@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type {
   ModelSelection,
   ProviderInstanceId,
@@ -35,6 +36,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const t = useUiTranslation();
   const size = props.size ?? "sm";
   const composerFloatingLayerProps = useComposerMenuProps();
   const [open, setOpen] = useComposerMenuState(props.hidden);
@@ -57,7 +59,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             aria-pressed={props.interactionMode === "plan"}
             type="button"
             onClick={props.onToggleInteractionMode}
-            aria-label={interactionModeTooltip}
+            aria-label={t(interactionModeTooltip)}
           />
         }
       >
@@ -75,10 +77,10 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
           />
         )}
         <span data-composer-control-label className="sr-only sm:not-sr-only">
-          {props.interactionMode === "plan" ? "Plan" : "Build"}
+          {props.interactionMode === "plan" ? t("Plan") : t("Build")}
         </span>
       </TooltipTrigger>
-      <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
+      <TooltipPopup side="top">{t(interactionModeTooltip)}</TooltipPopup>
     </Tooltip>
   ) : null;
 
@@ -96,12 +98,12 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
               <ComposerSelectControl
                 data-composer-shortcut="composer.mode"
                 size={size}
-                aria-label="Runtime mode"
+                aria-label={t("Runtime mode")}
               />
             }
           >
             <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
-            <SelectValue data-composer-control-label>{runtimeModeOption.label}</SelectValue>
+            <SelectValue data-composer-control-label>{t(runtimeModeOption.label)}</SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
             {props.runtimeModeOptions.map((option) => {
@@ -117,10 +119,10 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                     <div className="grid min-w-0 flex-1 gap-0.5">
                       <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
                         <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                        {option.label}
+                        {t(option.label)}
                       </span>
                       <span className="text-muted-foreground text-xs leading-4">
-                        {option.description}
+                        {t(option.description)}
                       </span>
                     </div>
                   </div>
@@ -129,7 +131,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             })}
           </SelectPopup>
         </Select>
-        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
+        <TooltipPopup side="top">{t(runtimeModeOption.description)}</TooltipPopup>
       </Tooltip>
 
       {interactionModeToggle}

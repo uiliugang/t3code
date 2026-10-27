@@ -33,7 +33,7 @@ export function SettingsSection(props: ComponentProps<typeof ListSection>) {
       <View>{props.children}</View>
       {props.footer ? (
         <Text textRole="footnote" className="px-2 text-foreground-muted">
-          {props.footer}
+          {typeof props.footer === "string" ? t(props.footer) : props.footer}
         </Text>
       ) : null}
     </View>

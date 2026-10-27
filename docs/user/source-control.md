@@ -1,7 +1,7 @@
 # Source control
 
-T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, GitCafe, and Meituan Code to clone
-and publish repositories, create pull requests, and review changes.
+This build enables GitHub and Meituan Code to clone and publish repositories, create pull requests,
+and review changes. The other hosting integrations described below are disabled in this build.
 
 ## Review turn changes
 

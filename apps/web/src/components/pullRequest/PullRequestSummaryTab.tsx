@@ -475,6 +475,7 @@ export function PullRequestSummaryTab({
         stale: entry.stale,
       })),
   ];
+  const showReviewerLogins = detail.provider === "meituan";
 
   const openLink = useOpenLink(threadRef);
   const openCheck = (url: string) => {
@@ -659,7 +660,12 @@ export function PullRequestSummaryTab({
               {reviewerEntries.length === 0 ? (
                 <span className="text-muted-foreground">None</span>
               ) : (
-                <span className="flex items-center -space-x-1">
+                <span
+                  className={cn(
+                    "flex items-center",
+                    showReviewerLogins ? "flex-wrap gap-2" : "-space-x-1",
+                  )}
+                >
                   {reviewerEntries.map((entry) => {
                     const login = entry.actor?.login ?? "ghost";
                     const named =
@@ -673,6 +679,7 @@ export function PullRequestSummaryTab({
                             <span
                               className={cn(
                                 "relative rounded-full hover:z-10",
+                                showReviewerLogins && "px-1.5 py-0.5",
                                 entry.outcome
                                   ? pullRequestReviewOutcomeRingClassName(
                                       entry.outcome,
@@ -683,11 +690,15 @@ export function PullRequestSummaryTab({
                             />
                           }
                         >
-                          <PullRequestActorLabel
-                            actor={entry.actor}
-                            tooltip={false}
-                            variant="avatar"
-                          />
+                          {showReviewerLogins ? (
+                            <span className="break-all font-medium text-foreground">{login}</span>
+                          ) : (
+                            <PullRequestActorLabel
+                              actor={entry.actor}
+                              tooltip={false}
+                              variant="avatar"
+                            />
+                          )}
                           {entry.outcome ? (
                             <span className="sr-only">
                               {entry.stale

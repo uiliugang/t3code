@@ -34,12 +34,15 @@ interface CommandPaletteResultsProps {
 }
 
 function CommandPaletteEmptyState(props: { emptyStateMessage?: string; isActionsOnly: boolean }) {
+  const t = useUiTranslation();
   return (
     <div className="py-10 text-center text-sm text-muted-foreground">
-      {props.emptyStateMessage ??
-        (props.isActionsOnly
-          ? "No matching actions."
-          : "No matching commands, projects, or threads.")}
+      {t(
+        props.emptyStateMessage ??
+          (props.isActionsOnly
+            ? "No matching actions."
+            : "No matching commands, projects, or threads."),
+      )}
     </div>
   );
 }
@@ -280,3 +283,4 @@ function CommandPaletteResultRow(props: {
     </CommandItem>
   );
 }
+import { useUiTranslation } from "../hooks/useUiTranslation";

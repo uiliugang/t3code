@@ -10,3 +10,18 @@ it("runs a driver for every host the server and clients read, in their order", (
     sourceControlDefinitions.definitions,
   );
 });
+
+it("only registers GitHub and Meituan Code", () => {
+  expect(sourceControlDefinitions.definitions.map((definition) => definition.kind)).toEqual([
+    "github",
+    "meituan",
+  ]);
+  expect(
+    sourceControlDefinitions.recognizeRemote("git@git.sankuai.com:project/repo.git")?.kind,
+  ).toBe("meituan");
+  expect(
+    sourceControlDefinitions.parseChangeRequestUrl(
+      "https://dev.sankuai.com/code/repo-detail/project/repo/pr/42/overview",
+    )?.definition.kind,
+  ).toBe("meituan");
+});

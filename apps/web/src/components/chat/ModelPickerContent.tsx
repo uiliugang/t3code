@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
@@ -206,6 +207,7 @@ function ModelPickerProviderNotices({
   onRequestClose: (() => void) | undefined;
   onOpenProviderSetup: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
+  const t = useUiTranslation();
   const navigate = useNavigate();
   return (
     <>
@@ -223,7 +225,7 @@ function ModelPickerProviderNotices({
                   onOpenProviderSetup?.(entry.instanceId);
                 }}
               >
-                {setupEntries.length > 1 ? `Set up ${entry.displayName}` : "Open provider setup"}
+                {setupEntries.length > 1 ? `Set up ${entry.displayName}` : t("Open provider setup")}
               </InlineButton>
             </div>
           ))}
@@ -243,7 +245,7 @@ function ModelPickerProviderNotices({
               void navigate({ to: "/settings/providers" });
             }}
           >
-            Provider settings
+            {t("Provider settings")}
           </InlineButton>
         </p>
       ))}
@@ -362,6 +364,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
 }) {
+  const t = useUiTranslation();
   const {
     searchInputRef,
     keybindings: providedKeybindings,
@@ -904,7 +907,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           >
             <ComboboxSearchInput
               ref={searchInputRef}
-              placeholder="Search models..."
+              placeholder={t("Search models...")}
               value={searchQuery}
               onChange={(e) => {
                 if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
@@ -978,7 +981,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     >
                       <div className="min-w-0 flex-1 text-left">
                         <div className="text-xs font-medium leading-snug redesign:text-sm redesign:font-normal">
-                          Legacy models
+                          {t("Legacy models")}
                         </div>
                         <div className="mt-1 text-xs font-normal leading-snug text-muted-foreground/70 redesign:text-muted-foreground">
                           {legacySection.legacyModels.length} models

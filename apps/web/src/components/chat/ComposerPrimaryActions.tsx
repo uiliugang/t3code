@@ -182,7 +182,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
             >
-              Previous
+              {t("Previous")}
             </Button>
           )
         ) : null}
@@ -219,7 +219,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
-          {isConnecting || isSendBusy ? "Sending..." : "Refine"}
+          {isConnecting || isSendBusy ? t("Sending...") : t("Refine")}
         </button>
       );
     }
@@ -232,7 +232,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
-          {isConnecting || isSendBusy ? "Sending..." : "Implement"}
+          {isConnecting || isSendBusy ? t("Sending...") : t("Implement")}
         </button>
         <Menu>
           <MenuTrigger
@@ -260,7 +260,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 if (canOperateThread) onImplementPlanInNewThread();
               }}
             >
-              Implement in a new thread
+              {t("Implement in a new thread")}
             </MenuItem>
           </MenuPopup>
         </Menu>
@@ -401,7 +401,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             )
           ) : (
             <>
-              {keepFullHistory ? "Full" : "Compact"}
+              {keepFullHistory ? t("Full") : t("Compact")}
               <span>{compactTokens}</span>
             </>
           )}
@@ -412,7 +412,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               ? `Next send keeps all ${compactTokens} tokens.`
               : `Next send compacts ${compactTokens} tokens first.`}
           </div>
-          <div>{keepFullHistory ? "Click to compact first" : "Click to keep full history"}</div>
+          <div>
+            {keepFullHistory ? t("Click to compact first") : t("Click to keep full history")}
+          </div>
         </TooltipPopup>
       </Tooltip>
       {submit}

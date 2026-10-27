@@ -182,17 +182,22 @@ export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
   "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
 
 export function PolicyTooltip({ children }: { readonly children: string }) {
+  const t = useUiTranslation();
   return (
     <Tooltip>
       <TooltipTrigger
         delay={200}
         render={
-          <Button size="icon-micro" variant="ghost-muted" aria-label="Background policy details">
+          <Button
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-label={t("Background policy details")}
+          >
             <InfoIcon className="size-3.5" />
           </Button>
         }
       />
-      <TooltipPopup side="top">{children}</TooltipPopup>
+      <TooltipPopup side="top">{t(children)}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -392,7 +397,7 @@ export function SettingsRow({
           {control}
         </div>
       </TooltipTrigger>
-      <TooltipPopup side="top">{message}</TooltipPopup>
+      <TooltipPopup side="top">{t(message)}</TooltipPopup>
     </Tooltip>
   );
   const renderedControl =
@@ -432,7 +437,7 @@ export function SettingsRow({
       : source === "t3.json"
         ? { state: "inherited", summary: "Inherited from the repository's t3.json" }
         : source === "environment" && scopedKeys.length > 0
-          ? { state: "inherited", summary: `Inherited from ${inheritedFrom}` }
+          ? { state: "inherited", summary: t("Inherited from {name}", { name: inheritedFrom }) }
           : customized
             ? { state: "environment", summary: "Set on the environment" }
             : { state: "default", summary: "Built-in default" };
@@ -453,7 +458,7 @@ export function SettingsRow({
           : {})}
       />
     ) : null;
-  const renderedStatus = status;
+  const renderedStatus = typeof status === "string" ? t(status) : status;
 
   return (
     <div

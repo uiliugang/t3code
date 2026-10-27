@@ -1,5 +1,8 @@
 import type { RepositoryIdentity } from "@t3tools/contracts";
-import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
+import {
+  canonicalizeGitCafePullRequestUrl,
+  knownSourceControlDefinitions,
+} from "@t3tools/source-control-definitions/registry";
 
 import { sourceControlClients, type ChangeRequestTerminology } from "./sourceControlClients.ts";
 
@@ -12,7 +15,7 @@ export function parsePullRequestReference(input: string): string | null {
   }
 
   const normalizedInput =
-    sourceControlClients.definitions
+    knownSourceControlDefinitions.definitions
       .map((definition) => definition.checkoutCommandArgument(trimmed))
       .find((argument) => argument !== null) ?? trimmed;
   if (normalizedInput.length === 0) {
@@ -20,7 +23,7 @@ export function parsePullRequestReference(input: string): string | null {
   }
 
   if (
-    sourceControlClients.definitions.some((definition) =>
+    knownSourceControlDefinitions.definitions.some((definition) =>
       definition.isChangeRequestReference(normalizedInput),
     )
   ) {

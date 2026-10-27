@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   type ProviderApprovalDecision,
   type ProviderApprovalOption,
@@ -37,6 +38,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
   options = DEFAULT_APPROVAL_OPTIONS,
   onRespondToApproval,
 }: ComposerPendingApprovalActionsProps) {
+  const t = useUiTranslation();
   const primaryOptions = options.filter(
     (option) => option.decision === "decline" || option.decision === "accept",
   );
@@ -53,7 +55,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
             size="xs"
             variant={option.decision === "accept" ? "default" : "outline"}
             disabled={disabled || isResponding || !canRespond}
-            aria-description={option.warning}
+            aria-description={option.warning ? t(option.warning) : undefined}
             onClick={() => {
               if (!disabled && !isResponding) {
                 void onRespondToApproval(requestId, option.decision);
@@ -61,13 +63,13 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
             }}
           >
             {option.warning ? <TriangleAlertIcon className="size-3 shrink-0" /> : null}
-            <span className="max-w-40 truncate">{option.label}</span>
+            <span className="max-w-40 truncate">{t(option.label)}</span>
           </Button>
         );
         return option.warning ? (
           <Tooltip key={option.decision}>
             <TooltipTrigger render={button} />
-            <TooltipPopup side="top">{option.warning}</TooltipPopup>
+            <TooltipPopup side="top">{t(option.warning)}</TooltipPopup>
           </Tooltip>
         ) : (
           button
@@ -77,7 +79,9 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
         <Menu>
           <MenuTrigger
             disabled={disabled || isResponding}
-            render={<Button size="icon-xs" variant="outline" aria-label="More approval options" />}
+            render={
+              <Button size="icon-xs" variant="outline" aria-label={t("More approval options")} />
+            }
           >
             <EllipsisIcon />
           </MenuTrigger>
@@ -87,20 +91,22 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
                 <MenuItem
                   key={option.decision}
                   disabled={disabled || isResponding}
-                  aria-description={option.warning}
+                  aria-description={option.warning ? t(option.warning) : undefined}
                   onClick={() => {
                     if (!disabled && !isResponding)
                       void onRespondToApproval(requestId, option.decision);
                   }}
                 >
                   {option.warning ? <TriangleAlertIcon className="size-3 text-warning" /> : null}
-                  <span className="min-w-0 whitespace-normal wrap-break-word">{option.label}</span>
+                  <span className="min-w-0 whitespace-normal wrap-break-word">
+                    {t(option.label)}
+                  </span>
                 </MenuItem>
               );
               return option.warning ? (
                 <Tooltip key={option.decision}>
                   <TooltipTrigger render={item} />
-                  <TooltipPopup side="top">{option.warning}</TooltipPopup>
+                  <TooltipPopup side="top">{t(option.warning)}</TooltipPopup>
                 </Tooltip>
               ) : (
                 item
