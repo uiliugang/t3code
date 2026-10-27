@@ -280,11 +280,13 @@ describe("source control host search items", () => {
     expect(searchSettings("ex switch accounts", items)).toHaveLength(1);
   });
 
-  it("finds the built-in hosts by their own words", () => {
-    expect(searchSettings("codeberg").map((item) => item.id)).toContain("source-control");
+  it("finds enabled hosts without advertising disabled integrations", () => {
+    expect(searchSettings("meituan").map((item) => item.id)).toContain("source-control");
     expect(searchSettings("ghes").map((item) => item.id)).toContain(
       sourceControlHostSettingsSearchId("github"),
     );
+    expect(searchSettings("codeberg")).toEqual([]);
+    expect(searchSettings("gitlab")).toEqual([]);
   });
 });
 

@@ -540,7 +540,7 @@ export function SettingResetButton({
           <Button
             size="icon-micro"
             variant="ghost-muted"
-            aria-label={`${t("Reset to default")}: ${t(label)}`}
+            aria-label={t("Reset {label} to default", { label: t(label) })}
             disabled={disabled}
             onClick={(event) => {
               event.stopPropagation();

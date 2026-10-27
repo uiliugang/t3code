@@ -128,6 +128,7 @@ const zhCN: Readonly<Record<string, string>> = {
   Close: "关闭",
   Reset: "重置",
   "Reset to default": "恢复默认值",
+  "Reset {label} to default": "将{label}恢复为默认值",
   "Restore defaults": "恢复默认设置",
   Delete: "删除",
   Remove: "移除",
