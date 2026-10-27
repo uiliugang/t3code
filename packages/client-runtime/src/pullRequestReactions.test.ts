@@ -1,7 +1,11 @@
 import type { PullRequestReaction, PullRequestReactionContent } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
-import { applyPendingPullRequestReactions } from "./pullRequestReactions.ts";
+import {
+  applyPendingPullRequestReactions,
+  pullRequestReactionTooltip,
+} from "./pullRequestReactions.ts";
 
 function reaction(overrides: Partial<PullRequestReaction> = {}): PullRequestReaction {
   return {
@@ -12,6 +16,18 @@ function reaction(overrides: Partial<PullRequestReaction> = {}): PullRequestReac
     ...overrides,
   };
 }
+
+it("localizes reaction text while preserving actor logins and the English wording", () => {
+  const value = reaction({ count: 5, actors: ["Summary", "liugang59"], viewerHasReacted: true });
+  expect(pullRequestReactionTooltip(value)).toBe(
+    "You, Summary, liugang59, and 2 others reacted with heart emoji",
+  );
+  const t = translateUi.bind(null, "zh-CN");
+  expect(pullRequestReactionTooltip(value, t)).toBe(
+    "你, Summary, liugang59，以及2 位其他用户 使用爱心表情回应",
+  );
+  expect(pullRequestReactionTooltip(reaction({ actors: ["You"] }), t)).toBe("You 使用爱心表情回应");
+});
 
 describe("pending reactions", () => {
   const pending = (

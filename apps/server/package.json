@@ -58,6 +58,7 @@
     "@t3tools/source-control-gitcafe": "workspace:*",
     "@t3tools/source-control-github": "workspace:*",
     "@t3tools/source-control-gitlab": "workspace:*",
+    "@t3tools/source-control-meituan": "workspace:*",
     "character-entities": "2.0.2",
     "effect": "catalog:",
     "jose": "catalog:",

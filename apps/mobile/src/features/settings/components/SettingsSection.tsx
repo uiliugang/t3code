@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { createContext, use, type ComponentProps } from "react";
 import { View } from "react-native";
 
@@ -13,7 +14,9 @@ export const SettingsSidebarContext = createContext<{ readonly selected: string 
 );
 
 export function SettingsSection(props: ComponentProps<typeof ListSection>) {
-  if (!use(SettingsSidebarContext)) return <ListSection {...props} />;
+  const t = useUiTranslation();
+  if (!use(SettingsSidebarContext))
+    return <ListSection {...props} title={props.title ? t(props.title) : props.title} />;
   return (
     <View className="gap-1">
       {props.title ? (
@@ -21,7 +24,7 @@ export function SettingsSection(props: ComponentProps<typeof ListSection>) {
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
             {props.titleIcon}
             <Text textRole="footnote" className="shrink font-t3-medium text-foreground-muted">
-              {props.title}
+              {t(props.title)}
             </Text>
           </View>
           {props.trailing}
@@ -30,7 +33,7 @@ export function SettingsSection(props: ComponentProps<typeof ListSection>) {
       <View>{props.children}</View>
       {props.footer ? (
         <Text textRole="footnote" className="px-2 text-foreground-muted">
-          {props.footer}
+          {typeof props.footer === "string" ? t(props.footer) : props.footer}
         </Text>
       ) : null}
     </View>

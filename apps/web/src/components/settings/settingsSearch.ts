@@ -1,3 +1,4 @@
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
@@ -204,6 +205,12 @@ const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
   .join(" ");
 
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "language",
+    title: "Interface language",
+    to: "/settings/appearance",
+    searchTerms: ["语言", "中文", "简体中文", "English", "language", "locale"],
+  },
   {
     id: "storage-worktree-keep-when",
     targetId: "storage-worktrees",
@@ -1291,6 +1298,8 @@ export function searchSettings(
       const title = normalizeSearchText(item.title);
       const fields = [
         title,
+        normalizeSearchText(translateUi("zh-CN", item.title)),
+        normalizeSearchText(translateUi("zh-CN", SETTINGS_SECTION_LABELS[item.to])),
         normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
       ];

@@ -2,6 +2,12 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // Exported types are part of our contracts even before they have consumers.
   "rules": { "types": "off", "nsTypes": "off" },
+  // Disabled integrations retain their driver entry points so registration can be restored.
+  "ignoreIssues": {
+    "packages/source-control-{azure-devops,bitbucket,forgejo,gitcafe,gitlab}/src/server/driver.ts": [
+      "exports",
+    ],
+  },
   // These executables are supplied by the OS or installed separately from npm.
   "ignoreBinaries": ["eas", "file", "mkfifo", "pkill", "pkg-config", "plutil", "sips"],
   "workspaces": {
@@ -59,7 +65,18 @@
       // The Vite+ web build prerequisite.
       // Native and disk-loaded provider packages stay external to the bundle; the
       // CLI archive and desktop sidecar stage them from this manifest.
-      "ignoreDependencies": ["@effect/platform-node-shared", "@t3tools/web", "@napi-rs/keyring"],
+      "ignoreDependencies": [
+        "@effect/platform-node-shared",
+        "@t3tools/web",
+        "@napi-rs/keyring",
+        "zod",
+        // Disabled hosting integrations remain installed so their entries can be re-enabled.
+        "@t3tools/source-control-azure-devops",
+        "@t3tools/source-control-bitbucket",
+        "@t3tools/source-control-forgejo",
+        "@t3tools/source-control-gitcafe",
+        "@t3tools/source-control-gitlab",
+      ],
     },
     "apps/desktop": {
       // Electron loads these bundles by filename rather than importing them.

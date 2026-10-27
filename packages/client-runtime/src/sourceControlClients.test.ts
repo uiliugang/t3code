@@ -366,3 +366,19 @@ describe("sourceControlClients.findByPublicDomain", () => {
     expect(sourceControlClients.findByPublicHost("gist.github.com")).toBeUndefined();
   });
 });
+
+it("only offers GitHub and Meituan Code while retaining saved link metadata", () => {
+  expect(sourceControlClients.definitions.map((definition) => definition.kind)).toEqual([
+    "github",
+    "meituan",
+  ]);
+  expect(sourceControlClients.recognizeRemote("git@git.sankuai.com:project/repo.git")?.kind).toBe(
+    "meituan",
+  );
+  expect(
+    sourceControlClients.parseChangeRequestUrl(
+      "https://dev.sankuai.com/code/repo-detail/project/repo/pr/42/overview",
+    )?.definition.kind,
+  ).toBe("meituan");
+  expect(kindOf("https://gitlab.com/team/repo/-/merge_requests/42")).toBe("gitlab");
+});

@@ -1,4 +1,5 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   type SourceControlDefinition,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
@@ -11,14 +12,20 @@ import { toastManager } from "../ui/toast";
 
 export type PullRequestLinkContextMenuAction = "copy-link" | "open-external";
 
-export const openOnHostLabel = (host: SourceControlDefinition): string =>
-  host === UNKNOWN_SOURCE_CONTROL_CLIENT ? "Open on host" : `Open on ${host.label}`;
+export const openOnHostLabel = (
+  host: SourceControlDefinition,
+  t = translateUi.bind(null, "en"),
+): string =>
+  host === UNKNOWN_SOURCE_CONTROL_CLIENT
+    ? t("Open on host")
+    : t("Open on {host}", { host: host.label });
 
 function pullRequestLinkContextMenuItems(
   openLabel: string,
+  t: UiTranslator,
 ): readonly ContextMenuItem<PullRequestLinkContextMenuAction>[] {
   return [
-    { id: "copy-link", label: "Copy link", icon: "copy" },
+    { id: "copy-link", label: t("Copy link"), icon: "copy" },
     { id: "open-external", label: openLabel },
   ];
 }
@@ -27,16 +34,18 @@ export async function showPullRequestLinkContextMenu({
   url,
   openLabel,
   position,
+  t = translateUi.bind(null, "en"),
 }: {
   readonly url: string;
   readonly openLabel: string;
   readonly position: { readonly x: number; readonly y: number };
+  readonly t?: UiTranslator;
 }): Promise<void> {
   const api = readLocalApi();
   if (!api) return;
   let action: PullRequestLinkContextMenuAction | null = null;
   try {
-    action = await api.contextMenu.show(pullRequestLinkContextMenuItems(openLabel), position);
+    action = await api.contextMenu.show(pullRequestLinkContextMenuItems(openLabel, t), position);
   } catch {
     return;
   }
@@ -46,7 +55,7 @@ export async function showPullRequestLinkContextMenu({
   } catch {
     toastManager.add({
       type: "error",
-      title: action === "copy-link" ? "Could not copy the link" : "Could not open the link",
+      title: action === "copy-link" ? t("Could not copy the link") : t("Could not open the link"),
     });
   }
 }

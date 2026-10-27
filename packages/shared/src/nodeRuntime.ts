@@ -11,6 +11,7 @@ const NodeRuntimeFeature = Schema.Literals([
   "Local device support",
   "Device automation",
   "Antigravity",
+  "Meituan Code",
   "Antigravity sign-in",
 ]);
 

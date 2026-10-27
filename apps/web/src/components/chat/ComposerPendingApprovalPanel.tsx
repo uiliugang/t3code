@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
   fullAccessOverrideExplanation,
@@ -20,6 +21,7 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
   pendingCount,
   className,
 }: ComposerPendingApprovalPanelProps) {
+  const t = useUiTranslation();
   const Detail = approval.requestKind === "mcp-elicitation" ? "span" : "code";
   const fallbackLabel =
     approval.requestKind === "mcp-elicitation"
@@ -83,7 +85,7 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
         tabIndex={0}
       >
         {approval.responseCapability === "not_resumable"
-          ? "Provider process is gone. Interrupt or restart the run to respond."
+          ? t("Provider process is gone. Interrupt or restart the run to respond.")
           : approval.detail || fallbackLabel}
       </Detail>
       {approval.reason ? (

@@ -1,10 +1,15 @@
+/* oxlint-disable t3code/no-low-value-comments -- Keep the disabled registrations as explicitly requested. */
 import * as AzureDevOps from "@t3tools/source-control-azure-devops/shared/definition";
 import * as Bitbucket from "@t3tools/source-control-bitbucket/shared/definition";
-import { makeSourceControlDefinitionRegistry } from "@t3tools/source-control-core/shared/definition";
+import {
+  makeSourceControlDefinitionRegistry,
+  type SourceControlDefinitionRegistry,
+} from "@t3tools/source-control-core/shared/definition";
 import * as Forgejo from "@t3tools/source-control-forgejo/shared/definition";
 import * as GitCafe from "@t3tools/source-control-gitcafe/shared/definition";
 import * as GitHub from "@t3tools/source-control-github/shared/definition";
 import * as GitLab from "@t3tools/source-control-gitlab/shared/definition";
+import * as Meituan from "@t3tools/source-control-meituan/shared/definition";
 
 export { canonicalizePullRequestUrl as canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-gitcafe/shared/definition";
 
@@ -13,7 +18,7 @@ export { canonicalizePullRequestUrl as canonicalizeGitCafePullRequestUrl } from 
  * GitCafe claims URLs first because GitHub and Forgejo accept the same routes on any hostname.
  * Remote recognition needs its own order because host labels can overlap (`gitea.github.example`).
  */
-export const builtInSourceControlDefinitions = makeSourceControlDefinitionRegistry(
+export const knownSourceControlDefinitions = makeSourceControlDefinitionRegistry(
   [
     GitHub.definition,
     GitLab.definition,
@@ -21,10 +26,12 @@ export const builtInSourceControlDefinitions = makeSourceControlDefinitionRegist
     Forgejo.definition,
     Bitbucket.definition,
     AzureDevOps.definition,
+    Meituan.definition,
   ],
   {
-    claimChangeRequestUrlsFirst: [GitCafe.definition.kind],
+    claimChangeRequestUrlsFirst: [GitCafe.definition.kind, Meituan.definition.kind],
     recognizeRemotesIn: [
+      Meituan.definition.kind,
       GitCafe.definition.kind,
       Forgejo.definition.kind,
       GitHub.definition.kind,
@@ -34,3 +41,17 @@ export const builtInSourceControlDefinitions = makeSourceControlDefinitionRegist
     ],
   },
 );
+
+// Keep saved links and repository identities readable when a host's entry is disabled.
+export const builtInSourceControlDefinitions: SourceControlDefinitionRegistry = {
+  ...knownSourceControlDefinitions,
+  definitions: [
+    GitHub.definition,
+    // GitLab.definition,
+    // GitCafe.definition,
+    // Forgejo.definition,
+    // Bitbucket.definition,
+    // AzureDevOps.definition,
+    Meituan.definition,
+  ],
+};

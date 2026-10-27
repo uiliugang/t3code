@@ -370,3 +370,16 @@ describe("server model preferences", () => {
     expect(decodeServerSettingsPatch(input)).toEqual(input);
   });
 });
+
+describe("device UI language", () => {
+  it("defaults old settings to English and round trips Chinese", () => {
+    expect(decodeClientSettings({}).uiLanguage).toBe("en");
+    const stored = encodeClientSettings(decodeClientSettings({ uiLanguage: "zh-CN" }));
+    expect(decodeClientSettings(stored).uiLanguage).toBe("zh-CN");
+    expect(decodeClientSettingsPatch({ uiLanguage: "en" })).toEqual({ uiLanguage: "en" });
+    expect(decodeClientSettingsPatch({})).not.toHaveProperty("uiLanguage");
+  });
+  it("rejects unsupported locale values", () => {
+    expect(() => decodeClientSettingsPatch({ uiLanguage: "invalid" })).toThrow();
+  });
+});

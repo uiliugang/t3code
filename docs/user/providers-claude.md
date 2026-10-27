@@ -94,6 +94,41 @@ To show Claude task lists in the web and desktop apps, add
 **Environment** section in **Settings > Providers**. Each update shows as a Tasks
 row in the thread; open it to see every step.
 
+## Custom API providers
+
+Claude Code can use a custom provider that accepts the Anthropic Messages API. An
+OpenAI-compatible `/v1/chat/completions` endpoint alone is not enough: use a gateway
+that translates the Anthropic protocol and supports the selected model's tool calls.
+
+In **Settings > Providers**, add a Claude instance and give it a separate config directory,
+such as `~/.claude_gateway`. Keep **Binary path** set to `claude`. Set the instance's
+**Environment variables** using the authentication method required by your gateway:
+
+| Variable               | API-key authentication           | Bearer-token authentication      |
+| ---------------------- | -------------------------------- | -------------------------------- |
+| `ANTHROPIC_BASE_URL`   | The gateway's Anthropic base URL | The gateway's Anthropic base URL |
+| `ANTHROPIC_API_KEY`    | Your API key, marked Sensitive   | An explicitly empty value        |
+| `ANTHROPIC_AUTH_TOKEN` | An explicitly empty value        | Your token, marked Sensitive     |
+
+Use the base URL given by the gateway, not the full `/v1/messages` request URL. If the
+config directory already has a subscription login, sign out of that directory in Claude
+Code first. You do not need to sign in to Anthropic for a gateway that uses its own credentials.
+
+Add the gateway's exact model ID with **Add custom model**, then select that model in a
+new thread using this Claude instance. A display label does not change the model ID sent to
+the gateway. Keep unsupported effort or thinking options off according to the gateway's
+model documentation. `ANTHROPIC_DEFAULT_*_MODEL` alias settings do not override the model
+explicitly selected in T3 Code.
+
+For a remote environment, the endpoint must be reachable from the server. `localhost`
+means the server itself, and credentials are saved on that environment. Values marked
+Sensitive use its secret storage. Configure separate instances for different gateways.
+
+A ready status is not proof that a gateway accepts the key or model. Send a small
+prompt and check the gateway's
+request log or usage dashboard. Custom endpoint settings show **Custom API endpoint**;
+cached Anthropic subscription identity and subscription limits do not describe that gateway.
+
 ## OpenRouter
 
 Create a Claude instance with its own config directory, such as

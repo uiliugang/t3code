@@ -86,6 +86,7 @@ const ThreadProject = Schema.Struct({
 const isThreadProject = Schema.is(ThreadProject);
 
 export interface Preferences {
+  readonly uiLanguage?: "en" | "zh-CN";
   readonly navigationTabOrder?: readonly string[];
   readonly hiddenNavigationTabs?: readonly string[];
   readonly pullRequestHideTestFiles?: boolean;
@@ -173,6 +174,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
+    uiLanguage?: "en" | "zh-CN";
     themeMode?: MobileThemeMode;
     baseFontSize?: number;
     terminalFontSize?: number | null;
@@ -253,6 +255,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   ) {
     preferences.themeMode = parsed.themeMode;
   }
+  if (parsed.uiLanguage === "en" || parsed.uiLanguage === "zh-CN")
+    preferences.uiLanguage = parsed.uiLanguage;
   if (typeof parsed.baseFontSize === "number") preferences.baseFontSize = parsed.baseFontSize;
   if (typeof parsed.terminalFontSize === "number" || parsed.terminalFontSize === null) {
     preferences.terminalFontSize = parsed.terminalFontSize;

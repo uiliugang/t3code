@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../../../lib/useUiTranslation";
 import {
   BASE_FONT_SIZE_STEP,
   MAX_BASE_FONT_SIZE,
@@ -13,17 +14,18 @@ import { FontSizeSliderRow } from "../components/FontSizeSliderRow";
 import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 
 export function TextAppearanceSection() {
+  const t = useUiTranslation();
   const { isReady, appearance, setBaseFontSize, mathRenderingEnabled, setMathRenderingEnabled } =
     useAppearancePreferences();
 
   return (
-    <SettingsSection title="Text">
+    <SettingsSection title={t("Text")}>
       <TextAppearancePreview fontSize={appearance.baseFontSize} />
       <AppearancePreviewSeparator />
       <FontSizeSliderRow
         disabled={!isReady}
         icon="textformat.size"
-        label="Text size"
+        label={t("Text size")}
         max={MAX_BASE_FONT_SIZE}
         min={MIN_BASE_FONT_SIZE}
         onChange={setBaseFontSize}
@@ -34,7 +36,7 @@ export function TextAppearanceSection() {
       <SettingsSwitchRow
         disabled={!isReady}
         icon="plusminus"
-        label="Render math"
+        label={t("Render math")}
         value={mathRenderingEnabled}
         onValueChange={setMathRenderingEnabled}
       />

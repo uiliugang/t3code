@@ -39,7 +39,7 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
-import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import { checkClaudeProviderStatus, type ClaudeCapabilitiesProbe } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ModelManifest from "./ModelManifest.ts";
@@ -166,6 +166,8 @@ type TestClaudeCapabilities = {
   readonly apiKeySource: string | undefined;
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly workspaceId?: string;
+  readonly usage?: NonNullable<ClaudeCapabilitiesProbe["usage"]>;
 };
 
 function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
@@ -2268,6 +2270,42 @@ it.layer(
   });
 
   describe("checkClaudeProviderStatus", () => {
+    it.effect("does not attribute a custom API endpoint to a cached Anthropic subscription", () =>
+      Effect.gen(function* () {
+        const status = yield* checkClaudeProviderStatus(
+          defaultClaudeSettings,
+          claudeCapabilities({
+            tokenSource: "oauth",
+            apiKeySource: "none",
+            apiProvider: "firstParty",
+            subscriptionType: "max",
+            email: "subscription@example.com",
+            workspaceId: "subscription-workspace",
+            usage: {
+              rate_limits_available: true,
+              rate_limits: { five_hour: { utilization: 80, resets_at: "2026-10-26T15:00:00Z" } },
+            },
+          }),
+          {
+            ANTHROPIC_BASE_URL: "https://gateway.example/anthropic",
+            ANTHROPIC_AUTH_TOKEN: "test-token",
+          },
+        );
+        assert.strictEqual(status.auth.type, "customEndpoint");
+        assert.strictEqual(status.auth.email, undefined);
+        assert.strictEqual(status.auth.workspaceId, undefined);
+        assert.strictEqual(status.usageLimits?.unavailable?.reason, "unsupported");
+        assert.deepStrictEqual(status.usageLimits?.windows, []);
+      }).pipe(
+        Effect.provide(
+          layerMockSpawner((args) => {
+            if (args.join(" ") === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+            throw new Error(`Unexpected args: ${args.join(" ")}`);
+          }),
+        ),
+      ),
+    );
+
     it.effect("reports a logged-out CLI as unauthenticated", () =>
       Effect.gen(function* () {
         const status = yield* checkClaudeProviderStatus(

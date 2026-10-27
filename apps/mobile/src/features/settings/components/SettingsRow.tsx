@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform } from "react-native";
@@ -20,6 +21,7 @@ export function SettingsRow(props: {
   readonly fullScreenTarget?: SettingsLegalDocumentTarget;
   readonly onPress?: () => void;
 }) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const sidebar = use(SettingsSidebarContext);
   // The Settings list opens pages in place of the detail column; a page's own rows push below.
@@ -29,7 +31,7 @@ export function SettingsRow(props: {
     (props.valuePosition === undefined && Platform.OS === "android");
   const content = {
     icon: props.icon,
-    label: props.label,
+    label: t(props.label),
     description: valueBelow ? props.value : undefined,
     detail: valueBelow ? undefined : props.value,
     disabled: props.disabled,
@@ -49,7 +51,7 @@ export function SettingsRow(props: {
     return (
       <RowPressable
         accessibilityRole="button"
-        accessibilityLabel={[props.label, props.value].filter(Boolean).join(", ")}
+        accessibilityLabel={[t(props.label), props.value].filter(Boolean).join(", ")}
         accessibilityState={{ disabled: Boolean(props.disabled), selected }}
         disabled={props.disabled}
         onPress={onPress}

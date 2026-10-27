@@ -2855,7 +2855,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           role: "Viewer",
         },
       ],
-      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
+      ...(signed
+        ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") }
+        : { identity: "-", hardenedRuntime: false, notarize: false }),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,
@@ -4051,6 +4053,36 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       }),
       verbose: options.verbose,
     });
+  } else if (
+    hostPlatform === (options.platform === "mac" ? "darwin" : "linux") &&
+    (options.arch === "universal" || options.arch === (yield* HostProcess.Architecture))
+  ) {
+    const packagedDirectory =
+      options.platform === "mac"
+        ? options.arch === "x64"
+          ? "mac"
+          : `mac-${options.arch}`
+        : options.arch === "x64"
+          ? "linux-unpacked"
+          : `linux-${options.arch}-unpacked`;
+    const appDirectory =
+      options.platform === "mac"
+        ? path.join(stageDistDir, packagedDirectory, `${resolveDesktopProductName(appVersion)}.app`)
+        : path.join(stageDistDir, packagedDirectory);
+    yield* verifyPackagedBundleIsSelfContained({
+      asarPath: path.join(
+        appDirectory,
+        ...(options.platform === "mac" ? ["Contents", "Resources"] : ["resources"]),
+        "app.asar",
+      ),
+      verbose: options.verbose,
+    });
+    if (options.platform === "mac") {
+      yield* runCommand(
+        ChildProcess.make("codesign", ["--verify", "--deep", "--strict", appDirectory]),
+        { label: "macOS packaged app signature check", verbose: options.verbose },
+      );
+    }
   }
   // x64 builds on arm64 runners; the arm64 check covers the shared JS bundle.
   if (options.platform === "mac" && options.arch === "arm64" && hostPlatform === "darwin") {

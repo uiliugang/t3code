@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
 import * as NodeCrypto from "node:crypto";
 import * as NodePath from "node:path";
+import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { createPackageWithOptions, extractFile } from "@electron/asar";
@@ -561,6 +562,35 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           `allowBuilds names a missing tarball: ${key}`,
         );
       }
+    }),
+  );
+
+  it("stages Cursor's Zod peer dependency in standalone desktop packages", () => {
+    const dependencies = resolveMergedStageDependencies({
+      platform: "mac",
+      serverDependencies: serverPackageJson.dependencies,
+      desktopDependencies: {},
+      arch: "arm64",
+      fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+    });
+    assert.property(dependencies, "zod");
+  });
+
+  it.effect("ad-hoc signs local macOS builds without the hardened runtime", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.1.3-preview.20261027.2",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const mac = config.mac as Record<string, unknown>;
+      assert.equal(mac.identity, "-");
+      assert.equal(mac.hardenedRuntime, false);
+      assert.equal(mac.notarize, false);
     }),
   );
 

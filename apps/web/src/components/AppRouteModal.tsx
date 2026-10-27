@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
@@ -63,12 +64,13 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
 }
 
 export function AppRouteModalClose() {
+  const t = useUiTranslation();
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <DialogPrimitive.Close
-            aria-label="Close"
+            aria-label={t("Close")}
             render={<Button size="icon-sm" variant="ghost" />}
           />
         }

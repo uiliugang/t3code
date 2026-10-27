@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useState } from "react";
 
 import {
@@ -12,6 +13,7 @@ import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 export function CliCommandSettingsRow() {
+  const t = useUiTranslation();
   const bridge = getDesktopCliCommandBridge();
   const query = useEnvironmentQuery(bridge ? desktopCliCommandStateAtom : null);
   const state = query.data;
@@ -55,7 +57,7 @@ export function CliCommandSettingsRow() {
           disabled={pending || query.isPending}
           onClick={() => change(installed ? "uninstall" : "install")}
         >
-          {installed ? "Remove" : "Install"}
+          {installed ? t("Remove") : t("Install")}
         </Button>
       }
     />

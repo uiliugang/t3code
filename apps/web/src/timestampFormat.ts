@@ -1,4 +1,5 @@
 import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
 function getTimestampFormatOptions(
   timestampFormat: TimestampFormat,
@@ -228,15 +229,18 @@ export function msUntilRelativeTimeChange(
   return Math.min(nextChangeMs - nowMs, DAY_MS);
 }
 
-export function formatRelativeElapsed(elapsedMs: number): RelativeTimeParts {
+export function formatRelativeElapsed(
+  elapsedMs: number,
+  t = translateUi.bind(null, "en"),
+): RelativeTimeParts {
   const seconds = Math.floor(elapsedMs / 1000);
-  if (seconds < 60) return { value: "just now", suffix: null };
+  if (seconds < 60) return { value: t("just now"), suffix: null };
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return { value: `${minutes}m`, suffix: "ago" };
+  if (minutes < 60) return { value: t("{count}m", { count: minutes }), suffix: t("ago") };
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { value: `${hours}h`, suffix: "ago" };
+  if (hours < 24) return { value: t("{count}h", { count: hours }), suffix: t("ago") };
   const days = Math.floor(hours / 24);
-  return { value: `${days}d`, suffix: "ago" };
+  return { value: t("{count}d", { count: days }), suffix: t("ago") };
 }
 
 export function formatRelativeTime(
