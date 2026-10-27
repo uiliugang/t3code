@@ -336,3 +336,22 @@ it("uses the environment's model preferences after migration, including empty li
   expect(merged.favorites).toEqual([]);
   expect(merged.providerModelPreferences).toEqual({});
 });
+
+it("persists language changes across hydration while preserving other device settings", async () => {
+  persistenceMocks.getClientSettings.mockResolvedValue({
+    ...DEFAULT_CLIENT_SETTINGS,
+    chatWidth: "wide",
+  });
+  await ensureClientSettingsHydrated();
+  await persistClientSettingsPatch({ uiLanguage: "zh-CN" });
+  const stored = persistenceMocks.setClientSettings.mock.calls.at(-1)![0];
+  expect(stored.uiLanguage).toBe("zh-CN");
+  expect(stored.chatWidth).toBe("wide");
+  __resetClientSettingsPersistenceForTests();
+  persistenceMocks.getClientSettings.mockResolvedValue(stored);
+  await ensureClientSettingsHydrated();
+  expect(getClientSettings().uiLanguage).toBe("zh-CN");
+  await persistClientSettingsPatch({ uiLanguage: "en" });
+  expect(getClientSettings().uiLanguage).toBe("en");
+  expect(getClientSettings().chatWidth).toBe("wide");
+});

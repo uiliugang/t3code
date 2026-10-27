@@ -94,6 +94,7 @@ function getClientSettingsSnapshot(): ClientSettings {
 
 function replaceClientSettingsSnapshot(settings: ClientSettings): void {
   clientSettingsSnapshot = settings;
+  if (typeof document !== "undefined") document.documentElement.lang = settings.uiLanguage;
   emitClientSettingsChange();
 }
 
@@ -745,6 +746,7 @@ export function __resetClientSettingsPersistenceForTests(): void {
 export function __setClientSettingsForTests(settings: ClientSettings): void {
   clientSettingsHydrationGeneration += 1;
   clientSettingsSnapshot = settings;
+  if (typeof document !== "undefined") document.documentElement.lang = settings.uiLanguage;
   clientSettingsHydrationStatus = "ready";
   clientSettingsHydrationPromise = null;
 }

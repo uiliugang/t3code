@@ -314,3 +314,17 @@ describe("movedSettingsPath", () => {
     expect(movedSettingsPath("/settings/appearance", "theme")).toBeNull();
   });
 });
+
+describe("localized settings search", () => {
+  it("finds language in Chinese or English without changing its navigation target", () => {
+    for (const query of ["语言", "简体中文", "language"]) {
+      expect(searchSettings(query).find((item) => item.id === "language")?.to).toBe(
+        "/settings/appearance",
+      );
+    }
+    expect(searchSettings("字体").some((item) => item.id === "interface-font")).toBe(true);
+    expect(searchSettings("Interface font").some((item) => item.id === "interface-font")).toBe(
+      true,
+    );
+  });
+});

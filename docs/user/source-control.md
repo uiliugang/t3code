@@ -1,6 +1,6 @@
 # Source control
 
-T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, and GitCafe to clone
+T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, GitCafe, and Meituan Code to clone
 and publish repositories, create pull requests, and review changes.
 
 ## Review turn changes
@@ -91,6 +91,38 @@ For a background service, put these `KEY=VALUE` entries in
 [`service.env`](./background-service.md#configure-the-service-environment)
 under T3 home, then run `t3 service restart`. Service installation and updates
 preserve that file.
+
+### Meituan Code
+
+Install Node.js 20 or newer and `code-cli` 0.1.27 or newer on the machine running T3 Code,
+with access to the Meituan network:
+
+```bash
+npm install -g @ee/code-cli@latest --registry=http://r.npm.sankuai.com
+code-cli auth login
+code-cli auth status
+```
+
+Open **Settings → Source control** and rescan. T3 Code reuses the CLI's login for
+`git.sankuai.com`; it does not require a separate token. An offline cached login shows as
+unverified. Git clone and push still require your SSH key or Git credentials. SSH is the default transport.
+
+Choose **Meituan Code** when cloning or publishing and enter `project/repository`.
+Existing Meituan Git remotes and pull request links from `dev.sankuai.com` are recognized
+automatically. When a repository requires an ONES work item, associate it with the source
+branch before creating a PR. Existing source-to-target PRs are reused and default reviewers
+remain enabled. Candidate reviewers for the target branch are added, with repository defaults as a fallback.
+
+You can read PRs and diffs, post comments, approve or request changes, mark drafts ready,
+close, reopen, and merge. Authors cannot approve or request changes on their own PRs.
+Human review assignments can be resolved and reopened. Creating inline comments,
+replying to review threads, reactions, editing PR text, and changing reviewer assignments
+are not available in this integration; use the Meituan Code website for those operations.
+
+The CLI exposes review assignments rather than complete discussion and commit history, so
+activity can be incomplete. It provides creation time but no last-update time, and listings
+can read at most 1,000 PRs. Empty check results do not prove that CI passed; check the
+Meituan Code website if the CLI cannot retrieve checks. Partial check failures stay pending in T3 Code.
 
 ### Azure DevOps
 

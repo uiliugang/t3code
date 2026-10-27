@@ -76,6 +76,34 @@ reported accounts, refresh provider status, and confirm the second instance has
 its own shadow path and login. A shadow-home conflict usually means the directory
 contains a copied Codex setup. Use a fresh shadow directory and sign in again.
 
+## Fast mode
+
+With **Use an existing Codex login**, select **Fast** in the model's speed options.
+T3 Code shows the tiers advertised by that model and account, including Ultrafast
+when available. Reasoning effort is a separate setting; choosing a lower effort
+does not select Fast mode.
+
+Accounts connected through T3 Code's **Connect with ChatGPT** flow use subscription
+sharing, which does not accept service tiers. T3 hides the tier selector for these
+accounts. To explicitly select Fast, add an instance using an existing Codex CLI
+login instead. Adding a tier to a custom model does not enable it for a managed account.
+
+The Codex terminal's `/fast` command is not a T3 composer command. Use the model's
+speed options in T3. For CLI defaults, set `service_tier = "fast"` at the top level of `config.toml`
+and `fast_mode = true` under `[features]`. An explicit thread selection
+takes precedence over a default. Availability and additional usage depend on the
+model and account; see [OpenAI's speed guide](https://learn.chatgpt.com/docs/agent-configuration/speed).
+
+## Goals
+
+Codex goals work through T3's composer: send `/goal <objective>`, `/goal` to view it,
+or `/goal pause`, `/goal resume`, and `/goal clear`. Send the command without
+attachments. See [Goals](./composer.md#goals) for continuation and Stop behavior.
+
+T3 treats `/goal edit` as viewing the current goal, rather than opening the Codex
+terminal's editor. Send `/goal <new objective>` to replace it; this resets the
+goal's usage accounting. The composer does not parse a token-budget flag.
+
 ## Answer questions while Codex works
 
 Codex can ask a question and keep working. Answer it in the thread's question

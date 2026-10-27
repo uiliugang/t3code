@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { Platform, View } from "react-native";
@@ -23,6 +24,7 @@ export function SettingsScreen(
     readonly workspaceRoot?: boolean;
   },
 ) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const route = useRoute();
   const workspace = useWorkspaceTabs();
@@ -42,7 +44,7 @@ export function SettingsScreen(
   return (
     <View collapsable={false} className={`flex-1 ${surfaceClassName}`}>
       <AppBar
-        title={props.title}
+        title={typeof props.title === "string" ? t(props.title) : props.title}
         actions={props.actions}
         search={props.search}
         trailing={Platform.OS === "android" ? props.trailing : undefined}

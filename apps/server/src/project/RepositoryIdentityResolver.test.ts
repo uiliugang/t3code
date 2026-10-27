@@ -22,6 +22,24 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
   }).pipe(Effect.provide(ProcessRunner.layer));
 
 it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
+  it.effect.each([
+    "ssh://git@git.sankuai.com/SA/service.git",
+    "https://git.sankuai.com/scm/SA/service.git",
+  ])("identifies the Meituan repository behind %s", (remote) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-meituan-identity-" });
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", remote]);
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+      expect(identity?.canonicalKey).toBe("git.sankuai.com/sa/service");
+      expect(identity?.provider).toBe("meituan");
+      expect(identity?.owner?.toLowerCase()).toBe("sa");
+      expect(identity?.name).toBe("service");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("normalizes equivalent GitHub remotes into a stable repository identity", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
