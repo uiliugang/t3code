@@ -1,11 +1,14 @@
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi } from "@t3tools/shared/uiLocale";
+import type { PullRequestReviewGuideStop } from "@t3tools/contracts";
 
 import {
   excerptExpansionOldContents,
   excerptRows,
   fileDiffRows,
   rowsToPatch,
+  stopSubline,
 } from "./reviewGuideTour.js";
 
 const PATCH = `diff --git a/src/tray.ts b/src/tray.ts
@@ -32,6 +35,29 @@ function parse(patch: string) {
 }
 
 const rows = fileDiffRows(parse(PATCH));
+
+it("localizes guide context and file counts without changing its content", () => {
+  const stop: PullRequestReviewGuideStop = {
+    title: "Summary",
+    summary: "Keep this content",
+    attention: null,
+    excerpts: [],
+    files: [],
+    notes: [],
+    questions: [],
+  };
+  const t = translateUi.bind(null, "zh-CN");
+  expect(stopSubline(stop)).toBe("Context, no code");
+  expect(stopSubline(stop, t)).toBe("背景说明，无代码");
+  expect(stopSubline({ ...stop, files: [{ path: "Summary" }] }, t)).toBe("1 个文件");
+  expect(stopSubline({ ...stop, files: [{ path: "Summary" }, { path: "Timeline" }] })).toBe(
+    "2 files",
+  );
+  expect(stopSubline({ ...stop, files: [{ path: "Summary" }, { path: "Timeline" }] }, t)).toBe(
+    "2 个文件",
+  );
+  expect(stop.title).toBe("Summary");
+});
 
 describe("fileDiffRows", () => {
   it("numbers both sides through context, deletions and additions", () => {

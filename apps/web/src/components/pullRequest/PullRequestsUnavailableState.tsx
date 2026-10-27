@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { ExternalLinkIcon } from "lucide-react";
 
@@ -18,13 +19,14 @@ export function PullRequestsUnavailableState({
   refreshing?: boolean;
   host?: { readonly url: string; readonly openLabel: string };
 }) {
+  const t = useUiTranslation();
   return (
     <Empty className="scrollbar-gutter-both min-h-0 justify-center-safe overflow-y-auto [&>*]:shrink-0">
       <EmptyMedia variant="icon">
         <PullRequestGlyph.pullRequest />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyTitle>{t(title)}</EmptyTitle>
         <EmptyDescription>{error}</EmptyDescription>
       </EmptyHeader>
       {onRetry || host ? (
@@ -38,7 +40,7 @@ export function PullRequestsUnavailableState({
               aria-busy={refreshing}
             >
               <RefreshIcon size="sm" refreshing={refreshing} />
-              Retry
+              {t("Retry")}
             </Button>
           ) : null}
           {host ? (

@@ -16,6 +16,14 @@ describe("UI translations", () => {
     ["Wait for the full response", "等待完整回复"],
     ["Open command palette", "打开命令面板"],
     ["Search models...", "搜索模型…"],
+    ["Summary", "摘要"],
+    ["Timeline", "时间线"],
+    ["Reviewers", "评审人"],
+    ["Description", "描述"],
+    ["Merge", "合并"],
+    ["Check out", "检出"],
+    ["Reviewing", "待我评审"],
+    ["Newest first", "最新优先"],
   ])("translates settings and action text: %s", (message, translated) => {
     expect(translateUi("zh-CN", message)).toBe(translated);
     expect(translateUi("en", message)).toBe(message);
@@ -32,5 +40,18 @@ describe("UI translations", () => {
     expect(translateUi("zh-CN", "Unknown {name} {missing}", values)).toBe(
       "Unknown Projects {count} <script> {missing}",
     );
+  });
+
+  it("formats pull request counts and keeps branch names verbatim", () => {
+    expect(translateUi("zh-CN", "{count} of {total} failing", { count: 1, total: 9 })).toBe(
+      "9 项检查中 1 项失败",
+    );
+    expect(translateUi("en", "{count} of {total} failing", { count: 1, total: 9 })).toBe(
+      "1 of 9 failing",
+    );
+    expect(translateUi("zh-CN", "Conflicts with {branch}", { branch: "Summary/{count}" })).toBe(
+      "与 Summary/{count} 冲突",
+    );
+    expect(translateUi("zh-CN", "Comments ({count})", { count: 0 })).toBe("评论（0）");
   });
 });

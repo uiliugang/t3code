@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { ArrowLeftIcon, FileDiffIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 
@@ -25,6 +26,7 @@ export function PullRequestDetailHeaderBody({
   files: ReactNode;
   diffStat: ReactNode;
 }) {
+  const t = useUiTranslation();
   return (
     <div className="col-span-2 mt-1 min-w-0 px-4 pb-4">
       {title}
@@ -39,7 +41,7 @@ export function PullRequestDetailHeaderBody({
         <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-xs text-muted-foreground/70">
           {base}
           <ArrowLeftIcon
-            aria-label="receives changes from"
+            aria-label={t("receives changes from")}
             className="size-3.5 shrink-0 opacity-60"
           />
           {head}
@@ -77,10 +79,11 @@ export function PullRequestDetailTabBar<Tab extends string>({
   inert?: boolean;
   children?: ReactNode;
 }) {
+  const t = useUiTranslation();
   return (
     <nav
       className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 px-4 py-2"
-      aria-label="Pull request tabs"
+      aria-label={t("Pull request tabs")}
       inert={inert}
     >
       <ToggleGroup
@@ -100,7 +103,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
             onPointerEnter={onTabIntent ? () => onTabIntent(tab.value) : undefined}
             onFocus={onTabIntent ? () => onTabIntent(tab.value) : undefined}
           >
-            {tab.label}
+            {t(tab.label)}
           </Toggle>
         ))}
       </ToggleGroup>

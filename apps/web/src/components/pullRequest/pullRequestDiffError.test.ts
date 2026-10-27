@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
 import { describePullRequestDiffError } from "./pullRequestDiffError";
 
@@ -33,5 +34,20 @@ describe("describePullRequestDiffError", () => {
     expect(result.description).toContain("Try again");
     expect(result.description).not.toContain("localhost");
     expect(result.description).not.toContain("limit");
+  });
+
+  it("localizes the explanation and preserves the host name", () => {
+    const t = translateUi.bind(null, "zh-CN");
+    expect(
+      describePullRequestDiffError("rate limit exceeded", "Meituan Code", "pull request", t),
+    ).toEqual({
+      title: "Meituan Code 请求频率已达上限",
+      description:
+        "Meituan Code 暂时限制了请求，无法加载差异。请稍后重试，或在 Meituan Code 查看更改。",
+    });
+    expect(describePullRequestDiffError("Connection failed", "GitHub", "pull request", t)).toEqual({
+      title: "无法加载更改",
+      description: "当前环境无法加载此合并请求的差异。请重试，或在 GitHub 查看更改。",
+    });
   });
 });

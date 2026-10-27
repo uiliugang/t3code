@@ -1,3 +1,5 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { Spinner } from "~/components/ui/spinner";
 import type {
   PullRequestActor,
@@ -89,14 +91,15 @@ export function PullRequestReviewDecisionGlyph({
 }: {
   decision: PullRequestReviewDecision;
 }) {
+  const t = useUiTranslation();
   const presentation = reviewDecisionPresentation(decision);
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
-        <span className="sr-only">{presentation.label}</span>
+        <span className="sr-only">{t(presentation.label)}</span>
       </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
+      <TooltipPopup>{t(presentation.label)}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -115,17 +118,22 @@ export interface PullRequestConflictPresentation {
   readonly Icon: PullRequestGlyphIcon;
 }
 
-function resolvePullRequestConflict(input: {
-  readonly state: PullRequestState;
-  readonly isDraft: boolean;
-  readonly mergeability?: PullRequestMergeability;
-  readonly baseBranch?: string;
-}): PullRequestConflictPresentation | null {
+function resolvePullRequestConflict(
+  input: {
+    readonly state: PullRequestState;
+    readonly isDraft: boolean;
+    readonly mergeability?: PullRequestMergeability;
+    readonly baseBranch?: string;
+  },
+  t = translateUi.bind(null, "en"),
+): PullRequestConflictPresentation | null {
   if (input.state !== "open" || input.isDraft || input.mergeability !== "conflicting") {
     return null;
   }
   return {
-    label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
+    label: input.baseBranch
+      ? t("Conflicts with {branch}", { branch: input.baseBranch })
+      : t("Has conflicts"),
     toneClassName: "text-destructive",
     Icon: PullRequestGlyph.conflicting,
   };
@@ -140,17 +148,18 @@ export function PullRequestStateGlyph({
   isDraft: boolean;
   className?: string;
 }) {
+  const t = useUiTranslation();
   const presentation = resolvePullRequestState({ state, isDraft });
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon
           role="img"
-          aria-label={presentation.label}
+          aria-label={t(presentation.label)}
           className={cn("size-4 shrink-0", presentation.toneClassName, className)}
         />
       </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
+      <TooltipPopup>{t(presentation.label)}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -168,23 +177,27 @@ export function PullRequestConflictGlyph({
   baseBranch?: string;
   className?: string;
 }) {
-  const presentation = resolvePullRequestConflict({
-    state,
-    isDraft,
-    ...(mergeability === undefined ? {} : { mergeability }),
-    ...(baseBranch === undefined ? {} : { baseBranch }),
-  });
+  const t = useUiTranslation();
+  const presentation = resolvePullRequestConflict(
+    {
+      state,
+      isDraft,
+      ...(mergeability === undefined ? {} : { mergeability }),
+      ...(baseBranch === undefined ? {} : { baseBranch }),
+    },
+    t,
+  );
   if (presentation === null) return null;
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon
           role="img"
-          aria-label={presentation.label}
+          aria-label={t(presentation.label)}
           className={cn("size-4 shrink-0", presentation.toneClassName, className)}
         />
       </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
+      <TooltipPopup>{t(presentation.label)}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -323,8 +336,11 @@ export function pullRequestReviewOutcomeRingClassName(
   return stale ? presentation.staleRingClassName : presentation.ringClassName;
 }
 
-export function pullRequestReviewOutcomeStaleLabel(outcome: PullRequestReviewOutcome): string {
-  return `${REVIEW_OUTCOME_PRESENTATION[outcome].label} earlier changes`;
+export function pullRequestReviewOutcomeStaleLabel(
+  outcome: PullRequestReviewOutcome,
+  t = translateUi.bind(null, "en"),
+): string {
+  return t("{outcome} earlier changes", { outcome: t(REVIEW_OUTCOME_PRESENTATION[outcome].label) });
 }
 
 export function PullRequestReviewOutcomeIcon({
@@ -354,12 +370,13 @@ export function PullRequestReviewOutcomeBadge({
   outcome: PullRequestReviewOutcome;
   className?: string;
 }) {
+  const t = useUiTranslation();
   const presentation = REVIEW_OUTCOME_PRESENTATION[outcome];
   return (
     <Badge size="sm" variant={presentation.badgeVariant} className={className}>
       <span className="inline-flex items-baseline gap-1">
         <presentation.Icon aria-hidden className="size-3 self-center" />
-        <span>{presentation.label}</span>
+        <span>{t(presentation.label)}</span>
       </span>
     </Badge>
   );
@@ -410,6 +427,7 @@ export function PullRequestActorLabel({
   tooltip?: boolean;
   profileUrl?: string | null;
 }) {
+  const t = useUiTranslation();
   const login = actor?.login ?? "ghost";
   const label = (
     <span className={cn("flex min-w-0 items-baseline", variant === "label" && "gap-1.5")}>
@@ -433,7 +451,7 @@ export function PullRequestActorLabel({
                   href={profileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Open ${login}'s profile`}
+                  aria-label={t("Open {login}'s profile", { login })}
                 />
               }
             />
@@ -446,7 +464,7 @@ export function PullRequestActorLabel({
       </TooltipTrigger>
       <TooltipPopup side="top">
         {actor?.name && actor.name !== login ? `${actor.name} (@${login})` : login}
-        {profileUrl ? " · Open profile" : ""}
+        {profileUrl ? t(" · Open profile") : ""}
       </TooltipPopup>
     </Tooltip>
   );
@@ -504,8 +522,11 @@ export function PullRequestMetaLine({
   );
 }
 
-export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
-  if (checks.length === 0) return "No checks reported";
+export function summarizePullRequestChecks(
+  checks: ReadonlyArray<PullRequestCheck>,
+  t = translateUi.bind(null, "en"),
+): string {
+  if (checks.length === 0) return t("No checks reported");
   const actionRequired = checks.filter((check) => check.status === "action-required");
   const workflowApprovalRequired = actionRequired.filter(isWorkflowApprovalCheck).length;
   const otherActionRequired = actionRequired.length - workflowApprovalRequired;
@@ -514,16 +535,35 @@ export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestChec
   ).length;
   const pending = checks.filter((check) => check.status === "pending").length;
   const passed = checks.filter((check) => check.status === "success").length;
-  if (failed > 0) return `${failed} of ${checks.length} failing`;
+  if (failed > 0) return t("{count} of {total} failing", { count: failed, total: checks.length });
   if (workflowApprovalRequired > 0 && otherActionRequired > 0) {
-    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} and ${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+    return t("{workflows} and {checks} awaiting action", {
+      workflows: t(workflowApprovalRequired === 1 ? "{count} workflow" : "{count} workflows", {
+        count: workflowApprovalRequired,
+      }),
+      checks: t(otherActionRequired === 1 ? "{count} check" : "{count} checks", {
+        count: otherActionRequired,
+      }),
+    });
   }
   if (workflowApprovalRequired > 0) {
-    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} awaiting approval`;
+    return t(
+      workflowApprovalRequired === 1
+        ? "{count} workflow awaiting approval"
+        : "{count} workflows awaiting approval",
+      { count: workflowApprovalRequired },
+    );
   }
   if (otherActionRequired > 0) {
-    return `${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+    return t(
+      otherActionRequired === 1
+        ? "{count} check awaiting action"
+        : "{count} checks awaiting action",
+      { count: otherActionRequired },
+    );
   }
-  if (pending > 0) return `${pending} of ${checks.length} running`;
-  return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
+  if (pending > 0) return t("{count} of {total} running", { count: pending, total: checks.length });
+  return passed === checks.length
+    ? t("All checks passed")
+    : t("{count} of {total} passing", { count: passed, total: checks.length });
 }

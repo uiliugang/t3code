@@ -1,5 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { EnvironmentId, ProjectId, type PullRequestDetailView } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -10,6 +11,7 @@ vi.mock(import("~/state/use-atom-command"), async (original) => ({
 
 import { act, render as renderUi } from "../../../test/render";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
+import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
 const detail: PullRequestDetailView = {
   provider: SourceControlProviderKind.make("github"),
@@ -107,4 +109,40 @@ it("keeps an unsaved description when collapsed and reopened", async () => {
   expect(screen.expanded("Description")).toBe("false");
   await screen.click("Description");
   expect(screen.container.querySelector("textarea")!.value).toBe("Unsaved description");
+});
+
+it("switches the summary language without translating MIS or discarding an edited description", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "zh-CN" });
+  using _settings = {
+    [Symbol.dispose]() {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    },
+  };
+  const value = {
+    ...detail,
+    provider: SourceControlProviderKind.make("meituan"),
+    body: "Summary Timeline Reviewers Merge Check out",
+    reviewers: [{ login: "liugang59", name: "刘刚", avatarUrl: null }],
+  };
+  await using screen = await render(value);
+  await expect.element(screen.getByText("评审人", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("liugang59", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText(value.body, { exact: true })).toBeVisible();
+  await screen.getByRole("button", { name: "编辑描述" }).click();
+  const editor = screen.getByRole("textbox", { name: "合并请求描述" });
+  await userEvent.fill(editor, "Keep this draft: Summary/{count}");
+
+  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+  await screen.rerender(tab(value));
+  await expect.element(screen.getByText("Reviewers", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("liugang59", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Pull request description" }))
+    .toHaveValue("Keep this draft: Summary/{count}");
+  await screen.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "zh-CN" });
+  await screen.rerender(tab(value));
+  await expect.element(screen.getByText("评审人", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText(value.body, { exact: true })).toBeVisible();
 });
