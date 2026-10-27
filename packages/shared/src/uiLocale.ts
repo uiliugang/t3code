@@ -917,6 +917,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Always allow": "始终允许",
   "Ask every time": "每次询问",
   "Keep full history": "保留完整历史",
+  Keep: "保留",
   "Remove “{name}”?": "移除“{name}”？",
   "Clear “{name}”’s cookies and cache?": "清除“{name}”的 Cookie 和缓存？",
   "Search commands": "搜索命令",
