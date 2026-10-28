@@ -533,6 +533,7 @@ describe("post-merge local base synchronization", () => {
     ...[
       "dirty",
       "untracked",
+      "ignored",
       "locked",
       "diverged",
       "ahead",
@@ -579,6 +580,10 @@ describe("post-merge local base synchronization", () => {
           if (scenario.checkout === "other")
             yield* fixture.command(fixture.repo, ["worktree", "add", checkout, scenario.base]);
           yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "remote merge\n");
+          if (scenario.protection === "ignored") {
+            yield* fixture.fs.writeFileString(`${fixture.worktree}/.env`, "remote tracked file\n");
+            yield* fixture.command(fixture.worktree, ["add", "-f", ".env"]);
+          }
           yield* fixture.command(fixture.worktree, ["commit", "-am", "remote merge"]);
           const merged = (yield* fixture.command(fixture.worktree, [
             "rev-parse",
@@ -593,6 +598,8 @@ describe("post-merge local base synchronization", () => {
             yield* fixture.fs.writeFileString(`${checkout}/tracked.txt`, "keep local edit\n");
           if (scenario.protection === "untracked")
             yield* fixture.fs.writeFileString(`${checkout}/local.txt`, "keep local file\n");
+          if (scenario.protection === "ignored")
+            yield* fixture.fs.writeFileString(`${checkout}/.env`, "keep ignored file\n");
           if (scenario.protection === "locked") {
             yield* fixture.command(fixture.repo, ["switch", "-c", "working"]);
             const locked = `${fixture.config.worktreesDir}/locked-base`;
@@ -711,6 +718,10 @@ describe("post-merge local base synchronization", () => {
           if (scenario.protection === "untracked")
             expect(yield* fixture.fs.readFileString(`${checkout}/local.txt`)).toBe(
               "keep local file\n",
+            );
+          if (scenario.protection === "ignored")
+            expect(yield* fixture.fs.readFileString(`${checkout}/.env`)).toBe(
+              "keep ignored file\n",
             );
           if (scenario.protection === "diverged" || scenario.protection === "ahead")
             expect(yield* fixture.fs.readFileString(`${checkout}/tracked.txt`)).toBe(

@@ -1636,7 +1636,17 @@ const make = Effect.gen(function* () {
             );
             if (changes.stdoutTruncated || changes.stdout.length > 0) return "uncommitted changes";
             if (yield* branchChanged(checkout, branch)) return "checkout changed";
-            yield* execute(["merge", "--ff-only", "--no-edit", "--no-autostash", target], checkout);
+            yield* execute(
+              [
+                "merge",
+                "--ff-only",
+                "--no-edit",
+                "--no-autostash",
+                "--no-overwrite-ignore",
+                target,
+              ],
+              checkout,
+            );
           } else {
             yield* execute(["update-ref", `refs/heads/${branch}`, target, current.sha]);
           }
