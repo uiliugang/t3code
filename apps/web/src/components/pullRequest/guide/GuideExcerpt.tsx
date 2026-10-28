@@ -1,3 +1,4 @@
+import { useCodeTheme } from "~/hooks/useCodeTheme";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type {
   DiffLineAnnotation,
@@ -11,11 +12,7 @@ import { ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useRenderedAppearance } from "~/hooks/useTheme";
-import {
-  getRenderablePatch,
-  resolveDiffThemeName,
-  resolveFileDiffPreviousPath,
-} from "~/lib/diffRendering";
+import { getRenderablePatch, resolveFileDiffPreviousPath } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import {
   buildDiffReviewComment,
@@ -210,6 +207,7 @@ function ExcerptDiff({
 }) {
   const t = useUiTranslation();
   const resolvedTheme = useRenderedAppearance();
+  const codeTheme = useCodeTheme();
   const loadExcerptFiles = excerptLoader(excerpt, slice.rows, loadDiffFiles);
 
   const annotations = (() => {
@@ -285,7 +283,7 @@ function ExcerptDiff({
     diffStyle: "unified" as const,
     lineDiffType: "none" as const,
     overflow: "scroll" as const,
-    theme: resolveDiffThemeName(resolvedTheme),
+    theme: codeTheme,
     themeType: resolvedTheme,
     preferredHighlighter: PREFERRED_HIGHLIGHTER,
     unsafeCSS: EXCERPT_UNSAFE_CSS,

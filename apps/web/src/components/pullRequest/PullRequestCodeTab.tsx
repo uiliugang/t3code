@@ -1,3 +1,4 @@
+import { useCodeTheme } from "~/hooks/useCodeTheme";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import {
   capitalizeTerm,
@@ -58,7 +59,6 @@ import {
   fnv1a32,
   getDiffLineStat,
   getRenderablePatch,
-  resolveDiffThemeName,
   resolveFileDiffPath,
   resolveFileDiffPreviousPath,
   type RenderablePatch,
@@ -281,6 +281,7 @@ function PullRequestCodeTab({
 }) {
   const t = useUiTranslation();
   const resolvedTheme = useRenderedAppearance();
+  const codeTheme = useCodeTheme();
   // Initialize the shared tokenizer and workers while the diff request is still pending.
   useDiffWorkerPool();
   const settings = useClientSettings((settings) => ({
@@ -845,7 +846,7 @@ function PullRequestCodeTab({
     diffStyle: diffLayout === "split" ? ("split" as const) : ("unified" as const),
     lineDiffType: "none" as const,
     overflow: wordWrap ? ("wrap" as const) : ("scroll" as const),
-    theme: resolveDiffThemeName(resolvedTheme),
+    theme: codeTheme,
     preferredHighlighter: PREFERRED_HIGHLIGHTER,
     themeType: resolvedTheme,
     stickyHeaders: true,

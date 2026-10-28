@@ -2,16 +2,20 @@ import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs/types";
 import { READABLE_LIGHT_THEME_NAME } from "./readableSyntaxTheme";
+import { JETBRAINS_THEME_NAMES } from "./jetBrainsSyntaxTheme";
 
 // Light mode uses a darker pierre-light so syntax stays readable on every code surface.
 export const DIFF_THEME_NAMES = {
   light: READABLE_LIGHT_THEME_NAME,
   dark: "pierre-dark",
+  jetbrainsLight: JETBRAINS_THEME_NAMES.light,
+  jetbrainsDark: JETBRAINS_THEME_NAMES.dark,
 } as const;
 
 export type DiffThemeName = (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES];
 
-export function resolveDiffThemeName(theme: "light" | "dark"): DiffThemeName {
+export function resolveDiffThemeName(theme: "light" | "dark", paletteId?: string): DiffThemeName {
+  if (paletteId === "claude-desktop") return JETBRAINS_THEME_NAMES[theme];
   return DIFF_THEME_NAMES[theme];
 }
 

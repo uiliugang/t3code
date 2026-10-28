@@ -1,3 +1,4 @@
+import { useCodeTheme } from "~/hooks/useCodeTheme";
 import type { EnvironmentId, OrchestrationV2ProjectedTurnItem, RunId } from "@t3tools/contracts";
 import {
   toolCallLines,
@@ -11,9 +12,7 @@ import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
 import { ExternalLinkIcon } from "lucide-react";
 import { memo, type ReactNode, Suspense, use } from "react";
 
-import { useRenderedAppearance } from "../../hooks/useTheme";
 import { cn } from "../../lib/utils";
-import { resolveDiffThemeName } from "../../lib/diffRendering";
 import { getSyntaxHighlighterPromise } from "../../lib/syntaxHighlighting";
 import { useTurnItemDetail } from "../../state/queries";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
@@ -44,11 +43,11 @@ function SyntaxTokens({
   readonly text: string;
   readonly language: "json" | "typescript";
 }) {
-  const resolvedTheme = useRenderedAppearance();
+  const codeTheme = useCodeTheme();
   const highlighter = use(getSyntaxHighlighterPromise(language));
   const { tokens } = highlighter.codeToTokens(text, {
     lang: language,
-    theme: resolveDiffThemeName(resolvedTheme),
+    theme: codeTheme,
   });
   return tokens.flatMap((line, lineIndex) => [
     lineIndex > 0 ? "\n" : "",
