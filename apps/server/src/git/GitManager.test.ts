@@ -723,6 +723,80 @@ const layerGitManagerTest = GitVcsDriver.layer.pipe(
 );
 
 it.layer(layerGitManagerTest)("GitManager", (it) => {
+  it.effect(
+    "limits new worktree branches to main/master and verifies the actual start commit",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-worktree-policy-");
+        yield* initRepo(repoDir);
+        yield* runGit(repoDir, ["branch", "master", "main"]);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        yield* runGit(repoDir, ["push", "origin", "main", "master"]);
+        yield* runGit(repoDir, ["remote", "add", "team/upstream", remoteDir]);
+        yield* runGit(repoDir, ["fetch", "team/upstream"]);
+        yield* runGit(repoDir, ["branch", "feature/main"]);
+        yield* runGit(repoDir, ["tag", "release"]);
+        yield* runGit(repoDir, ["checkout", "-b", "feature/ahead"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "extra.txt"), "unmerged\n");
+        yield* runGit(repoDir, ["add", "."]);
+        yield* runGit(repoDir, ["commit", "-m", "unmerged work"]);
+        const ahead = yield* runGit(repoDir, ["rev-parse", "HEAD"]);
+        const { manager } = yield* makeManager();
+        for (const [index, ref] of ["feature/main", "release", "HEAD", "main~0"].entries()) {
+          const result = yield* Effect.result(
+            manager.createWorktree({
+              cwd: repoDir,
+              refName: ref,
+              newRefName: `blocked-${index}`,
+              path: NodePath.join(yield* makeTempDir("t3code-worktree-policy-"), "checkout"),
+            }),
+          );
+          expect(Result.isFailure(result)).toBe(true);
+          expect((yield* runGit(repoDir, ["branch", "--list", `blocked-${index}`])).stdout).toBe(
+            "",
+          );
+        }
+        const spoofed = yield* Effect.result(
+          manager.createWorktree({
+            cwd: repoDir,
+            refName: ahead.stdout.trim(),
+            baseRefName: "main",
+            newRefName: "spoofed",
+            path: NodePath.join(yield* makeTempDir("t3code-worktree-policy-"), "checkout"),
+          }),
+        );
+        expect(Result.isFailure(spoofed)).toBe(true);
+        for (const [index, ref] of [
+          "main",
+          "master",
+          "refs/heads/main",
+          "origin/main",
+          "refs/remotes/origin/master",
+          "team/upstream/main",
+          "refs/remotes/team/upstream/master",
+        ].entries()) {
+          const allowed = yield* manager.createWorktree({
+            cwd: repoDir,
+            refName: ref,
+            newRefName: `allowed-${index}`,
+            path: NodePath.join(yield* makeTempDir("t3code-worktree-policy-"), "checkout"),
+          });
+          expect(allowed.worktree.refName).toBe(`allowed-${index}`);
+        }
+        const { manager: unrestricted } = yield* makeManager({
+          serverSettings: { newWorktreesMainBranchOnly: false },
+        });
+        const legacy = yield* unrestricted.createWorktree({
+          cwd: repoDir,
+          refName: "feature/ahead",
+          newRefName: "unrestricted",
+          path: NodePath.join(yield* makeTempDir("t3code-worktree-policy-"), "checkout"),
+        });
+        expect(legacy.worktree.refName).toBe("unrestricted");
+      }),
+  );
+
   it.effect("status reports the listed PR whose head is the branch", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

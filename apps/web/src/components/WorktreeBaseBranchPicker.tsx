@@ -1,4 +1,7 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { isMainOrMasterBranch } from "@t3tools/shared/git";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { useEnvironmentSettings } from "../hooks/useSettings";
 import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 
@@ -13,6 +16,7 @@ import { ComboboxTrigger } from "./ui/combobox";
 
 export function WorktreeBaseBranchPicker({
   environmentId,
+  projectId = null,
   cwd,
   value,
   onValueChange,
@@ -22,6 +26,7 @@ export function WorktreeBaseBranchPicker({
   id,
 }: {
   environmentId: EnvironmentId;
+  projectId?: ProjectId | null;
   cwd: string | null;
   value: string;
   onValueChange: (branch: string) => void;
@@ -31,6 +36,10 @@ export function WorktreeBaseBranchPicker({
   id?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const mainBranchOnly = useEnvironmentSettings(
+    environmentId,
+    (settings) => resolveProjectSettings(settings, projectId).settings.newWorktreesMainBranchOnly,
+  );
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim());
   const branches = usePaginatedBranches({
@@ -56,7 +65,12 @@ export function WorktreeBaseBranchPicker({
     resolvedActiveBranchIsRemote: selectedRef ? selectedRef.isRemote === true : null,
     startFromOrigin,
   });
-  const branchByName = new Map(branches.refs.map((branch) => [branch.name, branch]));
+  const allowed = mainBranchOnly
+    ? branches.refs.filter((branch) =>
+        isMainOrMasterBranch(branch.name, branch.isRemote ? branch.remoteName : undefined),
+      )
+    : branches.refs;
+  const branchByName = new Map(allowed.map((branch) => [branch.name, branch]));
   const items = [...branchByName.keys()];
   const hasNextPage = branches.data?.nextCursor != null;
   const statusText =

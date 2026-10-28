@@ -29,6 +29,8 @@ const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
+    expect(decodeServerSettings({}).autoDeleteMergedBranches).toBe(false);
+    expect(decodeServerSettings({}).newWorktreesMainBranchOnly).toBe(true);
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
@@ -43,6 +45,12 @@ describe("storage cleanup settings", () => {
   });
 
   it("accepts partial custom patches but requires complete stored project rules", () => {
+    const branchPolicy = { autoDeleteMergedBranches: true, newWorktreesMainBranchOnly: false };
+    expect(decodeServerSettingsPatch(branchPolicy)).toEqual(branchPolicy);
+    expect(
+      decodeServerSettings({ projectSettingsOverrides: { project: branchPolicy } })
+        .projectSettingsOverrides[ProjectId.make("project")],
+    ).toEqual(branchPolicy);
     expect(
       decodeServerSettingsPatch({
         worktreeCleanup: { mode: "custom", rules: { worktreeAfterDays: 8 } },

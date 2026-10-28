@@ -607,6 +607,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["new worktrees start remote origin latest fetched branch local"],
   },
   {
+    id: "worktree-main-branch-only",
+    title: "Only create worktrees from main/master",
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: ["branch base main master worktree restrict 创建 基线 主分支"],
+  },
+  {
+    id: "auto-delete-merged-branches",
+    title: "Automatically delete merged branches and worktrees",
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: ["branch cleanup merged main master worktree 自动 清理 合并 分支"],
+  },
+  {
     id: "add-project-starts-in",
     title: "Add project starts in",
     to: "/settings/threads",

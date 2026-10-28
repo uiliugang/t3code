@@ -8,12 +8,34 @@ import {
   buildTemporaryWorktreeBranchName,
   flattenTemporaryWorktreeBranchName,
   isTemporaryWorktreeBranch,
+  isMainOrMasterBranch,
   normalizeGitRemoteUrl,
   parseOriginUrlFromGitConfig,
   resolveAutoFeatureBranchName,
   sanitizeFeatureBranchName,
   WORKTREE_BRANCH_PREFIX,
 } from "./git.ts";
+
+describe("main/master worktree bases", () => {
+  it.each([
+    ["main", undefined, true],
+    ["master", undefined, true],
+    ["refs/heads/main", undefined, true],
+    ["refs/remotes/upstream/master", undefined, true],
+    ["origin/main", "origin", true],
+    ["refs/remotes/team/upstream/main", "team/upstream", true],
+    ["team/upstream/master", "team/upstream", true],
+    ["refs/remotes/origin/feature/main", "origin", false],
+    ["feature/main", undefined, false],
+    ["origin/feature/main", "origin", false],
+    ["refs/heads/feature/main", undefined, false],
+    ["refs/tags/main", undefined, false],
+    ["main~0", undefined, false],
+    ["HEAD", undefined, false],
+  ])("checks %s without accepting similarly named feature branches", (name, remote, expected) => {
+    expect(isMainOrMasterBranch(name, remote)).toBe(expected);
+  });
+});
 
 describe("normalizeGitRemoteUrl", () => {
   it("canonicalizes equivalent GitHub remotes across protocol variants", () => {

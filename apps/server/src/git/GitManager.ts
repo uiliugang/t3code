@@ -50,6 +50,7 @@ import {
 import {
   mergeGitStatusParts,
   resolveAutoFeatureBranchName,
+  isMainOrMasterBranch,
   sanitizeBranchFragment,
   sanitizeFeatureBranchName,
 } from "@t3tools/shared/git";
@@ -78,6 +79,7 @@ import {
 } from "../textGeneration/TextGenerationPresets.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
@@ -743,25 +745,66 @@ export const make = Effect.gen(function* () {
   );
   const createWorktree: GitManager["Service"]["createWorktree"] = Effect.fn(
     "GitManager.createWorktree",
-  )(function* (input, options) {
-    const submodules =
-      options?.submodules !== undefined
-        ? options.submodules
-        : yield* projectSettingsFor(input).pipe(
-            Effect.map(({ settings }) => settings.worktreeSubmodules),
-            Effect.orElseSucceed(() => null),
-          );
-    const worktreesDirectory = yield* readWorktreesDirectory;
-    const result = yield* gitCore.createWorktree(input, {
-      worktreesDirectory,
-      ...options,
-      submodules,
-    });
-    if (input.newRefName && input.baseRefName) {
-      yield* shareBranchBase(input.cwd, input.newRefName);
-    }
-    return result;
-  });
+  )(
+    function* (input, options) {
+      const { settings } = yield* projectSettingsFor(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitManager.createWorktree",
+              command: "git worktree add",
+              cwd: input.cwd,
+              detail: "Unable to read the worktree creation policy.",
+              cause,
+            }),
+        ),
+      );
+      if (input.newRefName && settings.newWorktreesMainBranchOnly) {
+        const base = input.baseRefName ?? input.refName;
+        const resolved = yield* gitCore.execute({
+          operation: "GitManager.createWorktree.validateBase",
+          cwd: input.cwd,
+          args: ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base],
+        });
+        const ref = resolved.stdout.trim();
+        const remote = ref.startsWith("refs/remotes/")
+          ? yield* gitCore.resolveWorktreeBaseRemote({
+              cwd: input.cwd,
+              refName: ref.slice("refs/remotes/".length),
+            })
+          : null;
+        const [start, baseCommit] = yield* Effect.all([
+          gitCore.resolveCommit({ cwd: input.cwd, revision: input.refName }),
+          gitCore.resolveCommit({ cwd: input.cwd, revision: base }),
+        ]);
+        if (
+          !isMainOrMasterBranch(ref, remote?.remoteName) ||
+          start.commitSha !== baseCommit.commitSha
+        ) {
+          return yield* new GitCommandError({
+            operation: "GitManager.createWorktree",
+            command: "git worktree add",
+            cwd: input.cwd,
+            detail:
+              "New worktree branches must start from main or master. Change this in Settings → Source Control → Branch management.",
+          });
+        }
+      }
+      const submodules =
+        options?.submodules !== undefined ? options.submodules : settings.worktreeSubmodules;
+      const worktreesDirectory = yield* readWorktreesDirectory;
+      const result = yield* gitCore.createWorktree(input, {
+        worktreesDirectory,
+        ...options,
+        submodules,
+      });
+      if (input.newRefName && input.baseRefName) {
+        yield* shareBranchBase(input.cwd, input.newRefName);
+      }
+      return result;
+    },
+    (effect, input) => withWorkspaceLease(input.cwd, effect),
+  );
 
   const readRepositoryInstructions = Effect.fn("GitManager.readRepositoryInstructions")(
     function* (cwd: string, fileName: string) {

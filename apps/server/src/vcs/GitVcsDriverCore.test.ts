@@ -2858,6 +2858,32 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
   });
 
   describe("refName operations", () => {
+    it.effect("compares the branch tip when deleting and invalidates cached refs", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const before = yield* git(cwd, ["rev-parse", "HEAD"]);
+        yield* git(cwd, ["branch", "merged"]);
+        yield* git(cwd, ["branch", "moved"]);
+        yield* git(cwd, ["commit", "--allow-empty", "-m", "later work"]);
+        const after = yield* git(cwd, ["rev-parse", "HEAD"]);
+        yield* git(cwd, ["update-ref", "refs/heads/moved", after]);
+        const moved = yield* Effect.result(
+          driver.deleteLocalBranch({ cwd, refName: "moved", expectedHeadSha: before }),
+        );
+        assert.isTrue(Result.isFailure(moved));
+        assert.equal(yield* git(cwd, ["rev-parse", "moved"]), after);
+        const checkedOut = yield* Effect.result(
+          driver.deleteLocalBranch({ cwd, refName: initialBranch, expectedHeadSha: after }),
+        );
+        assert.isTrue(Result.isFailure(checkedOut));
+        assert.isTrue((yield* driver.listRefs({ cwd })).refs.some((ref) => ref.name === "merged"));
+        yield* driver.deleteLocalBranch({ cwd, refName: "merged", expectedHeadSha: before });
+        assert.isFalse((yield* driver.listRefs({ cwd })).refs.some((ref) => ref.name === "merged"));
+      }),
+    );
+
     it.effect("lists root and upstream metadata and optionally includes matching remote refs", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

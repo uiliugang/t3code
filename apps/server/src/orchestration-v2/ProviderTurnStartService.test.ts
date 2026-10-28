@@ -788,7 +788,7 @@ function makeLocalCommandHarness(input: {
 }
 
 effectIt.effect(
-  "recovers the thread branch tip, falls back to the current project branch, and rejects detached HEAD",
+  "recovers the thread branch tip, recreates deleted branches from main, and requires an available base",
   () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -808,6 +808,7 @@ effectIt.effect(
       yield* git(workspaceRoot, ["config", "user.name", "Test"]);
       yield* git(workspaceRoot, ["config", "user.email", "test@example.com"]);
       yield* git(workspaceRoot, ["commit", "--allow-empty", "-m", "base"]);
+      const mainTip = yield* git(workspaceRoot, ["rev-parse", "HEAD"]);
       yield* git(workspaceRoot, ["worktree", "add", "-b", "feature/restore", worktreePath]);
       yield* fileSystem.writeFileString(path.join(worktreePath, "thread.txt"), "thread work");
       yield* git(worktreePath, ["add", "."]);
@@ -827,15 +828,37 @@ effectIt.effect(
       yield* git(workspaceRoot, ["tag", "project-current", threadTip]);
 
       // Reuse the workflow across turns so recovery cannot select a cached project branch.
-      for (const scenario of ["retained", "deleted", "detached"] as const) {
+      let expectedBase = mainTip;
+      for (const scenario of [
+        "retained",
+        "deleted",
+        "remote-merged",
+        "detached",
+        "detached-without-main",
+      ] as const) {
         yield* fileSystem.remove(worktreePath, { recursive: true });
         if (scenario !== "retained") {
           yield* git(workspaceRoot, ["worktree", "prune"]);
           yield* git(workspaceRoot, ["branch", "-D", "feature/restore"]);
         }
-        if (scenario === "detached") {
+        if (scenario === "detached" || scenario === "detached-without-main") {
           yield* git(workspaceRoot, ["switch", "--detach"]);
           expect(yield* git(workspaceRoot, ["branch", "--show-current"])).toBe("");
+        }
+        if (scenario === "remote-merged") {
+          const remote = path.join(root, "remote.git");
+          yield* git(workspaceRoot, ["init", "--bare", remote]);
+          yield* git(workspaceRoot, ["remote", "add", "origin", remote]);
+          yield* git(workspaceRoot, [
+            "push",
+            "origin",
+            "refs/heads/project-current:refs/heads/main",
+          ]);
+          expectedBase = projectTip;
+        }
+        if (scenario === "detached-without-main") {
+          yield* git(workspaceRoot, ["branch", "-D", "main"]);
+          yield* git(workspaceRoot, ["remote", "remove", "origin"]);
         }
         const harness = makeLocalCommandHarness({
           text: "Continue",
@@ -851,25 +874,26 @@ effectIt.effect(
           Effect.gen(function* () {
             expect(yield* git(worktreePath, ["branch", "--show-current"])).toBe("feature/restore");
             expect(yield* git(worktreePath, ["rev-parse", "HEAD"])).toBe(
-              scenario === "retained" ? threadTip : projectTip,
+              scenario === "retained" ? threadTip : expectedBase,
             );
-            expect(
-              yield* fileSystem.readFileString(
-                path.join(worktreePath, scenario === "retained" ? "thread.txt" : "project.txt"),
-              ),
-            ).toBe(scenario === "retained" ? "thread work" : "new project code");
+            expect(yield* fileSystem.exists(path.join(worktreePath, "thread.txt"))).toBe(
+              scenario === "retained",
+            );
             return yield* open();
           }).pipe(Effect.orDie),
         );
 
         yield* harness.start;
 
-        if (scenario === "detached") {
+        if (scenario === "detached-without-main") {
           expect(harness.open).not.toHaveBeenCalled();
           expect(harness.startRootRun).not.toHaveBeenCalled();
           expect(harness.projection().runs.at(-1)?.status).toBe("failed");
           expect(harness.projection().turnItems).toMatchObject([
-            { type: "error", failure: { message: expect.stringContaining("no current branch") } },
+            {
+              type: "error",
+              failure: { message: expect.stringContaining("no permitted base branch") },
+            },
           ]);
           expect(yield* fileSystem.exists(worktreePath)).toBe(false);
           expect(yield* git(workspaceRoot, ["branch", "--list", "feature/restore"])).toBe("");

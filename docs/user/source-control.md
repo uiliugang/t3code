@@ -3,6 +3,19 @@
 This build enables GitHub and Meituan Code to clone and publish repositories, create pull requests,
 and review changes. The other hosting integrations described below are disabled in this build.
 
+## Manage local branches and worktrees
+
+In **Settings → Source control → Branch management**, new worktree branches default to using
+`main` or `master` as their base. Turn off **Only create worktrees from main/master** to use other
+base branches. Checking out an existing branch is unaffected.
+
+**Automatically delete merged branches and worktrees** is off by default. Enable it to remove
+local resources after their commits reach `main` or `master`. Squash and rebase merges require a
+merged pull request matching the local branch's current commit. T3 Code keeps project checkouts,
+locked worktrees, uncommitted changes, and active work, and never deletes remote branches. Settings
+can apply to an environment or an individual project. Removed managed worktrees can be recreated
+when you continue their thread.
+
 ## Review turn changes
 
 A turn's changed files and diff show only the turn's own work. When a turn pulls, merges, or

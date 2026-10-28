@@ -1,4 +1,5 @@
 import { modelSelectionsEqual } from "@t3tools/shared/model";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
   CommandId,
@@ -14,6 +15,7 @@ import {
   parseGoalCommand,
   RunId,
   ThreadId,
+  type ProjectId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -87,7 +89,7 @@ class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoB
   { worktreePath: Schema.String, branch: Schema.String },
 ) {
   override get message(): string {
-    return `Could not recreate branch '${this.branch}' at ${this.worktreePath}: the project workspace has no current branch to start it from (detached HEAD?).`;
+    return `Could not recreate branch '${this.branch}' at ${this.worktreePath}: no permitted base branch is available.`;
   }
 }
 
@@ -149,6 +151,7 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
@@ -162,6 +165,7 @@ export const layer: Layer.Layer<
         readonly cwd: string;
         readonly worktreePath: string;
         readonly branch: string;
+        readonly projectId: ProjectId;
       }) {
         const { cwd, worktreePath, branch } = input;
         yield* gitWorkflow.pruneWorktrees({ cwd });
@@ -172,15 +176,29 @@ export const layer: Layer.Layer<
         }
         // Recovery can follow an external checkout, before the status cache expires.
         yield* gitWorkflow.invalidateLocalStatus(cwd);
-        const { refName: baseRef } = yield* gitWorkflow.localStatus({ cwd });
+        const { settings } = resolveProjectSettings(
+          yield* serverSettings.getSettings,
+          input.projectId,
+        );
+        const { refName: currentRef } = yield* gitWorkflow.localStatus({ cwd });
+        const baseRef = settings.newWorktreesMainBranchOnly
+          ? (localBranchNames.find((name) => name === "main") ??
+            localBranchNames.find((name) => name === "master") ??
+            null)
+          : currentRef;
         if (baseRef === null) {
           return yield* new WorktreeRecreateNoBaseError({ worktreePath, branch });
         }
+        const remoteBase = settings.newWorktreesStartFromOrigin
+          ? yield* gitWorkflow.fetchWorktreeBaseCommit({ cwd, refName: baseRef })
+          : null;
         yield* gitWorkflow.createWorktree({
           cwd,
-          refName: `refs/heads/${baseRef}`,
+          refName: remoteBase?.commitSha ?? `refs/heads/${baseRef}`,
           newRefName: branch,
-          baseRefName: `refs/heads/${baseRef}`,
+          baseRefName: remoteBase
+            ? `refs/remotes/${remoteBase.remoteRefName}`
+            : `refs/heads/${baseRef}`,
           path: worktreePath,
         });
       },
@@ -593,6 +611,7 @@ export const layer: Layer.Layer<
                 cwd: project.workspaceRoot,
                 worktreePath,
                 branch,
+                projectId: projection.thread.projectId,
               }).pipe(
                 Effect.mapError((cause) =>
                   cause._tag === "WorktreeRecreateNoBaseError"

@@ -4386,6 +4386,34 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const deleteLocalBranch: GitVcsDriver.GitVcsDriver["Service"]["deleteLocalBranch"] = Effect.fn(
     "deleteLocalBranch",
   )(function* (input) {
+    if (input.expectedHeadSha !== undefined) {
+      const worktrees = yield* executeWorktreeList("GitVcsDriver.deleteLocalBranch", input.cwd, []);
+      if (
+        worktrees.stdoutTruncated ||
+        parseWorktreeBranchPaths(worktrees.stdout).has(input.refName)
+      ) {
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.deleteLocalBranch",
+          command: "git branch delete",
+          cwd: input.cwd,
+          detail: "The branch is checked out or its checkout ownership could not be verified.",
+        });
+      }
+      // The merge proof names one commit; preserve a branch moved during cleanup.
+      yield* executeGit(
+        "GitVcsDriver.deleteLocalBranch",
+        input.cwd,
+        ["update-ref", "-d", `refs/heads/${input.refName}`, input.expectedHeadSha],
+        { timeoutMs: 10_000, fallbackErrorDetail: "git branch delete failed" },
+      );
+      yield* executeGit(
+        "GitVcsDriver.deleteLocalBranch.config",
+        input.cwd,
+        ["config", "--remove-section", `branch.${input.refName}`],
+        { timeoutMs: 10_000, allowNonZeroExit: true, writesSharedConfig: true },
+      );
+      return;
+    }
     yield* executeGit(
       "GitVcsDriver.deleteLocalBranch",
       input.cwd,

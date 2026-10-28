@@ -60,7 +60,12 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "sidebarAutoSettleOnMerge",
     "sidebarAutoSettleAfterDays",
   ],
-  "source-control": ["defaultAutoPull", "removeAgentCreditsOnMerge"],
+  "source-control": [
+    "defaultAutoPull",
+    "removeAgentCreditsOnMerge",
+    "newWorktreesMainBranchOnly",
+    "autoDeleteMergedBranches",
+  ],
   worktrees: [
     "newWorktreesStartFromOrigin",
     "worktreeSubmodules",
@@ -382,6 +387,24 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "source-control" ? (
                 <>
+                  <SettingsSection title="Branch management">
+                    <SettingsSwitchRow
+                      icon="arrow.triangle.branch"
+                      label="Only create worktrees from main/master"
+                      subtitle="Create new worktree branches only from main or master. Existing branch checkouts are unaffected."
+                      value={uniform("newWorktreesMainBranchOnly")}
+                      disabled={disabledFor("newWorktreesMainBranchOnly")}
+                      onValueChange={(value) => write({ newWorktreesMainBranchOnly: value })}
+                    />
+                    <SettingsSwitchRow
+                      icon="trash"
+                      label="Automatically delete merged branches and worktrees"
+                      subtitle="Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept."
+                      value={uniform("autoDeleteMergedBranches")}
+                      disabled={disabledFor("autoDeleteMergedBranches")}
+                      onValueChange={(value) => write({ autoDeleteMergedBranches: value })}
+                    />
+                  </SettingsSection>
                   <SettingsSection title="Pull requests">
                     <SettingsSwitchRow
                       icon={PullRequestGlyph.merged}
