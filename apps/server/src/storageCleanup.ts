@@ -15,7 +15,8 @@ import type {
   StorageCleanupReport,
   StorageCleanupReportEntry,
 } from "@t3tools/contracts";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -107,17 +108,23 @@ function sameProjectWorktreePolicies(left: ServerSettings, right: ServerSettings
       ...Object.keys(left.projectSettingsOverrides),
       ...Object.keys(right.projectSettingsOverrides),
     ]),
-  ].every((projectId) =>
-    Equal.equals(
-      left.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
-      right.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
-    ),
+  ].every(
+    (projectId) =>
+      Equal.equals(
+        left.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
+        right.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
+      ) &&
+      left.projectSettingsOverrides[projectId as ProjectId]?.autoDeleteMergedBranches ===
+        right.projectSettingsOverrides[projectId as ProjectId]?.autoDeleteMergedBranches,
   );
 }
 
 export function storageCleanupThreadIdle(thread: OrchestrationV2ThreadShell, now: number): boolean {
+  return thread.worktreePath !== null && threadIdle(thread, now);
+}
+
+function threadIdle(thread: OrchestrationV2ThreadShell, now: number): boolean {
   return (
-    thread.worktreePath !== null &&
     thread.activeRunId === null &&
     (thread.status === "idle" ||
       thread.status === "completed" ||
@@ -1088,6 +1095,292 @@ const make = Effect.gen(function* () {
   });
 
   const reportRef = yield* SubscriptionRef.make<StorageCleanupReport | null>(null);
+
+  const cleanMergedBranches = Effect.fn("StorageCleanup.cleanMergedBranches")(function* (
+    settings: ServerSettings,
+    now: number,
+    entries: StorageCleanupReportEntry[],
+  ) {
+    if (
+      !settings.autoDeleteMergedBranches &&
+      !Object.values(settings.projectSettingsOverrides).some(
+        (override) => override.autoDeleteMergedBranches === true,
+      )
+    )
+      return;
+    const snapshot = yield* readThreads();
+    const repositories = new Set<string>();
+    const enabled = (settings: ServerSettings, projectId: ProjectId) =>
+      resolveProjectSettings(settings, projectId).settings.autoDeleteMergedBranches;
+    const readBranches = Effect.fn("StorageCleanup.readLocalBranches")(function* (
+      cwd: string,
+      branch?: string,
+    ) {
+      const output = yield* git.execute({
+        operation: "StorageCleanup.readLocalBranches",
+        cwd,
+        args: [
+          "for-each-ref",
+          "--format=%(refname:strip=2)%00%(objectname)%00%(worktreepath)%00",
+          branch === undefined ? "refs/heads/" : `refs/heads/${branch}`,
+        ],
+      });
+      if (output.stdoutTruncated)
+        return yield* new GitCommandError({
+          operation: "StorageCleanup.readLocalBranches",
+          command: "git for-each-ref",
+          cwd,
+          detail: "Branch inspection exceeded the output limit.",
+        });
+      const fields = output.stdout.split("\0");
+      const branches: Array<{ name: string; sha: string; worktreePath: string | null }> = [];
+      for (let index = 0; index + 2 < fields.length; index += 3) {
+        const name = fields[index]!.trim();
+        if (!name) continue;
+        branches.push({ name, sha: fields[index + 1]!, worktreePath: fields[index + 2] || null });
+      }
+      return branches;
+    });
+    for (const project of snapshot.projects) {
+      if (!enabled(settings, project.id)) continue;
+      const cwd = project.workspaceRoot;
+      const projectEntry = {
+        kind: "branch" as const,
+        outcome: "failed" as const,
+        reason: "",
+        path: null,
+        projectPath: cwd,
+        threadId: null,
+        threadTitle: null,
+        bytes: null,
+        files: null,
+      };
+      yield* Effect.gen(function* () {
+        const repository = yield* git.execute({
+          operation: "StorageCleanup.inspectRepository",
+          cwd,
+          args: ["rev-parse", "--is-inside-work-tree"],
+          allowNonZeroExit: true,
+        });
+        if (repository.exitCode !== 0 || repository.stdout.trim() !== "true") return;
+        const common = (yield* git.execute({
+          operation: "StorageCleanup.repository",
+          cwd,
+          args: ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        })).stdout.trim();
+        if (repositories.has(common)) return;
+        repositories.add(common);
+        const remote = yield* git
+          .resolvePrimaryRemoteName(cwd)
+          .pipe(Effect.orElseSucceed(() => null));
+        const baseRefs = ["refs/heads/main", "refs/heads/master"];
+        if (remote !== null) {
+          const heads = yield* git.execute({
+            operation: "StorageCleanup.mainBranches",
+            cwd,
+            args: ["ls-remote", "--heads", "--", remote, "refs/heads/main", "refs/heads/master"],
+            timeoutMs: 20_000,
+          });
+          if (heads.stdoutTruncated) return;
+          for (const name of ["main", "master"]) {
+            if (!heads.stdout.split(/\r?\n/).some((line) => line.endsWith(`\trefs/heads/${name}`)))
+              continue;
+            yield* git.fetchRemoteTrackingBranch({ cwd, remoteName: remote, remoteBranch: name });
+            baseRefs.push(`refs/remotes/${remote}/${name}`);
+          }
+        }
+        const bases: string[] = [];
+        for (const revision of baseRefs) {
+          const resolved = yield* git.resolveCommit({ cwd, revision }).pipe(Effect.option);
+          if (Option.isSome(resolved)) bases.push(resolved.value.commitSha);
+        }
+        if (bases.length === 0) return;
+        let changed = false;
+        for (const branch of yield* readBranches(cwd)) {
+          if (isMainOrMasterBranch(branch.name)) continue;
+          const entry: StorageCleanupReportEntry = {
+            ...projectEntry,
+            outcome: "kept",
+            path: branch.name,
+          };
+          const keep = (reason: string) => entries.push({ ...entry, reason: sentence(reason) });
+          yield* Effect.gen(function* () {
+            if (
+              branch.worktreePath !== null &&
+              (yield* containsProjectRoot(branch.worktreePath, snapshot.projects))
+            )
+              return keep("contains a project checkout");
+            let merged = false;
+            for (const base of bases) {
+              const ancestor = yield* git.execute({
+                operation: "StorageCleanup.mergedBranch",
+                cwd,
+                args: ["merge-base", "--is-ancestor", branch.sha, base],
+                allowNonZeroExit: true,
+              });
+              if (ancestor.exitCode === 0) {
+                merged = true;
+                break;
+              }
+              if (ancestor.exitCode !== 1) return keep("merge inspection failed");
+            }
+            if (!merged) {
+              const pr = yield* gitManager.branchPullRequest(
+                { cwd, branch: branch.name },
+                { freshGitState: true },
+              );
+              merged =
+                pr?.state === "merged" &&
+                isMainOrMasterBranch(pr.baseRef) &&
+                pr.headRef === branch.name &&
+                pr.headSha === branch.sha;
+            }
+            if (!merged) return keep("not merged into main or master");
+            const protection = Effect.fn("StorageCleanup.mergedBranchProtection")(function* () {
+              const currentSettings = yield* settingsService.getSettings;
+              if (!enabled(currentSettings, project.id)) return "automatic cleanup is disabled";
+              const latestProjects = yield* projectStore.listShells();
+              const worktreePath = branch.worktreePath;
+              if (worktreePath !== null) {
+                if (yield* containsProjectRoot(worktreePath, latestProjects))
+                  return "contains a project checkout";
+                if (hasTerminal(worktreePath)) return "open terminal";
+                const real = yield* fs.realPath(worktreePath);
+                const parent = yield* fs.realPath(path.dirname(worktreePath));
+                if (real !== path.join(parent, path.basename(worktreePath)))
+                  return "worktree is a symbolic link";
+                if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File")
+                  return "not a linked worktree";
+                const gitDirectory = (yield* git.execute({
+                  operation: "StorageCleanup.worktreeLock",
+                  cwd: worktreePath,
+                  args: ["rev-parse", "--absolute-git-dir"],
+                })).stdout.trim();
+                if (yield* fs.exists(path.join(gitDirectory, "locked")))
+                  return "worktree is locked";
+                if (yield* branchChanged(worktreePath, branch.name))
+                  return "repository or branch changed";
+                const changes = yield* localChangesReason(worktreePath, {
+                  ...resolveWorktreeCleanup(currentSettings, project.id),
+                  worktreeKeepWhen: "uncommitted-changes",
+                });
+                if (changes !== null) return changes;
+              }
+              const paths = yield* projections.getThreadWorktreePaths({ includeArchived: true });
+              const ids = new Set([
+                ...snapshot.threads
+                  .filter(
+                    (thread) => thread.projectId === project.id && thread.branch === branch.name,
+                  )
+                  .map((thread) => thread.id),
+                ...paths
+                  .filter(
+                    (thread) =>
+                      worktreePath !== null &&
+                      pathKey(thread.worktreePath) === pathKey(worktreePath),
+                  )
+                  .map((thread) => thread.threadId),
+              ]);
+              const related = (yield* Effect.forEach(ids, (id) =>
+                projections.getThreadShell(id),
+              )).filter((thread) => thread !== null);
+              const sharing = related.filter(
+                (thread) =>
+                  worktreePath !== null &&
+                  thread.worktreePath !== null &&
+                  pathKey(thread.worktreePath) === pathKey(worktreePath),
+              );
+              if (worktreePath !== null && sharing.length === 0) {
+                const modified = Option.getOrNull((yield* fs.stat(worktreePath)).mtime);
+                if (modified === null || modified.getTime() > now - ORPHAN_WORKTREE_GRACE_MS)
+                  return "worktree was created recently";
+              }
+              if (sharing.length > 1 && worktreeOwner(sharing) === undefined)
+                return "worktree is shared by independent threads";
+              for (const thread of related) {
+                if (!enabled(currentSettings, thread.projectId))
+                  return "cleanup is disabled for a related thread's project";
+                if (!threadIdle(thread, now)) return "thread is running or has pending work";
+                if (now - storageCleanupActivityAt(thread) < SETTLE_SCRIPT_GRACE_MS)
+                  return "thread was active moments ago";
+              }
+              if (worktreePath !== null) {
+                const rows = yield* sql<{ payload_json: string }>`
+                  SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'
+                `.pipe(NodeSqliteClient.readOnly);
+                for (const row of rows) {
+                  const session = yield* decodeCleanupSession(row.payload_json);
+                  if (
+                    (pathKey(session.cwd) === pathKey(worktreePath) ||
+                      inside(worktreePath, session.cwd)) &&
+                    (yield* providerSessions.isLive(session.id))
+                  )
+                    return "provider session is still open";
+                }
+              }
+              const latest = (yield* readBranches(cwd, branch.name)).find(
+                (candidate) => candidate.name === branch.name,
+              );
+              if (latest?.sha !== branch.sha || latest.worktreePath !== worktreePath)
+                return "branch or checkout changed since check";
+              return null;
+            });
+            const remove = Effect.gen(function* () {
+              const blocked = yield* protection();
+              if (blocked !== null) return keep(blocked);
+              if (branch.worktreePath !== null) {
+                yield* git.removeWorktree({ cwd, path: branch.worktreePath, force: false });
+                changed = true;
+                entries.push({
+                  ...entry,
+                  kind: "worktree",
+                  path: branch.worktreePath,
+                  outcome: "removed",
+                  reason: "Merged into main or master",
+                });
+              }
+              const latest = (yield* readBranches(cwd, branch.name)).find(
+                (candidate) => candidate.name === branch.name,
+              );
+              if (latest?.sha !== branch.sha || latest.worktreePath !== null)
+                return keep("branch or checkout changed since check");
+              if (!enabled(yield* settingsService.getSettings, project.id))
+                return keep("automatic cleanup is disabled");
+              yield* git.deleteLocalBranch({
+                cwd,
+                refName: branch.name,
+                expectedHeadSha: branch.sha,
+              });
+              changed = true;
+              entries.push({ ...entry, outcome: "removed", reason: "Merged into main or master" });
+            });
+            yield* withWorkspaceLease(branch.worktreePath ?? cwd, remove);
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.sync(() =>
+                entries.push({
+                  ...entry,
+                  outcome: "failed",
+                  reason: cleanupFailureReason(error),
+                }),
+              ),
+            ),
+          );
+        }
+        if (changed) yield* gitManager.invalidateStatus(cwd);
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() =>
+            entries.push({
+              ...projectEntry,
+              reason: cleanupFailureReason(error),
+            }),
+          ),
+        ),
+      );
+    }
+  });
+
   const sweep = Effect.fn("StorageCleanup.sweep")(function* (
     trigger: StorageCleanupReport["trigger"],
   ) {
@@ -1095,6 +1388,23 @@ const make = Effect.gen(function* () {
     const serverSettings = yield* settingsService.getSettings;
     const settings = serverSettings.storageCleanup;
     const entries: StorageCleanupReportEntry[] = [];
+    yield* cleanMergedBranches(serverSettings, now, entries).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() =>
+          entries.push({
+            kind: "branch",
+            outcome: "failed",
+            reason: cleanupFailureReason(error),
+            path: null,
+            projectPath: null,
+            threadId: null,
+            threadTitle: null,
+            bytes: null,
+            files: null,
+          }),
+        ),
+      ),
+    );
     yield* cleanWorktrees(serverSettings, now, entries).pipe(
       Effect.catch((error) =>
         Effect.gen(function* () {
@@ -1236,7 +1546,7 @@ const make = Effect.gen(function* () {
     yield* forkParked(
       requestSweep.pipe(
         Effect.andThen(worker.drain),
-        Effect.repeat(Schedule.spaced("1 hour")),
+        Effect.repeat(Schedule.spaced("5 minutes")),
         Effect.asVoid,
       ),
     );
@@ -1245,6 +1555,7 @@ const make = Effect.gen(function* () {
         if (
           Equal.equals(settings.storageCleanup, lastSettings.storageCleanup) &&
           Equal.equals(settings.worktreeCleanup, lastSettings.worktreeCleanup) &&
+          settings.autoDeleteMergedBranches === lastSettings.autoDeleteMergedBranches &&
           sameProjectWorktreePolicies(settings, lastSettings)
         )
           return Effect.void;
@@ -1254,12 +1565,19 @@ const make = Effect.gen(function* () {
     );
     yield* forkParked(
       Stream.runForEach(events, (event) =>
-        (event.type === "thread.deleted" ||
-          (event.type === "provider-session.updated" &&
-            (event.payload.status === "stopped" || event.payload.status === "error"))) &&
-        anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnDelete)
+        event.type === "thread.pull-request-link-updated" &&
+        event.payload.snapshot?.state === "merged" &&
+        (lastSettings.autoDeleteMergedBranches ||
+          Object.values(lastSettings.projectSettingsOverrides).some(
+            (override) => override.autoDeleteMergedBranches === true,
+          ))
           ? requestSweep
-          : Effect.void,
+          : (event.type === "thread.deleted" ||
+                (event.type === "provider-session.updated" &&
+                  (event.payload.status === "stopped" || event.payload.status === "error"))) &&
+              anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnDelete)
+            ? requestSweep
+            : Effect.void,
       ).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Storage cleanup event stream failed", { cause }),

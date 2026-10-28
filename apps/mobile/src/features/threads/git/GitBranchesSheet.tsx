@@ -1,4 +1,5 @@
-import { sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { isMainOrMasterBranch, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { useNewTaskProjectDefaults } from "../use-new-task-project-defaults";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
@@ -27,7 +28,10 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { selectedThread } = useThreadSelection();
+  const { selectedThread, selectedThreadProject } = useThreadSelection();
+  const mainBranchOnly =
+    useNewTaskProjectDefaults(selectedThreadProject).projectSettings.settings
+      .newWorktreesMainBranchOnly;
   const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
@@ -50,7 +54,11 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
 
   const [newBranchName, setNewBranchName] = useState("");
   const [worktreeBaseBranch, setWorktreeBaseBranch] = useState(
-    currentBranchLabel === "Detached HEAD" ? "main" : currentBranchLabel,
+    mainBranchOnly
+      ? (availableBranches.find((branch) => isMainOrMasterBranch(branch.name))?.name ?? "main")
+      : currentBranchLabel === "Detached HEAD"
+        ? "main"
+        : currentBranchLabel,
   );
   const [worktreeBranchName, setWorktreeBranchName] = useState("");
 
@@ -164,6 +172,12 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
                 !canChangeThreadBranch ||
                 busy ||
                 worktreeBaseBranch.trim().length === 0 ||
+                (mainBranchOnly &&
+                  !isMainOrMasterBranch(
+                    worktreeBaseBranch.trim(),
+                    availableBranches.find((branch) => branch.name === worktreeBaseBranch.trim())
+                      ?.remoteName,
+                  )) ||
                 worktreeBranchName.trim().length === 0
               }
               onPress={() => {

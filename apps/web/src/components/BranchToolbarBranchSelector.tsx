@@ -1,4 +1,7 @@
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
+import { isMainOrMasterBranch } from "@t3tools/shared/git";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { useEnvironmentSettings } from "../hooks/useSettings";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
@@ -146,6 +149,12 @@ export function BranchToolbarBranchSelector({
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
   const activeProject = useProject(activeProjectRef);
+  const mainBranchOnly = useEnvironmentSettings(
+    environmentId,
+    (settings) =>
+      resolveProjectSettings(settings, activeProject?.id ?? null).settings
+        .newWorktreesMainBranchOnly,
+  );
 
   const activeThreadId = serverThread?.id ?? (draftThread ? threadId : undefined);
   const activeThreadBranch =
@@ -235,12 +244,17 @@ export function BranchToolbarBranchSelector({
   });
   const trimmedBranchQuery = branchQuery.trim();
   const deferredTrimmedBranchQuery = deferredBranchQuery.trim();
-  const refs = branchRefState.refs;
+  const isSelectingWorktreeBase =
+    effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
+  const refs =
+    isSelectingWorktreeBase && mainBranchOnly
+      ? branchRefState.refs.filter((ref) =>
+          isMainOrMasterBranch(ref.name, ref.isRemote ? ref.remoteName : undefined),
+        )
+      : branchRefState.refs;
   const branchByName = new Map(refs.map((refName) => [refName.name, refName] as const));
   const normalizedDeferredBranchQuery = deferredTrimmedBranchQuery.toLowerCase();
   const prReference = parsePullRequestReference(trimmedBranchQuery);
-  const isSelectingWorktreeBase =
-    effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
   const checkoutPullRequestItemValue =
     canChangeThreadBranch && prReference && onCheckoutPullRequestRequest
       ? `__checkout_pull_request__:${prReference}`
@@ -480,7 +494,19 @@ export function BranchToolbarBranchSelector({
 
   const worktreeBaseBranchCandidate = isInitialBranchesLoadPending
     ? null
-    : (defaultBranchName ?? currentGitBranch);
+    : isSelectingWorktreeBase && mainBranchOnly
+      ? (defaultBranchName ??
+        refs.find((ref) => ref.name === "main")?.name ??
+        refs[0]?.name ??
+        null)
+      : (defaultBranchName ?? currentGitBranch);
+  const activeWorktreeBaseAllowed =
+    !mainBranchOnly ||
+    (activeThreadBranch !== null &&
+      isMainOrMasterBranch(
+        activeThreadBranch,
+        listedActiveBranch?.remoteName ?? queriedActiveBranch?.remoteName,
+      ));
 
   // The server sets started threads' branches; defaulting here would detach the agent from its worktree.
   const threadStarted = serverSession !== null;
@@ -490,7 +516,7 @@ export function BranchToolbarBranchSelector({
       threadStarted ||
       effectiveEnvMode !== "worktree" ||
       activeWorktreePath ||
-      activeThreadBranch ||
+      (activeThreadBranch && (activeWorktreeBaseAllowed || activeBranchRefQuery.isPending)) ||
       !worktreeBaseBranchCandidate
     ) {
       return;
@@ -498,6 +524,8 @@ export function BranchToolbarBranchSelector({
     setThreadBranch(worktreeBaseBranchCandidate, null, true);
   }, [
     activeThreadBranch,
+    activeWorktreeBaseAllowed,
+    activeBranchRefQuery.isPending,
     activeWorktreePath,
     effectiveEnvMode,
     setThreadBranch,

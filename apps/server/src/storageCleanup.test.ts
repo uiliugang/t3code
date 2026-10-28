@@ -271,10 +271,29 @@ const cleanupFixture = (
     let fullStatusCalls = 0;
     let snapshotReads = 0;
     let events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty;
+    let pullRequest: GitManager.GitBranchPullRequest | null = null;
+    let moveBranchBeforeDelete = false;
     const activated = yield* Deferred.make<void>();
     const context = yield* Layer.build(StorageCleanup.layer).pipe(
       Effect.provideService(GitVcsDriver.GitVcsDriver, {
         ...git,
+        deleteLocalBranch: (input) =>
+          Effect.gen(function* () {
+            if (moveBranchBeforeDelete) {
+              moveBranchBeforeDelete = false;
+              const commit = yield* git.execute({
+                operation: "cleanup-test",
+                cwd: repo,
+                args: ["commit-tree", "feature^{tree}", "-p", "feature", "-m", "late commit"],
+              });
+              yield* git.execute({
+                operation: "cleanup-test",
+                cwd: repo,
+                args: ["update-ref", "refs/heads/feature", commit.stdout.trim()],
+              });
+            }
+            return yield* git.deleteLocalBranch(input);
+          }),
         execute: (input) =>
           Effect.gen(function* () {
             // Before Git's own clean check: inside `git worktree remove`, or on
@@ -373,6 +392,7 @@ const cleanupFixture = (
         )) as unknown as SqlClient.SqlClient),
       Effect.provideService(GitManager.GitManager, {
         invalidateStatus: () => Effect.void,
+        branchPullRequest: () => Effect.sync(() => pullRequest),
       } as unknown as GitManager.GitManager["Service"]),
       Effect.provideService(TerminalManager.TerminalManager, {
         subscribeMetadata: () => Effect.succeed(() => {}),
@@ -420,6 +440,12 @@ const cleanupFixture = (
       },
       setThreads: (next: typeof threads) => {
         threads = next;
+      },
+      setPullRequest: (next: GitManager.GitBranchPullRequest) => {
+        pullRequest = next;
+      },
+      moveBranchBeforeDelete: () => {
+        moveBranchBeforeDelete = true;
       },
       setDeletedThreads: (next: OrchestrationV2ThreadShell[]) => {
         deletedThreads = next;
@@ -481,6 +507,268 @@ const runCleanupTest = <A, E>(
     | Scope.Scope
   >,
 ) => effect.pipe(Effect.provide(cleanupTestLayer), Effect.scoped);
+
+describe("merged local branch cleanup", () => {
+  it.effect.each([
+    { base: "main", orphan: false },
+    { base: "master", orphan: false },
+    { base: "main", orphan: true },
+  ])("removes merged worktrees and branches targeting $base (orphan=$orphan)", ({ base, orphan }) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture();
+        fixture.disable();
+        fixture.setSettings({ autoDeleteMergedBranches: true });
+        if (base === "master")
+          yield* fixture.command(fixture.repo, ["branch", "-m", "main", "master"]);
+        yield* fixture.fs.writeFileString(`${fixture.worktree}/feature.txt`, "merged work\n");
+        yield* fixture.command(fixture.worktree, ["add", "."]);
+        yield* fixture.command(fixture.worktree, ["commit", "-m", "feature work"]);
+        yield* fixture.command(fixture.repo, [
+          "merge",
+          "--no-ff",
+          "feature",
+          "-m",
+          "merge feature",
+        ]);
+        if (orphan) {
+          fixture.setThreads([]);
+          yield* fixture.fs.utimes(fixture.worktree, 1, 1);
+        }
+        const report = yield* fixture.service.runNow;
+        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
+        expect((yield* fixture.command(fixture.repo, ["branch", "--list", "feature"])).stdout).toBe(
+          "",
+        );
+        expect((yield* fixture.command(fixture.repo, ["branch", "--list", base])).stdout).toContain(
+          base,
+        );
+        expect(report.entries).toEqual(
+          expect.arrayContaining([expect.objectContaining({ kind: "branch", outcome: "removed" })]),
+        );
+        expect((yield* fixture.service.runNow).counts.failed).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect.each([
+    "disabled",
+    "dirty",
+    "untracked",
+    "busy",
+    "unmerged",
+    "locked",
+    "session",
+    "shared",
+    "project",
+    "project-disabled",
+    "new-orphan",
+  ])("keeps %s worktrees and their branch", (scenario) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture();
+        fixture.disable();
+        if (scenario !== "disabled") fixture.setSettings({ autoDeleteMergedBranches: true });
+        if (scenario === "dirty")
+          yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "local edits\n");
+        if (scenario === "untracked")
+          yield* fixture.fs.writeFileString(`${fixture.worktree}/local.txt`, "local work\n");
+        if (scenario === "unmerged") {
+          yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "unmerged\n");
+          yield* fixture.command(fixture.worktree, ["commit", "-am", "unmerged commit"]);
+        }
+        if (scenario === "busy")
+          fixture.setThreads([
+            shell({
+              branch: "feature",
+              worktreePath: fixture.worktree,
+              status: "running",
+              activeRunId: RunId.make("run-active"),
+            }),
+          ]);
+        if (scenario === "locked")
+          yield* fixture.command(fixture.repo, ["worktree", "lock", fixture.worktree]);
+        if (scenario === "session") fixture.setOpenSessionCwd(fixture.worktree);
+        if (scenario === "new-orphan") fixture.setThreads([]);
+        if (scenario === "shared")
+          fixture.setThreads([
+            shell({ branch: "feature", worktreePath: fixture.worktree }),
+            shell({
+              id: ThreadId.make("independent"),
+              branch: "feature",
+              worktreePath: fixture.worktree,
+            }),
+          ]);
+        if (scenario === "project") fixture.setProjectRoots([fixture.repo, fixture.worktree]);
+        if (scenario === "project-disabled")
+          fixture.setSettings({
+            projectSettingsOverrides: {
+              [ProjectId.make("project-1")]: { autoDeleteMergedBranches: false },
+            },
+          });
+        const report = yield* fixture.service.runNow;
+        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+        expect(
+          (yield* fixture.command(fixture.repo, ["branch", "--list", "feature"])).stdout,
+        ).toContain("feature");
+        if (scenario === "locked") {
+          expect(report.entries).toContainEqual(
+            expect.objectContaining({
+              kind: "branch",
+              outcome: "kept",
+              reason: "Worktree is locked",
+            }),
+          );
+          yield* fixture.command(fixture.repo, ["worktree", "unlock", fixture.worktree]);
+        }
+      }),
+    ),
+  );
+
+  it.effect.each(["exact", "later-commit", "other-base"])(
+    "uses exact squash-merge evidence: %s",
+    (scenario) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(NOW_MS);
+          const fixture = yield* cleanupFixture();
+          fixture.disable();
+          fixture.setSettings({ autoDeleteMergedBranches: true });
+          yield* fixture.fs.writeFileString(`${fixture.worktree}/feature.txt`, "squashed work\n");
+          yield* fixture.command(fixture.worktree, ["add", "."]);
+          yield* fixture.command(fixture.worktree, ["commit", "-m", "feature"]);
+          const head = (yield* fixture.command(fixture.worktree, [
+            "rev-parse",
+            "HEAD",
+          ])).stdout.trim();
+          yield* fixture.command(fixture.repo, ["merge", "--squash", "feature"]);
+          yield* fixture.command(fixture.repo, ["commit", "-m", "squash merge"]);
+          fixture.setPullRequest({
+            number: 1,
+            title: "Feature",
+            url: "https://example.test/pull/1",
+            headRef: "feature",
+            baseRef: scenario === "other-base" ? "release" : "main",
+            headSha: head,
+            state: "merged",
+            repositoryKey: null,
+            updatedAt: null,
+          });
+          if (scenario === "later-commit")
+            yield* fixture.command(fixture.worktree, [
+              "commit",
+              "--allow-empty",
+              "-m",
+              "later work",
+            ]);
+          yield* fixture.service.runNow;
+          expect(yield* fixture.fs.exists(fixture.worktree)).toBe(scenario !== "exact");
+          expect(
+            (yield* fixture.command(fixture.repo, ["branch", "--list", "feature"])).stdout.includes(
+              "feature",
+            ),
+          ).toBe(scenario !== "exact");
+        }),
+      ),
+  );
+
+  it.effect.each(["available", "unreachable"])(
+    "refreshes merge evidence from an %s remote",
+    (scenario) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(NOW_MS);
+          const fixture = yield* cleanupFixture();
+          fixture.disable();
+          fixture.setSettings({ autoDeleteMergedBranches: true });
+          const remote = yield* fixture.fs.makeTempDirectoryScoped({ prefix: "cleanup-remote-" });
+          yield* fixture.command(remote, ["init", "--bare"]);
+          yield* fixture.command(fixture.repo, ["remote", "add", "origin", remote]);
+          yield* fixture.command(fixture.repo, ["push", "-u", "origin", "main"]);
+          yield* fixture.fs.writeFileString(`${fixture.worktree}/feature.txt`, "remote merge\n");
+          yield* fixture.command(fixture.worktree, ["add", "."]);
+          yield* fixture.command(fixture.worktree, ["commit", "-m", "feature"]);
+          yield* fixture.command(fixture.repo, ["push", "origin", "feature"]);
+          const head = (yield* fixture.command(fixture.worktree, [
+            "rev-parse",
+            "HEAD",
+          ])).stdout.trim();
+          yield* fixture.command(fixture.repo, [
+            "--git-dir",
+            remote,
+            "update-ref",
+            "refs/heads/main",
+            head,
+          ]);
+          if (scenario === "unreachable") {
+            yield* fixture.command(fixture.repo, ["fetch", "origin"]);
+            yield* fixture.command(fixture.repo, [
+              "remote",
+              "set-url",
+              "origin",
+              `${remote}/missing`,
+            ]);
+          }
+          yield* fixture.service.runNow;
+          expect(yield* fixture.fs.exists(fixture.worktree)).toBe(scenario !== "available");
+          expect(
+            (yield* fixture.command(fixture.repo, [
+              "--git-dir",
+              remote,
+              "show-ref",
+              "--verify",
+              "refs/heads/feature",
+            ])).stdout,
+          ).toContain(head);
+        }),
+      ),
+  );
+
+  it.effect("preserves a branch moved during compare-and-delete", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture();
+        fixture.disable();
+        fixture.setSettings({ autoDeleteMergedBranches: true });
+        yield* fixture.command(fixture.repo, ["worktree", "remove", fixture.worktree]);
+        const before = (yield* fixture.command(fixture.repo, ["rev-parse", "feature"])).stdout;
+        fixture.moveBranchBeforeDelete();
+        const report = yield* fixture.service.runNow;
+        expect((yield* fixture.command(fixture.repo, ["rev-parse", "feature"])).stdout).not.toBe(
+          before,
+        );
+        expect(report.entries).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ kind: "branch", path: "feature", outcome: "failed" }),
+          ]),
+        );
+      }),
+    ),
+  );
+
+  it.effect("removes merged branches without worktrees while keeping checked-out branches", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture();
+        fixture.disable();
+        fixture.setSettings({ autoDeleteMergedBranches: true });
+        yield* fixture.command(fixture.repo, ["branch", "merged-local"]);
+        yield* fixture.command(fixture.repo, ["checkout", "-b", "current-local"]);
+        yield* fixture.service.runNow;
+        expect(
+          (yield* fixture.command(fixture.repo, ["branch", "--list", "merged-local"])).stdout,
+        ).toBe("");
+        expect(
+          (yield* fixture.command(fixture.repo, ["branch", "--list", "current-local"])).stdout,
+        ).toContain("current-local");
+      }),
+    ),
+  );
+});
 
 const submoduleCleanupFixture = () =>
   Effect.gen(function* () {

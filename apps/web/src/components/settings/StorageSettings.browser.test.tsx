@@ -1,6 +1,6 @@
 import { act, render } from "../../../test/render";
 import { RegistryProvider } from "@effect/atom-react";
-import { DEFAULT_SERVER_SETTINGS, type StorageCleanupReport } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProjectId, type StorageCleanupReport } from "@t3tools/contracts";
 import { type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
 
@@ -122,3 +122,22 @@ it("keeps cleanup disabled when settled retention and all other rules are off", 
   await act(async () => button.click());
   expect(state.run).not.toHaveBeenCalled();
 });
+
+it.each(["environment", "project"])(
+  "enables cleanup for merged branches at %s scope",
+  async (scope) => {
+    setup();
+    state.settings = {
+      ...state.settings,
+      ...(scope === "environment"
+        ? { autoDeleteMergedBranches: true }
+        : {
+            projectSettingsOverrides: {
+              [ProjectId.make("project")]: { autoDeleteMergedBranches: true },
+            },
+          }),
+    };
+    await using screen = await render(panel());
+    expect(deleteButton(screen.container).disabled).toBe(false);
+  },
+);

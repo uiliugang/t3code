@@ -1,4 +1,5 @@
 import { ActiveNewTaskContext } from "../../state/active-new-task";
+import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import * as Dialog from "../../components/ui/Dialog";
 import React, { useEffect, useRef, useState } from "react";
 
@@ -453,8 +454,8 @@ export function NewTaskFlowProvider(
     Arr.filter((branch) => !branch.isRemote),
   );
 
-  const resolveWorkspaceSelection = (selection: ComposerDraftWorkspaceSelection | undefined) =>
-    resolveNewTaskDraftWorkspace({
+  const resolveWorkspaceSelection = (selection: ComposerDraftWorkspaceSelection | undefined) => {
+    const resolved = resolveNewTaskDraftWorkspace({
       selection,
       canChooseWorkspace,
       defaultMode: defaultWorkspaceMode,
@@ -463,6 +464,18 @@ export function NewTaskFlowProvider(
       branches: allBranchRefs,
       projectCwd: selectedProject?.workspaceRoot ?? null,
     });
+    if (resolved.mode !== "worktree" || !projectSettings.settings.newWorktreesMainBranchOnly)
+      return resolved;
+    const bases = allBranchRefs.filter((branch) =>
+      isMainOrMasterBranch(branch.name, branch.isRemote ? branch.remoteName : undefined),
+    );
+    if (bases.some((branch) => branch.name === resolved.branch)) return resolved;
+    return {
+      ...resolved,
+      branch: bases.find((branch) => branch.isDefault)?.name ?? bases[0]?.name ?? null,
+      worktreePath: null,
+    };
+  };
   const workspaceSelection = resolveWorkspaceSelection(selectedProjectDraft.workspaceSelection);
   const workspaceMode = workspaceSelection.mode;
   const selectedBranchName = workspaceSelection.branch;
@@ -847,7 +860,10 @@ export function NewTaskFlowProvider(
     attachments,
     submitting,
     branchesLoading,
-    availableBranches,
+    availableBranches:
+      workspaceMode === "worktree" && projectSettings.settings.newWorktreesMainBranchOnly
+        ? availableBranches.filter((branch) => isMainOrMasterBranch(branch.name))
+        : availableBranches,
     currentCheckoutBranchName,
     runtimeMode,
     interactionMode,

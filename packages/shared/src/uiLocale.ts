@@ -11,6 +11,15 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Branch management": "分支管理",
+  "Only create worktrees from main/master": "仅允许从 main/master 创建 worktree",
+  "Automatically delete merged branches and worktrees": "自动清理已合并的分支和 worktree",
+  "Create new worktree branches only from main or master. Existing branch checkouts are unaffected.":
+    "新 worktree 分支只能基于 main 或 master 创建。检出现有分支不受影响。",
+  "Automatically remove local branches and worktrees merged into main or master. Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":
+    "自动删除已合并到 main 或 master 的本地分支及 worktree。保留项目目录、有未提交改动、已锁定或正在使用的 worktree，以及远程分支。",
+  "Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":
+    "保留项目目录、有未提交改动、已锁定或正在使用的 worktree，以及远程分支。",
   "Weekly remaining": "每周剩余用量",
   "{provider}: weekly usage unavailable": "{provider}：暂无每周用量数据",
   "{provider}: {percent}% weekly remaining": "{provider}：每周剩余 {percent}%",

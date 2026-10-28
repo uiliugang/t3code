@@ -1430,6 +1430,7 @@ function ScheduledTaskEditorForm({
           {draft.workspaceMode === "worktree" ? (
             <Field label="Base branch" htmlFor="scheduled-task-base-ref">
               <WorktreeBaseBranchPicker
+                projectId={selectedProject?.id ?? null}
                 key={`${environmentId}:${selectedProjectId}`}
                 id="scheduled-task-base-ref"
                 environmentId={environmentId}
