@@ -11,6 +11,10 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Open in terminal": "在终端中打开",
+  "Repository terminal button": "仓库终端按钮",
+  "Show a shortcut to open the built-in terminal in each repository's working directory.":
+    "显示快捷按钮，在各仓库的工作目录中打开内置终端。",
   "Branch management": "分支管理",
   "Only create worktrees from main/master": "仅允许从 main/master 创建 worktree",
   "Automatically delete merged branches and worktrees": "自动清理已合并的分支和 worktree",

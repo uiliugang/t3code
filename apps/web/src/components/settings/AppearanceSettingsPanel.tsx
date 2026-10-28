@@ -324,6 +324,21 @@ export function AppearanceSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          {...searchableSetting("repository-terminal-button")}
+          description={t(
+            "Show a shortcut to open the built-in terminal in each repository's working directory.",
+          )}
+          control={
+            <Switch
+              checked={settings.showRepositoryTerminalButton}
+              onCheckedChange={(checked) =>
+                updateSettings({ showRepositoryTerminalButton: Boolean(checked) })
+              }
+              aria-label={t("Repository terminal button")}
+            />
+          }
+        />
         <AdvancedSettings
           targetIds={[
             searchableSetting("panel-animations").id,

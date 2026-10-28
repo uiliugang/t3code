@@ -4,6 +4,7 @@ import {
   resolveProjectFileBackedSetting,
 } from "@t3tools/shared/projectSettings";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
+import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import * as ServerSettings from "../serverSettings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Option from "effect/Option";
@@ -154,10 +155,11 @@ export const layer = Layer.effect(
                     threadId: input.threadId,
                     detail: "Set an absolute worktree location on this environment.",
                   });
-                const submodules =
+                const projectSettings =
                   settings === null
                     ? null
-                    : resolveProjectSettings(settings, input.projectId).settings.worktreeSubmodules;
+                    : resolveProjectSettings(settings, input.projectId).settings;
+                const submodules = projectSettings?.worktreeSubmodules ?? null;
                 const launchRoots = [];
                 const baseRefs = new Map<string, string>();
                 for (const root of config.roots) {
@@ -165,6 +167,35 @@ export const layer = Layer.effect(
                     root.id === config.primaryRootId && input.strategy.type === "worktree"
                       ? input.strategy.baseRef
                       : (root.defaultBaseRef ?? "HEAD");
+                  if (
+                    root.defaultSelected &&
+                    input.strategy.type === "worktree" &&
+                    projectSettings?.newWorktreesMainBranchOnly
+                  ) {
+                    if (baseRef === "HEAD" && root.defaultBaseRef === undefined) {
+                      const branches = yield* git.listLocalBranchNames(root.sourcePath);
+                      baseRef =
+                        branches.find((name) => name === "main") ??
+                        branches.find((name) => name === "master") ??
+                        baseRef;
+                    }
+                    const resolvedBase = yield* git.execute({
+                      operation: "WorkspaceProvisioner.validateBase",
+                      cwd: root.sourcePath,
+                      args: [
+                        "rev-parse",
+                        "--symbolic-full-name",
+                        "--verify",
+                        "--end-of-options",
+                        baseRef,
+                      ],
+                    });
+                    if (!isMainOrMasterBranch(resolvedBase.stdout.trim()))
+                      return yield* new WorkspacePreparationError({
+                        threadId: input.threadId,
+                        detail: `${root.alias}: new worktree branches must start from main or master. Change this in Settings → Source Control → Branch management.`,
+                      });
+                  }
                   let recordedBaseRef = baseRef;
                   if (
                     root.defaultSelected &&

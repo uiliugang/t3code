@@ -266,6 +266,11 @@ const cleanupFixture = (
     let threads = [shell({ branch: "feature", worktreePath: worktree })];
     let deletedThreads: OrchestrationV2ThreadShell[] = [];
     let storedWorktreePaths: string[] = [worktree];
+    let workspaceReferences: Array<{
+      workspacePath: string;
+      commonDir: string | null;
+      branch: string | null;
+    }> = [];
     let projectRoots = [repo];
     let editBeforeRemoval = false;
     let openSessionCwd: string | null = null;
@@ -372,34 +377,36 @@ const cleanupFixture = (
       } as unknown as PullRequestService.PullRequestService["Service"]),
       Effect.provideService(SqlClient.SqlClient, ((strings: TemplateStringsArray) =>
         Effect.sync(() =>
-          openSessionCwd !== null && strings.join("").includes("projection_provider_sessions")
-            ? [
-                {
-                  payload_json: JSON.stringify({
-                    id: "session-1",
-                    driver: "codex",
-                    providerInstanceId: "codex",
-                    status: "ready",
-                    cwd: openSessionCwd,
-                    model: null,
-                    capabilities: CodexProviderCapabilitiesV2,
-                    createdAt: "2026-06-01T12:00:00.000Z",
-                    updatedAt: "2026-06-01T12:00:00.000Z",
-                    lastError: null,
-                  }),
-                },
-              ]
-            : strings.join("").includes("deleted_at IS NOT NULL")
-              ? deletedThreads.map((thread) => ({
-                  payload_json: JSON.stringify(thread),
-                  workspaceRoot: repo,
-                }))
-              : strings.join("").includes('AS "worktreePath"')
-                ? [
-                    ...threads.flatMap((thread) => thread.worktreePath ?? []),
-                    ...storedWorktreePaths,
-                  ].map((worktreePath) => ({ worktreePath }))
-                : [],
+          strings.join("").includes('AS "workspacePath"')
+            ? workspaceReferences
+            : openSessionCwd !== null && strings.join("").includes("projection_provider_sessions")
+              ? [
+                  {
+                    payload_json: JSON.stringify({
+                      id: "session-1",
+                      driver: "codex",
+                      providerInstanceId: "codex",
+                      status: "ready",
+                      cwd: openSessionCwd,
+                      model: null,
+                      capabilities: CodexProviderCapabilitiesV2,
+                      createdAt: "2026-06-01T12:00:00.000Z",
+                      updatedAt: "2026-06-01T12:00:00.000Z",
+                      lastError: null,
+                    }),
+                  },
+                ]
+              : strings.join("").includes("deleted_at IS NOT NULL")
+                ? deletedThreads.map((thread) => ({
+                    payload_json: JSON.stringify(thread),
+                    workspaceRoot: repo,
+                  }))
+                : strings.join("").includes('AS "worktreePath"')
+                  ? [
+                      ...threads.flatMap((thread) => thread.worktreePath ?? []),
+                      ...storedWorktreePaths,
+                    ].map((worktreePath) => ({ worktreePath }))
+                  : [],
         )) as unknown as SqlClient.SqlClient),
       Effect.provideService(GitManager.GitManager, {
         invalidateStatus: () => Effect.void,
@@ -463,6 +470,9 @@ const cleanupFixture = (
       },
       setStoredWorktreePaths: (paths: string[]) => {
         storedWorktreePaths = paths;
+      },
+      setWorkspaceReferences: (references: typeof workspaceReferences) => {
+        workspaceReferences = references;
       },
       setProjectRoots: (roots: string[]) => {
         projectRoots = roots;
@@ -795,6 +805,8 @@ describe("merged local branch cleanup", () => {
     "project",
     "project-disabled",
     "new-orphan",
+    "workspace-checkout",
+    "workspace-branch",
   ])("keeps %s worktrees and their branch", (scenario) =>
     runCleanupTest(
       Effect.gen(function* () {
@@ -823,6 +835,18 @@ describe("merged local branch cleanup", () => {
           yield* fixture.command(fixture.repo, ["worktree", "lock", fixture.worktree]);
         if (scenario === "session") fixture.setOpenSessionCwd(fixture.worktree);
         if (scenario === "new-orphan") fixture.setThreads([]);
+        if (scenario === "workspace-checkout" || scenario === "workspace-branch") {
+          fixture.setThreads([]);
+          yield* fixture.fs.utimes(fixture.worktree, 1, 1);
+          fixture.setWorkspaceReferences([
+            {
+              workspacePath:
+                scenario === "workspace-checkout" ? fixture.worktree : `${fixture.repo}/old-task`,
+              commonDir: `${fixture.repo}/.git`,
+              branch: scenario === "workspace-branch" ? "feature" : null,
+            },
+          ]);
+        }
         if (scenario === "shared")
           fixture.setThreads([
             shell({ branch: "feature", worktreePath: fixture.worktree }),

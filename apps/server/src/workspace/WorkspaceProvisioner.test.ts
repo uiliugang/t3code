@@ -2,6 +2,7 @@ import * as WorkspaceCleanup from "./WorkspaceCleanup.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ThreadId,
   WorkspaceRootId,
@@ -16,6 +17,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -100,6 +102,11 @@ it.live(
       const layer = WorkspaceProvisioner.layer.pipe(
         Layer.provide(setupLayer),
         Layer.provide(
+          Layer.mock(ServerSettings.ServerSettingsService)({
+            getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+          }),
+        ),
+        Layer.provide(
           Layer.mock(CheckpointStore.CheckpointStore)({ captureCheckpoint: () => Effect.void }),
         ),
         Layer.provide(ServerConfig.layerTest(temp, path.join(temp, "state"))),
@@ -112,6 +119,22 @@ it.live(
           config: { version: 1, primaryRootId: roots[0]!.id, roots },
           strategy: { type: "worktree" as const, baseRef: "main" },
         };
+        yield* git.execute({
+          operation: "test",
+          cwd: roots[1]!.sourcePath,
+          args: ["checkout", "-b", "feature/backend"],
+        });
+        const invalidBase = yield* provisioner
+          .prepare({
+            ...input,
+            config: {
+              ...input.config,
+              roots: [roots[0]!, { ...roots[1]!, defaultBaseRef: "feature/backend" }],
+            },
+          })
+          .pipe(Effect.flip);
+        assert.include(invalidBase.message, "main or master");
+        assert.lengthOf(yield* sql`SELECT * FROM workspace_preparations`, 0);
         const error = yield* provisioner.prepare(input).pipe(Effect.flip);
         assert.include(error.message, "Setup failed");
         const [row] = yield* sql<{

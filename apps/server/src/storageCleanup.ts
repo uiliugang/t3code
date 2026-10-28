@@ -1315,6 +1315,41 @@ const make = Effect.gen(function* () {
               if (!enabled(currentSettings, project.id)) return "automatic cleanup is disabled";
               const latestProjects = yield* projectStore.listShells();
               const worktreePath = branch.worktreePath;
+              const workspaceReferences = yield* sql<{
+                workspacePath: string;
+                commonDir: string | null;
+                branch: string | null;
+              }>`
+                SELECT json_extract(r.value, '$.checkoutRoot') AS "workspacePath",
+                  json_extract(r.value, '$.identity.commonDir') AS "commonDir",
+                  json_extract(b.value, '$.launchBranch') AS branch
+                FROM orchestration_v2_projection_workspace_revisions w,
+                  json_each(w.payload_json, '$.resources') r
+                LEFT JOIN json_each(w.payload_json, '$.bindings') b
+                  ON json_extract(b.value, '$.resourceId') = json_extract(r.value, '$.id')
+                UNION SELECT json_extract(r.value, '$.path'),
+                  json_extract(r.value, '$.source.identity.commonDir'),
+                  json_extract(r.value, '$.branch')
+                FROM workspace_preparations w, json_each(w.payload_json, '$.resources') r
+                UNION SELECT json_extract(r.value, '$.sourcePath'), NULL, NULL
+                FROM projection_projects p, json_each(p.workspace_config_json, '$.roots') r
+                WHERE p.deleted_at IS NULL
+              `.pipe(NodeSqliteClient.readOnly);
+              for (const reference of workspaceReferences) {
+                if (
+                  reference.commonDir !== null &&
+                  pathKey(reference.commonDir) === pathKey(common) &&
+                  reference.branch === branch.name
+                )
+                  return "branch is retained by a multi-repository workspace";
+                if (
+                  worktreePath !== null &&
+                  (yield* containsProjectRoot(worktreePath, [
+                    { workspaceRoot: reference.workspacePath },
+                  ]))
+                )
+                  return "worktree belongs to a multi-repository workspace";
+              }
               if (worktreePath !== null) {
                 if (yield* containsProjectRoot(worktreePath, latestProjects))
                   return "contains a project checkout";
