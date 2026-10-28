@@ -16,6 +16,11 @@ locked worktrees, uncommitted changes, and active work, and never deletes remote
 can apply to an environment or an individual project. Removed managed worktrees can be recreated
 when you continue their thread.
 
+After a pull request into `main` or `master` merges, T3 Code fetches its repository and fast-forwards
+the matching existing local base branch, including when it is checked out in another worktree.
+This also runs with automatic cleanup disabled. Local commits, uncommitted files, locked worktrees,
+active work, and branches tracking a different repository or branch are kept as they are.
+
 ## Review turn changes
 
 A turn's changed files and diff show only the turn's own work. When a turn pulls, merges, or

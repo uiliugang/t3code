@@ -726,6 +726,8 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       repository: "owner/repository",
       number: 42,
       mergedAt: NOW,
+      baseBranch: "main",
+      url: "https://example.test/owner/repository/pull/42",
     }),
     layer: Layer.effect(
       ThreadSettlementService.ThreadSettlementServiceV2,

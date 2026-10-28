@@ -37,6 +37,8 @@ import { parse as parseYaml } from "yaml";
 
 import * as ServerConfig from "./config.ts";
 import * as GitManager from "./git/GitManager.ts";
+import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import { sourceControlDefinitions } from "./sourceControl/sourceControlDefinitions.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
@@ -221,6 +223,7 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const pullRequests = yield* PullRequestService.PullRequestService;
   const terminals = yield* TerminalManager.TerminalManager;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -1497,10 +1500,185 @@ const make = Effect.gen(function* () {
     yield* SubscriptionRef.set(reportRef, latestReport);
     return latestReport;
   });
+  type MergedBase = Pick<
+    PullRequestService.PullRequestMergeEvent,
+    "projectId" | "url" | "number" | "baseBranch"
+  >;
+  const synchronizedMerges = new Set<string>();
+  const synchronizeMergedBase = Effect.fn("StorageCleanup.synchronizeMergedBase")(
+    function* (merge: MergedBase) {
+      const branch = merge.baseBranch;
+      if (branch !== "main" && branch !== "master") return;
+      const project = (yield* projectStore.listShells()).find(
+        (entry) => entry.id === merge.projectId,
+      );
+      const repository = GitManager.pullRequestRepositoryKey(merge.url);
+      if (project === undefined || repository === null) return;
+      const cwd = project.workspaceRoot;
+      const execute = (args: string[], directory = cwd) =>
+        git.execute({
+          operation: "StorageCleanup.synchronizeMergedBase",
+          cwd: directory,
+          args,
+        });
+      const readBranch = Effect.fn("StorageCleanup.readMergedBase")(function* () {
+        const result = yield* execute([
+          "for-each-ref",
+          "--format=%(refname)%00%(objectname)%00%(worktreepath)%00%(upstream:remotename)%00%(upstream:remoteref)",
+          `refs/heads/${branch}`,
+        ]);
+        if (result.stdoutTruncated) return null;
+        const [ref, sha, checkout, remote, upstream] = result.stdout.trimEnd().split("\0");
+        return ref === `refs/heads/${branch}` && sha !== undefined
+          ? { sha, checkout: checkout || null, remote: remote || null, upstream: upstream || null }
+          : null;
+      });
+      const before = yield* readBranch();
+      if (
+        before === null ||
+        (before.upstream !== null && before.upstream !== `refs/heads/${branch}`)
+      )
+        return;
+      const matches = Effect.fn("StorageCleanup.matchesMergedRepository")(function* (
+        remote: string,
+      ) {
+        const url = yield* git.readConfigValue(cwd, `remote.${remote}.url`);
+        return (
+          url !== null &&
+          sourceControlDefinitions.canonicalRepositoryKey(
+            sourceControlDefinitions.repositoryKeyFromRemote(url),
+          ) === sourceControlDefinitions.canonicalRepositoryKey(repository)
+        );
+      });
+      let remote = before.remote;
+      if (remote !== null) {
+        if (!(yield* matches(remote))) return;
+      } else {
+        const names = (yield* execute(["remote"])).stdout.trim().split(/\r?\n/).filter(Boolean);
+        const matching = yield* Effect.filter(names, matches);
+        remote = matching.includes("origin")
+          ? "origin"
+          : matching.length === 1
+            ? matching[0]!
+            : null;
+      }
+      if (remote === null) return;
+      const common = (yield* execute([
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+      ])).stdout.trim();
+      const key = `${common}\0${repository}\0${merge.number}\0${branch}`;
+      if (synchronizedMerges.has(key)) return;
+      yield* git.fetchRemoteTrackingBranch({ cwd, remoteName: remote, remoteBranch: branch });
+      const target = (yield* git.resolveCommit({
+        cwd,
+        revision: `refs/remotes/${remote}/${branch}`,
+      })).commitSha;
+      const result = yield* withWorkspaceLease(
+        before.checkout ?? cwd,
+        Effect.gen(function* () {
+          const current = yield* readBranch();
+          if (
+            current === null ||
+            current.sha !== before.sha ||
+            current.checkout !== before.checkout
+          )
+            return "branch changed";
+          if (current.sha === target) return "up to date";
+          const ancestor = yield* git.execute({
+            operation: "StorageCleanup.synchronizeMergedBase",
+            cwd,
+            args: ["merge-base", "--is-ancestor", current.sha, target],
+            allowNonZeroExit: true,
+          });
+          if (ancestor.exitCode !== 0) return "local commits or ancestry unavailable";
+          if (current.checkout !== null) {
+            const checkout = current.checkout;
+            if (hasTerminal(checkout)) return "open terminal";
+            const snapshot = yield* readThreads();
+            const roots = new Map(
+              snapshot.projects.map((entry) => [entry.id, entry.workspaceRoot]),
+            );
+            const now = yield* Clock.currentTimeMillis;
+            if (
+              snapshot.threads.some((thread) => {
+                const workspace = thread.worktreePath ?? roots.get(thread.projectId);
+                return (
+                  workspace !== undefined &&
+                  (pathKey(workspace) === pathKey(checkout) || inside(checkout, workspace)) &&
+                  !threadIdle(thread, now)
+                );
+              })
+            )
+              return "active work";
+            const sessions = yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`.pipe(
+              NodeSqliteClient.readOnly,
+            );
+            for (const row of sessions) {
+              const session = yield* decodeCleanupSession(row.payload_json);
+              if (
+                (pathKey(session.cwd) === pathKey(checkout) || inside(checkout, session.cwd)) &&
+                (yield* providerSessions.isLive(session.id))
+              )
+                return "live provider session";
+            }
+            const directory = (yield* execute(
+              ["rev-parse", "--absolute-git-dir"],
+              checkout,
+            )).stdout.trim();
+            if (yield* fs.exists(path.join(directory, "locked"))) return "locked worktree";
+            const changes = yield* execute(
+              ["status", "--porcelain=v1", "-z", "--untracked-files=normal"],
+              checkout,
+            );
+            if (changes.stdoutTruncated || changes.stdout.length > 0) return "uncommitted changes";
+            if (yield* branchChanged(checkout, branch)) return "checkout changed";
+            yield* execute(
+              [
+                "merge",
+                "--ff-only",
+                "--no-edit",
+                "--no-autostash",
+                "--no-overwrite-ignore",
+                target,
+              ],
+              checkout,
+            );
+          } else {
+            yield* execute(["update-ref", `refs/heads/${branch}`, target, current.sha]);
+          }
+          yield* gitManager.invalidateStatus(cwd);
+          if (current.checkout !== null && current.checkout !== cwd)
+            yield* gitManager.invalidateStatus(current.checkout);
+          return "updated";
+        }),
+      );
+      if (result === "updated" || result === "up to date") {
+        if (synchronizedMerges.size >= REPORT_ENTRY_LIMIT)
+          synchronizedMerges.delete(synchronizedMerges.values().next().value!);
+        synchronizedMerges.add(key);
+      }
+      yield* Effect.logInfo("Post-merge local base synchronization", { branch, result });
+    },
+    Effect.catch((error) =>
+      Effect.logWarning("Post-merge local base synchronization failed", { errorTag: error._tag }),
+    ),
+  );
+
   const automaticSweepQueued = yield* Ref.make(false);
   const worker = yield* makeDrainableWorker(
-    (completion: Deferred.Deferred<StorageCleanupReport, ServerSettingsError> | undefined) =>
+    ({
+      completion,
+      merge,
+    }: {
+      completion?: Deferred.Deferred<StorageCleanupReport, ServerSettingsError>;
+      merge?: MergedBase;
+    }) =>
       (completion === undefined ? Ref.set(automaticSweepQueued, false) : Effect.void).pipe(
+        Effect.andThen(merge === undefined ? Effect.void : synchronizeMergedBase(merge)),
         Effect.andThen(sweep(completion === undefined ? "automatic" : "manual")),
         Effect.exit,
         Effect.flatMap((exit) =>
@@ -1516,11 +1694,11 @@ const make = Effect.gen(function* () {
       ),
   );
   const requestSweep = Ref.getAndSet(automaticSweepQueued, true).pipe(
-    Effect.flatMap((queued) => (queued ? Effect.void : worker.enqueue(undefined))),
+    Effect.flatMap((queued) => (queued ? Effect.void : worker.enqueue({}))),
   );
   const runNow = Effect.gen(function* () {
     const completion = yield* Deferred.make<StorageCleanupReport, ServerSettingsError>();
-    yield* worker.enqueue(completion);
+    yield* worker.enqueue({ completion });
     return yield* Deferred.await(completion);
   });
 
@@ -1541,6 +1719,7 @@ const make = Effect.gen(function* () {
     );
     yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
     const changes = yield* settingsService.subscribeChanges;
+    const merges = yield* pullRequests.subscribeMerges;
     const events = engine.streamDomainEvents;
     let lastSettings = yield* settingsService.getSettings.pipe(Effect.orDie);
     yield* forkParked(
@@ -1563,15 +1742,25 @@ const make = Effect.gen(function* () {
         return requestSweep;
       }),
     );
+    yield* forkParked(Stream.runForEach(merges, (merge) => worker.enqueue({ merge })));
     yield* forkParked(
       Stream.runForEach(events, (event) =>
         event.type === "thread.pull-request-link-updated" &&
-        event.payload.snapshot?.state === "merged" &&
-        (lastSettings.autoDeleteMergedBranches ||
-          Object.values(lastSettings.projectSettingsOverrides).some(
-            (override) => override.autoDeleteMergedBranches === true,
-          ))
-          ? requestSweep
+        event.payload.snapshot?.state === "merged"
+          ? projections.getThreadShell(event.threadId).pipe(
+              Effect.flatMap((thread) =>
+                thread === null
+                  ? Effect.void
+                  : worker.enqueue({
+                      merge: {
+                        projectId: thread.projectId,
+                        url: event.payload.url,
+                        number: event.payload.number,
+                        baseBranch: event.payload.snapshot!.baseBranch,
+                      },
+                    }),
+              ),
+            )
           : (event.type === "thread.deleted" ||
                 (event.type === "provider-session.updated" &&
                   (event.payload.status === "stopped" || event.payload.status === "error"))) &&
