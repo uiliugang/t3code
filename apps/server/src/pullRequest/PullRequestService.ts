@@ -100,6 +100,8 @@ import { toChangeBreakdown } from "./pullRequestChangeBreakdown.ts";
 
 export interface PullRequestMergeEvent extends PullRequestRef {
   readonly mergedAt: string;
+  readonly baseBranch: string;
+  readonly url: string;
 }
 
 type PullRequestReading = Pick<
@@ -3492,6 +3494,8 @@ export const make = Effect.gen(function* () {
         repository,
         number: input.number,
         mergedAt: DateTime.formatIso(yield* DateTime.now),
+        baseBranch: confirmed.baseBranch,
+        url: confirmed.url,
       });
     }
   });

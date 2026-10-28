@@ -22,6 +22,7 @@ import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as GitManager from "./git/GitManager.ts";
+import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as Settings from "./serverSettings.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
@@ -33,6 +34,7 @@ import { ServerActivation } from "./serverActivation.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
   ProjectId,
+  EventId,
   ProviderInstanceId,
   RunId,
   RuntimeRequestId,
@@ -271,12 +273,18 @@ const cleanupFixture = (
     let fullStatusCalls = 0;
     let snapshotReads = 0;
     let events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty;
+    let merges: Stream.Stream<PullRequestService.PullRequestMergeEvent> = Stream.empty;
     let pullRequest: GitManager.GitBranchPullRequest | null = null;
     let moveBranchBeforeDelete = false;
+    let fetchCalls = 0;
     const activated = yield* Deferred.make<void>();
     const context = yield* Layer.build(StorageCleanup.layer).pipe(
       Effect.provideService(GitVcsDriver.GitVcsDriver, {
         ...git,
+        fetchRemoteTrackingBranch: (input) => {
+          fetchCalls++;
+          return git.fetchRemoteTrackingBranch(input);
+        },
         deleteLocalBranch: (input) =>
           Effect.gen(function* () {
             if (moveBranchBeforeDelete) {
@@ -359,6 +367,9 @@ const cleanupFixture = (
       Effect.provideService(Orchestrator.OrchestratorV2, {
         streamDomainEvents: Stream.suspend(() => events),
       } as unknown as Orchestrator.OrchestratorV2["Service"]),
+      Effect.provideService(PullRequestService.PullRequestService, {
+        subscribeMerges: Effect.succeed(Stream.suspend(() => merges)),
+      } as unknown as PullRequestService.PullRequestService["Service"]),
       Effect.provideService(SqlClient.SqlClient, ((strings: TemplateStringsArray) =>
         Effect.sync(() =>
           openSessionCwd !== null && strings.join("").includes("projection_provider_sessions")
@@ -464,8 +475,13 @@ const cleanupFixture = (
       },
       fullStatusCalls: () => fullStatusCalls,
       snapshotReads: () => snapshotReads,
-      activate: (domainEvents: Stream.Stream<OrchestrationV2DomainEvent>) => {
+      fetchCalls: () => fetchCalls,
+      activate: (
+        domainEvents: Stream.Stream<OrchestrationV2DomainEvent>,
+        mergeEvents: Stream.Stream<PullRequestService.PullRequestMergeEvent> = Stream.empty,
+      ) => {
         events = domainEvents;
+        merges = mergeEvents;
         return Deferred.succeed(activated, undefined);
       },
     };
@@ -507,6 +523,210 @@ const runCleanupTest = <A, E>(
     | Scope.Scope
   >,
 ) => effect.pipe(Effect.provide(cleanupTestLayer), Effect.scoped);
+
+describe("post-merge local base synchronization", () => {
+  it.effect.each([
+    { base: "main", checkout: "root", source: "domain", protection: "none" },
+    { base: "master", checkout: "root", source: "merge", protection: "none" },
+    { base: "main", checkout: "other", source: "domain", protection: "none" },
+    { base: "main", checkout: "none", source: "domain", protection: "none" },
+    ...[
+      "dirty",
+      "untracked",
+      "locked",
+      "diverged",
+      "ahead",
+      "busy",
+      "session",
+      "foreign",
+      "upstream-branch",
+      "missing",
+      "fetch-failure",
+      "queued",
+    ].map((protection) => ({ base: "main", checkout: "root", source: "domain", protection })),
+    { base: "release", checkout: "root", source: "domain", protection: "non-main" },
+  ])(
+    "synchronizes $base ($checkout checkout, $source event, $protection) with cleanup disabled",
+    (scenario) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          fixture.disable();
+          if (scenario.base !== "main")
+            yield* fixture.command(fixture.repo, ["branch", "-m", "main", scenario.base]);
+          const remote = yield* fixture.fs.makeTempDirectoryScoped({
+            prefix: "post-merge-remote-",
+          });
+          yield* fixture.command(fixture.repo, ["init", "--bare", remote]);
+          const url = "https://github.com/acme/web.git";
+          yield* fixture.command(fixture.repo, ["remote", "add", "origin", url]);
+          yield* fixture.command(fixture.repo, ["config", `url.${remote}.insteadOf`, url]);
+          yield* fixture.command(fixture.repo, ["push", "origin", scenario.base]);
+          yield* fixture.command(fixture.repo, [
+            "config",
+            `branch.${scenario.base}.remote`,
+            "origin",
+          ]);
+          yield* fixture.command(fixture.repo, [
+            "config",
+            `branch.${scenario.base}.merge`,
+            `refs/heads/${scenario.base}`,
+          ]);
+          if (scenario.checkout !== "root")
+            yield* fixture.command(fixture.repo, ["switch", "-c", "working"]);
+          const checkout =
+            scenario.checkout === "other" ? `${fixture.config.worktreesDir}/base` : fixture.repo;
+          if (scenario.checkout === "other")
+            yield* fixture.command(fixture.repo, ["worktree", "add", checkout, scenario.base]);
+          yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "remote merge\n");
+          yield* fixture.command(fixture.worktree, ["commit", "-am", "remote merge"]);
+          const merged = (yield* fixture.command(fixture.worktree, [
+            "rev-parse",
+            "HEAD",
+          ])).stdout.trim();
+          yield* fixture.command(fixture.worktree, [
+            "push",
+            "origin",
+            `feature:refs/heads/${scenario.base}`,
+          ]);
+          if (scenario.protection === "dirty")
+            yield* fixture.fs.writeFileString(`${checkout}/tracked.txt`, "keep local edit\n");
+          if (scenario.protection === "untracked")
+            yield* fixture.fs.writeFileString(`${checkout}/local.txt`, "keep local file\n");
+          if (scenario.protection === "locked") {
+            yield* fixture.command(fixture.repo, ["switch", "-c", "working"]);
+            const locked = `${fixture.config.worktreesDir}/locked-base`;
+            yield* fixture.command(fixture.repo, ["worktree", "add", locked, scenario.base]);
+            yield* fixture.command(fixture.repo, ["worktree", "lock", locked]);
+          }
+          if (scenario.protection === "ahead")
+            yield* fixture.command(fixture.repo, ["merge", "--ff-only", "feature"]);
+          if (scenario.protection === "diverged" || scenario.protection === "ahead") {
+            yield* fixture.fs.writeFileString(`${checkout}/tracked.txt`, "keep local commit\n");
+            yield* fixture.command(checkout, ["commit", "-am", "local commit"]);
+          }
+          if (scenario.protection === "busy")
+            fixture.setThreads([
+              shell({
+                branch: scenario.base,
+                worktreePath: null,
+                status: "running",
+                activeRunId: RunId.make("active"),
+              }),
+            ]);
+          if (scenario.protection === "session") fixture.setOpenSessionCwd(checkout);
+          if (scenario.protection === "upstream-branch")
+            yield* fixture.command(fixture.repo, [
+              "config",
+              `branch.${scenario.base}.merge`,
+              "refs/heads/release",
+            ]);
+          if (scenario.protection === "fetch-failure") {
+            yield* fixture.command(fixture.repo, ["config", "--unset", `url.${remote}.insteadOf`]);
+            yield* fixture.command(fixture.repo, [
+              "config",
+              `url.${remote}/missing.insteadOf`,
+              url,
+            ]);
+          }
+          const localBefore = (yield* fixture.command(fixture.repo, [
+            "rev-parse",
+            scenario.base,
+          ])).stdout.trim();
+          if (scenario.protection === "missing") {
+            yield* fixture.command(fixture.repo, ["switch", "-c", "working"]);
+            yield* fixture.command(fixture.repo, ["branch", "-D", scenario.base]);
+          }
+          const delivered = yield* Deferred.make<void>();
+          const merge = {
+            projectId: ProjectId.make("project-1"),
+            repository: "acme/web",
+            number: 1,
+            url:
+              scenario.protection === "foreign"
+                ? "https://github.com/other/web/pull/1"
+                : "https://github.com/acme/web/pull/1",
+            baseBranch: scenario.base,
+            mergedAt: DateTime.formatIso(at(0)),
+          };
+          const domain: OrchestrationV2DomainEvent = {
+            id: EventId.make("merged"),
+            threadId: ThreadId.make("thread-1"),
+            occurredAt: at(0),
+            type: "thread.pull-request-link-updated",
+            payload: {
+              host: "github.com",
+              repository: "acme/web",
+              number: 1,
+              url: merge.url,
+              source: "manual",
+              linkedAt: merge.mergedAt,
+              stack: null,
+              snapshot: {
+                state: scenario.protection === "queued" ? "open" : "merged",
+                title: "Merged",
+                headBranch: "feature",
+                baseBranch: scenario.base,
+                isDraft: false,
+                updatedAt: merge.mergedAt,
+                syncedAt: merge.mergedAt,
+                mergedAt: merge.mergedAt,
+              },
+            },
+          };
+          const acknowledge = Stream.ensuring(Deferred.succeed(delivered, undefined));
+          yield* fixture.activate(
+            scenario.source === "domain"
+              ? Stream.make(domain, domain).pipe(acknowledge)
+              : Stream.empty,
+            scenario.source === "merge" ? Stream.make(merge).pipe(acknowledge) : Stream.empty,
+          );
+          yield* Deferred.await(delivered);
+          yield* fixture.service.drain;
+          if (scenario.protection === "missing")
+            expect(
+              (yield* fixture.command(fixture.repo, [
+                "branch",
+                "--list",
+                scenario.base,
+              ])).stdout.trim(),
+            ).toBe("");
+          else
+            expect(
+              (yield* fixture.command(fixture.repo, ["rev-parse", scenario.base])).stdout.trim(),
+            ).toBe(scenario.protection === "none" ? merged : localBefore);
+          if (scenario.checkout !== "none" && scenario.protection === "none")
+            expect(yield* fixture.fs.readFileString(`${checkout}/tracked.txt`)).toBe(
+              "remote merge\n",
+            );
+          if (scenario.checkout !== "root")
+            expect(
+              (yield* fixture.command(fixture.repo, ["branch", "--show-current"])).stdout.trim(),
+            ).toBe("working");
+          expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+          if (scenario.protection === "dirty")
+            expect(yield* fixture.fs.readFileString(`${checkout}/tracked.txt`)).toBe(
+              "keep local edit\n",
+            );
+          if (scenario.protection === "untracked")
+            expect(yield* fixture.fs.readFileString(`${checkout}/local.txt`)).toBe(
+              "keep local file\n",
+            );
+          if (scenario.protection === "diverged" || scenario.protection === "ahead")
+            expect(yield* fixture.fs.readFileString(`${checkout}/tracked.txt`)).toBe(
+              "keep local commit\n",
+            );
+          if (scenario.protection === "none") expect(fixture.fetchCalls()).toBe(1);
+          if (scenario.protection === "locked")
+            yield* fixture.command(fixture.repo, [
+              "worktree",
+              "unlock",
+              `${fixture.config.worktreesDir}/locked-base`,
+            ]);
+        }),
+      ),
+  );
+});
 
 describe("merged local branch cleanup", () => {
   it.effect.each([
