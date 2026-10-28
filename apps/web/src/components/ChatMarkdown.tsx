@@ -127,7 +127,7 @@ import {
   usePreferredEditor,
 } from "../editorPreferences";
 import { openInEditorMenuLabel } from "../editorLabels";
-import { resolveDiffThemeName } from "../lib/diffRendering";
+import { useCodeTheme } from "../hooks/useCodeTheme";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useRenderedAppearance } from "../hooks/useTheme";
 import { useClientSettings } from "../hooks/useSettings";
@@ -602,7 +602,7 @@ function useChatMarkdownState({
       input: { cwd: filePath, editor: "file-manager", reveal: true },
     });
   };
-  const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  const diffThemeName = useCodeTheme();
   const markdownFileLinkMetaByHref = (() => {
     const metaByHref = new Map<
       string,

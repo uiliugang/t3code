@@ -2353,8 +2353,8 @@
       --color-md-link: #ad5133;
       --color-md-blockquote-border: #ded8cf;
       --color-md-blockquote-bg: #f8f5ef;
-      --color-md-code-bg: #f0ebe5;
-      --color-md-code-text: #302d29;
+      --color-md-code-bg: #ffffff;
+      --color-md-code-text: #1f2329;
       --color-md-user-code-bg: rgba(48, 45, 41, 0.18);
       --color-md-user-code-text: #302d29;
       --color-md-user-fence-bg: rgba(0, 0, 0, 0.16);
@@ -2516,8 +2516,8 @@
       --color-md-link: #e5a082;
       --color-md-blockquote-border: #48423c;
       --color-md-blockquote-bg: #34312d;
-      --color-md-code-bg: #252320;
-      --color-md-code-text: #f5f0e8;
+      --color-md-code-bg: #2b2b2b;
+      --color-md-code-text: #bababa;
       --color-md-user-code-bg: rgba(245, 240, 232, 0.18);
       --color-md-user-code-text: #f5f0e8;
       --color-md-user-fence-bg: rgba(0, 0, 0, 0.28);
