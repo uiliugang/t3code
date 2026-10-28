@@ -8,5 +8,9 @@
   "ember-light",
   "ember-dark",
   "iris-light",
-  "iris-dark"
+  "iris-dark",
+  "artifact-wall-light",
+  "artifact-wall-dark",
+  "claude-desktop-light",
+  "claude-desktop-dark"
 ]

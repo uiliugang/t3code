@@ -11,6 +11,9 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Weekly remaining": "每周剩余用量",
+  "{provider}: weekly usage unavailable": "{provider}：暂无每周用量数据",
+  "{provider}: {percent}% weekly remaining": "{provider}：每周剩余 {percent}%",
   "Sharing & access": "共享与访问权限",
   Repositories: "仓库",
   "Default merge method": "默认合并方式",
