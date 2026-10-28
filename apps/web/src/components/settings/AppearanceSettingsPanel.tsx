@@ -14,7 +14,8 @@ import {
   MIN_PANEL_ANIMATION_DURATION_MS,
 } from "@t3tools/contracts/settings";
 import {
-  resolveEnvironmentIdentificationPillLabel,
+  resolveSidebarStageBackdropVariant,
+  type SidebarStageBackdropVariant,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
@@ -36,9 +37,39 @@ import { TypographySection } from "./TypographySettings";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
+  "nightly-artwork": "Nightly artwork",
+  "dev-artwork": "Dev artwork",
   pill: "Version pill",
   none: "None",
 };
+
+// The default "artwork" follows the running channel, so it is labeled as that channel's art,
+// or as "None" on Latest. The other channel's art is offered as a fixed choice.
+function environmentIdentificationOptions(
+  stageVariant: SidebarStageBackdropVariant | null,
+): ReadonlyArray<readonly [EnvironmentIdentificationMode, string]> {
+  if (stageVariant === "dev") {
+    return [
+      ["artwork", "Dev artwork"],
+      ["nightly-artwork", "Nightly artwork"],
+      ["pill", "Version pill"],
+      ["none", "None"],
+    ];
+  }
+  if (stageVariant === "nightly") {
+    return [
+      ["artwork", "Nightly artwork"],
+      ["dev-artwork", "Dev artwork"],
+      ["pill", "Version pill"],
+      ["none", "None"],
+    ];
+  }
+  return [
+    ["artwork", "None"],
+    ["nightly-artwork", "Nightly artwork"],
+    ["dev-artwork", "Dev artwork"],
+  ];
+}
 
 const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {
   comfortable: "Comfortable",
@@ -63,8 +94,13 @@ export function AppearanceSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const environmentStageLabel = useEnvironmentStageLabel();
-  const showEnvironmentIdentification =
-    resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null;
+  const environmentStageVariant = resolveSidebarStageBackdropVariant(environmentStageLabel);
+  const environmentIdentificationOptionList =
+    environmentIdentificationOptions(environmentStageVariant);
+  const environmentIdentificationLabel =
+    environmentIdentificationOptionList.find(
+      ([value]) => value === settings.environmentIdentificationMode,
+    )?.[1] ?? ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode];
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
   const glassOpacitySliderStyle = {
@@ -348,52 +384,52 @@ export function AppearanceSettingsPanel() {
               ) : null
             }
           />
-          {showEnvironmentIdentification ? (
-            <SettingsRow
-              {...searchableSetting("environment-identification")}
-              description={t("Choose how Dev and Nightly environments are identified.")}
-              resetAction={
-                settings.environmentIdentificationMode !==
-                DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
-                  <SettingResetButton
-                    label={t("environment identification")}
-                    onClick={() =>
-                      updateSettings({
-                        environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <Select
-                  value={settings.environmentIdentificationMode}
-                  onValueChange={(value) => {
-                    if (value === "artwork" || value === "pill" || value === "none") {
-                      updateSettings({ environmentIdentificationMode: value });
-                    }
-                  }}
+          <SettingsRow
+            {...searchableSetting("environment-identification")}
+            description={t(
+              environmentStageVariant
+                ? "Choose how Dev and Nightly environments are identified."
+                : "Show Dev or Nightly artwork in the sidebar header.",
+            )}
+            resetAction={
+              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+                <SettingResetButton
+                  label={t("environment identification")}
+                  onClick={() =>
+                    updateSettings({
+                      environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.environmentIdentificationMode}
+                onValueChange={(value) => {
+                  const option = environmentIdentificationOptionList.find(
+                    ([optionValue]) => optionValue === value,
+                  );
+                  if (option) updateSettings({ environmentIdentificationMode: option[0] });
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-full sm:w-40"
+                  aria-label={t("Environment identification")}
                 >
-                  <SelectTrigger
-                    size="sm"
-                    className="w-full sm:w-40"
-                    aria-label={t("Environment identification")}
-                  >
-                    <SelectValue>
-                      {t(ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode])}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    {Object.entries(ENVIRONMENT_IDENTIFICATION_LABELS).map(([value, label]) => (
-                      <SelectItem hideIndicator key={value} value={value}>
-                        {t(label)}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              }
-            />
-          ) : null}
+                  <SelectValue>{t(environmentIdentificationLabel)}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {environmentIdentificationOptionList.map(([value, label]) => (
+                    <SelectItem hideIndicator key={value} value={value}>
+                      {t(label)}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            }
+          />
           <SettingsRow
             {...searchableSetting("composer-context")}
             description={t(
