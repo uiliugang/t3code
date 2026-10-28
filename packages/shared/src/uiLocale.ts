@@ -102,6 +102,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Set how fast panels open and close.": "设置面板打开和关闭的速度。",
   "Choose how Dev and Nightly environments are identified.":
     "选择开发版与每日构建版环境的标识方式。",
+  "Show Dev or Nightly artwork in the sidebar header.": "在侧边栏顶部显示开发版或每日构建版图案。",
+  "Settings sections": "设置分类",
   "Keep branch and worktree controls below the composer after a thread starts.":
     "会话开始后，在输入框下方保留分支和工作树控件。",
   Theme: "主题",
