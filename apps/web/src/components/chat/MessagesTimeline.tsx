@@ -232,7 +232,11 @@ interface MessagesTimelineProps {
   displayThreadKey?: string;
   /** Off where another region already speaks the thread's status, like a subagent's bar. */
   announceTurnStatus?: boolean;
-  onOpenTurnDiff?: (runId: RunId, filePath?: string) => void;
+  onOpenTurnDiff?: (
+    runId: RunId,
+    filePath?: string,
+    resourceId?: import("@t3tools/contracts").ExecutionResourceId,
+  ) => void;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   renderHtmlRender?: TimelineRowSharedState["renderHtmlRender"];
   turnItemSource?: TimelineRowSharedState["turnItemSource"];

@@ -1,3 +1,5 @@
+import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
+import * as WorkspaceAccess from "./workspace/WorkspaceAccess.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -463,6 +465,11 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(UsageService.UsageService)({}),
   Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
+  Layer.mock(WorkspaceRecovery.WorkspaceRecovery)({}),
+  Layer.mock(WorkspaceAccess.WorkspaceAccess)({
+    validate: () => Effect.void,
+    run: (_input, operation) => operation,
+  }),
   Layer.mock(WorkspaceEntries.WorkspaceEntries)({}),
   Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({}),
   Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),

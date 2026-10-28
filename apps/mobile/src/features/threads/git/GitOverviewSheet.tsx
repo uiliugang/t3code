@@ -1,3 +1,7 @@
+import { useUiTranslation } from "../../../lib/useUiTranslation";
+import { WorkspaceRecoveryControl } from "./WorkspaceRecoveryControl";
+import type { ThreadWorkspaceRevision, WorkspaceExecutionResource } from "@t3tools/contracts";
+import { useThreadRepository } from "../../../state/use-thread-repository";
 import * as Dialog from "../../../components/ui/Dialog";
 import { SheetHeader } from "../../../components/ui/SheetHeader";
 import { useOpenPullRequest } from "../../../native/useOpenPullRequest";
@@ -61,6 +65,42 @@ type GitOverviewSheetProps = StaticScreenProps<{
   readonly presentation?: "sheet" | "inspector";
 };
 
+function RepositorySummaryRow({
+  environmentId,
+  workspace,
+  resource,
+  selected,
+  onPress,
+}: {
+  environmentId: EnvironmentId;
+  workspace: ThreadWorkspaceRevision;
+  resource: WorkspaceExecutionResource;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const t = useUiTranslation();
+  const status = useEnvironmentQuery(
+    vcsEnvironment.status({ environmentId, input: { cwd: resource.checkoutRoot } }),
+  );
+  const totals = status.data?.branchChanges ?? status.data?.workingTree;
+  const description = status.error
+    ? t("Status unavailable")
+    : !status.data
+      ? t("Loading...")
+      : `${status.data.refName ?? t("Detached HEAD")}${totals ? ` · +${totals.insertions} −${totals.deletions}` : ""}`;
+  return (
+    <ListRow
+      icon={selected ? "checkmark" : "folder"}
+      label={workspace.bindings
+        .filter((binding) => binding.resourceId === resource.id)
+        .map((binding) => binding.alias)
+        .join(" / ")}
+      description={description}
+      onPress={onPress}
+    />
+  );
+}
+
 export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const navigation = useNavigation();
   const { environmentId, threadId } = props.route.params;
@@ -87,6 +127,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     replace: presentation === "sheet",
     context: selectedThread ?? undefined,
   });
+  const { workspace, repository, selectRepository } = useThreadRepository();
   const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
   const linkedPrLines = useLinkedPullRequestLines(selectedThread, selectedEnvironmentRuntime);
   const linkedPrActions = useLinkedPullRequestActions({
@@ -107,7 +148,8 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       : null,
   );
 
-  const currentBranchLabel = gitStatus.data?.refName ?? selectedThread?.branch ?? "Detached HEAD";
+  const currentBranchLabel =
+    gitStatus.data?.refName ?? (repository ? null : selectedThread?.branch) ?? "Detached HEAD";
   const currentStatusSummary = statusSummary(gitStatus.data);
   const currentWorktreePath = selectedThreadWorktreePath;
   const gitOperationLabel = gitState.gitOperationLabel;
@@ -252,7 +294,37 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         ) : undefined
       }
     >
-      <ListSection>
+      {selectedThread?.workspaceConfiguration ? (
+        <WorkspaceRecoveryControl
+          key={workspace?.id ?? "preparation"}
+          threadRef={{ environmentId, threadId }}
+          revisionId={workspace?.id ?? null}
+        />
+      ) : null}
+      {workspace && workspace.resources.length > 1 ? (
+        <ListSection title="Repositories">
+          {workspace.resources.map((resource) => (
+            <RepositorySummaryRow
+              key={resource.id}
+              environmentId={environmentId}
+              workspace={workspace}
+              resource={resource}
+              selected={resource.id === repository?.id}
+              onPress={() => selectRepository(resource.id)}
+            />
+          ))}
+        </ListSection>
+      ) : null}
+      <ListSection
+        title={
+          repository
+            ? workspace?.bindings
+                .filter((binding) => binding.resourceId === repository.id)
+                .map((binding) => binding.alias)
+                .join(" / ")
+            : undefined
+        }
+      >
         {sheetMenuItems.map(({ item, disabledReason }) => (
           <ListRow
             key={`${item.id}-${item.label}`}

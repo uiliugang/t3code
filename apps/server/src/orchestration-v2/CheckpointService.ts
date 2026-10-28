@@ -1,4 +1,9 @@
+import * as Option from "effect/Option";
+import * as WorkspaceRepositoryResolver from "../workspace/WorkspaceRepositoryResolver.ts";
+import { withWorkspaceLeases } from "../workspace/workspaceLease.ts";
 import {
+  type ThreadWorkspaceRevision,
+  type WorkspaceExecutionResource,
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
@@ -109,6 +114,7 @@ export interface CheckpointServiceV2Shape {
     readonly rootNodeId: NodeId;
     readonly providerThreadId: ProviderThreadId;
     readonly cwd: string;
+    readonly workspace?: ThreadWorkspaceRevision;
     readonly createdAt: DateTime.Utc;
   }) => Effect.Effect<OrchestrationV2CheckpointScope, CheckpointServiceV2Error>;
   readonly captureBaseline: (input: {
@@ -175,11 +181,15 @@ const makeRootRunScope = Effect.fn("CheckpointService.makeRootRunScope")(functio
   readonly rootNodeId: NodeId;
   readonly providerThreadId: ProviderThreadId;
   readonly cwd: string;
+  readonly workspace?: ThreadWorkspaceRevision;
   readonly createdAt: DateTime.Utc;
 }) {
   const scopeId = yield* input.idAllocator.allocate.checkpointScope({
     threadId: input.threadId,
-    name: ROOT_CHECKPOINT_SCOPE_NAME,
+    name:
+      input.workspace === undefined
+        ? ROOT_CHECKPOINT_SCOPE_NAME
+        : `workspace:${input.workspace.id}`,
   });
   return {
     id: scopeId,
@@ -192,6 +202,7 @@ const makeRootRunScope = Effect.fn("CheckpointService.makeRootRunScope")(functio
     ordinalWithinParent: 0,
     advancesAppRunCount: true,
     cwd: input.cwd,
+    ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
     createdAt: input.createdAt,
   } satisfies OrchestrationV2CheckpointScope;
 });
@@ -211,6 +222,9 @@ function makeCheckpoint(input: {
 }): OrchestrationV2Checkpoint {
   return {
     id: input.id,
+    ...(input.scope.workspace === undefined
+      ? {}
+      : { workspaceRevisionId: input.scope.workspace.id }),
     threadId: input.scope.threadId,
     scopeId: input.scope.id,
     runId: input.runId,
@@ -237,6 +251,9 @@ export const layer: Layer.Layer<
     const checkpointRefFor = (input: Parameters<typeof checkpointRefForScopeOrdinal>[0]) =>
       checkpointRefForScopeOrdinal(input).pipe(Effect.provideService(Crypto.Crypto, crypto));
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const repositoryResolver = yield* Effect.serviceOption(
+      WorkspaceRepositoryResolver.WorkspaceRepositoryResolver,
+    );
     const workspaceLocks = yield* KeyedLock.make<string>();
     const withWorkspaceLock = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
       workspaceLocks.withLock(cwd, effect);
@@ -244,7 +261,7 @@ export const layer: Layer.Layer<
     const isGitCheckpointable = (cwd: string) =>
       checkpointStore.isGitRepository(cwd).pipe(Effect.orElseSucceed(() => false));
 
-    const captureBaseline: CheckpointServiceV2Shape["captureBaseline"] = (input) =>
+    const captureBaselineSingle: CheckpointServiceV2Shape["captureBaseline"] = (input) =>
       withWorkspaceLock(
         input.scope.cwd,
         Effect.gen(function* () {
@@ -286,7 +303,7 @@ export const layer: Layer.Layer<
         ),
       );
 
-    const materializeBaselineCheckpoint: CheckpointServiceV2Shape["materializeBaselineCheckpoint"] =
+    const materializeBaselineCheckpointSingle: CheckpointServiceV2Shape["materializeBaselineCheckpoint"] =
       (input) =>
         withWorkspaceLock(
           input.scope.cwd,
@@ -340,7 +357,7 @@ export const layer: Layer.Layer<
           ),
         );
 
-    const capture: CheckpointServiceV2Shape["capture"] = (input) =>
+    const captureSingle: CheckpointServiceV2Shape["capture"] = (input) =>
       withWorkspaceLock(
         input.scope.cwd,
         Effect.gen(function* () {
@@ -497,7 +514,7 @@ export const layer: Layer.Layer<
         ),
       );
 
-    const restore: CheckpointServiceV2Shape["restore"] = (input) =>
+    const restoreSingle: CheckpointServiceV2Shape["restore"] = (input) =>
       withWorkspaceLock(
         input.scope.cwd,
         Effect.gen(function* () {
@@ -534,7 +551,7 @@ export const layer: Layer.Layer<
         ),
       );
 
-    const deleteStaleRefs: CheckpointServiceV2Shape["deleteStaleRefs"] = (input) =>
+    const deleteStaleRefsSingle: CheckpointServiceV2Shape["deleteStaleRefs"] = (input) =>
       withWorkspaceLock(
         input.scope.cwd,
         checkpointStore.deleteCheckpointRefs({
@@ -551,6 +568,140 @@ export const layer: Layer.Layer<
             }),
         ),
       );
+
+    const resourceScope = (
+      scope: OrchestrationV2CheckpointScope,
+      resource: WorkspaceExecutionResource,
+    ): OrchestrationV2CheckpointScope => {
+      const { workspace: _workspace, ...single } = scope;
+      return {
+        ...single,
+        id: CheckpointScopeId.make(`${scope.id}:resource:${resource.id}`),
+        cwd: resource.checkoutRoot,
+      };
+    };
+    const aggregate = Effect.fn("CheckpointService.aggregate")(function* (
+      scope: OrchestrationV2CheckpointScope,
+      ordinal: number,
+      captured: ReadonlyArray<OrchestrationV2Checkpoint>,
+    ) {
+      const first = captured[0]!;
+      const id = yield* checkpointIdForScopeOrdinal(idAllocator, {
+        scopeId: scope.id,
+        ordinalWithinScope: ordinal,
+      }).pipe(Effect.mapError((cause) => new CheckpointCaptureError({ scopeId: scope.id, cause })));
+      const resources = captured.map((checkpoint, index) => ({
+        resourceId: scope.workspace!.resources[index]!.id,
+        scopeId: checkpoint.scopeId,
+        checkpointId: checkpoint.id,
+        ref: checkpoint.ref,
+        status: checkpoint.status,
+        files: checkpoint.files,
+      }));
+      return {
+        ...first,
+        id,
+        workspaceRevisionId: scope.workspace!.id,
+        scopeId: scope.id,
+        parentCheckpointId:
+          ordinal > 0
+            ? yield* checkpointIdForScopeOrdinal(idAllocator, {
+                scopeId: scope.id,
+                ordinalWithinScope: ordinal - 1,
+              }).pipe(
+                Effect.mapError(
+                  (cause) => new CheckpointCaptureError({ scopeId: scope.id, cause }),
+                ),
+              )
+            : null,
+        status: captured.every((entry) => entry.status === "ready")
+          ? ("ready" as const)
+          : ("error" as const),
+        resources,
+        files: captured.flatMap((checkpoint, index) =>
+          checkpoint.files.map((file) => ({
+            ...file,
+            resourceId: scope.workspace!.resources[index]!.id,
+            repositoryName: scope.workspace!.resources[index]!.name,
+          })),
+        ),
+      };
+    });
+    const captureBaseline: CheckpointServiceV2Shape["captureBaseline"] = (input) =>
+      input.scope.workspace === undefined
+        ? captureBaselineSingle(input)
+        : Effect.forEach(
+            input.scope.workspace.resources,
+            (resource) =>
+              captureBaselineSingle({ ...input, scope: resourceScope(input.scope, resource) }).pipe(
+                Effect.andThen(
+                  materializeBaselineCheckpointSingle({
+                    ...input,
+                    scope: resourceScope(input.scope, resource),
+                  }),
+                ),
+                Effect.flatMap((checkpoint) =>
+                  checkpoint.status === "ready"
+                    ? Effect.void
+                    : Effect.fail(
+                        new CheckpointBaselineCaptureError({
+                          scopeId: input.scope.id,
+                          ordinalWithinScope: input.ordinalWithinScope,
+                          cause: `Missing baseline for ${resource.name}.`,
+                        }),
+                      ),
+                ),
+              ),
+            { discard: true },
+          );
+    const materializeBaselineCheckpoint: CheckpointServiceV2Shape["materializeBaselineCheckpoint"] =
+      (input) =>
+        input.scope.workspace === undefined
+          ? materializeBaselineCheckpointSingle(input)
+          : Effect.forEach(input.scope.workspace.resources, (resource) =>
+              materializeBaselineCheckpointSingle({
+                ...input,
+                scope: resourceScope(input.scope, resource),
+              }),
+            ).pipe(
+              Effect.flatMap((captured) =>
+                aggregate(input.scope, input.ordinalWithinScope, captured),
+              ),
+            );
+    const capture: CheckpointServiceV2Shape["capture"] = (input) => {
+      const workspace = input.scope.workspace;
+      if (workspace === undefined) return captureSingle(input);
+      return withWorkspaceLeases(
+        workspace.resources.map((resource) => `resource:${resource.id}`),
+        Effect.forEach(workspace.resources, (resource) =>
+          Effect.gen(function* () {
+            if (Option.isSome(repositoryResolver))
+              yield* repositoryResolver.value
+                .verify(resource.identity)
+                .pipe(
+                  Effect.mapError(
+                    (cause) => new CheckpointCaptureError({ scopeId: input.scope.id, cause }),
+                  ),
+                );
+            return yield* captureSingle({ ...input, scope: resourceScope(input.scope, resource) });
+          }),
+        ).pipe(
+          Effect.flatMap((captured) => aggregate(input.scope, input.ordinalWithinScope, captured)),
+        ),
+      );
+    };
+    const restore: CheckpointServiceV2Shape["restore"] = (input) =>
+      input.scope.workspace === undefined
+        ? restoreSingle(input)
+        : Effect.fail(
+            new CheckpointRestoreError({
+              scopeId: input.scope.id,
+              checkpointId: input.checkpoint.id,
+              cause: "Workspace checkpoint sets require the journaled WorkspaceRestore service.",
+            }),
+          );
+    const deleteStaleRefs: CheckpointServiceV2Shape["deleteStaleRefs"] = (input) =>
+      input.scope.workspace === undefined ? deleteStaleRefsSingle(input) : Effect.void;
 
     return CheckpointServiceV2.of({
       prepareRootRunScope: (input) =>

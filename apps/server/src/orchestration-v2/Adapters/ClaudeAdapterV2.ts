@@ -1,3 +1,5 @@
+import type { ThreadWorkspaceRevision } from "@t3tools/contracts";
+import { workspaceContext } from "@t3tools/provider-core/server/workspacePolicy";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
@@ -350,6 +352,7 @@ export function spawnClaudeProcessGroup(
 }
 
 export const ClaudeProviderCapabilitiesV2 = {
+  workspace: { multipleRoots: true, readOnlyRoots: false },
   sessions: {
     supportsMultipleProviderThreadsPerSession: false,
     supportsModelSwitchInSession: true,
@@ -1432,6 +1435,7 @@ To wait for a background command or Monitor you started (tests, a build), call \
 `;
 
 export function makeClaudeQueryOptions(input: {
+  readonly workspace?: import("@t3tools/contracts").ThreadWorkspaceRevision;
   readonly modelSelection: ModelSelection;
   readonly nativeThreadId: string;
   readonly resume: boolean;
@@ -1565,8 +1569,11 @@ export function makeClaudeQueryOptions(input: {
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
   const additionalDirectories = [
-    ...(input.cwd === null ? [] : [input.cwd]),
-    ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
+    ...new Set([
+      ...(input.cwd === null ? [] : [input.cwd]),
+      ...(input.workspace?.bindings.map((binding) => binding.executionPath) ?? []),
+      ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
+    ]),
   ];
   const withDirectories =
     additionalDirectories.length === 0 ? options : { ...options, additionalDirectories };
@@ -2183,6 +2190,7 @@ const reserveClaudePdfBudget = (
   );
 
 const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input: {
+  readonly workspace?: ThreadWorkspaceRevision;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly priority?: SDKUserMessage["priority"];
@@ -2192,9 +2200,13 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
 }) {
+  const text =
+    input.workspace === undefined
+      ? input.text
+      : `${input.text}\n\n<workspace_repositories>\n${workspaceContext(input.workspace)}\n</workspace_repositories>`;
   if (input.attachments.length === 0) {
     const message = makeClaudeUserMessage({
-      text: input.text,
+      text,
       ...(input.skills === undefined ? {} : { skills: input.skills }),
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.uuid === undefined ? {} : { uuid: input.uuid }),
@@ -2206,7 +2218,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   }
 
   const textWithAttachmentPaths = yield* providerMessageTextWithAttachmentPaths({
-    text: input.text,
+    text,
     attachments: input.attachments,
     resolveExtractedTextPath: (path) =>
       DocumentText.resolveExtractedTextPath(path).pipe(
@@ -2629,8 +2641,10 @@ export function claudeEffectiveQueryPolicyKey(
     readonly allowedTools?: ReadonlyArray<string>;
     readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
   },
+  workspaceRevisionId?: string,
 ): string {
   return JSON.stringify({
+    workspaceRevisionId,
     runtimePolicy: claudeRuntimeQueryPolicyKey({
       ...queryPolicy,
       ...(mcpOverrides.allowedTools === undefined
@@ -9697,7 +9711,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
-          const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
+          const queryPolicyKey = claudeEffectiveQueryPolicyKey(
+            queryPolicy,
+            mcpOverrides,
+            turnInput.runtimePolicy.workspace?.id,
+          );
           const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
@@ -9705,6 +9723,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (
             existing !== null &&
             existing.nativeThreadId === nativeThreadId &&
+            existing.queryPolicyKey === queryPolicyKey &&
             isClaudeProviderContinuationTurn(turnInput)
           ) {
             return existing;
@@ -9804,6 +9823,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             launchArgSettings,
           );
           const queryOptions = makeClaudeQueryOptions({
+            ...(turnInput.runtimePolicy.workspace === undefined
+              ? {}
+              : { workspace: turnInput.runtimePolicy.workspace }),
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
             resume: shouldResume,
@@ -10003,6 +10025,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               promptUuid === null
                 ? null
                 : yield* makeClaudeUserMessageWithAttachments({
+                    ...(turnInput.runtimePolicy.workspace === undefined
+                      ? {}
+                      : { workspace: turnInput.runtimePolicy.workspace }),
                     text: applyClaudePromptEffortPrefix(
                       turnInput.message.text,
                       compileClaudeModelSelection(turnInput.modelSelection).promptEffort,

@@ -6,6 +6,7 @@ import {
   StoredProjectIcon,
   ProjectId,
   ProjectScript,
+  ProjectWorkspaceConfig,
   ThreadEnvMode,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -33,6 +34,7 @@ export const ProjectRow = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   workspaceRoot: Schema.String,
+  workspaceConfig: Schema.optional(ProjectWorkspaceConfig),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
   autoPull: Schema.Boolean,
@@ -51,6 +53,7 @@ const ProjectDbRow = Schema.Struct({
   autoPull: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+  workspaceConfig: Schema.NullOr(Schema.fromJsonString(ProjectWorkspaceConfig)),
 });
 
 function toShell(row: ProjectRow): OrchestrationProjectShell {
@@ -58,6 +61,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     id: row.projectId,
     title: row.title,
     workspaceRoot: row.workspaceRoot,
+    ...(row.workspaceConfig === undefined ? {} : { workspaceConfig: row.workspaceConfig }),
     repositoryIdentity: null,
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
@@ -68,6 +72,11 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function toRow(row: typeof ProjectDbRow.Type): ProjectRow {
+  const { workspaceConfig, ...rest } = row;
+  return workspaceConfig === null ? rest : { ...rest, workspaceConfig };
 }
 
 export class ProjectStoreV2 extends Context.Service<
@@ -86,6 +95,7 @@ export class ProjectStoreV2 extends Context.Service<
     /** Workspace roots match by exact string; callers normalize before asking. */
     readonly findActiveByWorkspaceRoot: (
       workspaceRoot: string,
+      options?: { readonly allowAmbiguous?: boolean },
     ) => Effect.Effect<Option.Option<ProjectRow>, ProjectStoreV2Error>;
     readonly getShell: (
       projectId: ProjectId,
@@ -114,6 +124,7 @@ export const make = Effect.gen(function* () {
         project_id AS "projectId",
         title,
         workspace_root AS "workspaceRoot",
+        workspace_config_json AS "workspaceConfig",
         default_model_selection_json AS "defaultModelSelection",
         default_thread_env_mode AS "defaultThreadEnvMode",
         auto_pull AS "autoPull",
@@ -137,13 +148,14 @@ export const make = Effect.gen(function* () {
   });
 
   const upsertRow = (row: ProjectRow) =>
-    encodeRow(row).pipe(
+    encodeRow({ ...row, workspaceConfig: row.workspaceConfig ?? null }).pipe(
       Effect.flatMap(
         (encoded) => sql`
           INSERT INTO projection_projects (
             project_id,
             title,
             workspace_root,
+            workspace_config_json,
             default_model_selection_json,
             default_thread_env_mode,
             auto_pull,
@@ -158,6 +170,7 @@ export const make = Effect.gen(function* () {
             ${encoded.projectId},
             ${encoded.title},
             ${encoded.workspaceRoot},
+            ${encoded.workspaceConfig},
             ${encoded.defaultModelSelection},
             ${encoded.defaultThreadEnvMode},
             ${encoded.autoPull},
@@ -172,6 +185,7 @@ export const make = Effect.gen(function* () {
           DO UPDATE SET
             title = excluded.title,
             workspace_root = excluded.workspace_root,
+            workspace_config_json = excluded.workspace_config_json,
             default_model_selection_json = excluded.default_model_selection_json,
             default_thread_env_mode = excluded.default_thread_env_mode,
             auto_pull = excluded.auto_pull,
@@ -193,7 +207,7 @@ export const make = Effect.gen(function* () {
   const get: ProjectStoreV2["Service"]["get"] = (projectId, options) =>
     selectRows({ projectId, includeDeleted: options?.includeDeleted === true }).pipe(
       NodeSqliteClient.readOnly,
-      Effect.map((rows) => Option.fromUndefinedOr(rows[0])),
+      Effect.map((rows) => Option.fromUndefinedOr(rows.map(toRow)[0])),
       mapError("get"),
     );
 
@@ -201,14 +215,28 @@ export const make = Effect.gen(function* () {
     selectRows({
       ...(options?.projectIds === undefined ? {} : { projectIds: options.projectIds }),
       includeDeleted: options?.includeDeleted === true,
-    }).pipe(NodeSqliteClient.readOnly, mapError("list"));
+    }).pipe(
+      NodeSqliteClient.readOnly,
+      Effect.map((rows) => rows.map(toRow)),
+      mapError("list"),
+    );
 
   const findActiveByWorkspaceRoot: ProjectStoreV2["Service"]["findActiveByWorkspaceRoot"] = (
     workspaceRoot,
+    options,
   ) =>
     selectRows({ workspaceRoot, includeDeleted: false }).pipe(
       NodeSqliteClient.readOnly,
-      Effect.map((rows) => Option.fromUndefinedOr(rows[0])),
+      Effect.flatMap((rows) =>
+        rows.length > 1 && !options?.allowAmbiguous
+          ? Effect.fail(
+              new ProjectStoreV2Error({
+                operation: "resolve-ambiguous-workspace",
+                cause: "Multiple projects use this directory. Select a project by ID.",
+              }),
+            )
+          : Effect.succeed(Option.fromUndefinedOr(rows.map(toRow)[0])),
+      ),
       mapError("findActiveByWorkspaceRoot"),
     );
 
@@ -220,6 +248,9 @@ export const make = Effect.gen(function* () {
           projectId: payload.projectId,
           title: payload.title,
           workspaceRoot: payload.workspaceRoot,
+          ...(payload.workspaceConfig === undefined
+            ? {}
+            : { workspaceConfig: payload.workspaceConfig }),
           defaultModelSelection: payload.defaultModelSelection,
           defaultThreadEnvMode: payload.defaultThreadEnvMode ?? null,
           autoPull: false,
@@ -246,6 +277,9 @@ export const make = Effect.gen(function* () {
         ...row,
         ...(payload.title === undefined ? {} : { title: payload.title }),
         ...(payload.workspaceRoot === undefined ? {} : { workspaceRoot: payload.workspaceRoot }),
+        ...(payload.workspaceConfig === undefined
+          ? {}
+          : { workspaceConfig: payload.workspaceConfig }),
         ...(payload.defaultModelSelection === undefined
           ? {}
           : { defaultModelSelection: payload.defaultModelSelection }),

@@ -1,3 +1,8 @@
+import * as WorkspaceRecovery from "../workspace/WorkspaceRecovery.ts";
+import * as WorkspaceRestore from "../workspace/WorkspaceRestore.ts";
+import * as WorkspaceAccess from "../workspace/WorkspaceAccess.ts";
+import * as WorkspaceProvisioner from "../workspace/WorkspaceProvisioner.ts";
+import * as WorkspaceRepositoryResolver from "../workspace/WorkspaceRepositoryResolver.ts";
 import * as GuestShareService from "../guest/GuestShareService.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
@@ -61,8 +66,18 @@ export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationCommandReceipts.layer,
 );
 
+const layerWorkspaceRestore = WorkspaceRestore.layer.pipe(
+  Layer.provide(WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer))),
+);
 const layerRuntimePolicyProvided = RuntimePolicy.layerFromProjectStore.pipe(
-  Layer.provide(ProjectStore.layer),
+  Layer.provide(
+    Layer.mergeAll(
+      layerWorkspaceRestore,
+      ProjectionStore.layer,
+      ProjectStore.layer,
+      WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer)),
+    ),
+  ),
 );
 
 const layerEventStoreProvided = EventStore.layerFromOrchestrationEventStore.pipe(
@@ -116,6 +131,7 @@ const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
 
 const layerCheckpointServiceProvided = CheckpointService.layer.pipe(
   Layer.provide(IdAllocator.layer),
+  Layer.provide(WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer))),
 );
 const layerContextHandoffServiceProvided = ContextHandoffService.layer.pipe(
   Layer.provide(IdAllocator.layer),
@@ -182,6 +198,7 @@ const layerRuntimeRequestServiceProvided = RuntimeRequestService.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStore.layer, layerProviderSessionManagerProvided)),
 );
 const layerCheckpointRollbackServiceProvided = CheckpointRollbackService.layer.pipe(
+  Layer.provide(layerWorkspaceRestore),
   Layer.provide(
     Layer.mergeAll(
       ProjectStore.layer,
@@ -264,12 +281,21 @@ export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe
 const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),
 );
+const layerWorkspaceResolver = WorkspaceRepositoryResolver.layer.pipe(
+  Layer.provide(GitVcsDriver.layer),
+);
+const layerWorkspaceProvisioner = WorkspaceProvisioner.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerWorkspaceResolver, GitVcsDriver.layer, layerProjectSetupScriptRunner),
+  ),
+);
 const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerProjectService,
       layerProjectSetupScriptRunner,
       layerManagedProjectFoldersProvided,
+      layerWorkspaceProvisioner,
       layerThreadManagementProvided,
       layerCommandReceiptStoreProvided,
       IdAllocator.layer,
@@ -357,6 +383,20 @@ export const layer = Layer.mergeAll(
 );
 
 export const layerProduction = Layer.mergeAll(
+  WorkspaceRecovery.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerThreadManagementProvided,
+        layerProviderSessionManagerProvided,
+        layerWorkspaceResolver,
+      ),
+    ),
+  ),
+  WorkspaceAccess.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(layerWorkspaceResolver, layerThreadManagementProvided, layerWorkspaceRestore),
+    ),
+  ),
   layer.pipe(Layer.provide(layerProjectService)),
   layerProjectService,
   layerManagedProjectFoldersProvided,

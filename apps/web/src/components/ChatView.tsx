@@ -1561,13 +1561,18 @@ export default function ChatView(props: ChatViewProps) {
     turnDiffSummaries.at(-1)?.completedAt ?? null,
   );
 
-  const gitCwd = activeProject
-    ? projectScriptCwd({
-        project: { cwd: activeProject.workspaceRoot },
-        worktreePath: activeThread?.worktreePath ?? null,
-      })
-    : null;
-  const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
+  const boundWorkspace = isServerThread ? serverThread?.workspace : undefined;
+  const primaryBinding = boundWorkspace?.bindings.find(
+    (binding) => binding.rootId === boundWorkspace.primaryRootId,
+  );
+  const pinnedProjectCwd =
+    (isServerThread ? serverThread?.projectWorkspaceRoot : undefined) ??
+    activeProject?.workspaceRoot ??
+    null;
+  const gitCwd = primaryBinding?.executionPath ?? activeThread?.worktreePath ?? pinnedProjectCwd;
+  const gitStatusCwd =
+    boundWorkspace?.resources.find((resource) => resource.id === primaryBinding?.resourceId)
+      ?.checkoutRoot ?? gitCwd;
   const gitStatusQuery = useEnvironmentQuery(
     gitStatusCwd === null
       ? null
@@ -1648,9 +1653,10 @@ export default function ChatView(props: ChatViewProps) {
     ? activeProviderStatus
     : null;
   const hasTimelineTopBanner = Boolean(timelineThreadError) || visibleProviderStatus !== null;
-  const activeProjectCwd = activeProject?.workspaceRoot ?? null;
+  const activeProjectCwd = pinnedProjectCwd;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
-  const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  const activeWorkspaceRoot =
+    primaryBinding?.executionPath ?? activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   const liveIsGitRepo = gitStatusQuery.data?.isRepo;

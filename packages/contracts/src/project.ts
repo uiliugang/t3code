@@ -12,6 +12,7 @@ import {
   ProjectId,
   TrimmedNonEmptyString,
   TrimmedString,
+  WorkspaceRootId,
   type UnknownUnionMember,
 } from "./baseSchemas.ts";
 
@@ -42,6 +43,48 @@ export const ProjectScript = Schema.Struct({
   autoOpenPreview: Schema.optional(Schema.Boolean),
 });
 export type ProjectScript = typeof ProjectScript.Type;
+
+export const ProjectWorkspaceRoot = Schema.Struct({
+  id: WorkspaceRootId,
+  alias: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+  sourcePath: TrimmedNonEmptyString,
+  description: TrimmedString.check(Schema.isMaxLength(2000)),
+  defaultSelected: Schema.Boolean,
+  accessIntent: Schema.Literals(["write", "read_only"]),
+  defaultBaseRef: Schema.optional(TrimmedNonEmptyString),
+  setupScript: Schema.optional(ProjectScript),
+});
+export type ProjectWorkspaceRoot = typeof ProjectWorkspaceRoot.Type;
+
+const workspaceConfigFields = {
+  primaryRootId: WorkspaceRootId,
+  roots: Schema.Array(ProjectWorkspaceRoot).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
+};
+const validWorkspaceRoots = Schema.makeFilter(
+  (config: {
+    readonly primaryRootId: WorkspaceRootId;
+    readonly roots: ReadonlyArray<ProjectWorkspaceRoot>;
+  }) => {
+    if (new Set(config.roots.map((root) => root.id)).size !== config.roots.length) {
+      return "Workspace root IDs must be unique.";
+    }
+    if (new Set(config.roots.map((root) => root.alias)).size !== config.roots.length) {
+      return "Workspace root aliases must be unique.";
+    }
+    return (
+      config.roots.some((root) => root.id === config.primaryRootId && root.defaultSelected) ||
+      "The primary workspace root must exist and be selected."
+    );
+  },
+);
+export const ProjectWorkspaceConfigInput =
+  Schema.Struct(workspaceConfigFields).check(validWorkspaceRoots);
+export type ProjectWorkspaceConfigInput = typeof ProjectWorkspaceConfigInput.Type;
+export const ProjectWorkspaceConfig = Schema.Struct({
+  ...workspaceConfigFields,
+  version: PositiveInt,
+}).check(validWorkspaceRoots);
+export type ProjectWorkspaceConfig = typeof ProjectWorkspaceConfig.Type;
 
 export const ProjectIconColor = Schema.Literals([
   "gray",
@@ -152,6 +195,7 @@ export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  workspaceConfig: Schema.optional(ProjectWorkspaceConfig),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
@@ -175,6 +219,7 @@ export type ProjectSnapshot = typeof ProjectSnapshot.Type;
 export const ProjectCreatePayload = Schema.Struct({
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  workspaceConfig: Schema.optional(ProjectWorkspaceConfigInput),
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
@@ -184,6 +229,8 @@ export type ProjectCreatePayload = typeof ProjectCreatePayload.Type;
 export const ProjectUpdatePayload = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceConfig: Schema.optional(ProjectWorkspaceConfigInput),
+  expectedWorkspaceVersion: Schema.optional(NonNegativeInt),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),

@@ -1,7 +1,14 @@
 import { assert, describe, it } from "@effect/vitest";
-import { CommandId, EventId, ProjectId, type ProjectScript } from "@t3tools/contracts";
+import {
+  CommandId,
+  EventId,
+  ProjectId,
+  ProjectWorkspaceConfigInput,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import {
   planProjectCommand,
@@ -55,7 +62,76 @@ const failureOf = (result: ReturnType<typeof plan>) => {
   return Result.isFailure(result) ? result.failure : assert.fail("expected a rejection");
 };
 
+const decodeWorkspaceConfig = Schema.decodeSync(ProjectWorkspaceConfigInput);
+
 describe("planProjectCommand", () => {
+  it("versions repository configuration under the project lock and rejects stale edits", () => {
+    const workspaceConfig = decodeWorkspaceConfig({
+      primaryRootId: "frontend",
+      roots: [
+        {
+          id: "frontend",
+          alias: "web",
+          sourcePath: "/repos/web",
+          description: "Web",
+          defaultSelected: true,
+          accessIntent: "write",
+        },
+        {
+          id: "backend",
+          alias: "api",
+          sourcePath: "/repos/api",
+          description: "API",
+          defaultSelected: true,
+          accessIntent: "write",
+        },
+      ],
+    });
+    const command = {
+      type: "project.meta.update" as const,
+      commandId: CommandId.make("cmd-repositories"),
+      projectId,
+      workspaceRoot: "/repos/web",
+      workspaceConfig,
+      expectedWorkspaceVersion: 0,
+    };
+    assert.deepEqual(payloadOf(plan(command, { project: row() })).workspaceConfig, {
+      ...workspaceConfig,
+      version: 1,
+    });
+    const configured = row({
+      workspaceRoot: "/repos/web",
+      workspaceConfig: { ...workspaceConfig, version: 1 },
+    });
+    assert.include(
+      failureOf(plan(command, { project: configured })).message,
+      "Reload before saving",
+    );
+    assert.deepEqual(
+      payloadOf(plan({ ...command, expectedWorkspaceVersion: 1 }, { project: configured }))
+        .workspaceConfig,
+      { ...workspaceConfig, version: 2 },
+    );
+    assert.include(
+      failureOf(plan({ ...command, workspaceRoot: "/wrong" }, { project: row() })).message,
+      "primary repository",
+    );
+    assert.include(
+      failureOf(
+        plan(
+          {
+            type: "project.meta.update",
+            commandId: command.commandId,
+            projectId,
+            workspaceRoot: "/moved",
+          },
+          { project: configured },
+        ),
+      ).message,
+      "repository configuration",
+    );
+  });
+
   it("keeps legacy scripts editable and removable while rejecting new invalid ones", () => {
     const legacy = script("install-javascript-dependencies");
     const withLegacy = (scripts: ReadonlyArray<ProjectScript>) =>

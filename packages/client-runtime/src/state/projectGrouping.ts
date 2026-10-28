@@ -73,25 +73,31 @@ export function derivePhysicalProjectKeyFromPath(environmentId: string, cwd: str
 }
 
 export function derivePhysicalProjectKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot"> &
+    Partial<Pick<EnvironmentProject, "id" | "workspaceConfig">>,
 ): string {
-  return derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
+  return project.workspaceConfig !== undefined && project.id !== undefined
+    ? `${project.environmentId}:workspace:${project.id}`
+    : derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
 }
 
 export function deriveProjectGroupingOverrideKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot"> &
+    Partial<Pick<EnvironmentProject, "id" | "workspaceConfig">>,
 ): string {
   return derivePhysicalProjectKey(project);
 }
 
 export function getProjectOrderKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot"> &
+    Partial<Pick<EnvironmentProject, "id" | "workspaceConfig">>,
 ): string {
   return derivePhysicalProjectKey(project);
 }
 
 function resolveProjectGroupingMode(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot"> &
+    Partial<Pick<EnvironmentProject, "id" | "workspaceConfig">>,
   settings: ProjectGroupingSettings,
 ): SidebarProjectGroupingMode {
   return (
@@ -130,12 +136,14 @@ function deriveLogicalProjectKey(
   project: Pick<
     EnvironmentProject,
     "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
-  >,
+  > &
+    Partial<Pick<EnvironmentProject, "workspaceConfig">>,
   options?: {
     readonly groupingMode?: SidebarProjectGroupingMode;
     readonly groupScratchProjects?: boolean;
   },
 ): string {
+  if (project.workspaceConfig !== undefined) return derivePhysicalProjectKey(project);
   if (options?.groupScratchProjects && project.isScratch) return SCRATCH_PROJECT_SCOPE_KEY;
   const groupingMode = options?.groupingMode ?? "repository";
   if (groupingMode === "separate") {
@@ -153,7 +161,8 @@ export function deriveLogicalProjectKeyFromSettings(
   project: Pick<
     EnvironmentProject,
     "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
-  >,
+  > &
+    Partial<Pick<EnvironmentProject, "workspaceConfig">>,
   settings: ProjectGroupingSettings,
   options?: { readonly groupScratchProjects?: boolean },
 ): string {

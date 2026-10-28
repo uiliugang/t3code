@@ -20,6 +20,36 @@ const zhCN: Readonly<Record<string, string>> = {
     "自动删除已合并到 main 或 master 的本地分支及 worktree。保留项目目录、有未提交改动、已锁定或正在使用的 worktree，以及远程分支。",
   "Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":
     "保留项目目录、有未提交改动、已锁定或正在使用的 worktree，以及远程分支。",
+  "New tasks use these repositories. Existing tasks keep their bound workspace.":
+    "新会话使用这些仓库，已有会话保留已绑定的工作区。",
+  "Primary repository": "主仓库",
+  "Make primary": "设为主仓库",
+  "Repository name": "仓库名称",
+  "Repository directory": "仓库目录",
+  "Directory on this environment": "此环境中的目录",
+  "Repository context": "仓库上下文",
+  "Frontend, backend API, shared schemas...": "前端、后端 API、共享协议等…",
+  "Default base ref": "默认基准分支",
+  "Worktree setup command": "工作树初始化命令",
+  "Add repository": "添加仓库",
+  "Save repositories": "保存仓库",
+  "Status unavailable": "无法获取状态",
+  "Workspace recovery": "工作区恢复",
+  "Accept files and reset conversation": "保留当前文件并重置模型会话",
+  "Allow setup retry": "允许重新执行初始化",
+  "Creates one worktree per repository. The task starts when all repositories are ready.":
+    "为每个仓库创建独立工作树，全部就绪后开始任务。",
+  "This task uses all configured repositories in their current directories.":
+    "此任务使用所有已配置仓库的当前目录。",
+  "Inspect every repository before continuing. Accepting keeps the current files and starts a new provider conversation; backups and the old history remain available.":
+    "继续前请检查每个仓库。确认后保留当前文件并开启新的模型会话，备份和原历史记录仍保留。",
+  "Current files accepted. The next message starts a new provider conversation. Describe the work to continue.":
+    "已保留当前文件。下一条消息将开启新的模型会话，请说明需要继续的工作。",
+  "Prepared repositories are retained. Confirm only after inspecting the setup terminals; retry may repeat setup commands. Then retry the task's preparation.":
+    "已保留准备好的仓库。请先检查初始化终端再确认，重试可能重复执行初始化命令。确认后可重试任务准备。",
+  "Setup can now be retried from the task's retry action.":
+    "现在可以通过任务的重试操作重新初始化。",
+  "This task has no unfinished workspace recovery.": "此任务没有待处理的工作区恢复。",
   "Weekly remaining": "每周剩余用量",
   "{provider}: weekly usage unavailable": "{provider}：暂无每周用量数据",
   "{provider}: {percent}% weekly remaining": "{provider}：每周剩余 {percent}%",

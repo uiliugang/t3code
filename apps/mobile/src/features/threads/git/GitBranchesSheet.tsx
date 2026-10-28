@@ -1,5 +1,6 @@
 import { isMainOrMasterBranch, sanitizeFeatureBranchName } from "@t3tools/shared/git";
 import { useNewTaskProjectDefaults } from "../use-new-task-project-defaults";
+import { useThreadRepository } from "../../../state/use-thread-repository";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
@@ -32,9 +33,12 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const mainBranchOnly =
     useNewTaskProjectDefaults(selectedThreadProject).projectSettings.settings
       .newWorktreesMainBranchOnly;
-  const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
-  const gitState = useSelectedThreadGitState();
-  const gitActions = useSelectedThreadGitActions();
+  const liveRepository = useThreadRepository();
+  const [resourceId] = useState(liveRepository.selectionTarget);
+  const { selectedThreadCwd, selectedThreadWorktreePath, repositoryTarget } =
+    useSelectedThreadWorktree(resourceId);
+  const gitState = useSelectedThreadGitState(resourceId);
+  const gitActions = useSelectedThreadGitActions(resourceId);
   const { canChangeThreadBranch } = gitActions;
 
   const gitStatus = useEnvironmentQuery(
@@ -140,6 +144,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
             />
           </View>
 
+          {repositoryTarget === undefined ? (
           <View className="bg-card android:gap-3 android:rounded-[20px] android:p-4 ios:gap-2 ios:rounded-[18px] ios:border ios:border-border ios:px-4 ios:py-4">
             <Text className="android:text-foreground android:text-base android:font-t3-medium ios:text-foreground-secondary ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">
               New worktree
@@ -194,6 +199,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
               }}
             />
           </View>
+          ) : null}
 
           <View className="gap-2">
             <Text className="text-foreground-secondary android:px-4 android:pb-1 android:pt-3 android:text-sm android:font-t3-medium ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">

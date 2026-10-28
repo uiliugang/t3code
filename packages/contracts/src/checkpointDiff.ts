@@ -1,3 +1,4 @@
+import { ThreadRepositoryTarget } from "./workspace.ts";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as Struct from "effect/Struct";
@@ -29,6 +30,7 @@ export const ThreadTurnDiff = TurnCountRange.mapFields(
 export const OrchestrationGetTurnDiffInput = TurnCountRange.mapFields(
   Struct.assign({
     threadId: ThreadId,
+    repositoryTarget: Schema.optional(ThreadRepositoryTarget),
     ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
   }),
   { unsafePreserveChecks: true },
@@ -40,6 +42,7 @@ export type OrchestrationGetTurnDiffResult = typeof OrchestrationGetTurnDiffResu
 
 export const OrchestrationGetFullThreadDiffInput = Schema.Struct({
   threadId: ThreadId,
+  repositoryTarget: Schema.optional(ThreadRepositoryTarget),
   toTurnCount: NonNegativeInt,
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
 });

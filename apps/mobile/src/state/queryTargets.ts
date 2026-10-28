@@ -1,6 +1,7 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId, ThreadRepositoryTarget } from "@t3tools/contracts";
 
 export interface CheckpointDiffTarget {
+  readonly repositoryTarget?: ThreadRepositoryTarget;
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
   readonly fromTurnCount: number | null;
@@ -28,6 +29,9 @@ export function buildCheckpointDiffTargets(target: CheckpointDiffTarget) {
         environmentId: target.environmentId,
         input: {
           threadId: target.threadId,
+          ...(target.repositoryTarget === undefined
+            ? {}
+            : { repositoryTarget: target.repositoryTarget }),
           toTurnCount: target.toTurnCount,
           ignoreWhitespace: target.ignoreWhitespace,
         },
@@ -42,6 +46,9 @@ export function buildCheckpointDiffTargets(target: CheckpointDiffTarget) {
       environmentId: target.environmentId,
       input: {
         threadId: target.threadId,
+        ...(target.repositoryTarget === undefined
+          ? {}
+          : { repositoryTarget: target.repositoryTarget }),
         fromTurnCount: target.fromTurnCount,
         toTurnCount: target.toTurnCount,
         ignoreWhitespace: target.ignoreWhitespace,

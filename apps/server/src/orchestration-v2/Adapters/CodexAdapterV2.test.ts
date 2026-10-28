@@ -29,6 +29,7 @@ import {
   TurnItemId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import { workspaceFixture } from "../testkit/workspaceFixtures.ts";
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexReplay from "effect-codex-app-server/replay";
 import * as CodexError from "effect-codex-app-server/errors";
@@ -189,6 +190,7 @@ describe("CodexAdapterV2 runtime policy", () => {
             runtimeMode,
             interactionMode: "default",
             cwd: null,
+            workspace: workspaceFixture(),
           },
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
@@ -207,6 +209,11 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.equal(autoAcceptEdits.approvalPolicy, "on-request");
       assert.equal(autoAcceptEdits.approvalsReviewer, "user");
       assert.equal(autoAcceptEdits.sandboxPolicy?.type, "workspaceWrite");
+      if (autoAcceptEdits.sandboxPolicy?.type === "workspaceWrite")
+        assert.deepEqual(autoAcceptEdits.sandboxPolicy.writableRoots, [
+          "/tasks/frontend",
+          "/tasks/backend",
+        ]);
       assert.equal(auto.approvalPolicy, "on-request");
       assert.equal(auto.approvalsReviewer, "auto_review");
       assert.equal(auto.sandboxPolicy?.type, "workspaceWrite");

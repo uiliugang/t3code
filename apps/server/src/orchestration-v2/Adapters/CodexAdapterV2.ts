@@ -1,6 +1,10 @@
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
+import {
+  workspaceWritePaths,
+  workspaceContext,
+} from "@t3tools/provider-core/server/workspacePolicy";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
   mcpToolPresentation,
@@ -233,6 +237,7 @@ const CODEX_CLIENT_CAPABILITIES = {
 } as const;
 
 export const CodexProviderCapabilitiesV2 = {
+  workspace: { multipleRoots: true, readOnlyRoots: false },
   sessions: {
     supportsMultipleProviderThreadsPerSession: true,
     supportsModelSwitchInSession: true,
@@ -738,10 +743,23 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
       input.runtimePolicy.approvalPolicy === undefined
         ? runtimeModeDefaults.approvalPolicy
         : yield* decodeTurnApprovalPolicy(input.runtimePolicy.approvalPolicy);
-    const sandboxPolicy =
+    const requestedSandboxPolicy =
       input.runtimePolicy.sandboxPolicy === undefined
         ? runtimeModeDefaults.sandboxPolicy
         : yield* decodeTurnSandboxPolicy(input.runtimePolicy.sandboxPolicy);
+    const sandboxPolicy =
+      requestedSandboxPolicy?.type === "workspaceWrite" &&
+      input.runtimePolicy.workspace !== undefined
+        ? {
+            ...requestedSandboxPolicy,
+            writableRoots: [
+              ...new Set([
+                ...(requestedSandboxPolicy.writableRoots ?? []),
+                ...workspaceWritePaths(input.runtimePolicy.workspace),
+              ]),
+            ],
+          }
+        : requestedSandboxPolicy;
     const selectedEffort =
       getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort") ??
       codexDefaultReasoningEffortOverride(input.modelSelection.model);
@@ -768,10 +786,21 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
           )
         : undefined;
-    const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+    const repositoryContext =
+      input.runtimePolicy.workspace === undefined
         ? undefined
-        : { ...t3Context, ...appContext };
+        : {
+            t3_workspace_repositories: {
+              kind: "untrusted" as const,
+              value: workspaceContext(input.runtimePolicy.workspace),
+            },
+          };
+    const additionalContext =
+      t3Context === undefined &&
+      repositoryContext === undefined &&
+      Object.keys(appContext).length === 0
+        ? undefined
+        : { ...t3Context, ...appContext, ...repositoryContext };
     return yield* decodeCodexTurnStartParamsWithCollaborationMode({
       threadId: input.nativeThreadId,
       input: input.codexInput,
@@ -1332,6 +1361,13 @@ function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      ...(input.runtimePolicy?.workspace === undefined
+        ? {}
+        : {
+            "sandbox_workspace_write.writable_roots": [
+              ...workspaceWritePaths(input.runtimePolicy.workspace),
+            ],
+          }),
       ...(mcpSession === undefined
         ? {}
         : {
@@ -7590,7 +7626,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ...codexThreadRuntimeParams({
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     modelSelection: input.modelSelection,
-                    runtimePolicy: input.runtimePolicy,
+                    runtimePolicy: threadInput.runtimePolicy ?? input.runtimePolicy,
                   }),
                 });
               }

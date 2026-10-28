@@ -272,8 +272,13 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
     }),
   ),
   t3_project_create: McpToolAccess.writesEnvironment(
-    ({ workspaceRoot, ...input }) =>
+    ({ workspaceRoot: suppliedRoot, ...input }) =>
       Effect.gen(function* () {
+        const workspaceRoot =
+          suppliedRoot ??
+          input.workspaceConfig?.roots.find(
+            (root) => root.id === input.workspaceConfig?.primaryRootId,
+          )?.sourcePath;
         const projects = yield* Project.ProjectService;
         if (workspaceRoot === undefined) {
           // Only updates record model defaults; reject defaults that creation would silently drop.

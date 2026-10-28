@@ -255,7 +255,13 @@ export function useThreadActionMenu(input: {
           openGuestShareDialog(threadRef);
           return;
         case "copy-path": {
-          const workspacePath = thread.worktreePath ?? projectCwd;
+          const workspacePath =
+            thread.workspace?.bindings.find(
+              (binding) => binding.rootId === thread.workspace?.primaryRootId,
+            )?.executionPath ??
+            thread.worktreePath ??
+            thread.projectWorkspaceRoot ??
+            projectCwd;
           if (!workspacePath) {
             toastManager.add(
               stackedThreadToast({

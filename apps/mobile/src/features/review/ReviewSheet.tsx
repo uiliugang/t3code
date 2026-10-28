@@ -1,3 +1,4 @@
+import { useThreadRepository } from "../../state/use-thread-repository";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -436,8 +437,13 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, "environment retry");
   const isEnvironmentReady = environment.presentation?.connection.phase === "connected";
   const { draftMessage } = useThreadDraftForThread({ environmentId, threadId });
-  const reviewCache = useReviewCacheForThread({ environmentId, threadId });
-  const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const { selectedThreadCwd, repositoryTarget } = useSelectedThreadWorktree();
+  const { workspace, repository, selectRepository } = useThreadRepository();
+  const reviewCache = useReviewCacheForThread({
+    environmentId,
+    threadId,
+    ...(repositoryTarget === undefined ? {} : { resourceId: repositoryTarget.resourceId }),
+  });
   const columnMetrics = useNativeColumnLayoutMetrics();
   const safeArea = columnMetrics?.safeArea ?? insets;
   const topContentInset = Platform.OS === "ios" ? safeArea.top : 0;
@@ -473,6 +479,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     threadKey: reviewCache.threadKey,
     environmentId,
     cwd: selectedThreadCwd,
+    repositoryTarget,
     selectedSection,
     draftMessage,
   });
@@ -679,6 +686,31 @@ export function ReviewSheet(props: ReviewSheetProps) {
         onReturnToThread={handleReturnToThread}
       />
 
+      {workspace && workspace.resources.length > 1 ? (
+        <View className="flex-row flex-wrap gap-2 border-b border-border px-4 py-2">
+          {workspace.resources.map((resource) => (
+            <Pressable
+              key={resource.id}
+              accessibilityRole="button"
+              accessibilityState={{ selected: repository?.id === resource.id }}
+              onPress={() => selectRepository(resource.id)}
+            >
+              <Text
+                className={
+                  repository?.id === resource.id
+                    ? "font-t3-bold text-foreground"
+                    : "text-foreground-secondary"
+                }
+              >
+                {workspace.bindings
+                  .filter((binding) => binding.resourceId === resource.id)
+                  .map((binding) => binding.alias)
+                  .join(" / ")}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <ScreenContent>
         <View className="flex-1 bg-sheet android:bg-sheet-solid">
           {showConnectionNotice ? (

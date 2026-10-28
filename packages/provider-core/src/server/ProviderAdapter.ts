@@ -32,6 +32,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
+  ThreadWorkspaceRevision,
   TurnItemId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -49,6 +50,7 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   cwd: Schema.NullOr(Schema.String),
+  workspace: Schema.optional(ThreadWorkspaceRevision),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
 });
@@ -477,6 +479,7 @@ export type ProviderAdapterV2RollbackTarget =
     };
 
 export interface ProviderAdapterV2RollbackThreadInput {
+  readonly runtimePolicy?: ProviderAdapterV2RuntimePolicy;
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly target: ProviderAdapterV2RollbackTarget;
   readonly providerThreadTurns: ReadonlyArray<OrchestrationV2ProviderTurn>;

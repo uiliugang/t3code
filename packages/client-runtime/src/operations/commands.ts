@@ -1,3 +1,4 @@
+import type { ProjectWorkspaceConfigInput } from "@t3tools/contracts";
 import { remapComposerContextAttachments } from "@t3tools/shared/composerContextReferences";
 import {
   type ThreadLinkedPullRequest,
@@ -42,6 +43,7 @@ interface CommandMetadata {
 }
 
 export interface CreateProjectInput extends CommandMetadata {
+  readonly workspaceConfig?: ProjectWorkspaceConfigInput;
   readonly projectId: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
@@ -51,6 +53,8 @@ export interface CreateProjectInput extends CommandMetadata {
 }
 
 export interface UpdateProjectInput extends CommandMetadata {
+  readonly workspaceConfig?: ProjectWorkspaceConfigInput;
+  readonly expectedWorkspaceVersion?: number;
   readonly projectId: ProjectId;
   readonly title?: string;
   readonly workspaceRoot?: string;
@@ -344,6 +348,7 @@ export const createProject = Effect.fn("EnvironmentCommands.createProject")(func
       ? {}
       : { defaultModelSelection: input.defaultModelSelection }),
     ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+    ...(input.workspaceConfig === undefined ? {} : { workspaceConfig: input.workspaceConfig }),
   });
 });
 
@@ -354,6 +359,9 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     type: "project.update",
     commandId: yield* allocateCommandId(input),
     projectId: input.projectId,
+    ...(input.expectedWorkspaceVersion === undefined
+      ? {}
+      : { expectedWorkspaceVersion: input.expectedWorkspaceVersion }),
     ...(input.title === undefined ? {} : { title: input.title }),
     ...(input.workspaceRoot === undefined ? {} : { workspaceRoot: input.workspaceRoot }),
     ...(input.defaultModelSelection === undefined
@@ -366,6 +374,7 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
       ? {}
       : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
     ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+    ...(input.workspaceConfig === undefined ? {} : { workspaceConfig: input.workspaceConfig }),
   });
 });
 

@@ -31,7 +31,13 @@ interface V2ItemInspectorProps {
   readonly environmentId: EnvironmentId;
   readonly cwd?: string | undefined;
   readonly workspaceRoot?: string | undefined;
-  readonly onOpenTurnDiff?: ((runId: RunId, filePath?: string) => void) | undefined;
+  readonly onOpenTurnDiff?:
+    | ((
+        runId: RunId,
+        filePath?: string,
+        resourceId?: import("@t3tools/contracts").ExecutionResourceId,
+      ) => void)
+    | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   readonly source?: TurnItemSource | undefined;
 }

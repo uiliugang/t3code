@@ -6,6 +6,7 @@ import {
   type ProjectIconOverride,
   ProjectId,
   type ProjectScript,
+  ProjectWorkspaceConfigInput,
   SCRIPT_RUN_COMMAND_PATTERN,
   type ThreadEnvMode,
 } from "@t3tools/contracts";
@@ -22,6 +23,7 @@ export interface ProjectCreateCommand {
   readonly projectId: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
+  readonly workspaceConfig?: ProjectWorkspaceConfigInput;
   readonly scripts?: ReadonlyArray<ProjectScript>;
 }
 
@@ -31,6 +33,8 @@ export interface ProjectMetaUpdateCommand {
   readonly projectId: ProjectId;
   readonly title?: string;
   readonly workspaceRoot?: string;
+  readonly workspaceConfig?: ProjectWorkspaceConfigInput;
+  readonly expectedWorkspaceVersion?: number;
   readonly defaultModelSelection?: ModelSelection | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly autoPull?: boolean;
@@ -105,6 +109,8 @@ const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
 /** Read state and commit the planned event under the project lock. */
+const isWorkspaceConfig = Schema.is(ProjectWorkspaceConfigInput);
+
 export function planProjectCommand(input: {
   readonly command: ProjectCommand;
   readonly state: ProjectCommandState;
@@ -130,6 +136,19 @@ export function planProjectCommand(input: {
           conflictingProjectId: state.workspaceOwner.projectId,
         });
   const occurredAt = DateTime.formatIso(input.now);
+  if (command.type !== "project.delete" && command.workspaceConfig !== undefined) {
+    if (!isWorkspaceConfig(command.workspaceConfig)) {
+      return invariant(
+        "Workspace roots must have unique IDs and aliases and a selected primary root.",
+      );
+    }
+    const primary = command.workspaceConfig.roots.find(
+      (root) => root.id === command.workspaceConfig?.primaryRootId,
+    );
+    if (primary?.sourcePath !== command.workspaceRoot) {
+      return invariant("The workspace root must match the primary repository directory.");
+    }
+  }
   const base = {
     eventId: input.eventId,
     aggregateKind: "project" as const,
@@ -149,7 +168,8 @@ export function planProjectCommand(input: {
         );
       }
       const conflict = requireWorkspaceAvailable(command.workspaceRoot);
-      if (conflict !== undefined) return Result.fail(conflict);
+      if (conflict !== undefined && command.workspaceConfig === undefined)
+        return Result.fail(conflict);
       return Result.succeed({
         ...base,
         type: "project.created",
@@ -157,6 +177,9 @@ export function planProjectCommand(input: {
           projectId: command.projectId,
           title: command.title,
           workspaceRoot: command.workspaceRoot,
+          ...(command.workspaceConfig === undefined
+            ? {}
+            : { workspaceConfig: { ...command.workspaceConfig, version: 1 } }),
           defaultModelSelection: null,
           faviconPath: null,
           projectIcon: null,
@@ -170,6 +193,24 @@ export function planProjectCommand(input: {
     case "project.meta.update": {
       const project = activeProject;
       if (project === undefined) return missingProject();
+      if (
+        command.workspaceConfig !== undefined &&
+        command.expectedWorkspaceVersion !== (project.workspaceConfig?.version ?? 0)
+      ) {
+        return invariant(
+          "Workspace configuration changed. Reload before saving repository changes.",
+        );
+      }
+      if (
+        project.workspaceConfig !== undefined &&
+        command.workspaceConfig === undefined &&
+        command.workspaceRoot !== undefined &&
+        command.workspaceRoot !== project.workspaceRoot
+      ) {
+        return invariant(
+          "Change the primary directory through the workspace repository configuration.",
+        );
+      }
       if (
         command.projectIcon?.kind === "monogram" &&
         Array.from(monogramSegmenter.segment(command.projectIcon.text)).length > 2
@@ -189,7 +230,12 @@ export function planProjectCommand(input: {
       }
       if (command.workspaceRoot !== undefined) {
         const conflict = requireWorkspaceAvailable(command.workspaceRoot);
-        if (conflict !== undefined) return Result.fail(conflict);
+        if (
+          conflict !== undefined &&
+          command.workspaceConfig === undefined &&
+          project.workspaceConfig === undefined
+        )
+          return Result.fail(conflict);
       }
       return Result.succeed({
         ...base,
@@ -198,6 +244,14 @@ export function planProjectCommand(input: {
           projectId: command.projectId,
           ...(command.title === undefined ? {} : { title: command.title }),
           ...(command.workspaceRoot === undefined ? {} : { workspaceRoot: command.workspaceRoot }),
+          ...(command.workspaceConfig === undefined
+            ? {}
+            : {
+                workspaceConfig: {
+                  ...command.workspaceConfig,
+                  version: (project.workspaceConfig?.version ?? 0) + 1,
+                },
+              }),
           ...(command.defaultModelSelection === undefined
             ? {}
             : { defaultModelSelection: command.defaultModelSelection }),

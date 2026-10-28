@@ -1,3 +1,4 @@
+import { useQuietThreadShell } from "../../state/entities";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ThreadPreviewState } from "../../previewStateStore";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
@@ -127,8 +128,20 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     });
   };
   const createBrowserSurfaceStable = useStableCallback(createBrowserSurface);
+  const workspace = useQuietThreadShell(activeThreadRef)?.workspace;
+  const selectDiffRepository = (resourceId?: import("@t3tools/contracts").ExecutionResourceId) => {
+    if (!activeThreadRef || !workspace) return;
+    const store = useDiffPanelStore.getState();
+    const selected =
+      resourceId ?? store.selectedRepositoryByThreadKey[scopedThreadKey(activeThreadRef)];
+    const target =
+      workspace.resources.find((resource) => resource.id === selected)?.id ??
+      workspace.bindings.find((binding) => binding.rootId === workspace.primaryRootId)?.resourceId;
+    if (target) store.selectRepository(activeThreadRef, target);
+  };
   const addDiffSurface = () => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
+    selectDiffRepository();
     useDiffPanelStore.getState().selectGitScope(activeThreadRef, "branch");
     useRightPanelStore.getState().open(activeThreadRef, "diff");
     onDiffPanelOpen?.();
@@ -293,11 +306,16 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     useRightPanelStore.getState().openPullRequest(activeThreadRef, pullRequestPanelTarget);
   };
   const addPullRequestSurfaceStable = useStableCallback(addPullRequestSurface);
-  const onOpenTurnDiff = (runId: RunId, filePath?: string) => {
+  const onOpenTurnDiff = (
+    runId: RunId,
+    filePath?: string,
+    resourceId?: import("@t3tools/contracts").ExecutionResourceId,
+  ) => {
     if (!isServerThread || !activeThreadRef) return;
     const diffOpen =
       selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, activeThreadRef) === "diff";
     explicitDiffOpenRef.current = diffOpen ? null : activeThreadRef;
+    selectDiffRepository(resourceId);
     useDiffPanelStore.getState().selectTurn(activeThreadRef, runId, filePath);
     useRightPanelStore.getState().open(activeThreadRef, "diff");
     onDiffPanelOpen?.();

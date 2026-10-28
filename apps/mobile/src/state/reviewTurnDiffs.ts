@@ -1,4 +1,9 @@
-import type { EnvironmentId, OrchestrationGetTurnDiffResult, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationGetTurnDiffResult,
+  ThreadId,
+  ThreadRepositoryTarget,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 
@@ -13,14 +18,21 @@ const lastTurnDiffsFamily = Atom.family((key: string) =>
   ),
 );
 
-export function lastReviewTurnDiffsAtom(environmentId: EnvironmentId, threadId: ThreadId) {
-  return lastTurnDiffsFamily(JSON.stringify([environmentId, threadId]));
+export function lastReviewTurnDiffsAtom(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  resourceId?: string,
+) {
+  return lastTurnDiffsFamily(JSON.stringify([environmentId, threadId, resourceId ?? null]));
 }
 
 export const recordReviewTurnDiffAnswer = (
   target: {
     readonly environmentId: EnvironmentId;
-    readonly input: { readonly ignoreWhitespace?: boolean };
+    readonly input: {
+      readonly repositoryTarget?: ThreadRepositoryTarget;
+      readonly ignoreWhitespace?: boolean;
+    };
   },
   value: OrchestrationGetTurnDiffResult,
   registry: AtomRegistry.AtomRegistry,
@@ -31,7 +43,11 @@ export const recordReviewTurnDiffAnswer = (
     if (target.input.ignoreWhitespace === true || value.fromTurnCount !== value.toTurnCount - 1) {
       return;
     }
-    const atom = lastReviewTurnDiffsAtom(target.environmentId, value.threadId);
+    const atom = lastReviewTurnDiffsAtom(
+      target.environmentId,
+      value.threadId,
+      target.input.repositoryTarget?.resourceId,
+    );
     const current = registry.get(atom);
     if (current[value.toTurnCount] === value.diff) return;
     registry.set(atom, { ...current, [value.toTurnCount]: value.diff });

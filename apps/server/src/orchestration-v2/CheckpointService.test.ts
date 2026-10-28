@@ -17,6 +17,66 @@ import * as Layer from "effect/Layer";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
+
+it.effect("captures distinct repository refs and rejects a partial checkpoint set", () =>
+  Effect.gen(function* () {
+    const refs = new Map<string, string>();
+    const workspace = workspaceFixture();
+    const layer = CheckpointService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          Layer.mock(CheckpointStore.CheckpointStore)({
+            isGitRepository: () => Effect.succeed(true),
+            hasCheckpointRef: ({ cwd, checkpointRef }) =>
+              Effect.succeed(refs.get(checkpointRef) === cwd),
+            captureCheckpoint: ({ cwd, checkpointRef }) =>
+              Effect.sync(() => {
+                refs.set(checkpointRef, cwd);
+              }),
+            diffCheckpoints: () => Effect.succeed("1\t0\tindex.ts\n"),
+            listAuthoredPaths: () => Effect.succeed(null),
+          }),
+        ),
+      ),
+      Layer.provideMerge(NodeCrypto.layer),
+    );
+    yield* Effect.gen(function* () {
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const scope = yield* checkpoints.prepareRootRunScope({
+        threadId: ThreadId.make("multi"),
+        runId: RunId.make("run"),
+        rootNodeId: NodeId.make("node"),
+        providerThreadId: ProviderThreadId.make("provider"),
+        cwd: workspace.resources[0]!.checkoutRoot,
+        workspace,
+        createdAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+      });
+      yield* checkpoints.captureBaseline({ scope, ordinalWithinScope: 0 });
+      const checkpoint = yield* checkpoints.capture({
+        scope,
+        runId: scope.runId,
+        nodeId: scope.nodeId,
+        ordinalWithinScope: 1,
+        appRunOrdinal: 1,
+        capturedAt: scope.createdAt,
+      });
+      assert.equal(checkpoint.status, "ready");
+      assert.equal(checkpoint.workspaceRevisionId, workspace.id);
+      assert.equal(new Set(checkpoint.resources?.map((member) => member.ref)).size, 2);
+      assert.equal(new Set(checkpoint.resources?.map((member) => member.checkpointId)).size, 2);
+      assert.equal(new Set(checkpoint.files.map((file) => file.resourceId)).size, 2);
+      const error = yield* checkpoints
+        .restore({
+          scope,
+          checkpoint: { ...checkpoint, resources: checkpoint.resources!.slice(0, 1) },
+        })
+        .pipe(Effect.flip);
+      assert.equal(error._tag, "CheckpointRestoreError");
+    }).pipe(Effect.provide(layer));
+  }),
+);
 
 it.effect(
   "skips unsupported baseline and turn checkpoints without swallowing capture failures",

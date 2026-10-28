@@ -1,3 +1,4 @@
+import { useThreadRepository } from "../../../state/use-thread-repository";
 import { ScreenContent } from "../../../components/ui/ScreenContent";
 import { SheetHeader } from "../../../components/ui/SheetHeader";
 import { Button } from "../../../components/ui/Button";
@@ -28,9 +29,11 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { selectedThread } = useThreadSelection();
-  const { selectedThreadCwd } = useSelectedThreadWorktree();
-  const gitState = useSelectedThreadGitState();
-  const gitActions = useSelectedThreadGitActions();
+  const liveRepository = useThreadRepository();
+  const [resourceId] = useState(liveRepository.selectionTarget);
+  const gitState = useSelectedThreadGitState(resourceId);
+  const gitActions = useSelectedThreadGitActions(resourceId);
+  const { selectedThreadCwd } = useSelectedThreadWorktree(resourceId);
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
 
   const gitStatus = useEnvironmentQuery(

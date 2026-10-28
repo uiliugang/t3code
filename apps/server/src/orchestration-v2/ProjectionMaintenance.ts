@@ -134,6 +134,7 @@ export const layer: Layer.Layer<
           yield* sql`DELETE FROM orchestration_v2_projection_run_attempts`;
           yield* sql`DELETE FROM orchestration_v2_projection_runs`;
           yield* sql`DELETE FROM orchestration_v2_projection_threads`;
+          yield* sql`DELETE FROM orchestration_v2_projection_workspace_revisions`;
           yield* sql`DELETE FROM orchestration_v2_turn_item_positions`;
 
           const pageSize = 500;
@@ -243,6 +244,7 @@ export const layer: Layer.Layer<
       let throughReceiptRowId = bounds[0]?.receipt_row_id ?? 0;
       const retainedThreadIds = new Set<string>();
       const retainedReadStateThreadIds = new Set<string>();
+      const retainedWorkspaceRevisionIds = new Set<string>();
       // Retain each key's oldest candidate, deleting it only when an older event appears.
       const oldestCandidateByEntityKey = new Map<string, number | null>();
       let deletedEventCount = 0;
@@ -257,6 +259,7 @@ export const layer: Layer.Layer<
           readonly event_type: string;
           readonly entity_id: string | null;
           readonly imported_legacy_thread: number;
+          readonly workspace_revision_id: string | null;
         }>`
           SELECT
             event.sequence,
@@ -264,6 +267,8 @@ export const layer: Layer.Layer<
             event.aggregate_kind,
             event.stream_id,
             event.event_type,
+            CASE WHEN event.aggregate_kind = 'thread' AND event.event_type LIKE 'thread.%'
+              THEN json_extract(event.payload_json, '$.workspace.id') ELSE NULL END AS workspace_revision_id,
             CASE
               WHEN event.application_event_version = 2
                 AND event.event_type IN ('message.updated', 'node.updated')
@@ -297,6 +302,11 @@ export const layer: Layer.Layer<
         const page = rows.slice(0, COMPACTION_PAGE_SIZE);
         const obsolete: number[] = [];
         for (const row of page) {
+          const retainsWorkspace =
+            row.workspace_revision_id !== null &&
+            !retainedWorkspaceRevisionIds.has(row.workspace_revision_id);
+          if (row.workspace_revision_id !== null)
+            retainedWorkspaceRevisionIds.add(row.workspace_revision_id);
           if (row.imported_legacy_thread === 1) {
             obsolete.push(row.sequence);
           } else if (row.application_event_version === 2) {
@@ -304,15 +314,17 @@ export const layer: Layer.Layer<
               row.aggregate_kind === "thread" &&
               supersedableThreadEventTypes.has(row.event_type)
             ) {
-              if (retainedThreadIds.has(row.stream_id)) obsolete.push(row.sequence);
+              if (retainedThreadIds.has(row.stream_id) && !retainsWorkspace)
+                obsolete.push(row.sequence);
               else retainedThreadIds.add(row.stream_id);
             } else if (
               row.aggregate_kind === "thread" &&
               readStateThreadEventTypes.has(row.event_type)
             ) {
               if (
-                retainedThreadIds.has(row.stream_id) ||
-                retainedReadStateThreadIds.has(row.stream_id)
+                !retainsWorkspace &&
+                (retainedThreadIds.has(row.stream_id) ||
+                  retainedReadStateThreadIds.has(row.stream_id))
               ) {
                 obsolete.push(row.sequence);
               } else retainedReadStateThreadIds.add(row.stream_id);

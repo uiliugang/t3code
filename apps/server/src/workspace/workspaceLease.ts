@@ -20,3 +20,9 @@ export const withWorkspaceLease = <A, E, R>(
       ),
     );
   });
+
+export const withWorkspaceLeases = <A, E, R>(
+  paths: ReadonlyArray<string>,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  [...new Set(paths)].sort().reduceRight((next, cwd) => withWorkspaceLease(cwd, next), effect);

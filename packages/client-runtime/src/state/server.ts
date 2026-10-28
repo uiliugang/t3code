@@ -1149,6 +1149,14 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    workspaceRecovery: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:workspace:recovery",
+      tag: WS_METHODS.workspaceRecovery,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.threadId}`,
+      },
+    }),
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,

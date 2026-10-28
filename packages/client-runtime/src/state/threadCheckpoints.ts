@@ -1,5 +1,7 @@
 import type {
   CheckpointId,
+  WorkspaceRevisionId,
+  ExecutionResourceId,
   CheckpointRef,
   CheckpointScopeId,
   MessageId,
@@ -10,6 +12,7 @@ import * as DateTime from "effect/DateTime";
 
 export interface ThreadCheckpointSummary {
   readonly checkpointId?: CheckpointId;
+  readonly workspaceRevisionId?: WorkspaceRevisionId | undefined;
   readonly scopeId?: CheckpointScopeId;
   readonly runId: RunId;
   readonly checkpointTurnCount: number;
@@ -17,6 +20,8 @@ export interface ThreadCheckpointSummary {
   readonly status: "ready" | "missing" | "error" | "stale";
   readonly files: ReadonlyArray<{
     readonly path: string;
+    readonly resourceId?: ExecutionResourceId | undefined;
+    readonly repositoryName?: string | undefined;
     readonly kind: string;
     readonly additions: number;
     readonly deletions: number;
@@ -37,6 +42,7 @@ export function deriveThreadCheckpointSummaries(
     return [
       {
         checkpointId: checkpoint.id,
+        workspaceRevisionId: checkpoint.workspaceRevisionId,
         scopeId: checkpoint.scopeId,
         runId: checkpoint.runId,
         checkpointTurnCount: checkpoint.appRunOrdinal,

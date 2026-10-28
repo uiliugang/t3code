@@ -22,6 +22,48 @@ const decodeProjectCreatePayload = Schema.decodeUnknownSync(ProjectCreatePayload
 const decodeProjectUpdatePayload = Schema.decodeUnknownSync(ProjectUpdatePayload);
 const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
 
+describe("project workspace configuration", () => {
+  const roots = [
+    {
+      id: "frontend",
+      alias: "frontend",
+      sourcePath: "/repos/web",
+      description: "Web client",
+      defaultSelected: true,
+      accessIntent: "write",
+    },
+    {
+      id: "backend",
+      alias: "backend",
+      sourcePath: "/repos/api",
+      description: "API server",
+      defaultSelected: true,
+      accessIntent: "write",
+    },
+  ];
+
+  it("preserves repository identity and the expected configuration version across RPC decoding", () => {
+    const input = {
+      workspaceConfig: { primaryRootId: "frontend", roots },
+      expectedWorkspaceVersion: 2,
+    };
+    expect(decodeProjectUpdatePayload(input)).toEqual(input);
+  });
+
+  it("rejects ambiguous roots and a missing or unselected primary root", () => {
+    for (const workspaceConfig of [
+      { primaryRootId: "missing", roots },
+      { primaryRootId: "frontend", roots: [roots[0], roots[0]] },
+      { primaryRootId: "frontend", roots: [roots[0], { ...roots[1], alias: "frontend" }] },
+      { primaryRootId: "frontend", roots: [{ ...roots[0], defaultSelected: false }, roots[1]] },
+    ]) {
+      expect(() =>
+        decodeProjectUpdatePayload({ workspaceConfig, expectedWorkspaceVersion: 0 }),
+      ).toThrow();
+    }
+  });
+});
+
 describe("project RPC errors", () => {
   it("derives stable messages from structured request context while retaining causes", () => {
     const cause = new Error("sensitive platform detail");

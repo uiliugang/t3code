@@ -1,3 +1,6 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as WorkspaceCleanup from "./workspace/WorkspaceCleanup.ts";
+import * as WorkspaceRepositoryResolver from "./workspace/WorkspaceRepositoryResolver.ts";
 import {
   GitCommandError,
   OrchestrationV2AppThreadJson,
@@ -219,6 +222,7 @@ const make = Effect.gen(function* () {
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const workspaceCleanup = yield* WorkspaceCleanup.WorkspaceCleanup;
   const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const sql = yield* SqlClient.SqlClient;
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -370,6 +374,10 @@ const make = Effect.gen(function* () {
       SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
       FROM orchestration_v2_projection_threads
       WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL
+      UNION SELECT json_extract(resource.value, '$.checkoutRoot') AS worktreePath
+      FROM orchestration_v2_projection_workspace_revisions, json_each(payload_json, '$.resources') AS resource
+      UNION SELECT json_extract(resource.value, '$.path') AS worktreePath
+      FROM workspace_preparations, json_each(payload_json, '$.resources') AS resource
     `.pipe(NodeSqliteClient.readOnly);
     const referenced = new Set<string>();
     for (const row of rows) {
@@ -768,6 +776,69 @@ const make = Effect.gen(function* () {
       ...deletedThreads.filter((thread) => !groups.has(path.resolve(thread.worktreePath!))),
     ];
     for (const thread of candidates) {
+      if (thread.workspace !== undefined) {
+        const settings = resolveWorktreeCleanup(serverSettings, thread.projectId);
+        const entry: StorageCleanupReportEntry = {
+          kind: "worktree",
+          outcome: "kept",
+          reason: "Workspace history retains this group until its task is deleted",
+          path: thread.worktreePath!,
+          projectPath: null,
+          threadId: thread.id,
+          threadTitle: thread.title,
+          bytes: null,
+          files: null,
+        };
+        if (!("workspaceRoot" in thread) || !settings.worktreeOnDelete) {
+          entries.push(entry);
+          continue;
+        }
+        const result = yield* workspaceCleanup
+          .remove({
+            threadId: thread.id,
+            workspace: thread.workspace,
+            managedRoots: roots,
+            isOccupied: Effect.fn("StorageCleanup.workspaceOccupied")(
+              function* (cwd) {
+                if (hasTerminal(cwd)) return true;
+                const sessionRows = yield* sql<{
+                  payload_json: string;
+                }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
+                for (const row of sessionRows) {
+                  const session = yield* decodeCleanupSession(row.payload_json);
+                  if (
+                    (session.cwd === cwd || inside(cwd, session.cwd)) &&
+                    (yield* providerSessions.isLive(session.id))
+                  )
+                    return true;
+                }
+                return false;
+              },
+              (effect) =>
+                effect.pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new WorkspaceCleanup.WorkspaceCleanupError({
+                        revisionId: thread.workspace!.id,
+                        detail: "Cannot inspect workspace occupancy.",
+                        cause,
+                      }),
+                  ),
+                ),
+            ),
+          })
+          .pipe(Effect.result);
+        entries.push(
+          result._tag === "Success"
+            ? {
+                ...entry,
+                outcome: "removed",
+                reason: "Deleted task worktree group removed; branches and history retained",
+              }
+            : { ...entry, reason: result.failure.message },
+        );
+        continue;
+      }
       const settings = resolveWorktreeCleanup(serverSettings, thread.projectId);
       if (!worktreeCleanupEnabled(settings)) continue;
       const worktreePath = path.resolve(thread.worktreePath!);
@@ -1783,4 +1854,10 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(StorageCleanup, make);
+export const layer = Layer.effect(StorageCleanup, make).pipe(
+  Layer.provide(
+    WorkspaceCleanup.layer.pipe(
+      Layer.provide(WorkspaceRepositoryResolver.layer.pipe(Layer.provide(NodeCrypto.layer))),
+    ),
+  ),
+);

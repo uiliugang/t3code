@@ -1,7 +1,15 @@
+import { workspaceFixture } from "../orchestration-v2/testkit/workspaceFixtures.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
-import { CheckpointRef, CheckpointScopeId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  CheckpointId,
+  CheckpointRef,
+  CheckpointScopeId,
+  RunId,
+  ThreadId,
+  WorkspaceRevisionId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -343,3 +351,65 @@ it.effect("preserves an exact-fit filtered patch across batches without a marker
     assert.strictEqual(patchReads, 2);
   }).pipe(Effect.provide(layer));
 });
+
+it.effect(
+  "keeps same-name files in different repositories on their own checkpoint refs and rejects an unspecified revision",
+  () => {
+    const workspace = workspaceFixture();
+    const projection = makeProjection();
+    const calls: Array<{ cwd: string; fromCheckpointRef: string; toCheckpointRef: string }> = [];
+    const layer = layerFor({
+      projection: Effect.succeed({
+        ...projection,
+        checkpointScopes: projection.checkpointScopes.map((scope) => ({ ...scope, workspace })),
+        checkpoints: projection.checkpoints.map((checkpoint) => ({
+          ...checkpoint,
+          resources: workspace.resources.map((resource) => ({
+            resourceId: resource.id,
+            scopeId: CheckpointScopeId.make(`${checkpoint.scopeId}:resource:${resource.id}`),
+            checkpointId: CheckpointId.make(`${checkpoint.scopeId}:${resource.id}`),
+            ref: CheckpointRef.make(`refs/t3/${resource.name}/second`),
+            status: "ready" as const,
+          })),
+        })),
+      }),
+      diffCheckpoints: (input) =>
+        Effect.sync(() => {
+          calls.push(input);
+          return `diff --git a/src/index.ts b/src/index.ts\n+${input.cwd}`;
+        }),
+    });
+    return Effect.gen(function* () {
+      const query = yield* CheckpointDiffQuery.CheckpointDiffQuery;
+      for (const resource of workspace.resources) {
+        const result = yield* query.getTurnDiff({
+          threadId,
+          fromTurnCount: 0,
+          toTurnCount: 2,
+          repositoryTarget: {
+            threadId,
+            workspaceRevisionId: workspace.id,
+            resourceId: resource.id,
+          },
+        });
+        assert.include(result.diff, resource.checkoutRoot);
+        assert.equal(calls.at(-1)!.toCheckpointRef, `refs/t3/${resource.name}/second`);
+      }
+      assert.notEqual(calls[0]!.fromCheckpointRef, calls[1]!.fromCheckpointRef);
+      yield* query.getTurnDiff({ threadId, fromTurnCount: 0, toTurnCount: 2 }).pipe(Effect.flip);
+      yield* query
+        .getTurnDiff({
+          threadId,
+          fromTurnCount: 0,
+          toTurnCount: 2,
+          repositoryTarget: {
+            threadId,
+            workspaceRevisionId: WorkspaceRevisionId.make("stale"),
+            resourceId: workspace.resources[0]!.id,
+          },
+        })
+        .pipe(Effect.flip);
+      assert.lengthOf(calls, 2);
+    }).pipe(Effect.provide(layer));
+  },
+);
