@@ -1,4 +1,3 @@
-import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   AuthOrchestrationOperateScope,
@@ -236,7 +235,6 @@ export const OpenInPicker = memo(function OpenInPicker({
   onOpenTerminal?: (() => void) | undefined;
   canOpenTerminal?: boolean;
 }) {
-  const t = useUiTranslation();
   const isPanel = displayMode === "panel";
   const ActionGroup = isPanel ? "div" : Group;
   const panelAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -301,9 +299,13 @@ export const OpenInPicker = memo(function OpenInPicker({
   const editorItems = (
     <>
       {onOpenTerminal ? (
-        <MenuItem disabled={!canOpenTerminal} onClick={onOpenTerminal}>
+        <MenuItem
+          density={presentation === "menu" ? "touch" : "default"}
+          disabled={!canOpenTerminal}
+          onClick={onOpenTerminal}
+        >
           <TerminalIcon aria-hidden />
-          <MenuItemLabel>{t("Open in terminal")}</MenuItemLabel>
+          <MenuItemLabel>Terminal</MenuItemLabel>
         </MenuItem>
       ) : null}
       {remote.mode === "remote-unavailable" ? (

@@ -326,7 +326,7 @@ export function AppearanceSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("repository-terminal-button")}
-          description={t("Show Open in terminal in each repository's Open in menu.")}
+          description={t("Show Terminal in each repository's Open in menu.")}
           control={
             <Switch
               checked={settings.showRepositoryTerminalButton}
