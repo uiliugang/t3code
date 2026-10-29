@@ -5,6 +5,7 @@ import {
   type Project,
   type ProjectCreatePayload,
   type ProjectUpdatePayload,
+  type ProjectWorkspaceConfigInput,
   type ProjectSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -172,6 +173,7 @@ export const make = Effect.gen(function* () {
     id: row.projectId,
     title: row.title,
     workspaceRoot: row.workspaceRoot,
+    ...(row.workspaceConfig === undefined ? {} : { workspaceConfig: row.workspaceConfig }),
     repositoryIdentity: enrichment?.repositoryIdentity ?? null,
     faviconPath: row.faviconPath ?? enrichment?.faviconPath ?? null,
     defaultModelSelection: row.defaultModelSelection,
@@ -222,6 +224,18 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  const normalizeWorkspaceConfig = Effect.fn("ProjectService.normalizeWorkspaceConfig")(function* (
+    projectId: ProjectId,
+    config: ProjectWorkspaceConfigInput,
+  ) {
+    const roots = yield* Effect.forEach(config.roots, (root) =>
+      normalizeWorkspaceRoot({ projectId, workspaceRoot: root.sourcePath }).pipe(
+        Effect.map((sourcePath) => ({ ...root, sourcePath })),
+      ),
+    );
+    return { ...config, roots };
+  });
+
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
@@ -234,7 +248,7 @@ export const make = Effect.gen(function* () {
           ? undefined
           : Option.getOrUndefined(
               yield* projects
-                .findActiveByWorkspaceRoot(workspaceRoot)
+                .findActiveByWorkspaceRoot(workspaceRoot, { allowAmbiguous: true })
                 .pipe(Effect.mapError(dispatchError)),
             );
       const now = yield* DateTime.now;
@@ -322,13 +336,19 @@ export const make = Effect.gen(function* () {
     const normalized = yield* normalizeWorkspaceRoot({ workspaceRoot });
     const row = yield* (
       options?.includeDeleted === true
-        ? projects
-            .list({ includeDeleted: true })
-            .pipe(
-              Effect.map((rows) =>
-                Option.fromUndefinedOr(rows.find((row) => row.workspaceRoot === normalized)),
-              ),
-            )
+        ? projects.list({ includeDeleted: true }).pipe(
+            Effect.flatMap((rows) => {
+              const matches = rows.filter((row) => row.workspaceRoot === normalized);
+              return matches.length > 1
+                ? Effect.fail(
+                    new ProjectStore.ProjectStoreV2Error({
+                      operation: "resolve-ambiguous-workspace",
+                      cause: "Multiple projects use this directory. Select a project by ID.",
+                    }),
+                  )
+                : Effect.succeed(Option.fromUndefinedOr(matches[0]));
+            }),
+          )
         : projects.findActiveByWorkspaceRoot(normalized)
     ).pipe(
       Effect.mapError((cause) => new ProjectOperationError({ operation: "list-projects", cause })),
@@ -338,9 +358,15 @@ export const make = Effect.gen(function* () {
 
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
+      const workspaceConfig =
+        input.workspaceConfig === undefined
+          ? undefined
+          : yield* normalizeWorkspaceConfig(input.projectId, input.workspaceConfig);
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
-        workspaceRoot: input.workspaceRoot,
+        workspaceRoot:
+          workspaceConfig?.roots.find((root) => root.id === workspaceConfig.primaryRootId)
+            ?.sourcePath ?? input.workspaceRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
       yield* commit({
@@ -349,6 +375,7 @@ export const make = Effect.gen(function* () {
         projectId: input.projectId,
         title: input.title,
         workspaceRoot,
+        ...(workspaceConfig === undefined ? {} : { workspaceConfig }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
       });
       yield* projectEnrichment.invalidate([workspaceRoot]);
@@ -363,19 +390,59 @@ export const make = Effect.gen(function* () {
         return yield* new ProjectNotFoundError({ projectId: input.projectId });
       }
       const previousRoot = existing.value.workspaceRoot;
+      const workspaceConfig =
+        input.workspaceConfig === undefined
+          ? undefined
+          : yield* normalizeWorkspaceConfig(input.projectId, input.workspaceConfig);
+      const requestedRoot =
+        workspaceConfig?.roots.find((root) => root.id === workspaceConfig.primaryRootId)
+          ?.sourcePath ?? input.workspaceRoot;
       const workspaceRoot =
-        input.workspaceRoot === undefined
+        requestedRoot === undefined
           ? previousRoot
           : yield* normalizeWorkspaceRoot({
               projectId: input.projectId,
-              workspaceRoot: input.workspaceRoot,
+              workspaceRoot: requestedRoot,
             });
+      if (workspaceRoot !== previousRoot) {
+        const shell = yield* threadProjections.getShellSnapshot().pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProjectOperationError({
+                operation: "list-threads",
+                projectId: input.projectId,
+                cause,
+              }),
+          ),
+        );
+        if (
+          [...shell.threads, ...shell.archivedThreads].some(
+            (thread) =>
+              thread.projectId === input.projectId &&
+              thread.deletedAt === null &&
+              thread.worktreePath === null &&
+              thread.projectWorkspaceRoot === undefined,
+          )
+        )
+          return yield* new ProjectOperationError({
+            operation: "normalize-workspace",
+            projectId: input.projectId,
+            cause:
+              "This project contains legacy tasks without a pinned directory. Create a new workspace instead of moving their root.",
+          });
+      }
       yield* commit({
         type: "project.meta.update",
         commandId: input.commandId,
         projectId: input.projectId,
         ...(input.title === undefined ? {} : { title: input.title }),
-        ...(workspaceRoot === previousRoot ? {} : { workspaceRoot }),
+        ...(workspaceRoot === previousRoot && workspaceConfig === undefined
+          ? {}
+          : { workspaceRoot }),
+        ...(workspaceConfig === undefined ? {} : { workspaceConfig }),
+        ...(input.expectedWorkspaceVersion === undefined
+          ? {}
+          : { expectedWorkspaceVersion: input.expectedWorkspaceVersion }),
         ...(input.defaultModelSelection === undefined
           ? {}
           : { defaultModelSelection: input.defaultModelSelection }),

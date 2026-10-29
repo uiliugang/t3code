@@ -1,3 +1,5 @@
+import { useThreadRepository } from "./use-thread-repository";
+import type { ThreadRepositorySelection } from "./use-thread-repository";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
@@ -7,7 +9,8 @@ import { useSelectedThreadWorktreePath, useThreadWorktreePath } from "./use-thre
 import { useThreadSelection } from "./use-thread-selection";
 import { resolvePreferredThreadWorktreePath } from "../features/terminal/terminalLaunchContext";
 
-export function useSelectedThreadWorktree() {
+export function useSelectedThreadWorktree(resourceId?: ThreadRepositorySelection) {
+  const { workspace, repository, repositoryTarget } = useThreadRepository(resourceId);
   const { selectedThread, selectedThreadProject } = useThreadSelection();
   const detailWorktreePath = useSelectedThreadWorktreePath();
 
@@ -17,8 +20,17 @@ export function useSelectedThreadWorktree() {
   });
 
   return {
-    selectedThreadWorktreePath,
-    selectedThreadCwd: selectedThreadWorktreePath ?? selectedThreadProject?.workspaceRoot ?? null,
+    repositoryTarget,
+    selectedThreadWorktreePath:
+      repository?.ownership === "managed" ? repository.checkoutRoot : selectedThreadWorktreePath,
+    selectedThreadCwd:
+      workspace && !repository
+        ? null
+        : (repository?.checkoutRoot ??
+          selectedThreadWorktreePath ??
+          selectedThread?.projectWorkspaceRoot ??
+          selectedThreadProject?.workspaceRoot ??
+          null),
   };
 }
 
@@ -38,11 +50,16 @@ export function useThreadCwd(ref: ScopedThreadRef | null): string | null {
   const project = useProject(
     ref === null || projectId === null ? null : { environmentId: ref.environmentId, projectId },
   );
+  const workspace = shell?.workspace ?? detailThread?.workspace;
   return (
+    workspace?.bindings.find((binding) => binding.rootId === workspace.primaryRootId)
+      ?.executionPath ??
     resolvePreferredThreadWorktreePath({
       threadShellWorktreePath: shell?.worktreePath ?? null,
       threadDetailWorktreePath: detailWorktreePath,
     }) ??
+    shell?.projectWorkspaceRoot ??
+    detailThread?.projectWorkspaceRoot ??
     project?.workspaceRoot ??
     null
   );

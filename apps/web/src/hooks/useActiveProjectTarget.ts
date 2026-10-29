@@ -23,7 +23,13 @@ export function useActiveProjectTarget(): ActiveProjectTarget | null {
           candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,
       )
     : null;
-  const cwd = thread?.worktreePath ?? project?.workspaceRoot;
+  const cwd =
+    activeThread?.workspace?.bindings.find(
+      (binding) => binding.rootId === activeThread.workspace?.primaryRootId,
+    )?.executionPath ??
+    thread?.worktreePath ??
+    activeThread?.projectWorkspaceRoot ??
+    project?.workspaceRoot;
 
   if (!thread || !threadId || !project || !cwd) return null;
 

@@ -1,3 +1,4 @@
+import type { ThreadRepositorySelection } from "./use-thread-repository";
 import { useAtomMount } from "@effect/atom-react";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -52,7 +53,7 @@ const selectedThreadStatusRevalidation = createVcsStatusRevalidationAtomFamily({
     ),
 });
 
-export function useSelectedThreadGitActions() {
+export function useSelectedThreadGitActions(resourceId?: ThreadRepositorySelection) {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -62,7 +63,7 @@ export function useSelectedThreadGitActions() {
   const createWorktree = useAtomCommand(vcsEnvironment.createWorktree, { reportFailure: false });
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const { selectedThread, selectedThreadProject } = useThreadSelection();
-  const canWriteSourceControl = useEnvironmentScope(
+  const hasSourceControlScope = useEnvironmentScope(
     selectedThread?.environmentId ?? null,
     AuthSourceControlWriteScope,
   );
@@ -70,17 +71,20 @@ export function useSelectedThreadGitActions() {
     selectedThread?.environmentId ?? null,
     AuthOrchestrationOperateScope,
   );
+  const { selectedThreadCwd, selectedThreadWorktreePath, repositoryTarget } =
+    useSelectedThreadWorktree(resourceId);
+  const canWriteSourceControl = hasSourceControlScope && selectedThreadCwd !== null;
   const canChangeThreadBranch = canWriteSourceControl && canOperateThread;
-  const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
   const runStackedAction = useAtomCommand(
     vcsActionManager.runStackedAction({
       environmentId: selectedThread?.environmentId ?? null,
       cwd: selectedThreadCwd,
+      ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
     }),
     { reportFailure: false },
   );
 
-  const selectedThreadGitRootCwd = selectedThreadProject?.workspaceRoot ?? null;
+  const selectedThreadGitRootCwd = selectedThreadCwd;
   const branchTarget = {
     environmentId: selectedThread?.environmentId ?? null,
     cwd: selectedThreadGitRootCwd,
@@ -94,6 +98,7 @@ export function useSelectedThreadGitActions() {
       readonly worktreePath?: string | null;
     },
   ) => {
+    if (repositoryTarget !== undefined) return AsyncResult.success(undefined);
     if (!readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope)) {
       return AsyncResult.failure<never, EnvironmentAuthorizationError>(
         Cause.fail(
@@ -131,7 +136,7 @@ export function useSelectedThreadGitActions() {
     const execute = () =>
       refreshStatus({
         environmentId: selectedThread.environmentId,
-        input: { cwd },
+        input: { cwd, ...(repositoryTarget === undefined ? {} : { repositoryTarget }) },
       });
     const result = options?.quiet
       ? await execute()
@@ -239,7 +244,11 @@ export function useSelectedThreadGitActions() {
       async ({ thread, cwd }) => {
         const result = await switchRef({
           environmentId: thread.environmentId,
-          input: { cwd, refName: branch },
+          input: {
+            cwd,
+            ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
+            refName: branch,
+          },
         });
         if (AsyncResult.isFailure(result)) {
           return result;
@@ -265,7 +274,12 @@ export function useSelectedThreadGitActions() {
       async ({ thread, cwd }) => {
         const result = await createRef({
           environmentId: thread.environmentId,
-          input: { cwd, refName: branch, switchRef: true },
+          input: {
+            cwd,
+            ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
+            refName: branch,
+            switchRef: true,
+          },
         });
         if (AsyncResult.isFailure(result)) {
           return result;
@@ -288,6 +302,7 @@ export function useSelectedThreadGitActions() {
     readonly baseBranch: string;
     readonly newBranch: string;
   }) => {
+    if (repositoryTarget !== undefined) return null;
     return runSelectedThreadGitMutation(
       "create_worktree",
       "Creating worktree",
@@ -325,7 +340,7 @@ export function useSelectedThreadGitActions() {
       async ({ thread, cwd }) => {
         const result = await pull({
           environmentId: thread.environmentId,
-          input: { cwd },
+          input: { cwd, ...(repositoryTarget === undefined ? {} : { repositoryTarget }) },
         });
         if (AsyncResult.isFailure(result)) {
           return result;

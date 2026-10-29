@@ -33,6 +33,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -57,9 +58,12 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import * as WorkspaceRepositoryResolver from "../workspace/WorkspaceRepositoryResolver.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import { ROLLBACK_FAILED_MESSAGE } from "./CheckpointRollbackService.ts";
+import { isCheckpointRestoreIsolated } from "./CheckpointRestoreSafety.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
@@ -85,8 +89,13 @@ import * as ResourceCleanupService from "./ResourceCleanupService.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
 
-const layerPlatformTest = Layer.merge(
+const layerPlatformTest = Layer.mergeAll(
+  Layer.mock(TerminalManager.TerminalManager)({
+    subscribeMetadata: (listener) =>
+      listener({ type: "snapshot", terminals: [] }).pipe(Effect.as(() => {})),
+  }),
   NodeServices.layer,
   Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
     resolveLink: () => Effect.die("unused title link"),
@@ -635,6 +644,137 @@ const layerSharedApplicationDataPlaneTest = Layer.mergeAll(
   Layer.provide(layerTestProviderInstanceRegistry),
   Layer.provide(layerGitWorkflowTest),
   Layer.provide(layerPlatformTest),
+);
+
+it.live(
+  "keeps the complete workspace checkpoint scope through preparation and follow-up turns",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const threadId = ThreadId.make("runtime-workspace-checkpoints");
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const resolver = yield* WorkspaceRepositoryResolver.WorkspaceRepositoryResolver;
+      const temp = yield* fs.makeTempDirectoryScoped({ prefix: "t3-workspace-checkpoint-" });
+      const fixture = workspaceFixture();
+      const resources = yield* Effect.forEach(fixture.resources, (resource) =>
+        Effect.gen(function* () {
+          const cwd = path.join(temp, resource.name);
+          yield* fs.makeDirectory(cwd);
+          yield* git.execute({ operation: "test", cwd, args: ["init", "-b", "main"] });
+          return { ...resource, checkoutRoot: cwd, identity: yield* resolver.inspect(cwd) };
+        }),
+      );
+      const workspace = workspaceFixture({
+        resources,
+        bindings: fixture.bindings.map((binding) => ({
+          ...binding,
+          executionPath: resources.find((resource) => resource.id === binding.resourceId)!
+            .checkoutRoot,
+        })),
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("workspace-checkpoints-create"),
+        threadId,
+        projectId: workspace.projectId,
+        title: "Workspace checkpoints",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("workspace-checkpoints-prepare"),
+        threadId,
+        messageId: MessageId.make("workspace-checkpoints-prepare"),
+        text: "Update both repositories.",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "defer_start" },
+      });
+      const preparingRun = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+      yield* orchestrator.dispatch({
+        type: "thread.workspace.bind",
+        commandId: CommandId.make("workspace-checkpoints-bind"),
+        threadId,
+        preparingRunId: preparingRun.id,
+        expectedWorkspaceRevisionId: null,
+        workspace,
+      });
+      yield* orchestrator.dispatch({
+        type: "prepared-run.release",
+        commandId: CommandId.make("workspace-checkpoints-release"),
+        threadId,
+        runId: preparingRun.id,
+      });
+      const started = yield* orchestrator.getThreadProjection(threadId);
+      const run = started.runs[0]!;
+      assert.equal(run.workspaceRevisionId, workspace.id);
+      assert.deepEqual(started.checkpointScopes[0]?.workspace, workspace);
+      assert.isFalse(
+        yield* isCheckpointRestoreIsolated(
+          started.thread,
+          { cwd: resources[0]!.checkoutRoot },
+          {
+            fileSystem: fs,
+            path,
+            projections: yield* ProjectionStore.ProjectionStoreV2,
+            projects: yield* ProjectStore.ProjectStoreV2,
+          },
+        ),
+      );
+      const now = yield* DateTime.now;
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make("workspace-checkpoints-complete"),
+            type: "run.updated",
+            threadId,
+            runId: run.id,
+            occurredAt: now,
+            payload: { ...run, status: "completed", completedAt: now },
+          },
+        ],
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("workspace-checkpoints-follow-up"),
+        threadId,
+        messageId: MessageId.make("workspace-checkpoints-follow-up"),
+        text: "Continue in both repositories.",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+      const continued = yield* orchestrator.getThreadProjection(threadId);
+      assert.lengthOf(continued.runs, 2);
+      assert.lengthOf(continued.checkpointScopes, 1);
+      assert.deepEqual(continued.checkpointScopes[0]?.workspace, workspace);
+      assert.equal(continued.runs[1]?.workspaceRevisionId, workspace.id);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer)),
+          GitVcsDriver.layer,
+        ).pipe(
+          Layer.provide(VcsProcess.layer),
+          Layer.provide(layerServerConfig),
+          Layer.provideMerge(NodeServices.layer),
+          Layer.merge(layerTest),
+        ),
+      ),
+    ),
 );
 
 it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {

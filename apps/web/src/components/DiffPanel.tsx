@@ -1,4 +1,5 @@
 import { useCodeTheme } from "~/hooks/useCodeTheme";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
@@ -229,10 +230,33 @@ export default function DiffPanel({
         }
       : null,
   );
-  const activeCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot;
-  const activeRepositoryRoot = activeThread?.worktreePath
-    ? undefined
-    : activeProject?.repositoryIdentity?.rootPath;
+  const selectedResourceId = useDiffPanelStore((state) =>
+    routeThreadRef
+      ? state.selectedRepositoryByThreadKey[scopedThreadKey(routeThreadRef)]
+      : undefined,
+  );
+  const primaryResourceId = activeThread?.workspace?.bindings.find(
+    (binding) => binding.rootId === activeThread.workspace?.primaryRootId,
+  )?.resourceId;
+  const repository =
+    activeThread?.workspace?.resources.find((resource) => resource.id === selectedResourceId) ??
+    activeThread?.workspace?.resources.find((resource) => resource.id === primaryResourceId);
+  const repositoryTarget =
+    activeThread?.workspace && repository
+      ? {
+          threadId: activeThread.id,
+          workspaceRevisionId: activeThread.workspace.id,
+          resourceId: repository.id,
+        }
+      : undefined;
+  const activeCwd =
+    repository?.checkoutRoot ??
+    activeThread?.worktreePath ??
+    activeThread?.projectWorkspaceRoot ??
+    activeProject?.workspaceRoot;
+  const activeRepositoryRoot =
+    repository?.checkoutRoot ??
+    (activeThread?.worktreePath ? undefined : activeProject?.repositoryIdentity?.rootPath);
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );
@@ -251,7 +275,7 @@ export default function DiffPanel({
       : null,
   );
   const diffSelection = useDiffPanelStore((state) =>
-    selectThreadDiffPanelSelection(state.byThreadKey, routeThreadRef),
+    selectThreadDiffPanelSelection(state.byThreadKey, routeThreadRef, repository?.id),
   );
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const turnDiffSummaries = useThreadCheckpointSummaries(routeThreadRef);
@@ -265,11 +289,12 @@ export default function DiffPanel({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rewrites the persisted diff store selection to the latest turn when the selected turn disappears
   useEffect(() => {
     if (!routeThreadRef || diffSelection.kind !== "turn") return;
+    if (repository) useDiffPanelStore.getState().selectRepository(routeThreadRef, repository.id);
     useDiffPanelStore.getState().reconcileTurnSelection(
       routeThreadRef,
       orderedTurnDiffSummaries.map((summary) => summary.runId),
     );
-  }, [diffSelection, orderedTurnDiffSummaries, routeThreadRef]);
+  }, [diffSelection, orderedTurnDiffSummaries, routeThreadRef, repository]);
 
   const selectedRunId = diffSelection.kind === "turn" ? diffSelection.turnId : null;
   const selectedGitScope = diffSelection.kind === "unstaged" ? "unstaged" : "branch";
@@ -294,7 +319,7 @@ export default function DiffPanel({
         : `Turn ${selectedCheckpointTurnCount ?? "?"}`;
   const reviewSectionId = selectedTurn ? `turn:${selectedTurn.runId}` : selectedGitScope;
   const collapseScopeKey = routeThreadRef
-    ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}:${reviewSectionId}`
+    ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}:${repository?.id ?? "legacy"}:${reviewSectionId}`
     : null;
   const codeViewMountKey = `${collapseScopeKey ?? reviewSectionId}:${codeViewRevision}`;
   const reviewSectionTitle = selectedTurn
@@ -316,6 +341,15 @@ export default function DiffPanel({
       fromTurnCount: selectedCheckpointRange?.fromTurnCount ?? null,
       toTurnCount: selectedCheckpointRange?.toTurnCount ?? null,
       ignoreWhitespace: diffIgnoreWhitespace,
+      ...(repositoryTarget === undefined
+        ? {}
+        : {
+            repositoryTarget: {
+              ...repositoryTarget,
+              workspaceRevisionId:
+                selectedTurn?.workspaceRevisionId ?? repositoryTarget.workspaceRevisionId,
+            },
+          }),
       cacheScope: selectedTurn ? `turn:${selectedTurn.runId}` : null,
     },
     { enabled: isGitRepo && selectedTurn !== undefined },
@@ -324,6 +358,7 @@ export default function DiffPanel({
     canReadFiles && selectedRunId === null && activeThread && activeCwd
       ? {
           cwd: activeCwd,
+          ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
           ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
           ignoreWhitespace: diffIgnoreWhitespace,
         }
@@ -388,6 +423,7 @@ export default function DiffPanel({
       ? createGitDiffFileContentsLoader(getDiffFileContents, {
           environmentId: activeThread.environmentId,
           cwd: preview.cwd,
+          ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
           sourceKind: selectedGitSource.kind,
           baseRef: selectedGitSource.baseRef,
           headRef: selectedGitSource.headRef,
@@ -409,6 +445,7 @@ export default function DiffPanel({
           environmentId: activeThread.environmentId,
           input: {
             cwd: branchDiffPreview.data.cwd,
+            ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
             includeMatchingRemoteRefs: true,
             refKind: "local",
             ...(baseRefQuery.trim().length > 0 ? { query: baseRefQuery.trim() } : {}),
@@ -426,6 +463,7 @@ export default function DiffPanel({
           environmentId: activeThread.environmentId,
           input: {
             cwd: branchDiffPreview.data.cwd,
+            ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
             includeMatchingRemoteRefs: true,
             refKind: "remote",
             ...(baseRefQuery.trim().length > 0 ? { query: baseRefQuery.trim() } : {}),
@@ -620,14 +658,17 @@ export default function DiffPanel({
 
   const selectTurn = (runId: RunId) => {
     if (!routeThreadRef) return;
+    if (repository) useDiffPanelStore.getState().selectRepository(routeThreadRef, repository.id);
     useDiffPanelStore.getState().selectTurn(routeThreadRef, runId);
   };
   const selectGitScope = (scope: "branch" | "unstaged") => {
     if (!routeThreadRef) return;
+    if (repository) useDiffPanelStore.getState().selectRepository(routeThreadRef, repository.id);
     useDiffPanelStore.getState().selectGitScope(routeThreadRef, scope);
   };
   const selectBranchBaseRef = (baseRef: string | null) => {
     if (!routeThreadRef) return;
+    if (repository) useDiffPanelStore.getState().selectRepository(routeThreadRef, repository.id);
     useDiffPanelStore.getState().selectBranchBaseRef(routeThreadRef, baseRef);
   };
   const selectedTurnValue = selectedTurn ? `turn:${selectedTurn.runId}` : "";
@@ -970,6 +1011,34 @@ export default function DiffPanel({
 
   return (
     <DiffPanelShell mode={mode} header={headerRow}>
+      {activeThread?.workspace && activeThread.workspace.resources.length > 1 && routeThreadRef ? (
+        <div className="border-b border-border px-3 py-2">
+          <label className="flex items-center gap-2 text-xs">
+            Repository
+            <select
+              aria-label="Diff repository"
+              className="min-w-0 flex-1 rounded border border-border bg-background p-1"
+              value={repository?.id ?? ""}
+              onChange={(event) => {
+                const resource = activeThread.workspace!.resources.find(
+                  (entry) => entry.id === event.target.value,
+                );
+                if (resource)
+                  useDiffPanelStore.getState().selectRepository(routeThreadRef, resource.id);
+              }}
+            >
+              {activeThread.workspace.resources.map((resource) => (
+                <option key={resource.id} value={resource.id}>
+                  {activeThread
+                    .workspace!.bindings.filter((binding) => binding.resourceId === resource.id)
+                    .map((binding) => binding.alias)
+                    .join(" / ")}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
       {!activeThread ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           Select a thread to inspect turn diffs.

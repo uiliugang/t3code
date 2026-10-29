@@ -343,15 +343,20 @@ it("persists language changes across hydration while preserving other device set
     chatWidth: "wide",
   });
   await ensureClientSettingsHydrated();
-  await persistClientSettingsPatch({ uiLanguage: "zh-CN" });
+  expect(getClientSettings().showRepositoryTerminalButton).toBe(false);
+  await persistClientSettingsPatch({ uiLanguage: "zh-CN", showRepositoryTerminalButton: true });
   const stored = persistenceMocks.setClientSettings.mock.calls.at(-1)![0];
   expect(stored.uiLanguage).toBe("zh-CN");
   expect(stored.chatWidth).toBe("wide");
+  expect(stored.showRepositoryTerminalButton).toBe(true);
   __resetClientSettingsPersistenceForTests();
   persistenceMocks.getClientSettings.mockResolvedValue(stored);
   await ensureClientSettingsHydrated();
   expect(getClientSettings().uiLanguage).toBe("zh-CN");
+  expect(getClientSettings().showRepositoryTerminalButton).toBe(true);
   await persistClientSettingsPatch({ uiLanguage: "en" });
   expect(getClientSettings().uiLanguage).toBe("en");
   expect(getClientSettings().chatWidth).toBe("wide");
+  await persistClientSettingsPatch({ showRepositoryTerminalButton: false });
+  expect(getClientSettings().showRepositoryTerminalButton).toBe(false);
 });

@@ -148,6 +148,14 @@ const make = Effect.gen(function* () {
       );
 
     const projection = yield* loadThread(scope);
+    if (
+      projection.thread.workspaceConfiguration !== undefined ||
+      projection.thread.workspace !== undefined
+    )
+      return yield* failure(
+        "invalid_request",
+        "Launch a new task with the worktree workspace strategy to prepare the complete repository group. A running multi-repository task cannot be handed off to one worktree.",
+      );
     if (projection.thread.worktreePath !== null) {
       return yield* alreadyInWorktree(projection.thread.worktreePath);
     }

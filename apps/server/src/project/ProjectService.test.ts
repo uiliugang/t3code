@@ -3,7 +3,13 @@ import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { CommandId, type Project, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  CommandId,
+  type Project,
+  ProjectId,
+  ProviderInstanceId,
+  WorkspaceRootId,
+} from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -32,6 +38,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 import * as ProjectService from "./ProjectService.ts";
+import { projectMutationOperation } from "./ProjectMutation.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 
 const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
@@ -152,11 +159,25 @@ it.layer(layerTest)("ProjectService", (it) => {
       } as const;
       yield* TestClock.setTime(Date.parse("2026-06-20T10:00:00.000Z"));
 
-      const created = yield* service.create({
+      const created = yield* projectMutationOperation(service, {
+        type: "project.create",
         commandId: CommandId.make("command:project:create"),
         projectId,
         title: "Project",
         workspaceRoot: "/work/project/",
+        workspaceConfig: {
+          primaryRootId: WorkspaceRootId.make("frontend"),
+          roots: [
+            {
+              id: WorkspaceRootId.make("frontend"),
+              alias: "frontend",
+              sourcePath: "/work/project/",
+              description: "Web",
+              defaultSelected: true,
+              accessIntent: "write",
+            },
+          ],
+        },
         defaultModelSelection: modelSelection,
         scripts: [
           {
@@ -169,6 +190,7 @@ it.layer(layerTest)("ProjectService", (it) => {
         ],
       });
       assert.equal(created.workspaceRoot, "/work/project");
+      assert.equal(created.workspaceConfig?.version, 1);
       assert.isNull(created.repositoryIdentity);
       assert.isNull(created.faviconPath);
 
@@ -180,7 +202,8 @@ it.layer(layerTest)("ProjectService", (it) => {
       assert.equal(hydratedCreated?.repositoryIdentity?.canonicalKey, "github.com/t3tools/project");
       assert.equal(hydratedCreated?.faviconPath, "/work/project/favicon.svg");
 
-      const updated = yield* service.update({
+      const updated = yield* projectMutationOperation(service, {
+        type: "project.update",
         commandId: CommandId.make("command:project:update"),
         projectId,
         title: "Renamed",
@@ -188,6 +211,28 @@ it.layer(layerTest)("ProjectService", (it) => {
         projectIcon: { kind: "emoji", emoji: "🦊" },
         faviconPath: "/work/project/custom.svg",
         defaultThreadEnvMode: "worktree",
+        expectedWorkspaceVersion: 1,
+        workspaceConfig: {
+          primaryRootId: WorkspaceRootId.make("frontend"),
+          roots: [
+            {
+              id: WorkspaceRootId.make("frontend"),
+              alias: "frontend",
+              sourcePath: "/work/project/",
+              description: "Web",
+              defaultSelected: true,
+              accessIntent: "write",
+            },
+            {
+              id: WorkspaceRootId.make("backend"),
+              alias: "backend",
+              sourcePath: "/work/api/",
+              description: "API",
+              defaultSelected: true,
+              accessIntent: "write",
+            },
+          ],
+        },
       });
       assert.equal(updated.title, "Renamed");
       assert.equal(updated.createdAt, created.createdAt);
@@ -195,6 +240,15 @@ it.layer(layerTest)("ProjectService", (it) => {
       assert.deepEqual(updated.projectIcon, { kind: "emoji", emoji: "🦊" });
       assert.equal(updated.faviconPath, "/work/project/custom.svg");
       assert.equal(updated.defaultThreadEnvMode, "worktree");
+      assert.equal(updated.workspaceConfig?.version, 2);
+      assert.deepEqual(
+        updated.workspaceConfig?.roots.map((root) => root.sourcePath),
+        ["/work/project", "/work/api"],
+      );
+      assert.deepEqual(
+        Option.getOrThrow(yield* service.getShell(projectId)).workspaceConfig,
+        updated.workspaceConfig,
+      );
 
       const byId = yield* service.getById(projectId);
       const byWorkspace = yield* service.getByWorkspaceRoot("/work/project/");
@@ -217,6 +271,7 @@ it.layer(layerTest)("ProjectService", (it) => {
       assert.isNull(reset.projectIcon);
       assert.equal(reset.faviconPath, hydratedCreated.faviconPath);
       assert.isNull(reset.defaultThreadEnvMode);
+      assert.deepEqual(reset.workspaceConfig, updated.workspaceConfig);
       assert.deepEqual(
         (yield* service.snapshot).projects.map((project) => project.id),
         [projectId],

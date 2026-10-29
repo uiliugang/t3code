@@ -75,6 +75,11 @@ import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
 import Migration0070 from "./Migrations/070_PeerLinks.ts";
 import Migration0071 from "./Migrations/071_PeerLinkFence.ts";
 import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import Migration0073 from "./Migrations/073_ProjectWorkspaceConfiguration.ts";
+import Migration0074 from "./Migrations/074_WorkspaceRevisions.ts";
+import Migration0077 from "./Migrations/077_WorkspaceCleanupJournal.ts";
+import Migration0076 from "./Migrations/076_WorkspaceRestoreJournal.ts";
+import Migration0075 from "./Migrations/075_WorkspacePreparation.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -150,6 +155,11 @@ const migrationEntries = [
   [70, "PeerLinks", Migration0070],
   [71, "PeerLinkFence", Migration0071],
   [72, "WaitingLinkRequestIndex", Migration0072],
+  [73, "ProjectWorkspaceConfiguration", Migration0073],
+  [74, "WorkspaceRevisions", Migration0074],
+  [75, "WorkspacePreparation", Migration0075],
+  [76, "WorkspaceRestoreJournal", Migration0076],
+  [77, "WorkspaceCleanupJournal", Migration0077],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

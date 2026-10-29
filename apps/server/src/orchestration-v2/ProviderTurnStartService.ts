@@ -28,7 +28,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { withWorkspaceLease, withWorkspaceLeases } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -591,7 +591,7 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      if (worktreePath !== null && branch !== null) {
+      if (projection.thread.workspace === undefined && worktreePath !== null && branch !== null) {
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
@@ -1541,9 +1541,20 @@ export const layer: Layer.Layer<
     return ProviderTurnStartServiceV2.of({
       start: Effect.fn("ProviderTurnStartService.start")(
         function* (input) {
-          // Storage cleanup removes worktrees under the same lease. Only startup
-          // holds it; the provider turn runs after it is released.
+          // Resource leases protect the complete multi-repository turn; checkout leases protect startup from cleanup.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          if (thread.workspace !== undefined) {
+            return yield* withWorkspaceLeases(
+              thread.workspace.resources.map((resource) => `resource:${resource.id}`),
+              Effect.gen(function* () {
+                const providerTurn = yield* withWorkspaceLeases(
+                  thread.workspace!.resources.map((resource) => resource.checkoutRoot),
+                  start(input),
+                );
+                if (providerTurn !== undefined) yield* providerTurn;
+              }),
+            );
+          }
           const providerTurn = yield* thread.worktreePath === null
             ? start(input)
             : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));

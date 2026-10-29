@@ -24,6 +24,7 @@ import type {
   TaskUpdateOutput,
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { workspaceFixture } from "../testkit/workspaceFixtures.ts";
 import {
   ChatAttachmentId,
   type ChatAttachment,
@@ -503,7 +504,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
   });
 
-  it("invalidates live-query reuse when MCP credentials rotate", () => {
+  it("invalidates live-query reuse when MCP credentials or workspace bindings change", () => {
     const threadId = ThreadId.make("thread-claude-mcp-credential-rotation");
     const mcpSession = mcpSessionFor(threadId);
     const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
@@ -526,6 +527,14 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       }),
     );
     assert.notEqual(rotatedKey, initialKey);
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession,
+      readOnlySandbox: false,
+    });
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(queryPolicy, overrides, "workspace:1"),
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(queryPolicy, overrides, "workspace:2"),
+    );
   });
 
   it("matches the read-only allowlist to the orchestrator toolkit annotations", () => {
@@ -589,11 +598,19 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
       nativeThreadId: "native-thread-claude-mcp",
       resume: false,
       cwd: "/workspace",
+      workspace: workspaceFixture(),
+      attachmentsDir: "/attachments",
       allowedTools: overrides.allowedTools ?? [],
       mcpServers: overrides.mcpServers ?? {},
       environment: {},
     });
     assert.isObject(options.systemPrompt);
+    assert.deepEqual(options.additionalDirectories, [
+      "/workspace",
+      "/tasks/frontend",
+      "/tasks/backend",
+      "/attachments",
+    ]);
     const systemPrompt = options.systemPrompt as {
       readonly type: string;
       readonly preset: string;

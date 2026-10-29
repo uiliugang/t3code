@@ -1,4 +1,4 @@
-import { type RunId } from "@t3tools/contracts";
+import { type ExecutionResourceId, type RunId } from "@t3tools/contracts";
 import { type MouseEvent, type ReactNode, memo, useLayoutEffect, useRef, useState } from "react";
 import { type TurnDiffFileChange } from "../../types";
 import {
@@ -34,7 +34,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   allDirectoriesExpanded: boolean;
   resolvedTheme: "light" | "dark";
   onToggleAllDirectories: () => void;
-  onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenTurnDiff: (runId: RunId, filePath?: string, resourceId?: ExecutionResourceId) => void;
   onFileContextMenu?: ChangedFileContextMenuHandler | undefined;
 }) {
   const {
@@ -46,6 +46,12 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     onOpenTurnDiff,
     onFileContextMenu,
   } = props;
+  const groupedFiles = new Map<ExecutionResourceId | undefined, TurnDiffFileChange[]>();
+  for (const file of files) {
+    const group = groupedFiles.get(file.resourceId) ?? [];
+    group.push(file);
+    groupedFiles.set(file.resourceId, group);
+  }
   const summaryStat = summarizeTurnDiffStats(files);
   const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
 
@@ -106,7 +112,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                   size="xs"
                   variant="ghost-muted"
                   aria-label="Open diff"
-                  onClick={() => onOpenTurnDiff(runId, files[0]?.path)}
+                  onClick={() => onOpenTurnDiff(runId, files[0]?.path, files[0]?.resourceId)}
                 />
               }
             >
@@ -117,15 +123,24 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           </Tooltip>
         </div>
       </div>
-      <ChangedFilesTree
-        key={`${runId}:${allDirectoriesExpanded}`}
-        runId={runId}
-        files={files}
-        allDirectoriesExpanded={allDirectoriesExpanded}
-        resolvedTheme={resolvedTheme}
-        onOpenTurnDiff={onOpenTurnDiff}
-        onFileContextMenu={onFileContextMenu}
-      />
+      {[...groupedFiles].map(([resourceId, repositoryFiles]) => (
+        <div key={resourceId ?? "legacy"}>
+          {resourceId ? (
+            <div className="px-3 py-2 text-xs font-medium text-muted-foreground">
+              {repositoryFiles[0]?.repositoryName}
+            </div>
+          ) : null}
+          <ChangedFilesTree
+            key={`${runId}:${resourceId ?? "legacy"}:${allDirectoriesExpanded}`}
+            runId={runId}
+            files={repositoryFiles}
+            allDirectoriesExpanded={allDirectoriesExpanded}
+            resolvedTheme={resolvedTheme}
+            onOpenTurnDiff={(id, path) => onOpenTurnDiff(id, path, resourceId)}
+            onFileContextMenu={resourceId === undefined ? onFileContextMenu : undefined}
+          />
+        </div>
+      ))}
     </div>
   );
 });
@@ -135,7 +150,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
   files: ReadonlyArray<TurnDiffFileChange>;
   allDirectoriesExpanded: boolean;
   resolvedTheme: "light" | "dark";
-  onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenTurnDiff: (runId: RunId, filePath?: string, resourceId?: ExecutionResourceId) => void;
   onFileContextMenu?: ChangedFileContextMenuHandler | undefined;
 }) {
   const { files, allDirectoriesExpanded, onOpenTurnDiff, resolvedTheme, runId, onFileContextMenu } =

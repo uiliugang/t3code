@@ -923,7 +923,8 @@ export const layer: Layer.Layer<
             })
             .pipe(
               Effect.catchCauseIf(
-                (cause) => !Cause.hasInterruptsOnly(cause),
+                (cause) =>
+                  input.checkpointScope.workspace === undefined && !Cause.hasInterruptsOnly(cause),
                 (_cause) =>
                   Effect.logWarning(
                     "orchestration V2 checkpoint baseline capture failed; starting provider without a baseline",

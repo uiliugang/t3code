@@ -1,3 +1,4 @@
+import { ProjectRepositoriesSettings } from "./ProjectRepositoriesSettings";
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -9,7 +10,11 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedProjectKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import { AsyncResult } from "effect/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
@@ -106,7 +111,9 @@ export function ProjectSettingsPanel({
       key: selected.projectKey,
       environmentId,
       checkoutKey,
-      memberKeys: members.map((member) => member.physicalProjectKey),
+      memberKeys: members.map((member) =>
+        scopedProjectKey(scopeProjectRef(member.environmentId, member.id)),
+      ),
     };
     if (!sameProjectSelection(lastSelection, current)) setLastSelection(current);
   }
@@ -118,7 +125,9 @@ export function ProjectSettingsPanel({
     lastSelection.checkoutKey === checkoutKey
       ? groups.find((group) =>
           group.memberProjects.some((member) =>
-            lastSelection.memberKeys.includes(member.physicalProjectKey),
+            lastSelection.memberKeys.includes(
+              scopedProjectKey(scopeProjectRef(member.environmentId, member.id)),
+            ),
           ),
         )
       : undefined;
@@ -129,7 +138,14 @@ export function ProjectSettingsPanel({
         search={{
           project: successor.projectKey,
           machine: environmentId ?? undefined,
-          checkout: checkoutKey ?? undefined,
+          checkout:
+            checkoutKey === null
+              ? undefined
+              : successor.memberProjects.find((member) =>
+                  lastSelection?.memberKeys.includes(
+                    scopedProjectKey(scopeProjectRef(member.environmentId, member.id)),
+                  ),
+                )?.physicalProjectKey,
         }}
         replace
         hashScrollIntoView={false}
@@ -560,6 +576,12 @@ function ProjectDetail({
             }
           />
         </SettingsSection>
+        {group.memberProjects.map((member) => (
+          <ProjectRepositoriesSettings
+            key={`${member.environmentId}:${member.id}`}
+            project={member}
+          />
+        ))}
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {hasMultipleCheckouts ? checkoutChoices : null}

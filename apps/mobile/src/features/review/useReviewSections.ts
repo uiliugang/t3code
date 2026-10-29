@@ -52,12 +52,15 @@ export function useReviewSections(input: {
   });
   const { canReadFiles } = fileAccess;
   const selectedThread = useSelectedThreadProjection();
-  const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const { selectedThreadCwd, repositoryTarget } = useSelectedThreadWorktree();
   const diffPreview = useEnvironmentQuery(
     canReadFiles && enabled && environmentId !== undefined && selectedThreadCwd !== null
       ? reviewEnvironment.diffPreview({
           environmentId,
-          input: { cwd: selectedThreadCwd },
+          input: {
+            cwd: selectedThreadCwd,
+            ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
+          },
         })
       : null,
   );
@@ -69,7 +72,7 @@ export function useReviewSections(input: {
 
   const lastTurnDiffs = useAtomValue(
     environmentId !== undefined && threadId !== undefined
-      ? lastReviewTurnDiffsAtom(environmentId, threadId)
+      ? lastReviewTurnDiffsAtom(environmentId, threadId, repositoryTarget?.resourceId)
       : NO_TURN_DIFFS_ATOM,
   );
 
@@ -100,6 +103,15 @@ export function useReviewSections(input: {
     ? getReviewSectionIdForCheckpoint(activeCheckpoint)
     : null;
   const activeTurnDiff = useCheckpointDiff({
+    ...(repositoryTarget === undefined
+      ? {}
+      : {
+          repositoryTarget: {
+            ...repositoryTarget,
+            workspaceRevisionId:
+              activeCheckpoint?.workspaceRevisionId ?? repositoryTarget.workspaceRevisionId,
+          },
+        }),
     environmentId: enabled ? (environmentId ?? null) : null,
     threadId: enabled ? (threadId ?? null) : null,
     fromTurnCount:

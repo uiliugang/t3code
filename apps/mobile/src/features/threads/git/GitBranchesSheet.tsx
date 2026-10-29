@@ -1,5 +1,6 @@
 import { isMainOrMasterBranch, sanitizeFeatureBranchName } from "@t3tools/shared/git";
 import { useNewTaskProjectDefaults } from "../use-new-task-project-defaults";
+import { useThreadRepository } from "../../../state/use-thread-repository";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
@@ -32,9 +33,12 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const mainBranchOnly =
     useNewTaskProjectDefaults(selectedThreadProject).projectSettings.settings
       .newWorktreesMainBranchOnly;
-  const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
-  const gitState = useSelectedThreadGitState();
-  const gitActions = useSelectedThreadGitActions();
+  const liveRepository = useThreadRepository();
+  const [resourceId] = useState(liveRepository.selectionTarget);
+  const { selectedThreadCwd, selectedThreadWorktreePath, repositoryTarget } =
+    useSelectedThreadWorktree(resourceId);
+  const gitState = useSelectedThreadGitState(resourceId);
+  const gitActions = useSelectedThreadGitActions(resourceId);
   const { canChangeThreadBranch } = gitActions;
 
   const gitStatus = useEnvironmentQuery(
@@ -140,60 +144,62 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
             />
           </View>
 
-          <View className="bg-card android:gap-3 android:rounded-[20px] android:p-4 ios:gap-2 ios:rounded-[18px] ios:border ios:border-border ios:px-4 ios:py-4">
-            <Text className="android:text-foreground android:text-base android:font-t3-medium ios:text-foreground-secondary ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">
-              New worktree
-            </Text>
-            {Platform.OS === "android" ? (
-              <Text className="text-foreground-secondary text-sm">Base branch</Text>
-            ) : null}
-            <TextInput
-              value={worktreeBaseBranch}
-              onChangeText={setWorktreeBaseBranch}
-              placeholder="main"
-              accessibilityLabel="Worktree base branch"
-              className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
-            />
-            {Platform.OS === "android" ? (
-              <Text className="text-foreground-secondary text-sm">New branch</Text>
-            ) : null}
-            <TextInput
-              value={worktreeBranchName}
-              onChangeText={setWorktreeBranchName}
-              placeholder="feature/mobile-thread"
-              accessibilityLabel="Worktree branch name"
-              className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
-            />
-            <SheetActionButton
-              icon="square.split.2x1"
-              label="Create worktree"
-              tone="primary"
-              disabled={
-                !canChangeThreadBranch ||
-                busy ||
-                worktreeBaseBranch.trim().length === 0 ||
-                (mainBranchOnly &&
-                  !isMainOrMasterBranch(
-                    worktreeBaseBranch.trim(),
-                    availableBranches.find((branch) => branch.name === worktreeBaseBranch.trim())
-                      ?.remoteName,
-                  )) ||
-                worktreeBranchName.trim().length === 0
-              }
-              onPress={() => {
-                const baseBranch = worktreeBaseBranch.trim();
-                const newBranch = worktreeBranchName.trim();
-                if (baseBranch.length === 0 || newBranch.length === 0) return;
-                void gitActions
-                  .onCreateSelectedThreadWorktree({ baseBranch, newBranch })
-                  .then((result) => {
-                    if (result === null) return;
-                    setWorktreeBranchName("");
-                    navigation.goBack();
-                  });
-              }}
-            />
-          </View>
+          {repositoryTarget === undefined ? (
+            <View className="bg-card android:gap-3 android:rounded-[20px] android:p-4 ios:gap-2 ios:rounded-[18px] ios:border ios:border-border ios:px-4 ios:py-4">
+              <Text className="android:text-foreground android:text-base android:font-t3-medium ios:text-foreground-secondary ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">
+                New worktree
+              </Text>
+              {Platform.OS === "android" ? (
+                <Text className="text-foreground-secondary text-sm">Base branch</Text>
+              ) : null}
+              <TextInput
+                value={worktreeBaseBranch}
+                onChangeText={setWorktreeBaseBranch}
+                placeholder="main"
+                accessibilityLabel="Worktree base branch"
+                className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
+              />
+              {Platform.OS === "android" ? (
+                <Text className="text-foreground-secondary text-sm">New branch</Text>
+              ) : null}
+              <TextInput
+                value={worktreeBranchName}
+                onChangeText={setWorktreeBranchName}
+                placeholder="feature/mobile-thread"
+                accessibilityLabel="Worktree branch name"
+                className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
+              />
+              <SheetActionButton
+                icon="square.split.2x1"
+                label="Create worktree"
+                tone="primary"
+                disabled={
+                  !canChangeThreadBranch ||
+                  busy ||
+                  worktreeBaseBranch.trim().length === 0 ||
+                  (mainBranchOnly &&
+                    !isMainOrMasterBranch(
+                      worktreeBaseBranch.trim(),
+                      availableBranches.find((branch) => branch.name === worktreeBaseBranch.trim())
+                        ?.remoteName,
+                    )) ||
+                  worktreeBranchName.trim().length === 0
+                }
+                onPress={() => {
+                  const baseBranch = worktreeBaseBranch.trim();
+                  const newBranch = worktreeBranchName.trim();
+                  if (baseBranch.length === 0 || newBranch.length === 0) return;
+                  void gitActions
+                    .onCreateSelectedThreadWorktree({ baseBranch, newBranch })
+                    .then((result) => {
+                      if (result === null) return;
+                      setWorktreeBranchName("");
+                      navigation.goBack();
+                    });
+                }}
+              />
+            </View>
+          ) : null}
 
           <View className="gap-2">
             <Text className="text-foreground-secondary android:px-4 android:pb-1 android:pt-3 android:text-sm android:font-t3-medium ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">

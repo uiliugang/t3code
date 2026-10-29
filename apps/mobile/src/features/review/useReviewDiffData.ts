@@ -1,3 +1,4 @@
+import type { ThreadRepositoryTarget } from "@t3tools/contracts";
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 
@@ -124,6 +125,7 @@ export function useReviewDiffData(input: {
   readonly threadKey: string | null;
   readonly environmentId: EnvironmentId | undefined;
   readonly cwd: string | null;
+  readonly repositoryTarget?: ThreadRepositoryTarget | undefined;
   readonly selectedSection: ReviewSectionItem | null;
   readonly draftMessage: string;
 }) {
@@ -139,10 +141,11 @@ export function useReviewDiffData(input: {
         diff: selectedSection?.diff,
       });
   const registry = useContext(RegistryContext);
-  const { environmentId, cwd } = input;
+  const { environmentId, cwd, repositoryTarget } = input;
   const scope = JSON.stringify([
     environmentId,
     cwd,
+    repositoryTarget,
     source?.kind,
     source?.baseRef,
     source?.diffHash,
@@ -163,9 +166,13 @@ export function useReviewDiffData(input: {
                   input: {
                     cacheKey: scope,
                     // Newer preview revisions refresh patches read under an older one.
-                    preview: { cwd },
+                    preview: {
+                      cwd,
+                      ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
+                    },
                     request: {
                       cwd,
+                      ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
                       ...(lazySource.baseRef ? { baseRef: lazySource.baseRef } : {}),
                       file: {
                         path: file.path,
@@ -177,7 +184,7 @@ export function useReviewDiffData(input: {
                 })
               : null,
           ),
-    [environmentId, cwd, lazySource, indices, scope],
+    [environmentId, cwd, repositoryTarget, lazySource, indices, scope],
   );
   const parsedQuery = useMemo(
     () =>

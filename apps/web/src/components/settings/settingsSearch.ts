@@ -323,6 +323,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["wide full width column layout messages composer monitor"],
   },
   {
+    id: "repository-terminal-button",
+    title: "Repository terminal button",
+    to: "/settings/appearance",
+    searchTerms: ["terminal", "repository", "workspace", "button", "show", "hide"],
+  },
+  {
     id: "math-rendering",
     title: "Render math",
     to: "/settings/appearance",

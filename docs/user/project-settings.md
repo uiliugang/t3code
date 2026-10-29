@@ -46,6 +46,35 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Multiple repositories in one project
+
+In **Settings → Projects → Repositories**, add the local directories for the repositories
+that belong to a task, such as a frontend and backend. Give each a name and short context,
+choose the primary repository, and save. Paths refer to the selected environment's machine;
+remote clients configure that machine's directories. Codex and Claude support these workspaces.
+Other providers refuse a multi-repository task until their adapter supports it.
+
+New tasks use the saved repositories. Existing tasks keep their original directories, even
+when project settings change. The primary repository is the default directory. Choose **Worktree**
+for a new task to create an isolated checkout for every repository. Each repository can have
+its own base branch and setup command; the agent starts after the entire group is ready.
+A failed setup retains the prepared checkouts so retry can continue without discarding work.
+
+Thread details group branch, stack, pull requests, commit actions, and changes by repository.
+Collapsed repositories keep their branch and change totals visible. Choose a repository before
+viewing its diff, opening its terminal, or opening it in an editor. A commit or push affects
+that repository. Project actions still run in the primary repository.
+
+File restore checks and backs up the whole group. Close its terminals first. Shared checkouts
+cannot be restored; rewind the conversation without files instead. If recovery is required,
+inspect every repository and use **Workspace recovery**. Accepting current files preserves them
+and starts a fresh provider conversation, while keeping backups and earlier history.
+
+Automatic group cleanup runs only for deleted tasks when **Delete worktrees with deleted threads**
+is enabled. It retains the whole group if any checkout has local files, an open terminal, or
+another owner. Branches and checkpoint refs are retained. Failed preparations are also retained
+for inspection; cleanup does not remove them automatically.
+
 ## Worktree branch names
 
 In **Settings → Worktrees → Worktree branch naming**, choose a static prefix,

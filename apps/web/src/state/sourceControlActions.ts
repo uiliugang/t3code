@@ -19,6 +19,7 @@ import {
   type SourceControlProviderKind,
   type SourceControlRepositoryVisibility,
   type ThreadId,
+  type ThreadRepositoryTarget,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
@@ -40,6 +41,7 @@ export type SourceControlActionKind =
   | "preparePullRequestThread";
 
 export interface SourceControlActionScope {
+  readonly repositoryTarget?: ThreadRepositoryTarget;
   readonly environmentId: EnvironmentId | null;
   readonly cwd: string | null;
 }
@@ -174,7 +176,12 @@ export function useVcsInitAction(scope: SourceControlActionScope) {
     }
     return init({
       environmentId: target.environmentId,
-      input: { cwd: target.cwd },
+      input: {
+        cwd: target.cwd,
+        ...(scope.repositoryTarget === undefined
+          ? {}
+          : { repositoryTarget: scope.repositoryTarget }),
+      },
     });
   };
   return useAction({ kind: "init", label: "Initializing repository", scope, action });
@@ -205,7 +212,12 @@ export function useVcsPullAction(scope: SourceControlActionScope) {
     }
     return pull({
       environmentId: target.environmentId,
-      input: { cwd: target.cwd },
+      input: {
+        cwd: target.cwd,
+        ...(scope.repositoryTarget === undefined
+          ? {}
+          : { repositoryTarget: scope.repositoryTarget }),
+      },
     });
   };
   return useAction({

@@ -1,3 +1,5 @@
+import { workspaceRelativeFilePath } from "@t3tools/shared/path";
+import type { ThreadRepositoryTarget } from "@t3tools/contracts";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
@@ -114,6 +116,7 @@ import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { useOpenLink } from "~/browser/useOpenLink";
 
 interface GitActionsControlProps {
+  repositoryTarget?: ThreadRepositoryTarget;
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
   draftId?: DraftId;
@@ -930,7 +933,8 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
 }
 
 export default function GitActionsControl({
-  gitCwd,
+  gitCwd: requestedGitCwd,
+  repositoryTarget: requestedRepositoryTarget,
   activeThreadRef,
   draftId,
   compact = false,
@@ -943,7 +947,6 @@ export default function GitActionsControl({
     "thread branch metadata update",
   );
   const activeEnvironmentId = activeThreadRef?.environmentId ?? null;
-  const successScopeKey = `${activeEnvironmentId ?? ""}\u0000${gitCwd ?? ""}`;
   const canWriteSourceControl = useEnvironmentScope(
     activeEnvironmentId,
     AuthSourceControlWriteScope,
@@ -968,6 +971,22 @@ export default function GitActionsControl({
   );
   const activeServerThread =
     activeServerThreadShell ?? activeServerThreadProjection?.projection.thread ?? null;
+  const scopedResource = activeServerThread?.workspace?.resources.find(
+    (resource) =>
+      requestedGitCwd !== null &&
+      workspaceRelativeFilePath(requestedGitCwd, resource.checkoutRoot) !== null,
+  );
+  const gitCwd = scopedResource?.checkoutRoot ?? requestedGitCwd;
+  const successScopeKey = `${activeEnvironmentId ?? ""}\u0000${gitCwd ?? ""}`;
+  const repositoryTarget =
+    requestedRepositoryTarget ??
+    (scopedResource && activeServerThread?.workspace && activeThreadRef
+      ? {
+          threadId: activeThreadRef.threadId,
+          workspaceRevisionId: activeServerThread.workspace.id,
+          resourceId: scopedResource.id,
+        }
+      : undefined);
   const isLocalDraftThread = activeDraftThread !== null && activeServerThread === null;
   const canChangeThreadBranch = canWriteSourceControl && (isLocalDraftThread || canOperateThread);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
@@ -979,14 +998,18 @@ export default function GitActionsControl({
   const [inlineSuccess, setInlineSuccess] = useState<InlineGitActionSuccess | null>(null);
   const [pendingDefaultBranchAction, setPendingDefaultBranchAction] =
     useState<PendingDefaultBranchAction | null>(null);
-  const sourceControlScope = { environmentId: activeEnvironmentId, cwd: gitCwd };
+  const sourceControlScope = {
+    environmentId: activeEnvironmentId,
+    cwd: gitCwd,
+    ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
+  };
   const vcsActionState = useAtomValue(vcsActionManager.stateAtom(sourceControlScope));
   const inlineSuccessExpired = useDeadlinePassed(inlineSuccess?.expiresAtMs ?? null);
   const visibleInlineSuccess =
     inlineSuccess?.scopeKey === successScopeKey && !inlineSuccessExpired ? inlineSuccess : null;
 
   const persistThreadBranchSync = (branch: string | null, manualSelection = false) => {
-    if (!activeThreadRef) {
+    if (!activeThreadRef || repositoryTarget !== undefined) {
       return;
     }
 

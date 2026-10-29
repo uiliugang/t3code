@@ -1,4 +1,5 @@
 import { OrchestrationMessageContext } from "./composerContext.ts";
+import { ThreadWorkspaceRevision } from "./workspace.ts";
 import { withRecordIdTable } from "./orchestrationV2IdTable.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -29,6 +30,8 @@ import {
   PlanId,
   PositiveInt,
   ProjectId,
+  WorkspaceRevisionId,
+  ExecutionResourceId,
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
@@ -55,6 +58,7 @@ import {
   OrchestrationGetTurnDiffResult,
 } from "./checkpointDiff.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { ProjectWorkspaceConfig } from "./project.ts";
 import {
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
@@ -371,6 +375,9 @@ export const OrchestrationV2IdentityCapabilities = Schema.Struct({
 export type OrchestrationV2IdentityCapabilities = typeof OrchestrationV2IdentityCapabilities.Type;
 
 export const OrchestrationV2ProviderCapabilities = Schema.Struct({
+  workspace: Schema.optional(
+    Schema.Struct({ multipleRoots: Schema.Boolean, readOnlyRoots: Schema.Boolean }),
+  ),
   sessions: OrchestrationV2SessionCapabilities,
   threads: OrchestrationV2ThreadCapabilities,
   turns: OrchestrationV2TurnCapabilities,
@@ -444,6 +451,9 @@ export const OrchestrationV2AppThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  projectWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceConfiguration: Schema.optional(ProjectWorkspaceConfig),
+  workspace: Schema.optional(ThreadWorkspaceRevision),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
@@ -666,6 +676,7 @@ export const ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE = "workspace_pr
 export const OrchestrationV2Run = Schema.Struct({
   id: RunId,
   threadId: ThreadId,
+  workspaceRevisionId: Schema.optional(WorkspaceRevisionId),
   ordinal: PositiveInt,
   providerInstanceId: ProviderInstanceId,
   modelSelection: ModelSelection,
@@ -905,6 +916,7 @@ export const OrchestrationV2CheckpointScope = Schema.Struct({
   nodeId: NodeId,
   parentScopeId: Schema.NullOr(CheckpointScopeId),
   providerThreadId: Schema.NullOr(ProviderThreadId),
+  workspace: Schema.optional(ThreadWorkspaceRevision),
   kind: Schema.Literals(["root_run", "subagent", "tool", "provider_thread", "manual"]),
   ordinalWithinParent: NonNegativeInt,
   advancesAppRunCount: Schema.Boolean,
@@ -1340,6 +1352,8 @@ export const OrchestrationV2PlanArtifact = Schema.Union([
 export type OrchestrationV2PlanArtifact = typeof OrchestrationV2PlanArtifact.Type;
 
 export const OrchestrationV2CheckpointFileSummary = Schema.Struct({
+  resourceId: Schema.optional(ExecutionResourceId),
+  repositoryName: Schema.optional(Schema.String),
   path: TrimmedNonEmptyString,
   kind: TrimmedNonEmptyString,
   additions: NonNegativeInt,
@@ -1349,6 +1363,7 @@ export type OrchestrationV2CheckpointFileSummary = typeof OrchestrationV2Checkpo
 
 export const OrchestrationV2Checkpoint = Schema.Struct({
   id: CheckpointId,
+  workspaceRevisionId: Schema.optional(WorkspaceRevisionId),
   threadId: ThreadId,
   scopeId: CheckpointScopeId,
   runId: Schema.NullOr(RunId),
@@ -1359,6 +1374,18 @@ export const OrchestrationV2Checkpoint = Schema.Struct({
   ref: CheckpointRef,
   status: Schema.Literals(["ready", "missing", "error", "stale"]),
   files: Schema.Array(OrchestrationV2CheckpointFileSummary),
+  resources: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        resourceId: ExecutionResourceId,
+        scopeId: CheckpointScopeId,
+        checkpointId: CheckpointId,
+        ref: CheckpointRef,
+        status: Schema.Literals(["ready", "missing", "error", "stale"]),
+        files: Schema.Array(OrchestrationV2CheckpointFileSummary),
+      }),
+    ),
+  ),
   capturedAt: Schema.DateTimeUtc,
 });
 export type OrchestrationV2Checkpoint = typeof OrchestrationV2Checkpoint.Type;
@@ -2021,6 +2048,9 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  projectWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceConfiguration: Schema.optional(ProjectWorkspaceConfig),
+  workspace: Schema.optional(ThreadWorkspaceRevision),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
@@ -3300,6 +3330,14 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("thread.workspace.bind"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    expectedWorkspaceRevisionId: Schema.NullOr(WorkspaceRevisionId),
+    preparingRunId: Schema.optional(RunId),
+    workspace: ThreadWorkspaceRevision,
+  }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({
     type: Schema.Literal("thread.guest-share.open"),

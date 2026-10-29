@@ -37,6 +37,7 @@ import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { workspaceFixture, workspaceThreadFixture } from "./testkit/workspaceFixtures.ts";
 import {
   buildBoundedThreadProjection,
   decodeThreadHistoryCursor,
@@ -1374,6 +1375,33 @@ it.effect("lists only active subagent IDs without loading shell data", () =>
 );
 
 it.layer(layerTest)("ProjectionStoreV2", (it) => {
+  it.effect("retains immutable workspace revisions and carries the current binding to shells", () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const workspace = workspaceFixture();
+      const thread = workspaceThreadFixture(workspace);
+      yield* store.apply({
+        id: EventId.make("workspace-created"),
+        threadId: thread.id,
+        type: "thread.created",
+        occurredAt: thread.createdAt,
+        payload: thread,
+      });
+      assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, workspace.id), workspace);
+      assert.deepEqual((yield* store.getThreadShell(thread.id))?.workspace, workspace);
+      const overwrite = yield* store
+        .apply({
+          id: EventId.make("workspace-overwrite"),
+          threadId: thread.id,
+          type: "thread.metadata-updated",
+          occurredAt: thread.updatedAt,
+          payload: { ...thread, workspace: { ...workspace, mode: "existing" } },
+        })
+        .pipe(Effect.flip);
+      assert.equal(overwrite._tag, "ProjectionStoreApplyEventError");
+      assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, workspace.id), workspace);
+    }),
+  );
   // regression: #21969 keep corrupt plan JSON in the typed read error
   it.effect("returns a typed read error for malformed stored plan JSON", () =>
     Effect.gen(function* () {

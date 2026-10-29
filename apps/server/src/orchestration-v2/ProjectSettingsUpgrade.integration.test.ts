@@ -1,3 +1,4 @@
+import * as TerminalManager from "../terminal/Manager.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import { assert, it } from "@effect/vitest";
@@ -115,7 +116,11 @@ const unusedEnrichment = {
 };
 
 const layerRuntime = (dbPath: string) => {
-  const layerPlatform = Layer.merge(
+  const layerPlatform = Layer.mergeAll(
+    Layer.mock(TerminalManager.TerminalManager)({
+      subscribeMetadata: (listener) =>
+        listener({ type: "snapshot", terminals: [] }).pipe(Effect.as(() => {})),
+    }),
     NodeServices.layer,
     Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
       resolveLink: () => Effect.die("unused"),

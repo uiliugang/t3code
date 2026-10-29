@@ -95,6 +95,38 @@ describe("command permissions", () => {
     ),
   );
 
+  it.effect("requires the destination orchestration grant for workspace recovery", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const recover = createCommandPermissions(runtime, WS_METHODS.workspaceRecovery);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationReadScope],
+            permissions: [AuthOrchestrationReadScope],
+          }),
+        );
+        expect(registry.get(recover.permissionAtom(env))).toBe(false);
+        expect((yield* recover.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationOperateScope],
+            permissions: [AuthOrchestrationOperateScope],
+          }),
+        );
+        yield* recover.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(recover.permissionAtom(other))).toBe(false);
+      }),
+    ),
+  );
+
   it.effect("requires the destination settings grant to run storage cleanup", () =>
     Effect.scoped(
       Effect.gen(function* () {

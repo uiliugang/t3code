@@ -24,6 +24,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
+  WorkspaceRevisionId,
   TurnItemId,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -61,6 +62,7 @@ import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
+import { workspaceFixture, workspaceThreadFixture } from "./testkit/workspaceFixtures.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
@@ -146,6 +148,41 @@ function threadCreatedEvent(input: {
     payload: input.thread,
   };
 }
+
+it.effect(
+  "retains historical workspace revisions through event compaction and projection rebuild",
+  () =>
+    Effect.gen(function* () {
+      const eventStore = yield* EventStore.EventStoreV2;
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const original = workspaceFixture();
+      const current = workspaceFixture({
+        id: WorkspaceRevisionId.make("workspace:2"),
+        previousRevisionId: original.id,
+      });
+      const thread = workspaceThreadFixture();
+      const now = thread.createdAt;
+      yield* eventStore.append({
+        events: [
+          threadCreatedEvent({ id: "workspace-history:create", thread, now }),
+          ...[original, original, current, current].map((workspace, index) => ({
+            id: EventId.make(`workspace-history:${index}`),
+            type: "thread.metadata-updated" as const,
+            threadId: thread.id,
+            occurredAt: now,
+            payload: { ...thread, workspace, title: `Update ${index}` },
+          })),
+        ],
+      });
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      yield* maintenance.compactEventStore();
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, original.id), original);
+      assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, current.id), current);
+      assert.deepEqual((yield* store.getThread(thread.id)).workspace, current);
+    }).pipe(Effect.provide(layerTest)),
+);
 
 it.effect("rebuilds event history one bounded page at a time", () =>
   Effect.gen(function* () {

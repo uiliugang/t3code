@@ -3,6 +3,7 @@ import type {
   OrchestrationGetFullThreadDiffResult,
   OrchestrationGetTurnDiffResult,
   ThreadId,
+  ThreadRepositoryTarget,
 } from "@t3tools/contracts";
 
 export type CheckpointDiffResult =
@@ -16,6 +17,7 @@ export interface CheckpointDiffState {
 }
 
 export interface CheckpointDiffTarget {
+  readonly repositoryTarget?: ThreadRepositoryTarget;
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
   readonly fromTurnCount: number | null;

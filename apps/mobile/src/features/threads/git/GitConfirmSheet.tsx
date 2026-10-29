@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useThreadRepository } from "../../../state/use-thread-repository";
 import { resolveDefaultBranchActionDialogCopy } from "@t3tools/client-runtime/state/vcs";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
@@ -32,8 +34,10 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const gitState = useSelectedThreadGitState();
-  const gitActions = useSelectedThreadGitActions();
+  const liveRepository = useThreadRepository();
+  const [resourceId] = useState(liveRepository.selectionTarget);
+  const gitState = useSelectedThreadGitState(resourceId);
+  const gitActions = useSelectedThreadGitActions(resourceId);
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
   const { selectedThreadProject } = useThreadSelection();
   const terminology = sourceControlClients.get(

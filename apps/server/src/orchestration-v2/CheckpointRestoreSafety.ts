@@ -10,7 +10,7 @@ export const SHARED_WORKSPACE_RESTORE_MESSAGE =
   "File restore requires an isolated worktree. This workspace may contain changes from another thread. Rewind the conversation without restoring files instead.";
 
 // Check isolation at admission and rollback; checkpoints restore whole checkouts, which may become shared.
-export const isCheckpointRestoreIsolated = Effect.fn("orchestrationV2.isCheckpointRestoreIsolated")(
+const isCheckoutRestoreIsolated = Effect.fn("orchestrationV2.isCheckpointRestoreIsolated")(
   function* (
     thread: Pick<OrchestrationV2AppThread, "id" | "worktreePath">,
     scope: Pick<OrchestrationV2CheckpointScope, "cwd">,
@@ -52,7 +52,13 @@ export const isCheckpointRestoreIsolated = Effect.fn("orchestrationV2.isCheckpoi
           const providerContext = yield* projections.getThreadProviderContext(otherThread.id);
           const paths = [
             otherThread.worktreePath,
-            ...other.checkpointScopes.map((candidate) => candidate.cwd),
+            ...(otherThread.workspace?.resources.map((resource) => resource.checkoutRoot) ?? []),
+            ...other.checkpointScopes.flatMap(
+              (candidate) =>
+                candidate.workspace?.resources.map((resource) => resource.checkoutRoot) ?? [
+                  candidate.cwd,
+                ],
+            ),
             // Errored sessions can still stream. Shared sessions retain another thread's opening cwd;
             // turn worktrees and project roots are already covered here.
             ...providerContext.providerSessions
@@ -66,7 +72,10 @@ export const isCheckpointRestoreIsolated = Effect.fn("orchestrationV2.isCheckpoi
           if (otherThread.worktreePath === null) {
             const project = yield* projects.get(otherThread.projectId, { includeDeleted: true });
             if (Option.isNone(project)) return false;
-            paths.push(project.value.workspaceRoot);
+            paths.push(
+              otherThread.projectWorkspaceRoot ?? project.value.workspaceRoot,
+              ...(otherThread.workspaceConfiguration?.roots.map((root) => root.sourcePath) ?? []),
+            );
           }
           for (const candidate of paths) {
             if (checkedPaths.has(candidate)) continue;
@@ -89,3 +98,33 @@ export const isCheckpointRestoreIsolated = Effect.fn("orchestrationV2.isCheckpoi
     return !shared;
   },
 );
+
+export const isCheckpointRestoreIsolated = Effect.fn(
+  "orchestrationV2.isWorkspaceCheckpointRestoreIsolated",
+)(function* (
+  thread: Pick<OrchestrationV2AppThread, "id" | "worktreePath" | "workspace">,
+  scope: Pick<OrchestrationV2CheckpointScope, "cwd" | "workspace">,
+  dependencies: Parameters<typeof isCheckoutRestoreIsolated>[2],
+) {
+  if (scope.workspace === undefined)
+    return (
+      thread.workspace === undefined &&
+      (yield* isCheckoutRestoreIsolated(thread, scope, dependencies))
+    );
+  if (
+    thread.workspace?.id !== scope.workspace.id ||
+    scope.workspace.resources.some((resource) => resource.ownership !== "managed")
+  )
+    return false;
+  for (const resource of scope.workspace.resources) {
+    if (
+      !(yield* isCheckoutRestoreIsolated(
+        { id: thread.id, worktreePath: resource.checkoutRoot },
+        { cwd: resource.checkoutRoot },
+        dependencies,
+      ))
+    )
+      return false;
+  }
+  return true;
+});

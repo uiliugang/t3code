@@ -1,3 +1,4 @@
+import { ExecutionResourceId, CheckpointRef } from "@t3tools/contracts";
 import { pendingGuestMessageCount } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
@@ -73,6 +74,8 @@ import {
   NodeId,
   ProjectId,
   ProviderInstanceId,
+  ThreadWorkspaceRevision,
+  WorkspaceRevisionId,
 } from "@t3tools/contracts";
 import {
   createOrchestrationV2TurnItemVisibility,
@@ -224,6 +227,7 @@ const ProjectionCheckpointContext = Schema.Struct({
   ),
   checkpointScopes: Schema.Array(
     OrchestrationV2CheckpointScopeJsonSchema.mapFields(({ id, runId, kind, cwd }) => ({
+      workspace: Schema.optional(Schema.fromJsonString(ThreadWorkspaceRevision)),
       id,
       runId,
       kind,
@@ -233,6 +237,19 @@ const ProjectionCheckpointContext = Schema.Struct({
   checkpoints: Schema.Array(
     OrchestrationV2CheckpointJsonSchema.mapFields(
       ({ scopeId, runId, ordinalWithinScope, appRunOrdinal, status, ref }) => ({
+        resources: Schema.optional(
+          Schema.fromJsonString(
+            Schema.Array(
+              Schema.Struct({
+                resourceId: ExecutionResourceId,
+                checkpointId: CheckpointId,
+                scopeId: CheckpointScopeId,
+                ref: CheckpointRef,
+                status,
+              }),
+            ),
+          ),
+        ),
         scopeId,
         runId,
         ordinalWithinScope,
@@ -470,6 +487,10 @@ export interface ProjectionStoreV2Shape {
   readonly getThread: (
     threadId: ThreadId,
   ) => Effect.Effect<OrchestrationV2AppThread, ProjectionStoreV2Error>;
+  readonly getWorkspaceRevision: (
+    threadId: ThreadId,
+    revisionId: WorkspaceRevisionId,
+  ) => Effect.Effect<ThreadWorkspaceRevision | null, ProjectionStoreV2Error>;
   readonly getLimitRecoveryCandidates: (options: {
     readonly now: DateTime.Utc;
     readonly autoResume: boolean;
@@ -1442,6 +1463,15 @@ export function threadShellFromProjection(
     interactionMode: projection.thread.interactionMode,
     branch: projection.thread.branch,
     worktreePath: projection.thread.worktreePath,
+    ...(projection.thread.workspace === undefined
+      ? {}
+      : { workspace: projection.thread.workspace }),
+    ...(projection.thread.workspaceConfiguration === undefined
+      ? {}
+      : { workspaceConfiguration: projection.thread.workspaceConfiguration }),
+    ...(projection.thread.projectWorkspaceRoot === undefined
+      ? {}
+      : { projectWorkspaceRoot: projection.thread.projectWorkspaceRoot }),
     pullRequests: threadPullRequestsOf(projection.thread),
     ...(projection.thread.linkedPullRequest === undefined
       ? {}
@@ -1724,6 +1754,15 @@ function shellFromState(input: {
     interactionMode: input.state.thread.interactionMode,
     branch: input.state.thread.branch,
     worktreePath: input.state.thread.worktreePath,
+    ...(input.state.thread.workspace === undefined
+      ? {}
+      : { workspace: input.state.thread.workspace }),
+    ...(input.state.thread.workspaceConfiguration === undefined
+      ? {}
+      : { workspaceConfiguration: input.state.thread.workspaceConfiguration }),
+    ...(input.state.thread.projectWorkspaceRoot === undefined
+      ? {}
+      : { projectWorkspaceRoot: input.state.thread.projectWorkspaceRoot }),
     pullRequests: threadPullRequestsOf(input.state.thread),
     ...(input.state.thread.linkedPullRequest === undefined
       ? {}
@@ -1795,6 +1834,22 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
   ProjectionStoreV2,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const encodeWorkspaceRevision = Schema.encodeEffect(
+      Schema.fromJsonString(ThreadWorkspaceRevision),
+    );
+    const decodeWorkspaceRevision = Schema.decodeUnknownEffect(
+      Schema.fromJsonString(ThreadWorkspaceRevision),
+    );
+    const getWorkspaceRevision = Effect.fn("ProjectionStore.getWorkspaceRevision")(
+      function* (threadId: ThreadId, revisionId: WorkspaceRevisionId) {
+        const rows = yield* sql<{
+          readonly payload_json: string;
+        }>`SELECT payload_json FROM orchestration_v2_projection_workspace_revisions WHERE revision_id = ${revisionId}`;
+        return rows[0] === undefined ? null : yield* decodeWorkspaceRevision(rows[0].payload_json);
+      },
+      (effect, threadId) =>
+        effect.pipe(Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause }))),
+    );
 
     const keepRecordedRunField = (payload: Statement.Fragment, path: string) => sql`
       CASE
@@ -1845,6 +1900,20 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             case "thread.model-selection-updated":
             case "thread.provider-switched":
             case "thread.guest-share-updated": {
+              if (event.payload.workspace !== undefined) {
+                const workspaceJson = yield* encodeWorkspaceRevision(event.payload.workspace);
+                const existing = yield* sql<{
+                  readonly payload_json: string;
+                }>`SELECT payload_json FROM orchestration_v2_projection_workspace_revisions WHERE revision_id = ${event.payload.workspace.id}`;
+                if (existing[0] !== undefined && existing[0].payload_json !== workspaceJson) {
+                  return yield* new ProjectionStoreApplyEventError({
+                    eventType: event.type,
+                    cause: "An immutable workspace revision cannot be overwritten.",
+                  });
+                }
+                yield* sql`INSERT INTO orchestration_v2_projection_workspace_revisions (revision_id, payload_json)
+                  VALUES (${event.payload.workspace.id}, ${workspaceJson}) ON CONFLICT (revision_id) DO NOTHING`;
+              }
               const payloadJson = yield* encodeThreadPayload(event.payload);
               const payload = parseEncodedPayload(payloadJson);
               yield* sql`
@@ -4851,7 +4920,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             `,
               sql`
               SELECT scope_id AS id, run_id AS "runId", kind,
-                json_extract(payload_json, '$.cwd') AS cwd
+                json_extract(payload_json, '$.cwd') AS cwd,
+                json_extract(payload_json, '$.workspace') AS workspace
               FROM orchestration_v2_projection_checkpoint_scopes
               WHERE thread_id = ${threadId}
               ORDER BY ordinal_within_parent ASC, scope_id ASC
@@ -4860,13 +4930,22 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               SELECT scope_id AS "scopeId", run_id AS "runId",
                 ordinal_within_scope AS "ordinalWithinScope",
                 app_run_ordinal AS "appRunOrdinal", status,
-                json_extract(payload_json, '$.ref') AS ref
+                json_extract(payload_json, '$.ref') AS ref,
+                json_extract(payload_json, '$.resources') AS resources
               FROM orchestration_v2_projection_checkpoints
               WHERE thread_id = ${threadId}
               ORDER BY scope_id ASC, ordinal_within_scope ASC
             `,
             ]);
-            return yield* decodeCheckpointContext({ runs, checkpointScopes, checkpoints });
+            return yield* decodeCheckpointContext({
+              runs,
+              checkpointScopes: checkpointScopes.map(({ workspace, ...row }) =>
+                workspace == null ? row : { ...row, workspace },
+              ),
+              checkpoints: checkpoints.map(({ resources, ...row }) =>
+                resources == null ? row : { ...row, resources },
+              ),
+            });
           }),
         )
         .pipe(
@@ -6627,6 +6706,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getThreadShell: readOnReader(getThreadShell),
       findGuestShareThreadId: readOnReader(findGuestShareThreadId),
       getThread: readOnReader(getThread),
+      getWorkspaceRevision: readOnReader(getWorkspaceRevision),
       getSettlementCandidates: readOnReader(getSettlementCandidates),
       getThreadsWithPullRequests: readOnReader(getThreadsWithPullRequests),
       getThreadWorktreePaths: readOnReader(getThreadWorktreePaths),

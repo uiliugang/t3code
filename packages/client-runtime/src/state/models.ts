@@ -145,6 +145,9 @@ export interface EnvironmentThreadShell {
   readonly interactionMode: OrchestrationV2ThreadShell["interactionMode"];
   readonly branch: string | null;
   readonly worktreePath: string | null;
+  readonly workspace?: OrchestrationV2ThreadShell["workspace"];
+  readonly workspaceConfiguration?: OrchestrationV2ThreadShell["workspaceConfiguration"];
+  readonly projectWorkspaceRoot?: OrchestrationV2ThreadShell["projectWorkspaceRoot"];
   readonly lineage: OrchestrationV2ThreadShell["lineage"];
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
   readonly linkOrigin: OrchestrationV2ThreadShell["linkOrigin"] | null;
@@ -296,6 +299,13 @@ export function presentThreadShell(
     interactionMode: thread.interactionMode,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    ...(thread.workspace === undefined ? {} : { workspace: thread.workspace }),
+    ...(thread.workspaceConfiguration === undefined
+      ? {}
+      : { workspaceConfiguration: thread.workspaceConfiguration }),
+    ...(thread.projectWorkspaceRoot === undefined
+      ? {}
+      : { projectWorkspaceRoot: thread.projectWorkspaceRoot }),
     pullRequests: threadPullRequestsOf(thread),
     linkedPullRequest: thread.linkedPullRequest ?? null,
     branchPullRequest: thread.branchPullRequest ?? null,

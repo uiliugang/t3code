@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./server/workspacePolicy": {
+      "types": "./src/server/workspacePolicy.ts",
+      "import": "./src/server/workspacePolicy.ts"
+    },
     "./client": {
       "types": "./src/client.ts",
       "import": "./src/client.ts"

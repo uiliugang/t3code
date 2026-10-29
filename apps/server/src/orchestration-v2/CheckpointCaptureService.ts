@@ -1,3 +1,4 @@
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
   CheckpointScopeId,
   CommandId,
@@ -99,6 +100,19 @@ export const layer: Layer.Layer<
         });
       }
 
+      if (run.workspaceRevisionId !== scope.workspace?.id)
+        return yield* new CheckpointCaptureExecutionError({
+          ...input,
+          cause: "The run and checkpoint workspace revisions do not match.",
+        });
+      if (
+        scope.workspace !== undefined &&
+        (yield* projections.getThread(input.threadId)).workspace?.id !== scope.workspace.id
+      )
+        return yield* new CheckpointCaptureExecutionError({
+          ...input,
+          cause: "The checkpoint belongs to a previous workspace revision.",
+        });
       const capturedAt = yield* DateTime.now;
       const baselineOrdinalWithinScope = Math.max(0, run.ordinal - 1);
       const hasReadyCheckpoint = (ordinalWithinScope: number) =>
@@ -233,7 +247,7 @@ export const layer: Layer.Layer<
 
     return CheckpointCaptureServiceV2.of({
       execute: Effect.fn("CheckpointCaptureServiceV2.execute")(function (input) {
-        return execute(input).pipe(
+        return withWorkspaceLease(`prepare:${input.threadId}`, execute(input)).pipe(
           Effect.mapError((cause) =>
             isCheckpointCaptureExecutionError(cause)
               ? cause

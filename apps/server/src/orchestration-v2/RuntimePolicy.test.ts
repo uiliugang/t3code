@@ -1,3 +1,7 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as ProjectionStore from "./ProjectionStore.ts";
+import * as WorkspaceRepositoryResolver from "../workspace/WorkspaceRepositoryResolver.ts";
+import { EventId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import {
   type ModelSelection,
@@ -17,6 +21,7 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
 
 const projectId = ProjectId.make("project:runtime-policy");
 const providerInstanceId = ProviderInstanceId.make("codex");
@@ -66,12 +71,18 @@ const supportedRuntimeModesByInstance = new Map<ProviderInstanceId, ReadonlyArra
 ]);
 const providerInstanceFor = (instanceId: ProviderInstanceId) =>
   ({
+    orchestrationAdapter: {
+      getCapabilities: () =>
+        Effect.succeed({
+          workspace: { multipleRoots: instanceId === providerInstanceId, readOnlyRoots: false },
+        }),
+    },
     snapshot: {
       getSnapshot: Effect.succeed({
         supportedRuntimeModes: supportedRuntimeModesByInstance.get(instanceId),
       } as ServerProvider),
     },
-  }) as ProviderInstance;
+  }) as unknown as ProviderInstance;
 
 const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
   Layer.provide(
@@ -105,6 +116,29 @@ const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
 );
 
 it.layer(layerTest)("RuntimePolicyV2", (it) => {
+  it.effect("keeps a task's bound directories when project defaults change", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const thread = makeThread({ now, worktreePath: null });
+      const workspace = workspaceFixture({ projectId: thread.projectId });
+      const bound = yield* policy.resolve({ thread: { ...thread, workspace }, modelSelection });
+      assert.equal(bound.cwd, "/tasks/frontend");
+      assert.deepEqual(bound.workspace, workspace);
+      const unsupported = yield* policy
+        .resolve({
+          thread: { ...thread, workspace },
+          modelSelection: { ...modelSelection, instanceId: grokInstanceId },
+        })
+        .pipe(Effect.flip);
+      assert.equal(unsupported._tag, "RuntimePolicyResolveError");
+      const legacy = yield* policy.resolve({
+        thread: { ...thread, projectWorkspaceRoot: "/original-project" },
+        modelSelection,
+      });
+      assert.equal(legacy.cwd, "/original-project");
+    }),
+  );
   it.effect("runs a mode the provider does not offer in Supervised", () =>
     Effect.gen(function* () {
       const policy = yield* RuntimePolicy.RuntimePolicyV2;
@@ -124,3 +158,44 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
     }),
   );
 });
+
+it.effect(
+  "prevents a legacy task from entering a checkout claimed by an active multi-repository task",
+  () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const thread = makeThread({ now, worktreePath: null });
+      const workspace = workspaceFixture({ projectId });
+      const projection = ProjectionStore.emptyProjection({
+        type: "thread.created",
+        id: EventId.make("created"),
+        threadId: ThreadId.make("other"),
+        occurredAt: now,
+        payload: { ...thread, id: ThreadId.make("other"), workspace },
+      });
+      const sharedLayer = layerTest.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getShellSnapshot: () =>
+                Effect.succeed({
+                  schemaVersion: 2,
+                  snapshotSequence: 1,
+                  threads: [
+                    { ...ProjectionStore.threadShellFromProjection(projection), status: "running" },
+                  ],
+                  archivedThreads: [],
+                }),
+            }),
+            Layer.mock(WorkspaceRepositoryResolver.WorkspaceRepositoryResolver)({
+              inspect: () => Effect.succeed(workspace.resources[1]!.identity),
+            }),
+          ),
+        ),
+      );
+      const result = yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
+        policy.resolve({ thread, modelSelection }),
+      ).pipe(Effect.provide(sharedLayer), Effect.result);
+      assert.isTrue(result._tag === "Failure");
+    }).pipe(Effect.provide(NodeServices.layer)),
+);

@@ -297,7 +297,11 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
   routeThreadKey: string;
   resolvedTheme: "light" | "dark";
   displayThreadKey?: string;
-  onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenTurnDiff: (
+    runId: RunId,
+    filePath?: string,
+    resourceId?: import("@t3tools/contracts").ExecutionResourceId,
+  ) => void;
 }) {
   if (!turnSummary) return null;
   const checkpointFiles = turnSummary.files;
@@ -326,7 +330,11 @@ function AssistantChangedFilesSectionInner({
   routeThreadKey: string;
   resolvedTheme: "light" | "dark";
   displayThreadKey?: string;
-  onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenTurnDiff: (
+    runId: RunId,
+    filePath?: string,
+    resourceId?: import("@t3tools/contracts").ExecutionResourceId,
+  ) => void;
 }) {
   const ctx = use(TimelineRowCtx);
   const persistedExpanded = useUiStateStore(

@@ -1,4 +1,9 @@
-import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  SourceControlProviderKind,
+  WorkspaceRootId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentProject } from "./models.ts";
@@ -120,6 +125,30 @@ function settings(
 }
 
 describe("buildProjectGroups", () => {
+  it("keeps workspaces with the same primary checkout and different repository membership separate", () => {
+    const roots = ["frontend", "backend"].map((alias) => ({
+      id: WorkspaceRootId.make(alias),
+      alias,
+      description: "",
+      sourcePath: `/repos/${alias}`,
+      accessIntent: "write" as const,
+      defaultSelected: true,
+    }));
+    const projects = [
+      makeProject("full-stack", "/repos/frontend", {
+        workspaceConfig: { version: 1, primaryRootId: roots[0]!.id, roots },
+      }),
+      makeProject("frontend-only", "/repos/frontend"),
+    ];
+    for (const mode of ["repository", "repository_path", "separate"] as const) {
+      const groups = buildProjectGroups({ projects, settings: settings(mode) });
+      expect(groups).toHaveLength(2);
+      expect(derivePhysicalProjectKey(projects[0]!)).not.toBe(
+        derivePhysicalProjectKey(projects[1]!),
+      );
+    }
+  });
+
   it.each(["repository", "repository_path", "separate"] as const)(
     "keeps scratch project ownership separate by default in %s mode",
     (mode) => {

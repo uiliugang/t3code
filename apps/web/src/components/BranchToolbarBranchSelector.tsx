@@ -1,3 +1,5 @@
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import type { ThreadRepositoryTarget } from "@t3tools/contracts";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -77,6 +79,7 @@ export interface BranchToolbarBranchSelectorHandle {
 }
 
 interface BranchToolbarBranchSelectorProps {
+  repository?: { target: ThreadRepositoryTarget; cwd: string };
   forceNewWorktree?: boolean;
   ref?: Ref<BranchToolbarBranchSelectorHandle>;
   className?: string;
@@ -99,6 +102,7 @@ function toBranchActionErrorMessage(error: unknown): string {
 }
 
 export function BranchToolbarBranchSelector({
+  repository: requestedRepository,
   forceNewWorktree = false,
   ref,
   className,
@@ -137,6 +141,25 @@ export function BranchToolbarBranchSelector({
   });
   const threadRef = scopeThreadRef(environmentId, threadId);
   const serverThread = useQuietThreadShell(threadRef);
+  const primaryResource = serverThread?.workspace?.resources.find(
+    (resource) =>
+      resource.id ===
+      serverThread.workspace?.bindings.find(
+        (binding) => binding.rootId === serverThread.workspace?.primaryRootId,
+      )?.resourceId,
+  );
+  const repository =
+    requestedRepository ??
+    (serverThread?.workspace && primaryResource
+      ? {
+          cwd: primaryResource.checkoutRoot,
+          target: {
+            threadId,
+            workspaceRevisionId: serverThread.workspace.id,
+            resourceId: primaryResource.id,
+          },
+        }
+      : undefined);
   const serverSession = serverThread?.runtime ?? null;
   const draftThread = useComposerDraftStore((store) =>
     draftId ? store.getDraftSession(draftId) : store.getDraftThreadByRef(threadRef),
@@ -160,10 +183,12 @@ export function BranchToolbarBranchSelector({
   const activeThreadBranch =
     activeThreadBranchOverride !== undefined
       ? activeThreadBranchOverride
-      : (serverThread?.branch ?? draftThread?.branch ?? null);
-  const activeWorktreePath = forceNewWorktree
-    ? null
-    : (serverThread?.worktreePath ?? draftThread?.worktreePath ?? null);
+      : repository === undefined
+        ? (serverThread?.branch ?? draftThread?.branch ?? null)
+        : null;
+  const activeWorktreePath =
+    repository?.cwd ??
+    (forceNewWorktree ? null : (serverThread?.worktreePath ?? draftThread?.worktreePath ?? null));
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
@@ -182,6 +207,7 @@ export function BranchToolbarBranchSelector({
     worktreePath: string | null,
     automatic = false,
   ) => {
+    if (repository !== undefined) return;
     if (
       !activeThreadId ||
       !activeProject ||
@@ -430,7 +456,8 @@ export function BranchToolbarBranchSelector({
       const checkoutResult = await switchRef({
         environmentId,
         input: {
-          cwd: selectionTarget.checkoutCwd,
+          cwd: repository?.cwd ?? selectionTarget.checkoutCwd,
+          ...(repository === undefined ? {} : { repositoryTarget: repository.target }),
           refName: refName.name,
         },
       });
@@ -470,6 +497,7 @@ export function BranchToolbarBranchSelector({
         environmentId,
         input: {
           cwd: branchCwd,
+          ...(repository === undefined ? {} : { repositoryTarget: repository.target }),
           refName: name,
           switchRef: true,
         },
@@ -570,19 +598,31 @@ export function BranchToolbarBranchSelector({
     branchPrBranch !== null && branchStatusQuery.data?.refName === branchPrBranch
       ? (branchStatusQuery.data.pr ?? null)
       : null;
+  const repositoryLink = branchPr?.url
+    ? sourceControlClients.parseChangeRequestUrl(branchPr.url)?.link
+    : undefined;
+  const repositoryLinks =
+    repository === undefined
+      ? (serverThread?.pullRequests ?? [])
+      : (serverThread?.pullRequests ?? []).filter(
+          (link) =>
+            repositoryLink !== undefined &&
+            link.host === repositoryLink.host &&
+            link.repository === repositoryLink.repository,
+        );
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(environmentId);
   const linkedStatus = useLinkedThreadPullRequest(
     environmentId,
-    serverThread?.linkedPullRequest,
+    repository === undefined ? serverThread?.linkedPullRequest : undefined,
     true,
-    serverThread?.pullRequests,
-    serverThread?.branchPullRequest,
+    repository === undefined ? serverThread?.pullRequests : undefined,
+    repository === undefined ? serverThread?.branchPullRequest : undefined,
   );
   const currentLinkedPr = supportsMultiplePullRequests
-    ? resolveThreadCurrentPullRequestLink(serverThread?.pullRequests ?? [])
+    ? resolveThreadCurrentPullRequestLink(repositoryLinks)
     : null;
   const prBadge = supportsMultiplePullRequests
-    ? resolveThreadPullRequestBadge(serverThread?.pullRequests)
+    ? resolveThreadPullRequestBadge(repositoryLinks)
     : null;
   const displayedPr = linkedStatus?.pr ?? (currentLinkedPr === null ? branchPr : null);
   const displayedPrStatus = prStatusIndicator(
@@ -717,7 +757,7 @@ export function BranchToolbarBranchSelector({
           <ThreadPullRequestBadgeControl
             render={<ComposerControl size="xs" />}
             badge={prBadge}
-            pullRequests={serverThread?.pullRequests ?? []}
+            pullRequests={repositoryLinks}
             number={prNumber}
             url={prUrl}
             status={displayedPrStatus}
@@ -766,7 +806,7 @@ export function BranchToolbarBranchSelector({
         {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (
           <ThreadDetailsPrRows
             threadRef={threadRef}
-            links={serverThread?.pullRequests ?? []}
+            links={repositoryLinks}
             currentLink={currentLinkedPr}
             onOpenLink={openPrLink}
             environmentId={environmentId}

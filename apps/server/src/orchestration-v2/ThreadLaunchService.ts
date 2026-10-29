@@ -1,3 +1,4 @@
+import * as WorkspaceProvisioner from "../workspace/WorkspaceProvisioner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -202,6 +203,9 @@ function failureDetail(error: unknown): string {
 
 const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
+  const workspaceProvisioner = yield* Effect.serviceOption(
+    WorkspaceProvisioner.WorkspaceProvisioner,
+  );
   const setupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
   const cloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
   const terminals = yield* TerminalManager.TerminalManager;
@@ -305,6 +309,66 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+
+    const workspaceThread = yield* threads
+      .getThreadShell(threadId)
+      .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+    if (workspaceThread?.workspaceConfiguration !== undefined) {
+      if (workspaceThread.workspace === undefined) {
+        if (Option.isNone(workspaceProvisioner))
+          return yield* mapError(
+            input,
+            "provision-worktree",
+            threadId,
+          )("Workspace provisioner is unavailable.");
+        yield* setupTracker.begin({
+          threadId,
+          branch: input.workspaceStrategy.branch ?? null,
+          baseRef:
+            input.workspaceStrategy.type === "worktree" ? input.workspaceStrategy.baseRef : "HEAD",
+          stages: ["checkout", "setup-script", "agent"],
+          fiber: yield* Effect.fiber,
+        });
+        yield* setupTracker.stageStatus(threadId, "checkout", "running");
+        const workspace = yield* workspaceProvisioner.value
+          .prepare({
+            threadId,
+            projectId: input.projectId,
+            config: workspaceThread.workspaceConfiguration,
+            strategy: input.workspaceStrategy,
+          })
+          .pipe(
+            Effect.mapError(mapError(input, "provision-worktree", threadId)),
+            Effect.tapError((error) =>
+              setupTracker.finish(threadId, "failed", failureDetail(error)),
+            ),
+          );
+        yield* threads
+          .dispatch({
+            type: "thread.workspace.bind",
+            commandId: CommandId.make(`${input.commandId}:workspace-group`),
+            threadId,
+            expectedWorkspaceRevisionId: null,
+            ...(runId === null ? {} : { preparingRunId: runId }),
+            workspace,
+          })
+          .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+        yield* setupTracker.stageStatus(threadId, "checkout", "done");
+        yield* setupTracker.stageStatus(threadId, "setup-script", "done");
+      }
+      if (runId !== null)
+        yield* threads
+          .dispatch({
+            type: "prepared-run.release",
+            commandId: CommandId.make(`${input.commandId}:release`),
+            threadId,
+            runId,
+          })
+          .pipe(Effect.mapError(mapError(input, "release-run", threadId)));
+      yield* setupTracker.stageStatus(threadId, "agent", "done");
+      yield* setupTracker.finish(threadId, "done");
+      return;
+    }
 
     const reused = input.reusedWorktree;
     const tracked = input.workspaceStrategy.type === "worktree" || reused !== undefined;
@@ -878,7 +942,9 @@ const make = Effect.gen(function* () {
         }
 
         const workspaceStrategy: ThreadLaunchWorkspaceStrategy =
-          input.workspaceStrategy.type === "root" && Option.isNone(launchReceipt)
+          input.workspaceStrategy.type === "root" &&
+          project.workspaceConfig === undefined &&
+          Option.isNone(launchReceipt)
             ? Option.match(
                 yield* managedFolders
                   .folderForThread({

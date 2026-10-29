@@ -70,19 +70,25 @@ const make = Effect.gen(function* () {
           (cause) => new RunFinalizationError({ ...input, operation: "refresh-workspace", cause }),
         ),
       );
-    const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
-    if (cwd !== undefined) {
-      // Retrying a display refresh after the checkpoint is durable blocks the next turn.
-      yield* observer.refresh({ cwd, threadId: input.threadId, runId: input.runId }).pipe(
-        Effect.catchTags({
-          RunFinalizationRefreshError: (cause) =>
-            Effect.logWarning("Failed to refresh workspace after checkpoint capture", {
-              ...input,
-              cause,
-            }),
-        }),
-      );
-    }
+    const scope = projection.checkpointScopes.find((scope) => scope.id === input.scopeId);
+    const cwds =
+      scope?.workspace?.resources.map((resource) => resource.checkoutRoot) ??
+      (scope === undefined ? [] : [scope.cwd]);
+    yield* Effect.forEach(
+      [...new Set(cwds)],
+      (cwd) =>
+        // Retrying a display refresh after the checkpoint is durable blocks the next turn.
+        observer.refresh({ cwd, threadId: input.threadId, runId: input.runId }).pipe(
+          Effect.catchTags({
+            RunFinalizationRefreshError: (cause) =>
+              Effect.logWarning("Failed to refresh workspace after checkpoint capture", {
+                ...input,
+                cause,
+              }),
+          }),
+        ),
+      { discard: true },
+    );
   });
   return RunFinalizationService.of({ finalize });
 });
@@ -106,7 +112,13 @@ export const layerObserver = Layer.effect(
           );
           if (local.refName === null || local.isDefaultRef) return;
           const thread = yield* projections.getThreadShell(threadId);
-          if (!thread || thread.branch !== local.refName) return;
+          if (!thread) return;
+          if (
+            thread.workspace === undefined
+              ? thread.branch !== local.refName
+              : !thread.workspace.resources.some((resource) => resource.checkoutRoot === cwd)
+          )
+            return;
           if (thread.activeRunId !== null && thread.activeRunId !== runId) return;
           yield* vcsStatus.refreshPullRequestStatus(cwd).pipe(
             Effect.catch((error) =>

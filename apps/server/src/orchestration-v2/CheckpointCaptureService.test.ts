@@ -1,3 +1,5 @@
+import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
+import { WorkspaceRevisionId } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
@@ -52,10 +54,19 @@ const modelSelection = {
 } as const;
 
 it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
-  it.effect.each([false, true])(
-    "captures without decoding history or losing newer delegated completion, ref lookup fails=%s",
-    (refLookupFails) =>
+  it.effect.each([
+    "ready",
+    "ref-lookup-failed",
+    "stale-workspace",
+    "missing-workspace-scope",
+  ] as const)(
+    "captures without decoding history or losing newer delegated completion, state=%s",
+    (state) =>
       Effect.gen(function* () {
+        const refLookupFails = state === "ref-lookup-failed";
+        const staleWorkspace = state === "stale-workspace";
+        const missingWorkspaceScope = state === "missing-workspace-scope";
+        const workspace = workspaceFixture({ projectId });
         const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
         const now = yield* DateTime.now;
         const later = DateTime.add(now, { seconds: 1 });
@@ -91,6 +102,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           checkpointId: null,
           contextHandoffId: null,
           delegatedCompletion: staleDelegatedCompletion,
+          ...(staleWorkspace || missingWorkspaceScope ? { workspaceRevisionId: workspace.id } : {}),
         };
         const rootNode = {
           id: rootNodeId,
@@ -120,6 +132,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           ordinalWithinParent: 0,
           advancesAppRunCount: true,
           cwd: "/repo",
+          ...(staleWorkspace ? { workspace } : {}),
           createdAt: now,
         };
         const providerThread = {
@@ -179,6 +192,10 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
             id: threadId,
             projectId,
             title: "Checkpoint capture delegated completion",
+            ...(missingWorkspaceScope ? { workspace } : {}),
+            ...(staleWorkspace
+              ? { workspace: { ...workspace, id: WorkspaceRevisionId.make("replacement") } }
+              : {}),
             providerInstanceId,
             modelSelection,
             runtimeMode: "full-access",
@@ -321,6 +338,12 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
             .execute({ threadId, runId, scopeId: CheckpointScopeId.make("missing-scope") })
             .pipe(Effect.flip);
           assert.instanceOf(incomplete, CheckpointCaptureService.CheckpointCaptureExecutionError);
+          if (staleWorkspace || missingWorkspaceScope) {
+            const stale = yield* service.execute({ threadId, runId, scopeId }).pipe(Effect.result);
+            assert.isTrue(stale._tag === "Failure");
+            assert.deepEqual(yield* Ref.get(committed), []);
+            return;
+          }
           yield* service.execute({ threadId, runId, scopeId });
 
           const events = yield* Ref.get(committed);

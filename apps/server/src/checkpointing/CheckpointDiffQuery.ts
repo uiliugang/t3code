@@ -1,3 +1,4 @@
+import { CheckpointScopeId } from "@t3tools/contracts";
 import {
   OrchestrationGetTurnDiffResult,
   type OrchestrationGetFullThreadDiffInput,
@@ -108,7 +109,7 @@ export const make = Effect.gen(function* () {
         return emptyDiff;
       }
 
-      const projection = yield* threads.getCheckpointContext(input.threadId).pipe(
+      let projection = yield* threads.getCheckpointContext(input.threadId).pipe(
         Effect.mapError(
           () =>
             new CheckpointThreadNotFoundError({
@@ -118,6 +119,49 @@ export const make = Effect.gen(function* () {
         ),
         Effect.withSpan("checkpoint.turnDiff.lookupContext"),
       );
+      if (projection.checkpointScopes.some((scope) => scope.workspace !== undefined)) {
+        const target = input.repositoryTarget;
+        if (target === undefined || target.threadId !== input.threadId)
+          return yield* new CheckpointWorkspacePathMissingError({
+            operation,
+            threadId: input.threadId,
+          });
+        const scopes = projection.checkpointScopes.filter(
+          (scope) =>
+            scope.workspace?.id === target.workspaceRevisionId &&
+            scope.workspace.resources.some((resource) => resource.id === target.resourceId),
+        );
+        if (scopes.length === 0)
+          return yield* new CheckpointWorkspacePathMissingError({
+            operation,
+            threadId: input.threadId,
+          });
+        projection = {
+          ...projection,
+          checkpointScopes: scopes.map((scope) => ({
+            ...scope,
+            id: CheckpointScopeId.make(`${scope.id}:resource:${target.resourceId}`),
+            cwd: scope.workspace!.resources.find((resource) => resource.id === target.resourceId)!
+              .checkoutRoot,
+          })),
+          checkpoints: projection.checkpoints.flatMap((checkpoint) => {
+            const resource = checkpoint.resources?.find(
+              (entry) => entry.resourceId === target.resourceId,
+            );
+            return resource === undefined
+              ? []
+              : [
+                  {
+                    ...checkpoint,
+                    id: resource.checkpointId,
+                    scopeId: resource.scopeId,
+                    ref: resource.ref,
+                    status: resource.status,
+                  },
+                ];
+          }),
+        };
+      }
       const completedRunIds = new Set(
         projection.runs.filter((run) => run.status === "completed").map((run) => run.id),
       );
@@ -298,6 +342,7 @@ export const make = Effect.gen(function* () {
     const turnDiff = yield* getTurnDiff({
       threadId: input.threadId,
       fromTurnCount: 0,
+      ...(input.repositoryTarget === undefined ? {} : { repositoryTarget: input.repositoryTarget }),
       toTurnCount: input.toTurnCount,
       ignoreWhitespace,
     });

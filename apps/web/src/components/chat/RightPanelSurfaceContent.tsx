@@ -1,3 +1,7 @@
+import { isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
+import { useQuietThreadShell } from "../../state/entities";
+import { joinHostPath } from "../files/filePath";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type {
   EditorId,
   EnvironmentId,
@@ -77,6 +81,8 @@ export function RightPanelSurfaceContent(props: {
   readonly files: RightPanelFileProps;
 }) {
   const { surface, threadRef, visible } = props;
+  const workspace = useQuietThreadShell(threadRef)?.workspace;
+  const t = useUiTranslation();
   if (surface === null) return null;
   switch (surface.kind) {
     case "preview":
@@ -185,36 +191,104 @@ export function RightPanelSurfaceContent(props: {
     case "file": {
       const files = props.files;
       const attachment = surface.kind === "file" ? surface.attachment : undefined;
+      const requestedPath = surface.kind === "file" ? surface.relativePath : null;
+      const repository =
+        workspace?.resources.find(
+          (resource) =>
+            requestedPath !== null &&
+            workspaceRelativeFilePath(requestedPath, resource.checkoutRoot) !== null,
+        ) ??
+        workspace?.resources.find(
+          (resource) =>
+            resource.id ===
+            workspace.bindings.find((binding) => binding.rootId === workspace.primaryRootId)
+              ?.resourceId,
+        );
+      const cwd = repository?.checkoutRoot ?? files.workspaceRoot;
+      const relative =
+        repository && requestedPath
+          ? workspaceRelativeFilePath(requestedPath, repository.checkoutRoot)
+          : requestedPath;
+      const relativePath = relative === "." ? null : (relative ?? requestedPath);
+      const openPath = (filePath: string) =>
+        files.onOpenFile(
+          repository && !isHostPath(filePath)
+            ? joinHostPath(repository.checkoutRoot, filePath)
+            : filePath,
+        );
       if (!attachment && (files.projectName === null || !files.workspaceRoot)) return null;
       return (
         <Suspense fallback={null}>
-          <FilePreviewPanel
-            key={`${props.environmentId}:${
-              attachment ? `attachment:${attachment.id}` : files.workspaceRoot
-            }`}
-            environmentId={props.environmentId}
-            cwd={files.workspaceRoot ?? ""}
-            projectName={files.projectName ?? ""}
-            threadRef={threadRef}
-            composerDraftTarget={props.composerDraftTarget}
-            keybindings={props.keybindings}
-            availableEditors={files.availableEditors}
-            openInShortcutEnabled={visible}
-            relativePath={surface.kind === "file" ? surface.relativePath : null}
-            {...(attachment ? { attachment } : {})}
-            revealLine={surface.kind === "file" ? (surface.revealLine ?? null) : null}
-            revealRequestId={surface.kind === "file" ? surface.revealRequestId : 0}
-            onOpenFile={files.onOpenFile}
-            onNavigateFolder={(relativePath, folderTrail, keepSource) =>
-              useRightPanelStore
-                .getState()
-                .navigateFolder(threadRef, surface.id, relativePath, folderTrail, keepSource)
-            }
-            folderTrail={surface.folderTrail}
-            onPendingChange={files.onPendingChange}
-            selectedFilePending={surface.kind === "file" && files.pendingSurfaceIds.has(surface.id)}
-            workspaceMutationId={props.workspaceMutationId}
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            {!attachment && workspace && workspace.resources.length > 1 ? (
+              <div className="border-b border-border px-3 py-2">
+                <select
+                  aria-label={t("Repository")}
+                  className="w-full bg-transparent text-sm"
+                  value={repository?.id}
+                  onChange={(event) => {
+                    const selected = workspace.resources.find(
+                      (resource) => resource.id === event.target.value,
+                    );
+                    if (selected) files.onOpenFile(selected.checkoutRoot);
+                  }}
+                >
+                  {workspace.resources.map((resource) => (
+                    <option key={resource.id} value={resource.id}>
+                      {workspace.bindings
+                        .filter((binding) => binding.resourceId === resource.id)
+                        .map((binding) => binding.alias)
+                        .join(" / ")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="min-h-0 flex-1">
+              <FilePreviewPanel
+                key={`${props.environmentId}:${attachment ? `attachment:${attachment.id}` : cwd}`}
+                environmentId={props.environmentId}
+                cwd={cwd ?? ""}
+                projectName={files.projectName ?? ""}
+                threadRef={threadRef}
+                composerDraftTarget={props.composerDraftTarget}
+                keybindings={props.keybindings}
+                availableEditors={files.availableEditors}
+                openInShortcutEnabled={visible}
+                relativePath={relativePath}
+                {...(attachment ? { attachment } : {})}
+                revealLine={surface.kind === "file" ? (surface.revealLine ?? null) : null}
+                revealRequestId={surface.kind === "file" ? surface.revealRequestId : 0}
+                onOpenFile={openPath}
+                onNavigateFolder={(relativePath, folderTrail, keepSource) =>
+                  useRightPanelStore
+                    .getState()
+                    .navigateFolder(
+                      threadRef,
+                      surface.id,
+                      repository && !isHostPath(relativePath)
+                        ? joinHostPath(repository.checkoutRoot, relativePath)
+                        : relativePath,
+                      folderTrail,
+                      keepSource,
+                    )
+                }
+                folderTrail={surface.folderTrail}
+                onPendingChange={(filePath, pending) =>
+                  files.onPendingChange(
+                    repository && !isHostPath(filePath)
+                      ? joinHostPath(repository.checkoutRoot, filePath)
+                      : filePath,
+                    pending,
+                  )
+                }
+                selectedFilePending={
+                  surface.kind === "file" && files.pendingSurfaceIds.has(surface.id)
+                }
+                workspaceMutationId={props.workspaceMutationId}
+              />
+            </div>
+          </div>
         </Suspense>
       );
     }

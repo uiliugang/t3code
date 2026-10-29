@@ -1,4 +1,4 @@
-import { RegistryContext } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type {
   DeleteProjectInput,
   UpdateProjectInput,
@@ -10,6 +10,7 @@ import {
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
+  WorkspaceRootId,
   type AuthEnvironmentScope,
   type AuthSessionState,
 } from "@t3tools/contracts";
@@ -34,6 +35,7 @@ type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
 const state = vi.hoisted(() => ({
   sessions: new Map<EnvironmentId, Atom.Writable<SessionResult>>(),
   projects: [] as Project[],
+  projectsRevision: null as Atom.Writable<number> | null,
   update:
     vi.fn<
       (request: {
@@ -74,7 +76,10 @@ vi.mock(import("~/state/environments"), async (original) => ({
 }));
 vi.mock(import("~/state/entities"), async (original) => ({
   ...(await original()),
-  useProjects: (() => state.projects) as never,
+  useProjects: (() => {
+    useAtomValue(state.projectsRevision!);
+    return state.projects;
+  }) as never,
   useThreadShells: () => [],
   waitForProjectRemoval: async () => true,
 }));
@@ -171,6 +176,7 @@ function deferred<T>() {
 
 function setup() {
   vi.clearAllMocks();
+  state.projectsRevision = Atom.make(0);
   state.sessions.clear();
   for (const id of [primaryId, remoteId])
     state.sessions.set(id, Atom.make<SessionResult>(writable()).pipe(Atom.keepAlive));
@@ -461,6 +467,46 @@ describe("project settings scope", () => {
   const environmentMenu = () => page.getByRole("button", { name: /^Environment scope:/ });
   const primaryOption = () => page.getByRole("menuitemradio", { name: /^primary/ });
   const remoteOption = () => page.getByRole("menuitemradio", { name: /^remote/ });
+
+  it.each([undefined, "remote:/work/remote"])(
+    "keeps the selected project after repository configuration changes its grouping key with checkout %s",
+    async (checkout) => {
+      setup();
+      state.projects = [state.projects[1]!];
+      await using screen = await mountSettings({
+        project: projectKey(),
+        machine: remoteId,
+        ...(checkout ? { checkout } : {}),
+      });
+      await expect.element(page.getByRole("textbox", { name: "Project name" })).toBeVisible();
+      state.projects = state.projects.map((project) => ({
+        ...project,
+        workspaceConfig: {
+          version: 1,
+          primaryRootId: WorkspaceRootId.make("frontend"),
+          roots: ["frontend", "backend"].map((alias) => ({
+            id: WorkspaceRootId.make(alias),
+            alias,
+            sourcePath: alias === "frontend" ? project.workspaceRoot : "/work/backend",
+            description: "",
+            defaultSelected: true,
+            accessIntent: "write" as const,
+          })),
+        },
+      }));
+      await act(async () => {
+        appAtomRegistry.set(state.projectsRevision!, 1);
+      });
+      await expect.element(page.getByRole("textbox", { name: "Project name" })).toBeVisible();
+      await vi.waitFor(() =>
+        expect(screen.router.state.location.search).toEqual({
+          project: projectKey(),
+          machine: remoteId,
+          ...(checkout ? { checkout: "remote:workspace:project-remote" } : {}),
+        }),
+      );
+    },
+  );
 
   it("offers every environment while no project is selected", async () => {
     setup();
