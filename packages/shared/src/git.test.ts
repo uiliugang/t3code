@@ -10,11 +10,28 @@ import {
   isTemporaryWorktreeBranch,
   isMainOrMasterBranch,
   normalizeGitRemoteUrl,
+  canonicalRepositoryCloneKey,
   parseOriginUrlFromGitConfig,
   resolveAutoFeatureBranchName,
   sanitizeFeatureBranchName,
   WORKTREE_BRANCH_PREFIX,
 } from "./git.ts";
+
+describe("canonicalRepositoryCloneKey", () => {
+  it("preserves generic SSH path and user namespaces", () => {
+    const remotes = [
+      "git@code.example.test:team/repo.git",
+      "ssh://git@code.example.test/team/repo.git",
+      "https://code.example.test/team/repo.git",
+      "code.example.test:team/repo.git",
+      "alice@code.example.test:team/repo.git",
+    ];
+    expect(new Set(remotes.map(canonicalRepositoryCloneKey)).size).toBe(remotes.length);
+    expect(canonicalRepositoryCloneKey("git@code.example.test:/team/repo.git")).toBe(
+      canonicalRepositoryCloneKey("ssh://git@code.example.test/team/repo.git"),
+    );
+  });
+});
 
 describe("main/master worktree bases", () => {
   it.each([

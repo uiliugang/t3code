@@ -1,4 +1,5 @@
 import { ProjectRepositoriesEditor } from "./components/ProjectRepositoriesEditor";
+import { ProjectConfigurationSettings } from "./ConfigurationSettings";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -302,6 +303,18 @@ function ProjectOverviewContent(props: {
           project={project}
         />
       ))}
+      {props.members.map((project) => {
+        const settings = props.environments.find(
+          (entry) => entry.environmentId === project.environmentId,
+        )?.serverConfig.settings;
+        return settings ? (
+          <ProjectConfigurationSettings
+            key={`${project.environmentId}:${project.id}`}
+            project={project}
+            settings={settings}
+          />
+        ) : null;
+      })}
       <SettingsSection title="Checkouts">
         {props.members.map((member, index) => {
           const environment = props.environments.find(

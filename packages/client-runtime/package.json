@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./settings-transfer": {
+      "types": "./src/settingsTransfer.ts",
+      "default": "./src/settingsTransfer.ts"
+    },
     "./composer-prediction": {
       "types": "./src/composerPrediction.ts",
       "default": "./src/composerPrediction.ts"
