@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   AuthOrchestrationOperateScope,
@@ -19,7 +20,12 @@ import {
   useRemoteOpenState,
 } from "../../remoteOpen";
 import { useEnvironment } from "../../state/environments";
-import { ChevronDownIcon, FolderClosedIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  FolderClosedIcon,
+  SquareArrowOutUpRightIcon,
+  TerminalIcon,
+} from "lucide-react";
 
 import { Group, GroupSeparator } from "../ui/group";
 import {
@@ -214,6 +220,8 @@ export const OpenInPicker = memo(function OpenInPicker({
   enableShortcut = true,
   displayMode = "toolbar",
   revealFileManager = false,
+  onOpenTerminal,
+  canOpenTerminal = true,
 }: {
   environmentId: EnvironmentId;
   keybindings: ResolvedKeybindingsConfig;
@@ -225,7 +233,10 @@ export const OpenInPicker = memo(function OpenInPicker({
   enableShortcut?: boolean;
   displayMode?: "toolbar" | "panel";
   revealFileManager?: boolean;
+  onOpenTerminal?: (() => void) | undefined;
+  canOpenTerminal?: boolean;
 }) {
+  const t = useUiTranslation();
   const isPanel = displayMode === "panel";
   const ActionGroup = isPanel ? "div" : Group;
   const panelAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -234,7 +245,8 @@ export const OpenInPicker = memo(function OpenInPicker({
   const canOperateHost = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const isHostEditorDenied = remote.mode === "local-exec" && !canOperateHost;
   const canOpenEditor = remote.mode !== "remote-unavailable" && !isHostEditorDenied;
-  const [menuOpen, setMenuOpen] = useComposerMenuState(isHostEditorDenied);
+  const menuDenied = isHostEditorDenied && !(onOpenTerminal && canOpenTerminal);
+  const [menuOpen, setMenuOpen] = useComposerMenuState(menuDenied);
   const remoteCapableEditors = useRemoteCapableEditors();
   const [remoteHintSeen, markRemoteHintSeen] = useRemoteOpenHint();
   const environmentLabel = useEnvironment(environmentId)?.label ?? "this machine";
@@ -288,6 +300,12 @@ export const OpenInPicker = memo(function OpenInPicker({
 
   const editorItems = (
     <>
+      {onOpenTerminal ? (
+        <MenuItem disabled={!canOpenTerminal} onClick={onOpenTerminal}>
+          <TerminalIcon aria-hidden />
+          <MenuItemLabel>{t("Open in terminal")}</MenuItemLabel>
+        </MenuItem>
+      ) : null}
       {remote.mode === "remote-unavailable" ? (
         <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
           No SSH route to {environmentLabel}
@@ -346,7 +364,7 @@ export const OpenInPicker = memo(function OpenInPicker({
           </MenuItem>
         )}
         <MenuSub>
-          <MenuSubTrigger density="touch" disabled={isHostEditorDenied}>
+          <MenuSubTrigger density="touch" disabled={menuDenied}>
             <SquareArrowOutUpRightIcon className="size-4" />
             <MenuItemLabel>Open in…</MenuItemLabel>
           </MenuSubTrigger>
@@ -412,7 +430,7 @@ export const OpenInPicker = memo(function OpenInPicker({
       )}
       <Menu open={menuOpen} onOpenChange={setMenuOpen}>
         <MenuTrigger
-          disabled={isHostEditorDenied}
+          disabled={menuDenied}
           render={
             <ThreadDetailsControl
               aria-label="Choose editor"

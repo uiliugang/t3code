@@ -196,6 +196,11 @@ export function ProjectActionsSettings() {
           editScope={AuthSettingsWriteScope}
           request={request}
           scripts={scripts}
+          repositories={representativeMember?.workspaceConfig?.roots.filter((root) =>
+            [...memberById.values()].every((member) =>
+              member.workspaceConfig?.roots.some((entry) => entry.id === root.id),
+            ),
+          )}
           onSubmit={submit}
           onDelete={(id) =>
             void persist((current) => current.filter((script) => script.id !== id), id, null)

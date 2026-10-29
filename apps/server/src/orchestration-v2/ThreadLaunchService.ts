@@ -335,6 +335,7 @@ const make = Effect.gen(function* () {
             threadId,
             projectId: input.projectId,
             config: workspaceThread.workspaceConfiguration,
+            scripts: project.scripts,
             strategy: input.workspaceStrategy,
           })
           .pipe(

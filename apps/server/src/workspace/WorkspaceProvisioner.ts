@@ -1,3 +1,8 @@
+import {
+  resolveProjectScripts,
+  setupProjectScript,
+  projectScriptAppliesToRoots,
+} from "@t3tools/shared/projectScripts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
   resolveProjectSettings,
@@ -13,6 +18,7 @@ import {
   T3_PROJECT_FILE_NAME,
   WorktreeSubmodules,
   ProjectId,
+  type ProjectScript,
   ProjectWorkspaceConfig,
   ThreadId,
   ThreadWorkspaceRevision,
@@ -77,6 +83,7 @@ export class WorkspaceProvisioner extends Context.Service<
       readonly threadId: ThreadId;
       readonly projectId: ProjectId;
       readonly config: ProjectWorkspaceConfig;
+      readonly scripts?: readonly ProjectScript[];
       readonly strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
     }) => Effect.Effect<ThreadWorkspaceRevision, WorkspacePreparationError>;
   }
@@ -140,10 +147,28 @@ export const layer = Layer.effect(
                       "Read-only repository roots are not supported by the current providers.",
                   });
                 const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
-                const config = input.config;
                 const settings = Option.isSome(settingsService)
                   ? yield* settingsService.value.getSettings
                   : null;
+                const workspaceSetup = settings
+                  ? setupProjectScript(
+                      resolveProjectScripts(settings, {
+                        id: input.projectId,
+                        scripts: input.scripts ?? [],
+                      }),
+                    )
+                  : null;
+                const config = workspaceSetup
+                  ? {
+                      ...input.config,
+                      roots: input.config.roots.map(({ setupScript: _setup, ...root }) => ({
+                        ...root,
+                        ...(projectScriptAppliesToRoots(workspaceSetup, [root.id])
+                          ? { setupScript: workspaceSetup }
+                          : {}),
+                      })),
+                    }
+                  : input.config;
                 const worktreesDirectory = resolveWorktreesDirectory(
                   settings?.worktreesDirectory ?? "",
                   serverConfig.worktreesDir,
@@ -367,16 +392,21 @@ export const layer = Layer.effect(
                     detail: `Setup completion is unknown in ${item.path}. Inspect the setup terminal before retrying; prepared checkouts have been retained.`,
                   });
                 if (item.setup !== "done") {
-                  const root = state.config.roots.find((entry) =>
-                    state.bindings.some(
-                      (binding) =>
-                        binding.rootId === entry.id && binding.resourceId === item.source.id,
-                    ),
+                  const root = state.config.roots.find(
+                    (entry) =>
+                      entry.setupScript &&
+                      projectScriptAppliesToRoots(entry.setupScript, [entry.id]) &&
+                      state.bindings.some(
+                        (binding) =>
+                          binding.rootId === entry.id && binding.resourceId === item.source.id,
+                      ),
                   );
                   if (state.mode === "isolated" && root?.setupScript) {
                     yield* update({ setup: "running" });
                     const result = yield* setup.runForThread({
                       threadId: input.threadId,
+                      repositoryRootIds: [root.id],
+                      script: { ...root.setupScript, id: `${root.id}-${root.setupScript.id}` },
                       worktreePath: path.join(
                         item.path,
                         state.bindings.find((binding) => binding.rootId === root.id)!

@@ -1,7 +1,9 @@
+import * as Schema from "effect/Schema";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import {
+  ThreadWorkspaceRevision,
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
   EventId,
@@ -41,6 +43,8 @@ import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadSettlementService from "./ThreadSettlementService.ts";
+
+const decodeWorkspace = Schema.decodeUnknownEffect(ThreadWorkspaceRevision);
 
 const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -1305,10 +1309,55 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         const shared = appThread("shared-checkout-thread", "settled");
         const missing = appThread("removed-worktree-thread", "settled", "/worktrees/removed");
         const worktree = appThread("worktree-thread", "settled", "/worktrees/thread");
+        const group = {
+          ...appThread("group", "settled", "/worktrees/frontend"),
+          workspace: yield* decodeWorkspace({
+            id: "revision",
+            projectId: "project-1",
+            sourceProjectVersion: 1,
+            previousRevisionId: null,
+            primaryRootId: "frontend",
+            mode: "isolated",
+            createdAt: "2026-06-10T12:00:00.000Z",
+            resources: ["frontend", "backend", "shared"].map((name) => ({
+              id: name,
+              storeId: name,
+              name,
+              checkoutRoot: `/worktrees/${name}`,
+              identity: {
+                checkoutRoot: `/worktrees/${name}`,
+                gitDir: `/git/${name}`,
+                commonDir: `/git/${name}`,
+                gitDirIdentity: name,
+                commonDirIdentity: name,
+              },
+              ownership: name === "shared" ? "borrowed" : "managed",
+              generation: 1,
+            })),
+            bindings: ["frontend", "backend", "shared"].map((name) => ({
+              rootId: name,
+              alias: name,
+              description: "",
+              accessIntent: "write",
+              resourceId: name,
+              relativeSubpath: "",
+              sourcePathAtBind: `/source/${name}`,
+              executionPath: `/worktrees/${name}`,
+              launchBaseRef: null,
+              launchBaseCommit: null,
+              launchBranch: null,
+            })),
+          }),
+        };
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([]),
-          currentThreads: [shared, missing, worktree],
-          existingWorktreePaths: ["/worktrees/thread"],
+          currentThreads: [shared, missing, worktree, group],
+          existingWorktreePaths: [
+            "/worktrees/thread",
+            "/worktrees/frontend",
+            "/worktrees/backend",
+            "/worktrees/shared",
+          ],
         });
 
         yield* Effect.gen(function* () {
@@ -1316,7 +1365,14 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
           yield* fixture.publishEvent(settledEvent(shared));
           yield* fixture.publishEvent(settledEvent(missing));
+          yield* fixture.publishEvent(settledEvent(group));
           yield* fixture.publishEvent(settledEvent(worktree));
+          const frontend = yield* Queue.take(fixture.scriptRuns);
+          const backend = yield* Queue.take(fixture.scriptRuns);
+          assert.strictEqual(frontend.worktreePath, "/worktrees/frontend");
+          assert.deepStrictEqual(frontend.repositoryRootIds?.map(String), ["frontend"]);
+          assert.strictEqual(backend.worktreePath, "/worktrees/backend");
+          assert.deepStrictEqual(backend.repositoryRootIds?.map(String), ["backend"]);
           const run = yield* Queue.take(fixture.scriptRuns);
           assert.strictEqual(run.threadId, worktree.id);
           assert.strictEqual(run.worktreePath, "/worktrees/thread");

@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
 export interface ProjectScriptInput {
+  readonly repositoryRootIds?: ProjectScript["repositoryRootIds"];
   readonly name: ProjectScript["name"];
   readonly command: ProjectScript["command"];
   readonly icon: ProjectScript["icon"];
@@ -21,6 +22,9 @@ export interface ProjectScriptInput {
 export function buildProjectScript(id: string, input: ProjectScriptInput): ProjectScript {
   return {
     id,
+    ...(input.repositoryRootIds === undefined
+      ? {}
+      : { repositoryRootIds: input.repositoryRootIds }),
     name: input.name,
     command: input.command,
     icon: input.icon,

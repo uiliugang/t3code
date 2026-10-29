@@ -96,9 +96,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     expandedRepository?.revision === workspace?.id
       ? expandedRepository?.resourceId
       : primaryResourceId;
-  const openInCwd =
-    workspace?.resources.find((resource) => resource.id === expandedResourceId)?.checkoutRoot ??
-    props.gitCwd;
 
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
@@ -174,22 +171,12 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {density !== "essential" && props.showOpenInPicker ? (
-                <OpenInPicker
-                  keybindings={props.keybindings}
-                  environmentId={props.environmentId}
-                  availableEditors={props.availableEditors}
-                  openInCwd={openInCwd}
-                  enableShortcut={props.openInShortcutEnabled}
-                  displayMode="panel"
-                />
-              ) : null}
-
               {props.activeProjectScripts ? (
                 <ProjectScriptsControl
                   environmentId={props.environmentId}
                   displayMode="panel"
                   scripts={props.activeProjectScripts}
+                  repositories={project?.workspaceConfig?.roots}
                   fileScripts={fileScripts}
                   preferredScriptId={props.preferredScriptId}
                   onRunScript={props.onRunProjectScript}
@@ -209,6 +196,12 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 threadId={props.threadId}
                 workspace={workspace}
                 resource={resource}
+                openInOptions={{
+                  keybindings: props.keybindings,
+                  availableEditors: props.availableEditors,
+                  enableShortcut: props.openInShortcutEnabled,
+                }}
+                showOpenInPicker={density !== "essential" && props.showOpenInPicker}
                 expanded={expandedResourceId === resource.id}
                 onToggle={() =>
                   setExpandedRepository({
@@ -230,6 +223,17 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               separated={density === "full"}
             >
               <div className="flex flex-col">
+                {density !== "essential" && props.showOpenInPicker ? (
+                  <OpenInPicker
+                    keybindings={props.keybindings}
+                    environmentId={props.environmentId}
+                    availableEditors={props.availableEditors}
+                    openInCwd={props.gitCwd}
+                    enableShortcut={props.openInShortcutEnabled}
+                    displayMode="panel"
+                  />
+                ) : null}
+
                 {props.isGitRepo ? (
                   <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />
                 ) : null}

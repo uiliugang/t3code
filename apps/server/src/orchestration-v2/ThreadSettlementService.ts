@@ -303,7 +303,7 @@ export const make = Effect.gen(function* () {
   const terminals = yield* TerminalManager.TerminalManager;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   // Repeated thread.settled retains settledAt; run the action only once per settlement.
-  const settleActionRunAt = new Map<ThreadId, number>();
+  const settleActionRunAt = new Map<string, number>();
 
   const sweep = Effect.fn("ThreadSettlementServiceV2.sweep")(function* (
     mergedPullRequest: PullRequestService.PullRequestMergeEvent | null,
@@ -575,17 +575,34 @@ export const make = Effect.gen(function* () {
       if (thread.settledOverride !== "settled") return;
       const settledAtMs = toMillis(thread.settledAt);
       if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
-      const run = yield* projectScripts.runForThread({
-        threadId,
-        projectId: thread.projectId,
-        worktreePath,
-        trigger: "settle",
-        observeCompletion: {},
-      });
-      settleActionRunAt.set(threadId, settledAtMs);
-      if (run.status === "started" && run.completion) {
-        yield* run.completion.pipe(Effect.forkDetach);
+      const targets = thread.workspace
+        ? thread.workspace.resources
+            .filter((resource) => resource.ownership === "managed")
+            .map((resource) => ({
+              path: resource.checkoutRoot,
+              rootIds: thread
+                .workspace!.bindings.filter((binding) => binding.resourceId === resource.id)
+                .map((binding) => binding.rootId),
+            }))
+        : [{ path: worktreePath, rootIds: undefined }];
+      for (const target of targets) {
+        const targetKey = `${threadId}\0${target.path}`;
+        if (settleActionRunAt.get(targetKey) === settledAtMs) continue;
+        if (!(yield* fileSystem.exists(target.path))) continue;
+        const run = yield* projectScripts.runForThread({
+          threadId,
+          projectId: thread.projectId,
+          worktreePath: target.path,
+          ...(target.rootIds ? { repositoryRootIds: target.rootIds } : {}),
+          trigger: "settle",
+          observeCompletion: {},
+        });
+        settleActionRunAt.set(targetKey, settledAtMs);
+        if (run.status === "started" && run.completion) {
+          yield* run.completion.pipe(Effect.forkDetach);
+        }
       }
+      settleActionRunAt.set(threadId, settledAtMs);
     },
     (effect, threadId) =>
       effect.pipe(
