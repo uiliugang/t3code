@@ -1,4 +1,5 @@
 import { ProjectRepositoriesSettings } from "./ProjectRepositoriesSettings";
+import { ProjectConfigurationSettings } from "./ConfigurationSettings";
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -584,6 +585,16 @@ function ProjectDetail({
         ))}
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
+        {group.memberProjects.map((member) => {
+          const settings = environmentById.get(member.environmentId)?.serverConfig?.settings;
+          return settings ? (
+            <ProjectConfigurationSettings
+              key={`${member.environmentId}:${member.id}`}
+              project={member}
+              settings={settings}
+            />
+          ) : null;
+        })}
         {hasMultipleCheckouts ? checkoutChoices : null}
         <SettingsSection title="Danger">
           <SettingsRow

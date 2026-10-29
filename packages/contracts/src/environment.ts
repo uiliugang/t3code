@@ -119,6 +119,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   localServerStop: Schema.optionalKey(Schema.Boolean),
   threadPullRequests: Schema.optionalKey(Schema.Boolean),
   multiRepositoryWorkspaces: Schema.optionalKey(Schema.Boolean),
+  projectConfigurationImport: Schema.optionalKey(Schema.Boolean),
   threadPullRequestWatch: Schema.optionalKey(Schema.Boolean),
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
   serverSelfUpdate: Schema.optionalKey(ServerSelfUpdateCapability),

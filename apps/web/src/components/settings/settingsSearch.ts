@@ -264,7 +264,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "project-overview",
     title: "Project overview",
     to: "/settings/projects",
-    searchTerms: ["name icon emoji image checkout remove delete"],
+    searchTerms: [
+      "name icon emoji image checkout remove delete git identity configuration import export backup",
+    ],
+  },
+  {
+    id: "settings-import-export",
+    title: "Import and export settings",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["configuration backup restore sync JSON theme shortcuts"],
   },
   {
     id: "default-model",

@@ -398,6 +398,14 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
+import {
+  ProjectConfigurationExportInput,
+  ProjectConfigurationExportResult,
+  ProjectImportStartInput,
+  ProjectImportActionInput,
+  ProjectImportSnapshot,
+  ProjectImportError,
+} from "./projectImport.ts";
 
 export const WS_METHODS = {
   projectsListEntries: "projects.listEntries",
@@ -409,6 +417,11 @@ export const WS_METHODS = {
   projectsMutate: "projects.mutate",
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
+  projectsExportConfiguration: "projects.exportConfiguration",
+  projectsImportConfiguration: "projects.importConfiguration",
+  projectsRetryImport: "projects.retryImport",
+  projectsForgetImport: "projects.forgetImport",
+  subscribeProjectImports: "subscribeProjectImports",
 
   shellOpenInEditor: "shell.openInEditor",
 
@@ -1246,6 +1259,33 @@ const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
   error: Schema.Union([ProjectSearchEntriesError, EnvironmentAuthorizationError]),
 });
 
+const WsProjectsExportConfigurationRpc = Rpc.make(WS_METHODS.projectsExportConfiguration, {
+  payload: ProjectConfigurationExportInput,
+  success: ProjectConfigurationExportResult,
+  error: Schema.Union([ProjectImportError, EnvironmentAuthorizationError]),
+});
+const WsProjectsImportConfigurationRpc = Rpc.make(WS_METHODS.projectsImportConfiguration, {
+  payload: ProjectImportStartInput,
+  success: ProjectImportSnapshot,
+  error: Schema.Union([ProjectImportError, EnvironmentAuthorizationError]),
+});
+const WsProjectsRetryImportRpc = Rpc.make(WS_METHODS.projectsRetryImport, {
+  payload: ProjectImportActionInput,
+  success: ProjectImportSnapshot,
+  error: Schema.Union([ProjectImportError, EnvironmentAuthorizationError]),
+});
+const WsProjectsForgetImportRpc = Rpc.make(WS_METHODS.projectsForgetImport, {
+  payload: ProjectImportActionInput,
+  success: Schema.Void,
+  error: Schema.Union([ProjectImportError, EnvironmentAuthorizationError]),
+});
+const WsSubscribeProjectImportsRpc = Rpc.make(WS_METHODS.subscribeProjectImports, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(ProjectImportSnapshot),
+  stream: true,
+  error: Schema.Union([ProjectImportError, EnvironmentAuthorizationError]),
+});
+
 const WsProjectsSearchContentsRpc = Rpc.make(WS_METHODS.projectsSearchContents, {
   payload: ProjectSearchContentsInput,
   success: ProjectSearchContentsResult,
@@ -2017,6 +2057,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
   WsProjectCloneStartRpc,
+  WsProjectsExportConfigurationRpc,
+  WsProjectsImportConfigurationRpc,
+  WsProjectsRetryImportRpc,
+  WsProjectsForgetImportRpc,
+  WsSubscribeProjectImportsRpc,
   WsProjectCloneCancelRpc,
   WsProjectCloneRetryRpc,
   WsSubscribeProjectClonesRpc,

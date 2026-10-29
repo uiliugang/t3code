@@ -17,6 +17,26 @@ export function createSourceControlEnvironmentAtoms<R, E>(
 ) {
   const commandScheduler = createAtomCommandScheduler();
   return {
+    exportProjectConfigurations: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:export-configuration",
+      tag: WS_METHODS.projectsExportConfiguration,
+    }),
+    importProjectConfigurations: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:import-configuration",
+      tag: WS_METHODS.projectsImportConfiguration,
+    }),
+    retryProjectImport: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:retry-import",
+      tag: WS_METHODS.projectsRetryImport,
+    }),
+    forgetProjectImport: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:forget-import",
+      tag: WS_METHODS.projectsForgetImport,
+    }),
+    projectImports: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:projects:imports",
+      tag: WS_METHODS.subscribeProjectImports,
+    }),
     discovery: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:source-control-discovery",
       tag: WS_METHODS.serverDiscoverSourceControl,

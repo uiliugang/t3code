@@ -184,6 +184,63 @@ returns. Leave it off if you don't want request bodies stored outside your
 machine. To skip requests that waited too long, set **Skip requests older
 than** on the task.
 
+## Import and export settings
+
+On web and desktop, open **Settings → General → Import and export** and choose
+one connected environment. Export saves a JSON file containing this client's
+preferences, theme library and selection, shortcuts, model preferences, shared
+actions and portable environment defaults. On mobile, use **Settings → About →
+Client Storage** and choose one environment with the filter. Native preferences
+are restored on mobile; web and desktop preferences are restored on those clients.
+
+For a project's explicit overrides and actions, select it in **Settings → Projects**
+and use **Project configuration** for the checkout you want. Project imports replace that
+checkout's explicit overrides; settings absent from the file inherit their defaults. This
+also lets an earlier export restore inheritance. Application imports merge matching settings
+and shortcuts, leaving other values intact. Project action shortcuts
+remain environment-local. Repository-specific actions are matched by repository alias;
+create the matching repositories before importing. Custom provider instances must already
+exist on the destination with the same ID and driver.
+
+Imports show their contents before saving. Export files exclude account credentials,
+connection addresses, machine paths, browser profiles and conversation history. Application
+exports include the selected environment's project and workspace definitions. Action
+commands and custom instructions are included as written, so review them before sharing a file.
+An import that fails after saving some settings reports incomplete progress; retry after
+resolving the error. Export the destination first if you want a backup to restore.
+
+To restore projects on another machine, choose that environment in **Settings → General**
+(**About → Client Storage** on mobile), import an application or project export, and enable
+**Clone repositories and create projects or workspace groups**. Optionally enter an absolute
+directory or a `~/` path on that environment; the default is `~/projects`. Repositories are
+deduplicated by Git identity and stored in stable repository folders inside that directory.
+Projects and groups then point to those checkouts, including repository-relative subdirectories.
+Repository setup actions are restored but are not run during import.
+
+The server saves the import information before cloning. Saved imports show repository
+results and **Retry failed import** continues after you fix network access, Git authentication,
+directory permissions or provider configuration on that environment. Completed clones are reused,
+including clones whose final move failed. Restarting the server pauses unfinished imports until
+you retry them. Existing unrelated files and failed partial checkouts are retained. **Forget import**
+removes only the saved import information. Clone URLs omit credentials; configure Git credentials
+on the destination. Older exports without clone information can still copy settings into an
+existing project; export them again from an updated server to create new projects.
+
+Project configuration shows its Git repository and a versioned identifier. Standard SSH
+and HTTPS remotes on GitHub, GitLab.com, Bitbucket.org and GitCafe share an identifier across
+clones and worktrees.
+The repository's own origin distinguishes forks, and repository-relative directories
+distinguish projects inside a monorepo. Nonstandard ports and SSH user namespaces remain
+distinct. Other hosts retain protocol, SSH path semantics and path casing. Renaming a remote repository or changing an SSH
+host alias can change the identifier. Projects without complete Git metadata and multi-repository
+groups use an environment-local identifier. Identifiers help compare exports; importing always
+targets the checkout or destination environment you explicitly selected.
+
+T3 Connect connects clients to environments. It does not back up app preferences to your
+account. You can keep exported JSON files in a private Git repository or a synchronized
+folder and import them on another device. Synchronize the exports rather than the live
+T3 database or credential directories.
+
 ## Defaults and inheritance
 
 Threads contains the model and workspace for new threads. Browser controls agent browser

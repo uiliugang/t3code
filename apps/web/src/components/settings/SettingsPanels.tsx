@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { ApplicationConfigurationSettings } from "./ConfigurationSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
@@ -776,6 +777,7 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <ApplicationConfigurationSettings />
       <SettingsSection id="notifications" title="Notifications">
         <NotificationSettings />
         <SettingsRow

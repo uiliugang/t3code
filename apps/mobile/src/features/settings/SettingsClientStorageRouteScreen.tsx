@@ -21,8 +21,15 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { ApplicationConfigurationSettings } from "./ConfigurationSettings";
+import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+import {
+  AndroidSettingsEnvironmentFilter,
+  SettingsEnvironmentFilterHeader,
+} from "./components/SettingsEnvironmentFilterHeader";
 
 export function SettingsClientStorageRouteScreen() {
+  const { selectedTargets } = useSettingsEnvironmentFilter();
   const insets = useSafeAreaInsets();
   const summaryResult = useAtomValue(clientCacheSummaryAtom);
   const clearResult = useAtomValue(clearClientCacheAtom);
@@ -68,93 +75,106 @@ export function SettingsClientStorageRouteScreen() {
   };
 
   return (
-    <SettingsScreen title="Client Storage">
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentInset={{ bottom: Math.max(insets.bottom, 18) }}
-        showsVerticalScrollIndicator={false}
-        className="flex-1"
-        contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"
-      >
-        <SettingsSection title="Environment caches">
-          {AsyncResult.isFailure(summaryResult) ? (
-            <View className="items-center gap-2 px-6 py-8">
-              <SymbolView
-                name="exclamationmark.triangle"
-                size={28}
-                tintColorClassName="accent-danger-foreground"
-                type="monochrome"
-                weight="regular"
-              />
-              <Text className="text-center text-base text-foreground">Storage unavailable</Text>
-              <Text className="text-center text-sm text-foreground-muted">
-                Restart the app and try again.
-              </Text>
-            </View>
-          ) : !summary ? (
-            <View className="items-center gap-3 px-6 py-8">
-              <AppActivityIndicator />
-              <Text className="text-center text-sm text-foreground-muted">
-                Inspecting cached data…
-              </Text>
-            </View>
-          ) : environmentSummaries.length > 0 ? (
-            environmentSummaries.map((environment, index) => (
-              <CacheEnvironmentRow
-                key={environment.environmentId}
-                environment={environment}
-                environmentLabel={
-                  savedConnectionsById[environment.environmentId]?.environmentLabel ??
-                  environment.environmentId
-                }
-                machine={resolveEnvironmentMachineKind(
-                  serverConfigs.get(environment.environmentId) ?? null,
-                )}
-                disabled={isClearing}
-                first={index === 0}
-                onClear={() => confirmClearEnvironment(environment)}
-              />
-            ))
-          ) : (
-            <View className="items-center gap-2 px-6 py-8">
-              <SymbolView
-                name="checkmark.circle"
-                size={28}
-                tintColorClassName="accent-icon"
-                type="monochrome"
-                weight="regular"
-              />
-              <Text className="text-center text-base text-foreground">No cached data</Text>
-              <Text className="text-center text-sm text-foreground-muted">
-                Offline cache records will appear here after environments are used.
-              </Text>
-            </View>
-          )}
-        </SettingsSection>
-
-        <View className="gap-3">
-          <SettingsSection title="Actions">
-            <SettingsActionRow
-              icon="trash"
-              label={summary ? `Clear ${formatBytes(summary.payloadBytes)}` : "Clear caches"}
-              tone="danger"
-              disabled={isClearing || !summary || summary.recordCount === 0}
-              loading={isClearing}
-              onPress={confirmClearAll}
+    <>
+      <SettingsEnvironmentFilterHeader />
+      <SettingsScreen title="Client Storage" trailing={<AndroidSettingsEnvironmentFilter />}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          contentInset={{ bottom: Math.max(insets.bottom, 18) }}
+          showsVerticalScrollIndicator={false}
+          className="flex-1"
+          contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"
+        >
+          {selectedTargets.length === 1 && selectedTargets[0] ? (
+            <ApplicationConfigurationSettings
+              key={selectedTargets[0].environmentId}
+              environment={selectedTargets[0]}
             />
-          </SettingsSection>
-          <Text className="px-2 text-sm leading-normal text-foreground-muted">
-            Clearing caches never removes environment connections, credentials, account data, or
-            appearance preferences.
-          </Text>
-          {AsyncResult.isFailure(summaryResult) || AsyncResult.isFailure(clearResult) ? (
-            <Text selectable className="px-2 text-sm text-danger-foreground">
-              Client storage is temporarily unavailable. Try again after restarting the app.
+          ) : (
+            <Text className="px-2 text-sm text-foreground-muted">
+              Choose one connected environment with the filter to import or export app settings.
             </Text>
-          ) : null}
-        </View>
-      </ScrollView>
-    </SettingsScreen>
+          )}
+          <SettingsSection title="Environment caches">
+            {AsyncResult.isFailure(summaryResult) ? (
+              <View className="items-center gap-2 px-6 py-8">
+                <SymbolView
+                  name="exclamationmark.triangle"
+                  size={28}
+                  tintColorClassName="accent-danger-foreground"
+                  type="monochrome"
+                  weight="regular"
+                />
+                <Text className="text-center text-base text-foreground">Storage unavailable</Text>
+                <Text className="text-center text-sm text-foreground-muted">
+                  Restart the app and try again.
+                </Text>
+              </View>
+            ) : !summary ? (
+              <View className="items-center gap-3 px-6 py-8">
+                <AppActivityIndicator />
+                <Text className="text-center text-sm text-foreground-muted">
+                  Inspecting cached data…
+                </Text>
+              </View>
+            ) : environmentSummaries.length > 0 ? (
+              environmentSummaries.map((environment, index) => (
+                <CacheEnvironmentRow
+                  key={environment.environmentId}
+                  environment={environment}
+                  environmentLabel={
+                    savedConnectionsById[environment.environmentId]?.environmentLabel ??
+                    environment.environmentId
+                  }
+                  machine={resolveEnvironmentMachineKind(
+                    serverConfigs.get(environment.environmentId) ?? null,
+                  )}
+                  disabled={isClearing}
+                  first={index === 0}
+                  onClear={() => confirmClearEnvironment(environment)}
+                />
+              ))
+            ) : (
+              <View className="items-center gap-2 px-6 py-8">
+                <SymbolView
+                  name="checkmark.circle"
+                  size={28}
+                  tintColorClassName="accent-icon"
+                  type="monochrome"
+                  weight="regular"
+                />
+                <Text className="text-center text-base text-foreground">No cached data</Text>
+                <Text className="text-center text-sm text-foreground-muted">
+                  Offline cache records will appear here after environments are used.
+                </Text>
+              </View>
+            )}
+          </SettingsSection>
+
+          <View className="gap-3">
+            <SettingsSection title="Actions">
+              <SettingsActionRow
+                icon="trash"
+                label={summary ? `Clear ${formatBytes(summary.payloadBytes)}` : "Clear caches"}
+                tone="danger"
+                disabled={isClearing || !summary || summary.recordCount === 0}
+                loading={isClearing}
+                onPress={confirmClearAll}
+              />
+            </SettingsSection>
+            <Text className="px-2 text-sm leading-normal text-foreground-muted">
+              Clearing caches never removes environment connections, credentials, account data, or
+              appearance preferences.
+            </Text>
+            {AsyncResult.isFailure(summaryResult) || AsyncResult.isFailure(clearResult) ? (
+              <Text selectable className="px-2 text-sm text-danger-foreground">
+                Client storage is temporarily unavailable. Try again after restarting the app.
+              </Text>
+            ) : null}
+          </View>
+        </ScrollView>
+      </SettingsScreen>
+    </>
   );
 }
 

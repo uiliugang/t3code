@@ -116,6 +116,7 @@ import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
+import * as ProjectConfigurationService from "./project/ProjectConfigurationService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
@@ -581,6 +582,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
+  ProjectConfigurationService.layer.pipe(
+    Layer.provide(RuntimeLayer.layerProjectService),
+    Layer.provide(layerSourceControlRepositoryService),
+  ),
   layerIdleCompactionWorker,
   StorageCleanup.layer.pipe(
     Layer.provide(ProjectionStoreV2.layer),

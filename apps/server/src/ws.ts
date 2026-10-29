@@ -213,6 +213,7 @@ import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
+import * as ProjectConfigurationService from "./project/ProjectConfigurationService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import { projectMutationOperation } from "./project/ProjectMutation.ts";
@@ -1311,6 +1312,7 @@ export const layerWsRpc = (
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const projectConfigurations = yield* ProjectConfigurationService.ProjectConfigurationService;
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
@@ -2734,6 +2736,12 @@ export const layerWsRpc = (
         [WS_METHODS.projectCloneRetry]: (input) =>
           projectCloneTracker.retry(input.projectId).pipe(Effect.map((applied) => ({ applied }))),
         [WS_METHODS.subscribeProjectClones]: () => projectCloneTracker.stream,
+        [WS_METHODS.projectsExportConfiguration]: (input) =>
+          projectConfigurations.exportProjects(input),
+        [WS_METHODS.projectsImportConfiguration]: (input) => projectConfigurations.start(input),
+        [WS_METHODS.projectsRetryImport]: (input) => projectConfigurations.retry(input.id),
+        [WS_METHODS.projectsForgetImport]: (input) => projectConfigurations.forget(input.id),
+        [WS_METHODS.subscribeProjectImports]: () => projectConfigurations.stream,
         [WS_METHODS.sourceControlPublishRepository]: (input) =>
           sourceControlRepositories.publishRepository(input).pipe(
             Effect.tap(() => repositoryIdentityResolver.resolve(input.cwd, { refresh: true })),

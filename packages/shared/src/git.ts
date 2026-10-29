@@ -374,3 +374,38 @@ export function applyGitStatusStreamEvent(
       return mergeGitStatusParts(toLocalStatusPart(current), event.remote);
   }
 }
+
+export function canonicalRepositoryCloneKey(remote: string): string | null {
+  const hasScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(remote);
+  const scp = hasScheme ? null : /^(?:([^@/]+)@)?([^:/\\]+):(.+)$/.exec(remote);
+  const value = hasScheme
+    ? remote
+    : scp && !/^[a-z]:[\\/]/i.test(remote)
+      ? `ssh://${scp[1] ? `${scp[1]}@` : ""}${scp[2]}/${scp[3]}`
+      : null;
+  if (value === null) return null;
+  try {
+    const url = new URL(value);
+    if (!["ssh:", "http:", "https:", "git:"].includes(url.protocol) || !url.hostname) return null;
+    const host = url.hostname.toLowerCase();
+    let path = (scp?.[3] ?? url.pathname).replace(/^\/+|\/+$/g, "").replace(/\.git$/, "");
+    if (!path) return null;
+    if (host === "github.com") path = path.toLowerCase();
+    const defaultPort = { "ssh:": "22", "http:": "80", "https:": "443", "git:": "9418" }[
+      url.protocol
+    ];
+    const port = url.port && url.port !== defaultPort ? url.port : "";
+    if (
+      ["github.com", "gitlab.com", "bitbucket.org", "git.cafe"].includes(host) &&
+      !port &&
+      (url.protocol !== "ssh:" || url.username === "git")
+    )
+      return `${host}/${path}`;
+    // Generic SSH hosts distinguish home-relative SCP paths from absolute URI paths.
+    const protocol = scp && !scp[3]!.startsWith("/") ? "ssh-home:" : url.protocol;
+    const user = url.protocol === "ssh:" ? url.username : "";
+    return `${protocol}//${user ? `${user}@` : ""}${host}${port ? `:${port}` : ""}/${path}`;
+  } catch {
+    return null;
+  }
+}

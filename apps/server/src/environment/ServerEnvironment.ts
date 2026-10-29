@@ -251,6 +251,7 @@ export const make = Effect.gen(function* () {
       threadVisitedTracking: true,
       threadPullRequests: true,
       multiRepositoryWorkspaces: true,
+      projectConfigurationImport: true,
       threadPullRequestWatch: true,
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
