@@ -11,6 +11,29 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Create workspace": "创建工作区",
+  "Creating...": "正在创建…",
+  "Select environment": "选择环境",
+  "Workspace name": "工作区名称",
+  "e.g. Customer portal": "例如：客户管理平台",
+  "Bring existing repositories together for one task. Each repository gets its own worktree when the task starts.":
+    "将已有仓库组成一个工作区。任务启动时，会为各仓库创建独立的 worktree。",
+  "Choose repositories from this environment or enter their existing directories.":
+    "选择此环境中的仓库，或填写已有仓库的目录。",
+  "Choose an existing repository": "选择已有仓库",
+  "Choose repository {number}": "选择第 {number} 个仓库",
+  "Remove repository {number}": "移除第 {number} 个仓库",
+  "Connect to an environment with workspace support and project editing permission.":
+    "请连接支持多仓工作区且具备项目编辑权限的环境。",
+  "Enter a workspace name.": "请输入工作区名称。",
+  "Choose between 2 and 16 repositories.": "请选择 2 至 16 个仓库。",
+  "Enter a name and directory for every repository.": "请填写每个仓库的名称和目录。",
+  "Repository names must be unique.": "仓库名称不能重复。",
+  "Choose each repository directory only once.": "仓库目录不能重复选择。",
+  "Choose a primary repository.": "请选择主仓库。",
+  "Could not create workspace.": "无法创建工作区。",
+  "Workspace created. Open it from the project list to continue.":
+    "工作区已创建，可从项目列表打开后继续。",
   "Run in repositories": "执行仓库范围",
   "All repositories": "全部仓库",
   "Select at least one repository.": "请至少选择一个仓库。",
