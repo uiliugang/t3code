@@ -9,6 +9,8 @@ import { createModelSelection } from "./model.ts";
 import {
   clearProjectSettingsOverrides,
   hasProjectSettingsOverrides,
+  mergedWorktreeCleanupPatch,
+  mergedWorktreeCleanupState,
   resolveNewThreadEnvMode,
   resolveProjectSettings,
   resolveSendEnvMode,
@@ -338,6 +340,46 @@ describe("projectSettingsOverrides patches", () => {
 });
 
 describe("resolveWorktreeCleanup", () => {
+  it("unifies legacy merge settings and preserves other rules when toggled", () => {
+    for (const [branches, worktrees] of [
+      [false, false],
+      [true, false],
+      [false, true],
+      [true, true],
+    ] as const) {
+      const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+        autoDeleteMergedBranches: branches,
+        storageCleanup: { worktreeOnMerge: worktrees, worktreeAfterDays: 15, logsAfterDays: 30 },
+      });
+      expect(mergedWorktreeCleanupState(initial)).toEqual({
+        checked: branches && worktrees,
+        mixed: branches !== worktrees,
+      });
+      for (const projectScoped of [false, true]) {
+        const enabled = applyServerSettingsPatch(
+          initial,
+          mergedWorktreeCleanupPatch(initial, { autoDeleteMergedBranches: true }, projectScoped),
+        );
+        expect(mergedWorktreeCleanupState(enabled)).toEqual({ checked: true, mixed: false });
+        expect(resolveWorktreeCleanup(enabled, null).worktreeAfterDays).toBe(15);
+        const disabled = applyServerSettingsPatch(
+          enabled,
+          mergedWorktreeCleanupPatch(enabled, { autoDeleteMergedBranches: false }, projectScoped),
+        );
+        expect(mergedWorktreeCleanupState(disabled)).toEqual({ checked: false, mixed: false });
+        expect(resolveWorktreeCleanup(disabled, null).worktreeAfterDays).toBe(15);
+        expect(disabled.storageCleanup.logsAfterDays).toBe(30);
+      }
+      const off = applyServerSettingsPatch(initial, { worktreeCleanup: { mode: "off" } });
+      expect(mergedWorktreeCleanupState(off)).toEqual({ checked: false, mixed: false });
+      const enabled = applyServerSettingsPatch(
+        off,
+        mergedWorktreeCleanupPatch(off, { autoDeleteMergedBranches: true }, false),
+      );
+      expect(mergedWorktreeCleanupState(enabled)).toEqual({ checked: true, mixed: false });
+      expect(resolveWorktreeCleanup(enabled, null).worktreeAfterDays).toBeNull();
+    }
+  });
   it("inherits machine rules, disables one project and keeps custom rules isolated", () => {
     const machine = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: {

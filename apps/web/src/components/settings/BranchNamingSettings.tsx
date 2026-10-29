@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { BranchNamingMode, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -20,6 +21,7 @@ const MODES = {
 } satisfies Record<BranchNamingMode, string>;
 
 export function BranchNamingSettings() {
+  const t = useUiTranslation();
   const settings = useScopedSettings();
   const { targets } = useSettingsScope();
   const scopeKey = targets.map((target) => `${target.environmentId}:${target.projectId}`).join(",");
@@ -61,15 +63,15 @@ export function BranchNamingSettings() {
               }
             }}
           >
-            <SelectTrigger size="sm" aria-label="Worktree branch naming">
+            <SelectTrigger size="sm" aria-label={t("Worktree branch naming")}>
               <SelectValue>
-                {(value: BranchNamingMode | null) => (value === null ? "Mixed" : MODES[value])}
+                {(value: BranchNamingMode | null) => t(value === null ? "Mixed" : MODES[value])}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {BranchNamingMode.literals.map((mode) => (
                 <SelectItem key={mode} value={mode}>
-                  {MODES[mode]}
+                  {t(MODES[mode])}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -96,13 +98,13 @@ export function BranchNamingSettings() {
           control={
             <Input
               key={`${scopeKey}:${prefixMixed}:${settings.branchNamePrefix}`}
-              aria-label="Branch prefix"
+              aria-label={t("Branch prefix")}
               autoCapitalize="none"
               spellCheck={false}
               onChange={() => {
                 prefixEdited.current = true;
               }}
-              placeholder={prefixMixed ? "Mixed" : "No prefix"}
+              placeholder={t(prefixMixed ? "Mixed" : "No prefix")}
               defaultValue={prefixMixed ? "" : settings.branchNamePrefix}
               onBlur={(event) => {
                 const value = event.target.value.trim();
@@ -132,17 +134,17 @@ export function BranchNamingSettings() {
           <div className="mt-3 max-w-2xl pb-3.5">
             <Textarea
               key={`${scopeKey}:${instructionsMixed}:${settings.branchNameInstructions}`}
-              aria-label="Branch naming instructions"
+              aria-label={t("Branch naming instructions")}
               onChange={() => {
                 instructionsEdited.current = true;
               }}
               rows={4}
               defaultValue={instructionsMixed ? "" : settings.branchNameInstructions}
-              placeholder={
+              placeholder={t(
                 instructionsMixed
                   ? "Mixed. Enter instructions to apply to all selected targets."
-                  : "Use julius/ followed by the issue ID and a short description."
-              }
+                  : "Use julius/ followed by the issue ID and a short description.",
+              )}
               onBlur={(event) => {
                 const value = event.target.value.trim();
                 if (

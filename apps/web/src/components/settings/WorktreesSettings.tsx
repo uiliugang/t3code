@@ -1,7 +1,9 @@
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 import { AdvancedSettings } from "./AdvancedSettings";
 import { BranchNamingSettings } from "./BranchNamingSettings";
+import { MainBranchOnlyRow } from "./WorktreeBranchSettings";
 import { WorktreeSubmodulesRow } from "./ProjectDefaultsSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -16,6 +18,7 @@ import { WorktreeCleanupSection, WorktreesDirectoryRow } from "./StorageSettings
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 function StartFromRemoteRow() {
+  const t = useUiTranslation();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -44,7 +47,7 @@ function StartFromRemoteRow() {
           onCheckedChange={(checked) =>
             updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
           }
-          aria-label="Start new worktrees from remote by default"
+          aria-label={t("Start new worktrees from remote by default")}
         />
       }
     />
@@ -60,6 +63,7 @@ export function WorktreesSettingsPanel() {
       <SettingsSection id="worktree-creation" title="Creation">
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
+        <MainBranchOnlyRow />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
           <WorktreeSubmodulesRow />
         </AdvancedSettings>

@@ -1184,8 +1184,10 @@ const make = Effect.gen(function* () {
       return;
     const snapshot = yield* readThreads();
     const repositories = new Set<string>();
-    const enabled = (settings: ServerSettings, projectId: ProjectId) =>
-      resolveProjectSettings(settings, projectId).settings.autoDeleteMergedBranches;
+    const enabled = (settings: ServerSettings, projectId: ProjectId) => {
+      const effective = resolveProjectSettings(settings, projectId).settings;
+      return effective.worktreeCleanup?.mode !== "off" && effective.autoDeleteMergedBranches;
+    };
     const readBranches = Effect.fn("StorageCleanup.readLocalBranches")(function* (
       cwd: string,
       branch?: string,

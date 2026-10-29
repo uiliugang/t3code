@@ -27,6 +27,9 @@ vi.mock("../../../components/ui/ListChoiceRow", () => ({ ListChoiceRow: () => nu
 vi.mock("./SettingsSection", () => ({
   SettingsSection: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
+vi.mock("../../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (message: string) => message,
+}));
 
 import { BranchNamingSettings } from "./BranchNamingSettings";
 
