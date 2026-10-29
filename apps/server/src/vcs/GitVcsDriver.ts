@@ -353,6 +353,10 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<string | null, GitCommandError>;
     readonly listRefs: (
       input: VcsListRefsInput,
+      options?: {
+        readonly remoteBranchDisplayDays: number;
+        readonly hideMergedRemoteBranches?: boolean;
+      },
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
     readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
     readonly createWorktree: (
@@ -404,6 +408,14 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<void, GitCommandError>;
     /** Tracks the start point like `git branch` does. */
     readonly createBranch: (input: GitCreateBranchInput) => Effect.Effect<void, GitCommandError>;
+    readonly prepareTaskBranch: (input: {
+      readonly cwd: string;
+      readonly branch: string;
+      readonly startFromOrigin: boolean;
+    }) => Effect.Effect<
+      { readonly branch: string | null; readonly created: boolean },
+      GitCommandError
+    >;
     readonly writeConfigValue: (
       input: GitWriteConfigValueInput,
     ) => Effect.Effect<void, GitCommandError>;

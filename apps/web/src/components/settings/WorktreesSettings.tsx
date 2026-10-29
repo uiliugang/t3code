@@ -3,7 +3,11 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 import { AdvancedSettings } from "./AdvancedSettings";
 import { BranchNamingSettings } from "./BranchNamingSettings";
-import { MainBranchOnlyRow } from "./WorktreeBranchSettings";
+import {
+  HideMergedRemoteBranchesRow,
+  MainBranchOnlyRow,
+  RemoteBranchDisplayDaysRow,
+} from "./WorktreeBranchSettings";
 import { WorktreeSubmodulesRow } from "./ProjectDefaultsSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -69,6 +73,8 @@ export function WorktreesSettingsPanel() {
         </AdvancedSettings>
       </SettingsSection>
       <SettingsSection id="worktree-branches" title="Branches">
+        <RemoteBranchDisplayDaysRow />
+        <HideMergedRemoteBranchesRow />
         <BranchNamingSettings />
       </SettingsSection>
       <WorktreeCleanupSection />

@@ -12,7 +12,7 @@ import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
 
 export function useSelectedThreadGitState(resourceId?: ThreadRepositorySelection) {
   const { selectedThread } = useThreadSelection();
-  const { selectedThreadCwd } = useSelectedThreadWorktree(resourceId);
+  const { selectedThreadCwd, repositoryTarget } = useSelectedThreadWorktree(resourceId);
 
   const selectedThreadGitTarget = {
     environmentId: selectedThread?.environmentId ?? null,
@@ -29,6 +29,7 @@ export function useSelectedThreadGitState(resourceId?: ThreadRepositorySelection
   );
 
   const selectedThreadBranchTarget = {
+    ...(repositoryTarget ? { repositoryTarget } : {}),
     environmentId: selectedThread?.environmentId ?? null,
     cwd: selectedThreadCwd,
     query: null,

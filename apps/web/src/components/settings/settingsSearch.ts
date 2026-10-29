@@ -628,6 +628,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["new worktrees start remote origin latest fetched branch local"],
   },
   {
+    id: "hide-merged-remote-branches",
+    title: "Hide merged remote branches",
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["git hide merged remote branches main master filter 隐藏 已合并 远程 分支"],
+  },
+  {
+    id: "remote-branch-display-days",
+    title: "Remote branch display days",
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["remote branch display age recent days weeks 21 远程 分支 展示 天数 最近 三周"],
+  },
+  {
     id: "worktree-main-branch-only",
     title: "Only create worktrees from main/master",
     to: "/settings/worktrees",

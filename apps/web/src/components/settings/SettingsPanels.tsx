@@ -519,6 +519,12 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.newWorktreesMainBranchOnly !== DEFAULT_UNIFIED_SETTINGS.newWorktreesMainBranchOnly
       ? ["Only create worktrees from main/master"]
       : []),
+    ...(settings.remoteBranchDisplayDays !== DEFAULT_UNIFIED_SETTINGS.remoteBranchDisplayDays
+      ? ["Remote branch display days"]
+      : []),
+    ...(settings.hideMergedRemoteBranches !== DEFAULT_UNIFIED_SETTINGS.hideMergedRemoteBranches
+      ? ["Hide merged remote branches"]
+      : []),
     ...(settings.autoDeleteMergedBranches !== DEFAULT_UNIFIED_SETTINGS.autoDeleteMergedBranches
       ? ["Automatically delete merged branches and worktrees"]
       : []),
@@ -637,6 +643,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
       newWorktreesMainBranchOnly: DEFAULT_UNIFIED_SETTINGS.newWorktreesMainBranchOnly,
+      remoteBranchDisplayDays: DEFAULT_UNIFIED_SETTINGS.remoteBranchDisplayDays,
+      hideMergedRemoteBranches: DEFAULT_UNIFIED_SETTINGS.hideMergedRemoteBranches,
       autoDeleteMergedBranches: DEFAULT_UNIFIED_SETTINGS.autoDeleteMergedBranches,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,

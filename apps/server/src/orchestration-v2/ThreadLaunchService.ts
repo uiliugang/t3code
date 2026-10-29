@@ -276,8 +276,12 @@ const make = Effect.gen(function* () {
       // `git worktree add` reads `-` as the previous checkout.
       if (yield* git.hasCommit({ cwd, refName: baseRef === "-" ? "@{-1}" : baseRef }))
         return undefined;
+      const settings = resolveProjectSettings(
+        yield* serverSettings.getSettings,
+        input.projectId,
+      ).settings;
       if (
-        strategy.startFromOrigin === true &&
+        (strategy.startFromOrigin ?? settings.newWorktreesStartFromOrigin) &&
         (yield* git.resolveWorktreeBaseRemote({ cwd, refName: baseRef })) !== null
       )
         return undefined;
@@ -313,6 +317,10 @@ const make = Effect.gen(function* () {
     const workspaceThread = yield* threads
       .getThreadShell(threadId)
       .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+    const settings = resolveProjectSettings(
+      yield* serverSettings.getSettings,
+      input.projectId,
+    ).settings;
     if (workspaceThread?.workspaceConfiguration !== undefined) {
       if (workspaceThread.workspace === undefined) {
         if (Option.isNone(workspaceProvisioner))
@@ -446,6 +454,19 @@ const make = Effect.gen(function* () {
         input.workspaceStrategy.type === "existing_worktree"
           ? input.workspaceStrategy.worktreePath
           : null;
+      let createdTaskBranch = false;
+      if (input.workspaceStrategy.type === "root") {
+        const uuid = yield* randomUuidV4;
+        const prepared = yield* git
+          .prepareTaskBranch({
+            cwd: project.workspaceRoot,
+            branch: buildTemporaryWorktreeBranchName(() => uuid.replaceAll("-", "")),
+            startFromOrigin: settings.newWorktreesStartFromOrigin,
+          })
+          .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+        branch = prepared.branch;
+        createdTaskBranch = prepared.created;
+      }
       if (input.workspaceStrategy.type === "worktree") {
         if (runId !== null) {
           yield* threads
@@ -461,7 +482,7 @@ const make = Effect.gen(function* () {
         let startRef = input.workspaceStrategy.baseRef;
         let baseRefName = input.workspaceStrategy.baseRef;
         const shouldFetch =
-          input.workspaceStrategy.startFromOrigin === true &&
+          (input.workspaceStrategy.startFromOrigin ?? settings.newWorktreesStartFromOrigin) &&
           (yield* git
             .resolveWorktreeBaseRemote({
               cwd: project.workspaceRoot,
@@ -539,13 +560,13 @@ const make = Effect.gen(function* () {
 
       if (
         reused === undefined &&
-        worktreePath !== null &&
+        (worktreePath !== null || createdTaskBranch) &&
         branch !== null &&
         initialMessage !== undefined &&
         isTemporaryWorktreeBranch(branch)
       ) {
         const oldBranch = branch;
-        const worktreeCwd = worktreePath;
+        const worktreeCwd = worktreePath ?? project.workspaceRoot;
         branchRename = yield* generateBranchNameFor(worktreeCwd, initialMessage).pipe(
           Effect.flatMap(({ branch: newBranch, exactName }) =>
             git.renameBranch({
@@ -563,9 +584,9 @@ const make = Effect.gen(function* () {
                   commandId: CommandId.make(`${input.commandId}:branch-rename`),
                   threadId,
                   branch: renamed.branch,
-                  worktreePath: worktreeCwd,
+                  worktreePath,
                   expectedBranch: oldBranch,
-                  expectedWorktreePath: worktreeCwd,
+                  expectedWorktreePath: worktreePath,
                 })
                 .pipe(
                   Effect.catchCause((cause) =>
@@ -582,7 +603,8 @@ const make = Effect.gen(function* () {
                 const sharing = [...snapshot.threads, ...snapshot.archivedThreads].filter(
                   (thread) =>
                     !visited.has(thread.id) &&
-                    thread.worktreePath === worktreeCwd &&
+                    (worktreePath !== null || thread.projectId === input.projectId) &&
+                    thread.worktreePath === worktreePath &&
                     thread.branch === oldBranch,
                 );
                 if (sharing.length === 0) break;
@@ -595,7 +617,7 @@ const make = Effect.gen(function* () {
                       threadId: thread.id,
                       branch: renamed.branch,
                       expectedBranch: oldBranch,
-                      expectedWorktreePath: worktreeCwd,
+                      expectedWorktreePath: worktreePath,
                     })
                     .pipe(
                       Effect.catchCause((cause) =>

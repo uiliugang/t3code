@@ -22,6 +22,7 @@ import type {
   ProjectEntry,
   ProjectEntryKind,
   ThreadId,
+  ThreadRepositoryTarget,
   TurnItemId,
   VcsListRefsResult,
   VcsRef,
@@ -165,11 +166,17 @@ export function useThreadSearch(
 }
 
 function vcsRefPageAtom(targetKey: string, cursor: number | undefined) {
-  const [environmentId, cwd, query] = JSON.parse(targetKey) as [EnvironmentId, string, string];
+  const [environmentId, cwd, query, repositoryTarget] = JSON.parse(targetKey) as [
+    EnvironmentId,
+    string,
+    string,
+    ThreadRepositoryTarget | null,
+  ];
   return vcsEnvironment.listRefs({
     environmentId,
     input: {
       cwd,
+      ...(repositoryTarget ? { repositoryTarget } : {}),
       ...(query.length > 0 ? { query } : {}),
       ...(cursor === undefined ? {} : { cursor }),
       limit: VCS_REF_LIST_LIMIT,
@@ -201,7 +208,9 @@ export function usePaginatedBranches(target: VcsRefTarget) {
   const { environmentId, cwd } = target;
   const query = target.query?.trim() ?? "";
   const targetKey =
-    environmentId !== null && cwd !== null ? JSON.stringify([environmentId, cwd, query]) : null;
+    environmentId !== null && cwd !== null
+      ? JSON.stringify([environmentId, cwd, query, target.repositoryTarget ?? null])
+      : null;
   const cursors = pagination.targetKey === targetKey ? pagination.cursors : INITIAL_BRANCH_CURSORS;
   const pagesKey = targetKey === null ? null : JSON.stringify([targetKey, cursors]);
   const results = useAtomValue(

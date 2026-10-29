@@ -16,6 +16,12 @@ const zhCN: Readonly<Record<string, string>> = {
     "自动清理已合并到 main 或 master 的本地分支及工作树，同时清理拉取请求已合并到默认分支的工作树。保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
   Creation: "创建",
   Branches: "分支",
+  "Remote branch display days": "远程分支展示天数",
+  "Hide merged remote branches": "隐藏已合并的远程分支",
+  "Hide remote branches already merged into main or master. Local and default branches remain visible.":
+    "隐藏已合并到 main 或 master 的远程分支。本地分支和默认分支始终保留。",
+  "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.":
+    "展示最近 N 天内有提交的远程分支，默认为 21 天（3 周）。设为 0 不限制时间。本地分支和默认分支始终保留。",
   Cleanup: "清理",
   "Worktree location": "工作树位置",
   "worktree location": "工作树位置",

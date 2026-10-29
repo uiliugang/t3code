@@ -1,4 +1,8 @@
-import { isMainOrMasterBranch, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import {
+  getBranchDisplayName,
+  isMainOrMasterBranch,
+  sanitizeFeatureBranchName,
+} from "@t3tools/shared/git";
 import { useNewTaskProjectDefaults } from "../use-new-task-project-defaults";
 import { useThreadRepository } from "../../../state/use-thread-repository";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -241,7 +245,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
                     <View className="absolute inset-0 rounded-[18px] bg-card" />
                   ) : null}
                   <Text className="text-foreground text-base android:font-t3-medium ios:font-t3-bold">
-                    {branch.name}
+                    {getBranchDisplayName(branch)}
                   </Text>
                   <Text className="text-foreground-secondary text-xs font-medium">{subtitle}</Text>
                 </Pressable>

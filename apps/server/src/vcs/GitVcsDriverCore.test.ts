@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, it, describe } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
@@ -3002,6 +3003,144 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect(
+      "filters remote branch ages before pagination and reuses snapshots across display windows",
+      () =>
+        Effect.gen(function* () {
+          const now = Date.parse("2026-10-29T12:00:00Z");
+          yield* TestClock.setTime(now);
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          yield* git(cwd, ["remote", "add", "origin", cwd]);
+          for (const [name, days] of [
+            [initialBranch, 60],
+            ["feature/old", 22],
+            ["feature/boundary", 21],
+            ["feature/recent", 1],
+          ] as const) {
+            const date = DateTime.formatIso(DateTime.makeUnsafe(now - days * 86_400_000));
+            const sha = yield* git(cwd, ["commit-tree", "HEAD^{tree}", "-m", name], {
+              GIT_AUTHOR_DATE: date,
+              GIT_COMMITTER_DATE: date,
+            });
+            yield* git(cwd, ["update-ref", `refs/remotes/origin/${name}`, sha]);
+            if (name === "feature/old") yield* git(cwd, ["branch", "local-old", sha]);
+          }
+          yield* git(cwd, [
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            `refs/remotes/origin/${initialBranch}`,
+          ]);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const input = { cwd, includeMatchingRemoteRefs: true };
+          const options = { remoteBranchDisplayDays: 21 };
+          const first = yield* driver.listRefs({ ...input, limit: 2 }, options);
+          const second = yield* driver.listRefs(
+            { ...input, cursor: first.nextCursor!, limit: 10 },
+            options,
+          );
+          assert.equal(first.totalCount, 5);
+          assert.sameMembers(
+            [...first.refs, ...second.refs].map((ref) => ref.name),
+            [
+              initialBranch,
+              "local-old",
+              `origin/${initialBranch}`,
+              "origin/feature/boundary",
+              "origin/feature/recent",
+            ],
+          );
+          assert.equal(second.nextCursor, null);
+          assert.equal(
+            (yield* driver.listRefs({ ...input, query: "feature/old" }, options)).totalCount,
+            0,
+          );
+          assert.equal(
+            (yield* driver.listRefs(input, { remoteBranchDisplayDays: 7 })).totalCount,
+            4,
+          );
+          assert.equal(
+            (yield* driver.listRefs(input, { remoteBranchDisplayDays: 0 })).totalCount,
+            6,
+          );
+          yield* TestClock.adjust("1 day");
+          assert.equal((yield* driver.listRefs(input, options)).totalCount, 4);
+        }),
+    );
+
+    it.effect.each(["main", "master"] as const)(
+      "hides remote branches merged into %s before paging and can show them again",
+      (base) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          yield* git(cwd, ["branch", "-M", base]);
+          yield* git(cwd, ["remote", "add", "origin", cwd]);
+          const initial = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["checkout", "-b", "feature/merged"]);
+          yield* git(cwd, ["commit", "--allow-empty", "-m", "merged work"]);
+          const merged = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["checkout", base]);
+          yield* git(cwd, ["merge", "--no-ff", "feature/merged", "-m", "merge feature"]);
+          yield* git(cwd, ["update-ref", `refs/remotes/origin/${base}`, "HEAD"]);
+          yield* git(cwd, ["update-ref", "refs/remotes/origin/feature/merged", merged]);
+          yield* git(cwd, ["checkout", "-b", "feature/open", initial]);
+          yield* git(cwd, ["commit", "--allow-empty", "-m", "unmerged work"]);
+          yield* git(cwd, ["update-ref", "refs/remotes/origin/feature/open", "HEAD"]);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const input = {
+            cwd,
+            includeMatchingRemoteRefs: true,
+            refKind: "remote" as const,
+            limit: 1,
+          };
+          const options = { remoteBranchDisplayDays: 0, hideMergedRemoteBranches: true };
+          const first = yield* driver.listRefs(input, options);
+          const rest = yield* driver.listRefs(
+            { ...input, cursor: first.nextCursor!, limit: 10 },
+            options,
+          );
+          assert.equal(first.totalCount, 2);
+          assert.sameMembers(
+            [...first.refs, ...rest.refs].map((ref) => ref.name),
+            [`origin/${base}`, "origin/feature/open"],
+          );
+          assert.equal(
+            (yield* driver.listRefs({ ...input, query: "feature/merged" }, options)).totalCount,
+            0,
+          );
+          assert.isTrue(
+            (yield* driver.listRefs({ cwd }, options)).refs.some(
+              (ref) => ref.name === "feature/merged",
+            ),
+          );
+          assert.equal(
+            (yield* driver.listRefs(input, { ...options, hideMergedRemoteBranches: false }))
+              .totalCount,
+            3,
+          );
+          yield* git(cwd, ["merge", "--no-ff", base, "-m", "local-only merge"]);
+          yield* git(cwd, ["branch", "-f", base, "HEAD"]);
+          assert.isTrue(
+            (yield* driver.listRefs({ ...input, refresh: true }, options)).refs.some(
+              (ref) => ref.name === "origin/feature/open",
+            ),
+          );
+          yield* git(cwd, ["update-ref", `refs/remotes/origin/${base}`, "HEAD"]);
+          yield* TestClock.adjust("5 seconds");
+          assert.equal(
+            (yield* driver.listRefs({ ...input, refresh: true }, options)).totalCount,
+            1,
+          );
+          yield* git(cwd, ["update-ref", "-d", `refs/remotes/origin/${base}`]);
+          yield* TestClock.adjust("5 seconds");
+          assert.equal(
+            (yield* driver.listRefs({ ...input, refresh: true }, options)).totalCount,
+            0,
+          );
+        }),
+    );
+
     it.effect("marks the origin default ref as default when no local copy exists", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
@@ -3020,6 +3159,59 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.equal(remoteDefault?.isRemote, true);
         assert.equal(remoteDefault?.isDefault, true);
       }),
+    );
+
+    it.effect.each([
+      { main: "main", startFromOrigin: true, remote: "matching" },
+      { main: "master", startFromOrigin: true, remote: "matching" },
+      { main: "main", startFromOrigin: false, remote: "matching" },
+      { main: "main", startFromOrigin: true, remote: "missing" },
+      { main: "main", startFromOrigin: true, remote: "none" },
+    ])(
+      "prepares a task branch from $main with remote=$remote enabled=$startFromOrigin without moving main",
+      (scenario) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const remote = yield* makeTmpDir("git-task-remote-");
+          yield* initRepoWithCommit(cwd);
+          yield* git(cwd, ["branch", "-M", scenario.main]);
+          yield* git(remote, ["init", "--bare"]);
+          if (scenario.remote !== "none") {
+            yield* git(cwd, ["remote", "add", "origin", remote]);
+            yield* git(cwd, [
+              "push",
+              "origin",
+              `${scenario.main}:${scenario.remote === "matching" ? scenario.main : "release"}`,
+            ]);
+          }
+          const remoteHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["commit", "--allow-empty", "-m", "local only"]);
+          const localHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* writeTextFile(cwd, "task.txt", "uncommitted work\n");
+          yield* git(cwd, ["branch", "t3/task"]);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const prepared = yield* driver.prepareTaskBranch({
+            cwd,
+            branch: "t3/task",
+            startFromOrigin: scenario.startFromOrigin,
+          });
+          const branch = prepared.branch;
+          assert.deepEqual(prepared, { branch: "t3/task-2", created: true });
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), branch);
+          assert.equal(yield* git(cwd, ["rev-parse", scenario.main]), localHead);
+          assert.equal(
+            yield* git(cwd, ["rev-parse", "HEAD"]),
+            scenario.startFromOrigin && scenario.remote === "matching" ? remoteHead : localHead,
+          );
+          assert.equal(
+            yield* (yield* FileSystem.FileSystem).readFileString(`${cwd}/task.txt`),
+            "uncommitted work\n",
+          );
+          assert.deepEqual(
+            yield* driver.prepareTaskBranch({ cwd, branch: "t3/another", startFromOrigin: true }),
+            { branch, created: false },
+          );
+        }),
     );
 
     it.effect("preserves exact custom names and refuses collisions without a suffix", () =>

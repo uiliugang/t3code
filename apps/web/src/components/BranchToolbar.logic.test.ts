@@ -10,7 +10,36 @@ import {
   resolveLocalCheckoutBranchMismatch,
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
+  shouldPreserveWorktreeBaseBranch,
 } from "./BranchToolbar.logic";
+
+it.each([
+  { branch: null, allowed: false, lookupPending: true, lookupHasData: false, preserve: false },
+  { branch: "main", allowed: true, lookupPending: true, lookupHasData: true, preserve: true },
+  {
+    branch: "feature/task",
+    allowed: false,
+    lookupPending: true,
+    lookupHasData: false,
+    preserve: true,
+  },
+  {
+    branch: "feature/task",
+    allowed: false,
+    lookupPending: true,
+    lookupHasData: true,
+    preserve: false,
+  },
+  {
+    branch: "feature/task",
+    allowed: false,
+    lookupPending: false,
+    lookupHasData: false,
+    preserve: false,
+  },
+])("preserves a worktree base only while allowed or awaiting its first lookup: %j", (input) => {
+  expect(shouldPreserveWorktreeBaseBranch(input)).toBe(input.preserve);
+});
 
 describe("resolveDraftEnvModeAfterBranchChange", () => {
   it("switches to local mode when returning from an existing worktree to the main worktree", () => {

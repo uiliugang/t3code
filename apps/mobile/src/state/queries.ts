@@ -265,11 +265,7 @@ export function useThreadSearch(
   };
 }
 
-export function useBranches(input: {
-  readonly environmentId: EnvironmentId | null;
-  readonly cwd: string | null;
-  readonly query?: string | null;
-}) {
+export function useBranches(input: VcsRefTarget) {
   const query = input.query?.trim() ?? "";
   return useEnvironmentQuery(
     input.environmentId !== null && input.cwd !== null
@@ -277,6 +273,7 @@ export function useBranches(input: {
           environmentId: input.environmentId,
           input: {
             cwd: input.cwd,
+            ...(input.repositoryTarget ? { repositoryTarget: input.repositoryTarget } : {}),
             ...(query.length > 0 ? { query } : {}),
             limit: VCS_REF_LIST_LIMIT,
           },
@@ -289,7 +286,7 @@ export function usePaginatedBranches(target: VcsRefTarget) {
   const query = target.query?.trim() ?? "";
   const targetKey =
     target.environmentId !== null && target.cwd !== null
-      ? JSON.stringify([target.environmentId, target.cwd, query])
+      ? JSON.stringify([target.environmentId, target.cwd, query, target.repositoryTarget ?? null])
       : null;
   const [pagination, setPagination] = useState<{
     readonly targetKey: string | null;
@@ -306,6 +303,7 @@ export function usePaginatedBranches(target: VcsRefTarget) {
             environmentId: target.environmentId!,
             input: {
               cwd: target.cwd!,
+              ...(target.repositoryTarget ? { repositoryTarget: target.repositoryTarget } : {}),
               ...(query.length > 0 ? { query } : {}),
               ...(cursor === undefined ? {} : { cursor }),
               limit: VCS_REF_LIST_LIMIT,

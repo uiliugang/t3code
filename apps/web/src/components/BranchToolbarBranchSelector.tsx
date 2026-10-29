@@ -63,6 +63,7 @@ import {
   resolveEffectiveEnvMode,
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
+  shouldPreserveWorktreeBaseBranch,
 } from "./BranchToolbar.logic";
 import {
   ThreadPullRequestBadgeControl,
@@ -278,6 +279,7 @@ export function BranchToolbarBranchSelector({
   const branchRefState = usePaginatedBranches({
     environmentId,
     cwd: branchCwd,
+    ...(repository === undefined ? {} : { repositoryTarget: repository.target }),
     // Substring search needs sanitized names to detect new-branch collisions; refs cannot contain ASCII
     // spaces.
     query: sanitizeNewRefName(deferredBranchQuery.trim()),
@@ -353,6 +355,7 @@ export function BranchToolbarBranchSelector({
           input: {
             cwd: branchCwd,
             query: resolvedActiveBranch,
+            ...(repository === undefined ? {} : { repositoryTarget: repository.target }),
             limit: 10,
           },
         })
@@ -593,7 +596,12 @@ export function BranchToolbarBranchSelector({
       threadStarted ||
       effectiveEnvMode !== "worktree" ||
       activeWorktreePath ||
-      (activeThreadBranch && (activeWorktreeBaseAllowed || activeBranchRefQuery.isPending)) ||
+      shouldPreserveWorktreeBaseBranch({
+        branch: activeThreadBranch,
+        allowed: activeWorktreeBaseAllowed,
+        lookupPending: activeBranchRefQuery.isPending,
+        lookupHasData: activeBranchRefQuery.data !== null,
+      }) ||
       !worktreeBaseBranchCandidate
     ) {
       return;
@@ -603,6 +611,7 @@ export function BranchToolbarBranchSelector({
     activeThreadBranch,
     activeWorktreeBaseAllowed,
     activeBranchRefQuery.isPending,
+    activeBranchRefQuery.data,
     activeWorktreePath,
     effectiveEnvMode,
     setThreadBranch,

@@ -196,6 +196,15 @@ export function resolveBranchToolbarValue(input: {
   return currentGitBranch ?? activeThreadBranch;
 }
 
+export function shouldPreserveWorktreeBaseBranch(input: {
+  branch: string | null;
+  allowed: boolean;
+  lookupPending: boolean;
+  lookupHasData: boolean;
+}): boolean {
+  return Boolean(input.branch && (input.allowed || (input.lookupPending && !input.lookupHasData)));
+}
+
 export function resolveBranchTriggerLabel(input: {
   activeWorktreePath: string | null;
   effectiveEnvMode: EnvMode;

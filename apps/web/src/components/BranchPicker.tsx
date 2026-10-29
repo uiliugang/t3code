@@ -1,4 +1,5 @@
 import type { VcsRef } from "@t3tools/contracts";
+import { getBranchDisplayName } from "@t3tools/shared/git";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
@@ -280,7 +281,7 @@ export function BranchPickerRefItem({
       onContextMenu={onContextMenu}
     >
       <div className="flex w-full min-w-0 items-center justify-between gap-2">
-        <MiddleTruncate value={itemValue} className="flex-1" />
+        <MiddleTruncate value={getBranchDisplayName(refName)} className="flex-1" />
         {badge && <span className="shrink-0 text-3xs text-muted-foreground/45">{badge}</span>}
       </div>
     </ComboboxItem>

@@ -75,7 +75,7 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
               projectCwd: spec.projectCwd,
               baseBranch: spec.branch!,
               branch: spec.worktreeBranchName,
-              ...(spec.startFromOrigin ? { startFromOrigin: true } : {}),
+              startFromOrigin: spec.startFromOrigin,
             },
             runSetupScript: true,
           }

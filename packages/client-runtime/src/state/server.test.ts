@@ -1,5 +1,7 @@
 import {
   EnvironmentId,
+  DEFAULT_SERVER_SETTINGS,
+  ProjectId,
   ProviderInstanceId,
   ServerObservability,
   EnvironmentThemeId,
@@ -23,6 +25,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { AtomRegistry } from "effect/reactivity";
+import { vcsRefsCacheStateAtom } from "./vcsRefInvalidation.ts";
 import { RpcClientError } from "effect/rpc";
 import * as Socket from "effect/socket/Socket";
 
@@ -64,7 +68,7 @@ const CONFIG = {
   keybindingsConfigPath: null,
   observability: null,
   providers: [],
-  settings: {},
+  settings: DEFAULT_SERVER_SETTINGS,
   environment: { capabilities: { environmentThemes: true } },
 } as unknown as ServerConfig;
 
@@ -267,6 +271,43 @@ const makeConfigPersistenceHarness = Effect.fn("test.makeConfigPersistenceHarnes
 });
 
 describe("server state projection", () => {
+  it.effect.each([
+    {
+      key: "display days",
+      environmentPatch: { remoteBranchDisplayDays: 7 },
+      projectPatch: { remoteBranchDisplayDays: 0 },
+    },
+    {
+      key: "merged branch visibility",
+      environmentPatch: { hideMergedRemoteBranches: false },
+      projectPatch: { hideMergedRemoteBranches: true },
+    },
+  ])(
+    "invalidates branch lists when $key changes globally or for a project",
+    ({ environmentPatch, projectPatch }) =>
+      Effect.gen(function* () {
+        const registry = yield* AtomRegistry.AtomRegistry;
+        const harness = yield* makeConfigPersistenceHarness(() => Effect.void);
+        const cacheState = vcsRefsCacheStateAtom({ environmentId: TARGET.environmentId });
+        const sendSettings = (settings: ServerConfig["settings"]) =>
+          harness.send({ version: 1, type: "settingsUpdated", payload: { settings } });
+        yield* sendSettings({ ...CONFIG.settings, ...environmentPatch });
+        expect(registry.get(cacheState)).toEqual({ revision: 1, persistedCacheReadable: false });
+        const settings = {
+          ...CONFIG.settings,
+          ...environmentPatch,
+          projectSettingsOverrides: {
+            [ProjectId.make("remote-days")]: projectPatch,
+          },
+        };
+        yield* sendSettings(settings);
+        expect(registry.get(cacheState).revision).toBe(2);
+        yield* sendSettings({ ...settings, branchNamePrefix: "feature" });
+        expect(registry.get(cacheState).revision).toBe(2);
+        yield* sendSettings({ ...settings, projectSettingsOverrides: {} });
+        expect(registry.get(cacheState).revision).toBe(3);
+      }).pipe(Effect.scoped, Effect.provide(AtomRegistry.layer)),
+  );
   it.effect("skips duplicate keybinding saves but persists changed keybindings", () =>
     Effect.gen(function* () {
       const saved = yield* Ref.make<ReadonlyArray<ServerConfig>>([]);

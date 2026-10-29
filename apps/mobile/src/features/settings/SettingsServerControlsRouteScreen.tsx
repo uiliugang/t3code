@@ -3,7 +3,7 @@ import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { AppText as Text } from "../../components/ui/AppText";
+import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import {
   type ResponseStreamingMode,
   type ServerSettings,
@@ -13,7 +13,7 @@ import {
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   type ProjectScopedServerSettingKey,
 } from "@t3tools/contracts";
-import { useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -44,6 +44,41 @@ import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { mergedWorktreeCleanupState } from "@t3tools/shared/projectSettings";
 
+function RemoteBranchDisplayDaysField(props: {
+  value: number | null;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const t = useUiTranslation();
+  const draft = useRef<{ text: string; over: number | null } | null>(null);
+  const save = useEffectEvent(() => {
+    const edit = draft.current;
+    draft.current = null;
+    if (edit === null || edit.over !== props.value) return;
+    const text = edit.text.trim();
+    const value = Number(text);
+    if (text !== "" && Number.isSafeInteger(value) && value >= 0 && value !== props.value)
+      props.onChange(value);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- saves an unsent settings edit when Android Back unmounts the field without ending editing
+  useEffect(() => () => save(), []);
+  return (
+    <AppTextInput
+      key={props.value}
+      accessibilityLabel={t("Remote branch display days")}
+      keyboardType="number-pad"
+      defaultValue={props.value === null ? "" : String(props.value)}
+      placeholder={props.value === null ? t("Mixed") : "21"}
+      editable={!props.disabled}
+      className="min-h-10 w-24 rounded-xl border border-border px-3 py-2 text-right text-base text-foreground"
+      onChangeText={(text) => {
+        draft.current = { text, over: props.value };
+      }}
+      onEndEditing={() => save()}
+    />
+  );
+}
+
 type SettingsPage = "threads" | "source-control" | "worktrees" | "maintenance";
 
 const PAGE_TITLES: Record<SettingsPage, string> = {
@@ -67,6 +102,8 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "worktreeCleanup",
     "newWorktreesStartFromOrigin",
     "newWorktreesMainBranchOnly",
+    "remoteBranchDisplayDays",
+    "hideMergedRemoteBranches",
     "autoDeleteMergedBranches",
     "worktreeSubmodules",
     "branchNamingMode",
@@ -427,6 +464,39 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "worktrees" ? (
                 <>
+                  <SettingsSection
+                    title="Branches"
+                    footer={t(
+                      "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.",
+                    )}
+                    trailing={
+                      isMixed("remoteBranchDisplayDays") ? (
+                        <MixedValuesLabel projectSelected={projectSelected} />
+                      ) : null
+                    }
+                  >
+                    <View className="flex-row items-center justify-between gap-4 px-4 py-3">
+                      <Text className="flex-1 text-base text-foreground">
+                        {t("Remote branch display days")}
+                      </Text>
+                      <RemoteBranchDisplayDaysField
+                        key={targetsKey}
+                        value={uniform("remoteBranchDisplayDays")}
+                        disabled={disabledFor("remoteBranchDisplayDays")}
+                        onChange={(value) => write({ remoteBranchDisplayDays: value })}
+                      />
+                    </View>
+                    <SettingsSwitchRow
+                      icon="arrow.triangle.branch"
+                      label={t("Hide merged remote branches")}
+                      subtitle={t(
+                        "Hide remote branches already merged into main or master. Local and default branches remain visible.",
+                      )}
+                      value={uniform("hideMergedRemoteBranches")}
+                      disabled={disabledFor("hideMergedRemoteBranches")}
+                      onValueChange={(value) => write({ hideMergedRemoteBranches: value })}
+                    />
+                  </SettingsSection>
                   <SettingsSection title="Creation">
                     <SettingsSwitchRow
                       icon="arrow.triangle.branch"

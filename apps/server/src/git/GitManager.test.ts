@@ -8,6 +8,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as TestClock from "effect/testing/TestClock";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -725,6 +726,72 @@ const layerGitManagerTest = GitVcsDriver.layer.pipe(
 );
 
 it.layer(layerGitManagerTest)("GitManager", (it) => {
+  it.effect(
+    "uses the project's remote branch display window instead of the environment default",
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse("2026-10-29T00:00:00Z"));
+        const cwd = yield* makeTempDir("t3code-remote-branch-days-");
+        yield* initRepo(cwd);
+        yield* runGit(cwd, ["remote", "add", "origin", cwd]);
+        const old = yield* (yield* GitVcsDriver.GitVcsDriver).execute({
+          operation: "test.oldBranch",
+          cwd,
+          args: ["commit-tree", "HEAD^{tree}", "-m", "old branch"],
+          env: {
+            GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
+            GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
+          },
+        });
+        yield* runGit(cwd, ["update-ref", "refs/remotes/origin/old", old.stdout.trim()]);
+        yield* runGit(cwd, ["update-ref", "refs/remotes/origin/merged", "HEAD"]);
+        const projectId = ProjectId.make("remote-branch-days");
+        const { manager } = yield* makeManager({
+          serverSettings: {
+            remoteBranchDisplayDays: 21,
+            projectSettingsOverrides: {
+              [projectId]: { remoteBranchDisplayDays: 0, hideMergedRemoteBranches: false },
+            },
+          },
+          seed: Effect.gen(function* () {
+            yield* (yield* ProjectStore.ProjectStoreV2).apply({
+              sequence: 1,
+              eventId: EventId.make("event:remote-branch-days"),
+              aggregateKind: "project",
+              aggregateId: projectId,
+              occurredAt: "2026-10-29T00:00:00Z",
+              commandId: null,
+              causationEventId: null,
+              correlationId: null,
+              metadata: {},
+              type: "project.created",
+              payload: {
+                projectId,
+                title: "Remote branch days",
+                workspaceRoot: cwd,
+                defaultModelSelection: null,
+                scripts: [],
+                createdAt: "2026-10-29T00:00:00Z",
+                updatedAt: "2026-10-29T00:00:00Z",
+              },
+            });
+          }),
+        });
+        expect(
+          (yield* manager.listRefs({ cwd })).refs.some((ref) => ref.name === "origin/old"),
+        ).toBe(true);
+        expect(
+          (yield* manager.listRefs({ cwd })).refs.some((ref) => ref.name === "origin/merged"),
+        ).toBe(true);
+        const { manager: defaults } = yield* makeManager();
+        expect(
+          (yield* defaults.listRefs({ cwd })).refs.some((ref) => ref.name === "origin/old"),
+        ).toBe(false);
+        expect(
+          (yield* defaults.listRefs({ cwd })).refs.some((ref) => ref.name === "origin/merged"),
+        ).toBe(false);
+      }),
+  );
   it.effect(
     "limits new worktree branches to main/master and verifies the actual start commit",
     () =>

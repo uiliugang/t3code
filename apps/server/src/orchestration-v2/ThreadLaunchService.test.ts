@@ -197,6 +197,7 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.mock(GitWorkflow.GitWorkflowService)({
       createWorktree,
       renameBranch,
+      prepareTaskBranch: () => Effect.succeed({ branch: null, created: false }),
       fetchWorktreeBaseCommit:
         options.fetchWorktreeBaseCommit ??
         (() => Effect.succeed({ commitSha: "remote-main-sha", remoteRefName: "origin/main" })),
@@ -916,6 +917,46 @@ const preparationSettled = (threadId: ThreadId) =>
     );
     return yield* threads.getThreadProjection(threadId);
   });
+
+it.effect.each([true, false])(
+  "waits for local task branch preparation before releasing the run (success=%s)",
+  (succeeds) =>
+    Effect.gen(function* () {
+      const prepared = yield* Deferred.make<
+        { branch: string | null; created: boolean },
+        GitCommandError
+      >();
+      const harness = makeHarness({ git: { prepareTaskBranch: () => Deferred.await(prepared) } });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const launched = yield* launches.launch(
+          launchInput({
+            command: "command:protected-main",
+            thread: "thread:protected-main",
+            message: "Implement search",
+            workspace: { type: "root", branch: "main" },
+          }),
+        );
+        assert.equal(launched.projection.runs[0]?.status, "preparing");
+        if (succeeds)
+          yield* Deferred.succeed(prepared, { branch: "feature/search", created: true });
+        else
+          yield* Deferred.fail(
+            prepared,
+            new GitCommandError({
+              operation: "prepare",
+              command: "git fetch",
+              cwd: "/repo",
+              detail: "Remote unavailable",
+            }),
+          );
+        const projection = yield* preparationSettled(launched.threadId);
+        assert.equal(projection.runs[0]?.status, succeeds ? "starting" : "failed");
+        assert.equal(projection.thread.branch, succeeds ? "feature/search" : "main");
+        assert.equal(projection.thread.worktreePath, null);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+);
 
 function scheduledTaskInput(id: string, targetProjectId: ProjectId) {
   return {

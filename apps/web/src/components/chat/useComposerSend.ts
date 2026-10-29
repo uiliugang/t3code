@@ -1265,7 +1265,7 @@ export function useComposerSend(input: ComposerSendInput) {
                     prepareWorktree: {
                       projectCwd: activeProject.workspaceRoot,
                       baseBranch: baseBranchForWorktree,
-                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                      startFromOrigin,
                     },
                     runSetupScript: true,
                   }
