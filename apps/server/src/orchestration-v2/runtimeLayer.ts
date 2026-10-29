@@ -1,6 +1,8 @@
 import * as WorkspaceRecovery from "../workspace/WorkspaceRecovery.ts";
 import * as WorkspaceRestore from "../workspace/WorkspaceRestore.ts";
 import * as WorkspaceAccess from "../workspace/WorkspaceAccess.ts";
+import * as WorkspaceCheckout from "../workspace/WorkspaceCheckout.ts";
+import * as RunCheckoutReconciler from "../workspace/RunCheckoutReconciler.ts";
 import * as WorkspaceProvisioner from "../workspace/WorkspaceProvisioner.ts";
 import * as WorkspaceRepositoryResolver from "../workspace/WorkspaceRepositoryResolver.ts";
 import * as GuestShareService from "../guest/GuestShareService.ts";
@@ -284,6 +286,22 @@ const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
 const layerWorkspaceResolver = WorkspaceRepositoryResolver.layer.pipe(
   Layer.provide(GitVcsDriver.layer),
 );
+const layerWorkspaceCheckoutProvided = WorkspaceCheckout.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerThreadManagementProvided,
+      layerProjectService,
+      layerProviderSessionManagerProvided,
+      layerWorkspaceResolver,
+      GitVcsDriver.layer,
+    ),
+  ),
+);
+const layerRunCheckoutReconcilerProvided = RunCheckoutReconciler.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerWorkspaceCheckoutProvided, ProjectionStore.layer, layerWorkspaceResolver),
+  ),
+);
 const layerWorkspaceProvisioner = WorkspaceProvisioner.layer.pipe(
   Layer.provide(
     Layer.mergeAll(layerWorkspaceResolver, GitVcsDriver.layer, layerProjectSetupScriptRunner),
@@ -383,6 +401,7 @@ export const layer = Layer.mergeAll(
 );
 
 export const layerProduction = Layer.mergeAll(
+  layerWorkspaceCheckoutProvided,
   WorkspaceRecovery.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -397,7 +416,7 @@ export const layerProduction = Layer.mergeAll(
       Layer.mergeAll(layerWorkspaceResolver, layerThreadManagementProvided, layerWorkspaceRestore),
     ),
   ),
-  layer.pipe(Layer.provide(layerProjectService)),
+  layer.pipe(Layer.provide(layerProjectService), Layer.provide(layerRunCheckoutReconcilerProvided)),
   layerProjectService,
   layerManagedProjectFoldersProvided,
   layerThreadLaunchProvided,

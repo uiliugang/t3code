@@ -1149,6 +1149,14 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    workspaceCheckout: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:workspace:checkout",
+      tag: WS_METHODS.workspaceCheckout,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.threadId}`,
+      },
+    }),
     workspaceRecovery: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:workspace:recovery",
       tag: WS_METHODS.workspaceRecovery,

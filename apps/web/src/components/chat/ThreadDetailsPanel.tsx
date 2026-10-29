@@ -10,6 +10,7 @@ import type {
   ProjectScript,
   ResolvedKeybindingsConfig,
   ThreadId,
+  WorkspaceRootId,
 } from "@t3tools/contracts";
 
 import type { DraftId } from "../../composerDraftStore";
@@ -89,12 +90,17 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     (binding) => binding.rootId === workspace.primaryRootId,
   )?.resourceId;
   const [expandedRepository, setExpandedRepository] = useState<{
-    revision: string;
-    resourceId: string | null;
+    environmentId: EnvironmentId;
+    threadId: ThreadId;
+    rootId: WorkspaceRootId | null;
   } | null>(null);
   const expandedResourceId =
-    expandedRepository?.revision === workspace?.id
-      ? expandedRepository?.resourceId
+    expandedRepository?.environmentId === props.environmentId &&
+    expandedRepository.threadId === props.threadId
+      ? expandedRepository.rootId === null
+        ? null
+        : (workspace?.bindings.find((binding) => binding.rootId === expandedRepository.rootId)
+            ?.resourceId ?? primaryResourceId)
       : primaryResourceId;
 
   const fileScripts = useT3ProjectFileScripts(
@@ -205,8 +211,13 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 expanded={expandedResourceId === resource.id}
                 onToggle={() =>
                   setExpandedRepository({
-                    revision: workspace.id,
-                    resourceId: expandedResourceId === resource.id ? null : resource.id,
+                    environmentId: props.environmentId,
+                    threadId: props.threadId,
+                    rootId:
+                      expandedResourceId === resource.id
+                        ? null
+                        : (workspace.bindings.find((binding) => binding.resourceId === resource.id)
+                            ?.rootId ?? workspace.primaryRootId),
                   })
                 }
                 onOpenChanges={() => {

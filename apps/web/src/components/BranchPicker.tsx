@@ -179,6 +179,7 @@ export function BranchPicker({
               <LegendList<string>
                 ref={attachBranchList}
                 data={filteredItems}
+                extraData={renderItem}
                 keyExtractor={(item) => item}
                 {...(getItemType ? { getItemType } : {})}
                 renderItem={({ item, index }) => renderItem(item, index)}

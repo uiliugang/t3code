@@ -21,8 +21,7 @@ export function useSelectedThreadWorktree(resourceId?: ThreadRepositorySelection
 
   return {
     repositoryTarget,
-    selectedThreadWorktreePath:
-      repository?.ownership === "managed" ? repository.checkoutRoot : selectedThreadWorktreePath,
+    selectedThreadWorktreePath: repository?.checkoutRoot ?? selectedThreadWorktreePath,
     selectedThreadCwd:
       workspace && !repository
         ? null

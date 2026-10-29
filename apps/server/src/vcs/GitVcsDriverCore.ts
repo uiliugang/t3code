@@ -2224,6 +2224,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
     }
 
+    yield* invalidateChangedCheckoutRefs(cwd, repositoryPaths, refName).pipe(Effect.ignore);
+
     const fallbackAheadCount =
       includeDivergence && !upstreamRef && refName
         ? yield* computeAheadCountAgainstBase(cwd, refName).pipe(Effect.orElseSucceed(() => 0))
@@ -3731,6 +3733,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
     yield* Cache.invalidate(repositoryPathsRefreshCache, repositoryPathsCacheKey);
     yield* Cache.invalidate(repositoryPathsCache, repositoryPathsCacheKey);
+  });
+
+  const invalidateChangedCheckoutRefs = Effect.fn("invalidateChangedCheckoutRefs")(function* (
+    cwd: string,
+    repositoryPaths: GitRepositoryPaths | null,
+    branch: string | null,
+  ) {
+    if (repositoryPaths === null) return;
+    if (repositoryPaths.currentBranch !== branch) {
+      return yield* invalidateListRefsSnapshot(cwd);
+    }
+    const { gitCommonDir, worktreeRoot } = repositoryPaths;
+    const epoch = listRefsEpochByCommonDir.get(gitCommonDir);
+    if (worktreeRoot === null || epoch === undefined) return;
+    const snapshot = yield* Cache.getOption(
+      listRefsSnapshotCache,
+      new GitRefsSnapshotCacheKey({ gitCommonDir, epoch }),
+    );
+    if (Option.isNone(snapshot)) return;
+    const cachedBranch =
+      snapshot.value.localBranches.find((ref) => ref.worktreePath === worktreeRoot)?.name ?? null;
+    if (cachedBranch !== branch) yield* invalidateListRefsSnapshot(cwd);
   });
 
   const listRefs: GitVcsDriver.GitVcsDriver["Service"]["listRefs"] = Effect.fn("listRefs")(

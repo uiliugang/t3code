@@ -820,6 +820,14 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
     nodeNames(yield* store.getThreadRecords(threadId, ["nodes"])),
     nodes.map(([name]) => name).toSorted(),
   );
+  assert.deepEqual(
+    nodeNames(yield* store.getThreadRecords(threadId, ["nodes"], { nodeRunIds: [activeRun.id] })),
+    ["active-run-done-tool"],
+  );
+  assert.deepEqual(
+    (yield* store.getThreadRecords(threadId, ["nodes"], { nodeRunIds: [] })).nodes,
+    [],
+  );
 });
 
 const backgroundThreadUpdatesKeepTimestamp = Effect.gen(function* () {

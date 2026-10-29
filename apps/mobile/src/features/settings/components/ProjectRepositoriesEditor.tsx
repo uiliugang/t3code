@@ -10,6 +10,7 @@ import { useState } from "react";
 import { View } from "react-native";
 import { AppText, AppTextInput } from "../../../components/ui/AppText";
 import { Button } from "../../../components/ui/Button";
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { uuidv4 } from "../../../lib/uuid";
 import { projectEnvironment } from "../../../state/projects";
 import { useAtomCommand } from "../../../state/use-atom-command";
@@ -23,6 +24,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
     useSettingsEnvironmentFilter();
   const config = useAtomValue(serverEnvironment.configValueAtom(project.environmentId));
   const permission = useEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope);
+  const t = useUiTranslation();
   const allowed = permission && config?.environment.capabilities.multiRepositoryWorkspaces === true;
   const update = useAtomCommand(projectEnvironment.update, { reportFailure: true });
   const [roots, setRoots] = useState<ReadonlyArray<ProjectWorkspaceRoot>>(
@@ -77,7 +79,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
     <SettingsSection title="Repositories">
       <View className="gap-4 p-4">
         <AppText className="text-sm text-foreground-muted">
-          New tasks use these repositories. Existing tasks keep their bound workspace.
+          {t("New tasks use these repositories. Existing tasks keep their bound group.")}
         </AppText>
         {roots.map((root) => (
           <View key={root.id} className="gap-3 rounded-xl border border-border p-3">

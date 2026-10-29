@@ -45,7 +45,7 @@ export function WorkspaceRecoveryControl({
         disabled={!allowed || busy}
         onClick={() => void run("inspect")}
       >
-        {t("Workspace recovery")}
+        {t("Group recovery")}
       </Button>
       {report ? (
         <div className="flex flex-col gap-2 py-2 text-xs text-muted-foreground">

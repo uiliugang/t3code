@@ -4,16 +4,14 @@ import type {
   ExecutionResourceId,
   EnvironmentId,
   ThreadRepositoryTarget,
+  WorkspaceRootId,
 } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "./atom-registry";
 import { useThreadSelection } from "./use-thread-selection";
 
 const selection = Atom.family((key: string) =>
-  Atom.make<ExecutionResourceId | null>(null).pipe(
-    Atom.keepAlive,
-    Atom.withLabel(`repository:${key}`),
-  ),
+  Atom.make<WorkspaceRootId | null>(null).pipe(Atom.keepAlive, Atom.withLabel(`repository:${key}`)),
 );
 
 export type ThreadRepositorySelection =
@@ -24,9 +22,12 @@ export function useThreadRepository(override?: ThreadRepositorySelection) {
   const { selectedThread } = useThreadSelection();
   const workspace = selectedThread?.workspace;
   const key = selectedThread
-    ? `${scopedThreadKey({ environmentId: selectedThread.environmentId, threadId: selectedThread.id })}:${workspace?.id ?? "legacy"}`
+    ? scopedThreadKey({ environmentId: selectedThread.environmentId, threadId: selectedThread.id })
     : "none";
-  const selected = useAtomValue(selection(key));
+  const selectedRootId = useAtomValue(selection(key));
+  const selected = workspace?.bindings.find(
+    (binding) => binding.rootId === selectedRootId,
+  )?.resourceId;
   const primary = workspace?.bindings.find(
     (binding) => binding.rootId === workspace.primaryRootId,
   )?.resourceId;
@@ -58,6 +59,10 @@ export function useThreadRepository(override?: ThreadRepositorySelection) {
       repositoryTarget && selectedThread
         ? { ...repositoryTarget, environmentId: selectedThread.environmentId }
         : undefined,
-    selectRepository: (id: ExecutionResourceId) => appAtomRegistry.set(selection(key), id),
+    selectRepository: (id: ExecutionResourceId) =>
+      appAtomRegistry.set(
+        selection(key),
+        workspace?.bindings.find((binding) => binding.resourceId === id)?.rootId ?? null,
+      ),
   };
 }

@@ -9,6 +9,7 @@ import { useState } from "react";
 import { View } from "react-native";
 import { AppText } from "../../../components/ui/AppText";
 import { Button } from "../../../components/ui/Button";
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { serverEnvironment } from "../../../state/server";
 import { useAtomCommand } from "../../../state/use-atom-command";
 
@@ -19,6 +20,7 @@ export function WorkspaceRecoveryControl({
   threadRef: ScopedThreadRef;
   revisionId: WorkspaceRevisionId | null;
 }) {
+  const t = useUiTranslation();
   const allowed = useAtomValue(
     serverEnvironment.workspaceRecovery.permissionAtom(threadRef.environmentId),
   );
@@ -42,11 +44,11 @@ export function WorkspaceRecoveryControl({
       <Button
         disabled={!allowed || busy}
         onPress={() => void run("inspect")}
-        label="Workspace recovery"
+        label={t("Group recovery")}
       />
       {report ? (
         <>
-          <AppText>{report.detail}</AppText>
+          <AppText>{t(report.detail)}</AppText>
           {report.repositories.map((repository) => (
             <AppText key={repository.path}>
               {repository.name}: {repository.stage}

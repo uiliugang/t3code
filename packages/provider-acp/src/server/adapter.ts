@@ -3607,6 +3607,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const diffText =
             acpToolCallDiffPatch(toolCall.data.content) ?? textFromUnknown(rawOutput);
           const rawInputRecord = unknownRecord(rawInput);
+          const commandCwd =
+            nonEmptyText(rawInputRecord?.cwd, "") || nonEmptyText(rawInputRecord?.workdir, "");
           const inputVariant =
             typeof rawInputRecord?.variant === "string"
               ? rawInputRecord.variant.trim().toLowerCase()
@@ -3794,6 +3796,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   ...base,
                   type: "command_execution",
                   input: toolCall.command ?? monitorCommand ?? toolCall.title ?? "Command",
+                  ...(commandCwd ? { cwd: commandCwd } : {}),
                   ...(textFromUnknown(rawOutput) === undefined
                     ? {}
                     : { output: textFromUnknown(rawOutput) }),
@@ -3838,6 +3841,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   turnItem = {
                     ...base,
                     type: "command_execution",
+                    ...(commandCwd ? { cwd: commandCwd } : {}),
                     input:
                       toolCall.command ??
                       monitorCommand ??

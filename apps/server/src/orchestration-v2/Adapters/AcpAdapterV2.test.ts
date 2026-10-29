@@ -1203,7 +1203,7 @@ describe("AcpAdapterV2", () => {
                         kind: "execute",
                         title: "Run command",
                         status: "in_progress",
-                        rawInput: { command: "pwd" },
+                        rawInput: { command: "pwd", cwd: "/repo/linked-checkout" },
                       },
                       {
                         sessionUpdate: "tool_call_update",
@@ -1261,6 +1261,7 @@ describe("AcpAdapterV2", () => {
           const item = event.turnItem;
           retained.set(item.id, item);
           if (item.type !== "dynamic_tool" && item.type !== "command_execution") continue;
+          if (item.type === "command_execution") assert.equal(item.cwd, "/repo/linked-checkout");
           const streams = [...retained.values()].filter(
             (entry) => entry.type === "assistant_message" || entry.type === "reasoning",
           );

@@ -1459,8 +1459,16 @@ function OpenCommandPaletteDialog(props: {
   actionItems.push({
     kind: "action",
     value: "action:create-workspace",
-    searchTerms: ["workspace", "multiple repositories", "multi repo", "创建工作区", "多仓"],
-    title: t("Create workspace"),
+    searchTerms: [
+      "group",
+      "workspace",
+      "repositories",
+      "multi repo",
+      "创建分组",
+      "创建工作区",
+      "多仓",
+    ],
+    title: t("Create group"),
     icon: <LayersIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       openCreateWorkspace();

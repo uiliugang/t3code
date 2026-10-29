@@ -1,4 +1,7 @@
 import {
+  WorkspaceCheckoutInput,
+  WorkspaceCheckoutResult,
+  WorkspaceCheckoutError,
   WorkspaceRecoveryInput,
   WorkspaceRecoveryResult,
   WorkspaceRecoveryError,
@@ -448,6 +451,7 @@ export const WS_METHODS = {
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
   workspaceRecovery: "workspace.recovery",
+  workspaceCheckout: "workspace.checkout",
 
   gitRunStackedAction: "git.runStackedAction",
   gitResolvePullRequest: "git.resolvePullRequest",
@@ -1466,6 +1470,12 @@ const WsWorkspaceRecoveryRpc = Rpc.make(WS_METHODS.workspaceRecovery, {
   error: Schema.Union([WorkspaceRecoveryError, EnvironmentAuthorizationError]),
 });
 
+const WsWorkspaceCheckoutRpc = Rpc.make(WS_METHODS.workspaceCheckout, {
+  payload: WorkspaceCheckoutInput,
+  success: WorkspaceCheckoutResult,
+  error: Schema.Union([WorkspaceCheckoutError, EnvironmentAuthorizationError]),
+});
+
 const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   payload: VcsInitInput,
   error: Schema.Union([VcsError, GitCommandError, EnvironmentAuthorizationError]),
@@ -2048,6 +2058,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
   WsWorkspaceRecoveryRpc,
+  WsWorkspaceCheckoutRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
   WsTerminalOpenRpc,

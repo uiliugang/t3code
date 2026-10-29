@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
+import { RunCheckoutReconciler } from "../workspace/RunCheckoutReconciler.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
@@ -52,6 +53,7 @@ const make = Effect.gen(function* () {
   const checkpointCapture = yield* CheckpointCapture.CheckpointCaptureServiceV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const observer = yield* RunFinalizationObserver;
+  const checkoutReconciler = yield* RunCheckoutReconciler;
 
   const finalize: RunFinalizationService["Service"]["finalize"] = Effect.fn(
     "RunFinalizationService.finalize",
@@ -71,11 +73,16 @@ const make = Effect.gen(function* () {
         ),
       );
     const scope = projection.checkpointScopes.find((scope) => scope.id === input.scopeId);
+    const checkoutCwds = yield* checkoutReconciler.reconcile({
+      threadId: input.threadId,
+      runId: input.runId,
+      scope: scope ?? null,
+    });
     const cwds =
       scope?.workspace?.resources.map((resource) => resource.checkoutRoot) ??
       (scope === undefined ? [] : [scope.cwd]);
     yield* Effect.forEach(
-      [...new Set(cwds)],
+      [...new Set([...cwds, ...checkoutCwds])],
       (cwd) =>
         // Retrying a display refresh after the checkpoint is durable blocks the next turn.
         observer.refresh({ cwd, threadId: input.threadId, runId: input.runId }).pipe(

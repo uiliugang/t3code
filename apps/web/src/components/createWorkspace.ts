@@ -7,9 +7,9 @@ export function workspaceCreationError(input: {
   roots: readonly ProjectWorkspaceRoot[];
   primaryRootId: WorkspaceRootId;
 }): string | null {
-  if (!input.title.trim()) return "Enter a workspace name.";
-  if (input.roots.length < 2 || input.roots.length > 16)
-    return "Choose between 2 and 16 repositories.";
+  if (!input.title.trim()) return "Enter a group name.";
+  if (input.roots.length < 1 || input.roots.length > 16)
+    return "Choose between 1 and 16 repositories.";
   if (input.roots.some((root) => !root.alias.trim() || !root.sourcePath.trim()))
     return "Enter a name and directory for every repository.";
   if (new Set(input.roots.map((root) => root.alias.trim())).size !== input.roots.length)
