@@ -1,5 +1,6 @@
 import {
   ORCHESTRATION_V2_WS_METHODS,
+  WS_METHODS,
   type ThreadId,
   type OrchestrationGetTurnDiffResult,
 } from "@t3tools/contracts";
@@ -41,6 +42,14 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       ? {}
       : { onAnswer: options.onCheckpointDiffAnswer };
   return {
+    predictMessage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:orchestration:predict-message",
+      tag: WS_METHODS.threadPredictMessage,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
+      },
+    }),
     threadTranscript: createEnvironmentCommand(runtime, {
       label: "environment-data:orchestration:thread-transcript",
       execute: Effect.fn("orchestration.execute")(function* (input: {

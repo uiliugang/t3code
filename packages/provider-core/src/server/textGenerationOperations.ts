@@ -8,6 +8,7 @@ import { extractJsonObject } from "@t3tools/shared/schemaJson";
 import type { ProviderTextGeneration } from "./textGeneration.ts";
 import {
   buildBranchNamePrompt,
+  buildPredictedMessagePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildReviewGuidePrompt,
@@ -167,7 +168,21 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     });
   });
 
+  const generatePredictedMessage: ProviderTextGeneration["generatePredictedMessage"] = Effect.fn(
+    `${name}.generatePredictedMessage`,
+  )(function* (input) {
+    const generated = yield* run({
+      operation: "generatePredictedMessage",
+      cwd: input.cwd,
+      modelSelection: input.modelSelection,
+      ...buildPredictedMessagePrompt(input.messages),
+    });
+    const text = generated.text?.trim();
+    return { text: text && text.length <= 500 ? text : null };
+  });
+
   return {
+    generatePredictedMessage,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

@@ -15,6 +15,7 @@ export type {
   BranchNameGenerationResult,
   CommitMessageGenerationInput,
   CommitMessageGenerationResult,
+  PredictedMessageGenerationInput,
   PrContentGenerationInput,
   PrContentGenerationResult,
   ReviewGuideGenerationInput,
@@ -28,6 +29,7 @@ export class TextGeneration extends Context.Service<TextGeneration, ProviderText
 ) {}
 
 type TextGenerationOp =
+  | "generatePredictedMessage"
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
@@ -57,6 +59,15 @@ export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const sourceControl = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   return TextGeneration.of({
+    generatePredictedMessage: Effect.fn("TextGeneration.generatePredictedMessage")(
+      function (input) {
+        return resolveInstance(
+          registry,
+          "generatePredictedMessage",
+          input.modelSelection.instanceId,
+        ).pipe(Effect.flatMap((textGeneration) => textGeneration.generatePredictedMessage(input)));
+      },
+    ),
     generateCommitMessage: Effect.fn("TextGeneration.generateCommitMessage")(function (input) {
       return resolveInstance(
         registry,

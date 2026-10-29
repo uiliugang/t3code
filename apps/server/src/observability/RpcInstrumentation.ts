@@ -117,6 +117,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.pullRequestsChangeBreakdown]: "pull-requests",
   [WS_METHODS.pullRequestsRunAction]: "pull-requests",
   [WS_METHODS.pullRequestsUpdate]: "pull-requests",
+  [WS_METHODS.threadPredictMessage]: "text-generation",
   [WS_METHODS.pullRequestsComment]: "pull-requests",
   [WS_METHODS.pullRequestsUpdateComment]: "pull-requests",
   [WS_METHODS.pullRequestsSubmitReview]: "pull-requests",

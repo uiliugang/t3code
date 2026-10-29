@@ -1,3 +1,6 @@
+import { Button } from "../ui/button";
+import { useComposerPrediction } from "./useComposerPrediction";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
@@ -698,7 +701,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     attachmentTargetKeyRef.current = attachmentTargetKey;
   });
   const questionPreparations = useQuestionAttachmentPreparation((state) => state.counts);
+  const t = useUiTranslation();
   const prompt = composerDraft.prompt;
+  const prediction = useComposerPrediction({
+    environmentId,
+    threadId: routeThreadRef.threadId,
+    thread: props.activeThreadShell,
+    enabled:
+      settings.showPredictedMessages &&
+      routeKind === "server" &&
+      canOperateThread &&
+      environmentUnavailable === null &&
+      !isSendBusy &&
+      !isCompacting &&
+      !isEditingQueuedMessage &&
+      !showPlanFollowUpPrompt &&
+      incomingPendingUserInputs.length === 0 &&
+      pendingApprovals.length === 0 &&
+      prompt.length === 0 &&
+      !composerDraftHasUserContent(composerDraft),
+  });
   const composerImages = attachmentDraft.images;
   const composerFiles = attachmentDraft.files;
   const inlineFileIdSet = (() => {
@@ -2244,8 +2266,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const expandMobileComposerStable = useStableCallback(expandMobileComposer);
 
-  const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) =>
-    composerCommandKeyHandler({
+  const acceptPrediction = () => {
+    if (
+      !prediction.text ||
+      promptRef.current.length > 0 ||
+      composerDraftHasUserContent(getComposerDraft(composerDraftTarget))
+    )
+      return false;
+    const accepted = applyPromptReplacement(0, 0, prediction.text);
+    if (accepted) prediction.dismiss();
+    return accepted;
+  };
+  const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) => {
+    if (
+      prediction.text &&
+      !composerMenuOpenRef.current &&
+      !event.isComposing &&
+      event.keyCode !== 229 &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
+      if (key === "Tab" && acceptPrediction()) return true;
+      if (key === "Escape") {
+        prediction.dismiss();
+        return true;
+      }
+    }
+    return composerCommandKeyHandler({
       keybindings,
       sendShortcut: settings.sendShortcut,
       routeKind,
@@ -2282,6 +2331,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       applyPromptReplacement,
       submitComposer,
     })(key, event, isTaskItem);
+  };
 
   const {
     stashQueue,
@@ -3701,6 +3751,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         "my-0 max-h-8 min-h-8 overflow-hidden py-0 whitespace-pre! leading-8",
                     )}
                     placeholderClassName={cn(
+                      prediction.text && "truncate",
                       isComposerResting &&
                         "flex items-center overflow-hidden whitespace-nowrap leading-8",
                     )}
@@ -3714,7 +3765,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onCitationDraftSave={saveCitationDraftToPromptStable}
                     onPaste={onComposerPasteStable}
                     placeholder={
-                      isComposerApprovalState
+                      prediction.text ??
+                      (isComposerApprovalState
                         ? activePendingApproval?.supportsFeedback
                           ? "Send feedback to decline this request"
                           : "Send a message to decline and redirect the agent"
@@ -3728,7 +3780,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Choose a project above to start a thread"
                               : showProviderUnavailable
                                 ? "Enable a provider in Settings to send a message"
-                                : DEFAULT_COMPOSER_PLACEHOLDER
+                                : DEFAULT_COMPOSER_PLACEHOLDER)
                     }
                     disabled={
                       projectSelectionRequired ||
@@ -3770,6 +3822,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </div>
             </div>
 
+            {prediction.text ? (
+              <div className="flex items-center gap-2 px-1 pb-1">
+                <Button
+                  variant="ghost-muted"
+                  size="micro"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={acceptPrediction}
+                  title={prediction.text}
+                >
+                  {t("Tab to accept prediction")}
+                </Button>
+                <Button
+                  variant="ghost-muted"
+                  size="micro"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={prediction.dismiss}
+                >
+                  {t("Dismiss prediction")}
+                </Button>
+              </div>
+            ) : null}
             <ComposerPromptLengthValidation
               message={providerInputSubmissionError ?? composerSubmissionError}
             />

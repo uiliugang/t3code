@@ -1,3 +1,5 @@
+import { useComposerPrediction } from "./useComposerPrediction";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useSidebarWorkspaceTabs } from "../workspace/useSystemWorkspaceTabBar";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
@@ -445,6 +447,29 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     draftMessage.trim().length > 0 ||
     draftAttachments.length > 0 ||
     (queuedEdit?.existingAttachments.length ?? 0) > 0;
+  const t = useUiTranslation();
+  const prediction = useComposerPrediction(
+    props.selectedThread,
+    !props.isDraft &&
+      !props.hidden &&
+      props.canOperateThread &&
+      props.serverConfig?.threadPredictions === true &&
+      props.connectionState === "connected" &&
+      !props.activeThreadBusy &&
+      draftMessage.length === 0 &&
+      !hasContent &&
+      queuedEdit === null &&
+      props.queueCount === 0 &&
+      !props.interactionLocked &&
+      !props.sendBlockedReason,
+  );
+  const acceptPrediction = () => {
+    const current = getComposerDraftSnapshot(composerDraftKey);
+    if (!prediction.text || current.text.length > 0 || current.attachments.length > 0) return;
+    props.onChangeDraftMessage(prediction.text);
+    prediction.dismiss();
+    inputRef.current?.focus();
+  };
   const stripAttachments = composerStripAttachments(draftAttachments);
   const showStopAction = !hasContent && props.canStopThread && queuedEdit === null;
   const onResumeQueue = props.onResumeQueue;
@@ -821,6 +846,15 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         style={{ maxWidth: props.contentMaxWidth }}
       >
         {props.draftControls}
+        {prediction.text ? (
+          <View className="gap-1 px-2 pb-2">
+            <Text className="text-sm text-foreground-muted">{prediction.text}</Text>
+            <View className="flex-row items-center gap-2">
+              <Button label={t("Use prediction")} tone="text" onPress={acceptPrediction} />
+              <Button label={t("Dismiss prediction")} tone="text" onPress={prediction.dismiss} />
+            </View>
+          </View>
+        ) : null}
         {!isSubmissionLocked &&
         composerMenu.trigger &&
         (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (

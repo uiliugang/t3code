@@ -38,6 +38,11 @@ import {
   ChatGptHandoffInput,
   ChatGptHandoffState,
 } from "./providerSetup.ts";
+import {
+  ThreadPredictionInput,
+  ThreadPredictionResult,
+  ThreadPredictionError,
+} from "./threadPrediction.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -549,6 +554,7 @@ export const WS_METHODS = {
   pullRequestsActivity: "pullRequests.activity",
   pullRequestsReviewGuide: "pullRequests.reviewGuide",
   pullRequestsGenerateReviewGuide: "pullRequests.generateReviewGuide",
+  threadPredictMessage: "thread.predictMessage",
   pullRequestsThreadComments: "pullRequests.threadComments",
   pullRequestsDiffFileContents: "pullRequests.diffFileContents",
   pullRequestsFilesViewed: "pullRequests.filesViewed",
@@ -1046,6 +1052,12 @@ const WsPullRequestsReviewGuideRpc = Rpc.make(WS_METHODS.pullRequestsReviewGuide
   payload: PullRequestRef,
   success: PullRequestReviewGuideResult,
   error: PullRequestRpcError,
+});
+
+const WsThreadPredictMessageRpc = Rpc.make(WS_METHODS.threadPredictMessage, {
+  payload: ThreadPredictionInput,
+  success: ThreadPredictionResult,
+  error: Schema.Union([ThreadPredictionError, EnvironmentAuthorizationError]),
 });
 
 const WsPullRequestsGenerateReviewGuideRpc = Rpc.make(WS_METHODS.pullRequestsGenerateReviewGuide, {
@@ -1970,6 +1982,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsActivityRpc,
   WsPullRequestsReviewGuideRpc,
   WsPullRequestsGenerateReviewGuideRpc,
+  WsThreadPredictMessageRpc,
   WsPullRequestsThreadCommentsRpc,
   WsPullRequestsDiffFileContentsRpc,
   WsPullRequestsFilesViewedRpc,

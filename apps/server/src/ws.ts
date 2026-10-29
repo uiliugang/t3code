@@ -181,6 +181,7 @@ import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as ThreadPrediction from "./textGeneration/ThreadPrediction.ts";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -1235,6 +1236,7 @@ export const layerWsRpc = (
       const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
       const eventLoopMonitor = yield* EventLoopMonitor.EventLoopMonitor;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
+      const threadPrediction = yield* ThreadPrediction.ThreadPrediction;
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
@@ -1784,6 +1786,7 @@ export const layerWsRpc = (
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
           threadFind: true,
+          threadPredictions: true,
           threadFindProgressive: true,
           ...Option.match(scratchWorkspaceRoot, {
             onNone: () => ({}),
@@ -1939,6 +1942,7 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.threadPredictMessage]: (input) => threadPrediction.predict(input),
         [ORCHESTRATION_V2_WS_METHODS.searchThread]: (input) =>
           threadManagement
             .searchThread(input)
@@ -3259,6 +3263,7 @@ export const WS_RPC_SERVER_OPTIONS = {
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
+    const threadPrediction = yield* ThreadPrediction.ThreadPrediction;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -3328,6 +3333,7 @@ export const layer = Layer.unwrap(
           Effect.provide(
             layerWsRpc(session, clientAnalyticsProps, serverBrowser).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provide(Layer.succeed(ThreadPrediction.ThreadPrediction, threadPrediction)),
               // Handler-context reporters see only request defects, not server-wide defects.
               Layer.provide(DefectReporter.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

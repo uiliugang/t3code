@@ -282,6 +282,7 @@ function createTextGeneration(
         title: "Update workflow",
       }),
     generateReviewGuide: () => Effect.succeed({ stops: [] }),
+    generatePredictedMessage: () => Effect.succeed({ text: null }),
     ...overrides,
   };
 
@@ -331,6 +332,7 @@ function createTextGeneration(
         ),
       ),
     generateReviewGuide: (input) => implementation.generateReviewGuide(input),
+    generatePredictedMessage: (input) => implementation.generatePredictedMessage(input),
   };
 }
 

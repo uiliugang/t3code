@@ -20,6 +20,7 @@ import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textG
 import { investigationUnsupported } from "@t3tools/provider-core/server/textGenerationOperations";
 import {
   buildBranchNamePrompt,
+  buildPredictedMessagePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
@@ -342,7 +343,19 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   });
   const generateReviewGuide: ProviderTextGeneration["generateReviewGuide"] = () =>
     Effect.fail(investigationUnsupported("generateReviewGuide", "Muse Code"));
+  const generatePredictedMessage: ProviderTextGeneration["generatePredictedMessage"] = Effect.fn(
+    "MuseTextGeneration.generatePredictedMessage",
+  )(function* (input) {
+    const generated = yield* runMuseJson({
+      operation: "generatePredictedMessage",
+      ...buildPredictedMessagePrompt(input.messages),
+      modelSelection: input.modelSelection,
+    });
+    const text = generated.text?.trim();
+    return { text: text && text.length <= 500 ? text : null };
+  });
   return {
+    generatePredictedMessage,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
