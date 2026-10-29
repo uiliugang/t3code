@@ -9,6 +9,7 @@ import {
   resolveProjectProviderInstanceEnabled,
   type ResolvedServerSettings,
   type ServerSettings,
+  type ServerSettingsPatch,
   type T3ProjectFile,
   type ThreadEnvMode,
   type WorktreeCleanupRules,
@@ -242,5 +243,44 @@ export function resolveWorktreeCleanup(
     worktreeOnMerge,
     worktreeOnDelete,
     worktreeUnchanged,
+  };
+}
+
+export function mergedWorktreeCleanupState(settings: ServerSettings) {
+  const worktrees = resolveWorktreeCleanup(settings, null).worktreeOnMerge;
+  const branches = settings.worktreeCleanup?.mode !== "off" && settings.autoDeleteMergedBranches;
+  return { checked: branches && worktrees, mixed: branches !== worktrees };
+}
+
+export function mergedWorktreeCleanupPatch(
+  settings: ServerSettings,
+  patch: ServerSettingsPatch,
+  projectScoped: boolean,
+): ServerSettingsPatch {
+  const enabled = patch.autoDeleteMergedBranches;
+  if (enabled === undefined) return patch;
+  const rules = {
+    ...resolveWorktreeCleanup(settings, null),
+    ...(patch.worktreeCleanup?.mode === "custom" ? patch.worktreeCleanup.rules : {}),
+    worktreeOnMerge: enabled,
+  };
+  if (projectScoped)
+    return {
+      ...patch,
+      autoDeleteMergedBranches: enabled,
+      worktreeCleanup: { mode: "custom", rules },
+    };
+  return {
+    ...patch,
+    autoDeleteMergedBranches: enabled,
+    storageCleanup: { ...patch.storageCleanup, worktreeOnMerge: enabled },
+    ...(settings.worktreeCleanup === null
+      ? {}
+      : {
+          worktreeCleanup:
+            settings.worktreeCleanup.mode === "off" && !enabled
+              ? { mode: "off" }
+              : { mode: "custom", rules },
+        }),
   };
 }

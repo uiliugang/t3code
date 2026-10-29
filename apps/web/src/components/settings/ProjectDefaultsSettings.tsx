@@ -461,10 +461,8 @@ export function WorktreeSubmodulesRow() {
             <SelectValue>
               {(value: string | null) =>
                 isWorktreeSubmodules(value)
-                  ? WORKTREE_SUBMODULES_LABELS[value]
-                  : unavailable
-                    ? "Unavailable"
-                    : "Mixed"
+                  ? t(WORKTREE_SUBMODULES_LABELS[value])
+                  : t(unavailable ? "Unavailable" : "Mixed")
               }
             </SelectValue>
           </SelectTrigger>

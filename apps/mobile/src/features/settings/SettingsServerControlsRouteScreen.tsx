@@ -41,6 +41,8 @@ import {
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { AutoSettleSettingsRows } from "./ThreadSettingsSections";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
+import { useUiTranslation } from "../../lib/useUiTranslation";
+import { mergedWorktreeCleanupState } from "@t3tools/shared/projectSettings";
 
 type SettingsPage = "threads" | "source-control" | "worktrees" | "maintenance";
 
@@ -60,14 +62,12 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "sidebarAutoSettleOnMerge",
     "sidebarAutoSettleAfterDays",
   ],
-  "source-control": [
-    "defaultAutoPull",
-    "removeAgentCreditsOnMerge",
+  "source-control": ["defaultAutoPull", "removeAgentCreditsOnMerge"],
+  worktrees: [
+    "worktreeCleanup",
+    "newWorktreesStartFromOrigin",
     "newWorktreesMainBranchOnly",
     "autoDeleteMergedBranches",
-  ],
-  worktrees: [
-    "newWorktreesStartFromOrigin",
     "worktreeSubmodules",
     "branchNamingMode",
     "branchNamePrefix",
@@ -177,6 +177,7 @@ export function SettingsEnvironmentMaintenanceRouteScreen() {
 }
 
 function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
+  const t = useUiTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
@@ -205,6 +206,20 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   const reference = displayTargets[0] ?? null;
   const uniform = <K extends keyof ServerSettings>(key: K) =>
     uniformMobileSetting(displayTargets, key);
+  const mergedCleanup = reference === null ? null : mergedWorktreeCleanupState(reference.settings);
+  const mergedCleanupMixed =
+    mergedCleanup === null ||
+    mergedCleanup.mixed ||
+    displayTargets.some((target) => {
+      const state = mergedWorktreeCleanupState(target.settings);
+      return state.mixed || state.checked !== mergedCleanup.checked;
+    });
+  const mergedCleanupSupported = displayTargets.every(
+    ({ environment }) =>
+      environment.serverConfig.environment.capabilities.storageCleanup === true &&
+      (!projectSelected ||
+        environment.serverConfig.environment.capabilities.projectWorktreeCleanup === true),
+  );
   // `uniform` folds a real null into "mixed"; nullable keys need the distinction.
   const isMixed = (key: keyof ServerSettings) =>
     reference === null ||
@@ -387,24 +402,6 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "source-control" ? (
                 <>
-                  <SettingsSection title="Branch management">
-                    <SettingsSwitchRow
-                      icon="arrow.triangle.branch"
-                      label="Only create worktrees from main/master"
-                      subtitle="Create new worktree branches only from main or master. Existing branch checkouts are unaffected."
-                      value={uniform("newWorktreesMainBranchOnly")}
-                      disabled={disabledFor("newWorktreesMainBranchOnly")}
-                      onValueChange={(value) => write({ newWorktreesMainBranchOnly: value })}
-                    />
-                    <SettingsSwitchRow
-                      icon="trash"
-                      label="Automatically delete merged branches and worktrees"
-                      subtitle="Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept."
-                      value={uniform("autoDeleteMergedBranches")}
-                      disabled={disabledFor("autoDeleteMergedBranches")}
-                      onValueChange={(value) => write({ autoDeleteMergedBranches: value })}
-                    />
-                  </SettingsSection>
                   <SettingsSection title="Pull requests">
                     <SettingsSwitchRow
                       icon={PullRequestGlyph.merged}
@@ -430,14 +427,26 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "worktrees" ? (
                 <>
-                  <SettingsSection title="New worktrees">
+                  <SettingsSection title="Creation">
                     <SettingsSwitchRow
                       icon="arrow.triangle.branch"
-                      label="Start from remote"
-                      subtitle="Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing."
+                      label={t("Start from remote")}
+                      subtitle={t(
+                        "Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.",
+                      )}
                       value={uniform("newWorktreesStartFromOrigin")}
                       disabled={disabledFor("newWorktreesStartFromOrigin")}
                       onValueChange={(value) => write({ newWorktreesStartFromOrigin: value })}
+                    />
+                    <SettingsSwitchRow
+                      icon="arrow.triangle.branch"
+                      label={t("Only create worktrees from main/master")}
+                      subtitle={t(
+                        "Create new worktree branches only from main or master. Existing branch checkouts are unaffected.",
+                      )}
+                      value={uniform("newWorktreesMainBranchOnly")}
+                      disabled={disabledFor("newWorktreesMainBranchOnly")}
+                      onValueChange={(value) => write({ newWorktreesMainBranchOnly: value })}
                     />
                   </SettingsSection>
                   <SettingsSection
@@ -453,8 +462,8 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     ).map((choice, index) => (
                       <SettingsChoiceRow
                         key={choice.mode ?? "inherit"}
-                        label={choice.label}
-                        description={choice.description}
+                        label={t(choice.label)}
+                        description={t(choice.description)}
                         selected={
                           !isMixed("worktreeSubmodules") &&
                           uniform("worktreeSubmodules") === choice.mode
@@ -473,6 +482,20 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     disabled={disabledFor("branchNamingMode")}
                     onChange={write}
                   />
+                  <SettingsSection title="Cleanup">
+                    <SettingsSwitchRow
+                      icon="trash"
+                      label={t("Automatically delete merged branches and worktrees")}
+                      subtitle={t(
+                        mergedCleanupSupported
+                          ? "Automatically remove local branches and worktrees merged into main or master, and worktrees whose pull request is merged into the default branch. Keeps project checkouts, uncommitted changes, locked worktrees, active work, and remote branches."
+                          : "Update the selected environments to use storage cleanup, or choose a machine that supports it.",
+                      )}
+                      value={mergedCleanupMixed ? null : (mergedCleanup?.checked ?? false)}
+                      disabled={disabledFor("autoDeleteMergedBranches") || !mergedCleanupSupported}
+                      onValueChange={(value) => write({ autoDeleteMergedBranches: value })}
+                    />
+                  </SettingsSection>
                 </>
               ) : null}
 

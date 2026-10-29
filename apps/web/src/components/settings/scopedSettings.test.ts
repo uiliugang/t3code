@@ -391,6 +391,27 @@ describe("scoped settings writes", () => {
     const settledPlan = planScopedSettingsPatch(project, [machine, customized], {
       worktreeCleanup: { mode: "custom", rules: { worktreeSettledAfterDays: 0 } },
     });
+    for (const enabled of [true, false]) {
+      const mergedPlan = planScopedSettingsPatch(project, [machine, customized], {
+        autoDeleteMergedBranches: enabled,
+      });
+      expect(
+        mergedPlan.serverWrites.map((write) => write.patch.projectSettingsOverrides),
+      ).toMatchObject([
+        {
+          [projectId]: {
+            autoDeleteMergedBranches: enabled,
+            worktreeCleanup: { rules: { worktreeOnMerge: enabled, worktreeAfterDays: 8 } },
+          },
+        },
+        {
+          [laptopProjectId]: {
+            autoDeleteMergedBranches: enabled,
+            worktreeCleanup: { rules: { worktreeOnMerge: enabled, worktreeAfterDays: 30 } },
+          },
+        },
+      ]);
+    }
     expect(
       settledPlan.serverWrites.map((write) => write.patch.projectSettingsOverrides),
     ).toMatchObject([

@@ -5,12 +5,14 @@ and review changes. The other hosting integrations described below are disabled 
 
 ## Manage local branches and worktrees
 
-In **Settings → Source control → Branch management**, new worktree branches default to using
+In **Settings → Worktrees → Creation**, new worktree branches default to using
 `main` or `master` as their base. Turn off **Only create worktrees from main/master** to use other
 base branches. Checking out an existing branch is unaffected.
 
-**Automatically delete merged branches and worktrees** is off by default. Enable it to remove
-local resources after their commits reach `main` or `master`. Squash and rebase merges require a
+In **Settings → Worktrees → Cleanup**, **Automatically delete merged branches and worktrees**
+controls both merged-branch and merged-worktree cleanup and is off by default. Enable it to remove
+local resources after their commits reach `main` or `master`. It also removes worktrees whose pull
+request is merged and whose commits are included in the default branch. Squash and rebase merges require a
 merged pull request matching the local branch's current commit. T3 Code keeps project checkouts,
 locked worktrees, uncommitted changes, and active work, and never deletes remote branches. Settings
 can apply to an environment or an individual project. Removed managed worktrees can be recreated

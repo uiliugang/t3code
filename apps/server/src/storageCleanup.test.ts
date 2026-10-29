@@ -804,6 +804,8 @@ describe("merged local branch cleanup", () => {
     "shared",
     "project",
     "project-disabled",
+    "project-cleanup-off",
+    "machine-cleanup-off",
     "new-orphan",
     "workspace-checkout",
     "workspace-branch",
@@ -863,6 +865,14 @@ describe("merged local branch cleanup", () => {
               [ProjectId.make("project-1")]: { autoDeleteMergedBranches: false },
             },
           });
+        if (scenario === "project-cleanup-off")
+          fixture.setSettings({
+            projectSettingsOverrides: {
+              [ProjectId.make("project-1")]: { worktreeCleanup: { mode: "off" } },
+            },
+          });
+        if (scenario === "machine-cleanup-off")
+          fixture.setSettings({ worktreeCleanup: { mode: "off" } });
         const report = yield* fixture.service.runNow;
         expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
         expect(

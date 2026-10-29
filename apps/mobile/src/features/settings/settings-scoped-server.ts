@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import {
   clearProjectSettingsOverrides,
+  mergedWorktreeCleanupPatch,
   resolveProjectSettings,
 } from "@t3tools/shared/projectSettings";
 
@@ -52,7 +53,10 @@ export function planMobileScopedSettingsPatch(
   patch: ServerSettingsPatch,
 ) {
   if (!projectSelected) {
-    return targets.map((target) => ({ environmentId: target.environment.environmentId, patch }));
+    return targets.map((target) => ({
+      environmentId: target.environment.environmentId,
+      patch: mergedWorktreeCleanupPatch(target.settings, patch, false),
+    }));
   }
   const keys = Object.keys(patch);
   if (
@@ -67,7 +71,8 @@ export function planMobileScopedSettingsPatch(
     const current =
       target.environment.serverConfig.settings.projectSettingsOverrides[target.projectId] ?? {};
     const next: Record<string, unknown> = { ...current };
-    for (const [key, value] of Object.entries(patch)) {
+    const destinationPatch = mergedWorktreeCleanupPatch(target.settings, patch, true);
+    for (const [key, value] of Object.entries(destinationPatch)) {
       if (
         value === null &&
         !isNullableProjectSettingsOverride(key as ProjectScopedServerSettingKey)

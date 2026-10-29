@@ -11,6 +11,102 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "{summary}. Show where this value comes from": "{summary}。查看此设置的来源",
+  "Automatically remove local branches and worktrees merged into main or master, and worktrees whose pull request is merged into the default branch. Keeps project checkouts, uncommitted changes, locked worktrees, active work, and remote branches.":
+    "自动清理已合并到 main 或 master 的本地分支及工作树，同时清理拉取请求已合并到默认分支的工作树。保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
+  Creation: "创建",
+  Branches: "分支",
+  Cleanup: "清理",
+  "Worktree location": "工作树位置",
+  "worktree location": "工作树位置",
+  "Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the T3 home folder.":
+    "新工作树的存放目录，可位于任意磁盘，例如 D:\\worktrees 或 ~/worktrees。已有工作树的位置不变。留空则使用 T3 主目录。",
+  "Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.":
+    "使用基准分支所跟踪远程分支的最新提交，即使两者名称不同。未设置跟踪分支时，使用 origin 上的同名分支；远程分支不存在时，使用本地分支。",
+  "Start new worktrees from remote by default": "默认从远程分支创建新工作树",
+  "new worktrees start from remote": "从远程分支创建新工作树",
+  "How new worktrees in this project populate git submodules.":
+    "此项目新工作树中 Git 子模块的初始化方式。",
+  "How new worktrees populate git submodules. Projects and their t3.json can override it.":
+    "新工作树中 Git 子模块的初始化方式。项目及其 t3.json 可以覆盖此设置。",
+  Recursive: "递归初始化",
+  "Top level only": "仅顶层",
+  Skip: "跳过",
+  "Worktree branch naming": "工作树分支命名",
+  "Choose how new worktree branches are named from your first message.":
+    "选择如何根据首条消息为新工作树的分支命名。",
+  "The model chooses a prefix that describes the work, such as feat/add-search, fix/login-timeout, or refactor/auth.":
+    "由模型选择描述任务的前缀，例如 feat/add-search、fix/login-timeout 或 refactor/auth。",
+  "branch naming": "分支命名",
+  "Static prefix": "固定前缀",
+  "Semantic prefix": "语义前缀",
+  "Branch prefix": "分支前缀",
+  "branch prefix": "分支前缀",
+  "For example, t3 or t3/ produces t3/add-search. Leave empty for no prefix.":
+    "例如，填写 t3 或 t3/ 将生成 t3/add-search。留空则不添加前缀。",
+  "No prefix": "无前缀",
+  "Branch naming instructions": "分支命名指令",
+  "branch naming instructions": "分支命名指令",
+  "Appended to the naming prompt. The model returns the complete branch name; no prefix or suffix is added.":
+    "追加到命名提示词中。模型返回完整分支名，不额外添加前缀或后缀。",
+  "Mixed. Enter instructions to apply to all selected targets.":
+    "所选目标的值不同。输入指令以应用到全部所选目标。",
+  "Use julius/ followed by the issue ID and a short description.":
+    "使用 julius/ 前缀，后接问题编号和简短描述。",
+  "Worktree cleanup": "工作树清理",
+  "Automatic worktree cleanup": "自动清理工作树",
+  "Keep this project's worktrees until you delete them manually.":
+    "保留此项目的工作树，直到手动删除。",
+  "Use these rules for this project.": "对此项目使用以下规则。",
+  "Use each machine's worktree cleanup settings.": "使用各设备的工作树清理设置。",
+  "Delete worktrees with deleted threads": "删除会话时清理工作树",
+  "Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept.":
+    "删除活跃或已归档的会话时，移除不再使用的工作树。保留有本地改动的工作树。",
+  "Delete merged worktrees": "清理拉取请求已合并的工作树",
+  "Remove worktrees whose pull request is merged and whose commits are included in the default branch.":
+    "清理拉取请求已合并且提交已包含在默认分支中的工作树。",
+  "Delete inactive worktrees": "清理长期未活动的工作树",
+  "Remove worktrees after their threads have been inactive for this many days. Branches and thread history are kept.":
+    "会话连续未活动达到指定天数后，清理其工作树。保留分支和会话历史。",
+  "Delete settled worktrees": "清理已结束会话的工作树",
+  "Remove worktrees this many days after their thread settles. Set 0 days to remove them at the next cleanup. Branches and thread history are kept.":
+    "会话结束达到指定天数后，清理其工作树。设为 0 天则在下次清理时移除。保留分支和会话历史。",
+  "Delete unchanged worktrees": "清理无新提交的工作树",
+  "Remove worktrees with no commits beyond the default branch.":
+    "清理没有超出默认分支的新提交的工作树。",
+  "Keep worktrees with local changes": "保留有本地改动的工作树",
+  "Includes ignored files, except node_modules.": "包括已忽略的文件，但不包括 node_modules。",
+  "Deletes untracked and ignored files, including .env.": "删除未跟踪和已忽略的文件，包括 .env。",
+  "Keeps edits and untracked files. Deletes ignored files, including .env.":
+    "保留改动和未跟踪文件。删除已忽略的文件，包括 .env。",
+  "Any local files": "任何本地文件",
+  "Uncommitted changes": "未提交的改动",
+  "Edited tracked files": "已跟踪文件的改动",
+  "Mixed across selected machines": "所选设备的值不同",
+  "Offline machines will not get this setting": "离线设备不会应用此设置",
+  "Update the selected machines to configure project worktree cleanup.":
+    "请更新所选设备，以配置项目工作树清理。",
+  "Update the selected environments to use storage cleanup, or choose a machine that supports it.":
+    "请更新所选环境以使用存储清理，或选择支持此功能的设备。",
+  "Decrease {label}": "减少{label}",
+  "Increase {label}": "增加{label}",
+  "{label} in days": "{label}的天数",
+  days: "天",
+  "Use the repository's t3.json, or initialize recursively.":
+    "使用仓库的 t3.json 设置，未配置时递归初始化。",
+  "Initialize nested submodules too.": "同时初始化嵌套子模块。",
+  "Skip submodules declared inside other submodules.": "跳过其他子模块内部声明的子模块。",
+  "Leave submodules empty for a setup script.": "保留空的子模块目录，由初始化脚本处理。",
+  "Add your prefix to the generated branch name.": "为生成的分支名添加指定前缀。",
+  "Let the model choose feat/, fix/, refactor/, or another prefix.":
+    "由模型选择 feat/、fix/、refactor/ 或其他前缀。",
+  "Generate the complete name with no added prefix or suffix.":
+    "生成完整分支名，不额外添加前缀或后缀。",
+  "Use t3 or t3/ for t3/add-search. Leave empty for no prefix.":
+    "填写 t3 或 t3/ 将生成 t3/add-search。留空则不添加前缀。",
+  "Append instructions to the naming prompt.": "将指令追加到命名提示词中。",
+  "Mixed. Enter instructions for all selected targets.":
+    "所选目标的值不同。请输入应用于全部所选目标的指令。",
   "Create workspace": "创建工作区",
   "Creating...": "正在创建…",
   "Select environment": "选择环境",
@@ -41,14 +137,14 @@ const zhCN: Readonly<Record<string, string>> = {
   "Repository terminal menu item": "仓库终端菜单项",
   "Show Terminal in each repository's Open in menu.": "在各仓库的打开菜单中显示 Terminal。",
   "Branch management": "分支管理",
-  "Only create worktrees from main/master": "仅允许从 main/master 创建 worktree",
-  "Automatically delete merged branches and worktrees": "自动清理已合并的分支和 worktree",
+  "Only create worktrees from main/master": "仅允许从 main/master 创建工作树",
+  "Automatically delete merged branches and worktrees": "自动清理已合并的分支和工作树",
   "Create new worktree branches only from main or master. Existing branch checkouts are unaffected.":
-    "新 worktree 分支只能基于 main 或 master 创建。检出现有分支不受影响。",
+    "新工作树分支只能基于 main 或 master 创建。检出现有分支不受影响。",
   "Automatically remove local branches and worktrees merged into main or master. Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":
-    "自动删除已合并到 main 或 master 的本地分支及 worktree。保留项目目录、有未提交改动、已锁定或正在使用的 worktree，以及远程分支。",
+    "自动删除已合并到 main 或 master 的本地分支及工作树。保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
   "Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":
-    "保留项目目录、有未提交改动、已锁定或正在使用的 worktree，以及远程分支。",
+    "保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
   "New tasks use these repositories. Existing tasks keep their bound workspace.":
     "新会话使用这些仓库，已有会话保留已绑定的工作区。",
   "Primary repository": "主仓库",

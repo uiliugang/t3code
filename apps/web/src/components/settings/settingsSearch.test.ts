@@ -316,6 +316,13 @@ describe("movedSettingsPath", () => {
     expect(movedSettingsPath("/settings/source-control", "worktree-branch-naming")).toBe(
       "/settings/worktrees",
     );
+    for (const anchor of [
+      "worktree-main-branch-only",
+      "auto-delete-merged-branches",
+      "branch-management",
+    ]) {
+      expect(movedSettingsPath("/settings/source-control", anchor)).toBe("/settings/worktrees");
+    }
     expect(movedSettingsPath("/settings/appearance", "diff-color-scheme")).toBe("/settings/diffs");
     expect(movedSettingsPath("/settings/connections", "network-access")).toBe("/settings/access");
     expect(movedSettingsPath("/settings/storage", "storage-worktrees")).toBe("/settings/worktrees");
@@ -333,7 +340,7 @@ describe("movedSettingsPath", () => {
 });
 
 describe("localized settings search", () => {
-  it("finds language in Chinese or English without changing its navigation target", () => {
+  it("finds translated settings without changing their navigation targets", () => {
     for (const query of ["语言", "简体中文", "language"]) {
       expect(searchSettings(query).find((item) => item.id === "language")?.to).toBe(
         "/settings/appearance",
@@ -343,5 +350,13 @@ describe("localized settings search", () => {
     expect(searchSettings("Interface font").some((item) => item.id === "interface-font")).toBe(
       true,
     );
+    for (const [query, id] of [
+      ["工作树位置", "storage-worktrees-location"],
+      ["工作树清理", "storage-worktrees"],
+      ["仅允许从 main/master 创建工作树", "worktree-main-branch-only"],
+      ["自动清理已合并的分支和工作树", "auto-delete-merged-branches"],
+    ] as const) {
+      expect(searchSettings(query).find((item) => item.id === id)?.to).toBe("/settings/worktrees");
+    }
   });
 });

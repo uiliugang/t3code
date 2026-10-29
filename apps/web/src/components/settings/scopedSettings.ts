@@ -17,6 +17,7 @@ import {
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
   clearProjectSettingsOverrides,
+  mergedWorktreeCleanupPatch,
   resolveProjectSettings,
   resolveWorktreeCleanup,
   type ProjectSettingSource,
@@ -210,8 +211,8 @@ function projectOverrideWrites(
   return [...writes.values()];
 }
 
-/** Puts an idle compaction mode in the form each destination server reads. */
 function forDestination(previous: ServerSettings, patch: ServerSettingsPatch): ServerSettingsPatch {
+  patch = mergedWorktreeCleanupPatch(previous, patch, false);
   if (patch.idleCompaction === undefined) return patch;
   const { idleCompaction, compactIdleThreads: _legacy, ...rest } = patch;
   return { ...rest, ...idleCompactionPatch(previous, idleCompaction) };
@@ -244,14 +245,18 @@ export function planScopedSettingsPatch(
               // Override entries store whole objects; complete partial patches from each target's effective
               // value.
               const effective = resolveProjectSettings(settings, projectId).settings;
+              const destinationPatch = mergedWorktreeCleanupPatch(effective, serverPatch, true);
               const next: Record<string, unknown> = { ...current };
-              for (const [key, value] of Object.entries<unknown>(serverPatch)) {
-                if (key === "worktreeCleanup" && serverPatch.worktreeCleanup?.mode === "custom") {
+              for (const [key, value] of Object.entries<unknown>(destinationPatch)) {
+                if (
+                  key === "worktreeCleanup" &&
+                  destinationPatch.worktreeCleanup?.mode === "custom"
+                ) {
                   next[key] = {
                     mode: "custom",
                     rules: {
                       ...resolveWorktreeCleanup(settings, projectId),
-                      ...serverPatch.worktreeCleanup.rules,
+                      ...destinationPatch.worktreeCleanup.rules,
                     },
                   };
                   continue;

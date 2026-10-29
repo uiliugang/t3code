@@ -3,7 +3,10 @@ import type {
   StorageCleanupSettings,
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+import {
+  mergedWorktreeCleanupState,
+  resolveWorktreeCleanup,
+} from "@t3tools/shared/projectSettings";
 import { useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -11,6 +14,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { formatBytes } from "../../lib/formatBytes";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -47,6 +51,7 @@ import {
 import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
 
 export function WorktreesDirectoryRow() {
+  const t = useUiTranslation();
   const { connectedEnvironments, targets } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -80,10 +85,10 @@ export function WorktreesDirectoryRow() {
       control={
         <Input
           key={`${scopeKey}:${mixed}:${settings.worktreesDirectory}`}
-          aria-label="Worktree location"
+          aria-label={t("Worktree location")}
           autoCapitalize="none"
           spellCheck={false}
-          placeholder={mixed ? "Mixed" : "Default"}
+          placeholder={t(mixed ? "Mixed" : "Default")}
           defaultValue={mixed ? "" : settings.worktreesDirectory}
           onChange={() => {
             edited.current = true;
@@ -111,6 +116,7 @@ function RetentionControl({
   onChange: (value: number | null) => void;
   minimum?: number;
 }) {
+  const t = useUiTranslation();
   const [draft, setDraft] = useState(value);
   const [savedValue, setSavedValue] = useState(value);
   if (savedValue !== value) {
@@ -139,23 +145,23 @@ function RetentionControl({
           }}
         >
           <NumberFieldGroup>
-            <NumberFieldDecrement aria-label={`Decrease ${label}`} />
+            <NumberFieldDecrement aria-label={t("Decrease {label}", { label: t(label) })} />
             <NumberFieldInput
-              aria-label={`${label} in days`}
+              aria-label={t("{label} in days", { label: t(label) })}
               size={new Intl.NumberFormat().format(draft ?? value).length}
               className="field-sizing-content w-auto min-w-[1ch] grow-0 text-right"
             />
             <span aria-hidden="true" className="self-center pr-2 text-xs">
-              days
+              {t("days")}
             </span>
-            <NumberFieldIncrement aria-label={`Increase ${label}`} />
+            <NumberFieldIncrement aria-label={t("Increase {label}", { label: t(label) })} />
           </NumberFieldGroup>
         </NumberField>
       ) : (
-        <span className="text-xs text-muted-foreground">Off</span>
+        <span className="text-xs text-muted-foreground">{t("Off")}</span>
       )}
       <Switch
-        aria-label={label}
+        aria-label={t(label)}
         checked={value !== null}
         onCheckedChange={(enabled) => onChange(enabled ? 8 : null)}
       />
@@ -436,6 +442,7 @@ function supportsStorageCleanup(
 
 /** Narrows a mixed selection to the machines that support cleanup. */
 function StorageCleanupScopeNotice() {
+  const t = useUiTranslation();
   const { connectedEnvironments } = useSettingsScope();
   return (
     <SettingsScopeNotice
@@ -448,12 +455,15 @@ function StorageCleanupScopeNotice() {
         )
         .map((environment) => environment.environmentId)}
     >
-      Update the selected environments to use storage cleanup, or choose a machine that supports it.
+      {t(
+        "Update the selected environments to use storage cleanup, or choose a machine that supports it.",
+      )}
     </SettingsScopeNotice>
   );
 }
 
 export function WorktreeCleanupSection() {
+  const t = useUiTranslation();
   const { scope, environments, connectedEnvironments, targets, target } = useSettingsScope();
   const scopedSettings = useScopedSettings();
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
@@ -469,6 +479,13 @@ export function WorktreeCleanupSection() {
   const mixedModes = targets.some((entry) => projectMode(entry) !== mode);
   const updateSettings = useUpdateScopedSettings();
   const clearSettings = useClearScopedSettings();
+  const mergedCleanup = mergedWorktreeCleanupState(scopedSettings);
+  const mergedCleanupMixed =
+    mergedCleanup.mixed ||
+    targets.some((entry) => {
+      const state = mergedWorktreeCleanupState(entry.settings);
+      return state.mixed || state.checked !== mergedCleanup.checked;
+    });
   const ruleStatus = (key: keyof StorageCleanupSettings) =>
     targets.some(
       (target) =>
@@ -476,7 +493,7 @@ export function WorktreeCleanupSection() {
           key
         ] !== settings[key],
     )
-      ? "Mixed across selected machines"
+      ? t("Mixed across selected machines")
       : undefined;
   const update = (patch: Partial<StorageCleanupSettings>) =>
     updateSettings({ storageCleanup: patch });
@@ -495,7 +512,7 @@ export function WorktreeCleanupSection() {
     return (
       <SettingsSection id="storage-worktrees" title="Cleanup" variant="plain">
         <SettingsScopeNotice inline target="all">
-          Update the selected machines to configure project worktree cleanup.
+          {t("Update the selected machines to configure project worktree cleanup.")}
         </SettingsScopeNotice>
       </SettingsSection>
     );
@@ -511,6 +528,31 @@ export function WorktreeCleanupSection() {
   return (
     <SettingsSection id="storage-worktrees" title="Cleanup">
       <>
+        <SettingsRow
+          {...searchableSetting("auto-delete-merged-branches")}
+          description="Automatically remove local branches and worktrees merged into main or master, and worktrees whose pull request is merged into the default branch. Keeps project checkouts, uncommitted changes, locked worktrees, active work, and remote branches."
+          serverScoped={!isProjectScope}
+          settingKeys={isProjectScope ? [] : ["autoDeleteMergedBranches", "worktreeCleanup"]}
+          mixed={mergedCleanupMixed}
+          resetAction={
+            mergedCleanup.checked || mergedCleanupMixed ? (
+              <SettingResetButton
+                label="Automatically delete merged branches and worktrees"
+                onClick={() => updateSettings({ autoDeleteMergedBranches: false })}
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              aria-label={t("Automatically delete merged branches and worktrees")}
+              mixed={mergedCleanupMixed}
+              checked={mergedCleanup.checked}
+              onCheckedChange={(autoDeleteMergedBranches) =>
+                updateSettings({ autoDeleteMergedBranches })
+              }
+            />
+          }
+        />
         {isProjectScope && (
           <SettingsRow
             title="Automatic worktree cleanup"
@@ -528,27 +570,30 @@ export function WorktreeCleanupSection() {
               <Select
                 value={mixedModes ? null : mode}
                 onValueChange={(next) => {
-                  if (next === "inherit") clearSettings(["worktreeCleanup"]);
+                  if (next === "inherit")
+                    clearSettings(["worktreeCleanup", "autoDeleteMergedBranches"]);
                   else if (next === "off") updateSettings({ worktreeCleanup: { mode: "off" } });
                   else if (next === "custom")
                     updateSettings({ worktreeCleanup: { mode: "custom", rules: {} } });
                 }}
               >
-                <SelectTrigger size="sm" aria-label="Automatic worktree cleanup">
+                <SelectTrigger size="sm" aria-label={t("Automatic worktree cleanup")}>
                   <SelectValue>
-                    {mixedModes
-                      ? "Mixed"
-                      : mode === "inherit"
-                        ? "Inherit"
-                        : mode === "off"
-                          ? "Off"
-                          : "Custom"}
+                    {t(
+                      mixedModes
+                        ? "Mixed"
+                        : mode === "inherit"
+                          ? "Inherit"
+                          : mode === "off"
+                            ? "Off"
+                            : "Custom",
+                    )}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="inherit">Inherit</SelectItem>
-                  <SelectItem value="off">Off</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
+                  <SelectItem value="inherit">{t("Inherit")}</SelectItem>
+                  <SelectItem value="off">{t("Off")}</SelectItem>
+                  <SelectItem value="custom">{t("Custom")}</SelectItem>
                 </SelectPopup>
               </Select>
             }
@@ -563,22 +608,9 @@ export function WorktreeCleanupSection() {
               serverScoped={!isProjectScope}
               control={
                 <Switch
-                  aria-label="Delete worktrees with deleted threads"
+                  aria-label={t("Delete worktrees with deleted threads")}
                   checked={settings.worktreeOnDelete}
                   onCheckedChange={(worktreeOnDelete) => updateWorktree({ worktreeOnDelete })}
-                />
-              }
-            />
-            <SettingsRow
-              title="Delete merged worktrees"
-              status={ruleStatus("worktreeOnMerge")}
-              description="Remove worktrees whose pull request is merged and whose commits are included in the default branch."
-              serverScoped={!isProjectScope}
-              control={
-                <Switch
-                  aria-label="Delete merged worktrees"
-                  checked={settings.worktreeOnMerge}
-                  onCheckedChange={(worktreeOnMerge) => updateWorktree({ worktreeOnMerge })}
                 />
               }
             />
@@ -610,7 +642,7 @@ export function WorktreeCleanupSection() {
                     status={[
                       ruleStatus("worktreeSettledAfterDays"),
                       environments.length > connectedEnvironments.length
-                        ? "Offline machines will not get this setting"
+                        ? t("Offline machines will not get this setting")
                         : undefined,
                     ]
                       .filter(Boolean)
@@ -636,7 +668,7 @@ export function WorktreeCleanupSection() {
                 serverScoped={!isProjectScope}
                 control={
                   <Switch
-                    aria-label="Delete unchanged worktrees"
+                    aria-label={t("Delete unchanged worktrees")}
                     checked={settings.worktreeUnchanged}
                     onCheckedChange={(worktreeUnchanged) => updateWorktree({ worktreeUnchanged })}
                   />
@@ -669,17 +701,19 @@ export function WorktreeCleanupSection() {
                           updateWorktree({ worktreeKeepWhen: next });
                       }}
                     >
-                      <SelectTrigger size="sm" aria-label="Keep worktrees with local changes">
+                      <SelectTrigger size="sm" aria-label={t("Keep worktrees with local changes")}>
                         <SelectValue>
                           {ruleStatus("worktreeKeepWhen")
-                            ? "Mixed"
-                            : KEEP_WHEN_LABELS[settings.worktreeKeepWhen]}
+                            ? t("Mixed")
+                            : t(KEEP_WHEN_LABELS[settings.worktreeKeepWhen])}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectPopup align="end" alignItemWithTrigger={false}>
-                        <SelectItem value="any-local-files">Any local files</SelectItem>
-                        <SelectItem value="uncommitted-changes">Uncommitted changes</SelectItem>
-                        <SelectItem value="tracked-changes">Edited tracked files</SelectItem>
+                        <SelectItem value="any-local-files">{t("Any local files")}</SelectItem>
+                        <SelectItem value="uncommitted-changes">
+                          {t("Uncommitted changes")}
+                        </SelectItem>
+                        <SelectItem value="tracked-changes">{t("Edited tracked files")}</SelectItem>
                       </SelectPopup>
                     </Select>
                   }

@@ -621,14 +621,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "worktree-main-branch-only",
     title: "Only create worktrees from main/master",
-    to: "/settings/source-control",
+    to: "/settings/worktrees",
     scope: "project-defaults",
     searchTerms: ["branch base main master worktree restrict 创建 基线 主分支"],
   },
   {
     id: "auto-delete-merged-branches",
     title: "Automatically delete merged branches and worktrees",
-    to: "/settings/source-control",
+    to: "/settings/worktrees",
     scope: "project-defaults",
     searchTerms: ["branch cleanup merged main master worktree 自动 清理 合并 分支"],
   },
@@ -1202,6 +1202,7 @@ const SPLIT_SETTINGS_PATHS: ReadonlySet<string> = new Set([
 ]);
 // Section anchors that moved but are not search results themselves.
 const MOVED_SECTION_ANCHORS: Readonly<Record<string, SettingsPath>> = {
+  "branch-management": "/settings/worktrees",
   "authorized-clients": "/settings/access",
   "legacy-features": "/settings/labs",
   "text-generation": "/settings/threads",
