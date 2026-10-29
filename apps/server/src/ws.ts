@@ -440,6 +440,21 @@ const persistChatAttachments = Effect.fn("ws.assets.persistChatAttachments")(fun
   );
 });
 
+const isWorkspacePathsError = Schema.is(WorkspacePaths.WorkspacePathsError);
+
+export function projectMutationFailureMessage(
+  error: ProjectService.ProjectServiceError | ServerRuntimeStartup.ServerRuntimeStartupError,
+): string {
+  if (
+    error._tag === "ProjectOperationError" &&
+    error.operation === "normalize-workspace" &&
+    isWorkspacePathsError(error.cause)
+  ) {
+    return error.cause.message;
+  }
+  return error._tag === "ProjectNotEmptyError" ? error.message : "Failed to mutate project.";
+}
+
 function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesError): {
   readonly failure: ProjectEntriesFailure;
   readonly normalizedCwd?: string;
@@ -2799,10 +2814,7 @@ export const layerWsRpc = (
               (cause) =>
                 new ProjectMutationError({
                   commandId: mutation.commandId,
-                  message:
-                    cause._tag === "ProjectNotEmptyError"
-                      ? cause.message
-                      : "Failed to mutate project.",
+                  message: projectMutationFailureMessage(cause),
                   cause,
                 }),
             ),

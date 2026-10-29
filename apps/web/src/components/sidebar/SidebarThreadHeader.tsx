@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { FolderPlusIcon, LayersIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { openCreateWorkspace } from "../CreateWorkspaceDialog";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -112,6 +113,9 @@ export function SidebarThreadHeader({
             </SidebarHeaderIconButton>
           </>
         ) : null}
+        <SidebarHeaderIconButton label={t("Create workspace")} onClick={openCreateWorkspace}>
+          <LayersIcon />
+        </SidebarHeaderIconButton>
         <SidebarHeaderIconButton
           label={t("New thread")}
           tooltip={

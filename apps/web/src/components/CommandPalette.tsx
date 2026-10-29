@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { openCreateWorkspace } from "./CreateWorkspaceDialog";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -62,6 +63,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  LayersIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -1451,6 +1453,17 @@ function OpenCommandPaletteDialog(props: {
     keepOpen: true,
     run: async () => {
       openAddProjectFlow();
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:create-workspace",
+    searchTerms: ["workspace", "multiple repositories", "multi repo", "创建工作区", "多仓"],
+    title: t("Create workspace"),
+    icon: <LayersIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      openCreateWorkspace();
     },
   });
 

@@ -1,5 +1,7 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
-import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
+import { LayersIcon, MessageSquareDashedIcon, PlusIcon } from "lucide-react";
+import { openCreateWorkspace } from "./CreateWorkspaceDialog";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
@@ -11,6 +13,7 @@ import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 export function NoProjectsHero() {
+  const t = useUiTranslation();
   const contentArea = workspaceAreaProps("home", 1, "Home");
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
@@ -34,10 +37,14 @@ export function NoProjectsHero() {
                   ? "Add a project to start your first thread."
                   : "Add a project, or start without one."}
               </EmptyDescription>
-              <div className="mt-6 flex justify-center gap-2">
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
                 <Button size="sm" onClick={() => openCommandPalette({ open: "add-project" })}>
                   <PlusIcon className="size-4" />
                   Add project
+                </Button>
+                <Button size="sm" variant="outline" onClick={openCreateWorkspace}>
+                  <LayersIcon />
+                  {t("Create workspace")}
                 </Button>
                 {scratchTargetEnvironmentId === null ? null : (
                   <Button

@@ -1,4 +1,7 @@
 import { attachSidebarTree, SIDEBAR_TREE_PROPS } from "../lib/sidebarTree";
+import { openCreateWorkspace } from "./CreateWorkspaceDialog";
+import { useUiTranslation } from "../hooks/useUiTranslation";
+import { SidebarHeaderIconButton } from "./sidebar/SidebarThreadHeader";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
 import { Spinner } from "~/components/ui/spinner";
@@ -7,6 +10,7 @@ import {
   ArrowUpDownIcon,
   ChevronRightIcon,
   FolderPlusIcon,
+  LayersIcon,
   Globe2Icon,
   SearchIcon,
   SquarePenIcon,
@@ -2872,6 +2876,7 @@ interface SidebarProjectsContentProps {
 const SidebarProjectsContent = memo(function SidebarProjectsContent(
   props: SidebarProjectsContentProps,
 ) {
+  const t = useUiTranslation();
   const {
     showArm64IntelBuildWarning,
     arm64IntelBuildWarningDescription,
@@ -3000,6 +3005,9 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               </TooltipTrigger>
               <TooltipPopup side="right">Add project</TooltipPopup>
             </Tooltip>
+            <SidebarHeaderIconButton label={t("Create workspace")} onClick={openCreateWorkspace}>
+              <LayersIcon />
+            </SidebarHeaderIconButton>
           </div>
         </div>
 

@@ -122,6 +122,7 @@ import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import {
   layerWsRpc,
+  projectMutationFailureMessage,
   subscribeOrchestrationV2Shell,
   subscribeOrchestrationV2Thread,
   WS_RPC_SERVER_OPTIONS,
@@ -130,6 +131,44 @@ import {
 
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
   ({ availableEditors: [], settings: {}, ...fields }) as unknown as ServerConfig;
+
+it("reports invalid workspace directories without exposing unrelated project failure details", () => {
+  const workspaceRoot = "/work/shared";
+  for (const cause of [
+    new WorkspacePaths.WorkspaceRootNotExistsError({
+      workspaceRoot,
+      normalizedWorkspaceRoot: workspaceRoot,
+    }),
+    new WorkspacePaths.WorkspaceRootNotDirectoryError({
+      workspaceRoot,
+      normalizedWorkspaceRoot: workspaceRoot,
+    }),
+  ]) {
+    assert.equal(
+      projectMutationFailureMessage(
+        new ProjectService.ProjectOperationError({
+          operation: "normalize-workspace",
+          workspaceRoot,
+          cause,
+        }),
+      ),
+      cause.message,
+    );
+  }
+  assert.equal(
+    projectMutationFailureMessage(
+      new ProjectService.ProjectOperationError({
+        operation: "dispatch-project-command",
+        cause: new Error("private database detail"),
+      }),
+    ),
+    "Failed to mutate project.",
+  );
+  const notEmpty = new ProjectService.ProjectNotEmptyError({
+    projectId: ProjectId.make("project:occupied"),
+  });
+  assert.equal(projectMutationFailureMessage(notEmpty), notEmpty.message);
+});
 
 const settingsUpdated = (settings: object): ServerConfigStreamEvent => ({
   version: 1,

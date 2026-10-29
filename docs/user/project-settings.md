@@ -48,7 +48,12 @@ and other phone-only settings ignore the filter.
 
 ## Multiple repositories in one project
 
-In **Settings → Projects → Repositories**, add the local directories for the repositories
+Choose **Create workspace** beside **Add project** in the sidebar, or search for it in the
+command palette. Choose an environment, name the workspace, select at least two existing
+repositories or enter their directories, and choose the primary repository. Creating a
+workspace keeps the existing projects and opens a new task with **Worktree** selected.
+
+In **Settings → Projects → Repositories**, you can later edit the directories for the repositories
 that belong to a task, such as a frontend and backend. Give each a name and short context,
 choose the primary repository, and save. Paths refer to the selected environment's machine;
 remote clients configure that machine's directories. Codex and Claude support these workspaces.
@@ -69,7 +74,7 @@ all selected repositories before the agent starts.
 Thread details group branch, stack, pull requests, commit actions, and changes by repository.
 Collapsed repositories keep their branch and change totals visible. Choose a repository before
 viewing its diff, opening its terminal, or opening it in an editor. A commit or push affects
-that repository. Project actions still run in the primary repository.
+that repository. Project actions follow their configured repository selection.
 
 File restore checks and backs up the whole group. Close its terminals first. Shared checkouts
 cannot be restored; rewind the conversation without files instead. If recovery is required,
