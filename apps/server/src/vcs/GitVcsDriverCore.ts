@@ -32,7 +32,11 @@ import {
   type ReviewDiffPreviewSource,
   type VcsRef,
 } from "@t3tools/contracts";
-import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
+import {
+  dedupeRemoteBranchesWithLocalMatches,
+  isMainOrMasterBranch,
+  resolveAutoFeatureBranchName,
+} from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
@@ -45,6 +49,7 @@ import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 import { explicitBareRepositoryEnv, gitConfigEnv } from "./VcsProcess.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
   parseRemoteNames,
   parseRemoteNamesInGitOrder,
@@ -172,8 +177,9 @@ interface GitRepositoryPaths {
 
 interface GitRefsSnapshot {
   readonly localBranches: ReadonlyArray<VcsRef>;
-  readonly remoteBranches: ReadonlyArray<VcsRef>;
+  readonly remoteBranches: ReadonlyArray<{ readonly ref: VcsRef; readonly lastCommit: number }>;
   readonly hasPrimaryRemote: boolean;
+  readonly mergedRemoteBranches: Effect.Effect<ReadonlySet<string>, GitCommandError>;
 }
 
 interface ExecuteGitOptions {
@@ -3513,7 +3519,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           [
             ...gitDirArgs,
             "for-each-ref",
-            "--format=%(refname)%09%(committerdate:unix)%09%(symref)%09%(upstream)",
+            "--format=%(refname)%09%(committerdate:unix)%09%(symref)%09%(upstream)%09%(objectname)",
             "refs/heads",
             "refs/remotes",
           ],
@@ -3579,11 +3585,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const worktreeMap = new Map(existingWorktreeEntries);
     const localBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
     const remoteBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
+    const refCommits = new Map<string, string>();
 
     for (const line of refsResult.stdout.split("\n")) {
       if (line.length === 0) continue;
-      const [fullRefName, lastCommitRaw, symbolicTarget, upstreamRef] = line.split("\t");
+      const [fullRefName, lastCommitRaw, symbolicTarget, upstreamRef, commit] = line.split("\t");
       if (!fullRefName || symbolicTarget) continue;
+      refCommits.set(fullRefName, commit || fullRefName);
       const parsedLastCommit = Number.parseInt(lastCommitRaw ?? "0", 10);
       const lastCommit = Number.isFinite(parsedLastCommit) ? parsedLastCommit : 0;
 
@@ -3628,10 +3636,41 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ? right.lastCommit - left.lastCommit
         : left.ref.name.localeCompare(right.ref.name);
 
+    const baseRemotes = remoteNames.includes("origin") ? ["origin"] : remoteNames;
+    const mergeBases = ["main", "master"].flatMap((name) => {
+      const ref = [
+        ...baseRemotes.map((remote) => `refs/remotes/${remote}/${name}`),
+        `refs/heads/${name}`,
+      ].find((candidate) => refCommits.has(candidate));
+      return ref === undefined ? [] : [refCommits.get(ref)!];
+    });
+    const mergedRemoteBranches = yield* Effect.cached(
+      Effect.forEach(
+        [...new Set(mergeBases)],
+        (base) =>
+          executeGitWithStableDiagnostics(
+            "GitVcsDriver.listRefs.mergedRefs",
+            fetchCwd,
+            [
+              ...gitDirArgs,
+              "for-each-ref",
+              `--merged=${base}`,
+              "--format=%(refname)",
+              "refs/remotes",
+            ],
+            {
+              maxOutputBytes: 16 * 1024 * 1024,
+              fallbackErrorDetail: "Could not determine merged remote branches.",
+            },
+          ).pipe(Effect.map((result) => result.stdout.split("\n").filter(Boolean))),
+        { concurrency: 2 },
+      ).pipe(Effect.map((refs) => new Set(refs.flat()))),
+    );
     return {
       localBranches: localBranches.toSorted(byRecencyThenName).map(({ ref }) => ref),
-      remoteBranches: remoteBranches.toSorted(byRecencyThenName).map(({ ref }) => ref),
+      remoteBranches: remoteBranches.toSorted(byRecencyThenName),
       hasPrimaryRemote: remoteNames.includes("origin"),
+      mergedRemoteBranches,
     } satisfies GitRefsSnapshot;
   });
 
@@ -3758,7 +3797,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   const listRefs: GitVcsDriver.GitVcsDriver["Service"]["listRefs"] = Effect.fn("listRefs")(
-    function* (input) {
+    function* (input, options) {
       const repositoryPaths = yield* resolveRepositoryPaths(input.cwd, input.refresh === true).pipe(
         Effect.catchTags({
           GitCommandError: (error) =>
@@ -3791,9 +3830,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ? ref.worktreePath === repositoryPaths.worktreeRoot
           : ref.name === repositoryPaths.currentBranch,
       }));
+      const cutoff = options?.remoteBranchDisplayDays
+        ? (yield* Clock.currentTimeMillis) / 1_000 - options.remoteBranchDisplayDays * 86_400
+        : null;
+      const merged =
+        options?.hideMergedRemoteBranches && input.refKind !== "local"
+          ? yield* snapshot.mergedRemoteBranches
+          : null;
+      const remoteBranches = snapshot.remoteBranches
+        .filter(({ ref, lastCommit }) => cutoff === null || ref.isDefault || lastCommit >= cutoff)
+        .filter(
+          ({ ref }) =>
+            merged === null ||
+            ref.isDefault ||
+            isMainOrMasterBranch(ref.name, ref.remoteName) ||
+            !merged.has(`refs/remotes/${ref.name}`),
+        )
+        .map(({ ref }) => ref);
       const combinedBranches = input.includeMatchingRemoteRefs
-        ? [...localBranches, ...snapshot.remoteBranches]
-        : dedupeRemoteBranchesWithLocalMatches([...localBranches, ...snapshot.remoteBranches]);
+        ? [...localBranches, ...remoteBranches]
+        : dedupeRemoteBranchesWithLocalMatches([...localBranches, ...remoteBranches]);
       const allBranches = combinedBranches.toSorted((left, right) => {
         const leftPriority = left.current ? 0 : left.isDefault ? 1 : 2;
         const rightPriority = right.current ? 0 : right.isDefault ? 1 : 2;
@@ -4611,6 +4667,43 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }),
     );
 
+  const prepareTaskBranch: GitVcsDriver.GitVcsDriver["Service"]["prepareTaskBranch"] = Effect.fn(
+    "GitVcsDriver.prepareTaskBranch",
+  )(function* (input) {
+    const repository = yield* resolveRepositoryPathsUncached(input.cwd);
+    if (repository === null) return { branch: null, created: false };
+    return yield* withWorkspaceLease(
+      repository.worktreeRoot ?? input.cwd,
+      Effect.gen(function* () {
+        const current = yield* resolveRepositoryPathsUncached(input.cwd);
+        const base = current?.currentBranch ?? null;
+        if (base === null || !isMainOrMasterBranch(base)) return { branch: base, created: false };
+        const head = yield* executeGit(
+          "GitVcsDriver.prepareTaskBranch.head",
+          input.cwd,
+          ["rev-parse", "--verify", "HEAD"],
+          { allowNonZeroExit: true },
+        );
+        if (head.exitCode !== 0) return { branch: base, created: false };
+        const remote = input.startFromOrigin
+          ? yield* fetchWorktreeBaseCommit({ cwd: input.cwd, refName: `origin/${base}` })
+          : null;
+        const branch = resolveAutoFeatureBranchName(
+          yield* listLocalBranchNames(input.cwd),
+          input.branch,
+        );
+        yield* createBranch({
+          cwd: input.cwd,
+          branch,
+          startPoint: remote?.commitSha ?? `refs/heads/${base}`,
+        });
+        yield* switchRef({ cwd: input.cwd, refName: branch });
+        yield* writeConfigValue({ cwd: input.cwd, key: branchBaseConfigKey(branch), value: base });
+        return { branch, created: true };
+      }),
+    );
+  });
+
   const listWorktreePaths: GitVcsDriver.GitVcsDriver["Service"]["listWorktreePaths"] = (cwd) =>
     executeWorktreeList("GitVcsDriver.listWorktreePaths", cwd, []).pipe(
       // A `prunable` record's directory is gone; another checkout may now sit there.
@@ -4721,6 +4814,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }),
     createBranch: Effect.fnUntraced(function* (input) {
       return yield* withListRefsInvalidation(input.cwd, createBranch(input));
+    }),
+    prepareTaskBranch: Effect.fnUntraced(function* (input) {
+      return yield* withListRefsInvalidation(input.cwd, prepareTaskBranch(input));
     }),
     writeConfigValue,
     removeWorktree: Effect.fnUntraced(function* (input) {

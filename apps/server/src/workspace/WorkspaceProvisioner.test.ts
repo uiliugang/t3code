@@ -241,6 +241,20 @@ it.live(
         assert.isTrue(
           yield* fs.exists(path.join(selected.resources[1]!.checkoutRoot, "setup.txt")),
         );
+        yield* git.execute({
+          operation: "test",
+          cwd: roots[0]!.sourcePath,
+          args: ["checkout", "main"],
+        });
+        const local = yield* provisioner.prepare({
+          ...input,
+          threadId: ThreadId.make("local-protected-main"),
+          strategy: { type: "root" },
+        });
+        assert.equal(local.mode, "existing");
+        assert.match(local.bindings[0]!.launchBranch!, /^t3\//);
+        assert.equal(local.bindings[1]!.launchBranch, "feature/backend");
+        assert.equal(local.resources[0]!.checkoutRoot, yield* fs.realPath(roots[0]!.sourcePath));
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );

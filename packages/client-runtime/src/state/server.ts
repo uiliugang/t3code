@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  type ProjectId,
   type ProviderInstanceId,
   type ServerConfig,
   type ServerConfigStreamEvent,
@@ -25,7 +26,8 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { invalidateVcsRefs } from "./vcsRefInvalidation.ts";
 
 import {
   createAtomCommandScheduler,
@@ -403,6 +405,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
     const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
     const cache = yield* Persistence.EnvironmentCacheStore;
     const environmentId = supervisor.target.environmentId;
+    const registry = yield* Effect.serviceOption(AtomRegistry.AtomRegistry);
     const cachedConfig = yield* cache.loadServerConfig(environmentId).pipe(
       Effect.catch((error) =>
         Effect.logWarning("Could not load cached server configuration.").pipe(
@@ -485,9 +488,35 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
     }).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
-          const next = applyServerConfigProjection(yield* SubscriptionRef.get(state), event);
+          const previous = yield* SubscriptionRef.get(state);
+          const next = applyServerConfigProjection(previous, event);
           if (Option.isNone(next)) {
             return;
+          }
+          if (
+            Option.isSome(previous) &&
+            Option.isSome(registry) &&
+            previous.value.config.settings !== next.value.config.settings
+          ) {
+            const before = previous.value.config.settings;
+            const after = next.value.config.settings;
+            const projects = new Set([
+              ...Object.keys(before.projectSettingsOverrides),
+              ...Object.keys(after.projectSettingsOverrides),
+            ]);
+            if (
+              before.remoteBranchDisplayDays !== after.remoteBranchDisplayDays ||
+              before.hideMergedRemoteBranches !== after.hideMergedRemoteBranches ||
+              [...projects].some(
+                (id) =>
+                  before.projectSettingsOverrides[id as ProjectId]?.remoteBranchDisplayDays !==
+                    after.projectSettingsOverrides[id as ProjectId]?.remoteBranchDisplayDays ||
+                  before.projectSettingsOverrides[id as ProjectId]?.hideMergedRemoteBranches !==
+                    after.projectSettingsOverrides[id as ProjectId]?.hideMergedRemoteBranches,
+              )
+            ) {
+              invalidateVcsRefs(registry.value, { environmentId }, false);
+            }
           }
           yield* Ref.set(pendingPersistence, Option.some(next.value.config));
           yield* SubscriptionRef.set(state, next);

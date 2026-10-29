@@ -88,6 +88,17 @@ for inspection; cleanup does not remove them automatically.
 
 ## Worktree branch names
 
+In **Settings → Worktrees → Branches**, **Remote branch display days** limits remote branch
+lists by their latest commit time. The default is 21 days (3 weeks); set it to `0` for no age limit.
+Local branches and the default branch stay visible. This only filters the list and never
+deletes branches. Select a project to override its environment's value.
+
+**Hide merged remote branches** is on by default and also filters branches whose commits are
+already contained in `main` or `master`. It uses fetched remote refs, preferring `origin`, and
+falls back to local branches when needed. Local branches and the base refs stay visible.
+Turn it off to show those remote branches again, subject to the age limit. Squash merges that
+do not retain the branch's commits are not detected by this Git ancestry check.
+
 In **Settings → Worktrees → Worktree branch naming**, choose a static prefix,
 a model-selected semantic prefix such as `feat/` or `fix/`, or custom instructions
 for the complete name. The static prefix defaults to `t3/`; a trailing slash is
@@ -95,7 +106,7 @@ optional, and an empty prefix adds nothing. Invalid characters in a static prefi
 are replaced with hyphens. Custom instructions are appended to
 the naming prompt and can specify issue IDs, namespaces, and casing.
 
-These settings apply to automatically named new worktree branches. Select a project
+These settings apply to automatically named branches for new tasks and worktrees. Select a project
 to override its environment defaults. Worktree directories keep their original names.
 If generation fails, or a custom name is invalid or already taken, the temporary
 branch name remains.
@@ -247,6 +258,13 @@ Threads contains the model and workspace for new threads. Browser controls agent
 access. Source control contains automatic pull, the default pull request merge method and text
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
+
+New tasks in **Current checkout** automatically create a development branch when the checkout
+is on `main` or `master`. **New worktree** creates an isolated checkout instead. In
+**Settings → Worktrees**, **Start from remote** also controls the base of these automatic local
+branches: enabled uses the latest `origin/main` or `origin/master`, falling back to the local
+branch when the remote branch is missing; disabled uses the local branch. Existing development
+branches stay selected. If fetching or switching fails, the task stops before the agent starts.
 
 The Projects category, under Code, holds the project's name, icon, actions,
 checkouts and removal. Actions belong to a project: editing them creates the project's own list

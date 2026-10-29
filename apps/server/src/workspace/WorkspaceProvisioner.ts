@@ -188,10 +188,18 @@ export const layer = Layer.effect(
                 const launchRoots = [];
                 const baseRefs = new Map<string, string>();
                 for (const root of config.roots) {
+                  const taskBranch =
+                    root.defaultSelected && input.strategy.type === "root"
+                      ? yield* git.prepareTaskBranch({
+                          cwd: root.sourcePath,
+                          branch: `t3/${token.slice(0, 8)}`,
+                          startFromOrigin: projectSettings?.newWorktreesStartFromOrigin ?? true,
+                        })
+                      : null;
                   let baseRef =
                     root.id === config.primaryRootId && input.strategy.type === "worktree"
                       ? input.strategy.baseRef
-                      : (root.defaultBaseRef ?? "HEAD");
+                      : (taskBranch?.branch ?? root.defaultBaseRef ?? "HEAD");
                   if (
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
@@ -225,7 +233,9 @@ export const layer = Layer.effect(
                   if (
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
-                    input.strategy.startFromOrigin
+                    (input.strategy.startFromOrigin ??
+                      projectSettings?.newWorktreesStartFromOrigin ??
+                      true)
                   ) {
                     const remote = yield* git.fetchWorktreeBaseCommit({
                       cwd: root.sourcePath,

@@ -21,7 +21,7 @@ import {
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
 import { useRef, useState, type ReactNode } from "react";
-import { sanitizeNewRefName } from "@t3tools/shared/git";
+import { getBranchDisplayName, sanitizeNewRefName } from "@t3tools/shared/git";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -397,7 +397,7 @@ export function BranchPickerScreen(props: {
       onPress={() => props.onSelect(item)}
       selected={selectedBranchName === item.name}
       subtitle={branchBadgeLabel({ branch: item, project: props.project })?.toUpperCase()}
-      title={item.name}
+      title={getBranchDisplayName(item)}
     />
   );
 

@@ -278,6 +278,7 @@ export function BranchToolbarBranchSelector({
   const branchRefState = usePaginatedBranches({
     environmentId,
     cwd: branchCwd,
+    ...(repository === undefined ? {} : { repositoryTarget: repository.target }),
     // Substring search needs sanitized names to detect new-branch collisions; refs cannot contain ASCII
     // spaces.
     query: sanitizeNewRefName(deferredBranchQuery.trim()),
@@ -353,6 +354,7 @@ export function BranchToolbarBranchSelector({
           input: {
             cwd: branchCwd,
             query: resolvedActiveBranch,
+            ...(repository === undefined ? {} : { repositoryTarget: repository.target }),
             limit: 10,
           },
         })

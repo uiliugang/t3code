@@ -190,7 +190,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
                       projectCwd: project.workspaceRoot,
                       baseBranch: branch,
                       requireWorktree: true,
-                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                      startFromOrigin,
                     },
                     runSetupScript: true,
                   },

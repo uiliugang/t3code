@@ -42,6 +42,8 @@ import {
   type ThreadPullRequestKey,
   type VcsCreateWorktreeInput,
   type VcsCreateWorktreeResult,
+  type VcsListRefsInput,
+  type VcsListRefsResult,
 } from "@t3tools/contracts";
 import {
   hasProjectSettingsOverrides,
@@ -121,6 +123,9 @@ interface SourceControlTextGenerationSettings {
 export class GitManager extends Context.Service<
   GitManager,
   {
+    readonly listRefs: (
+      input: VcsListRefsInput,
+    ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
       options?: GitVcsDriver.CreateWorktreeOptions,
@@ -3261,6 +3266,29 @@ export const make = Effect.gen(function* () {
   );
 
   return GitManager.of({
+    listRefs: Effect.fn("GitManager.listRefs")(function* (input) {
+      const { settings } = yield* projectSettingsFor({
+        cwd: input.cwd,
+        ...(input.repositoryTarget === undefined
+          ? {}
+          : { threadId: input.repositoryTarget.threadId }),
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitManager.listRefs",
+              command: "git for-each-ref",
+              cwd: input.cwd,
+              detail: "Unable to read the remote branch display settings.",
+              cause,
+            }),
+        ),
+      );
+      return yield* gitCore.listRefs(input, {
+        remoteBranchDisplayDays: settings.remoteBranchDisplayDays,
+        hideMergedRemoteBranches: settings.hideMergedRemoteBranches,
+      });
+    }),
     createWorktree,
     localStatus,
     remoteStatus,

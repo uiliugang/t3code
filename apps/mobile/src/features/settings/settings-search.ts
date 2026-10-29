@@ -96,6 +96,11 @@ const SETTINGS_SEARCH_TERMS = {
     "automatically pull",
   ],
   SettingsWorktrees: [
+    "remote branch display days",
+    "hide merged remote branches",
+    "隐藏已合并的远程分支",
+    "21 days",
+    "远程分支展示天数",
     "worktree",
     "branch naming",
     "branch prefix",

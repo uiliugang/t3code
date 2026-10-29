@@ -110,6 +110,16 @@ export function deriveLocalBranchNameFromRemoteRef(branchName: string): string {
   return branchName.slice(firstSeparatorIndex + 1);
 }
 
+export function getBranchDisplayName(
+  branch: Pick<VcsRef, "name" | "isRemote" | "remoteName">,
+): string {
+  return branch.isRemote &&
+    (branch.remoteName === undefined || branch.remoteName === "origin") &&
+    branch.name.startsWith("origin/")
+    ? branch.name.slice("origin/".length)
+    : branch.name;
+}
+
 export function buildTemporaryWorktreeBranchName(
   randomHex: (byteLength: number) => string,
 ): string {

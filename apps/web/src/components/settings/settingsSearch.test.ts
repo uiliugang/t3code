@@ -354,6 +354,8 @@ describe("localized settings search", () => {
       ["工作树位置", "storage-worktrees-location"],
       ["工作树清理", "storage-worktrees"],
       ["仅允许从 main/master 创建工作树", "worktree-main-branch-only"],
+      ["远程分支展示天数", "remote-branch-display-days"],
+      ["隐藏已合并的远程分支", "hide-merged-remote-branches"],
       ["自动清理已合并的分支和工作树", "auto-delete-merged-branches"],
     ] as const) {
       expect(searchSettings(query).find((item) => item.id === id)?.to).toBe("/settings/worktrees");

@@ -9,6 +9,7 @@ import {
   flattenTemporaryWorktreeBranchName,
   isTemporaryWorktreeBranch,
   isMainOrMasterBranch,
+  getBranchDisplayName,
   normalizeGitRemoteUrl,
   canonicalRepositoryCloneKey,
   parseOriginUrlFromGitConfig,
@@ -51,6 +52,18 @@ describe("main/master worktree bases", () => {
     ["HEAD", undefined, false],
   ])("checks %s without accepting similarly named feature branches", (name, remote, expected) => {
     expect(isMainOrMasterBranch(name, remote)).toBe(expected);
+  });
+});
+
+describe("branch display names", () => {
+  it.each([
+    [{ name: "origin/feature/search", isRemote: true, remoteName: "origin" }, "feature/search"],
+    [{ name: "origin/main", isRemote: true }, "main"],
+    [{ name: "origin/local", isRemote: false }, "origin/local"],
+    [{ name: "upstream/main", isRemote: true, remoteName: "upstream" }, "upstream/main"],
+    [{ name: "origin/team/main", isRemote: true, remoteName: "origin/team" }, "origin/team/main"],
+  ])("formats %o without changing its ref", (branch, expected) => {
+    expect(getBranchDisplayName(branch)).toBe(expected);
   });
 });
 
