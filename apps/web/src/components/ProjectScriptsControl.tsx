@@ -63,6 +63,7 @@ interface ProjectScriptsControlProps {
   presentation?: "toolbar" | "menu";
   onRequestMenuClose?: () => void;
   environmentId: EnvironmentId;
+  repositories?: Parameters<typeof ProjectScriptEditorDialog>[0]["repositories"];
   scripts: ReadonlyArray<ProjectScript>;
   fileScripts?: ReadonlyArray<T3ProjectFileScript>;
   preferredScriptId?: string | null;
@@ -81,6 +82,7 @@ export default function ProjectScriptsControl({
   onRequestMenuClose,
   environmentId,
   scripts,
+  repositories,
   fileScripts = NO_FILE_SCRIPTS,
   preferredScriptId = null,
   onRunScript,
@@ -452,6 +454,7 @@ export default function ProjectScriptsControl({
         environmentId={environmentId}
         request={editorRequest}
         scripts={scripts}
+        repositories={repositories}
         onSubmit={submitScript}
         onDelete={(scriptId) => void onDeleteScript(scriptId)}
         onClose={() => setEditorRequest(null)}

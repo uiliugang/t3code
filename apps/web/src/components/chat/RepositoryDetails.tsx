@@ -2,7 +2,8 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useRightPanelStore } from "../../rightPanelStore";
-import { Button } from "../ui/button";
+import { OpenInPicker } from "./OpenInPicker";
+import type { ComponentProps } from "react";
 import { Badge } from "../ui/badge";
 import type {
   EnvironmentId,
@@ -10,7 +11,7 @@ import type {
   ThreadWorkspaceRevision,
   WorkspaceExecutionResource,
 } from "@t3tools/contracts";
-import { ChevronDownIcon, ChevronRightIcon, FolderGit2Icon, TerminalIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, FolderGit2Icon } from "lucide-react";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
 import { BranchToolbarBranchSelector } from "../BranchToolbarBranchSelector";
@@ -22,6 +23,8 @@ export function RepositoryDetails({
   threadId,
   workspace,
   resource,
+  openInOptions,
+  showOpenInPicker,
   expanded,
   onToggle,
   onOpenChanges,
@@ -30,6 +33,11 @@ export function RepositoryDetails({
   threadId: ThreadId;
   workspace: ThreadWorkspaceRevision;
   resource: WorkspaceExecutionResource;
+  openInOptions: Pick<
+    ComponentProps<typeof OpenInPicker>,
+    "keybindings" | "availableEditors" | "enableShortcut"
+  >;
+  showOpenInPicker: boolean;
   expanded: boolean;
   onToggle: () => void;
   onOpenChanges: () => void;
@@ -90,17 +98,19 @@ export function RepositoryDetails({
             </span>
           ) : null}
         </button>
-        {showTerminalButton ? (
-          <div className="shrink-0 pr-3 pt-2.5">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={t("Open in terminal")}
-                    disabled={!terminals.canWrite()}
-                    onClick={() => {
+      </div>
+      {expanded ? (
+        <div data-workspace-repository-content className="flex min-w-0 flex-col pb-2">
+          {showOpenInPicker || showTerminalButton ? (
+            <OpenInPicker
+              {...openInOptions}
+              environmentId={environmentId}
+              openInCwd={resource.checkoutRoot}
+              displayMode="panel"
+              canOpenTerminal={terminals.canWrite()}
+              onOpenTerminal={
+                showTerminalButton
+                  ? () => {
                       const launched = terminals.launchTerminal({
                         location: {
                           cwd: resource.checkoutRoot,
@@ -113,19 +123,11 @@ export function RepositoryDetails({
                             .openTerminal({ environmentId, threadId }, terminalId),
                       });
                       if (launched) void launched.result;
-                    }}
-                  />
-                }
-              >
-                <TerminalIcon aria-hidden />
-              </TooltipTrigger>
-              <TooltipPopup>{t("Open in terminal")}</TooltipPopup>
-            </Tooltip>
-          </div>
-        ) : null}
-      </div>
-      {expanded ? (
-        <div data-workspace-repository-content className="flex min-w-0 flex-col pb-2">
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
           <BranchToolbarBranchSelector
             repository={{ target, cwd: resource.checkoutRoot }}
             environmentId={environmentId}

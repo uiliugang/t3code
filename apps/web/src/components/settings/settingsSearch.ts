@@ -324,9 +324,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "repository-terminal-button",
-    title: "Repository terminal button",
+    title: "Repository terminal menu item",
     to: "/settings/appearance",
-    searchTerms: ["terminal", "repository", "workspace", "button", "show", "hide"],
+    searchTerms: ["terminal", "repository", "workspace", "button", "menu", "show", "hide"],
   },
   {
     id: "math-rendering",

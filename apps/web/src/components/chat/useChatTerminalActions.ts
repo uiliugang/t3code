@@ -16,7 +16,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
-import { projectScriptTerminalInput } from "@t3tools/shared/projectScripts";
+import { projectScriptTargets, projectScriptTerminalInput } from "@t3tools/shared/projectScripts";
 import { type SetStateAction } from "react";
 import {
   isAtomCommandInterrupted,
@@ -194,7 +194,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     storeCloseTerminal(activeThreadRef, terminalId);
     focusActiveDrawerTerminal(activeThreadRef);
   };
-  const runProjectScript = async (
+  const runProjectScriptAtLocation = async (
     script: ProjectScript,
     options?: {
       cwd?: string;
@@ -228,7 +228,10 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
             panelTerminalIds,
             runningTerminalIds,
           });
-    const targetWorktreePath = options?.worktreePath ?? activeThread.worktreePath ?? null;
+    const targetWorktreePath =
+      options?.worktreePath !== undefined
+        ? options.worktreePath
+        : (activeThread.worktreePath ?? null);
 
     setTerminalUiLaunchContext({
       threadId: activeThreadId,
@@ -301,6 +304,42 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
         );
       }
     }
+  };
+  const runProjectScript = async (
+    script: ProjectScript,
+    options?: Parameters<typeof runProjectScriptAtLocation>[1],
+  ) => {
+    if (options?.cwd !== undefined) return runProjectScriptAtLocation(script, options);
+    if (activeThread?.workspace) {
+      const targets = projectScriptTargets(script, activeThread.workspace);
+      if (targets.length === 0 && activeThreadId) {
+        setThreadError(activeThreadId, "This action has no matching repositories in this task.");
+        return;
+      }
+      for (const [index, target] of targets.entries()) {
+        await runProjectScriptAtLocation(
+          { ...script, autoOpenPreview: index === 0 && script.autoOpenPreview },
+          {
+            ...options,
+            cwd: target.cwd,
+            worktreePath: target.worktreePath,
+            env: {
+              T3CODE_PROJECT_ROOT: target.sourcePath,
+              ...(target.worktreePath ? { T3CODE_WORKTREE_PATH: target.worktreePath } : {}),
+              ...options?.env,
+            },
+            preferNewTerminal: true,
+          },
+        );
+      }
+      return;
+    }
+    if (activeThread?.workspaceConfiguration || script.repositoryRootIds !== undefined) {
+      if (activeThreadId)
+        setThreadError(activeThreadId, "This action has no prepared repositories in this task.");
+      return;
+    }
+    return runProjectScriptAtLocation(script, options);
   };
   const runProjectScriptStable = useStableCallback(runProjectScript);
 

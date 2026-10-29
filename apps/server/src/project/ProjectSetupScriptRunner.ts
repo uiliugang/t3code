@@ -4,6 +4,8 @@ import {
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
   resolveProjectScripts,
+  projectScriptAppliesToRoots,
+  projectScriptTargets,
   settleProjectScript,
   setupProjectScript,
 } from "@t3tools/shared/projectScripts";
@@ -67,6 +69,8 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectCwd?: string;
   readonly worktreePath: string;
   readonly trigger?: "setup" | "settle";
+  readonly repositoryRootIds?: NonNullable<ProjectScript["repositoryRootIds"]>;
+  readonly script?: ProjectScript;
   readonly project?: {
     readonly id: ProjectId;
     readonly workspaceRoot: string;
@@ -419,8 +423,9 @@ export const make = Effect.gen(function* () {
     const trigger = input.trigger ?? "setup";
     const scripts = resolveProjectScripts(settings, project);
     const script =
-      trigger === "settle" ? settleProjectScript(scripts) : setupProjectScript(scripts);
-    if (!script) {
+      input.script ??
+      (trigger === "settle" ? settleProjectScript(scripts) : setupProjectScript(scripts));
+    if (!script || !projectScriptAppliesToRoots(script, input.repositoryRootIds ?? [])) {
       return {
         status: "no-script",
       } as const;
@@ -431,10 +436,15 @@ export const make = Effect.gen(function* () {
       trigger === "settle"
         ? `settle-${script.id}-${(yield* crypto.randomUUIDv4().pipe(Effect.orDie)).slice(0, 8)}`
         : `setup-${script.id}`;
-    const cwd = input.worktreePath;
+    const target = thread?.workspace
+      ? projectScriptTargets(script, thread.workspace).find(
+          (entry) => entry.worktreePath === input.worktreePath,
+        )
+      : undefined;
+    const cwd = target?.cwd ?? input.worktreePath;
     const env = {
       ...projectScriptRuntimeEnv({
-        project: { cwd: project.workspaceRoot },
+        project: { cwd: target?.sourcePath ?? project.workspaceRoot },
         worktreePath: input.worktreePath,
       }),
       // Before client attachment, truecolor probes wait for terminal replies nobody can send.

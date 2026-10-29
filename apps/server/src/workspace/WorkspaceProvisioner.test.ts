@@ -221,6 +221,26 @@ it.live(
           for (const resource of workspace.resources)
             assert.isFalse(yield* fs.exists(resource.checkoutRoot));
         }).pipe(Effect.provide(WorkspaceCleanup.layer));
+        const selected = yield* provisioner.prepare({
+          ...input,
+          threadId: ThreadId.make("scoped-setup"),
+          scripts: [
+            {
+              id: "scope",
+              name: "Scope",
+              command: "setup",
+              icon: "configure",
+              runOnWorktreeCreate: true,
+              repositoryRootIds: [roots[1]!.id],
+            },
+          ],
+        });
+        assert.isFalse(
+          yield* fs.exists(path.join(selected.resources[0]!.checkoutRoot, "setup.txt")),
+        );
+        assert.isTrue(
+          yield* fs.exists(path.join(selected.resources[1]!.checkoutRoot, "setup.txt")),
+        );
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );

@@ -1,3 +1,4 @@
+import { terminalEnvironment } from "../../state/terminal";
 import * as Dialog from "../../components/ui/Dialog";
 import { useRememberThreadProject } from "./useRememberThreadProject";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -25,6 +26,7 @@ import {
 } from "@t3tools/contracts";
 import {
   projectScriptCwd,
+  projectScriptTargets,
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
   resolveProjectScripts,
@@ -713,6 +715,8 @@ function ThreadRouteContent(
     });
   };
 
+  const openScriptTerminal = useAtomCommand(terminalEnvironment.open, "open script terminal");
+  const writeScriptTerminal = useAtomCommand(terminalEnvironment.write, "run project script");
   const handleRunProjectScript = async (script: ProjectScript) => {
     if (
       !selectedThread ||
@@ -721,6 +725,44 @@ function ThreadRouteContent(
     ) {
       return;
     }
+
+    if (selectedThread.workspace) {
+      const targets = projectScriptTargets(script, selectedThread.workspace);
+      for (const [index, target] of targets.entries()) {
+        const terminalId = `script-${uuidv4()}`;
+        const opened = await openScriptTerminal({
+          environmentId: selectedThread.environmentId,
+          input: {
+            threadId: selectedThread.id,
+            terminalId,
+            cwd: target.cwd,
+            worktreePath: target.worktreePath,
+            env: projectScriptRuntimeEnv({
+              project: { cwd: target.sourcePath },
+              worktreePath: target.worktreePath,
+            }),
+          },
+        });
+        if (opened._tag === "Failure") return;
+        const written = await writeScriptTerminal({
+          environmentId: selectedThread.environmentId,
+          input: {
+            threadId: selectedThread.id,
+            terminalId,
+            data: projectScriptTerminalInput(script.command),
+          },
+        });
+        if (written._tag === "Failure") return;
+        if (index === targets.length - 1)
+          void navigation.navigate("ThreadTerminal", {
+            environmentId: String(selectedThread.environmentId),
+            threadId: String(selectedThread.id),
+            terminalId,
+          });
+      }
+      return;
+    }
+    if (selectedThread.workspaceConfiguration || script.repositoryRootIds !== undefined) return;
 
     const targetTerminalId = resolveProjectScriptTerminalId({
       existingTerminalIds: terminalMenuSessions.map((session) => session.terminalId),

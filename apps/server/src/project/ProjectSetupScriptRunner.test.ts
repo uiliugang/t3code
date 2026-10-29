@@ -1,6 +1,11 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, type TerminalEvent, type TerminalSessionSnapshot } from "@t3tools/contracts";
+import {
+  WorkspaceRootId,
+  ProjectId,
+  type TerminalEvent,
+  type TerminalSessionSnapshot,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -34,6 +39,7 @@ const openSnapshot = (history: string): TerminalSessionSnapshot => ({
 });
 
 const makeHarness = Effect.fn(function* (options: {
+  readonly repositoryRootIds?: readonly string[];
   readonly history?: string;
   readonly opening?: Deferred.Deferred<void>;
 }) {
@@ -72,6 +78,7 @@ const makeHarness = Effect.fn(function* (options: {
   const start = runner.runForThread({
     threadId,
     worktreePath: "/repo/.t3/worktrees/feature",
+    repositoryRootIds: [WorkspaceRootId.make("frontend")],
     observeCompletion: { onOutputLine: (line) => Queue.offer(outputLines, line) },
     project: {
       id: ProjectId.make("project-1"),
@@ -81,6 +88,9 @@ const makeHarness = Effect.fn(function* (options: {
           id: "setup",
           name: "Setup",
           command: "vp i",
+          ...(options.repositoryRootIds
+            ? { repositoryRootIds: options.repositoryRootIds.map((id) => WorkspaceRootId.make(id)) }
+            : {}),
           icon: "configure",
           runOnWorktreeCreate: true,
         },
@@ -101,6 +111,14 @@ const setup = Effect.fn(function* (options: { readonly history?: string } = {}) 
 });
 
 describe("ProjectSetupScriptRunner", () => {
+  it.effect("skips an automatic script outside its selected repository scope", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ repositoryRootIds: ["backend"] });
+      expect(yield* harness.start).toEqual({ status: "no-script" });
+      expect(yield* Queue.size(harness.writes)).toBe(0);
+      expect(harness.listeners.size).toBe(0);
+    }),
+  );
   it.effect("shows a startup prompt and types only once the line editor starts", () =>
     Effect.gen(function* () {
       const { result, writes, outputLines, emit } = yield* setup();

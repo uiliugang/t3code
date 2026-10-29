@@ -1,4 +1,11 @@
-import type { ProjectId, ProjectScript, ServerSettings } from "@t3tools/contracts";
+import type {
+  ProjectId,
+  ProjectScript,
+  ServerSettings,
+  WorkspaceRootId,
+  WorkspaceRootBinding,
+  WorkspaceExecutionResource,
+} from "@t3tools/contracts";
 
 type ProjectScriptSettings = Pick<
   ServerSettings,
@@ -75,4 +82,41 @@ export function settleProjectScript(scripts: readonly ProjectScript[]): ProjectS
  */
 export function projectScriptTerminalInput(command: string): string {
   return ` ${command}\r`;
+}
+
+export function projectScriptAppliesToRoots(
+  script: Pick<ProjectScript, "repositoryRootIds">,
+  rootIds: readonly WorkspaceRootId[],
+): boolean {
+  return (
+    script.repositoryRootIds === undefined ||
+    rootIds.some((id) => script.repositoryRootIds!.includes(id))
+  );
+}
+
+export function projectScriptTargets(
+  script: Pick<ProjectScript, "repositoryRootIds">,
+  workspace: {
+    bindings: readonly Pick<
+      WorkspaceRootBinding,
+      "rootId" | "resourceId" | "executionPath" | "sourcePathAtBind"
+    >[];
+    resources: readonly Pick<WorkspaceExecutionResource, "id" | "checkoutRoot" | "ownership">[];
+  },
+) {
+  return workspace.resources.flatMap((resource) => {
+    const bindings = workspace.bindings.filter((binding) => binding.resourceId === resource.id);
+    const binding = bindings.find((entry) => projectScriptAppliesToRoots(script, [entry.rootId]));
+    return binding
+      ? [
+          {
+            resourceId: resource.id,
+            rootIds: bindings.map((entry) => entry.rootId),
+            cwd: binding.executionPath,
+            sourcePath: binding.sourcePathAtBind,
+            worktreePath: resource.ownership === "managed" ? resource.checkoutRoot : null,
+          },
+        ]
+      : [];
+  });
 }

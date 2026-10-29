@@ -1,9 +1,12 @@
+import { useUiTranslation } from "../hooks/useUiTranslation";
+import { Checkbox } from "./ui/checkbox";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
   type EnvironmentId,
   type ProjectScript,
   type ProjectScriptIcon,
+  type ProjectWorkspaceRoot,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import {
@@ -79,6 +82,7 @@ export function ScriptIcon({
 }
 
 export interface NewProjectScriptInput {
+  repositoryRootIds?: ProjectScript["repositoryRootIds"];
   name: string;
   command: string;
   icon: ProjectScriptIcon;
@@ -118,6 +122,7 @@ export function editorRequestForScript(
   return {
     scriptId: script.id,
     initial: {
+      repositoryRootIds: script.repositoryRootIds,
       name: script.name,
       command: script.command,
       icon: script.icon,
@@ -136,6 +141,7 @@ export function ProjectScriptEditorDialog({
   editScope = AuthOrchestrationOperateScope,
   request,
   scripts,
+  repositories,
   onSubmit,
   onDelete,
   onClose,
@@ -144,6 +150,7 @@ export function ProjectScriptEditorDialog({
   editScope?: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
   request: ProjectScriptEditorRequest | null;
   scripts: ReadonlyArray<ProjectScript>;
+  repositories?: readonly Pick<ProjectWorkspaceRoot, "id" | "alias">[] | undefined;
   onSubmit: (
     scriptId: string | null,
     input: NewProjectScriptInput,
@@ -195,6 +202,7 @@ export function ProjectScriptEditorDialog({
               editScope={editScope}
               request={shown.request}
               scripts={scripts}
+              repositories={repositories}
               validationError={validationError}
               onValidationError={setValidationError}
               onSubmit={onSubmit}
@@ -244,6 +252,7 @@ function ProjectScriptEditorForm({
   editScope,
   request,
   scripts,
+  repositories,
   validationError,
   onValidationError: setValidationError,
   onSubmit,
@@ -254,6 +263,7 @@ function ProjectScriptEditorForm({
   editScope: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
   request: ProjectScriptEditorRequest;
   scripts: ReadonlyArray<ProjectScript>;
+  repositories?: readonly Pick<ProjectWorkspaceRoot, "id" | "alias">[] | undefined;
   validationError: string | null;
   onValidationError: (error: string | null) => void;
   onSubmit: (
@@ -265,6 +275,8 @@ function ProjectScriptEditorForm({
 }) {
   const canEditActions = useEnvironmentScope(environmentId, editScope);
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const t = useUiTranslation();
+  const [repositoryRootIds, setRepositoryRootIds] = useState(request.initial.repositoryRootIds);
   const formId = React.useId();
   const [name, setName] = useState(request.initial.name);
   const [command, setCommand] = useState(request.initial.command);
@@ -338,6 +350,10 @@ function ProjectScriptEditorForm({
       return;
     }
 
+    if (repositoryRootIds?.length === 0) {
+      setValidationError(t("Select at least one repository."));
+      return;
+    }
     setValidationError(null);
     let payload: NewProjectScriptInput;
     try {
@@ -353,6 +369,7 @@ function ProjectScriptEditorForm({
       });
       const trimmedPreviewUrl = previewUrl.trim();
       payload = {
+        repositoryRootIds,
         name: trimmedName,
         command: trimmedCommand,
         icon,
@@ -408,6 +425,45 @@ function ProjectScriptEditorForm({
       <DialogPanel>
         <form id={formId} onSubmit={submit}>
           <fieldset className="space-y-4" disabled={isSaving || !canEditActions}>
+            {repositories && repositories.length > 0 ? (
+              <div className="space-y-2">
+                <div>
+                  <Label>{t("Run in repositories")}</Label>
+                </div>
+                <Label>
+                  <Checkbox
+                    checked={repositoryRootIds === undefined}
+                    onCheckedChange={(checked) => setRepositoryRootIds(checked ? undefined : [])}
+                  />
+                  {t("All repositories")}
+                </Label>
+                {repositories.map((repository) => (
+                  <div key={repository.id}>
+                    <Label>
+                      <Checkbox
+                        checked={
+                          repositoryRootIds === undefined ||
+                          repositoryRootIds.includes(repository.id)
+                        }
+                        onCheckedChange={(checked) => {
+                          const selected =
+                            repositoryRootIds ?? repositories.map((entry) => entry.id);
+                          setRepositoryRootIds(
+                            checked
+                              ? [...new Set([...selected, repository.id])]
+                              : selected.filter((id) => id !== repository.id),
+                          );
+                        }}
+                      />
+                      {repository.alias}
+                    </Label>
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  {t("Runs once in each selected repository of this task.")}
+                </p>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="script-name">Name</Label>
               <div className="flex items-center gap-2">

@@ -60,6 +60,12 @@ for a new task to create an isolated checkout for every repository. Each reposit
 its own base branch and setup command; the agent starts after the entire group is ready.
 A failed setup retains the prepared checkouts so retry can continue without discarding work.
 
+In an action's configuration, **Run in repositories** selects where it runs. All repositories
+are selected by default. A selection applies to manual runs, worktree setup and settle actions,
+using the repositories bound to that task. Each repository gets its own terminal. A workspace
+setup action takes precedence over individual repository setup commands; it finishes across
+all selected repositories before the agent starts.
+
 Thread details group branch, stack, pull requests, commit actions, and changes by repository.
 Collapsed repositories keep their branch and change totals visible. Choose a repository before
 viewing its diff, opening its terminal, or opening it in an editor. A commit or push affects
