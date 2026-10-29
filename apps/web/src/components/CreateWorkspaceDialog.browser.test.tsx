@@ -85,19 +85,18 @@ it("retains the group after a failed save and retries without changing the prima
   state.navigate.mockResolvedValue(null);
   await using _screen = await render(<CreateWorkspaceDialogHost />);
   await act(() => openCreateWorkspace());
-  await page.getByRole("textbox", { name: "Workspace name" }).fill("Product");
+  await page.getByRole("textbox", { name: "Group name" }).fill("Product");
   await page.getByRole("combobox", { name: "Choose repository 1" }).click();
   await page.getByRole("option", { name: /frontend/ }).click();
+  await page.getByRole("button", { name: "Add repository", exact: true }).click();
   await page.getByRole("combobox", { name: "Choose repository 2" }).click();
   await page.getByRole("option", { name: /backend/ }).click();
   await page.getByText("Primary repository", { exact: true }).nth(1).click();
-  await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+  await page.getByRole("button", { name: "Create group", exact: true }).click();
   await expect.element(page.getByRole("alert")).toHaveTextContent("Directory unavailable");
-  await expect
-    .element(page.getByRole("textbox", { name: "Workspace name" }))
-    .toHaveValue("Product");
+  await expect.element(page.getByRole("textbox", { name: "Group name" })).toHaveValue("Product");
   await expect.element(page.getByRole("radio").nth(1)).toBeChecked();
-  await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+  await page.getByRole("button", { name: "Create group", exact: true }).click();
   await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   expect(state.create.mock.calls[1]?.[0]).toEqual(state.create.mock.calls[0]?.[0]);
   expect(state.create.mock.calls[1]?.[0]).toMatchObject({
@@ -119,7 +118,7 @@ it("clears repository paths on an explicit environment switch and blocks submiss
   setup();
   await using _screen = await render(<CreateWorkspaceDialogHost />);
   await act(() => openCreateWorkspace());
-  await page.getByRole("textbox", { name: "Workspace name" }).fill("Local work");
+  await page.getByRole("textbox", { name: "Group name" }).fill("Local work");
   await page.getByRole("combobox", { name: "Choose repository 1" }).click();
   await page.getByRole("option", { name: /frontend/ }).click();
   await page.getByRole("combobox", { name: "Environment", exact: true }).click();
@@ -132,7 +131,7 @@ it("clears repository paths on an explicit environment switch and blocks submiss
     .not.toBeInTheDocument();
   await act(() => state.setPermissions(new Set([local])));
   await expect
-    .element(page.getByRole("button", { name: "Create workspace", exact: true }))
+    .element(page.getByRole("button", { name: "Create group", exact: true }))
     .toBeDisabled();
   expect(state.create).not.toHaveBeenCalled();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();

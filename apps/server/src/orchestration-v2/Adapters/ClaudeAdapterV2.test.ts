@@ -8625,7 +8625,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   type: "tool_use",
                   id: bashToolUseId,
                   name: "Bash",
-                  input: { command: "git status" },
+                  input: { command: "git status", cwd: "/repo/linked-checkout" },
                 },
               ],
             },
@@ -8671,6 +8671,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             ? bash.turnItem.output
             : undefined,
           "On branch main\nwarning: dirty",
+        );
+        assert.equal(
+          bash?.type === "turn_item.updated" && bash.turnItem.type === "command_execution"
+            ? bash.turnItem.cwd
+            : undefined,
+          "/repo/linked-checkout",
         );
       }).pipe(
         Effect.provide(

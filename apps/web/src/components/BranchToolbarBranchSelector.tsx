@@ -1,4 +1,6 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/shell";
+import { useAtomValue } from "@effect/atom-react";
 import type { ThreadRepositoryTarget } from "@t3tools/contracts";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { isMainOrMasterBranch } from "@t3tools/shared/git";
@@ -42,6 +44,7 @@ import { useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "../state/threads";
+import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
@@ -122,6 +125,13 @@ export function BranchToolbarBranchSelector({
   const composerFloatingLayerProps = useComposerMenuProps();
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const canBindWorkspaceCheckout = useAtomValue(
+    serverEnvironment.workspaceCheckout.permissionAtom(environmentId),
+  );
+  const bindWorkspaceCheckout = useAtomCommand(
+    serverEnvironment.workspaceCheckout,
+    "thread checkout binding",
+  );
   const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, "thread session stop");
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
@@ -192,7 +202,11 @@ export function BranchToolbarBranchSelector({
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
-  const canUpdateThreadBranch = !hasServerThread || canOperateThread;
+  const checkoutBusy =
+    threadRuntimeIsActive(serverThread?.runtime) ||
+    serverThread?.source.pendingRuntimeRequest != null;
+  const canUpdateThreadBranch =
+    !hasServerThread || (canOperateThread && canBindWorkspaceCheckout && !checkoutBusy);
   const canChangeThreadBranch = canWriteSourceControl && canUpdateThreadBranch;
   const effectiveEnvMode =
     effectiveEnvModeOverride ??
@@ -400,6 +414,7 @@ export function BranchToolbarBranchSelector({
   };
 
   const runBranchAction = (action: () => Promise<void>) => {
+    if (checkoutBusy) return;
     if (
       !readEnvironmentScope(environmentId, AuthSourceControlWriteScope) ||
       (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
@@ -420,6 +435,32 @@ export function BranchToolbarBranchSelector({
     });
   };
 
+  const bindThreadCheckout = async (
+    cwd: string,
+    branch: string | null,
+    worktreePath: string | null,
+  ) => {
+    if (!serverThread) {
+      setThreadBranch(branch, worktreePath);
+      setOptimisticBranch(branch);
+      return;
+    }
+    const result = await bindWorkspaceCheckout({
+      environmentId,
+      input: {
+        threadId: serverThread.id,
+        cwd,
+        expectedWorktreePath: serverThread.worktreePath,
+        expectedWorkspaceRevisionId: repository?.target.workspaceRevisionId ?? null,
+        ...(repository === undefined ? {} : { resourceId: repository.target.resourceId }),
+      },
+    });
+    if (result._tag === "Success") {
+      setOptimisticBranch(result.value.branch);
+      onActiveThreadBranchOverrideChange?.(result.value.branch);
+    }
+  };
+
   const selectBranch = (refName: VcsRef) => {
     if (!canUpdateThreadBranch || !branchCwd || !activeProjectCwd || isBranchActionPending) return;
 
@@ -437,9 +478,15 @@ export function BranchToolbarBranchSelector({
     });
 
     if (selectionTarget.reuseExistingWorktree) {
-      setThreadBranch(refName.name, selectionTarget.nextWorktreePath);
       setIsBranchMenuOpen(false);
       onComposerFocusRequest?.();
+      runBranchAction(() =>
+        bindThreadCheckout(
+          selectionTarget.checkoutCwd,
+          refName.name,
+          selectionTarget.nextWorktreePath,
+        ),
+      );
       return;
     }
 
@@ -465,8 +512,11 @@ export function BranchToolbarBranchSelector({
         const nextBranchName = refName.isRemote
           ? (checkoutResult.value.refName ?? selectedBranchName)
           : selectedBranchName;
-        setOptimisticBranch(nextBranchName);
-        setThreadBranch(nextBranchName, selectionTarget.nextWorktreePath);
+        await bindThreadCheckout(
+          repository?.cwd ?? selectionTarget.checkoutCwd,
+          nextBranchName,
+          selectionTarget.nextWorktreePath,
+        );
         return;
       }
       setOptimisticBranch(previousBranch);
@@ -503,8 +553,7 @@ export function BranchToolbarBranchSelector({
         },
       });
       if (createBranchResult._tag === "Success") {
-        setOptimisticBranch(createBranchResult.value.refName);
-        setThreadBranch(createBranchResult.value.refName, activeWorktreePath);
+        await bindThreadCheckout(branchCwd, createBranchResult.value.refName, activeWorktreePath);
         return;
       }
       setOptimisticBranch(previousBranch);

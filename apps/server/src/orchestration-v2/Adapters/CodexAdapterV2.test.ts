@@ -2959,6 +2959,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.isAtLeast(recoveredIndex, 0);
         assert.isAbove(resumedCommandIndex, recoveredIndex);
         assert.isAbove(terminalIndex, resumedCommandIndex);
+        assert.deepEqual(
+          harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "command_execution"
+              ? [event.turnItem.cwd]
+              : [],
+          ),
+          ["/workspace", "/workspace"],
+        );
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),

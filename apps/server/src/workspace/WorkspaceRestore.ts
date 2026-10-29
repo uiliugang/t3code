@@ -91,7 +91,7 @@ export const layer = Layer.effect(
           return yield* new WorkspaceRestoreError({
             threadId,
             detail:
-              "Workspace recovery is required. A restore did not finish; its backup refs and recovery journal have been retained. Inspect all repositories and the provider conversation before resuming.",
+              "Group recovery is required. A restore did not finish; its backup refs and recovery journal have been retained. Inspect all repositories and the provider conversation before resuming.",
           });
       },
       (effect, threadId, _workspace) =>
@@ -101,7 +101,7 @@ export const layer = Layer.effect(
               ? cause
               : new WorkspaceRestoreError({
                   threadId,
-                  detail: "Cannot verify workspace recovery state.",
+                  detail: "Cannot verify group recovery state.",
                   cause,
                 }),
           ),

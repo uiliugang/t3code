@@ -1228,6 +1228,9 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 ...base,
                 type: "command_execution",
                 input: toolCall.args.command,
+                ...(toolCall.args.workingDirectory === undefined
+                  ? {}
+                  : { cwd: toolCall.args.workingDirectory }),
                 ...(outputText.length === 0 ? {} : { output: outputText }),
                 ...(toolCall.result?.status === "success"
                   ? { exitCode: toolCall.result.value.exitCode }

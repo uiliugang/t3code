@@ -29,7 +29,7 @@ type MuseToolPresentation = {
   readonly status: OrchestrationV2TurnItemStatus;
   readonly title: string | null;
 } & (
-  | Fields<"command_execution", "type" | "input" | "output" | "exitCode">
+  | Fields<"command_execution", "type" | "input" | "output" | "exitCode" | "cwd">
   | Fields<"file_change", "type" | "fileName" | "oldStr" | "newStr" | "diffStr">
   | Fields<"web_search", "type" | "patterns" | "results">
   | Fields<"dynamic_tool", "type" | "toolName" | "input" | "output">
@@ -87,10 +87,12 @@ export function museToolPresentation(
   const output = detail ? [detail, text].filter(Boolean).join("\n") : text;
 
   if (item.kind === "userShell" || /shell|bash|exec_command/i.test(item.tool ?? "")) {
+    const cwd = stringArg("cwd", "workdir");
     return {
       ...shared,
       type: "command_execution",
       input: item.commandText ?? stringArg("command", "cmd") ?? item.args ?? "",
+      ...(cwd === undefined ? {} : { cwd }),
       output,
       ...(item.exitCode === undefined ? {} : { exitCode: item.exitCode }),
     };

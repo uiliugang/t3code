@@ -3070,7 +3070,7 @@ describe("PiAdapterV2", () => {
           type: "tool_execution_start",
           toolCallId: "shell-call",
           toolName,
-          args: { command: "echo hello" },
+          args: { command: "echo hello", cwd: "/repo/linked-checkout" },
         });
         const running = yield* takeEvent(
           (event) =>
@@ -3080,6 +3080,7 @@ describe("PiAdapterV2", () => {
           running.type === "turn_item.updated" &&
             running.turnItem.type === "command_execution" &&
             running.turnItem.status === "running" &&
+            running.turnItem.cwd === "/repo/linked-checkout" &&
             running.turnItem.input === "echo hello",
         );
         yield* fake.emit({
@@ -3102,6 +3103,7 @@ describe("PiAdapterV2", () => {
             completed.turnItem.type === "command_execution" &&
             completed.turnItem.title === toolName &&
             completed.turnItem.input === "echo hello" &&
+            completed.turnItem.cwd === "/repo/linked-checkout" &&
             completed.turnItem.output === "hello" &&
             completed.turnItem.exitCode === exitCode &&
             completed.turnItem.status === (exitCode === 0 ? "completed" : "failed"),

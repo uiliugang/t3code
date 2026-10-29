@@ -113,7 +113,7 @@ export function SidebarThreadHeader({
             </SidebarHeaderIconButton>
           </>
         ) : null}
-        <SidebarHeaderIconButton label={t("Create workspace")} onClick={openCreateWorkspace}>
+        <SidebarHeaderIconButton label={t("Create group")} onClick={openCreateWorkspace}>
           <LayersIcon />
         </SidebarHeaderIconButton>
         <SidebarHeaderIconButton

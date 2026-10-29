@@ -5477,6 +5477,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? readPath
               : undefined;
           const itemType = input.classification.itemType;
+          const commandCwd = firstStringInputField(input.toolInput, ["cwd", "workdir"]);
           const webSearchPatterns = webSearchPatternsFromClaudeTool({
             toolInput: input.toolInput,
             output: input.output,
@@ -5494,6 +5495,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ...itemBase,
                   type: "command_execution",
                   input: commandInputFromClaudeTool(input.toolName, input.toolInput),
+                  ...(commandCwd === undefined ? {} : { cwd: commandCwd }),
                   ...(outputText.length === 0 ? {} : { output: outputText }),
                 }
               : itemType === "file_change"

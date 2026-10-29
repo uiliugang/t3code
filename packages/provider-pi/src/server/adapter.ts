@@ -1014,6 +1014,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           completedAt: completed ? emittedAt : null,
         } as const;
         if (toolName === "bash" || toolName === "powershell") {
+          const cwd = recordString(args, "cwd") ?? recordString(args, "workdir");
           const exitCode =
             recordNumber(recordField(resultRecord, "structuredContent"), "exit_code") ??
             recordNumber(recordField(resultRecord, "details"), "exitCode");
@@ -1025,6 +1026,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               title: toolName,
               type: "command_execution",
               input: recordString(args, "command") ?? "",
+              ...(cwd === undefined ? {} : { cwd }),
               ...(outputText.length > 0 ? { output: outputText } : {}),
               ...(exitCode === undefined ? {} : { exitCode }),
             },

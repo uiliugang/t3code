@@ -46,17 +46,17 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
-## Multiple repositories in one project
+## Repository groups
 
-Choose **Create workspace** beside **Add project** in the sidebar, or search for it in the
-command palette. Choose an environment, name the workspace, select at least two existing
-repositories or enter their directories, and choose the primary repository. Creating a
-workspace keeps the existing projects and opens a new task with **Worktree** selected.
+Choose **Create group** beside **Add project** in the sidebar, or search for it in the
+command palette. Choose an environment, name the group, select 1–16 existing repositories
+or enter their directories, and choose the primary repository. Creating a group keeps the
+existing projects and opens a new task with **Worktree** selected.
 
 In **Settings → Projects → Repositories**, you can later edit the directories for the repositories
 that belong to a task, such as a frontend and backend. Give each a name and short context,
 choose the primary repository, and save. Paths refer to the selected environment's machine;
-remote clients configure that machine's directories. Codex and Claude support these workspaces.
+remote clients configure that machine's directories. Codex and Claude support these groups.
 Other providers refuse a multi-repository task until their adapter supports it.
 
 New tasks use the saved repositories. Existing tasks keep their original directories, even
@@ -67,7 +67,7 @@ A failed setup retains the prepared checkouts so retry can continue without disc
 
 In an action's configuration, **Run in repositories** selects where it runs. All repositories
 are selected by default. A selection applies to manual runs, worktree setup and settle actions,
-using the repositories bound to that task. Each repository gets its own terminal. A workspace
+using the repositories bound to that task. Each repository gets its own terminal. A group
 setup action takes precedence over individual repository setup commands; it finishes across
 all selected repositories before the agent starts.
 
@@ -78,7 +78,7 @@ that repository. Project actions follow their configured repository selection.
 
 File restore checks and backs up the whole group. Close its terminals first. Shared checkouts
 cannot be restored; rewind the conversation without files instead. If recovery is required,
-inspect every repository and use **Workspace recovery**. Accepting current files preserves them
+inspect every repository and use **Group recovery**. Accepting current files preserves them
 and starts a fresh provider conversation, while keeping backups and earlier history.
 
 Automatic group cleanup runs only for deleted tasks when **Delete worktrees with deleted threads**

@@ -44,7 +44,7 @@ export function NoProjectsHero() {
                 </Button>
                 <Button size="sm" variant="outline" onClick={openCreateWorkspace}>
                   <LayersIcon />
-                  {t("Create workspace")}
+                  {t("Create group")}
                 </Button>
                 {scratchTargetEnvironmentId === null ? null : (
                   <Button

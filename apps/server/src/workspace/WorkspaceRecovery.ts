@@ -61,7 +61,7 @@ export const layer = Layer.effect(
               const workspace = projection.thread.workspace;
               if ((workspace?.id ?? null) !== input.expectedRevisionId)
                 return yield* new WorkspaceRecoveryError({
-                  detail: "The task workspace changed. Reopen recovery.",
+                  detail: "The task group changed. Reopen recovery.",
                 });
               const assertIdle = () =>
                 projection.thread.deletedAt !== null ||
@@ -72,8 +72,7 @@ export const layer = Layer.effect(
                 projection.runtimeRequests.some((request) => request.status === "pending");
               if (input.action !== "inspect" && assertIdle())
                 return yield* new WorkspaceRecoveryError({
-                  detail:
-                    "Stop the task and cancel queued messages before recovering its workspace.",
+                  detail: "Stop the task and cancel queued messages before recovering its group.",
                 });
               if (input.action !== "inspect") {
                 const terminalState = yield* Ref.make<ReadonlyArray<TerminalSummary>>([]);
@@ -98,7 +97,7 @@ export const layer = Layer.effect(
                   )
                 )
                   return yield* new WorkspaceRecoveryError({
-                    detail: "Close this workspace's terminals before confirming recovery.",
+                    detail: "Close this group's terminals before confirming recovery.",
                   });
               }
               const restoreRows = yield* sql<{
@@ -155,7 +154,7 @@ export const layer = Layer.effect(
                         ),
                         threadId: input.threadId,
                         providerSessionId: session.id,
-                        reason: "Workspace recovery",
+                        reason: "Group recovery",
                       });
                     }
                     if (workspace.id !== revision.id)
@@ -215,7 +214,7 @@ export const layer = Layer.effect(
               }
               return {
                 kind: "ready" as const,
-                detail: "This task has no unfinished workspace recovery.",
+                detail: "This task has no unfinished group recovery.",
                 repositories: [],
               };
             }),
@@ -228,7 +227,7 @@ export const layer = Layer.effect(
                 ? cause
                 : new WorkspaceRecoveryError({
                     detail:
-                      "Workspace recovery did not finish. Its journal and backups have been retained.",
+                      "Group recovery did not finish. Its journal and backups have been retained.",
                     cause,
                   }),
             ),

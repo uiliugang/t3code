@@ -75,7 +75,7 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
     <SettingsSection title="Repositories">
       <div className="flex flex-col gap-4 px-3 py-3 sm:px-4">
         <p className="text-sm text-muted-foreground">
-          {t("New tasks use these repositories. Existing tasks keep their bound workspace.")}
+          {t("New tasks use these repositories. Existing tasks keep their bound group.")}
         </p>
         {roots.map((root) => (
           <fieldset

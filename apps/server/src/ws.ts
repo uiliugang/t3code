@@ -1,4 +1,5 @@
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
+import * as WorkspaceCheckout from "./workspace/WorkspaceCheckout.ts";
 import * as WorkspaceAccess from "./workspace/WorkspaceAccess.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -1324,6 +1325,7 @@ export const layerWsRpc = (
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const workspaceAccess = yield* WorkspaceAccess.WorkspaceAccess;
       const workspaceRecovery = yield* WorkspaceRecovery.WorkspaceRecovery;
+      const workspaceCheckout = yield* WorkspaceCheckout.WorkspaceCheckout;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -3003,6 +3005,7 @@ export const layerWsRpc = (
             .run(input, gitWorkflow.switchRef(input))
             .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.workspaceRecovery]: (input) => workspaceRecovery.resolve(input),
+        [WS_METHODS.workspaceCheckout]: (input) => workspaceCheckout.bind(input),
         [WS_METHODS.vcsInit]: (input) =>
           workspaceAccess
             .run(input, vcsProvisioning.initRepository(input))

@@ -590,6 +590,51 @@ it.effect("retries an in-flight ref snapshot invalidated by a mutation", () =>
   ).pipe(Effect.provide(layerServerConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect.each(["branch", "worktree"] as const)(
+  "refreshes cached refs after status observes an external %s checkout",
+  (checkout) =>
+    Effect.gen(function* () {
+      const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      let refScans = 0;
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) => {
+            if (ChildProcess.isStandardCommand(command) && command.args.includes("for-each-ref"))
+              refScans++;
+            return delegate.spawn(command);
+          }),
+        ),
+        Effect.provide(layerServerConfig),
+      );
+      const cwd = yield* makeTmpDir();
+      yield* initRepoWithCommit(cwd);
+      yield* driver.listRefs({ cwd });
+      assert.equal(refScans, 1);
+
+      const target = checkout === "worktree" ? path.join(cwd, "linked-checkout") : cwd;
+      yield* git(
+        cwd,
+        checkout === "worktree"
+          ? ["worktree", "add", "-b", "feature/agent", target]
+          : ["switch", "-c", "feature/agent"],
+      );
+      assert.equal((yield* driver.statusDetailsLocal(target)).branch, "feature/agent");
+      const refs = yield* driver.listRefs({ cwd: target });
+      assert.deepEqual(
+        refs.refs.filter((ref) => ref.current).map((ref) => [ref.name, ref.worktreePath]),
+        [["feature/agent", yield* fileSystem.realPath(target)]],
+      );
+      assert.equal(refScans, 2);
+
+      yield* driver.statusDetailsLocal(target);
+      yield* driver.listRefs({ cwd: target });
+      assert.equal(refScans, 2);
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("invalidates a ref snapshot when a mutation fails after changing Git", () =>
   Effect.scoped(
     Effect.gen(function* () {

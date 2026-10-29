@@ -542,7 +542,7 @@ describe("OpenCodeAdapterV2", () => {
           },
           {
             status: "completed",
-            input: { command: "pwd" },
+            input: { command: "pwd", workdir: "/repo/linked-checkout" },
             output: "/repo\n",
             title: "Working directory",
             metadata: {},
@@ -655,6 +655,7 @@ describe("OpenCodeAdapterV2", () => {
           ["pwd", "pwd", "pwd", "pwd"],
         );
         assert.equal(commands[2]?.output, "/repo\n");
+        assert.equal(commands[2]?.cwd, "/repo/linked-checkout");
         assert.equal(commands[3]?.output, "Command failed");
         assert.isTrue(
           events.some(

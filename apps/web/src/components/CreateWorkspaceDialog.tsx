@@ -84,7 +84,7 @@ function CreateWorkspaceDialog() {
           <DialogTitle>
             <span className="flex items-center gap-2">
               <LayersIcon className="size-5" />
-              {t("Create workspace")}
+              {t("Create group")}
             </span>
           </DialogTitle>
           <DialogDescription>
@@ -128,9 +128,7 @@ function CreateWorkspaceDialog() {
           </div>
           {!allowed ? (
             <p role="alert" className="mb-4 text-sm text-muted-foreground">
-              {t(
-                "Connect to an environment with workspace support and project editing permission.",
-              )}
+              {t("Connect to an environment with group support and project editing permission.")}
             </p>
           ) : null}
           {selectedId ? (
@@ -198,7 +196,7 @@ function WorkspaceForm({
   const handleNewThread = useNewThreadHandler();
   const [projectId] = useState(newProjectId);
   const [title, setTitle] = useState("");
-  const [roots, setRoots] = useState(() => [emptyRoot(), emptyRoot()]);
+  const [roots, setRoots] = useState(() => [emptyRoot()]);
   const [primaryRootId, setPrimaryRootId] = useState(roots[0]!.id);
   const [error, setError] = useState<string | null>(null);
   const validation = workspaceCreationError({ title, roots, primaryRootId });
@@ -223,7 +221,7 @@ function WorkspaceForm({
     setBusy(false);
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
-      setError(cause instanceof Error ? cause.message : t("Could not create workspace."));
+      setError(cause instanceof Error ? cause.message : t("Could not create group."));
       return;
     }
     close();
@@ -234,7 +232,7 @@ function WorkspaceForm({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: t("Workspace created. Open it from the project list to continue."),
+          title: t("Group created. Open it from the project list to continue."),
         }),
       );
   };
@@ -247,7 +245,7 @@ function WorkspaceForm({
     >
       <fieldset disabled={busy} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor={`${id}-name`}>{t("Workspace name")}</Label>
+          <Label htmlFor={`${id}-name`}>{t("Group name")}</Label>
           <Input
             id={`${id}-name`}
             value={title}
@@ -280,7 +278,7 @@ function WorkspaceForm({
                   variant="ghost"
                   size="icon-xs"
                   aria-label={t("Remove repository {number}", { number: index + 1 })}
-                  disabled={roots.length <= 2}
+                  disabled={roots.length <= 1}
                   onClick={() => {
                     const next = roots.filter((entry) => entry.id !== root.id);
                     setRoots(next);
@@ -392,7 +390,7 @@ function WorkspaceForm({
           {t("Cancel")}
         </Button>
         <Button type="submit" disabled={!allowed || busy}>
-          {busy ? t("Creating...") : t("Create workspace")}
+          {busy ? t("Creating...") : t("Create group")}
         </Button>
       </DialogFooter>
     </form>

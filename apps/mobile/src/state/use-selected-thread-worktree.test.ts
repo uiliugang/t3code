@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   detail: null as { thread: { projectId: string } } | null,
   detailWorktreePath: null as string | null,
   projects: new Map<string, { workspaceRoot: string }>(),
+  repository: null as { checkoutRoot: string; ownership: "managed" | "borrowed" } | null,
 }));
 
 vi.mock("./entities", () => ({
@@ -26,14 +27,26 @@ vi.mock("./use-thread-detail", () => ({
   useThreadWorktreePath: (ref: unknown) => (ref === null ? null : state.detailWorktreePath),
   useSelectedThreadWorktreePath: () => null,
 }));
-vi.mock("./use-thread-selection", () => ({ useThreadSelection: () => ({}) }));
+vi.mock("./use-thread-selection", () => ({
+  useThreadSelection: () => ({ selectedThread: state.shell }),
+}));
+vi.mock("./use-thread-repository", () => ({
+  useThreadRepository: () => ({
+    workspace: state.repository ? {} : undefined,
+    repository: state.repository,
+  }),
+}));
 
-const { useThreadCwd } = await import("./use-selected-thread-worktree");
+const { useThreadCwd, useSelectedThreadWorktree } = await import("./use-selected-thread-worktree");
 
 const ref = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
 
 function setup(input: Partial<Omit<typeof state, "projects">>) {
-  Object.assign(state, { shell: null, detail: null, detailWorktreePath: null }, input);
+  Object.assign(
+    state,
+    { shell: null, detail: null, detailWorktreePath: null, repository: null },
+    input,
+  );
   state.projects = new Map([[ProjectId.make("project"), { workspaceRoot: "/repo" }]]);
 }
 
@@ -53,3 +66,16 @@ describe("useThreadCwd", () => {
     expect(useThreadCwd(null)).toBeNull();
   });
 });
+
+it.each(["managed", "borrowed"] as const)(
+  "uses the selected %s repository for both the Git cwd and worktree path",
+  (ownership) => {
+    setup({
+      shell: { projectId: "project", worktreePath: "/primary" },
+      repository: { checkoutRoot: "/secondary", ownership },
+    });
+    const selected = useSelectedThreadWorktree();
+    expect(selected.selectedThreadCwd).toBe("/secondary");
+    expect(selected.selectedThreadWorktreePath).toBe("/secondary");
+  },
+);

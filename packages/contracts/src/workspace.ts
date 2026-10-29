@@ -86,6 +86,30 @@ export const ThreadRepositoryTarget = Schema.Struct({
 });
 export type ThreadRepositoryTarget = typeof ThreadRepositoryTarget.Type;
 
+export const WorkspaceCheckoutInput = Schema.Struct({
+  threadId: ThreadId,
+  cwd: TrimmedNonEmptyString,
+  expectedWorktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  expectedWorkspaceRevisionId: Schema.NullOr(WorkspaceRevisionId),
+  resourceId: Schema.optional(ExecutionResourceId),
+});
+export type WorkspaceCheckoutInput = typeof WorkspaceCheckoutInput.Type;
+
+export const WorkspaceCheckoutResult = Schema.Struct({
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type WorkspaceCheckoutResult = typeof WorkspaceCheckoutResult.Type;
+
+export class WorkspaceCheckoutError extends Schema.TaggedError<WorkspaceCheckoutError>()(
+  "WorkspaceCheckoutError",
+  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message() {
+    return this.detail;
+  }
+}
+
 export const WorkspaceRecoveryInput = Schema.Struct({
   threadId: ThreadId,
   expectedRevisionId: Schema.NullOr(WorkspaceRevisionId),

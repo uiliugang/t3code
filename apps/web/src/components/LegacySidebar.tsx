@@ -3005,7 +3005,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               </TooltipTrigger>
               <TooltipPopup side="right">Add project</TooltipPopup>
             </Tooltip>
-            <SidebarHeaderIconButton label={t("Create workspace")} onClick={openCreateWorkspace}>
+            <SidebarHeaderIconButton label={t("Create group")} onClick={openCreateWorkspace}>
               <LayersIcon />
             </SidebarHeaderIconButton>
           </div>

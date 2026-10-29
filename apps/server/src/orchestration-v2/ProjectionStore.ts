@@ -346,6 +346,7 @@ export interface ProjectionRecordFilter {
   readonly messageRunIds?: ReadonlyArray<RunId>;
   readonly turnItemRunIds?: ReadonlyArray<RunId | null>;
   readonly runIds?: ReadonlyArray<RunId>;
+  readonly nodeRunIds?: ReadonlyArray<RunId>;
   readonly subagentIds?: ReadonlyArray<NodeId>;
   readonly turnItemTypes?: ReadonlyArray<OrchestrationV2TurnItem["type"]>;
   readonly turnItemStatuses?: ReadonlyArray<OrchestrationV2TurnItem["status"]>;
@@ -3170,6 +3171,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT payload_json
             FROM orchestration_v2_projection_nodes AS node
             WHERE node.thread_id = ${threadId}
+              ${filter?.nodeRunIds === undefined ? sql`` : sql`AND node.run_id IN (SELECT value FROM json_each(${encodeIdList(filter.nodeRunIds)}))`}
               ${
                 filter?.omitSettledLeafNodes === true
                   ? sql`AND NOT (

@@ -107,29 +107,29 @@ const zhCN: Readonly<Record<string, string>> = {
   "Append instructions to the naming prompt.": "将指令追加到命名提示词中。",
   "Mixed. Enter instructions for all selected targets.":
     "所选目标的值不同。请输入应用于全部所选目标的指令。",
-  "Create workspace": "创建工作区",
+  "Create group": "创建分组",
   "Creating...": "正在创建…",
   "Select environment": "选择环境",
-  "Workspace name": "工作区名称",
+  "Group name": "分组名称",
   "e.g. Customer portal": "例如：客户管理平台",
   "Bring existing repositories together for one task. Each repository gets its own worktree when the task starts.":
-    "将已有仓库组成一个工作区。任务启动时，会为各仓库创建独立的 worktree。",
+    "将已有仓库组成一个分组。任务启动时，会为各仓库创建独立的 worktree。",
   "Choose repositories from this environment or enter their existing directories.":
     "选择此环境中的仓库，或填写已有仓库的目录。",
   "Choose an existing repository": "选择已有仓库",
   "Choose repository {number}": "选择第 {number} 个仓库",
   "Remove repository {number}": "移除第 {number} 个仓库",
-  "Connect to an environment with workspace support and project editing permission.":
-    "请连接支持多仓工作区且具备项目编辑权限的环境。",
-  "Enter a workspace name.": "请输入工作区名称。",
-  "Choose between 2 and 16 repositories.": "请选择 2 至 16 个仓库。",
+  "Connect to an environment with group support and project editing permission.":
+    "请连接支持分组且具备项目编辑权限的环境。",
+  "Enter a group name.": "请输入分组名称。",
+  "Choose between 1 and 16 repositories.": "请选择 1 至 16 个仓库。",
   "Enter a name and directory for every repository.": "请填写每个仓库的名称和目录。",
   "Repository names must be unique.": "仓库名称不能重复。",
   "Choose each repository directory only once.": "仓库目录不能重复选择。",
   "Choose a primary repository.": "请选择主仓库。",
-  "Could not create workspace.": "无法创建工作区。",
-  "Workspace created. Open it from the project list to continue.":
-    "工作区已创建，可从项目列表打开后继续。",
+  "Could not create group.": "无法创建分组。",
+  "Group created. Open it from the project list to continue.":
+    "分组已创建，可从项目列表打开后继续。",
   "Run in repositories": "执行仓库范围",
   "All repositories": "全部仓库",
   "Select at least one repository.": "请至少选择一个仓库。",
@@ -145,8 +145,8 @@ const zhCN: Readonly<Record<string, string>> = {
     "自动删除已合并到 main 或 master 的本地分支及工作树。保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
   "Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":
     "保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
-  "New tasks use these repositories. Existing tasks keep their bound workspace.":
-    "新会话使用这些仓库，已有会话保留已绑定的工作区。",
+  "New tasks use these repositories. Existing tasks keep their bound group.":
+    "新会话使用这些仓库，已有会话保留已绑定的分组。",
   "Primary repository": "主仓库",
   "Make primary": "设为主仓库",
   "Repository name": "仓库名称",
@@ -159,7 +159,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Add repository": "添加仓库",
   "Save repositories": "保存仓库",
   "Status unavailable": "无法获取状态",
-  "Workspace recovery": "工作区恢复",
+  "Group recovery": "分组恢复",
   "Accept files and reset conversation": "保留当前文件并重置模型会话",
   "Allow setup retry": "允许重新执行初始化",
   "Creates one worktree per repository. The task starts when all repositories are ready.":
@@ -174,7 +174,17 @@ const zhCN: Readonly<Record<string, string>> = {
     "已保留准备好的仓库。请先检查初始化终端再确认，重试可能重复执行初始化命令。确认后可重试任务准备。",
   "Setup can now be retried from the task's retry action.":
     "现在可以通过任务的重试操作重新初始化。",
-  "This task has no unfinished workspace recovery.": "此任务没有待处理的工作区恢复。",
+  "This task has no unfinished group recovery.": "此任务没有待处理的分组恢复。",
+  "This task has no unfinished workspace recovery.": "此任务没有待处理的分组恢复。",
+  "The task group changed. Reopen recovery.": "任务分组已更改，请重新打开恢复操作。",
+  "Stop the task and cancel queued messages before recovering its group.":
+    "恢复分组前，请先停止任务并取消排队中的消息。",
+  "Close this group's terminals before confirming recovery.": "确认恢复前，请先关闭此分组的终端。",
+  "Group recovery did not finish. Its journal and backups have been retained.":
+    "分组恢复未完成，恢复记录和备份已保留。",
+  "Group recovery is required. A restore did not finish; its backup refs and recovery journal have been retained. Inspect all repositories and the provider conversation before resuming.":
+    "需要恢复分组。上次文件还原未完成，备份引用和恢复记录已保留。请检查所有仓库及模型会话后再继续。",
+  "Cannot verify group recovery state.": "无法验证分组恢复状态。",
   "Weekly remaining": "每周剩余用量",
   "{provider}: weekly usage unavailable": "{provider}：暂无每周用量数据",
   "{provider}: {percent}% weekly remaining": "{provider}：每周剩余 {percent}%",
