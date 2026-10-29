@@ -241,7 +241,9 @@ export function SettingInheritance({
                 <Button
                   size="icon-micro"
                   variant="ghost-muted"
-                  aria-label={`${overrideSummary}. Show where this value comes from`}
+                  aria-label={t("{summary}. Show where this value comes from", {
+                    summary: overrideSummary,
+                  })}
                 />
               }
             />

@@ -11,6 +11,7 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "{summary}. Show where this value comes from": "{summary}。查看此设置的来源",
   "Automatically remove local branches and worktrees merged into main or master, and worktrees whose pull request is merged into the default branch. Keeps project checkouts, uncommitted changes, locked worktrees, active work, and remote branches.":
     "自动清理已合并到 main 或 master 的本地分支及工作树，同时清理拉取请求已合并到默认分支的工作树。保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
   Creation: "创建",
