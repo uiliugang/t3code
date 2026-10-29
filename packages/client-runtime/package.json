@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./composer-prediction": {
+      "types": "./src/composerPrediction.ts",
+      "default": "./src/composerPrediction.ts"
+    },
     "./zip/bounded-zip": {
       "types": "./src/zip/boundedZip.ts",
       "default": "./src/zip/boundedZip.ts"

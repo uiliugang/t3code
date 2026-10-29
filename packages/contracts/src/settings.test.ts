@@ -27,6 +27,20 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("composer prediction settings", () => {
+  it("keeps predictions opt-in and preserves the saved toggle", () => {
+    expect(decodeClientSettings({}).showPredictedMessages).toBe(false);
+    expect(
+      decodeClientSettings(
+        encodeClientSettings(decodeClientSettings({ showPredictedMessages: true })),
+      ).showPredictedMessages,
+    ).toBe(true);
+    expect(decodeClientSettingsPatch({ showPredictedMessages: false })).toEqual({
+      showPredictedMessages: false,
+    });
+  });
+});
+
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).autoDeleteMergedBranches).toBe(false);

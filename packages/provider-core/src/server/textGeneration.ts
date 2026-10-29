@@ -97,7 +97,17 @@ export type ReviewGuideGenerationResult = Omit<
   "headSha" | "generatedAt" | "modelSelection"
 >;
 
+export interface PredictedMessageGenerationInput {
+  cwd: string;
+  messages: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string }>;
+  modelSelection: ModelSelection;
+}
+
 export interface ProviderTextGeneration {
+  readonly generatePredictedMessage: (
+    input: PredictedMessageGenerationInput,
+  ) => Effect.Effect<{ readonly text: string | null }, TextGenerationError>;
+
   readonly generateCommitMessage: (
     input: CommitMessageGenerationInput,
   ) => Effect.Effect<CommitMessageGenerationResult, TextGenerationError>;

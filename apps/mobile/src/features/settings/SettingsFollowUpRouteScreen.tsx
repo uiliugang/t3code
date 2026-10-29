@@ -9,6 +9,8 @@ import { DEFAULT_FOLLOW_UP_BEHAVIOR, type FollowUpBehavior } from "../../lib/fol
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "./components/SettingsSection";
+import { useUiTranslation } from "../../lib/useUiTranslation";
+import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 
 const FOLLOW_UP_OPTIONS: ReadonlyArray<{
@@ -30,6 +32,7 @@ const FOLLOW_UP_OPTIONS: ReadonlyArray<{
 
 export function SettingsFollowUpRouteScreen() {
   const insets = useSafeAreaInsets();
+  const t = useUiTranslation();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferencesReady = AsyncResult.isSuccess(preferencesResult) && !preferencesResult.waiting;
@@ -45,6 +48,21 @@ export function SettingsFollowUpRouteScreen() {
       contentContainerClassName="gap-3 px-5 pt-4"
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
     >
+      <SettingsSection title={t("Composer")}>
+        <ListToggleRow
+          label={t("Show predicted messages")}
+          description={t(
+            "Predict your next message from the conversation. Uses your text generation model and counts toward its usage.",
+          )}
+          disabled={!preferencesReady}
+          value={
+            AsyncResult.isSuccess(preferencesResult)
+              ? (preferencesResult.value.showPredictedMessages ?? false)
+              : false
+          }
+          onValueChange={(showPredictedMessages) => savePreferences({ showPredictedMessages })}
+        />
+      </SettingsSection>
       <SettingsSection title="While the agent is running">
         {FOLLOW_UP_OPTIONS.map((option, index) => (
           <SettingsChoiceRow

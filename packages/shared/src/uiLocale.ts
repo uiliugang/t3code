@@ -300,6 +300,13 @@ const zhCN: Readonly<Record<string, string>> = {
   "Proactive panels": "自动打开面板",
   "Show skills in slash menu": "在斜杠菜单中显示技能",
   "Rich text composer": "富文本输入框",
+  "Show predicted messages": "显示预测消息",
+  "predicted messages": "预测消息",
+  "Predict your next message from the conversation. Uses your text generation model and counts toward its usage.":
+    "根据对话预测你接下来要发送的消息。使用文本生成模型，并计入该模型的用量。",
+  "Tab to accept prediction": "按 Tab 接受预测消息",
+  "Use prediction": "使用预测消息",
+  "Dismiss prediction": "忽略预测消息",
   "Collapse composer on scroll": "滚动时折叠输入框",
   "Send shortcut": "发送快捷键",
   "Follow-up behavior": "后续消息处理方式",

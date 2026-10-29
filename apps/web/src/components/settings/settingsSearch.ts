@@ -549,6 +549,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
   },
   {
+    id: "composer-predictions",
+    title: "Show predicted messages",
+    to: "/settings/chat",
+    searchTerms: ["prediction predict next message suggestion autocomplete tab 预测 消息"],
+  },
+  {
     id: "composer-collapse",
     title: "Collapse composer on scroll",
     to: "/settings/chat",
