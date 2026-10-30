@@ -1,5 +1,10 @@
 import {
   CommandId,
+  repositoryGroupingKeyOf,
+  type ProjectFoldersInspectInput,
+  type ProjectFoldersImportInput,
+  type ProjectFolderCandidate,
+  type ProjectFolderImportResult,
   type OrchestrationProjectShell,
   ProjectId,
   type Project,
@@ -13,6 +18,8 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -116,6 +123,12 @@ export class ProjectService extends Context.Service<
   ProjectService,
   {
     readonly create: (input: ProjectCreateInput) => Effect.Effect<Project, ProjectServiceError>;
+    readonly inspectFolders: (
+      input: ProjectFoldersInspectInput,
+    ) => Effect.Effect<ReadonlyArray<ProjectFolderCandidate>, ProjectOperationError>;
+    readonly importFolders: (
+      input: ProjectFoldersImportInput,
+    ) => Effect.Effect<ReadonlyArray<ProjectFolderImportResult>, ProjectOperationError>;
     readonly bootstrap: (
       input: ProjectBootstrapInput,
     ) => Effect.Effect<
@@ -154,6 +167,8 @@ export class ProjectService extends Context.Service<
 >()("t3/project/ProjectService") {}
 
 export const make = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
@@ -165,6 +180,31 @@ export const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
+  const importLocks = yield* KeyedLock.make<string>();
+
+  // Keep stored paths stable; real paths are only the identity used for duplicate checks and locks.
+  const physicalRoot = Effect.fn("ProjectService.physicalRoot")((root: string) =>
+    fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root)),
+  );
+  const findWorkspaceOwner = Effect.fn("ProjectService.findWorkspaceOwner")(function* (
+    root: string,
+    allowAmbiguous = false,
+  ) {
+    const direct = yield* projects.findActiveByWorkspaceRoot(root, { allowAmbiguous });
+    if (Option.isSome(direct)) return direct;
+    const physical = yield* physicalRoot(root);
+    const rows = yield* projects.list();
+    const roots = yield* Effect.forEach(rows, (row) => physicalRoot(row.workspaceRoot), {
+      concurrency: 8,
+    });
+    const matches = rows.filter((_, index) => roots[index] === physical);
+    if (matches.length > 1 && !allowAmbiguous)
+      return yield* new ProjectStore.ProjectStoreV2Error({
+        operation: "resolve-ambiguous-workspace",
+        cause: "Multiple projects use this directory. Select a project by ID.",
+      });
+    return Option.fromUndefinedOr(matches[0]);
+  });
 
   const toProject = (
     row: ProjectStore.ProjectRow,
@@ -247,9 +287,7 @@ export const make = Effect.gen(function* () {
         workspaceRoot === undefined
           ? undefined
           : Option.getOrUndefined(
-              yield* projects
-                .findActiveByWorkspaceRoot(workspaceRoot, { allowAmbiguous: true })
-                .pipe(Effect.mapError(dispatchError)),
+              yield* findWorkspaceOwner(workspaceRoot, true).pipe(Effect.mapError(dispatchError)),
             );
       const now = yield* DateTime.now;
       const eventId = yield* idAllocator.allocate
@@ -284,7 +322,7 @@ export const make = Effect.gen(function* () {
         projectId,
         workspaceRoot === undefined
           ? planAndCommit
-          : workspaceLocks.withLock(workspaceRoot, planAndCommit),
+          : workspaceLocks.withLock(yield* physicalRoot(workspaceRoot), planAndCommit),
       )
       .pipe(Effect.mapError(dispatchError));
     if (receipt.projectId !== projectId || receipt.commandType !== command.type) {
@@ -349,7 +387,7 @@ export const make = Effect.gen(function* () {
                 : Effect.succeed(Option.fromUndefinedOr(matches[0]));
             }),
           )
-        : projects.findActiveByWorkspaceRoot(normalized)
+        : findWorkspaceOwner(normalized)
     ).pipe(
       Effect.mapError((cause) => new ProjectOperationError({ operation: "list-projects", cause })),
     );
@@ -652,7 +690,134 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const inspectFolders: ProjectService["Service"]["inspectFolders"] = Effect.fn(
+    "ProjectService.inspectFolders",
+  )(function* (input) {
+    const rows = yield* projects
+      .list()
+      .pipe(
+        Effect.mapError(
+          (cause) => new ProjectOperationError({ operation: "list-projects", cause }),
+        ),
+      );
+    const known = yield* Effect.forEach(
+      rows,
+      (row) =>
+        Effect.all({
+          root: physicalRoot(row.workspaceRoot),
+          identity: projectEnrichment.readRepositoryIdentity(row.workspaceRoot),
+          id: Effect.succeed(row.projectId),
+        }),
+      { concurrency: 4 },
+    );
+    return yield* Effect.forEach(
+      input.paths,
+      Effect.fn("ProjectService.inspectFolder")(
+        function* (folderPath): Effect.fn.Return<ProjectFolderCandidate> {
+          const base = {
+            path: folderPath,
+            title: path.basename(folderPath),
+            workspaceRoot: null,
+            repositoryKey: null,
+            existingProjectId: null,
+            matchingRepositoryProjectId: null,
+            error: null,
+          };
+          const normalized = yield* workspacePaths
+            .normalizeWorkspaceRoot(folderPath)
+            .pipe(Effect.result);
+          if (Result.isFailure(normalized)) return { ...base, error: normalized.failure.message };
+          const root = yield* physicalRoot(normalized.success);
+          const existing = known.find((entry) => entry.root === root);
+          const identity = yield* projectEnrichment.readRepositoryIdentity(normalized.success);
+          const key = identity ? repositoryGroupingKeyOf(identity) : null;
+          const sameRepository = key
+            ? known.find(
+                (entry) => entry.identity && repositoryGroupingKeyOf(entry.identity) === key,
+              )
+            : undefined;
+          return {
+            ...base,
+            title: path.basename(normalized.success),
+            workspaceRoot: root,
+            repositoryKey: key,
+            existingProjectId: existing?.id ?? null,
+            matchingRepositoryProjectId: sameRepository?.id ?? null,
+          };
+        },
+      ),
+      { concurrency: 4 },
+    );
+  });
+
+  const importFolders: ProjectService["Service"]["importFolders"] = Effect.fn(
+    "ProjectService.importFolders",
+  )((input) =>
+    importLocks.withLock(
+      "folders",
+      Effect.gen(function* () {
+        const candidates = yield* inspectFolders({
+          paths: input.folders.map((folder) => folder.path),
+        });
+        const importedRoots = new Map<string, ProjectId>();
+        const importedRepositories = new Map<string, ProjectId>();
+        const results: ProjectFolderImportResult[] = [];
+        for (const [index, candidate] of candidates.entries()) {
+          const base = { path: candidate.path, projectId: null, error: null };
+          if (candidate.error || !candidate.workspaceRoot) {
+            results.push({ ...base, status: "failed", error: candidate.error });
+            continue;
+          }
+          const existingId =
+            candidate.existingProjectId ?? importedRoots.get(candidate.workspaceRoot);
+          if (existingId) {
+            results.push({ ...base, status: "existing", projectId: existingId });
+            continue;
+          }
+          const sameRepositoryId =
+            candidate.matchingRepositoryProjectId ??
+            (candidate.repositoryKey
+              ? importedRepositories.get(candidate.repositoryKey)
+              : undefined);
+          if (sameRepositoryId && !input.folders[index]!.allowSameRepository) {
+            results.push({ ...base, status: "repository", projectId: sameRepositoryId });
+            continue;
+          }
+          const created = yield* Effect.gen(function* () {
+            const projectId = yield* idAllocator.allocate.project({ fixtureName: "folder-import" });
+            const commandId = yield* idAllocator.allocate.command({
+              fixtureName: "folder-import",
+              commandName: "create",
+            });
+            return yield* create({
+              projectId,
+              commandId,
+              title: candidate.title,
+              workspaceRoot: candidate.workspaceRoot!,
+            });
+          }).pipe(Effect.result);
+          if (Result.isFailure(created)) {
+            const error = created.failure;
+            results.push(
+              error._tag === "ProjectConflictError"
+                ? { ...base, status: "existing", projectId: error.conflictingProjectId }
+                : { ...base, status: "failed", error: error.message },
+            );
+            continue;
+          }
+          importedRoots.set(candidate.workspaceRoot, created.success.id);
+          if (candidate.repositoryKey)
+            importedRepositories.set(candidate.repositoryKey, created.success.id);
+          results.push({ ...base, status: "created", projectId: created.success.id });
+        }
+        return results;
+      }),
+    ),
+  );
+
   return ProjectService.of({
+    inspectFolders,
+    importFolders,
     create,
     bootstrap,
     update,

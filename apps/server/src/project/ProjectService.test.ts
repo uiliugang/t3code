@@ -13,6 +13,7 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
@@ -100,19 +101,88 @@ const layerTestFor = (
     | ProjectFaviconResolver.ProjectFaviconResolver
     | RepositoryIdentityResolver.RepositoryIdentityResolver
   >,
+  realPaths = false,
 ) =>
   RuntimeLayer.layerProjectService.pipe(
     Layer.provideMerge(ProjectEnrichmentService.layer),
-    Layer.provideMerge(layerWorkspacePaths),
+    Layer.provideMerge(realPaths ? WorkspacePaths.layer : layerWorkspacePaths),
     Layer.provideMerge(projectMetadataLayer),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-test-" })),
-    Layer.provide(NodeServices.layer),
+    Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(layerEnrichmentCompletions),
   );
 
 const layerTest = layerTestFor(layerMetadata);
+
+it.layer(layerTestFor(layerMetadata, true))("folder import", (it) => {
+  it.effect(
+    "deduplicates paths and repositories, preserves successes and retries failed folders",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const root = yield* fs.makeTempDirectoryScoped();
+        const service = yield* ProjectService.ProjectService;
+        const first = `${root}/one/repo`;
+        const second = `${root}/two/repo`;
+        const missing = `${root}/missing`;
+        yield* fs.makeDirectory(first, { recursive: true });
+        yield* fs.makeDirectory(second, { recursive: true });
+        yield* fs.symlink(first, `${root}/alias`);
+        const paths = [first, `${root}/alias`, second, missing];
+        const preview = yield* service.inspectFolders({ paths });
+        assert.equal(preview[0]?.workspaceRoot, preview[1]?.workspaceRoot);
+        assert.equal(preview[0]?.repositoryKey, preview[2]?.repositoryKey);
+        assert.isNotNull(preview[3]?.error);
+        const input = { folders: paths.map((path) => ({ path, allowSameRepository: false })) };
+        const result = yield* service.importFolders(input);
+        assert.deepEqual(
+          result.map((entry) => entry.status),
+          ["created", "existing", "repository", "failed"],
+        );
+        assert.equal(result[0]?.projectId, result[1]?.projectId);
+        const existing = yield* service.inspectFolders({ paths: [second] });
+        assert.equal(existing[0]?.matchingRepositoryProjectId, result[0]?.projectId);
+        yield* fs.makeDirectory(missing);
+        const retry = yield* service.importFolders(input);
+        assert.deepEqual(
+          retry.map((entry) => entry.status),
+          ["existing", "existing", "repository", "created"],
+        );
+        const explicit = yield* service.importFolders({
+          folders: [{ path: second, allowSameRepository: true }],
+        });
+        assert.equal(explicit[0]?.status, "created");
+        assert.lengthOf((yield* service.snapshot).projects, 3);
+      }),
+  );
+  it.effect("serializes concurrent imports of the same physical folder", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(`${root}/repo`);
+      yield* fs.symlink(`${root}/repo`, `${root}/alias`);
+      const service = yield* ProjectService.ProjectService;
+      const results = yield* Effect.forEach(
+        ["repo", "alias"],
+        (name) =>
+          service.importFolders({
+            folders: [{ path: `${root}/${name}`, allowSameRepository: true }],
+          }),
+        { concurrency: 2 },
+      );
+      assert.deepEqual(
+        results
+          .flat()
+          .map((entry) => entry.status)
+          .sort(),
+        ["created", "existing"],
+      );
+      assert.equal(results[0]?.[0]?.projectId, results[1]?.[0]?.projectId);
+    }),
+  );
+});
 
 const layerProjectServiceDependencies = Layer.mergeAll(
   RuntimeLayer.layerEventSink,
@@ -128,7 +198,7 @@ const layerProjectServiceDependencies = Layer.mergeAll(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-race-" })),
-  Layer.provide(NodeServices.layer),
+  Layer.provideMerge(NodeServices.layer),
 );
 
 const waitForProject = Effect.fn("ProjectServiceTest.waitForProject")(function* (
@@ -149,6 +219,35 @@ const waitForProject = Effect.fn("ProjectServiceTest.waitForProject")(function* 
 });
 
 it.layer(layerTest)("ProjectService", (it) => {
+  it.effect("rejects another project for a symbolic link to an existing folder", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(`${root}/repo`);
+      yield* fs.symlink(`${root}/repo`, `${root}/alias`);
+      const service = yield* ProjectService.ProjectService;
+      const original = yield* service.create({
+        commandId: CommandId.make("alias-original"),
+        projectId: ProjectId.make("alias-original"),
+        title: "Original",
+        workspaceRoot: `${root}/repo`,
+      });
+      const duplicate = yield* service
+        .create({
+          commandId: CommandId.make("alias-duplicate"),
+          projectId: ProjectId.make("alias-duplicate"),
+          title: "Duplicate",
+          workspaceRoot: `${root}/alias`,
+        })
+        .pipe(Effect.result);
+      assert.equal(duplicate._tag, "Failure");
+      assert.equal(
+        Option.getOrThrow(yield* service.getByWorkspaceRoot(`${root}/alias`)).id,
+        original.id,
+      );
+      yield* service.delete({ commandId: CommandId.make("alias-cleanup"), projectId: original.id });
+    }),
+  );
   it.effect("creates, updates, resolves, snapshots, and soft-deletes projects", () =>
     Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;

@@ -1,5 +1,6 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { LayersIcon } from "lucide-react";
+import { ProjectImportActions } from "./ProjectImportActions";
 
 import { Button } from "../ui/button";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
@@ -46,7 +47,14 @@ export function ProjectsSettings() {
       ) : unavailable ? (
         unavailable
       ) : (
-        <SettingsScopeNotice target="project">
+        <SettingsScopeNotice
+          target="project"
+          actions={
+            <ProjectImportActions
+              environmentId={value.machine ? EnvironmentId.make(value.machine) : undefined}
+            />
+          }
+        >
           Choose a project to manage its name, icon, checkouts and actions.
         </SettingsScopeNotice>
       )}

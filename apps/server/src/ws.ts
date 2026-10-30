@@ -76,6 +76,7 @@ import {
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   ProjectMutationError,
+  ProjectFoldersError,
   ProviderUploadFeedbackError,
   ProviderSetupError,
   RelayClientInstallFailedError,
@@ -2739,6 +2740,14 @@ export const layerWsRpc = (
         [WS_METHODS.projectsExportConfiguration]: (input) =>
           projectConfigurations.exportProjects(input),
         [WS_METHODS.projectsImportConfiguration]: (input) => projectConfigurations.start(input),
+        [WS_METHODS.projectsInspectFolders]: (input) =>
+          projectService
+            .inspectFolders(input)
+            .pipe(Effect.mapError((cause) => new ProjectFoldersError({ cause }))),
+        [WS_METHODS.projectsImportFolders]: (input) =>
+          projectService
+            .importFolders(input)
+            .pipe(Effect.mapError((cause) => new ProjectFoldersError({ cause }))),
         [WS_METHODS.projectsRetryImport]: (input) => projectConfigurations.retry(input.id),
         [WS_METHODS.projectsForgetImport]: (input) => projectConfigurations.forget(input.id),
         [WS_METHODS.subscribeProjectImports]: () => projectConfigurations.stream,
