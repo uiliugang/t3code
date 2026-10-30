@@ -85,6 +85,15 @@ export class ProjectNotEmptyError extends Schema.TaggedError<ProjectNotEmptyErro
   }
 }
 
+export class ProjectWorkspaceRootChangeBlockedError extends Schema.TaggedError<ProjectWorkspaceRootChangeBlockedError>()(
+  "ProjectWorkspaceRootChangeBlockedError",
+  { projectId: ProjectId },
+) {
+  override get message(): string {
+    return "Cannot change the primary repository directory while this project has legacy tasks without a pinned directory (including archived tasks). Create a new project to use a different directory.";
+  }
+}
+
 export class ProjectOperationError extends Schema.TaggedError<ProjectOperationError>()(
   "ProjectOperationError",
   {
@@ -110,6 +119,7 @@ export type ProjectServiceError =
   | ProjectNotFoundError
   | ProjectConflictError
   | ProjectNotEmptyError
+  | ProjectWorkspaceRootChangeBlockedError
   | ProjectOperationError;
 
 export class ProjectService extends Context.Service<
@@ -424,11 +434,8 @@ export const make = Effect.gen(function* () {
               thread.projectWorkspaceRoot === undefined,
           )
         )
-          return yield* new ProjectOperationError({
-            operation: "normalize-workspace",
+          return yield* new ProjectWorkspaceRootChangeBlockedError({
             projectId: input.projectId,
-            cause:
-              "This project contains legacy tasks without a pinned directory. Create a new workspace instead of moving their root.",
           });
       }
       yield* commit({

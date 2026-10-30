@@ -5,11 +5,14 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
+  EventId,
   type Project,
   ProjectId,
   ProviderInstanceId,
+  ThreadId,
   WorkspaceRootId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -696,6 +699,80 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
       );
     }).pipe(Effect.provide(layerTestFor(layerVersionedMetadata)));
   }),
+);
+
+it.effect(
+  "explains why archived legacy tasks block changing the primary repository directory",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.make;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const projectId = ProjectId.make("project:legacy-root");
+      const threadId = ThreadId.make("thread:legacy-root");
+      const providerInstanceId = ProviderInstanceId.make("codex");
+      const now = DateTime.makeUnsafe("2026-10-30T00:00:00.000Z");
+      yield* service.create({
+        commandId: CommandId.make("command:legacy-root:create"),
+        projectId,
+        title: "Legacy",
+        workspaceRoot: "/work/original",
+      });
+      yield* projections.apply({
+        id: EventId.make("event:legacy-root:thread"),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId,
+          title: "Archived legacy task",
+          providerInstanceId,
+          modelSelection: { instanceId: providerInstanceId, model: "test-model" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: now,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      });
+      const failure = yield* service
+        .update({
+          commandId: CommandId.make("command:legacy-root:move"),
+          projectId,
+          workspaceConfig: {
+            primaryRootId: WorkspaceRootId.make("primary"),
+            roots: [
+              {
+                id: WorkspaceRootId.make("primary"),
+                alias: "primary",
+                sourcePath: "/work/moved",
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+          expectedWorkspaceVersion: 0,
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(failure, ProjectService.ProjectWorkspaceRootChangeBlockedError);
+      assert.include(failure.message, "including archived tasks");
+      assert.include(failure.message, "Create a new project");
+      const project = Option.getOrThrow(yield* service.getById(projectId));
+      assert.equal(project.workspaceRoot, "/work/original");
+      assert.isUndefined(project.workspaceConfig);
+    }).pipe(Effect.provide(layerProjectServiceDependencies)),
 );
 
 it.effect("serializes two projects claiming the same workspace root", () =>

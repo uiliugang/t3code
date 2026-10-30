@@ -454,7 +454,10 @@ export function projectMutationFailureMessage(
   ) {
     return error.cause.message;
   }
-  return error._tag === "ProjectNotEmptyError" ? error.message : "Failed to mutate project.";
+  return error._tag === "ProjectNotEmptyError" ||
+    error._tag === "ProjectWorkspaceRootChangeBlockedError"
+    ? error.message
+    : "Failed to mutate project.";
 }
 
 function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesError): {

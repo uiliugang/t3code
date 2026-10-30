@@ -112,10 +112,29 @@ describe("resolveUsageLimitsAfterProbe", () => {
     expect(resolveUsageLimitsAfterProbe({ published: live, probed: newer })).toEqual(newer);
   });
 
-  it("keeps the last good windows through a failed probe but not an unsupported one", () => {
-    const failed = { checkedAt, windows: [], unavailable: { reason: "probeFailed" as const } };
+  it("marks retained windows unavailable after a failed probe", () => {
+    const failed = {
+      checkedAt,
+      windows: [],
+      unavailable: { reason: "probeFailed" as const, message: "Usage probe timed out." },
+    };
     const unsupported = { checkedAt, windows: [], unavailable: { reason: "unsupported" as const } };
-    expect(resolveUsageLimitsAfterProbe({ published, probed: failed })).toBe(published);
+    const sparse = { ...published, unavailable: { reason: "probeFailed" as const } };
+    const unavailable = { ...published, unavailable: failed.unavailable };
+    expect(resolveUsageLimitsAfterProbe({ published, probed: failed })).toEqual(unavailable);
+    expect(resolveUsageLimitsAfterProbe({ published: sparse, probed: failed })).toEqual(
+      unavailable,
+    );
+    expect(resolveUsageLimitsAfterProbe({ published: sparse, probed: unsupported })).toBe(
+      unsupported,
+    );
+    expect(
+      resolveUsageLimitsAfterProbe({
+        published: { ...failed, checkedAt: "2026-09-03T11:00:00.000Z" },
+        probed: failed,
+      }),
+    ).toBe(failed);
+    expect(resolveUsageLimitsAfterProbe({ published: unsupported, probed: failed })).toBe(failed);
     expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(unsupported);
     expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: failed })).toBe(failed);
   });

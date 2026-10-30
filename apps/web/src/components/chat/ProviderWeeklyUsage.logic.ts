@@ -7,10 +7,9 @@ export function collectProviderWeeklyUsage(providers: ReadonlyArray<ProviderInst
     .filter((provider) => provider.enabled)
     .map((provider) => {
       const limits = provider.snapshot.usageLimits;
-      const weekly =
-        limits?.unavailable?.reason === "unsupported"
-          ? []
-          : (limits?.windows.filter((window) => window.kind === "weekly") ?? []);
+      const weekly = limits?.unavailable
+        ? []
+        : (limits?.windows.filter((window) => window.kind === "weekly") ?? []);
       // Overall allowances take precedence over model-specific weekly windows.
       const window =
         weekly.find((window) => window.id === "seven_day" || window.id === "secondary") ??

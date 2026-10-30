@@ -164,6 +164,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Worktree setup command": "工作树初始化命令",
   "Add repository": "添加仓库",
   "Save repositories": "保存仓库",
+  "Repositories saved": "仓库已保存",
+  "Failed to save repositories": "仓库保存失败",
+  "Cannot change the primary repository directory while this project has legacy tasks without a pinned directory (including archived tasks). Create a new project to use a different directory.":
+    "此项目包含未固定工作目录的旧会话（包括已归档会话），无法修改主仓库路径。请在新目录创建新项目。",
   "Status unavailable": "无法获取状态",
   "Group recovery": "分组恢复",
   "Accept files and reset conversation": "保留当前文件并重置模型会话",
