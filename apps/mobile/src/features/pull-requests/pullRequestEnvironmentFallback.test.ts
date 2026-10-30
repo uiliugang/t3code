@@ -29,14 +29,27 @@ const environment = (
 ) => ({ environmentId: EnvironmentId.make(environmentId), connectionState, isEnabled });
 
 describe("pullRequestFallbackEnvironment", () => {
-  it("moves to a connected copy of the repository when the original is down", () => {
-    expect(
-      pullRequestFallbackEnvironment(target, projects, [
-        environment("desktop"),
-        environment("server"),
-      ]),
-    ).toEqual({ environmentId: "server", projectId: "t3-copy" });
-  });
+  it.each([false, true])(
+    "moves to a connected copy of the repository when the original is down (fork: %s)",
+    (fork) => {
+      const candidates = fork
+        ? projects.map((project) => ({
+            ...project,
+            repositoryIdentity: {
+              ...project.repositoryIdentity!,
+              canonicalKey: "github.com/upstream/t3code",
+              origin: { canonicalKey: project.repositoryIdentity!.canonicalKey },
+            },
+          }))
+        : projects;
+      expect(
+        pullRequestFallbackEnvironment(target, candidates, [
+          environment("desktop"),
+          environment("server"),
+        ]),
+      ).toEqual({ environmentId: "server", projectId: "t3-copy" });
+    },
+  );
 
   it("stays put while the original is connected or nothing else holds the repository", () => {
     expect(

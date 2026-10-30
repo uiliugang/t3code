@@ -36,14 +36,17 @@ export function pullRequestFallbackEnvironment(
   const own = projects.find(
     (project) => project.environmentId === target.environmentId && project.id === target.projectId,
   );
-  const host = target.host ?? own?.repositoryIdentity?.canonicalKey.split("/")[0];
+  const identity = own?.repositoryIdentity;
+  const host =
+    target.host ?? (identity?.origin?.canonicalKey ?? identity?.canonicalKey)?.split("/")[0];
   if (!host) return null;
   const key = `${host}/${target.repository}`.toLowerCase();
   const copy = projects.find(
     (project) =>
       project.environmentId !== target.environmentId &&
       connectedEnvironmentIds.has(project.environmentId) &&
-      project.repositoryIdentity?.canonicalKey.toLowerCase() === key,
+      (project.repositoryIdentity?.origin?.canonicalKey.toLowerCase() === key ||
+        project.repositoryIdentity?.canonicalKey.toLowerCase() === key),
   );
   return copy ? { environmentId: String(copy.environmentId), projectId: String(copy.id) } : null;
 }

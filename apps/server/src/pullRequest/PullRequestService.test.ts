@@ -16,6 +16,7 @@ import type {
   ProjectId,
   PullRequestReviewCapabilities,
   PullRequestReviewerCapabilities,
+  RepositoryOrigin,
 } from "@t3tools/contracts";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts/settings";
 import type { ServerSettings } from "@t3tools/contracts";
@@ -48,6 +49,7 @@ function project(input: {
   readonly provider?: string;
   readonly host?: string;
   readonly remoteUrl?: string;
+  readonly origin?: RepositoryOrigin;
 }): OrchestrationProjectShell {
   const host = input.host ?? (input.provider === "gitlab" ? "gitlab.com" : "github.com");
   return {
@@ -65,6 +67,7 @@ function project(input: {
             },
             provider: SourceControlProviderKind.make(input.provider ?? "github"),
             displayName: input.repository,
+            ...(input.origin === undefined ? {} : { origin: input.origin }),
           },
         }
       : {}),
@@ -756,6 +759,75 @@ it.effect("reads a repository once when several worktrees share it", () =>
 
     assert.strictEqual(calls, 1);
     assert.strictEqual(result.entries.length, 1);
+  }),
+);
+
+it.effect.each([false, true])("lists forks independently of their upstream (batch: %s)", (batch) =>
+  Effect.gen(function* () {
+    const origin = {
+      canonicalKey: "github.com/uiliugang/t3code",
+      remoteUrl: "https://github.com/uiliugang/t3code.git",
+      displayName: "uiliugang/t3code",
+    };
+    const repositories = ["uiliugang/t3code", "other/t3code", "pingdotgg/t3code"];
+    const listed: string[] = [];
+    const service = yield* makeService({
+      projects: [origin, origin, { canonicalKey: "github.com/other/t3code" }, undefined].map(
+        (origin, index) =>
+          project({
+            id: `p${index}`,
+            title: "t3code",
+            workspaceRoot: `/w${index}`,
+            repository: "pingdotgg/t3code",
+            ...(origin === undefined ? {} : { origin }),
+          }),
+      ),
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: ({ repository }) => {
+            assert.strictEqual(batch, false);
+            listed.push(repository);
+            return Effect.succeed({
+              items: [changeRequest(1, "2026-07-02T00:00:00Z")],
+              truncated: false,
+              continues: false,
+            });
+          },
+          ...(batch
+            ? ({
+                listChangeRequestsAcross: (input) => {
+                  listed.push(...input.repositories);
+                  return Effect.succeed({
+                    items: input.repositories.map((repository) =>
+                      batchedChangeRequest(1, repository, "2026-07-02T00:00:00Z"),
+                    ),
+                    truncated: false,
+                    continues: false,
+                  });
+                },
+              } satisfies Pick<PullRequestProviderApi, "listChangeRequestsAcross">)
+            : {}),
+          getChangeRequest: ({ repository }) =>
+            Effect.succeed(hostedChangeRequest(`From ${repository}`)),
+        }),
+      ],
+    });
+
+    const result = yield* service.list({ state: "open" });
+    assert.deepStrictEqual(listed.toSorted(), repositories.toSorted());
+    assert.deepStrictEqual(
+      result.entries.map((entry) => entry.repository).toSorted(),
+      repositories.toSorted(),
+    );
+    for (const repository of [origin.displayName, "pingdotgg/t3code"]) {
+      const detail = yield* service.detail({
+        projectId: "p0" as ProjectId,
+        host: "github.com",
+        repository,
+        number: 1,
+      });
+      assert.strictEqual(detail.body, `From ${repository}`);
+    }
   }),
 );
 

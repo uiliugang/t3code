@@ -3,11 +3,18 @@ import type { EnvironmentId, EnvironmentMachineKind, ProjectId } from "@t3tools/
 export interface AssignableProject {
   readonly id: ProjectId;
   readonly environmentId: EnvironmentId;
-  readonly repositoryIdentity?: { readonly canonicalKey?: string | undefined } | null | undefined;
+  readonly repositoryIdentity?:
+    | {
+        readonly canonicalKey?: string | undefined;
+        readonly origin?: { readonly canonicalKey: string } | undefined;
+      }
+    | null
+    | undefined;
 }
 
 function repositoryKey(project: AssignableProject): string | undefined {
-  return project.repositoryIdentity?.canonicalKey?.toLowerCase();
+  const identity = project.repositoryIdentity;
+  return (identity?.origin?.canonicalKey ?? identity?.canonicalKey)?.toLowerCase();
 }
 
 export function assignProjectsToEnvironments(

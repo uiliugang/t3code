@@ -854,6 +854,24 @@ export const make = Effect.gen(function* () {
           { concurrency: REPOSITORY_CONCURRENCY },
         ),
       ),
+      Effect.map((projects) =>
+        projects.map((project) => {
+          const origin = project.repositoryIdentity?.origin;
+          if (origin === undefined) return project;
+          // PR listings follow the checkout's own repository, not its upstream identity.
+          const remoteUrl = origin.remoteUrl ?? `https://${origin.canonicalKey}`;
+          const provider = sourceControlDefinitions.recognizeRemote(remoteUrl);
+          return {
+            ...project,
+            repositoryIdentity: {
+              canonicalKey: origin.canonicalKey,
+              locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl },
+              displayName: origin.displayName ?? origin.canonicalKey.split("/").slice(1).join("/"),
+              ...(provider === null ? {} : { provider: provider.kind }),
+            },
+          };
+        }),
+      ),
       Effect.flatMap((projects) =>
         resolveRemoteHosts(projects, filter).pipe(
           Effect.map((remoteHosts) => ({ remoteHosts, projects })),
