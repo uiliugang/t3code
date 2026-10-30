@@ -15,6 +15,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexSchema from "effect-codex-app-server/schema";
 import * as CodexErrors from "effect-codex-app-server/errors";
+import { HttpClient } from "effect/http";
 
 import type {
   CodexSettings,
@@ -32,9 +33,11 @@ import {
   codexModelFamily,
   createModelCapabilities,
   formatCodexModelName,
+  readCustomModelEntries,
 } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { codexApiModels } from "./CodexApiModels.ts";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
@@ -85,6 +88,7 @@ export interface CodexAppServerProviderSnapshot {
   readonly rateLimits?: CodexRateLimitsProbe;
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel> | undefined;
+  readonly modelCatalogError?: string | undefined;
   readonly serviceTier?: string | undefined;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
 }
@@ -309,7 +313,24 @@ function appendCustomCodexModels(
   customModels: ReadonlyArray<CustomModelSetting>,
 ): ReadonlyArray<ServerProviderModel> {
   const fallbackCapabilities = models.find((model) => model.capabilities)?.capabilities ?? null;
-  return providerModelsFromSettings(models, customModels, fallbackCapabilities);
+  const customBySlug = new Map(
+    readCustomModelEntries(customModels).map((entry) => [entry.slug, entry]),
+  );
+  return providerModelsFromSettings(
+    models.map((model) => {
+      const custom = customBySlug.get(model.slug);
+      return custom
+        ? {
+            ...model,
+            ...custom,
+            isCustom: true,
+            capabilities: custom.capabilities ?? model.capabilities,
+          }
+        : model;
+    }),
+    customModels,
+    fallbackCapabilities,
+  );
 }
 
 function parseCodexSkillsListResponse(
@@ -532,26 +553,65 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
 
   // Optional discovery must finish before the outer timeout can discard the account result.
   const deadlineMs = spawnedAtMs + CODEX_AUTH_PROBE_TIMEOUT_MS - CODEX_DISCOVERY_MARGIN_MS;
-  const [skillsResponse, models, serviceTier, rateLimits] = yield* Effect.all(
+  const readConfig = yield* Effect.cached(
+    withCodexDiscoveryDeadline(
+      client.request("config/read", { includeLayers: false }),
+      deadlineMs,
+      CODEX_CONFIG_PROBE_TIMEOUT_MS,
+    ).pipe(
+      Effect.catch(() => Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined))),
+    ),
+  );
+  const [skillsResponse, catalog, configResponse, rateLimits] = yield* Effect.all(
     [
       withCodexDiscoveryDeadline(client.request("skills/list", { cwds: [input.cwd] }), deadlineMs),
-      accountResponse.account?.type === "chatgpt"
-        ? requestCodexChatGptModels({
-            client,
-            codexHome: initialize.codexHome,
-            spawnedAtMs,
+      Effect.gen(function* () {
+        const config = yield* readConfig;
+        const apiResult =
+          input.skipNativeUsage || !config
+            ? undefined
+            : yield* withCodexDiscoveryDeadline(
+                codexApiModels(
+                  config.config,
+                  input.environment ?? process.env,
+                  initialize.codexHome,
+                ).pipe(Effect.result),
+                deadlineMs,
+              );
+        if (config && !input.skipNativeUsage && apiResult === undefined) {
+          return { models: undefined, error: "Custom model catalog discovery timed out." };
+        }
+        if (apiResult && Result.isFailure(apiResult)) {
+          return { models: undefined, error: apiResult.failure.message };
+        }
+        const apiModels = apiResult?.success;
+        if (apiModels !== undefined) {
+          const nativeModels = yield* withCodexDiscoveryDeadline(
+            requestAllCodexModels(client),
             deadlineMs,
-          })
-        : withCodexDiscoveryDeadline(requestAllCodexModels(client), deadlineMs),
+            CODEX_CONFIG_PROBE_TIMEOUT_MS,
+          ).pipe(Effect.option, Effect.map(Option.getOrUndefined));
+          const nativeBySlug = new Map(nativeModels?.map((model) => [model.slug, model]));
+          return {
+            models: apiModels.map((model) => ({
+              ...model,
+              capabilities: nativeBySlug.get(model.slug)?.capabilities ?? null,
+            })),
+            error: undefined,
+          };
+        }
+        const models = yield* accountResponse.account?.type === "chatgpt"
+          ? requestCodexChatGptModels({
+              client,
+              codexHome: initialize.codexHome,
+              spawnedAtMs,
+              deadlineMs,
+            })
+          : withCodexDiscoveryDeadline(requestAllCodexModels(client), deadlineMs);
+        return { models, error: undefined };
+      }),
       // The shared catalog must exclude config from the server's launch project.
-      withCodexDiscoveryDeadline(
-        client.request("config/read", { includeLayers: false }),
-        deadlineMs,
-        CODEX_CONFIG_PROBE_TIMEOUT_MS,
-      ).pipe(
-        Effect.map((response) => response?.config.service_tier ?? undefined),
-        Effect.catch(() => Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined))),
-      ),
+      readConfig,
       // Usage is an enrichment: a failure or a slow answer degrades to "no
       // usage this probe" rather than costing the account and models.
       input.skipNativeUsage
@@ -585,8 +645,9 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     account: accountResponse,
     ...(rateLimits ? { rateLimits } : {}),
     version,
-    models,
-    serviceTier,
+    models: catalog.models,
+    modelCatalogError: catalog.error,
+    serviceTier: configResponse?.config.service_tier ?? undefined,
     skills: skillsResponse ? parseCodexSkillsListResponse(skillsResponse, input.cwd) : [],
   } satisfies CodexAppServerProviderSnapshot;
 });
@@ -689,14 +750,22 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   }) => Effect.Effect<
     CodexAppServerProviderSnapshot,
     CodexErrors.CodexAppServerError,
-    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Scope.Scope
+    | ChildProcessSpawner.ChildProcessSpawner
+    | FileSystem.FileSystem
+    | Path.Path
+    | Scope.Scope
+    | HttpClient.HttpClient
   > = probeCodexAppServerProvider,
   environment?: NodeJS.ProcessEnv,
   managedAuth?: ServerProvider["auth"],
+  previousModels: ReadonlyArray<ServerProviderModel> = [],
 ): Effect.fn.Return<
   ServerProviderDraft,
   ServerSettingsError,
-  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+  | ChildProcessSpawner.ChildProcessSpawner
+  | FileSystem.FileSystem
+  | Path.Path
+  | HttpClient.HttpClient
 > {
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
@@ -801,7 +870,10 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: applyConfiguredCodexServiceTier(
       applyPreferredCodexDefaultModel(
-        appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
+        appendCustomCodexModels(
+          snapshot.models ?? (snapshot.modelCatalogError ? previousModels : []),
+          codexSettings.customModels,
+        ),
       ),
       snapshot.serviceTier,
     ),
@@ -827,7 +899,10 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       ...(accountStatus.message
         ? { message: accountStatus.message }
         : snapshot.models === undefined
-          ? { message: "Codex did not return its model catalog in time." }
+          ? {
+              message:
+                snapshot.modelCatalogError ?? "Codex did not return its model catalog in time.",
+            }
           : {}),
       ...(managedAuth ? {} : { usageLimits }),
     },

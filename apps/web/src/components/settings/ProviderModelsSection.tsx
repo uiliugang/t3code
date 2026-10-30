@@ -16,6 +16,7 @@ import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { CustomModelEditor } from "./CustomModelEditor";
+import { RefreshIcon } from "../ui/refresh-icon";
 
 const CUSTOM_MODEL_PLACEHOLDER_BY_KIND: Partial<Record<ProviderDriverKind, string>> = {
   [ProviderDriverKind.make("codex")]: "gpt-6.7-codex-ultra-preview",
@@ -108,6 +109,8 @@ interface ProviderModelsSectionProps {
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onToggleFavorite: (model: string) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
+  readonly onSyncModels?: (() => void) | undefined;
+  readonly isSyncingModels?: boolean | undefined;
 }
 
 export function ProviderModelsSection({
@@ -125,6 +128,8 @@ export function ProviderModelsSection({
   onFavoriteModelsChange,
   onToggleFavorite,
   onModelOrderChange,
+  onSyncModels,
+  isSyncingModels = false,
 }: ProviderModelsSectionProps) {
   const [input, setInput] = useState("");
   const [isAdding, setIsAdding] = useState(false);
@@ -217,8 +222,20 @@ export function ProviderModelsSection({
   };
 
   const handleSaveEdit = (next: CustomModelDefinition) => {
-    if (!canManageCustomModels) return;
-    onChange(customModels.map((entry) => (entry.slug === next.slug ? next : entry)));
+    if (!canManageCustomModels || editingSlug === null) return;
+    onChange(customModels.map((entry) => (entry.slug === editingSlug ? next : entry)));
+    if (editingSlug !== next.slug) {
+      if (canWritePreferences) {
+        onModelOrderChange([
+          ...new Set(modelOrder.map((slug) => (slug === editingSlug ? next.slug : slug))),
+        ]);
+        onFavoriteModelsChange([
+          ...new Set(favoriteModels.map((slug) => (slug === editingSlug ? next.slug : slug))),
+        ]);
+      }
+      scrollToSlugRef.current = next.slug;
+      setFilter("");
+    }
     setEditingSlug(null);
   };
 
@@ -328,6 +345,29 @@ export function ProviderModelsSection({
               : ""}
             {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ""}
           </span>
+          {onSyncModels ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    disabled={isSyncingModels}
+                    aria-label="Sync models from provider"
+                    aria-busy={isSyncingModels}
+                    onClick={onSyncModels}
+                  >
+                    <RefreshIcon refreshing={isSyncingModels} />
+                  </Button>
+                }
+              />
+              <TooltipPopup>
+                Sync models using this instance's saved configuration. Custom API providers use
+                /v1/models.
+              </TooltipPopup>
+            </Tooltip>
+          ) : null}
         </div>
         {driverKind !== "antigravity" && !isAdding ? (
           <Button
@@ -379,6 +419,14 @@ export function ProviderModelsSection({
                   driverKind={driverKind}
                   entry={editingEntry}
                   builtInModels={builtInModels}
+                  reservedSlugs={[
+                    ...customModels
+                      .filter((candidate) => candidate.slug !== editingSlug)
+                      .map((candidate) => candidate.slug),
+                    ...(driverKind === "codex"
+                      ? []
+                      : builtInModels.map((candidate) => candidate.slug)),
+                  ]}
                   onSave={handleSaveEdit}
                   onCancel={() => setEditingSlug(null)}
                 />
