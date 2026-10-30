@@ -262,12 +262,13 @@ export function CleanupResults({
       })}
       {report.omittedCount > 0 && (
         <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-          {environmentLabel}: {report.omittedCount.toLocaleString()} more results.
+          {environmentLabel}:{" "}
+          {t("{count} more results.", { count: report.omittedCount.toLocaleString() })}
         </p>
       )}
       {report.entries.length === 0 && report.omittedCount === 0 && (
         <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-          {environmentLabel}: Nothing needed cleanup.
+          {environmentLabel}: {t("Nothing needed cleanup.")}
         </p>
       )}
     </>
