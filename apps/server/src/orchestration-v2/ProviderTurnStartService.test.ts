@@ -831,13 +831,14 @@ effectIt.effect(
       let expectedBase = mainTip;
       for (const scenario of [
         "retained",
+        "leftover",
         "deleted",
         "remote-merged",
         "detached",
         "detached-without-main",
       ] as const) {
         yield* fileSystem.remove(worktreePath, { recursive: true });
-        if (scenario !== "retained") {
+        if (scenario !== "retained" && scenario !== "leftover") {
           yield* git(workspaceRoot, ["worktree", "prune"]);
           yield* git(workspaceRoot, ["branch", "-D", "feature/restore"]);
         }
@@ -859,6 +860,10 @@ effectIt.effect(
         if (scenario === "detached-without-main") {
           yield* git(workspaceRoot, ["branch", "-D", "main"]);
           yield* git(workspaceRoot, ["remote", "remove", "origin"]);
+        }
+        if (scenario === "leftover") {
+          yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+          yield* fileSystem.writeFileString(path.join(worktreePath, "notes.txt"), "keep");
         }
         const harness = makeLocalCommandHarness({
           text: "Continue",
@@ -885,7 +890,15 @@ effectIt.effect(
 
         yield* harness.start;
 
-        if (scenario === "detached-without-main") {
+        if (scenario === "leftover") {
+          expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+          expect(harness.projection().turnItems).toMatchObject([
+            { type: "error", failure: { message: expect.stringContaining("metadata is missing") } },
+          ]);
+          expect(yield* fileSystem.readFileString(path.join(worktreePath, "notes.txt"))).toBe(
+            "keep",
+          );
+        } else if (scenario === "detached-without-main") {
           expect(harness.open).not.toHaveBeenCalled();
           expect(harness.startRootRun).not.toHaveBeenCalled();
           expect(harness.projection().runs.at(-1)?.status).toBe("failed");
@@ -1081,6 +1094,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
       const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-start-" });
       const worktreePath = path.join(workspaceRoot, "project", "worktree");
       yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+      yield* fileSystem.writeFileString(path.join(worktreePath, ".git"), "gitdir: fixture");
       const release = yield* Deferred.make<void>();
       const openEntered = yield* Deferred.make<void>();
       const harness = makeLocalCommandHarness({

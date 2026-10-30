@@ -36,6 +36,8 @@ import {
   ProjectId,
   EventId,
   ProviderInstanceId,
+  ProviderSessionId,
+  ProviderDriverKind,
   RunId,
   RuntimeRequestId,
   ThreadId,
@@ -809,6 +811,9 @@ describe("merged local branch cleanup", () => {
     "new-orphan",
     "workspace-checkout",
     "workspace-branch",
+    "outside",
+    "metadata-missing",
+    "ordinary",
   ])("keeps %s worktrees and their branch", (scenario) =>
     runCleanupTest(
       Effect.gen(function* () {
@@ -816,6 +821,28 @@ describe("merged local branch cleanup", () => {
         const fixture = yield* cleanupFixture();
         fixture.disable();
         if (scenario !== "disabled") fixture.setSettings({ autoDeleteMergedBranches: true });
+        if (scenario === "locked" || scenario === "ordinary")
+          fixture.setSettings({
+            storageCleanup: { ...DEFAULT_SERVER_SETTINGS.storageCleanup, worktreeOnMerge: true },
+          });
+        let retainedPath = fixture.worktree;
+        if (scenario === "outside") {
+          retainedPath = `${fixture.repo}/external`;
+          yield* fixture.command(fixture.repo, [
+            "worktree",
+            "move",
+            fixture.worktree,
+            retainedPath,
+          ]);
+          fixture.setThreads([shell({ branch: "feature", worktreePath: retainedPath })]);
+        }
+        if (scenario === "ordinary") {
+          retainedPath = `${fixture.repo}/notes`;
+          yield* fixture.fs.makeDirectory(retainedPath);
+          fixture.setThreads([shell({ branch: null, worktreePath: retainedPath })]);
+        }
+        if (scenario === "metadata-missing")
+          yield* fixture.fs.rename(`${fixture.worktree}/.git`, `${fixture.worktree}/.git.saved`);
         if (scenario === "dirty")
           yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "local edits\n");
         if (scenario === "untracked")
@@ -874,10 +901,14 @@ describe("merged local branch cleanup", () => {
         if (scenario === "machine-cleanup-off")
           fixture.setSettings({ worktreeCleanup: { mode: "off" } });
         const report = yield* fixture.service.runNow;
-        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+        expect(yield* fixture.fs.exists(retainedPath)).toBe(true);
         expect(
           (yield* fixture.command(fixture.repo, ["branch", "--list", "feature"])).stdout,
         ).toContain("feature");
+        if (scenario === "metadata-missing" || scenario === "locked")
+          expect(report.counts.failed).toBe(0);
+        if (scenario === "ordinary")
+          expect(report.entries.some((entry) => entry.path === retainedPath)).toBe(false);
         if (scenario === "locked") {
           expect(report.entries).toContainEqual(
             expect.objectContaining({
@@ -1844,6 +1875,62 @@ describe("storage cleanup reports and local file policies", () => {
       }),
     ),
   );
+  it.effect(
+    "rechecks merged branches when a provider session stops with deletion cleanup disabled",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(NOW_MS);
+          const fixture = yield* cleanupFixture();
+          fixture.disable();
+          fixture.setSettings({ autoDeleteMergedBranches: true });
+          fixture.setOpenSessionCwd(fixture.worktree);
+          const release = yield* Deferred.make<void>();
+          const delivered = yield* Deferred.make<void>();
+          const event: OrchestrationV2DomainEvent = {
+            id: EventId.make("session-stopped"),
+            type: "provider-session.updated",
+            threadId: ThreadId.make("thread-1"),
+            occurredAt: at(0),
+            payload: {
+              id: ProviderSessionId.make("session-1"),
+              driver: ProviderDriverKind.make("codex"),
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              status: "stopped",
+              cwd: fixture.worktree,
+              model: null,
+              capabilities: CodexProviderCapabilitiesV2,
+              createdAt: at(0),
+              updatedAt: at(0),
+              lastError: null,
+            },
+          };
+          yield* fixture.activate(
+            Stream.fromEffect(Deferred.await(release)).pipe(
+              Stream.map(() => event),
+              Stream.concat(
+                Stream.fromEffect(Deferred.succeed(delivered, undefined)).pipe(Stream.drain),
+              ),
+            ),
+          );
+          yield* fixture.service.reports.pipe(
+            Stream.filter((report) => report !== null),
+            Stream.take(1),
+            Stream.runCollect,
+          );
+          expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+          fixture.setSessionLive(false);
+          yield* Deferred.succeed(release, undefined);
+          yield* Deferred.await(delivered);
+          yield* fixture.service.drain;
+          expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
+          expect(yield* fixture.service.latestReport).toMatchObject({
+            trigger: "automatic",
+            counts: { failed: 0 },
+          });
+        }),
+      ),
+  );
   it.live.each(["before-check", "while-measuring"] as const)(
     "keeps a worktree protected by a missing project root (%s)",
     (timing) =>
@@ -2370,12 +2457,17 @@ describe("storage cleanup reports and local file policies", () => {
   it.live("reports git failures without aborting the remaining categories", () =>
     runCleanupTest(
       Effect.gen(function* () {
-        const { service, worktree, command, enableFiles } = yield* cleanupFixture();
+        const { service, worktree, command, enableFiles, fs } = yield* cleanupFixture();
         enableFiles();
-        yield* command(worktree, ["worktree", "lock", worktree]);
+        const index = (yield* command(worktree, [
+          "rev-parse",
+          "--git-path",
+          "index",
+        ])).stdout.trim();
+        yield* fs.writeFileString(index, "invalid index");
         const report = yield* service.runNow;
         expect(report.entries[0]).toMatchObject({ outcome: "failed" });
-        expect(report.entries[0]?.reason).toContain("git worktree remove: fatal:");
+        expect(report.entries[0]?.reason).toContain("git:");
         expect(report.entries.map((entry) => entry.kind)).toEqual([
           "worktree",
           "browser-artifacts",

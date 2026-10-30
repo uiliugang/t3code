@@ -188,13 +188,14 @@ function lastRunSummary(
   return entries.map((entry) => `${entry.label}: ${entry.counts}`).join(" · ");
 }
 
-function CleanupResults({
+export function CleanupResults({
   report,
   environmentLabel,
 }: {
   report: StorageCleanupReport;
   environmentLabel: string;
 }) {
+  const t = useUiTranslation();
   return (
     <>
       {report.entries.map((entry, index) => {
@@ -215,26 +216,26 @@ function CleanupResults({
             description={
               <span className="block space-y-2 wrap-anywhere select-text">
                 <span className={`block ${entry.outcome === "failed" ? "text-destructive" : ""}`}>
-                  {entry.reason}
+                  {t(entry.reason)}
                 </span>
                 <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-l border-border/60 pl-3">
-                  <span>Machine</span>
+                  <span>{t("Machine")}</span>
                   <span className="text-foreground/80">{environmentLabel}</span>
                   {entry.projectPath && (
                     <>
-                      <span>Project</span>
+                      <span>{t("Project")}</span>
                       <code className="text-foreground/80">{entry.projectPath}</code>
                     </>
                   )}
                   {entry.path && (
                     <>
-                      <span>Folder</span>
+                      <span>{t("Folder")}</span>
                       <code className="text-foreground/80">{entry.path}</code>
                     </>
                   )}
                   {entry.threadTitle && (
                     <>
-                      <span>Thread</span>
+                      <span>{t("Thread")}</span>
                       <span>{entry.threadTitle}</span>
                     </>
                   )}
@@ -530,7 +531,7 @@ export function WorktreeCleanupSection() {
       <>
         <SettingsRow
           {...searchableSetting("auto-delete-merged-branches")}
-          description="Automatically remove local branches and worktrees merged into main or master, and worktrees whose pull request is merged into the default branch. Keeps project checkouts, uncommitted changes, locked worktrees, active work, and remote branches."
+          description="Automatically remove merged local branches and managed worktrees after they stop being used. Keeps external worktrees, project checkouts, uncommitted changes, locked worktrees, active provider sessions, and remote branches."
           serverScoped={!isProjectScope}
           settingKeys={isProjectScope ? [] : ["autoDeleteMergedBranches", "worktreeCleanup"]}
           mixed={mergedCleanupMixed}

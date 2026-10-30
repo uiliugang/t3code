@@ -863,6 +863,12 @@ const make = Effect.gen(function* () {
       const keep = (reason: string) => entries.push({ ...entry, reason: sentence(reason) });
       yield* Effect.gen(function* () {
         if (!(yield* fs.exists(worktreePath))) return;
+        if (
+          thread.branch === null &&
+          !roots.some((root) => inside(root, worktreePath)) &&
+          !(yield* fs.exists(path.join(worktreePath, ".git")))
+        )
+          return;
         if (deleted && !settings.worktreeOnDelete) return keep("no rules apply");
         if (members.length > 1 && worktreeOwner(members) === undefined)
           return keep(`shared by ${members.length} threads`);
@@ -884,10 +890,23 @@ const make = Effect.gen(function* () {
           return keep("outside the managed worktree folder");
         if (yield* containsProjectRoot(worktreePath, [project, ...snapshot.projects]))
           return keep("contains a project checkout");
-        if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File")
-          return keep("not a linked worktree");
+        if (
+          (yield* fs.stat(path.join(worktreePath, ".git")).pipe(
+            Effect.catchIf(
+              (error) => error.reason._tag === "NotFound",
+              () => Effect.succeed(null),
+            ),
+          ))?.type !== "File"
+        )
+          return keep("worktree metadata is missing; files were retained");
         if (yield* branchChanged(worktreePath, thread.branch))
           return keep("repository or branch changed");
+        const gitDirectory = (yield* git.execute({
+          operation: "StorageCleanup.worktreeLock",
+          cwd: worktreePath,
+          args: ["rev-parse", "--absolute-git-dir"],
+        })).stdout.trim();
+        if (yield* fs.exists(path.join(gitDirectory, "locked"))) return keep("worktree is locked");
         const changes = yield* localChangesReason(worktreePath, settings);
         if (changes !== null) return keep(changes);
         if (
@@ -1183,6 +1202,16 @@ const make = Effect.gen(function* () {
     )
       return;
     const snapshot = yield* readThreads();
+    const managedRoots = yield* Effect.forEach(
+      managedWorktreesDirectories(
+        settings,
+        config.worktreesDir,
+        path,
+        yield* HostProcess.HomeDirectory,
+      ),
+      (directory) =>
+        fs.realPath(directory).pipe(Effect.orElseSucceed(() => path.resolve(directory))),
+    );
     const repositories = new Set<string>();
     const enabled = (settings: ServerSettings, projectId: ProjectId) => {
       const effective = resolveProjectSettings(settings, projectId).settings;
@@ -1360,12 +1389,24 @@ const make = Effect.gen(function* () {
                 if (yield* containsProjectRoot(worktreePath, latestProjects))
                   return "contains a project checkout";
                 if (hasTerminal(worktreePath)) return "open terminal";
+                if (!(yield* fs.exists(worktreePath))) return "worktree path is missing";
                 const real = yield* fs.realPath(worktreePath);
+                if (
+                  !managedRoots.some((root) => !isFilesystemRoot(root, path) && inside(root, real))
+                )
+                  return "outside the managed worktree folder";
                 const parent = yield* fs.realPath(path.dirname(worktreePath));
                 if (real !== path.join(parent, path.basename(worktreePath)))
                   return "worktree is a symbolic link";
-                if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File")
-                  return "not a linked worktree";
+                if (
+                  (yield* fs.stat(path.join(worktreePath, ".git")).pipe(
+                    Effect.catchIf(
+                      (error) => error.reason._tag === "NotFound",
+                      () => Effect.succeed(null),
+                    ),
+                  ))?.type !== "File"
+                )
+                  return "worktree metadata is missing; files were retained";
                 const gitDirectory = (yield* git.execute({
                   operation: "StorageCleanup.worktreeLock",
                   cwd: worktreePath,
@@ -1815,6 +1856,13 @@ const make = Effect.gen(function* () {
   });
 
   const start = Effect.fn("StorageCleanup.start")(function* () {
+    let lastSettings = yield* settingsService.getSettings.pipe(Effect.orDie);
+    const cleanupEnabled = () =>
+      anyWorktreePolicy(lastSettings, worktreeCleanupEnabled) ||
+      lastSettings.autoDeleteMergedBranches ||
+      Object.values(lastSettings.projectSettingsOverrides).some(
+        (override) => override.autoDeleteMergedBranches === true,
+      );
     const unsubscribe = yield* terminals.subscribeMetadata((event) =>
       Effect.sync(() => {
         if (event.type === "snapshot") {
@@ -1827,13 +1875,20 @@ const make = Effect.gen(function* () {
           threadTerminals?.delete(event.terminalId);
           if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
         }
-      }),
+      }).pipe(
+        Effect.andThen(() =>
+          event.type !== "snapshot" &&
+          (event.type !== "upsert" || !["starting", "running"].includes(event.terminal.status)) &&
+          cleanupEnabled()
+            ? requestSweep
+            : Effect.void,
+        ),
+      ),
     );
     yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
     const changes = yield* settingsService.subscribeChanges;
     const merges = yield* pullRequests.subscribeMerges;
     const events = engine.streamDomainEvents;
-    let lastSettings = yield* settingsService.getSettings.pipe(Effect.orDie);
     yield* forkParked(
       requestSweep.pipe(
         Effect.andThen(worker.drain),
@@ -1876,7 +1931,7 @@ const make = Effect.gen(function* () {
           : (event.type === "thread.deleted" ||
                 (event.type === "provider-session.updated" &&
                   (event.payload.status === "stopped" || event.payload.status === "error"))) &&
-              anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnDelete)
+              cleanupEnabled()
             ? requestSweep
             : Effect.void,
       ).pipe(

@@ -333,7 +333,7 @@ files such as `.env` and build output. **Any local files** also protects ignored
 `node_modules`. **Edited tracked files** protects only tracked edits and allows untracked and
 ignored files to be deleted. Thread history stays; starting another turn recreates the checkout.
 Branches are kept unless **Automatically delete merged branches and worktrees** is enabled.
-That switch controls both merged-branch and merged-worktree cleanup. If it shows **Mixed** after an
+That switch controls both merged-branch and merged-worktree cleanup. Only worktrees in the current or previous managed locations are removed; branches attached to external worktrees are retained. If it shows **Mixed** after an
 upgrade, choose on or off to apply the same choice to both rules.
 Merge cleanup requires a merged pull request whose commits are included in the remote default
 branch. A squash or rebase merge on GitHub also counts when the pull request targeted the default
@@ -341,11 +341,11 @@ branch and the worktree is still at the pull request's last commit.
 
 Enable **Delete worktrees with deleted threads** to remove safe worktrees after their last
 thread is deleted, including archived threads and worktrees left by earlier deletions. The
-server waits for sessions and terminals to stop and retries skipped worktrees after restart.
+server waits for sessions and terminals to stop and retries skipped worktrees after restart. A finished turn can leave a provider session open until its idle timeout, so merging does not guarantee immediate removal.
 Existing prompts for deleting a worktree manually remain available when this policy is off.
 
 Choose **Delete now** to run the enabled rules immediately. The latest results show which
-worktrees were removed or kept and why, plus any failures.
+worktrees were removed or kept and why, plus any failures. The Worktrees page also shows recent results since the server started, with missing directories kept separately as history. Ordinary working folders are excluded from the worktree list; directories with missing Git metadata are retained for inspection.
 Results also list folders in the worktree folder that no thread uses, with their sizes; cleanup never removes them, so remove them manually if you want.
 
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
