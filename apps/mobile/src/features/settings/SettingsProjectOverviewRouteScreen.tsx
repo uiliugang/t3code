@@ -13,7 +13,11 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { useNavigation } from "@react-navigation/native";
+import { StackActions, useNavigation } from "@react-navigation/native";
+import {
+  ensureBrowseDirectoryPath,
+  getBrowseParentPath,
+} from "@t3tools/client-runtime/state/projects";
 import { useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -93,6 +97,36 @@ export function SettingsProjectOverviewRouteScreen() {
           contentContainerClassName="gap-6 px-5 pt-4"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
+          <Button
+            label="Import folders"
+            icon="folder.badge.plus"
+            onPress={() =>
+              navigation.dispatch(
+                StackActions.push(
+                  "AddProject",
+                  selectedTargets.length === 1
+                    ? { environmentId: selectedTargets[0]!.environmentId }
+                    : {},
+                ),
+              )
+            }
+          />
+          {members.length === 1 ? (
+            <Button
+              label="Import sibling folders"
+              icon="folder.badge.plus"
+              onPress={() =>
+                navigation.dispatch(
+                  StackActions.push("AddProjectFolders", {
+                    environmentId: members[0]!.environmentId,
+                    parentPath:
+                      getBrowseParentPath(ensureBrowseDirectoryPath(members[0]!.workspaceRoot)) ??
+                      "~/",
+                  }),
+                )
+              }
+            />
+          ) : null}
           {selectedProjectKey === null ? (
             <Text className="px-2 text-base text-foreground-muted">
               Choose a project with the filter above to manage its name, checkouts and removal.

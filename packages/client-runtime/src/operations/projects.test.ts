@@ -7,10 +7,42 @@ import {
   getCloneDirectoryName,
   getDefaultCloneUrl,
   normalizePastedCloneUrl,
+  selectProjectFolders,
 } from "./projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
 
 describe("add project shared logic", () => {
+  it("bulk-selects distinct new folders while allowing explicit repository duplicates", () => {
+    const candidate = {
+      path: "/repo",
+      workspaceRoot: "/repo",
+      title: "repo",
+      repositoryKey: "host/team/repo",
+      existingProjectId: null,
+      matchingRepositoryProjectId: null,
+      error: null,
+      allowSameRepository: false,
+    };
+    const alias = { ...candidate, path: "/alias" };
+    const checkout = { ...candidate, path: "/checkout", workspaceRoot: "/checkout" };
+    const existing = {
+      ...candidate,
+      path: "/existing",
+      workspaceRoot: "/existing",
+      existingProjectId: ProjectId.make("existing"),
+    };
+    const sameRepository = { ...checkout, matchingRepositoryProjectId: ProjectId.make("existing") };
+    const unavailable = { ...candidate, error: "Unavailable" };
+    expect(selectProjectFolders([], [candidate, alias, checkout, existing, unavailable])).toEqual([
+      candidate,
+    ]);
+    expect(selectProjectFolders([], [sameRepository])).toEqual([]);
+    expect(selectProjectFolders([candidate], [sameRepository], true)).toEqual([
+      candidate,
+      { ...sameRepository, allowSameRepository: true },
+    ]);
+    expect(selectProjectFolders([candidate], [alias], true)).toEqual([candidate]);
+  });
   it("routes owner/repository shorthand to GitHub over HTTPS", () => {
     expect(normalizePastedCloneUrl("imputnet/helium")).toBe(
       "https://github.com/imputnet/helium.git",

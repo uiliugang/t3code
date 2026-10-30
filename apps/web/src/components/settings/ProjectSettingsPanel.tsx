@@ -53,6 +53,7 @@ import {
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import { ProjectImportActions } from "./ProjectImportActions";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -489,6 +490,14 @@ function ProjectDetail({
   return (
     <>
       <SettingsPageContainer className="gap-6">
+        <ProjectImportActions
+          environmentId={
+            group.memberProjects.length === 1 ? representative.environmentId : undefined
+          }
+          workspaceRoot={
+            group.memberProjects.length === 1 ? representative.workspaceRoot : undefined
+          }
+        />
         <Alert variant="info">
           <InfoIcon aria-hidden />
           <AlertDescription>

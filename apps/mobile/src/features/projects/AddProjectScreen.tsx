@@ -83,6 +83,7 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ErrorBanner } from "../../components/ui/ErrorBanner";
 import { SourceControlIcon } from "./SourceControlIcon";
+import { ProjectFolderPicker } from "./ProjectFolderPicker";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { uuidv4 } from "../../lib/uuid";
@@ -513,6 +514,30 @@ function SourceControlRow(props: {
   );
 }
 
+export function AddProjectFoldersScreen(props: { environmentId?: string; parentPath?: string }) {
+  const { selectedEnvironment } = useSelectedEnvironment(
+    (props.environmentId ?? null) as EnvironmentId | null,
+  );
+  return (
+    <AddProjectShell title="Import folders">
+      {selectedEnvironment ? (
+        <>
+          <SectionTitle>{selectedEnvironment.label}</SectionTitle>
+          <ProjectFolderPicker
+            key={selectedEnvironment.environmentId}
+            environmentId={selectedEnvironment.environmentId}
+            initialPath={
+              props.parentPath ?? getAddProjectInitialQuery(selectedEnvironment.baseDirectory)
+            }
+          />
+        </>
+      ) : (
+        <EmptyEnvironmentState />
+      )}
+    </AddProjectShell>
+  );
+}
+
 export function AddProjectSourceScreen(props: { readonly environmentId?: string | string[] }) {
   const navigation = useNavigation();
   const { environmentOptions, selectedEnvironment, setSelectedEnvironmentId } =
@@ -631,6 +656,20 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
               onPress={() =>
                 navigation.dispatch(
                   StackActions.push("AddProjectLocal", {
+                    environmentId: selectedEnvironment.environmentId,
+                  }),
+                )
+              }
+            />
+            <ListRow
+              title="Import folders"
+              icon={
+                <SymbolView name="folder.badge.plus" size={20} tintColorClassName="accent-icon" />
+              }
+              disabled={!isConnected || !canCreateProject}
+              onPress={() =>
+                navigation.dispatch(
+                  StackActions.push("AddProjectFolders", {
                     environmentId: selectedEnvironment.environmentId,
                   }),
                 )

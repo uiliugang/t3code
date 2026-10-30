@@ -131,6 +131,7 @@ import {
   ensureBrowseDirectoryPath,
   findProjectByPath,
   getBrowseDirectoryPath,
+  getBrowseParentPath,
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
@@ -244,6 +245,9 @@ import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@t3tools/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
+import { openProjectFolderImport } from "../projectFolderImport";
+import { ProjectFolderImportDialog } from "./ProjectFolderImportDialog";
+
 const ADD_PROJECT_ENTRY_GROUP = "add-project";
 const NEW_THREAD_IN_GROUP = "projects";
 
@@ -304,6 +308,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           initialContext={state.restoredSearch}
         />
       </CommandDialog>
+      <ProjectFolderImportDialog />
     </ComposerHandleContext>
   );
 }
@@ -922,6 +927,17 @@ function OpenCommandPaletteDialog(props: {
     const sourceItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [
       {
         kind: "action",
+        value: `action:add-project:${environmentId}:bulk`,
+        searchTerms: ["import", "batch", "folders", "bulk"],
+        title: t("Import folders"),
+        icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          setOpen(false);
+          openProjectFolderImport({ environmentId });
+        },
+      },
+      {
+        kind: "action",
         value: `action:add-project:${environmentId}:local`,
         searchTerms: ["local", "folder", "directory", "browse"],
         title: t("Local folder"),
@@ -933,6 +949,23 @@ function OpenCommandPaletteDialog(props: {
         },
       },
     ];
+
+    const currentRoot = getBrowseCwdForEnvironment(environmentId);
+    const siblingPath = currentRoot
+      ? getBrowseParentPath(ensureBrowseDirectoryPath(currentRoot))
+      : null;
+    if (siblingPath)
+      sourceItems.push({
+        kind: "action",
+        value: `action:add-project:${environmentId}:siblings`,
+        searchTerms: ["import", "sibling", "folders"],
+        title: t("Import sibling folders"),
+        icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          setOpen(false);
+          openProjectFolderImport({ environmentId, parentPath: siblingPath });
+        },
+      });
 
     if (newProjectsRootFor(environmentId) !== null) {
       sourceItems.unshift({

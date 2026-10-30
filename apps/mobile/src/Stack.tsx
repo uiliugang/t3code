@@ -77,6 +77,7 @@ import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteSc
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
+import { AddProjectFoldersRoute } from "./features/projects/AddProjectFoldersRoute";
 import { AddProjectNewRoute } from "./features/projects/AddProjectNewRoute";
 import { AddProjectRepositoryRoute } from "./features/projects/AddProjectRepositoryRoute";
 import { AddProjectSourceRoute } from "./features/projects/AddProjectSourceRoute";
@@ -764,6 +765,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       linking: "new/add-project/local",
       screen: AddProjectLocalRoute,
       options: GLASS_HEADER_OPTIONS,
+    }),
+    AddProjectFolders: createNativeStackScreen({
+      linking: "new/add-project/folders",
+      screen: AddProjectFoldersRoute,
+      options: { ...GLASS_HEADER_OPTIONS, title: "Import folders" },
     }),
     AddProjectNew: createNativeStackScreen({
       linking: "new/add-project/new",
