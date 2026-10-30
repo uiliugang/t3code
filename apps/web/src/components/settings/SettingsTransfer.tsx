@@ -149,7 +149,7 @@ export function SettingsTransfer({
         control={
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void exportFile()}>
-              <DownloadIcon /> Export
+              <UploadIcon /> Export
             </Button>
             <Button
               size="sm"
@@ -157,7 +157,7 @@ export function SettingsTransfer({
               disabled={busy || !canImport}
               onClick={() => fileInput.current?.click()}
             >
-              <UploadIcon /> Import
+              <DownloadIcon /> Import
             </Button>
             <input
               ref={fileInput}
