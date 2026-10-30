@@ -139,6 +139,10 @@ export interface CreateWorktreeProgress {
 
 export interface CreateWorktreeOptions {
   readonly progress?: CreateWorktreeProgress;
+  readonly generatedBranchName?: {
+    readonly branch: string;
+    readonly exactName: boolean;
+  };
   /** Null or omitted defers to the checkout's t3.json. */
   readonly submodules?: WorktreeSubmodules | null;
   readonly worktreesDirectory?: string;

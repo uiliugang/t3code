@@ -3436,6 +3436,61 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         }),
     );
 
+    it.effect.each([
+      {
+        requested: "lg/import-folders",
+        exactName: false,
+        taken: false,
+        expected: "lg/import-folders",
+      },
+      {
+        requested: "lg/import-folders",
+        exactName: false,
+        taken: true,
+        expected: "lg/import-folders-1",
+      },
+      { requested: "LG/ABC-123.v2", exactName: true, taken: false, expected: "LG/ABC-123.v2" },
+      { requested: "lg/import-folders", exactName: true, taken: true, expected: "t3/12345678" },
+      { requested: "invalid name", exactName: true, taken: false, expected: "t3/12345678" },
+    ])(
+      "creates the directory from the final branch name: $expected ($requested, $taken)",
+      (scenario) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const path = yield* Path.Path;
+          const fs = yield* FileSystem.FileSystem;
+          const worktreesDirectory = yield* makeTmpDir("git-worktrees-");
+          if (scenario.taken) yield* driver.createRef({ cwd, refName: scenario.requested });
+          const result = yield* driver.createWorktree(
+            {
+              cwd,
+              path: null,
+              refName: initialBranch,
+              newRefName: "t3/12345678",
+              baseRefName: initialBranch,
+            },
+            {
+              worktreesDirectory,
+              generatedBranchName: { branch: scenario.requested, exactName: scenario.exactName },
+            },
+          );
+          assert.equal(result.worktree.refName, scenario.expected);
+          assert.equal(path.basename(result.worktree.path), scenario.expected.replaceAll("/", "-"));
+          assert.isTrue(yield* fs.exists(result.worktree.path));
+          assert.equal(
+            yield* git(result.worktree.path, ["branch", "--show-current"]),
+            scenario.expected,
+          );
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
+          assert.equal(
+            yield* git(cwd, ["config", `branch.${scenario.expected}.t3-merge-base`]),
+            initialBranch,
+          );
+        }),
+    );
+
     it.effect("creates parallel worktrees in one repository without racing on its config", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
@@ -3490,7 +3545,6 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             }),
           { concurrency: "unbounded" },
         );
-        // Launches rename their temporary branch from inside the new worktree.
         yield* Effect.forEach(
           branches,
           (branch) =>
