@@ -170,6 +170,10 @@ it("reports invalid workspace directories without exposing unrelated project fai
     projectId: ProjectId.make("project:occupied"),
   });
   assert.equal(projectMutationFailureMessage(notEmpty), notEmpty.message);
+  const rootChangeBlocked = new ProjectService.ProjectWorkspaceRootChangeBlockedError({
+    projectId: ProjectId.make("project:legacy-tasks"),
+  });
+  assert.equal(projectMutationFailureMessage(rootChangeBlocked), rootChangeBlocked.message);
 });
 
 const settingsUpdated = (settings: object): ServerConfigStreamEvent => ({

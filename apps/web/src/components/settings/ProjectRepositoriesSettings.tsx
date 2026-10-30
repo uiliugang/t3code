@@ -1,4 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { serverEnvironment } from "../../state/server";
 import {
   AuthOrchestrationOperateScope,
@@ -14,6 +18,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { randomUUID } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsSection } from "./settingsLayout";
 
 export function ProjectRepositoriesSettings({ project }: { project: Project }) {
@@ -21,7 +26,7 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(project.environmentId));
   const permission = useEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope);
   const allowed = permission && config?.environment.capabilities.multiRepositoryWorkspaces === true;
-  const update = useOrchestrationCommand(projectEnvironment.update, { reportFailure: true });
+  const update = useOrchestrationCommand(projectEnvironment.update, { reportFailure: false });
   const [roots, setRoots] = useState<ReadonlyArray<ProjectWorkspaceRoot>>(
     () =>
       project.workspaceConfig?.roots ?? [
@@ -66,7 +71,19 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
         },
       });
       setSaved(result._tag === "Success");
-      if (result._tag === "Success") setEditingVersion((version) => version + 1);
+      if (result._tag === "Success") {
+        setEditingVersion((version) => version + 1);
+        toastManager.add({ type: "success", title: t("Repositories saved") });
+      } else if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: t("Failed to save repositories"),
+            description: t(error instanceof Error ? error.message : "An error occurred."),
+          }),
+        );
+      }
     } finally {
       setSaving(false);
     }
