@@ -1199,6 +1199,16 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverRunStorageCleanup,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
+    skills: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:skills",
+      tag: WS_METHODS.skillsSubscribe,
+      idleTtlMs: 0,
+    }),
+    mutateSkills: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:mutate",
+      tag: WS_METHODS.skillsMutate,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
     prepareTriage: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:prepare-triage",
       tag: WS_METHODS.serverPrepareTriage,

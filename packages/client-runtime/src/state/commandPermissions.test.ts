@@ -13,6 +13,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
+  AuthProvidersManageScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
   ThreadId,
@@ -71,15 +72,22 @@ describe("command permissions", () => {
     WS_METHODS.projectsImportConfiguration,
     WS_METHODS.projectsRetryImport,
     WS_METHODS.projectsImportFolders,
+    WS_METHODS.skillsMutate,
   ])("requires clone, project and settings grants on the destination for %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
         const command = createCommandPermissions(runtime, method);
         const required =
-          method === WS_METHODS.projectsImportFolders
-            ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
-            : [AuthSourceControlWriteScope, AuthOrchestrationOperateScope, AuthSettingsWriteScope];
+          method === WS_METHODS.skillsMutate
+            ? [AuthProvidersManageScope]
+            : method === WS_METHODS.projectsImportFolders
+              ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
+              : [
+                  AuthSourceControlWriteScope,
+                  AuthOrchestrationOperateScope,
+                  AuthSettingsWriteScope,
+                ];
         for (const missing of required) {
           const scopes = required.filter((scope) => scope !== missing);
           registry.set(
