@@ -3338,6 +3338,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
     threadId: ThreadId,
     expectedWorkspaceRevisionId: Schema.NullOr(WorkspaceRevisionId),
     preparingRunId: Schema.optional(RunId),
+    restoringFromCleanup: Schema.optional(Schema.Boolean),
     workspace: ThreadWorkspaceRevision,
   }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.

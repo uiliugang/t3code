@@ -7,6 +7,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Equal from "effect/Equal";
 
 export class WorkspaceBindingError extends Schema.TaggedError<WorkspaceBindingError>()(
   "WorkspaceBindingError",
@@ -56,7 +57,7 @@ export function planWorkspaceBinding(input: {
   }
   if (
     thread.deletedAt !== null ||
-    thread.archivedAt !== null ||
+    (thread.archivedAt !== null && !command.restoringFromCleanup) ||
     projection.runs.some(
       (run) =>
         ["queued", "preparing", "starting", "running", "waiting"].includes(run.status) &&
@@ -66,6 +67,24 @@ export function planWorkspaceBinding(input: {
     projection.runtimeRequests.some((request) => request.status === "pending")
   )
     return reject("busy");
+  if (
+    command.restoringFromCleanup &&
+    (thread.workspace === undefined ||
+      !Equal.equals(thread.workspace.bindings, command.workspace.bindings) ||
+      thread.workspace.resources.length !== command.workspace.resources.length ||
+      thread.workspace.resources.some(
+        (resource) =>
+          !command.workspace.resources.some(
+            (next) =>
+              next.id === resource.id &&
+              next.storeId === resource.storeId &&
+              next.checkoutRoot === resource.checkoutRoot &&
+              next.ownership === resource.ownership &&
+              next.identity.commonDirIdentity === resource.identity.commonDirIdentity,
+          ),
+      ))
+  )
+    return reject("stale-revision");
   const primary = command.workspace.bindings.find(
     (binding) => binding.rootId === command.workspace.primaryRootId,
   );

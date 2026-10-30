@@ -98,6 +98,16 @@ is enabled. It retains the whole group if any checkout has local files, an open 
 another owner. Branches and checkpoint refs are retained. Failed preparations are also retained
 for inspection; cleanup does not remove them automatically.
 
+To free disk space manually, open **Settings > Worktrees > Local worktrees**. Select individual
+worktrees or complete multi-repository groups within a project, then confirm cleanup. A group
+is retained if any member has local changes, untracked files, a lock, or active work. Ignored
+files, including `.env` and installed dependencies, require explicit confirmation and cannot
+be recovered. Worktrees containing submodules are retained for manual Git cleanup.
+
+Cleanup keeps branches, commits and thread history. Choose **Rebuild worktrees**, or continue a
+thread, to recreate the directories. Reinstall dependencies and recreate any ignored files you
+need. When connected remotely, cleanup runs on the machine named in the list.
+
 ## Worktree branch names
 
 In **Settings → Worktrees → Branches**, **Remote branch display days** limits remote branch

@@ -1,4 +1,5 @@
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
+import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
 import * as WorkspaceCheckout from "./workspace/WorkspaceCheckout.ts";
 import * as WorkspaceAccess from "./workspace/WorkspaceAccess.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
@@ -1331,6 +1332,7 @@ export const layerWsRpc = (
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const workspaceAccess = yield* WorkspaceAccess.WorkspaceAccess;
       const workspaceRecovery = yield* WorkspaceRecovery.WorkspaceRecovery;
+      const managedWorktrees = yield* ManagedWorktrees.ManagedWorktrees;
       const workspaceCheckout = yield* WorkspaceCheckout.WorkspaceCheckout;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -3025,6 +3027,9 @@ export const layerWsRpc = (
             .run(input, gitWorkflow.switchRef(input))
             .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.workspaceRecovery]: (input) => workspaceRecovery.resolve(input),
+        [WS_METHODS.managedWorktreesList]: (input) => managedWorktrees.list(input),
+        [WS_METHODS.managedWorktreesRemove]: (input) => managedWorktrees.remove(input),
+        [WS_METHODS.managedWorktreesRestore]: (input) => managedWorktrees.restore(input),
         [WS_METHODS.workspaceCheckout]: (input) => workspaceCheckout.bind(input),
         [WS_METHODS.vcsInit]: (input) =>
           workspaceAccess

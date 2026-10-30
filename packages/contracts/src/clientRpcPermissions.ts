@@ -54,6 +54,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.vcsSwitchRef]: AuthSourceControlWriteScope,
   [WS_METHODS.vcsInit]: AuthSourceControlWriteScope,
   [WS_METHODS.workspaceRecovery]: AuthOrchestrationOperateScope,
+  [WS_METHODS.managedWorktreesRemove]: AuthSourceControlWriteScope,
+  [WS_METHODS.managedWorktreesRestore]: AuthSourceControlWriteScope,
   [WS_METHODS.workspaceCheckout]: AuthOrchestrationOperateScope,
 
   // Starts an agent session on this environment that can read its logs and database.
@@ -80,6 +82,8 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  if (method === WS_METHODS.managedWorktreesRestore)
+    return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
   if (method === WS_METHODS.projectsImportFolders)
     return [AuthOrchestrationOperateScope, AuthFilesystemReadScope];
   if (

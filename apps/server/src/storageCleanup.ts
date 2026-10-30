@@ -1333,6 +1333,10 @@ const make = Effect.gen(function* () {
                   json_extract(r.value, '$.source.identity.commonDir'),
                   json_extract(r.value, '$.branch')
                 FROM workspace_preparations w, json_each(w.payload_json, '$.resources') r
+                UNION SELECT json_extract(r.value, '$.identity.checkoutRoot'),
+                  json_extract(r.value, '$.identity.commonDir'),
+                  json_extract(r.value, '$.branch')
+                FROM managed_worktree_snapshots w, json_each(w.payload_json, '$.resources') r
                 UNION SELECT json_extract(r.value, '$.sourcePath'), NULL, NULL
                 FROM projection_projects p, json_each(p.workspace_config_json, '$.roots') r
                 WHERE p.deleted_at IS NULL

@@ -2,6 +2,7 @@ import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 import { AdvancedSettings } from "./AdvancedSettings";
+import { ManagedWorktreesSettings } from "./ManagedWorktreesSettings";
 import { BranchNamingSettings } from "./BranchNamingSettings";
 import {
   HideMergedRemoteBranchesRow,
@@ -78,6 +79,7 @@ export function WorktreesSettingsPanel() {
         <BranchNamingSettings />
       </SettingsSection>
       <WorktreeCleanupSection />
+      <ManagedWorktreesSettings />
     </SettingsPageContainer>
   );
 }
