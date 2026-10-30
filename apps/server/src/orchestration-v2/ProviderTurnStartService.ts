@@ -595,6 +595,24 @@ export const layer: Layer.Layer<
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
+        if (
+          exists &&
+          (yield* isManagedWorktreePath(worktreePath)) &&
+          !(yield* fileSystem.exists(path.join(worktreePath, ".git")))
+        ) {
+          yield* settleStartFailure({
+            signal: "worktree-metadata-missing",
+            title: "Worktree needs inspection",
+            error: new WorktreeRecreateError({
+              worktreePath,
+              branch,
+              cause: "Worktree metadata is missing.",
+            }),
+            message:
+              "Worktree metadata is missing. Files in this directory were retained. Inspect the directory before continuing.",
+          });
+          return;
+        }
         if (!exists && (yield* isManagedWorktreePath(worktreePath))) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),

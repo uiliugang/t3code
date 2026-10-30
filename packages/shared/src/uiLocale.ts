@@ -11,17 +11,74 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
-  "Local worktrees": "本地 worktree",
+  "Full path": "完整路径",
+  "This connection cannot manage worktrees.": "当前连接没有管理工作树的权限。",
+  "Worktrees: {current} · Needs attention: {attention} · History: {history}":
+    "{current} 个当前工作树 · {attention} 组待处理 · {history} 条历史",
+  "{count} items removed": "已清理 {count} 项",
+  "View results": "查看结果",
+  "Select cleanable ({count})": "选择可清理项（{count}）",
+  "No cleanable worktrees": "暂无可清理项",
+  "Selected groups: {groups} · Worktrees: {count}": "已选 {groups} 组 · {count} 个工作树",
+  "Clear selection": "取消选择",
+  "{count} more results.": "还有 {count} 项结果。",
+  "Nothing needed cleanup.": "本次没有需要清理的项目。",
+  "Manage working directories linked to threads. Branches and thread history are kept when you clean a directory here.":
+    "管理会话关联的工作目录。在此清理目录时，分支和会话历史仍保留。",
+  Retained: "已保留",
+  "Current worktrees": "当前工作树",
+  "Needs attention": "需要处理",
+  "Missing working directories": "已不存在的工作目录",
+  "Working directory missing": "工作目录已不存在",
+  "Unknown branch": "分支未知",
+  "Historical branch": "历史分支",
+  "Retry inspection": "重新检查",
+  "Copy path": "复制路径",
+  "Recent cleanup results": "最近清理结果",
+  "Automatic cleanup": "自动清理",
+  "Manual cleanup": "手动清理",
+  "Could not load recent cleanup results.": "无法读取最近的清理结果。",
+  "No cleanup results since this server started.": "本次服务启动后暂无清理结果。",
+  "Latest results since this server started. Active tasks, terminals and provider sessions delay cleanup.":
+    "仅显示本次服务启动后的最近结果。正在运行的任务、终端和 provider 会话会延迟清理。",
+  "Worktrees linked to threads in this environment. Missing directories are shown separately; ordinary working folders are excluded.":
+    "显示此环境中与会话关联的 worktree。已不存在的目录单独展示，普通工作文件夹不计入。",
+  "Worktree metadata is missing. Files in this directory were retained.":
+    "工作树元数据已不存在，此目录中的剩余文件已保留。",
+  "Could not inspect this checkout. Check repository access and retry.":
+    "无法检查此工作目录，请检查仓库访问权限后重试。",
+  "Some working directories are missing and have no cleanup snapshot.":
+    "部分工作目录已不存在，且没有清理快照。",
+  "The working directory no longer exists. Thread history is kept.":
+    "工作目录已不存在，会话历史仍保留。",
+  "The saved checkout cannot be rebuilt. Check its repository and retained references.":
+    "暂时无法重建，请检查源仓库和保留的提交引用。",
+  "This checkout is not registered with its repository.":
+    "此工作目录已不在仓库的 worktree 注册列表中。",
+  "Finish rebuilding this group before cleaning it again.": "请先完成此组的重建，再清理工作目录。",
+  "Automatically remove merged local branches and managed worktrees after they stop being used. Keeps external worktrees, project checkouts, uncommitted changes, locked worktrees, active provider sessions, and remote branches.":
+    "合并后，在工作树停止使用并通过检查后，自动清理本地分支及托管工作树。保留外部工作树、项目目录、本地改动、锁定的工作树、活跃 provider 会话和远程分支。",
+  "Worktree metadata is missing; files were retained": "工作树元数据已不存在，剩余文件已保留",
+  "Merged into main or master": "已合并到 main 或 master",
+  "Outside the managed worktree folder": "不在托管工作树目录内",
+  "Worktree is locked": "工作树已锁定",
+  Thread: "会话",
+  Machine: "设备",
+  "Shown results: {removed} removed, {kept} retained, {failed} failed":
+    "当前展示：已清理 {removed} 项，已保留 {kept} 项，失败 {failed} 项",
+  "Local worktrees": "本地工作树",
   "Nested worktrees must be cleaned manually.": "嵌套的工作目录需要通过 Git 手动清理。",
   "Ready to clean": "可清理",
   "Worktree removed": "工作目录已清理",
   "Partially cleaned": "部分清理",
   "Inspection failed": "检查失败",
   "Select {title}": "选择 {title}",
-  "{count} worktrees": "{count} 个 worktree",
+  "{count} worktrees": "{count} 个工作树",
   "{count} linked threads": "{count} 个关联会话",
   "Rebuild worktrees": "重建工作目录",
   "Clean worktrees": "清理工作目录",
+  Rebuild: "重建",
+  Clean: "清理",
   "Clean selected ({count})": "清理所选（{count}）",
   "Checking worktrees...": "正在检查工作目录…",
   "No managed worktrees": "暂无托管的 worktree",
