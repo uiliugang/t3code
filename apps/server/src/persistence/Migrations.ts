@@ -79,6 +79,7 @@ import Migration0073 from "./Migrations/073_ProjectWorkspaceConfiguration.ts";
 import Migration0074 from "./Migrations/074_WorkspaceRevisions.ts";
 import Migration0077 from "./Migrations/077_WorkspaceCleanupJournal.ts";
 import Migration0078 from "./Migrations/078_ManagedWorktreeSnapshots.ts";
+import Migration0079 from "./Migrations/079_SkillCatalog.ts";
 import Migration0076 from "./Migrations/076_WorkspaceRestoreJournal.ts";
 import Migration0075 from "./Migrations/075_WorkspacePreparation.ts";
 
@@ -162,6 +163,7 @@ const migrationEntries = [
   [76, "WorkspaceRestoreJournal", Migration0076],
   [77, "WorkspaceCleanupJournal", Migration0077],
   [78, "ManagedWorktreeSnapshots", Migration0078],
+  [79, "SkillCatalog", Migration0079],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

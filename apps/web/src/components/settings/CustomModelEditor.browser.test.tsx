@@ -9,7 +9,7 @@ import { AppRouteModal } from "../AppRouteModal";
 import { CustomModelEditor } from "./CustomModelEditor";
 
 function ModelSettings() {
-  const [editing, setEditing] = useState(true);
+  const [editing, setEditing] = useState(false);
   return (
     <AppRouteModal label="Provider settings">
       {editing ? (
@@ -23,7 +23,9 @@ function ModelSettings() {
           onSave={() => setEditing(false)}
         />
       ) : (
-        <p>Model settings</p>
+        <button type="button" onClick={() => setEditing(true)}>
+          Edit model
+        </button>
       )}
     </AppRouteModal>
   );
@@ -31,10 +33,12 @@ function ModelSettings() {
 
 it("focuses the request ID and cancels editing with Escape without closing settings", async () => {
   await using _screen = await render(<ModelSettings />);
+  await expect.element(page.getByRole("dialog", { name: "Provider settings" })).toHaveFocus();
+  await userEvent.click(page.getByRole("button", { name: "Edit model" }));
   await expect
     .element(page.getByRole("textbox", { name: "Request model ID (slug)" }))
     .toHaveFocus();
   await userEvent.keyboard("{Escape}");
   await expect.element(page.getByRole("dialog", { name: "Provider settings" })).toBeVisible();
-  await expect.element(page.getByText("Model settings", { exact: true })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Edit model" })).toBeVisible();
 });

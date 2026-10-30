@@ -54,6 +54,7 @@ import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolv
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as SkillManager from "../skills/SkillManager.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
@@ -465,6 +466,7 @@ const boxToolkitLayer = (thread: BoxThread) => {
   ).pipe(
     Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
     Layer.provide(NodeCrypto.layer),
+    Layer.provide(Layer.mock(SkillManager.SkillManager)({})),
     Layer.provide(layerBoxThreads),
     Layer.provide(layerBoxLaunches),
     Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
@@ -560,6 +562,7 @@ const makeLaptop = (
       Layer.provideMerge(Layer.merge(layerOrchestrator, ServerSettings.layerTest())),
     );
     const layerHere = McpHttpServer.layerOrchestratorToolkit.pipe(
+      Layer.provide(Layer.mock(SkillManager.SkillManager)({})),
       Layer.provideMerge(McpServer.McpServer.layer),
       Layer.provideMerge(
         RemoteDelegation.layer.pipe(

@@ -68,6 +68,7 @@ const SETTINGS_SEARCH_TERMS = {
     "thread behavior",
   ],
   SettingsFollowUp: ["follow-ups", "queue", "steer", "while the agent is running"],
+  SettingsSkills: ["skills", "install", "sources", "update", "rollback", "mtskills"],
   SettingsArchive: ["archive", "archived", "restore", "unarchive"],
   SettingsProviderAccounts: [
     "provider accounts",

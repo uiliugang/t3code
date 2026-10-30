@@ -1,4 +1,6 @@
 import {
+  SkillSnapshot,
+  SkillMutation,
   OrchestratorMcpCapabilitiesInput,
   OrchestratorMcpCapabilitiesResult,
   OrchestrationV2StopWorkflowInput,
@@ -49,6 +51,7 @@ import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
+import * as SkillManager from "../../../skills/SkillManager.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
@@ -347,7 +350,33 @@ const EnvironmentUnlinkTool = Tool.make("t3_environment_unlink", {
   .annotate(Tool.Idempotent, true)
   .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenWhileLinksOff);
 
+const ListSkillsTool = Tool.make("list_managed_skills", {
+  description:
+    "List this environment's managed skills, installation sources, versions and agent directory targets.",
+  parameters: Tool.EmptyParams,
+  success: SkillSnapshot,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [SkillManager.SkillManager],
+}).annotate(Tool.Readonly, true);
+
+const ManageSkillsTool = Tool.make("manage_skills", {
+  description:
+    "Queue a skill installation, update, rollback, removal or source/target configuration in this environment. Requires full access. Use list_managed_skills for source, skill and target IDs and completion status. Activation waits until agents are idle; existing unmanaged directories are never overwritten.",
+  parameters: Schema.Struct({ operation: SkillMutation }),
+  success: Schema.Struct({ queued: Schema.Boolean }),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    ThreadManagementService.ThreadManagementService,
+    SkillManager.SkillManager,
+  ],
+}).annotate(Tool.Destructive, true);
+
 export const OrchestratorToolkit = Toolkit.make(
+  ListSkillsTool,
+  ManageSkillsTool,
   OrchestratorCapabilitiesTool,
   DelegateTaskTool,
   TaskStatusTool,

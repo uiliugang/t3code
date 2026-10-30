@@ -10,8 +10,27 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
+import * as SkillManager from "../../../skills/SkillManager.ts";
 
 const handlers = {
+  list_managed_skills: McpToolAccess.reads(() =>
+    Effect.gen(function* () {
+      const service = yield* SkillManager.SkillManager;
+      return yield* service.snapshot.pipe(
+        Effect.mapError(
+          (error) =>
+            new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
+        ),
+      );
+    }),
+  ),
+  manage_skills: McpToolAccess.writesEnvironment(({ operation }) =>
+    Effect.gen(function* () {
+      const service = yield* SkillManager.SkillManager;
+      yield* service.mutate(operation);
+      return { queued: true };
+    }),
+  ),
   orchestrator_capabilities: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
