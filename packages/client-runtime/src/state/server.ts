@@ -1218,6 +1218,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.skillsSubscribe,
       idleTtlMs: 0,
     }),
+    inspectSkills: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:inspect",
+      tag: WS_METHODS.skillsInspect,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
     mutateSkills: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:mutate",
       tag: WS_METHODS.skillsMutate,

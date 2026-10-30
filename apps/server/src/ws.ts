@@ -2514,6 +2514,7 @@ export const layerWsRpc = (
         [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
         [WS_METHODS.skillsSubscribe]: () => skillManager.changes,
         [WS_METHODS.skillsMutate]: (input) => skillManager.mutate(input),
+        [WS_METHODS.skillsInspect]: (input) => skillManager.inspect(input),
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.peerLinksList]: (_input) =>

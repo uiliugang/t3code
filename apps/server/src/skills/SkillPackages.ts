@@ -19,6 +19,7 @@ import * as ServerConfig from "../config.ts";
 const metadataSchema = Schema.Struct({
   name: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)),
   description: Schema.String.check(Schema.isMinLength(1)),
+  version: Schema.optionalKey(Schema.String),
 });
 const decodeMetadata = Schema.decodeUnknownEffect(metadataSchema);
 const isSkillManagerError = Schema.is(SkillManagerError);
@@ -28,19 +29,33 @@ interface PackageInput {
   readonly skill: string;
   readonly staging: string;
 }
+interface PackageFile {
+  readonly path: string;
+  readonly hash: string;
+  readonly text: string;
+}
+interface PackageContents {
+  readonly name: string;
+  readonly description: string;
+  readonly digest: string;
+  readonly directory: string;
+  readonly version?: string;
+  readonly files: ReadonlyArray<PackageFile>;
+  readonly truncated: boolean;
+}
 export class SkillPackages extends Context.Service<
   SkillPackages,
   {
     readonly prepare: (source: SkillSource) => Effect.Effect<string, SkillManagerError>;
-    readonly fetch: (input: PackageInput) => Effect.Effect<
-      {
-        readonly name: string;
-        readonly description: string;
-        readonly digest: string;
-        readonly directory: string;
-      },
-      SkillManagerError
-    >;
+    readonly metadata: (
+      directory: string,
+    ) => Effect.Effect<{ readonly name: string; readonly description: string }, SkillManagerError>;
+    readonly inspect: (
+      directory: string,
+      destination?: string,
+    ) => Effect.Effect<PackageContents, SkillManagerError>;
+    readonly diagnose: (source: SkillSource) => Effect.Effect<void, SkillManagerError>;
+    readonly fetch: (input: PackageInput) => Effect.Effect<PackageContents, SkillManagerError>;
   }
 >()("t3/skills/SkillPackages") {}
 
@@ -84,12 +99,21 @@ const make = Effect.gen(function* () {
         binary,
         ChildProcess.make(resolved.command, resolved.args, { cwd, env, shell: resolved.shell }),
       ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
-      if (result.code !== 0)
-        return yield* new SkillManagerError({ operation: "install", reason: "installer-failed" });
+      if (result.code !== 0) {
+        const diagnostic = `${result.stderr} ${result.stdout}`;
+        const reason = /unauthori[sz]ed|authentication|login|\b401\b|\b403\b/i.test(diagnostic)
+          ? "authentication"
+          : /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|fetch failed/i.test(diagnostic)
+            ? "network"
+            : "installer-failed";
+        return yield* new SkillManagerError({ operation: "install", reason });
+      }
     },
     Effect.timeout("5 minutes"),
-    Effect.mapError(
-      (cause) => new SkillManagerError({ operation: "install", reason: "installer-failed", cause }),
+    Effect.mapError((cause) =>
+      isSkillManagerError(cause)
+        ? cause
+        : new SkillManagerError({ operation: "install", reason: "installer-missing", cause }),
     ),
   );
 
@@ -118,6 +142,105 @@ const make = Effect.gen(function* () {
         : new SkillManagerError({ operation: "prepare", reason: "io", cause }),
     ),
   );
+
+  const mapError = (cause: unknown) =>
+    isSkillManagerError(cause)
+      ? cause
+      : new SkillManagerError({ operation: "package", reason: "io", cause });
+  const metadata = Effect.fn("SkillPackages.metadata")(readMetadata, Effect.mapError(mapError));
+  const inspect = Effect.fn("SkillPackages.inspect")(function* (
+    directory: string,
+    destination?: string,
+  ) {
+    const sourceRoot = yield* fs.realPath(directory);
+    const selected = yield* readMetadata(sourceRoot);
+    if (destination) yield* fs.makeDirectory(destination, { recursive: true });
+    const manifest: PackageFile[] = [];
+    let textBytes = 0;
+    let truncated = false;
+    const hashes: string[] = [];
+    let bytes = 0;
+    let files = 0;
+    const copy = Effect.fn("SkillPackages.copy")(function* (
+      directory: string,
+      relative: string,
+      ancestors: ReadonlySet<string>,
+    ): Effect.fn.Return<void, SkillManagerError | import("effect/PlatformError").PlatformError> {
+      const real = yield* fs.realPath(directory);
+      if (!inside(sourceRoot, real) || ancestors.has(real))
+        return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
+      const next = new Set([...ancestors, real]);
+      for (const name of (yield* fs.readDirectory(directory)).toSorted()) {
+        if (name === ".git" || name === "node_modules") continue;
+        const file = path.join(directory, name);
+        const target = destination ? path.join(destination, relative, name) : undefined;
+        if (!inside(sourceRoot, yield* fs.realPath(file)))
+          return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
+        const info = yield* fs.stat(file);
+        if (info.type === "Directory") {
+          if (++files > 1000)
+            return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
+          if (target) yield* fs.makeDirectory(target, { recursive: true });
+          yield* copy(file, path.join(relative, name), next);
+        } else if (info.type === "File") {
+          bytes += Number(info.size);
+          if (++files > 1000 || bytes > 25 * 1024 * 1024)
+            return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
+          const contents = yield* fs.readFile(file);
+          const digest = Hex.encode(yield* crypto.digest("SHA-256", contents).pipe(Effect.orDie));
+          hashes.push(
+            `${path.join(relative, name).split(path.sep).join("/")}\0${info.mode & 0o111}\0${digest}`,
+          );
+          const includeText =
+            contents.length <= 8192 &&
+            textBytes + contents.length <= 65536 &&
+            !contents.includes(0);
+          const text = includeText ? new TextDecoder().decode(contents) : "";
+          textBytes += includeText ? contents.length : 0;
+          truncated ||= !includeText;
+          manifest.push({
+            path: path.join(relative, name).split(path.sep).join("/"),
+            hash: `${info.mode & 0o111}:${digest}`,
+            text,
+          });
+          if (target) {
+            yield* fs.writeFile(target, contents);
+            yield* fs.chmod(target, info.mode & 0o777);
+          }
+        } else
+          return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
+      }
+    });
+    yield* copy(sourceRoot, "", new Set());
+    const digest = Hex.encode(
+      yield* crypto
+        .digest("SHA-256", new TextEncoder().encode(hashes.join("\0")))
+        .pipe(Effect.orDie),
+    );
+    return {
+      name: selected.name,
+      description: selected.description,
+      digest,
+      directory: destination ?? sourceRoot,
+      ...(selected.version ? { version: selected.version } : {}),
+      files: manifest,
+      truncated,
+    };
+  }, Effect.mapError(mapError));
+  const diagnose = Effect.fn("SkillPackages.diagnose")(function* (source: SkillSource) {
+    if (!source.enabled)
+      return yield* new SkillManagerError({ operation: "diagnose", reason: "source-disabled" });
+    if (source.kind === "local") return;
+    const binary = source.executable || (source.kind === "mtskills" ? "mtskills" : "npx");
+    yield* run(
+      binary,
+      !source.executable && source.kind === "skills"
+        ? ["--no-install", "skills", "--version"]
+        : ["--version"],
+      config.stateDir,
+      source.registry,
+    );
+  });
 
   const fetch = Effect.fn("SkillPackages.fetch")(
     function* (input: PackageInput) {
@@ -192,62 +315,13 @@ const make = Effect.gen(function* () {
       });
       yield* discover(root, 0);
       if (candidates.length !== 1)
-        return yield* new SkillManagerError({ operation: "discover", reason: "invalid-package" });
+        return yield* new SkillManagerError({
+          operation: "discover",
+          reason: candidates.length ? "select-skill" : "invalid-package",
+          choices: candidates.map((candidate) => candidate.name),
+        });
       const selected = candidates[0]!;
-      const sourceRoot = yield* fs.realPath(selected.directory);
-      const destination = path.join(input.staging, "package");
-      yield* fs.makeDirectory(destination, { recursive: true });
-      const hashes: string[] = [];
-      let bytes = 0;
-      let files = 0;
-      const copy = Effect.fn("SkillPackages.copy")(function* (
-        directory: string,
-        relative: string,
-        ancestors: ReadonlySet<string>,
-      ): Effect.fn.Return<void, SkillManagerError | import("effect/PlatformError").PlatformError> {
-        const real = yield* fs.realPath(directory);
-        if (!inside(sourceRoot, real) || ancestors.has(real))
-          return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
-        const next = new Set([...ancestors, real]);
-        for (const name of (yield* fs.readDirectory(directory)).toSorted()) {
-          if (name === ".git" || name === "node_modules") continue;
-          const file = path.join(directory, name);
-          const target = path.join(destination, relative, name);
-          if (!inside(sourceRoot, yield* fs.realPath(file)))
-            return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
-          const info = yield* fs.stat(file);
-          if (info.type === "Directory") {
-            if (++files > 1000)
-              return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
-            yield* fs.makeDirectory(target, { recursive: true });
-            yield* copy(file, path.join(relative, name), next);
-          } else if (info.type === "File") {
-            bytes += Number(info.size);
-            if (++files > 1000 || bytes > 25 * 1024 * 1024)
-              return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
-            const contents = yield* fs.readFile(file);
-            const digest = Hex.encode(yield* crypto.digest("SHA-256", contents).pipe(Effect.orDie));
-            hashes.push(
-              `${path.join(relative, name).split(path.sep).join("/")}\0${info.mode & 0o111}\0${digest}`,
-            );
-            yield* fs.writeFile(target, contents);
-            yield* fs.chmod(target, info.mode & 0o777);
-          } else
-            return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
-        }
-      });
-      yield* copy(sourceRoot, "", new Set());
-      const digest = Hex.encode(
-        yield* crypto
-          .digest("SHA-256", new TextEncoder().encode(hashes.join("\0")))
-          .pipe(Effect.orDie),
-      );
-      return {
-        name: selected.name,
-        description: selected.description,
-        digest,
-        directory: destination,
-      };
+      return yield* inspect(selected.directory, path.join(input.staging, "package"));
     },
     Effect.mapError((cause) =>
       isSkillManagerError(cause)
@@ -255,7 +329,7 @@ const make = Effect.gen(function* () {
         : new SkillManagerError({ operation: "fetch", reason: "io", cause }),
     ),
   );
-  return SkillPackages.of({ fetch, prepare });
+  return SkillPackages.of({ fetch, prepare, inspect, metadata, diagnose });
 });
 
 export const layer = Layer.effect(SkillPackages, make);

@@ -1,3 +1,4 @@
+import { skillMessages } from "./skillMessages.ts";
 export type UiLocale = "en" | "zh-CN";
 
 export type UiTranslator = (
@@ -11,6 +12,7 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  ...skillMessages,
   "Full path": "完整路径",
   "This connection cannot manage worktrees.": "当前连接没有管理工作树的权限。",
   "Worktrees: {current} · Needs attention: {attention} · History: {history}":

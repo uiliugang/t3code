@@ -22,7 +22,13 @@ import {
   OrchestrationV2SearchThreadsResult,
 } from "./orchestrationV2.ts";
 import { OrchestrationDispatchCommandError } from "./orchestrationDispatch.ts";
-import { SkillMutation, SkillSnapshot, SkillManagerError } from "./skills.ts";
+import {
+  SkillMutation,
+  SkillSnapshot,
+  SkillManagerError,
+  SkillInspect,
+  SkillInspection,
+} from "./skills.ts";
 import {
   McpAppCallToolInput,
   McpAppCallToolResult,
@@ -534,6 +540,7 @@ export const WS_METHODS = {
   serverRunStorageCleanup: "server.runStorageCleanup",
   skillsSubscribe: "skills.subscribe",
   skillsMutate: "skills.mutate",
+  skillsInspect: "skills.inspect",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
   peerLinksList: "peerLinks.list",
@@ -802,6 +809,11 @@ const WsSkillsSubscribeRpc = Rpc.make(WS_METHODS.skillsSubscribe, {
   payload: Schema.Struct({}),
   success: SkillSnapshot,
   stream: true,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsInspectRpc = Rpc.make(WS_METHODS.skillsInspect, {
+  payload: SkillInspect,
+  success: SkillInspection,
   error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
 });
 const WsSkillsMutateRpc = Rpc.make(WS_METHODS.skillsMutate, {
@@ -2038,6 +2050,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRunStorageCleanupRpc,
   WsSkillsSubscribeRpc,
   WsSkillsMutateRpc,
+  WsSkillsInspectRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
   WsServerUpdateSettingsRpc,

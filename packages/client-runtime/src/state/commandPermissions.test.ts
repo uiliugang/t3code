@@ -73,13 +73,14 @@ describe("command permissions", () => {
     WS_METHODS.projectsRetryImport,
     WS_METHODS.projectsImportFolders,
     WS_METHODS.skillsMutate,
+    WS_METHODS.skillsInspect,
   ])("requires clone, project and settings grants on the destination for %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
         const command = createCommandPermissions(runtime, method);
         const required =
-          method === WS_METHODS.skillsMutate
+          method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
             ? [AuthProvidersManageScope]
             : method === WS_METHODS.projectsImportFolders
               ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]

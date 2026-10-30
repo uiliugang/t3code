@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./skillsUi": {
+      "types": "./src/skillsUi.ts",
+      "import": "./src/skillsUi.ts"
+    },
     "./threadPrediction": {
       "types": "./src/threadPrediction.ts",
       "import": "./src/threadPrediction.ts"

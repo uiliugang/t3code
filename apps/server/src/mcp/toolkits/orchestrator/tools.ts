@@ -1,6 +1,8 @@
 import {
   SkillSnapshot,
   SkillMutation,
+  SkillInspect,
+  SkillInspection,
   OrchestratorMcpCapabilitiesInput,
   OrchestratorMcpCapabilitiesResult,
   OrchestrationV2StopWorkflowInput,
@@ -360,9 +362,22 @@ const ListSkillsTool = Tool.make("list_managed_skills", {
   dependencies: [SkillManager.SkillManager],
 }).annotate(Tool.Readonly, true);
 
+const InspectSkillsTool = Tool.make("inspect_skill", {
+  description:
+    "Preview a discovered skill before adoption, or read bounded file differences for a managed skill. Use the returned digest when adopting or resolving changes. Paths belong to this environment. Requires full access.",
+  parameters: Schema.Struct({ inspection: SkillInspect }),
+  success: SkillInspection,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    ThreadManagementService.ThreadManagementService,
+    SkillManager.SkillManager,
+  ],
+}).annotate(Tool.Readonly, true);
 const ManageSkillsTool = Tool.make("manage_skills", {
   description:
-    "Queue a skill installation, update, rollback, removal or source/target configuration in this environment. Requires full access. Use list_managed_skills for source, skill and target IDs and completion status. Activation waits until agents are idle; existing unmanaged directories are never overwritten.",
+    "Queue skill installations, adoption, updates, rollback, removal, batch operations or source/target configuration in this environment. New managed skills default to automatic daily updates when idle. Policy automatic checks and applies daily; notify checks daily for manual application; pinned disables updates. The legacy manual value also disables scheduled checks. Requires full access. Use list_managed_skills for IDs and durable job results; queued is not completed. Preview adoption with inspect_skill and pass its digest. Copy keeps originals; takeover backs up only selected locations. External plugin skills cannot be adopted. Local changes block updates until explicitly resolved. Unmanage keeps files or restores adoption backups; remove uninstalls the managed copy. A rollback pins the version; change policy to resume automatic updates.",
   parameters: Schema.Struct({ operation: SkillMutation }),
   success: Schema.Struct({ queued: Schema.Boolean }),
   failure: OrchestratorMcpFailure,
@@ -376,6 +391,7 @@ const ManageSkillsTool = Tool.make("manage_skills", {
 
 export const OrchestratorToolkit = Toolkit.make(
   ListSkillsTool,
+  InspectSkillsTool,
   ManageSkillsTool,
   OrchestratorCapabilitiesTool,
   DelegateTaskTool,
