@@ -92,6 +92,14 @@ export function createProjectEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.projectId]),
   };
   return {
+    inspectFolders: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:inspect-folders",
+      tag: WS_METHODS.projectsInspectFolders,
+    }),
+    importFolders: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:import-folders",
+      tag: WS_METHODS.projectsImportFolders,
+    }),
     fileMetadata: fileMetadata.metadata,
     fileMetadataThread: fileMetadata.retainThread,
     invalidateFileMetadata: createEnvironmentCommand(runtime, {

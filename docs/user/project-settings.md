@@ -46,6 +46,18 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Import existing folders
+
+Use **Settings > Projects > Import folders**, or choose **Import folders** when adding a project.
+Select the environment that owns the folders, browse to their parent directory, and select the
+folders to import. **Select available** skips existing projects and other copies of repositories
+already selected or added; you can select a different checkout explicitly. Selections remain
+while browsing other directories. A project's settings also offer **Import sibling folders**.
+
+Importing registers existing folders without copying files, initializing Git, or starting threads.
+Duplicate directories, including symbolic links to an existing project, are skipped. Successful
+imports are kept if another folder fails; retry the remaining folders after correcting the error.
+
 ## Repository groups
 
 Choose **Create group** beside **Add project** in the sidebar, or search for it in the
@@ -117,7 +129,8 @@ are replaced with hyphens. Custom instructions are appended to
 the naming prompt and can specify issue IDs, namespaces, and casing.
 
 These settings apply to automatically named branches for new tasks and worktrees. Select a project
-to override its environment defaults. Worktree directories keep their original names.
+to override its environment defaults. New worktree directories use the final branch name,
+with slashes replaced by hyphens, before setup scripts and the agent start.
 If generation fails, or a custom name is invalid or already taken, the temporary
 branch name remains.
 

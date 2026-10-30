@@ -23,6 +23,7 @@ import {
   ProviderInstanceId,
   OrchestrationV2ThreadProjectionJson,
   ScheduledTaskId,
+  TextGenerationError,
   type ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
@@ -176,6 +177,8 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
     Layer.mock(TerminalManager.TerminalManager)({ close: closeTerminal }),
     Layer.succeed(ProjectService.ProjectService, {
+      inspectFolders: () => Effect.die("unused"),
+      importFolders: () => Effect.die("unused"),
       create: () => Effect.die("unused"),
       bootstrap: () => Effect.die("unused"),
       update: () => Effect.die("unused"),
@@ -1062,16 +1065,29 @@ it.effect("runs a Scratch scheduled task saved with a worktree in its own folder
   }).pipe(Effect.provide(harness.layer));
 });
 
-it.effect.each(["stable", "upstream/release"])(
-  "launches from %s with the fetched commit and remote PR base",
-  (baseRef) =>
+it.effect.each(
+  ["stable", "upstream/release"].flatMap((baseRef) =>
+    (["manual", "generated", "failed"] as const).map((naming) => ({ baseRef, naming })),
+  ),
+)(
+  "launches from $baseRef with the fetched commit and remote PR base ($naming naming)",
+  ({ baseRef, naming }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const git = yield* GitVcsDriver.GitVcsDriver;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "launch-remote-base-" });
       const cwd = `${directory}/repo`;
       const remote = `${directory}/remote.git`;
-      const worktreePath = `${directory}/worktree`;
+      const automaticName = naming !== "manual";
+      const expectedBranch =
+        naming === "generated"
+          ? "lg/import-folders"
+          : naming === "failed"
+            ? "t3/abcdef12"
+            : "feature";
+      const worktreePath = automaticName
+        ? `${directory}/worktrees/repo/${expectedBranch.replaceAll("/", "-")}`
+        : `${directory}/worktree`;
       yield* fs.makeDirectory(cwd);
       const command = (at: string, args: string[]) =>
         git.execute({ operation: "launch-test", cwd: at, args });
@@ -1089,7 +1105,7 @@ it.effect.each(["stable", "upstream/release"])(
       yield* command(cwd, ["reset", "--hard", localHead]);
       yield* command(cwd, ["update-ref", "-d", "refs/remotes/upstream/release"]);
 
-      const setupStarted = yield* Deferred.make<void>();
+      const setupStarted = yield* Deferred.make<string>();
       const harness = makeHarness({
         hasCommit: ({ refName }) =>
           command(cwd, ["rev-parse", "--verify", `${refName}^{commit}`]).pipe(
@@ -1102,9 +1118,18 @@ it.effect.each(["stable", "upstream/release"])(
         },
         fetchWorktreeBaseCommit: (input) => git.fetchWorktreeBaseCommit({ ...input, cwd }),
         createWorktree: (input, options) =>
-          git.createWorktree({ ...input, cwd, path: worktreePath }, options),
-        runSetup: () =>
-          Deferred.succeed(setupStarted, undefined).pipe(
+          git.createWorktree(
+            { ...input, cwd, path: automaticName ? null : worktreePath },
+            { ...options, worktreesDirectory: `${directory}/worktrees` },
+          ),
+        generateBranchName: () =>
+          naming === "failed"
+            ? Effect.fail(
+                new TextGenerationError({ operation: "generateBranchName", detail: "Unavailable" }),
+              )
+            : Effect.succeed({ branch: "lg/import-folders" }),
+        runSetup: (input) =>
+          Deferred.succeed(setupStarted, input.worktreePath).pipe(
             Effect.as({ status: "no-script" as const }),
           ),
       });
@@ -1114,7 +1139,7 @@ it.effect.each(["stable", "upstream/release"])(
         const workspace = {
           type: "worktree" as const,
           baseRef,
-          branch: "feature",
+          ...(naming === "generated" ? {} : { branch: expectedBranch }),
           startFromOrigin: true,
         };
         yield* launches.checkWorktreeBase({ projectId, workspaceStrategy: workspace });
@@ -1123,11 +1148,18 @@ it.effect.each(["stable", "upstream/release"])(
             command: "command:launch:remote-base",
             thread: "thread:launch:remote-base",
             workspace,
+            ...(automaticName ? { message: "Import folders" } : {}),
           }),
         );
-        yield* Deferred.await(setupStarted);
+        const setupCwd = yield* Deferred.await(setupStarted);
+        assert.equal(setupCwd, worktreePath);
+        assert.equal(
+          (yield* command(setupCwd, ["branch", "--show-current"])).stdout.trim(),
+          expectedBranch,
+        );
         const projection = yield* threads.getThreadProjection(launched.threadId);
         assert.equal(projection.thread.worktreePath, worktreePath);
+        assert.equal(projection.thread.branch, expectedBranch);
         assert.equal(
           (yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim(),
           remoteHead,
@@ -2127,17 +2159,12 @@ it.effect("cancels tracked setup before provider work is released", () =>
   }),
 );
 
-it.effect("stops an in-flight branch rename when tracked setup is cancelled", () =>
+it.effect("cancels branch naming before creating the worktree or starting setup", () =>
   Effect.gen(function* () {
-    const setupEntered = yield* Deferred.make<void>();
     const branchNameStarted = yield* Deferred.make<void>();
     const allowBranchName = yield* Deferred.make<void>();
     const branchNameInterrupted = yield* Deferred.make<void>();
-    const renameAttempted = yield* Deferred.make<void>();
     const harness = makeHarness({
-      renameBranch: (input) =>
-        Deferred.succeed(renameAttempted, undefined).pipe(Effect.as({ branch: input.newBranch })),
-      runSetup: () => Deferred.succeed(setupEntered, undefined).pipe(Effect.andThen(Effect.never)),
       generateBranchName: () =>
         Deferred.succeed(branchNameStarted, undefined).pipe(
           Effect.andThen(Deferred.await(allowBranchName)),
@@ -2157,18 +2184,12 @@ it.effect("stops an in-flight branch rename when tracked setup is cancelled", ()
           workspace: { type: "worktree", baseRef: "main" },
         }),
       );
-      yield* Deferred.await(setupEntered);
       yield* Deferred.await(branchNameStarted);
       assert.isTrue(yield* tracker.cancel(launched.threadId));
       yield* Deferred.succeed(allowBranchName, undefined);
-      yield* Effect.raceFirst(
-        Deferred.await(branchNameInterrupted),
-        Deferred.await(renameAttempted),
-      );
-      assert.isTrue(
-        yield* Deferred.isDone(branchNameInterrupted),
-        "the cancelled setup's branch rename kept running",
-      );
+      yield* Deferred.await(branchNameInterrupted);
+      assert.equal(harness.createWorktree.mock.calls.length, 0);
+      assert.equal(harness.runSetup.mock.calls.length, 0);
       assert.equal(harness.renameBranch.mock.calls.length, 0);
       assert.isNull((yield* threads.getThreadProjection(launched.threadId)).thread.worktreePath);
     }).pipe(Effect.provide(harness.layer));

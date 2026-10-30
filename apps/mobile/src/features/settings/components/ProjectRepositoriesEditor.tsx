@@ -6,10 +6,15 @@ import {
   type ProjectWorkspaceRoot,
 } from "@t3tools/contracts";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 import { View } from "react-native";
 import { AppText, AppTextInput } from "../../../components/ui/AppText";
 import { Button } from "../../../components/ui/Button";
+import * as Dialog from "../../../components/ui/Dialog";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { uuidv4 } from "../../../lib/uuid";
 import { projectEnvironment } from "../../../state/projects";
@@ -26,7 +31,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
   const permission = useEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope);
   const t = useUiTranslation();
   const allowed = permission && config?.environment.capabilities.multiRepositoryWorkspaces === true;
-  const update = useAtomCommand(projectEnvironment.update, { reportFailure: true });
+  const update = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const [roots, setRoots] = useState<ReadonlyArray<ProjectWorkspaceRoot>>(
     () =>
       project.workspaceConfig?.roots ?? [
@@ -70,6 +75,13 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
           selectProject(
             derivePhysicalProjectKey({ ...result.value, environmentId: project.environmentId }),
           );
+        Dialog.alert(t("Repositories saved"));
+      } else if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        Dialog.alert(
+          t("Failed to save repositories"),
+          t(error instanceof Error ? error.message : "An error occurred."),
+        );
       }
     } finally {
       setSaving(false);

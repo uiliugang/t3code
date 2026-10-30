@@ -9,6 +9,7 @@ import { vi } from "vite-plus/test";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
+  AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
@@ -66,39 +67,40 @@ const setup = Effect.gen(function* () {
 });
 
 describe("command permissions", () => {
-  it.effect.each([WS_METHODS.projectsImportConfiguration, WS_METHODS.projectsRetryImport])(
-    "requires clone, project and settings grants on the destination for %s",
-    (method) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const registry = yield* setup;
-          const command = createCommandPermissions(runtime, method);
-          const required = [
-            AuthSourceControlWriteScope,
-            AuthOrchestrationOperateScope,
-            AuthSettingsWriteScope,
-          ];
-          for (const missing of required) {
-            const scopes = required.filter((scope) => scope !== missing);
-            registry.set(
-              sessions(env),
-              AsyncResult.success({ ...grant(false), scopes, permissions: scopes }),
-            );
-            expect(registry.get(command.permissionAtom(env))).toBe(false);
-            expect(yield* command.authorize(registry, env).pipe(Effect.flip)).toMatchObject({
-              requiredPermission: missing,
-            });
-          }
+  it.effect.each([
+    WS_METHODS.projectsImportConfiguration,
+    WS_METHODS.projectsRetryImport,
+    WS_METHODS.projectsImportFolders,
+  ])("requires clone, project and settings grants on the destination for %s", (method) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const command = createCommandPermissions(runtime, method);
+        const required =
+          method === WS_METHODS.projectsImportFolders
+            ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
+            : [AuthSourceControlWriteScope, AuthOrchestrationOperateScope, AuthSettingsWriteScope];
+        for (const missing of required) {
+          const scopes = required.filter((scope) => scope !== missing);
           registry.set(
             sessions(env),
-            AsyncResult.success({ ...grant(false), scopes: required, permissions: required }),
+            AsyncResult.success({ ...grant(false), scopes, permissions: scopes }),
           );
-          expect(registry.get(command.permissionAtom(env))).toBe(true);
-          yield* command.authorize(registry, env);
-          registry.set(sessions(other), AsyncResult.success(grant(false)));
-          expect(registry.get(command.permissionAtom(other))).toBe(false);
-        }),
-      ),
+          expect(registry.get(command.permissionAtom(env))).toBe(false);
+          expect(yield* command.authorize(registry, env).pipe(Effect.flip)).toMatchObject({
+            requiredPermission: missing,
+          });
+        }
+        registry.set(
+          sessions(env),
+          AsyncResult.success({ ...grant(false), scopes: required, permissions: required }),
+        );
+        expect(registry.get(command.permissionAtom(env))).toBe(true);
+        yield* command.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(command.permissionAtom(other))).toBe(false);
+      }),
+    ),
   );
   it.effect("requires the destination preview grant to close a browser tab", () =>
     Effect.scoped(

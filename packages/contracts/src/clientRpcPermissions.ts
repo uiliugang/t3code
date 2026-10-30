@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
   AuthAccessWriteScope,
+  AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
@@ -15,6 +16,7 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  [WS_METHODS.projectsImportFolders]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsExportConfiguration]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsImportConfiguration]: AuthSourceControlWriteScope,
   [WS_METHODS.projectsRetryImport]: AuthSourceControlWriteScope,
@@ -82,6 +84,8 @@ export function clientRpcRequiredScopes(
 ): readonly AuthEnvironmentScope[] {
   if (method === WS_METHODS.managedWorktreesRestore)
     return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
+  if (method === WS_METHODS.projectsImportFolders)
+    return [AuthOrchestrationOperateScope, AuthFilesystemReadScope];
   if (
     method === WS_METHODS.projectsImportConfiguration ||
     method === WS_METHODS.projectsRetryImport

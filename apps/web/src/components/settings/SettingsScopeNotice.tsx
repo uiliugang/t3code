@@ -33,8 +33,10 @@ export function SettingsScopeNotice({
   targetId,
   eligibleEnvironmentIds,
   inline = false,
+  actions,
 }: {
   children: string;
+  actions?: ReactNode;
   /** Renders inside a section instead of as its own page. */
   inline?: boolean;
   target: "environment" | "all" | "project" | "checkout";
@@ -152,6 +154,7 @@ export function SettingsScopeNotice({
   };
   const notice = (
     <div className="space-y-3">
+      {actions}
       <p role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
         {children}
       </p>

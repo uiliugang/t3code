@@ -5,14 +5,18 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
+  EventId,
   type Project,
   ProjectId,
   ProviderInstanceId,
+  ThreadId,
   WorkspaceRootId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
@@ -100,19 +104,88 @@ const layerTestFor = (
     | ProjectFaviconResolver.ProjectFaviconResolver
     | RepositoryIdentityResolver.RepositoryIdentityResolver
   >,
+  realPaths = false,
 ) =>
   RuntimeLayer.layerProjectService.pipe(
     Layer.provideMerge(ProjectEnrichmentService.layer),
-    Layer.provideMerge(layerWorkspacePaths),
+    Layer.provideMerge(realPaths ? WorkspacePaths.layer : layerWorkspacePaths),
     Layer.provideMerge(projectMetadataLayer),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-test-" })),
-    Layer.provide(NodeServices.layer),
+    Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(layerEnrichmentCompletions),
   );
 
 const layerTest = layerTestFor(layerMetadata);
+
+it.layer(layerTestFor(layerMetadata, true))("folder import", (it) => {
+  it.effect(
+    "deduplicates paths and repositories, preserves successes and retries failed folders",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const root = yield* fs.makeTempDirectoryScoped();
+        const service = yield* ProjectService.ProjectService;
+        const first = `${root}/one/repo`;
+        const second = `${root}/two/repo`;
+        const missing = `${root}/missing`;
+        yield* fs.makeDirectory(first, { recursive: true });
+        yield* fs.makeDirectory(second, { recursive: true });
+        yield* fs.symlink(first, `${root}/alias`);
+        const paths = [first, `${root}/alias`, second, missing];
+        const preview = yield* service.inspectFolders({ paths });
+        assert.equal(preview[0]?.workspaceRoot, preview[1]?.workspaceRoot);
+        assert.equal(preview[0]?.repositoryKey, preview[2]?.repositoryKey);
+        assert.isNotNull(preview[3]?.error);
+        const input = { folders: paths.map((path) => ({ path, allowSameRepository: false })) };
+        const result = yield* service.importFolders(input);
+        assert.deepEqual(
+          result.map((entry) => entry.status),
+          ["created", "existing", "repository", "failed"],
+        );
+        assert.equal(result[0]?.projectId, result[1]?.projectId);
+        const existing = yield* service.inspectFolders({ paths: [second] });
+        assert.equal(existing[0]?.matchingRepositoryProjectId, result[0]?.projectId);
+        yield* fs.makeDirectory(missing);
+        const retry = yield* service.importFolders(input);
+        assert.deepEqual(
+          retry.map((entry) => entry.status),
+          ["existing", "existing", "repository", "created"],
+        );
+        const explicit = yield* service.importFolders({
+          folders: [{ path: second, allowSameRepository: true }],
+        });
+        assert.equal(explicit[0]?.status, "created");
+        assert.lengthOf((yield* service.snapshot).projects, 3);
+      }),
+  );
+  it.effect("serializes concurrent imports of the same physical folder", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(`${root}/repo`);
+      yield* fs.symlink(`${root}/repo`, `${root}/alias`);
+      const service = yield* ProjectService.ProjectService;
+      const results = yield* Effect.forEach(
+        ["repo", "alias"],
+        (name) =>
+          service.importFolders({
+            folders: [{ path: `${root}/${name}`, allowSameRepository: true }],
+          }),
+        { concurrency: 2 },
+      );
+      assert.deepEqual(
+        results
+          .flat()
+          .map((entry) => entry.status)
+          .sort(),
+        ["created", "existing"],
+      );
+      assert.equal(results[0]?.[0]?.projectId, results[1]?.[0]?.projectId);
+    }),
+  );
+});
 
 const layerProjectServiceDependencies = Layer.mergeAll(
   RuntimeLayer.layerEventSink,
@@ -128,7 +201,7 @@ const layerProjectServiceDependencies = Layer.mergeAll(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-race-" })),
-  Layer.provide(NodeServices.layer),
+  Layer.provideMerge(NodeServices.layer),
 );
 
 const waitForProject = Effect.fn("ProjectServiceTest.waitForProject")(function* (
@@ -149,6 +222,35 @@ const waitForProject = Effect.fn("ProjectServiceTest.waitForProject")(function* 
 });
 
 it.layer(layerTest)("ProjectService", (it) => {
+  it.effect("rejects another project for a symbolic link to an existing folder", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(`${root}/repo`);
+      yield* fs.symlink(`${root}/repo`, `${root}/alias`);
+      const service = yield* ProjectService.ProjectService;
+      const original = yield* service.create({
+        commandId: CommandId.make("alias-original"),
+        projectId: ProjectId.make("alias-original"),
+        title: "Original",
+        workspaceRoot: `${root}/repo`,
+      });
+      const duplicate = yield* service
+        .create({
+          commandId: CommandId.make("alias-duplicate"),
+          projectId: ProjectId.make("alias-duplicate"),
+          title: "Duplicate",
+          workspaceRoot: `${root}/alias`,
+        })
+        .pipe(Effect.result);
+      assert.equal(duplicate._tag, "Failure");
+      assert.equal(
+        Option.getOrThrow(yield* service.getByWorkspaceRoot(`${root}/alias`)).id,
+        original.id,
+      );
+      yield* service.delete({ commandId: CommandId.make("alias-cleanup"), projectId: original.id });
+    }),
+  );
   it.effect("creates, updates, resolves, snapshots, and soft-deletes projects", () =>
     Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;
@@ -696,6 +798,80 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
       );
     }).pipe(Effect.provide(layerTestFor(layerVersionedMetadata)));
   }),
+);
+
+it.effect(
+  "explains why archived legacy tasks block changing the primary repository directory",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.make;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const projectId = ProjectId.make("project:legacy-root");
+      const threadId = ThreadId.make("thread:legacy-root");
+      const providerInstanceId = ProviderInstanceId.make("codex");
+      const now = DateTime.makeUnsafe("2026-10-30T00:00:00.000Z");
+      yield* service.create({
+        commandId: CommandId.make("command:legacy-root:create"),
+        projectId,
+        title: "Legacy",
+        workspaceRoot: "/work/original",
+      });
+      yield* projections.apply({
+        id: EventId.make("event:legacy-root:thread"),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId,
+          title: "Archived legacy task",
+          providerInstanceId,
+          modelSelection: { instanceId: providerInstanceId, model: "test-model" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: now,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      });
+      const failure = yield* service
+        .update({
+          commandId: CommandId.make("command:legacy-root:move"),
+          projectId,
+          workspaceConfig: {
+            primaryRootId: WorkspaceRootId.make("primary"),
+            roots: [
+              {
+                id: WorkspaceRootId.make("primary"),
+                alias: "primary",
+                sourcePath: "/work/moved",
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+          expectedWorkspaceVersion: 0,
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(failure, ProjectService.ProjectWorkspaceRootChangeBlockedError);
+      assert.include(failure.message, "including archived tasks");
+      assert.include(failure.message, "Create a new project");
+      const project = Option.getOrThrow(yield* service.getById(projectId));
+      assert.equal(project.workspaceRoot, "/work/original");
+      assert.isUndefined(project.workspaceConfig);
+    }).pipe(Effect.provide(layerProjectServiceDependencies)),
 );
 
 it.effect("serializes two projects claiming the same workspace root", () =>

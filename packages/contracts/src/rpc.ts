@@ -407,6 +407,13 @@ import {
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 import {
+  ProjectFoldersInspectInput,
+  ProjectFoldersInspectResult,
+  ProjectFoldersImportInput,
+  ProjectFoldersImportResult,
+  ProjectFoldersError,
+} from "./projectFolders.ts";
+import {
   ProjectConfigurationExportInput,
   ProjectConfigurationExportResult,
   ProjectImportStartInput,
@@ -423,6 +430,8 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
   projectsMutate: "projects.mutate",
+  projectsInspectFolders: "projects.inspectFolders",
+  projectsImportFolders: "projects.importFolders",
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
   projectsExportConfiguration: "projects.exportConfiguration",
@@ -1333,6 +1342,17 @@ const WsProjectsMutateRpc = Rpc.make(WS_METHODS.projectsMutate, {
   error: Schema.Union([ProjectMutationError, EnvironmentAuthorizationError]),
 });
 
+const WsProjectsInspectFoldersRpc = Rpc.make(WS_METHODS.projectsInspectFolders, {
+  payload: ProjectFoldersInspectInput,
+  success: ProjectFoldersInspectResult,
+  error: Schema.Union([ProjectFoldersError, EnvironmentAuthorizationError]),
+});
+const WsProjectsImportFoldersRpc = Rpc.make(WS_METHODS.projectsImportFolders, {
+  payload: ProjectFoldersImportInput,
+  success: ProjectFoldersImportResult,
+  error: Schema.Union([ProjectFoldersError, EnvironmentAuthorizationError]),
+});
+
 const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
   payload: Schema.Struct({}),
   success: ProjectEnsureScratchResult,
@@ -2098,6 +2118,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchEntriesRpc,
   WsProjectsEnsureScratchRpc,
   WsProjectsCreateNewRpc,
+  WsProjectsInspectFoldersRpc,
+  WsProjectsImportFoldersRpc,
   WsProjectsWriteFileRpc,
   WsProjectsMutateRpc,
   WsShellOpenInEditorRpc,

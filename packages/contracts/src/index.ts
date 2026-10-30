@@ -51,6 +51,7 @@ export * from "./threadTitle.ts";
 export * from "./t3ProjectFile.ts";
 export * from "./editor.ts";
 export * from "./project.ts";
+export * from "./projectFolders.ts";
 export * from "./workspace.ts";
 export * from "./managedWorktrees.ts";
 export * from "./filesystem.ts";

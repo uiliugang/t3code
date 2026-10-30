@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   ProjectMutation,
   ProjectId,
+  ProjectFolderCandidate,
   ServerConfig,
   SourceControlDiscoveryResult,
   SourceControlRepositoryInfo,
@@ -26,6 +27,38 @@ import {
 import type { EnvironmentProject } from "../state/models.ts";
 import { sourceControlClients } from "../sourceControlClients.ts";
 import type { SourceControlDefinition } from "../sourceControlClients.ts";
+
+export type ProjectFolderSelection = ProjectFolderCandidate & {
+  readonly allowSameRepository: boolean;
+};
+
+export function selectProjectFolders(
+  selected: ReadonlyArray<ProjectFolderSelection>,
+  candidates: ReadonlyArray<ProjectFolderCandidate>,
+  explicit = false,
+): ProjectFolderSelection[] {
+  const next = [...selected];
+  for (const candidate of candidates) {
+    if (candidate.error || candidate.existingProjectId || !candidate.workspaceRoot) continue;
+    if (next.some((entry) => entry.workspaceRoot === candidate.workspaceRoot)) continue;
+    if (
+      !explicit &&
+      (candidate.matchingRepositoryProjectId ||
+        (candidate.repositoryKey &&
+          next.some((entry) => entry.repositoryKey === candidate.repositoryKey)))
+    )
+      continue;
+    next.push({ ...candidate, allowSameRepository: explicit });
+  }
+  return next;
+}
+
+export function projectFolderStatus(candidate: ProjectFolderCandidate): string {
+  if (candidate.error) return candidate.error;
+  if (candidate.existingProjectId) return "Already added";
+  if (candidate.matchingRepositoryProjectId) return "Repository already added";
+  return candidate.repositoryKey ?? "Folder";
+}
 
 export type AddProjectRemoteSource = SourceControlProviderKind | "url";
 

@@ -77,6 +77,7 @@ import {
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   ProjectMutationError,
+  ProjectFoldersError,
   ProviderUploadFeedbackError,
   ProviderSetupError,
   RelayClientInstallFailedError,
@@ -455,7 +456,10 @@ export function projectMutationFailureMessage(
   ) {
     return error.cause.message;
   }
-  return error._tag === "ProjectNotEmptyError" ? error.message : "Failed to mutate project.";
+  return error._tag === "ProjectNotEmptyError" ||
+    error._tag === "ProjectWorkspaceRootChangeBlockedError"
+    ? error.message
+    : "Failed to mutate project.";
 }
 
 function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesError): {
@@ -2741,6 +2745,14 @@ export const layerWsRpc = (
         [WS_METHODS.projectsExportConfiguration]: (input) =>
           projectConfigurations.exportProjects(input),
         [WS_METHODS.projectsImportConfiguration]: (input) => projectConfigurations.start(input),
+        [WS_METHODS.projectsInspectFolders]: (input) =>
+          projectService
+            .inspectFolders(input)
+            .pipe(Effect.mapError((cause) => new ProjectFoldersError({ cause }))),
+        [WS_METHODS.projectsImportFolders]: (input) =>
+          projectService
+            .importFolders(input)
+            .pipe(Effect.mapError((cause) => new ProjectFoldersError({ cause }))),
         [WS_METHODS.projectsRetryImport]: (input) => projectConfigurations.retry(input.id),
         [WS_METHODS.projectsForgetImport]: (input) => projectConfigurations.forget(input.id),
         [WS_METHODS.subscribeProjectImports]: () => projectConfigurations.stream,
