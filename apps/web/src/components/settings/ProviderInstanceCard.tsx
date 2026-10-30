@@ -159,14 +159,26 @@ function nextConfigBlobWithValue(
 export function deriveProviderModelsForDisplay(input: {
   readonly liveModels: ReadonlyArray<ServerProviderModel> | undefined;
   readonly customModels: ReadonlyArray<CustomModelDefinition>;
+  readonly includeCustomModels?: boolean;
 }): ReadonlyArray<ServerProviderModel> {
   const liveCustomModelsBySlug = new Map(
     Arr.filterMap(input.liveModels ?? [], (model) =>
       model.isCustom ? Result.succeed([model.slug, model] as const) : Result.failVoid,
     ),
   );
-  const serverModels = input.liveModels?.filter((model) => !model.isCustom) ?? [];
+  const overrides = new Map(input.customModels.map((entry) => [entry.slug, entry]));
+  const serverModels = (input.liveModels?.filter((model) => !model.isCustom) ?? []).map((model) => {
+    const override = overrides.get(model.slug);
+    return override
+      ? {
+          ...model,
+          name: override.name === override.slug ? model.name : override.name,
+          capabilities: override.capabilities ?? model.capabilities,
+        }
+      : model;
+  });
   const serverSlugs = new Set(serverModels.map((model) => model.slug));
+  if (input.includeCustomModels === false) return serverModels;
   const customModels = input.customModels.flatMap((entry) =>
     serverSlugs.has(entry.slug)
       ? []
@@ -597,7 +609,6 @@ interface ProviderInstanceCardProps {
 }
 
 const EMPTY_ACP_PROJECTS: NonNullable<ProviderInstanceCardProps["acpProjects"]> = [];
-const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
 
 /** Unknown drivers stay read-only to preserve fork config. projectOverride switches affect only the
  * project, not instance.enabled. */
@@ -704,13 +715,11 @@ export function ProviderInstanceCard({
     instance.config !== null && typeof instance.config === "object"
       ? (instance.config as Record<string, unknown>).customModels
       : undefined;
-  const customModels =
-    instance.driver === "antigravity"
-      ? NO_CUSTOM_MODELS
-      : readCustomModelEntries(storedCustomModels);
+  const customModels = readCustomModelEntries(storedCustomModels);
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
     customModels,
+    includeCustomModels: instance.driver !== "antigravity",
   });
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();

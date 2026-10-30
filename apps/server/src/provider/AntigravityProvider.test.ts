@@ -131,6 +131,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
   options: {
     readonly enabled?: boolean;
     readonly safe?: boolean;
+    readonly customModels?: AntigravitySettings["customModels"];
     readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
   } = {},
 ) {
@@ -142,7 +143,10 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
   );
   const safety = yield* Ref.make<Effect.Effect<boolean>>(Effect.succeed(options.safe ?? true));
   const provider = yield* makeAntigravityProvider(
-    decodeSettings({ enabled: options.enabled ?? true, customModels: ["do-not-seed-me"] }),
+    decodeSettings({
+      enabled: options.enabled ?? true,
+      customModels: options.customModels ?? ["do-not-seed-me"],
+    }),
     {
       stampIdentity: (snapshot) => Effect.succeed({ ...snapshot, instanceId, driver }),
       ...(options.probeUsage ? { probeUsage: options.probeUsage } : {}),
@@ -266,7 +270,10 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
   it.effect("publishes session metadata and native commands without another health probe", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const harness = yield* makeHarness();
+        const model = buildAntigravityModelsFromSession(sessionSetupResult)[0]!;
+        const harness = yield* makeHarness({
+          customModels: ["do-not-seed-me", { slug: model.slug, name: "Team Gemini" }],
+        });
         yield* harness.initialize;
         const nextReady = yield* Stream.toPull(
           harness.provider.snapshot.streamChanges.pipe(
@@ -284,7 +291,12 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
           auth: { status: "authenticated", type: "oauth-personal" },
           supportsTextGeneration: true,
         });
-        expect(snapshot.models).toEqual(buildAntigravityModelsFromSession(sessionSetupResult));
+        const expectedModels = buildAntigravityModelsFromSession(sessionSetupResult).map((entry) =>
+          entry.slug === model.slug ? { ...entry, name: "Team Gemini" } : entry,
+        );
+        expect(snapshot.models).toEqual(expectedModels);
+        yield* harness.provider.onConfigOptionsUpdated([modelConfig]);
+        expect((yield* harness.provider.snapshot.getSnapshot).models).toEqual(expectedModels);
         expect(snapshot.slashCommands).toEqual(expectedCommands);
         expect((yield* harness.provider.snapshotForCwd("/workspace")).slashCommands).toEqual(
           expectedCommands,
@@ -609,7 +621,10 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
             windows: [],
             unavailable: { reason: "probeFailed" },
           });
-          expect((yield* harness.provider.snapshot.refresh).usageLimits).toEqual(limits);
+          expect((yield* harness.provider.snapshot.refresh).usageLimits).toEqual({
+            ...limits,
+            unavailable: { reason: "probeFailed" },
+          });
           yield* harness.provider.onSignedOut;
           expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
           yield* Ref.set(usage, {

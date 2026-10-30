@@ -160,6 +160,7 @@ const fixture = Effect.gen(function* () {
     ),
   );
   return {
+    temp,
     fs,
     path,
     sql,
@@ -276,6 +277,15 @@ it.live("deduplicates shared checkouts, protects nested project roots and filter
     });
     yield* Effect.gen(function* () {
       const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const scratch = path.join(context.temp, "scratch");
+      yield* fs.makeDirectory(scratch);
+      yield* persist({
+        ...thread,
+        id: ThreadId.make("scratch"),
+        workspace: undefined,
+        branch: null,
+        worktreePath: scratch,
+      });
       const groups = yield* service.list({});
       assert.lengthOf(groups, 1);
       assert.lengthOf(groups[0]!.threads, 2);
@@ -311,6 +321,58 @@ it.live("deduplicates shared checkouts, protects nested project roots and filter
         "failed",
       );
       assert.isTrue(yield* fs.exists(nestedCheckout));
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("classifies missing and leftover worktrees without losing historical branches", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture;
+    const { resources, git, fs, path, workspace } = context;
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      for (const resource of resources) {
+        yield* git.execute({
+          operation: "test",
+          cwd: resource.identity.commonDir,
+          args: [
+            "--git-dir",
+            resource.identity.commonDir,
+            "worktree",
+            "remove",
+            resource.checkoutRoot,
+          ],
+        });
+        const [group] = yield* service.list({});
+        assert.equal(group!.status, resource === resources[0] ? "blocked" : "removed");
+        assert.propertyVal(
+          group!.resources.find((entry) => entry.path === resource.checkoutRoot)!,
+          "inspection",
+          "missing",
+        );
+        assert.equal(
+          group!.resources.find((entry) => entry.path === resource.checkoutRoot)!.branch,
+          workspace.bindings.find((binding) => binding.resourceId === resource.id)!.launchBranch,
+        );
+      }
+      const [missing] = yield* service.list({});
+      assert.isFalse(missing!.recoveryPending);
+      assert.deepEqual(missing!.actions, { remove: false, restore: false });
+      const leftover = resources[0]!.checkoutRoot;
+      yield* fs.makeDirectory(leftover);
+      yield* fs.writeFileString(path.join(leftover, "notes.txt"), "keep");
+      const [retained] = yield* service.list({});
+      assert.equal(retained!.status, "blocked");
+      assert.propertyVal(
+        retained!.resources.find((entry) => entry.path === leftover)!,
+        "inspection",
+        "non-git",
+      );
+      assert.equal(
+        (yield* service.remove({ targets: [retained!], deleteIgnoredFiles: true }))[0]!.outcome,
+        "failed",
+      );
+      assert.equal(yield* fs.readFileString(path.join(leftover, "notes.txt")), "keep");
     }).pipe(Effect.provide(context.layer));
   }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );

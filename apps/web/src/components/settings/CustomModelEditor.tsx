@@ -47,6 +47,7 @@ export function CustomModelEditor({
 }: CustomModelEditorProps) {
   const [draft, setDraft] = useState<CustomModelDraft>(() => draftFromDefinition(entry));
   const [error, setError] = useState<string | null>(null);
+  const nameOnly = driverKind === "antigravity";
   const presets = driverKind ? (DESCRIPTOR_PRESETS_BY_KIND[driverKind] ?? []) : [];
   const startFromCandidates = builtInModels.filter(
     (model) => (model.capabilities?.optionDescriptors?.length ?? 0) > 0,
@@ -123,12 +124,28 @@ export function CustomModelEditor({
   };
 
   const handleSave = () => {
+    if (nameOnly) {
+      onSave({
+        slug: entry.slug,
+        name: draft.name.trim() || entry.slug,
+        capabilities: entry.capabilities,
+      });
+      return;
+    }
     const problem = validateDraft(draft, reservedSlugs);
     if (problem) {
       setError(problem);
       return;
     }
-    onSave(definitionFromDraft(draft));
+    onSave(
+      definitionFromDraft({
+        ...draft,
+        descriptors:
+          driverKind === "claudeAgent" && draft.slug.trim() !== entry.slug
+            ? draft.descriptors.filter((descriptor) => descriptor.id !== "contextWindow")
+            : draft.descriptors,
+      }),
+    );
   };
 
   const idSelectValue = (descriptor: EditorDescriptor) =>
@@ -294,7 +311,8 @@ export function CustomModelEditor({
         <Input
           id={domId("slug")}
           size="sm"
-          autoFocus
+          autoFocus={!nameOnly}
+          readOnly={nameOnly}
           value={draft.slug}
           onChange={(event) => {
             setError(null);
@@ -305,8 +323,9 @@ export function CustomModelEditor({
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          Model IDs are case-sensitive. Select the updated model again in existing threads and
-          default model settings.
+          {nameOnly
+            ? "Model IDs and options are managed by the Antigravity account."
+            : "Model IDs are case-sensitive. Select the updated model again in existing threads and default model settings."}
         </p>
       </div>
       <div className="flex flex-col gap-1">
@@ -316,6 +335,7 @@ export function CustomModelEditor({
         <Input
           id={domId("name")}
           size="sm"
+          autoFocus={nameOnly}
           value={draft.name}
           onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
           placeholder={draft.slug}
@@ -324,63 +344,65 @@ export function CustomModelEditor({
         />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">Options shown in the composer</span>
-          {startFromCandidates.length > 0 ? (
-            <Select value={START_FROM_NONE} onValueChange={handleStartFrom}>
-              <SelectTrigger
-                size="compact"
-                className="w-44"
-                aria-label="Copy options from a built-in model"
-              >
-                <SelectValue>Copy from…</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {startFromCandidates.map((model) => (
-                  <SelectItem key={model.slug} value={model.slug}>
-                    {model.name}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
+      {!nameOnly ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Options shown in the composer</span>
+            {startFromCandidates.length > 0 ? (
+              <Select value={START_FROM_NONE} onValueChange={handleStartFrom}>
+                <SelectTrigger
+                  size="compact"
+                  className="w-44"
+                  aria-label="Copy options from a built-in model"
+                >
+                  <SelectValue>Copy from…</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {startFromCandidates.map((model) => (
+                    <SelectItem key={model.slug} value={model.slug}>
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            ) : null}
+          </div>
+          {draft.descriptors.length === 0 ? (
+            <p className="text-xs text-muted-foreground/70">
+              No custom options. The composer uses the provider's default options.
+            </p>
           ) : null}
+          {draft.descriptors.map(renderDescriptor)}
+          <div className="flex flex-wrap gap-1">
+            {presets
+              .filter(
+                (preset) => !draft.descriptors.some((descriptor) => descriptor.id === preset.id),
+              )
+              .map((preset) => (
+                <Button
+                  key={preset.id}
+                  type="button"
+                  size="xs"
+                  variant="ghost-muted"
+                  className={cn("-ml-2 first:ml-0")}
+                  onClick={() => addDescriptor(descriptorFromPreset(preset))}
+                >
+                  <PlusIcon className="size-3" />
+                  {preset.label}
+                </Button>
+              ))}
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost-muted"
+              onClick={() => addDescriptor(emptyEditorDescriptor())}
+            >
+              <PlusIcon className="size-3" />
+              Custom option
+            </Button>
+          </div>
         </div>
-        {draft.descriptors.length === 0 ? (
-          <p className="text-xs text-muted-foreground/70">
-            No custom options. The composer uses the provider's default options.
-          </p>
-        ) : null}
-        {draft.descriptors.map(renderDescriptor)}
-        <div className="flex flex-wrap gap-1">
-          {presets
-            .filter(
-              (preset) => !draft.descriptors.some((descriptor) => descriptor.id === preset.id),
-            )
-            .map((preset) => (
-              <Button
-                key={preset.id}
-                type="button"
-                size="xs"
-                variant="ghost-muted"
-                className={cn("-ml-2 first:ml-0")}
-                onClick={() => addDescriptor(descriptorFromPreset(preset))}
-              >
-                <PlusIcon className="size-3" />
-                {preset.label}
-              </Button>
-            ))}
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost-muted"
-            onClick={() => addDescriptor(emptyEditorDescriptor())}
-          >
-            <PlusIcon className="size-3" />
-            Custom option
-          </Button>
-        </div>
-      </div>
+      ) : null}
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
 

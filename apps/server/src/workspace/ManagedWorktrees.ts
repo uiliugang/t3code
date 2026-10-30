@@ -277,7 +277,26 @@ const make = Effect.gen(function* () {
         return { threadId: row.thread_id, paths: yield* Effect.forEach(paths, canonical) };
       }),
     );
+    const sources = [
+      ...new Set([
+        ...projectRows.flatMap((project) => [
+          project.workspaceRoot,
+          ...(project.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
+        ]),
+        ...(yield* readThreads()).flatMap(
+          (thread) => thread.workspace?.bindings.map((binding) => binding.sourcePathAtBind) ?? [],
+        ),
+      ]),
+    ];
+    const registeredPaths = new Set(
+      (yield* Effect.forEach(
+        sources,
+        (source) => git.listWorktreePaths(source).pipe(Effect.orElseSucceed(() => [])),
+        { concurrency: 4 },
+      )).flat(),
+    );
     return {
+      registeredPaths,
       projectRows,
       projectPaths,
       scopes,
@@ -300,6 +319,7 @@ const make = Effect.gen(function* () {
       : null;
     const resources: ManagedWorktreeGroup["resources"][number][] = [];
     const identities: Array<typeof SavedResource.Type> = [];
+    let ordinaryDirectories = 0;
     const idle = yield* assertIdle(group).pipe(Effect.result);
     if (idle._tag === "Failure") reason = failure(idle.failure).message;
     for (const checkout of group.paths) {
@@ -307,8 +327,30 @@ const make = Effect.gen(function* () {
       const previous = saved?.resources.find(
         (resource) => resource.identity.checkoutRoot === checkout,
       );
-      let branch = previous?.branch ?? null;
-      let ignoredFiles = false;
+      const history = group.threads.flatMap((thread) => {
+        if (!thread.workspace)
+          return thread.worktreePath === checkout && thread.branch !== null ? [thread.branch] : [];
+        return thread.workspace.bindings
+          .filter((binding) => binding.executionPath === checkout)
+          .flatMap((binding) => binding.launchBranch ?? []);
+      });
+      const historicalBranch = new Set(history).size === 1 ? history[0]! : null;
+      const resource = {
+        path: checkout,
+        name: path.basename(checkout),
+        branch: previous ? previous.branch : historicalBranch,
+        branchSource: (previous
+          ? "snapshot"
+          : historicalBranch === null
+            ? "unknown"
+            : "history") as NonNullable<ManagedWorktreeGroup["resources"][number]["branchSource"]>,
+        present,
+        ignoredFiles: false,
+        inspection: (present ? "unavailable" : "missing") as NonNullable<
+          ManagedWorktreeGroup["resources"][number]["inspection"]
+        >,
+      };
+      resources.push(resource);
       if (!managedRoots.some((root) => root !== checkout && contains(root, checkout)))
         reason ??= "This checkout is outside the managed worktree directories.";
       if (
@@ -322,71 +364,83 @@ const make = Effect.gen(function* () {
       if (projectPaths.some((source) => contains(checkout, source)))
         reason ??= "This directory is used by a project checkout.";
       if (present) {
-        const identity = yield* resolver.inspect(checkout);
-        if (identity.checkoutRoot !== checkout || identity.gitDir === identity.commonDir)
-          reason ??= "The main repository cannot be removed.";
-        if (yield* fs.exists(path.join(identity.gitDir, "locked")))
-          reason ??= "This worktree is locked.";
-        for (const thread of group.threads) {
-          const resource = thread.workspace?.resources.find(
-            (item) => item.checkoutRoot === checkout,
-          );
-          if (resource) yield* resolver.verify(previous?.restoredIdentity ?? resource.identity);
+        if (!(yield* fs.exists(path.join(checkout, ".git")))) {
+          resource.inspection = "non-git";
+          ordinaryDirectories += !context.registeredPaths.has(checkout) ? 1 : 0;
+          reason ??= "Worktree metadata is missing. Files in this directory were retained.";
+          continue;
         }
-        const status = yield* git.execute({
-          operation: "ManagedWorktrees.inspect",
-          cwd: checkout,
-          args: [
-            "status",
-            "--porcelain",
-            "-z",
-            "--untracked-files=all",
-            "--ignored",
-            "--ignore-submodules=none",
-          ],
-        });
-        if (status.stdoutTruncated)
-          reason ??= "The status output was truncated; this worktree was retained.";
-        const entries = status.stdout.split("\0").filter(Boolean);
-        ignoredFiles = entries.some((entry) => entry.startsWith("!! "));
-        if (entries.some((entry) => !entry.startsWith("!! ")))
-          reason ??= "This worktree has local changes or untracked files.";
-        const ref = yield* git.execute({
-          operation: "ManagedWorktrees.branch",
-          cwd: checkout,
-          args: ["rev-parse", "--abbrev-ref", "HEAD"],
-        });
-        branch = ref.stdout.trim() === "HEAD" ? null : ref.stdout.trim();
-        const commit = yield* git.resolveCommit({ cwd: checkout, revision: "HEAD" });
-        identities.push({
-          identity,
-          branch,
-          commit: commit.commitSha,
-          ref: `refs/t3/worktree-cleanup/${group.id}/${identities.length}`,
-          removed: false,
-        });
-        const submodules = yield* git.execute({
-          operation: "ManagedWorktrees.submodules",
-          cwd: checkout,
-          args: ["ls-files", "--stage"],
-        });
-        if (
-          submodules.stdoutTruncated ||
-          submodules.stdout.split("\n").some((line) => line.startsWith("160000 "))
-        )
-          reason ??= "Worktrees containing submodules must be cleaned manually.";
+        const checked = yield* Effect.gen(function* () {
+          const identity = yield* resolver.inspect(checkout);
+          resource.inspection = "linked";
+          if (!context.registeredPaths.has(checkout))
+            reason ??= "This checkout is not registered with its repository.";
+          if (identity.checkoutRoot !== checkout || identity.gitDir === identity.commonDir) {
+            resource.inspection = "non-git";
+            reason ??= "The main repository cannot be removed.";
+          }
+          if (yield* fs.exists(path.join(identity.gitDir, "locked")))
+            reason ??= "This worktree is locked.";
+          for (const thread of group.threads) {
+            const resource = thread.workspace?.resources.find(
+              (item) => item.checkoutRoot === checkout,
+            );
+            if (resource) yield* resolver.verify(previous?.restoredIdentity ?? resource.identity);
+          }
+          const status = yield* git.execute({
+            operation: "ManagedWorktrees.inspect",
+            cwd: checkout,
+            args: [
+              "status",
+              "--porcelain",
+              "-z",
+              "--untracked-files=all",
+              "--ignored",
+              "--ignore-submodules=none",
+            ],
+          });
+          if (status.stdoutTruncated)
+            reason ??= "The status output was truncated; this worktree was retained.";
+          const entries = status.stdout.split("\0").filter(Boolean);
+          resource.ignoredFiles = entries.some((entry) => entry.startsWith("!! "));
+          if (entries.some((entry) => !entry.startsWith("!! ")))
+            reason ??= "This worktree has local changes or untracked files.";
+          const ref = yield* git.execute({
+            operation: "ManagedWorktrees.branch",
+            cwd: checkout,
+            args: ["rev-parse", "--abbrev-ref", "HEAD"],
+          });
+          const branch = ref.stdout.trim() === "HEAD" ? null : ref.stdout.trim();
+          resource.branch = branch;
+          resource.branchSource = "git";
+          const commit = yield* git.resolveCommit({ cwd: checkout, revision: "HEAD" });
+          identities.push({
+            identity,
+            branch,
+            commit: commit.commitSha,
+            ref: `refs/t3/worktree-cleanup/${group.id}/${identities.length}`,
+            removed: false,
+          });
+          const submodules = yield* git.execute({
+            operation: "ManagedWorktrees.submodules",
+            cwd: checkout,
+            args: ["ls-files", "--stage"],
+          });
+          if (
+            submodules.stdoutTruncated ||
+            submodules.stdout.split("\n").some((line) => line.startsWith("160000 "))
+          )
+            reason ??= "Worktrees containing submodules must be cleaned manually.";
+        }).pipe(Effect.result);
+        if (checked._tag === "Failure") {
+          resource.inspection = "unavailable";
+          reason ??= "Could not inspect this checkout. Check repository access and retry.";
+        }
       } else if (previous) {
         identities.push(previous);
       } else {
-        reason ??= "This worktree is missing and has no manual cleanup snapshot.";
+        reason ??= "Some working directories are missing and have no cleanup snapshot.";
       }
-      resources.push({
-        path: checkout,
-        name: path.basename(checkout),
-        branch,
-        present,
-        ignoredFiles,
-      });
     }
     for (const scope of scopes) {
       if (group.threads.some((thread) => thread.id === scope.threadId)) continue;
@@ -394,6 +448,48 @@ const make = Effect.gen(function* () {
         reason ??= "Another task's history still uses this worktree.";
     }
     const missing = resources.filter((resource) => !resource.present).length;
+    if (saved?.resources.some((resource) => resource.restoredIdentity !== undefined))
+      reason ??= "Finish rebuilding this group before cleaning it again.";
+    let restorable = saved !== undefined && idle._tag === "Success";
+    if (restorable && saved) {
+      const recovery = yield* Effect.forEach(saved.resources, (resource) =>
+        Effect.gen(function* () {
+          yield* resolver.verifyRepository(resource.identity);
+          if (yield* fs.exists(resource.identity.checkoutRoot))
+            yield* resolver.verify(resource.restoredIdentity ?? resource.identity);
+          yield* git.execute({
+            operation: "ManagedWorktrees.inspectRecovery",
+            cwd: resource.identity.commonDir,
+            args: [
+              "--git-dir",
+              resource.identity.commonDir,
+              "rev-parse",
+              "--verify",
+              `${resource.branch === null ? resource.ref : `refs/heads/${resource.branch}`}^{commit}`,
+            ],
+          });
+        }),
+      ).pipe(Effect.result);
+      restorable = recovery._tag === "Success";
+      if (!restorable)
+        reason ??=
+          "The saved checkout cannot be rebuilt. Check its repository and retained references.";
+    }
+    const status =
+      missing === resources.length
+        ? "removed"
+        : resources.some((resource) => resource.inspection === "unavailable")
+          ? "failed"
+          : reason
+            ? "blocked"
+            : saved
+              ? "partial"
+              : "ready";
+    const excluded =
+      !saved &&
+      ordinaryDirectories === resources.length &&
+      group.threads.every((thread) => !thread.workspace && thread.branch === null) &&
+      group.paths.every((checkout) => !managedRoots.some((root) => contains(root, checkout)));
     const token = yield* fingerprint({
       identities,
       threads: group.threads.map((thread) => [
@@ -415,17 +511,14 @@ const make = Effect.gen(function* () {
         .map((thread) => ({ id: thread.id, title: thread.title })),
       resources,
       recoveryPending: saved !== undefined,
-      status:
-        saved && missing === resources.length
-          ? "removed"
-          : reason
-            ? "blocked"
-            : saved || missing > 0
-              ? "partial"
-              : "ready",
-      reason,
+      status,
+      actions: { remove: status === "ready" || status === "partial", restore: restorable },
+      reason:
+        status === "removed" && !saved
+          ? "The working directory no longer exists. Thread history is kept."
+          : reason,
     };
-    return { report, identities, saved };
+    return { report, identities, saved, excluded };
   });
   const list = Effect.fn("ManagedWorktrees.list")(function* (input: ManagedWorktreesListInput) {
     const groups = yield* inventory();
@@ -438,11 +531,12 @@ const make = Effect.gen(function* () {
       ),
       (group) =>
         inspect(group, context).pipe(
-          Effect.map((result) => result.report),
+          Effect.map((result) => (result.excluded ? null : result.report)),
           Effect.catch((cause) =>
             Effect.succeed({
               id: group.id,
               fingerprint: "unavailable",
+              actions: { remove: false, restore: false },
               projectId: group.threads[0]!.projectId,
               projectTitle: group.threads[0]!.projectId,
               title: group.threads[0]!.title,
@@ -451,7 +545,9 @@ const make = Effect.gen(function* () {
                 path: checkout,
                 name: path.basename(checkout),
                 branch: null,
-                present: true,
+                present: false,
+                inspection: "unavailable" as const,
+                branchSource: "unknown" as const,
                 ignoredFiles: false,
               })),
               status: "failed" as const,
@@ -461,7 +557,7 @@ const make = Effect.gen(function* () {
           ),
         ),
       { concurrency: 4 },
-    );
+    ).pipe(Effect.map((reports) => reports.filter((report) => report !== null)));
   }, Effect.mapError(failure));
   const remove = Effect.fn("ManagedWorktrees.remove")(function* (
     input: ManagedWorktreesRemoveInput,
@@ -497,7 +593,7 @@ const make = Effect.gen(function* () {
                   return yield* new ManagedWorktreeError({
                     detail: "The worktree changed since inspection. Refresh and confirm again.",
                   });
-                if (!["ready", "partial"].includes(checked.report.status))
+                if (!checked.report.actions?.remove)
                   return yield* new ManagedWorktreeError({
                     detail: checked.report.reason ?? "This group cannot be cleaned.",
                   });

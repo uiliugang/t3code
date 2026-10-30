@@ -18,13 +18,37 @@ export const ManagedWorktreeGroup = Schema.Struct({
       branch: Schema.NullOr(Schema.String),
       present: Schema.Boolean,
       ignoredFiles: Schema.Boolean,
+      inspection: Schema.optionalKey(
+        Schema.Literals(["linked", "missing", "non-git", "unavailable"]),
+      ),
+      branchSource: Schema.optionalKey(Schema.Literals(["git", "snapshot", "history", "unknown"])),
     }),
   ),
   status: Schema.Literals(["ready", "blocked", "removed", "partial", "failed"]),
   recoveryPending: Schema.Boolean,
   reason: Schema.NullOr(Schema.String),
+  actions: Schema.optionalKey(Schema.Struct({ remove: Schema.Boolean, restore: Schema.Boolean })),
 });
 export type ManagedWorktreeGroup = typeof ManagedWorktreeGroup.Type;
+
+export const canRemoveManagedWorktree = (group: ManagedWorktreeGroup) =>
+  group.actions?.remove ?? (group.status === "ready" || group.status === "partial");
+
+export const canRestoreManagedWorktree = (group: ManagedWorktreeGroup) =>
+  group.actions?.restore ??
+  (group.recoveryPending && group.threads.length > 0 && group.status !== "failed");
+
+export function managedWorktreeSection(group: ManagedWorktreeGroup) {
+  if (group.status === "removed") return "Missing working directories";
+  if (
+    group.status === "failed" ||
+    group.resources.some(
+      (resource) => resource.inspection === "non-git" || resource.inspection === "unavailable",
+    )
+  )
+    return "Needs attention";
+  return "Current worktrees";
+}
 
 export const ManagedWorktreesListInput = Schema.Struct({
   projectIds: Schema.optional(Schema.Array(ProjectId)),
