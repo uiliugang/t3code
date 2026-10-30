@@ -1178,6 +1178,20 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    managedWorktrees: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:managed-worktrees:list",
+      tag: WS_METHODS.managedWorktreesList,
+    }),
+    removeManagedWorktrees: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:managed-worktrees:remove",
+      tag: WS_METHODS.managedWorktreesRemove,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    restoreManagedWorktrees: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:managed-worktrees:restore",
+      tag: WS_METHODS.managedWorktreesRestore,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
     workspaceCheckout: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:workspace:checkout",
       tag: WS_METHODS.workspaceCheckout,

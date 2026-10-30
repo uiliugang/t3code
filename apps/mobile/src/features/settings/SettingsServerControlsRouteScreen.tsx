@@ -43,6 +43,7 @@ import { AutoSettleSettingsRows } from "./ThreadSettingsSections";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { mergedWorktreeCleanupState } from "@t3tools/shared/projectSettings";
+import { ManagedWorktreesSection } from "./ManagedWorktreesSection";
 
 function RemoteBranchDisplayDaysField(props: {
   value: number | null;
@@ -566,6 +567,23 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       onValueChange={(value) => write({ autoDeleteMergedBranches: value })}
                     />
                   </SettingsSection>
+                  {selectedTargets.map((environment) => (
+                    <ManagedWorktreesSection
+                      key={`${environment.environmentId}:${selectedProjectKey}`}
+                      environmentId={environment.environmentId}
+                      label={environment.label}
+                      {...(projectSelected
+                        ? {
+                            projectIds: targets
+                              .filter(
+                                (target) =>
+                                  target.environment.environmentId === environment.environmentId,
+                              )
+                              .flatMap((target) => (target.projectId ? [target.projectId] : [])),
+                          }
+                        : {})}
+                    />
+                  ))}
                 </>
               ) : null}
 

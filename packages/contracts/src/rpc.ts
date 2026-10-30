@@ -1,4 +1,12 @@
 import {
+  ManagedWorktreeError,
+  ManagedWorktreeGroup,
+  ManagedWorktreeResult,
+  ManagedWorktreesListInput,
+  ManagedWorktreesRemoveInput,
+  ManagedWorktreesRestoreInput,
+} from "./managedWorktrees.ts";
+import {
   WorkspaceCheckoutInput,
   WorkspaceCheckoutResult,
   WorkspaceCheckoutError,
@@ -464,6 +472,9 @@ export const WS_METHODS = {
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
   workspaceRecovery: "workspace.recovery",
+  managedWorktreesList: "managedWorktrees.list",
+  managedWorktreesRemove: "managedWorktrees.remove",
+  managedWorktreesRestore: "managedWorktrees.restore",
   workspaceCheckout: "workspace.checkout",
 
   gitRunStackedAction: "git.runStackedAction",
@@ -1510,6 +1521,21 @@ const WsWorkspaceRecoveryRpc = Rpc.make(WS_METHODS.workspaceRecovery, {
   error: Schema.Union([WorkspaceRecoveryError, EnvironmentAuthorizationError]),
 });
 
+const WsManagedWorktreesListRpc = Rpc.make(WS_METHODS.managedWorktreesList, {
+  payload: ManagedWorktreesListInput,
+  success: Schema.Array(ManagedWorktreeGroup),
+  error: Schema.Union([ManagedWorktreeError, EnvironmentAuthorizationError]),
+});
+const WsManagedWorktreesRemoveRpc = Rpc.make(WS_METHODS.managedWorktreesRemove, {
+  payload: ManagedWorktreesRemoveInput,
+  success: Schema.Array(ManagedWorktreeResult),
+  error: Schema.Union([ManagedWorktreeError, EnvironmentAuthorizationError]),
+});
+const WsManagedWorktreesRestoreRpc = Rpc.make(WS_METHODS.managedWorktreesRestore, {
+  payload: ManagedWorktreesRestoreInput,
+  error: Schema.Union([ManagedWorktreeError, EnvironmentAuthorizationError]),
+});
+
 const WsWorkspaceCheckoutRpc = Rpc.make(WS_METHODS.workspaceCheckout, {
   payload: WorkspaceCheckoutInput,
   success: WorkspaceCheckoutResult,
@@ -2103,6 +2129,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
   WsWorkspaceRecoveryRpc,
+  WsManagedWorktreesListRpc,
+  WsManagedWorktreesRemoveRpc,
+  WsManagedWorktreesRestoreRpc,
   WsWorkspaceCheckoutRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,

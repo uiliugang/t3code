@@ -11,6 +11,43 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Local worktrees": "本地 worktree",
+  "Nested worktrees must be cleaned manually.": "嵌套的工作目录需要通过 Git 手动清理。",
+  "Ready to clean": "可清理",
+  "Worktree removed": "工作目录已清理",
+  "Partially cleaned": "部分清理",
+  "Inspection failed": "检查失败",
+  "Select {title}": "选择 {title}",
+  "{count} worktrees": "{count} 个 worktree",
+  "{count} linked threads": "{count} 个关联会话",
+  "Rebuild worktrees": "重建工作目录",
+  "Clean worktrees": "清理工作目录",
+  "Clean selected ({count})": "清理所选（{count}）",
+  "Checking worktrees...": "正在检查工作目录…",
+  "No managed worktrees": "暂无托管的 worktree",
+  "Branches, commits and thread history are kept. Working directories are deleted. Continue a thread to rebuild its worktrees.":
+    "保留分支、提交和会话历史，删除工作目录。继续会话时将重建工作目录。",
+  "Also delete ignored files, including .env and installed dependencies. These files cannot be restored.":
+    "同时删除被忽略的文件，包括 .env 和已安装的依赖。这些文件无法恢复。",
+  "Clean {groups} groups ({count} worktrees)": "清理 {groups} 个组（{count} 个 worktree）",
+  "Cleaning...": "正在清理…",
+  "Environment offline": "环境离线",
+  "Worktrees removed. Branches and thread history retained.":
+    "工作目录已清理，分支和会话历史已保留。",
+  "This worktree has local changes or untracked files.":
+    "此工作目录有本地改动或未跟踪文件，已保留。",
+  "This worktree is locked.": "此工作目录已锁定。",
+  "This directory is used by a project checkout.": "此目录正在作为项目目录使用。",
+  "This checkout is outside the managed worktree directories.":
+    "此目录不在托管 worktree 的路径内。",
+  "Borrowed repositories cannot be removed.": "无法清理借用的外部仓库。",
+  "A provider session is still using this worktree.": "仍有 provider 会话正在使用此工作目录。",
+  "Close this group's terminals before cleanup or recovery.": "请先关闭此组的终端，再清理或重建。",
+  "This worktree is missing and has no manual cleanup snapshot.":
+    "此工作目录已不存在，且没有手动清理快照。",
+  "Worktrees containing submodules must be cleaned manually.":
+    "包含子模块的工作目录需要通过 Git 手动清理。",
+  "Another task's history still uses this worktree.": "其他会话的历史仍在引用此工作目录。",
   "{summary}. Show where this value comes from": "{summary}。查看此设置的来源",
   "Automatically remove local branches and worktrees merged into main or master, and worktrees whose pull request is merged into the default branch. Keeps project checkouts, uncommitted changes, locked worktrees, active work, and remote branches.":
     "自动清理已合并到 main 或 master 的本地分支及工作树，同时清理拉取请求已合并到默认分支的工作树。保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",

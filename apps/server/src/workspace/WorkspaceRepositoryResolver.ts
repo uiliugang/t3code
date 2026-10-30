@@ -58,6 +58,9 @@ export class WorkspaceRepositoryResolver extends Context.Service<
     readonly verify: (
       identity: WorkspaceCheckoutIdentity,
     ) => Effect.Effect<void, WorkspaceRepositoryError>;
+    readonly verifyRepository: (
+      identity: WorkspaceCheckoutIdentity,
+    ) => Effect.Effect<void, WorkspaceRepositoryError>;
     readonly resolve: (
       config: ProjectWorkspaceConfigInput,
       selectedRootIds?: ReadonlyArray<WorkspaceRootId>,
@@ -278,7 +281,32 @@ const make = Effect.gen(function* () {
     return { primaryRootId: config.primaryRootId, resources: resolved, bindings };
   });
 
-  return WorkspaceRepositoryResolver.of({ inspect, verify, resolve });
+  const verifyRepository = Effect.fn("WorkspaceRepositoryResolver.verifyRepository")(
+    function* (identity: WorkspaceCheckoutIdentity) {
+      if (
+        (yield* fs.realPath(identity.commonDir)) !== identity.commonDir ||
+        (yield* directoryIdentity(identity.commonDir)) !== identity.commonDirIdentity
+      )
+        return yield* new WorkspaceRepositoryError({
+          path: identity.commonDir,
+          operation: "verify-identity",
+          cause: "The source repository was replaced or moved.",
+        });
+    },
+    (effect, identity) =>
+      effect.pipe(
+        Effect.mapError((cause) =>
+          isWorkspaceRepositoryError(cause)
+            ? cause
+            : new WorkspaceRepositoryError({
+                path: identity.commonDir,
+                operation: "verify-identity",
+                cause,
+              }),
+        ),
+      ),
+  );
+  return WorkspaceRepositoryResolver.of({ inspect, verify, verifyRepository, resolve });
 });
 
 const isWorkspaceRepositoryError = Schema.is(WorkspaceRepositoryError);

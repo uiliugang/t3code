@@ -1,4 +1,5 @@
 import * as WorkspaceRecovery from "../workspace/WorkspaceRecovery.ts";
+import * as ManagedWorktrees from "../workspace/ManagedWorktrees.ts";
 import * as WorkspaceRestore from "../workspace/WorkspaceRestore.ts";
 import * as WorkspaceAccess from "../workspace/WorkspaceAccess.ts";
 import * as WorkspaceCheckout from "../workspace/WorkspaceCheckout.ts";
@@ -265,7 +266,20 @@ const layerAgentSessionImporterProvided = AgentSessionImporter.layer.pipe(
   ),
 );
 
+const layerManagedWorktreesProvided = ManagedWorktrees.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerOrchestratorProvided,
+      layerProviderSessionManagerProvided,
+      ProjectStore.layer,
+      ProjectionStore.layer,
+      GitVcsDriver.layer,
+      WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer)),
+    ),
+  ),
+);
 const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImporter.pipe(
+  Layer.provide(layerManagedWorktreesProvided),
   Layer.provide(
     Layer.mergeAll(
       layerOrchestratorProvided,
@@ -401,6 +415,7 @@ export const layer = Layer.mergeAll(
 );
 
 export const layerProduction = Layer.mergeAll(
+  layerManagedWorktreesProvided,
   layerWorkspaceCheckoutProvided,
   WorkspaceRecovery.layer.pipe(
     Layer.provide(

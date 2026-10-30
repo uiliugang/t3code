@@ -302,6 +302,20 @@ it.effect(
           }),
         );
         yield* git.authorize(registry, env);
+        const removeWorktrees = createCommandPermissions(
+          runtime,
+          WS_METHODS.managedWorktreesRemove,
+        );
+        yield* removeWorktrees.authorize(registry, env);
+        expect(registry.get(removeWorktrees.permissionAtom(other))).toBe(false);
+        const restoreWorktrees = createCommandPermissions(
+          runtime,
+          WS_METHODS.managedWorktreesRestore,
+        );
+        expect(registry.get(restoreWorktrees.permissionAtom(env))).toBe(false);
+        expect(
+          (yield* restoreWorktrees.authorize(registry, env).pipe(Effect.flip)).requiredScope,
+        ).toBe(AuthOrchestrationOperateScope);
         const prepare = createCommandPermissions(runtime, WS_METHODS.gitPreparePullRequestThread);
         const input = {
           cwd: "/repo",
@@ -323,6 +337,7 @@ it.effect(
           }),
         );
         expect(registry.get(prepare.permissionAtom(env, input))).toBe(true);
+        yield* restoreWorktrees.authorize(registry, env);
         yield* prepare.authorize(registry, env, input);
       }),
     ),

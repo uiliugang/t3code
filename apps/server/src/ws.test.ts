@@ -1,4 +1,5 @@
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
+import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
 import * as WorkspaceCheckout from "./workspace/WorkspaceCheckout.ts";
 import * as WorkspaceAccess from "./workspace/WorkspaceAccess.ts";
 import * as ThreadPrediction from "./textGeneration/ThreadPrediction.ts";
@@ -510,6 +511,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
   Layer.mock(WorkspaceRecovery.WorkspaceRecovery)({}),
+  Layer.mock(ManagedWorktrees.ManagedWorktrees)({}),
   Layer.mock(WorkspaceCheckout.WorkspaceCheckout)({}),
   Layer.mock(WorkspaceAccess.WorkspaceAccess)({
     validate: () => Effect.void,
