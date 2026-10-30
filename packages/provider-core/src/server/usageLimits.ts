@@ -104,8 +104,13 @@ export function resolveUsageLimitsAfterProbe(input: {
   readonly probed: ServerProviderUsageLimits | undefined;
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
-  if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
-    return published;
+  if (
+    probed?.unavailable?.reason === "probeFailed" &&
+    published &&
+    published.unavailable?.reason !== "unsupported" &&
+    (!published.unavailable || published.windows.length > 0)
+  ) {
+    return { ...published, unavailable: probed.unavailable };
   }
   if (
     published &&

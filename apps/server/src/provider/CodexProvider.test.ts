@@ -1,6 +1,113 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { CodexSettings } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as TestClock from "effect/testing/TestClock";
 
-import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
+import {
+  applyPreferredCodexDefaultModel,
+  checkCodexProviderStatus,
+  mapCodexModelCapabilities,
+} from "./CodexProvider.ts";
+
+const defaultCodexSettings = Schema.decodeSync(CodexSettings)({});
+const decodeProbeRequest = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({ id: Schema.optionalKey(Schema.Number), method: Schema.String }),
+  ),
+);
+
+it.effect("reads idle account usage when the response takes more than three seconds", () =>
+  Effect.gen(function* () {
+    const output = yield* Effect.acquireRelease(Queue.unbounded<Uint8Array>(), Queue.shutdown);
+    const usageRequest = yield* Deferred.make<number>();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    const handle = ChildProcessSpawner.makeHandle({
+      pid: ChildProcessSpawner.ProcessId(1),
+      exitCode: Effect.never,
+      isRunning: Effect.succeed(true),
+      kill: () => Effect.void,
+      unref: Effect.succeed(Effect.void),
+      stdin: Sink.forEach((chunk: Uint8Array) => {
+        const { id, method } = decodeProbeRequest(decoder.decode(chunk));
+        if (id === undefined) return Effect.void;
+        if (method === "account/rateLimits/read") {
+          return Deferred.succeed(usageRequest, id);
+        }
+        const responses: Record<string, unknown> = {
+          initialize: {
+            userAgent: "codex/1.0.0",
+            codexHome: "/codex-home",
+            platformFamily: "unix",
+            platformOs: "darwin",
+          },
+          "account/read": { account: null, requiresOpenaiAuth: false },
+          "model/list": { data: [], nextCursor: null },
+          "skills/list": { data: [] },
+        };
+        const frame =
+          method in responses
+            ? { id, result: responses[method] }
+            : { id, error: { code: -32601, message: "Unsupported request" } };
+        return Queue.offer(output, encoder.encode(`${JSON.stringify(frame)}\n`));
+      }),
+      stdout: Stream.fromQueue(output),
+      stderr: Stream.empty,
+      all: Stream.empty,
+      getInputFd: () => Sink.drain,
+      getOutputFd: () => Stream.empty,
+    });
+    const probe = yield* checkCodexProviderStatus(defaultCodexSettings).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.succeed(handle)),
+          ),
+        ),
+      ),
+      Effect.forkChild,
+    );
+    const id = yield* Deferred.await(usageRequest);
+    yield* TestClock.adjust("5 seconds");
+    yield* Queue.offer(
+      output,
+      encoder.encode(
+        `${JSON.stringify({
+          id,
+          result: {
+            rateLimits: {
+              primary: { usedPercent: 46, windowDurationMins: 10_080, resetsAt: null },
+              secondary: null,
+            },
+          },
+        })}\n`,
+      ),
+    );
+    const status = yield* Fiber.join(probe);
+    assert.strictEqual(status.status, "ready");
+    assert.deepStrictEqual(status.usageLimits?.windows, [
+      {
+        id: "primary",
+        kind: "weekly",
+        label: "Weekly",
+        usedPercent: 46,
+        windowDurationMins: 10_080,
+      },
+    ]);
+    assert.strictEqual(status.usageLimits?.unavailable, undefined);
+  }).pipe(Effect.scoped),
+);
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({

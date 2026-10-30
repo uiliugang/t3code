@@ -123,26 +123,31 @@ describe("provider weekly usage", () => {
     ).toBe(16);
   });
 
-  it("keeps missing, unsupported and non-weekly quotas unknown", () => {
+  it("keeps missing, unavailable and non-weekly quotas unknown", () => {
     for (const usageLimits of [
       undefined,
       { checkedAt, windows: [] },
       { checkedAt, windows: [{ ...weekly, kind: "session" as const }] },
       { checkedAt, windows: [{ ...weekly, kind: "monthly" as const }] },
       { checkedAt, windows: [weekly], unavailable: { reason: "unsupported" as const } },
+      { checkedAt, windows: [weekly], unavailable: { reason: "probeFailed" as const } },
+      {
+        checkedAt,
+        windows: [{ ...weekly, usedPercent: 100 }],
+        unavailable: { reason: "probeFailed" as const },
+      },
     ]) {
       expect(summarize(provider({ usageLimits }))[0]?.remaining).toBeNull();
     }
   });
 
-  it("retains last reported quotas after a failed probe and preserves zero", () => {
+  it("preserves zero and fully remaining quotas after a successful probe", () => {
     expect(
       summarize(
         provider({
           usageLimits: {
             checkedAt,
             windows: [{ ...weekly, usedPercent: 100 }],
-            unavailable: { reason: "probeFailed" },
           },
         }),
       )[0]?.remaining,
