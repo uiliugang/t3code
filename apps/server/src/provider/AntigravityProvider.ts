@@ -8,7 +8,7 @@ import {
   type ServerProviderSlashCommand,
   type ServerProviderUsageLimits,
 } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import { createModelCapabilities, readCustomModelEntries } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -134,6 +134,14 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   settings: AntigravitySettings,
   options: AntigravityProviderOptions,
 ) {
+  const names = new Map(
+    readCustomModelEntries(settings.customModels).map((entry) => [entry.slug, entry.name]),
+  );
+  const modelsFromSession = (setup: SessionSetupResult) =>
+    buildAntigravityModelsFromSession(setup).map((model) => {
+      const name = names.get(model.slug);
+      return name && name !== model.slug ? { ...model, name } : model;
+    });
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const initialDraft = {
     ...buildServerProvider({
@@ -301,7 +309,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             published: draft.usageLimits,
             probed: usageLimits ?? draft.usageLimits,
           }),
-          models: buildAntigravityModelsFromSession(started.sessionSetupResult),
+          models: modelsFromSession(started.sessionSetupResult),
           supportsTextGeneration,
           ...(cwd
             ? {
@@ -324,7 +332,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   const onConfigOptionsUpdated = Effect.fn("AntigravityProvider.onConfigOptionsUpdated")(function* (
     configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
   ) {
-    const models = buildAntigravityModelsFromSession({ configOptions });
+    const models = modelsFromSession({ configOptions });
     yield* SubscriptionRef.update(metadata, (state) => {
       if (state.draft.auth.status !== "authenticated") return state;
       return { ...state, draft: { ...state.draft, models } };

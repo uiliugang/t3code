@@ -29,12 +29,31 @@ describe("deriveProviderModelsForDisplay", () => {
       },
     ];
 
+    const models = deriveProviderModelsForDisplay({
+      liveModels,
+      customModels: [
+        { slug: "kept-custom", name: "kept-custom", capabilities: null },
+        {
+          slug: "server-model",
+          name: "Edited server model",
+          capabilities: { optionDescriptors: [] },
+        },
+      ],
+    });
+    expect(models.map((model) => model.slug)).toEqual(["server-model", "kept-custom"]);
+    expect(models[0]).toEqual({
+      slug: "server-model",
+      name: "Edited server model",
+      isCustom: false,
+      capabilities: { optionDescriptors: [] },
+    });
     expect(
       deriveProviderModelsForDisplay({
         liveModels,
-        customModels: [{ slug: "kept-custom", name: "kept-custom", capabilities: null }],
+        customModels: [{ slug: "not-in-account", name: "Unavailable", capabilities: null }],
+        includeCustomModels: false,
       }).map((model) => model.slug),
-    ).toEqual(["server-model", "kept-custom"]);
+    ).toEqual(["server-model"]);
   });
 });
 

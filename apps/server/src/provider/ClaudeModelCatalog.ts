@@ -22,6 +22,7 @@ import {
   decodeClaudeProfileAdapter,
 } from "./ClaudeModelManifest.ts";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
+import { providerModelsFromSettings } from "@t3tools/provider-core/server/snapshotProbe";
 import { BUNDLED_MODEL_MANIFEST, resolveProviderCatalog } from "./ModelManifest.ts";
 
 const CLAUDE = ProviderDriverKind.make("claudeAgent");
@@ -82,16 +83,23 @@ export function scopeClaudeModelCatalog(
   const customEntries = readCustomModelEntries(customModels);
   if (customEntries.length === 0) return catalog;
   const customAliases = new Set(customEntries.map((entry) => entry.slug.toLowerCase()));
+  const overrides = new Map(
+    providerModelsFromSettings(
+      catalog.models.map((entry) => entry.model),
+      customModels,
+      null,
+    ).map((model) => [model.slug, model]),
+  );
 
   const builtInModels = catalog.models.map((entry) => {
-    if (!entry.model.aliases?.some((alias) => customAliases.has(alias.toLowerCase()))) {
-      return entry;
-    }
+    const model = overrides.get(entry.model.slug) ?? entry.model;
     return {
       ...entry,
       model: {
-        ...entry.model,
-        aliases: entry.model.aliases.filter((alias) => !customAliases.has(alias.toLowerCase())),
+        ...model,
+        ...(model.aliases
+          ? { aliases: model.aliases.filter((alias) => !customAliases.has(alias.toLowerCase())) }
+          : {}),
       },
     };
   });

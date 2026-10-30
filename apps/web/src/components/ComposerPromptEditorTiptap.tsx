@@ -42,6 +42,7 @@ import {
   use,
   useEffect,
   useEffectEvent,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -156,6 +157,14 @@ export interface ComposerPromptEditorProps {
   skills: ReadonlyArray<ServerProviderSkill>;
   disabled: boolean;
   placeholder: string;
+  prediction?:
+    | {
+        text: string;
+        label: string;
+        collapsed: boolean;
+        onAccept: () => void;
+      }
+    | undefined;
   ariaLabel?: string | undefined;
   suggestionListId?: string | undefined;
   activeSuggestionId?: string | undefined;
@@ -931,6 +940,7 @@ function ComposerPromptEditorTiptapInner(
     skills,
     disabled,
     placeholder,
+    prediction,
     ariaLabel,
     suggestionListId,
     activeSuggestionId,
@@ -989,6 +999,9 @@ function ComposerPromptEditorTiptapInner(
   const [openCitation, setOpenCitation] = useState<OpenCitationComment | null>(null);
   const citationDraftRef = useRef<{ key: string; comment: string } | null>(null);
   const [isEmpty, setIsEmpty] = useState(value.length === 0);
+  const predictionId = useId();
+  const showPrediction =
+    isEmpty && value.length === 0 && contextRecords.size === 0 && !disabled && !!prediction?.text;
 
   const citationCommentActions = {
     openComment: openCitation,
@@ -1093,6 +1106,7 @@ function ComposerPromptEditorTiptapInner(
         }
       : {}),
     "aria-placeholder": placeholder,
+    ...(showPrediction ? { "aria-describedby": predictionId } : {}),
   };
 
   const editor = useEditor(
@@ -1810,7 +1824,34 @@ function ComposerPromptEditorTiptapInner(
               onCopyCapture={(event) => handleCopyCut(event, false)}
               onCutCapture={(event) => handleCopyCut(event, true)}
             />
-            {isEmpty && contextRecords.size === 0 && placeholder ? (
+            {showPrediction && prediction ? (
+              <button
+                id={predictionId}
+                type="button"
+                dir="auto"
+                tabIndex={-1}
+                aria-label={`${prediction.label}: ${prediction.text}`}
+                className={cn(
+                  "absolute inset-x-0 top-0 cursor-pointer text-start leading-relaxed text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+                  prediction.collapsed && "leading-8",
+                )}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  if (editor?.isEditable && editor.isEmpty && !editor.view.composing) {
+                    prediction.onAccept();
+                  }
+                }}
+              >
+                <span
+                  className={cn(
+                    "line-clamp-2 whitespace-pre-wrap wrap-anywhere",
+                    prediction.collapsed && "line-clamp-1 whitespace-nowrap",
+                  )}
+                >
+                  {prediction.text}
+                </span>
+              </button>
+            ) : isEmpty && contextRecords.size === 0 && placeholder ? (
               <div
                 className={cn(
                   "pointer-events-none absolute inset-0 leading-relaxed text-placeholder",

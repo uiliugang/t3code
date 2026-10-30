@@ -1122,7 +1122,7 @@ export function ChatSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("composer-predictions")}
-          description="Predict your next message from the conversation. Uses your text generation model and counts toward its usage."
+          description="Tab or click to accept; Esc to dismiss. Uses your text generation model and counts toward its usage."
           resetAction={
             settings.showPredictedMessages !== DEFAULT_UNIFIED_SETTINGS.showPredictedMessages ? (
               <SettingResetButton

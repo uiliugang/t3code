@@ -505,7 +505,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "predicted messages": "预测消息",
   "Predict your next message from the conversation. Uses your text generation model and counts toward its usage.":
     "根据对话预测你接下来要发送的消息。使用文本生成模型，并计入该模型的用量。",
-  "Tab to accept prediction": "按 Tab 接受预测消息",
+  "Tab or click to accept; Esc to dismiss. Uses your text generation model and counts toward its usage.":
+    "Tab 或点击填入，Esc 忽略。使用文本生成模型并计入用量。",
   "Use prediction": "使用预测消息",
   "Dismiss prediction": "忽略预测消息",
   "Collapse composer on scroll": "滚动时折叠输入框",

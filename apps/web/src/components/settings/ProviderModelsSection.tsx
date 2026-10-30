@@ -1,4 +1,12 @@
-import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PlusIcon, StarIcon, XIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  PencilIcon,
+  PlusIcon,
+  RotateCcwIcon,
+  StarIcon,
+  XIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   ProviderDriverKind,
@@ -216,16 +224,25 @@ export function ProviderModelsSection({
     if (!canManageCustomModels) return;
     if (editingSlug === slug) setEditingSlug(null);
     onChange(customModels.filter((entry) => entry.slug !== slug));
-    onModelOrderChange(modelOrder.filter((model) => model !== slug));
-    onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
+    if (canWritePreferences && !models.some((model) => model.slug === slug && !model.isCustom)) {
+      onModelOrderChange(modelOrder.filter((model) => model !== slug));
+      onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
+    }
     setError(null);
   };
 
   const handleSaveEdit = (next: CustomModelDefinition) => {
     if (!canManageCustomModels || editingSlug === null) return;
-    onChange(customModels.map((entry) => (entry.slug === editingSlug ? next : entry)));
+    onChange(
+      customModels.some((entry) => entry.slug === editingSlug)
+        ? customModels.map((entry) => (entry.slug === editingSlug ? next : entry))
+        : [...customModels, next],
+    );
     if (editingSlug !== next.slug) {
       if (canWritePreferences) {
+        if (!hiddenModelSet.has(editingSlug)) {
+          onHiddenModelsChange([...hiddenModels, editingSlug], [editingSlug]);
+        }
         onModelOrderChange([
           ...new Set(modelOrder.map((slug) => (slug === editingSlug ? next.slug : slug))),
         ]);
@@ -297,6 +314,7 @@ export function ProviderModelsSection({
         isFiltering={isFiltering}
         canWritePreferences={canWritePreferences}
         canManageCustomModels={canManageCustomModels}
+        hasOverride={customModels.some((entry) => entry.slug === model.slug)}
         {...rowHandlers}
       />
     );
@@ -397,8 +415,8 @@ export function ProviderModelsSection({
           const previous = visibleModels[index - 1];
           const startsGroup = previous === undefined || groupOf(previous) !== group;
           const editingEntry =
-            canManageCustomModels && model.isCustom && editingSlug === model.slug
-              ? customModels.find((entry) => entry.slug === model.slug)
+            canManageCustomModels && editingSlug === model.slug
+              ? (customModels.find((entry) => entry.slug === model.slug) ?? model)
               : undefined;
           return (
             <div key={`${instanceId}:${model.slug}:group`}>
@@ -423,9 +441,9 @@ export function ProviderModelsSection({
                     ...customModels
                       .filter((candidate) => candidate.slug !== editingSlug)
                       .map((candidate) => candidate.slug),
-                    ...(driverKind === "codex"
-                      ? []
-                      : builtInModels.map((candidate) => candidate.slug)),
+                    ...builtInModels
+                      .filter((candidate) => candidate.slug !== editingSlug)
+                      .map((candidate) => candidate.slug),
                   ]}
                   onSave={handleSaveEdit}
                   onCancel={() => setEditingSlug(null)}
@@ -487,6 +505,7 @@ function ProviderModelRow({
   isFiltering,
   canWritePreferences,
   canManageCustomModels,
+  hasOverride,
   onToggleFavorite,
   onMove,
   onSetHidden,
@@ -501,6 +520,7 @@ function ProviderModelRow({
   readonly isFiltering: boolean;
   readonly canWritePreferences: boolean;
   readonly canManageCustomModels: boolean;
+  readonly hasOverride: boolean;
   readonly onToggleFavorite: (slug: string) => void;
   readonly onMove: (slug: string, direction: -1 | 1) => void;
   readonly onSetHidden: (slug: string, hidden: boolean) => void;
@@ -610,41 +630,43 @@ function ProviderModelRow({
             </Tooltip>
           </>
         ) : null}
-        {model.isCustom ? (
-          <>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-micro"
-                    variant="ghost-muted"
-                    disabled={!canManageCustomModels}
-                    aria-label={`Edit ${model.slug}`}
-                    onClick={() => onToggleEdit(model.slug)}
-                  />
-                }
-              >
-                <PencilIcon className="size-3" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">Edit name and options</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-micro"
-                    variant="ghost-muted"
-                    disabled={!canManageCustomModels}
-                    aria-label={`Remove ${model.slug}`}
-                    onClick={() => onRemove(model.slug)}
-                  />
-                }
-              >
-                <XIcon className="size-3" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">Remove custom model</TooltipPopup>
-            </Tooltip>
-          </>
+        {model.isCustom || canManageCustomModels ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-micro"
+                  variant="ghost-muted"
+                  disabled={!canManageCustomModels}
+                  aria-label={`Edit ${model.slug}`}
+                  onClick={() => onToggleEdit(model.slug)}
+                />
+              }
+            >
+              <PencilIcon className="size-3" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Edit model</TooltipPopup>
+          </Tooltip>
+        ) : null}
+        {model.isCustom || hasOverride ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-micro"
+                  variant="ghost-muted"
+                  disabled={!canManageCustomModels}
+                  aria-label={`${model.isCustom ? "Remove" : "Reset"} ${model.slug}`}
+                  onClick={() => onRemove(model.slug)}
+                />
+              }
+            >
+              {model.isCustom ? <XIcon className="size-3" /> : <RotateCcwIcon className="size-3" />}
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {model.isCustom ? "Remove custom model" : "Reset model overrides"}
+            </TooltipPopup>
+          </Tooltip>
         ) : null}
       </span>
       {/* Disabled switches receive no pointer events; wrap the tooltip trigger. */}

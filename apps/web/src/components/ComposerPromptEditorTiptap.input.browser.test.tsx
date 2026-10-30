@@ -133,6 +133,54 @@ function textWithMark(editor: Editor, name: string) {
   return text;
 }
 
+it("accepts a prediction without submitting and protects in-progress input", async () => {
+  const onAccept = vi.fn();
+  const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+  await using screen = await render(
+    <form onSubmit={onSubmit}>
+      <ComposerPromptEditor
+        editorRef={createRef<ComposerPromptEditorHandle>()}
+        value=""
+        cursor={0}
+        contextRecords={new Map()}
+        skills={[]}
+        disabled={false}
+        placeholder="Write a message"
+        prediction={{
+          text: "Review the changes\nand run the tests.",
+          label: "Use prediction",
+          collapsed: false,
+          onAccept,
+        }}
+        onChange={() => {}}
+        onPaste={() => {}}
+      />
+    </form>,
+  );
+  const editor = editorIn(screen.container);
+  const suggestion = screen.getByRole("button", { name: /Use prediction/ });
+  await expect.element(suggestion).toBeVisible();
+  expect(serializeEditorDoc(editor.state.doc).value).toBe("");
+  await act(async () => editor.view.focus());
+  await suggestion.click();
+  expect(onAccept).toHaveBeenCalledOnce();
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(editor.view.dom);
+
+  await act(async () => {
+    editor.view.dom.dispatchEvent(new CompositionEvent("compositionstart"));
+  });
+  await suggestion.click();
+  expect(onAccept).toHaveBeenCalledOnce();
+  await act(async () => {
+    editor.view.dom.dispatchEvent(new CompositionEvent("compositionend"));
+    editor.commands.insertContent("My own message");
+  });
+  await expect.element(suggestion).not.toBeInTheDocument();
+  expect(serializeEditorDoc(editor.state.doc).value).toBe("My own message");
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+
 it.each([
   { value: "clean _build and node", code: [] },
   { value: "clean `_build` and `node", code: ["_build"] },
