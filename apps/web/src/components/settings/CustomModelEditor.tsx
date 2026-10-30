@@ -31,6 +31,7 @@ interface CustomModelEditorProps {
   readonly driverKind: ProviderDriverKind | null;
   readonly entry: CustomModelDefinition;
   readonly builtInModels: ReadonlyArray<ServerProviderModel>;
+  readonly reservedSlugs: ReadonlyArray<string>;
   readonly onSave: (next: CustomModelDefinition) => void;
   readonly onCancel: () => void;
 }
@@ -40,6 +41,7 @@ export function CustomModelEditor({
   driverKind,
   entry,
   builtInModels,
+  reservedSlugs,
   onSave,
   onCancel,
 }: CustomModelEditorProps) {
@@ -121,7 +123,7 @@ export function CustomModelEditor({
   };
 
   const handleSave = () => {
-    const problem = validateDraft(draft);
+    const problem = validateDraft(draft, reservedSlugs);
     if (problem) {
       setError(problem);
       return;
@@ -286,13 +288,34 @@ export function CustomModelEditor({
       }}
     >
       <div className="flex flex-col gap-1">
+        <label htmlFor={domId("slug")} className="text-xs text-muted-foreground">
+          Request model ID (slug)
+        </label>
+        <Input
+          id={domId("slug")}
+          size="sm"
+          autoFocus
+          value={draft.slug}
+          onChange={(event) => {
+            setError(null);
+            setDraft((current) => ({ ...current, slug: event.target.value }));
+          }}
+          font="mono"
+          className="sm:w-72"
+          spellCheck={false}
+        />
+        <p className="text-xs text-muted-foreground">
+          Model IDs are case-sensitive. Select the updated model again in existing threads and
+          default model settings.
+        </p>
+      </div>
+      <div className="flex flex-col gap-1">
         <label htmlFor={domId("name")} className="text-xs text-muted-foreground">
           Display name
         </label>
         <Input
           id={domId("name")}
           size="sm"
-          autoFocus
           value={draft.name}
           onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
           placeholder={draft.slug}

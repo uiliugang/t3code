@@ -90,6 +90,10 @@ On web and desktop, use Settings → Providers → **Models** to add an unlisted
 name and options. Only options supported by the provider integration affect turns. Antigravity
 uses its account catalog and does not support custom models.
 
+Edit a custom model to change its **Request model ID (slug)** separately from its display name.
+Model IDs are case-sensitive. After changing an ID, select the updated model in existing threads
+and default model settings that used the old ID.
+
 To rename a built-in model on every client, edit the server's `settings.json` in its `userdata`
 directory. Add a custom model entry with the built-in model ID and a new name under that provider
 instance:

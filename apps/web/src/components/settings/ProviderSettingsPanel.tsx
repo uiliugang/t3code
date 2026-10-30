@@ -1254,6 +1254,46 @@ function ProviderInstanceRow({
   readonly favorites: UnifiedSettings["favorites"];
   readonly actions: ProviderInstanceRowActions;
 }) {
+  const canRefreshModels = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
+  const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const [isSyncingModels, setIsSyncingModels] = useState(false);
+  const syncingRef = useRef(false);
+  const syncModels = async () => {
+    if (syncingRef.current || !readEnvironmentScope(environmentId, AuthOrchestrationReadScope))
+      return;
+    syncingRef.current = true;
+    setIsSyncingModels(true);
+    try {
+      const result = await refreshServerProviders({
+        environmentId,
+        input: { instanceId, refreshModels: true },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Could not sync models",
+          description: error instanceof Error ? error.message : "The model sync failed.",
+        });
+      } else if (result._tag === "Success") {
+        const provider = result.value.providers.find(
+          (candidate) => candidate.instanceId === instanceId,
+        );
+        if (provider?.status !== "ready" && provider?.message) {
+          toastManager.add({
+            type: "error",
+            title: "Could not sync models",
+            description: provider.message,
+          });
+        }
+      }
+    } finally {
+      syncingRef.current = false;
+      setIsSyncingModels(false);
+    }
+  };
   const allProjects = useProjects();
   const acpProjects =
     mode === "editor" && liveProvider?.driver === "acpRegistry"
@@ -1391,6 +1431,17 @@ function ProviderInstanceRow({
       hiddenModels={hiddenModels}
       favoriteModels={favoriteModels}
       modelOrder={modelOrder}
+      onSyncModels={
+        mode === "editor" &&
+        canRefreshModels &&
+        driver === "codex" &&
+        codexSetupMode !== "managed" &&
+        liveProvider?.enabled &&
+        liveProvider.installed
+          ? () => void syncModels()
+          : undefined
+      }
+      isSyncingModels={isSyncingModels}
       onHiddenModelsChange={(next, affectedModels) => {
         const hidden = new Set(next);
         void actions.updateModelPreferences({

@@ -51,4 +51,34 @@ it("binds the whole revision, rejects stale membership edits, and preserves the 
     now: thread.updatedAt,
   });
   assert.isTrue(Result.isFailure(foreign));
+  const recovery = {
+    ...command,
+    restoringFromCleanup: true,
+    expectedWorkspaceRevisionId: workspace.id,
+    workspace: workspaceFixture({
+      ...workspace,
+      id: WorkspaceRevisionId.make("workspace:recovered"),
+      previousRevisionId: workspace.id,
+      bindings: structuredClone(workspace.bindings),
+    }),
+  };
+  const archived = { ...projection, thread: { ...bound, archivedAt: bound.updatedAt } };
+  assert.isTrue(
+    Result.isSuccess(
+      planWorkspaceBinding({
+        command: recovery,
+        projection: archived,
+        now: bound.updatedAt,
+      }),
+    ),
+  );
+  assert.isTrue(
+    Result.isFailure(
+      planWorkspaceBinding({
+        command: { ...recovery, workspace: { ...recovery.workspace, bindings: next.bindings } },
+        projection: archived,
+        now: bound.updatedAt,
+      }),
+    ),
+  );
 });

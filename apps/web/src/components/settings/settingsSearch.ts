@@ -250,6 +250,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["worktree location folder directory path drive external disk"],
   },
   {
+    id: "local-worktrees",
+    title: "Local worktrees",
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: [
+      "manual cleanup grouped worktrees restore rebuild 本地 工作树 手动 清理 分组 重建",
+    ],
+  },
+  {
     id: "storage-artifacts",
     title: "Artifacts and logs",
     to: "/settings/maintenance",

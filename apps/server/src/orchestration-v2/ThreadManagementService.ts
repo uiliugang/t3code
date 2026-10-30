@@ -58,6 +58,7 @@ import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimi
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ManagedWorktrees from "../workspace/ManagedWorktrees.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -543,6 +544,7 @@ const SETTLE_AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
 const make = Effect.gen(function* () {
   const threadDispatch = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const managedWorktrees = yield* Effect.serviceOption(ManagedWorktrees.ManagedWorktrees);
   const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const layerScope = yield* Effect.scope;
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
@@ -706,6 +708,20 @@ const make = Effect.gen(function* () {
   const dispatch: ThreadManagementServiceShape["dispatch"] = (command) =>
     ensureCommandTranscripts(command).pipe(
       Effect.andThen(assertDispatchTargetEnabled(command)),
+      Effect.andThen(() =>
+        command.type === "message.dispatch" && Option.isSome(managedWorktrees)
+          ? managedWorktrees.value.restore({ threadId: command.threadId }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new Orchestrator.OrchestratorDispatchError({
+                    commandId: command.commandId,
+                    commandType: command.type,
+                    cause,
+                  }),
+              ),
+            )
+          : Effect.void,
+      ),
       Effect.andThen(orchestrator.dispatch(command)),
     );
 
