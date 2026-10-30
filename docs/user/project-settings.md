@@ -119,7 +119,8 @@ are replaced with hyphens. Custom instructions are appended to
 the naming prompt and can specify issue IDs, namespaces, and casing.
 
 These settings apply to automatically named branches for new tasks and worktrees. Select a project
-to override its environment defaults. Worktree directories keep their original names.
+to override its environment defaults. New worktree directories use the final branch name,
+with slashes replaced by hyphens, before setup scripts and the agent start.
 If generation fails, or a custom name is invalid or already taken, the temporary
 branch name remains.
 

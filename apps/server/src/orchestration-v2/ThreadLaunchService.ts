@@ -516,6 +516,18 @@ const make = Effect.gen(function* () {
           branch = flattenTemporaryWorktreeBranchName(branch);
         }
         yield* setupTracker.stageStatus(threadId, "checkout", "running");
+        // Finalize the name before checkout so setup scripts and providers only see one path.
+        const generatedBranchName =
+          branch !== null && isTemporaryWorktreeBranch(branch) && initialMessage !== undefined
+            ? yield* generateBranchNameFor(project.workspaceRoot, initialMessage).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Worktree branch name generation failed", {
+                    threadId,
+                    cause,
+                  }).pipe(Effect.as(undefined)),
+                ),
+              )
+            : undefined;
         const worktree = yield* git
           .createWorktree(
             {
@@ -526,6 +538,7 @@ const make = Effect.gen(function* () {
               path: null,
             },
             {
+              ...(generatedBranchName === undefined ? {} : { generatedBranchName }),
               progress: {
                 onWorktreeClaimed: (path) =>
                   Effect.sync(() => {
@@ -560,6 +573,7 @@ const make = Effect.gen(function* () {
 
       if (
         reused === undefined &&
+        input.workspaceStrategy.type !== "worktree" &&
         (worktreePath !== null || createdTaskBranch) &&
         branch !== null &&
         initialMessage !== undefined &&

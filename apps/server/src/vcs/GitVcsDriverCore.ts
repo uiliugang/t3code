@@ -3885,8 +3885,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   )(function* (input, options) {
     yield* refuseOptionLikeRefName("GitVcsDriver.createWorktree", input.cwd, input.refName);
     yield* refuseOptionLikeRefName("GitVcsDriver.createWorktree", input.cwd, input.newRefName);
-    const targetBranch = input.newRefName ?? input.refName;
-    const sanitizedBranch = targetBranch.replace(/\//g, "-");
+    let targetBranch = input.newRefName ?? input.refName;
     // Resolve sub/.. before taking the basename.
     const repoName = path.basename(path.resolve(input.cwd));
     let worktreePath = input.path;
@@ -3905,7 +3904,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           detail: `The worktree location "${options?.worktreesDirectory}" must be an absolute folder on this machine, not a drive root. Change it in Settings → Worktrees.`,
         });
       }
-      worktreePath = path.join(parentDir, repoName, sanitizedBranch);
+      worktreePath = path.join(parentDir, repoName, targetBranch.replaceAll("/", "-"));
     }
     if (input.newRefName) {
       // Kept apart from the checkout so the shared-config lock only covers the tracking write.
@@ -3914,8 +3913,27 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         { cwd: input.cwd, branch: input.newRefName, startPoint: input.refName },
         "git worktree add failed",
       );
+      if (options?.generatedBranchName) {
+        targetBranch = yield* renameBranch({
+          cwd: input.cwd,
+          oldBranch: input.newRefName,
+          newBranch: options.generatedBranchName.branch,
+          exactName: options.generatedBranchName.exactName,
+        }).pipe(
+          Effect.map((result) => result.branch),
+          Effect.catchTags({
+            GitCommandError: (cause) =>
+              Effect.logWarning("Worktree branch naming failed; keeping temporary name", {
+                cause,
+              }).pipe(Effect.as(input.newRefName!)),
+          }),
+        );
+        if (input.path == null) {
+          worktreePath = path.join(path.dirname(worktreePath), targetBranch.replaceAll("/", "-"));
+        }
+      }
     }
-    const args = ["worktree", "add", "--", worktreePath, input.newRefName ?? input.refName];
+    const args = ["worktree", "add", "--", worktreePath, targetBranch];
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
 
@@ -4022,7 +4040,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }
 
-    const newRefName = input.newRefName;
+    const newRefName = input.newRefName ? targetBranch : null;
     if (newRefName && input.baseRefName) {
       const base = yield* resolveBranchBase(input.cwd, input.baseRefName);
       if (base) {
@@ -4036,7 +4054,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             // The base key names a branch on the host; this one keeps the remote it came from.
             yield* writeConfigValue({
               cwd: input.cwd,
-              key: `branch.${input.newRefName}.t3-merge-base-ref`,
+              key: `branch.${newRefName}.t3-merge-base-ref`,
               value: base.baseRef,
             });
           }
