@@ -22,6 +22,7 @@ describe("customModelEditor.logic", () => {
   it("round-trips a definition through the draft, marking the current value as default", () => {
     const definition = definitionFromDraft(
       draft({
+        slug: "  gpt-6.1-sol  ",
         name: " My Model ",
         descriptors: [
           {
@@ -40,7 +41,7 @@ describe("customModelEditor.logic", () => {
     );
 
     expect(definition).toEqual({
-      slug: "my-model",
+      slug: "gpt-6.1-sol",
       name: "My Model",
       capabilities: {
         optionDescriptors: [
@@ -150,6 +151,12 @@ describe("customModelEditor.logic", () => {
   });
 
   it("rejects duplicate ids, blank ids, and selects without choices", () => {
+    expect(validateDraft(draft({ slug: "  " }))).toBe("Enter a request model ID.");
+    expect(validateDraft(draft({ slug: "x".repeat(257) }))).toContain("256");
+    expect(validateDraft(draft({ slug: " model " }), ["model"])).toBe(
+      "That request model ID is already in use.",
+    );
+    expect(validateDraft(draft({ slug: "Model" }), ["model"])).toBeNull();
     const select = (id: string, choices: Array<{ id: string }>) => ({
       key: id,
       type: "select" as const,

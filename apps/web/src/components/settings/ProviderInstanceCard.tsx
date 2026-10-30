@@ -579,6 +579,8 @@ interface ProviderInstanceCardProps {
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onToggleFavorite: (model: string) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
+  readonly onSyncModels?: (() => void) | undefined;
+  readonly isSyncingModels?: boolean | undefined;
   readonly onRunUpdate?: (() => void) | undefined;
   readonly onInstallRecommended?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
@@ -621,6 +623,8 @@ export function ProviderInstanceCard({
   onFavoriteModelsChange,
   onToggleFavorite,
   onModelOrderChange,
+  onSyncModels,
+  isSyncingModels,
   onRunUpdate,
   onInstallRecommended,
   isUpdating = false,
@@ -1259,6 +1263,8 @@ export function ProviderInstanceCard({
               onFavoriteModelsChange={onFavoriteModelsChange}
               onToggleFavorite={onToggleFavorite}
               onModelOrderChange={onModelOrderChange}
+              onSyncModels={onSyncModels}
+              isSyncingModels={isSyncingModels}
             />
           </div>
         </SettingsSection>

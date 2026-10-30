@@ -25,6 +25,11 @@ T3 Code can use your installed Codex and its existing login. Run `codex login`
 on the environment's machine to sign in. [Provider setup](./install.md#providers)
 covers installation and custom configuration.
 
+For a custom API provider such as Sub2API, T3 Code uses that service's model catalog
+with the instance's Codex configuration and variables. In **Settings → Providers → Models**,
+use **Sync models from provider** after the service's available models change.
+Manually added models and their options are kept when you sync.
+
 ## Use multiple accounts
 
 Add another ChatGPT account in **Settings → Providers**, then select the account

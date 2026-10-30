@@ -1,9 +1,10 @@
-import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
+import { CodexSettings, ProviderDriverKind, type ServerProviderModel } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Ref from "effect/Ref";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
@@ -197,12 +198,18 @@ export const CodexDriver: ProviderDriver<
       ),
     );
 
+    const previousModels = yield* Ref.make<ReadonlyArray<ServerProviderModel>>([]);
     // Kick the TTL-gated manifest refresh in the background and classify with the in-memory
     // manifest, so a slow or hung fetch never delays the provider check.
     const checkProvider = modelCatalog.refreshInBackground.pipe(
       Effect.andThen(
         Effect.zipWith(
-          checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
+          Ref.get(previousModels).pipe(
+            Effect.flatMap((models) =>
+              checkCodexProviderStatus(effectiveConfig, undefined, processEnv, undefined, models),
+            ),
+            Effect.tap((draft) => Ref.set(previousModels, draft.models)),
+          ),
           currentCatalog,
           (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
           { concurrent: true },
@@ -211,6 +218,7 @@ export const CodexDriver: ProviderDriver<
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, pathService),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
     );
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<CodexSettings>>({

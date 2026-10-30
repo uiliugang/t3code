@@ -4,6 +4,7 @@ import {
   type ProviderOptionDescriptor,
 } from "@t3tools/contracts";
 import { type CustomModelDefinition, createModelCapabilities } from "@t3tools/shared/model";
+import { MAX_CUSTOM_MODEL_LENGTH } from "../../modelSelection";
 
 export interface EditorChoice {
   readonly key: string;
@@ -179,7 +180,7 @@ function descriptorToEditor(descriptor: ProviderOptionDescriptor): EditorDescrip
 export function draftFromDefinition(entry: CustomModelDefinition): CustomModelDraft {
   return {
     slug: entry.slug,
-    name: entry.name === entry.slug ? "" : entry.name,
+    name: entry.name,
     descriptors: (entry.capabilities?.optionDescriptors ?? []).map(descriptorToEditor),
   };
 }
@@ -194,7 +195,16 @@ export function descriptorsFromCapabilities(
     .map(descriptorToEditor);
 }
 
-export function validateDraft(draft: CustomModelDraft): string | null {
+export function validateDraft(
+  draft: CustomModelDraft,
+  reservedSlugs: ReadonlyArray<string> = [],
+): string | null {
+  const slug = draft.slug.trim();
+  if (!slug) return "Enter a request model ID.";
+  if (slug.length > MAX_CUSTOM_MODEL_LENGTH) {
+    return `Request model IDs must be ${MAX_CUSTOM_MODEL_LENGTH} characters or less.`;
+  }
+  if (reservedSlugs.includes(slug)) return "That request model ID is already in use.";
   const seenIds = new Set<string>();
   for (const [index, descriptor] of draft.descriptors.entries()) {
     const position = `Option ${index + 1}`;
@@ -250,9 +260,10 @@ export function definitionFromDraft(draft: CustomModelDraft): CustomModelDefinit
     };
   });
   const name = draft.name.trim();
+  const slug = draft.slug.trim();
   return {
-    slug: draft.slug,
-    name: name || draft.slug,
+    slug,
+    name: name || slug,
     capabilities:
       descriptors.length > 0 ? createModelCapabilities({ optionDescriptors: descriptors }) : null,
   };
