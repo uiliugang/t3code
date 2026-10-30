@@ -56,8 +56,13 @@ describe("providerModelsFromSettings", () => {
     ]);
   });
 
-  it("renames a built-in model when a named entry uses its slug", () => {
+  it("overrides a built-in model without losing its provider identity", () => {
     const capabilities = createModelCapabilities({ optionDescriptors: [] });
+    const override = {
+      slug: "gpt-5.5",
+      name: "Team GPT",
+      capabilities: OPENCODE_CUSTOM_MODEL_CAPABILITIES,
+    };
     const models = providerModelsFromSettings(
       [
         {
@@ -65,14 +70,18 @@ describe("providerModelsFromSettings", () => {
           name: "GPT-5.5",
           shortName: "5.5",
           isCustom: false,
+          isDefault: true,
+          aliases: ["default"],
           capabilities,
         },
       ],
-      [{ slug: "gpt-5.5", name: "Team GPT" }],
+      [override],
       capabilities,
     );
 
-    expect(models).toEqual([{ slug: "gpt-5.5", name: "Team GPT", isCustom: false, capabilities }]);
+    expect(models).toEqual([
+      { ...override, isCustom: false, isDefault: true, aliases: ["default"] },
+    ]);
   });
 
   it("preserves a custom slug that collides with a provider alias", () => {

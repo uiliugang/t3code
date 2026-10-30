@@ -1,4 +1,3 @@
-import { Button } from "../ui/button";
 import { useComposerPrediction } from "./useComposerPrediction";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
@@ -703,24 +702,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const questionPreparations = useQuestionAttachmentPreparation((state) => state.counts);
   const t = useUiTranslation();
   const prompt = composerDraft.prompt;
-  const prediction = useComposerPrediction({
-    environmentId,
-    threadId: routeThreadRef.threadId,
-    thread: props.activeThreadShell,
-    enabled:
-      settings.showPredictedMessages &&
-      routeKind === "server" &&
-      canOperateThread &&
-      environmentUnavailable === null &&
-      !isSendBusy &&
-      !isCompacting &&
-      !isEditingQueuedMessage &&
-      !showPlanFollowUpPrompt &&
-      incomingPendingUserInputs.length === 0 &&
-      pendingApprovals.length === 0 &&
-      prompt.length === 0 &&
-      !composerDraftHasUserContent(composerDraft),
-  });
   const composerImages = attachmentDraft.images;
   const composerFiles = attachmentDraft.files;
   const inlineFileIdSet = (() => {
@@ -938,6 +919,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry === undefined && multipleModelSelections === null;
   const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
+  const prediction = useComposerPrediction({
+    environmentId,
+    threadId: routeThreadRef.threadId,
+    thread: props.activeThreadShell,
+    enabled:
+      settings.showPredictedMessages &&
+      routeKind === "server" &&
+      canOperateThread &&
+      environmentUnavailable === null &&
+      !noProviderAvailable &&
+      !projectSelectionRequired &&
+      !isSendBusy &&
+      !isCompacting &&
+      !isEditingQueuedMessage &&
+      !showPlanFollowUpPrompt &&
+      incomingPendingUserInputs.length === 0 &&
+      pendingApprovals.length === 0 &&
+      prompt.length === 0 &&
+      !composerDraftHasUserContent(composerDraft),
+  });
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??
       (lockedProvider === null
@@ -2277,6 +2278,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (accepted) prediction.dismiss();
     return accepted;
   };
+  const acceptPredictionStable = useStableCallback(acceptPrediction);
+  const expandMobileComposerOrAcceptPrediction = () => {
+    expandMobileComposer();
+    acceptPrediction();
+  };
+  const expandMobileComposerOrAcceptPredictionStable = useStableCallback(
+    expandMobileComposerOrAcceptPrediction,
+  );
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) => {
     if (
       prediction.text &&
@@ -3588,13 +3597,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   data-chat-composer-transition-prompt="true"
                   className={cn(
                     "min-w-0 flex-1 truncate bg-transparent p-0 text-left text-sm focus:outline-none",
-                    prompt.trim() ? "text-foreground" : "text-placeholder",
+                    prompt.trim()
+                      ? "text-foreground"
+                      : prediction.text
+                        ? "text-muted-foreground"
+                        : "text-placeholder",
                   )}
                   onPointerDown={(event) => event.preventDefault()}
-                  onClick={expandMobileComposerStable}
-                  aria-label="Expand composer"
+                  onClick={expandMobileComposerOrAcceptPredictionStable}
+                  aria-label={
+                    prediction.text
+                      ? `${t("Use prediction")}: ${prediction.text}`
+                      : "Expand composer"
+                  }
                 >
                   {prompt.trim() ||
+                    prediction.text ||
                     (showProviderUnavailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
@@ -3751,10 +3769,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         "my-0 max-h-8 min-h-8 overflow-hidden py-0 whitespace-pre! leading-8",
                     )}
                     placeholderClassName={cn(
-                      prediction.text && "truncate",
                       isComposerResting &&
                         "flex items-center overflow-hidden whitespace-nowrap leading-8",
                     )}
+                    prediction={
+                      prediction.text
+                        ? {
+                            text: prediction.text,
+                            label: t("Use prediction"),
+                            collapsed: isComposerResting,
+                            onAccept: acceptPredictionStable,
+                          }
+                        : undefined
+                    }
                     onChange={onPromptChangeStable}
                     onVisibleSelectionChange={expandComposerForEditorChangeStable}
                     onCommandKeyDown={onComposerCommandKeyStable}
@@ -3765,8 +3792,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onCitationDraftSave={saveCitationDraftToPromptStable}
                     onPaste={onComposerPasteStable}
                     placeholder={
-                      prediction.text ??
-                      (isComposerApprovalState
+                      isComposerApprovalState
                         ? activePendingApproval?.supportsFeedback
                           ? "Send feedback to decline this request"
                           : "Send a message to decline and redirect the agent"
@@ -3780,7 +3806,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Choose a project above to start a thread"
                               : showProviderUnavailable
                                 ? "Enable a provider in Settings to send a message"
-                                : DEFAULT_COMPOSER_PLACEHOLDER)
+                                : DEFAULT_COMPOSER_PLACEHOLDER
                     }
                     disabled={
                       projectSelectionRequired ||
@@ -3822,27 +3848,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </div>
             </div>
 
-            {prediction.text ? (
-              <div className="flex items-center gap-2 px-1 pb-1">
-                <Button
-                  variant="ghost-muted"
-                  size="micro"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={acceptPrediction}
-                  title={prediction.text}
-                >
-                  {t("Tab to accept prediction")}
-                </Button>
-                <Button
-                  variant="ghost-muted"
-                  size="micro"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={prediction.dismiss}
-                >
-                  {t("Dismiss prediction")}
-                </Button>
-              </div>
-            ) : null}
             <ComposerPromptLengthValidation
               message={providerInputSubmissionError ?? composerSubmissionError}
             />

@@ -182,7 +182,14 @@ describe("acpRegistrySnapshotReadiness", () => {
       ...identity,
       settings: decodeSettings({
         agentId: "test-agent",
-        customModels: [" custom-model ", "gpt-discovered"],
+        customModels: [
+          " custom-model ",
+          {
+            slug: "gpt-discovered",
+            name: "Team discovered",
+            capabilities: { optionDescriptors: [] },
+          },
+        ],
       }),
       checkedAt: "2026-08-13T10:00:00.000Z",
       inspection: {
@@ -219,7 +226,7 @@ describe("acpRegistrySnapshotReadiness", () => {
     ).toEqual([
       {
         slug: "gpt-discovered",
-        name: "GPT Discovered",
+        name: "Team discovered",
         isCustom: false,
         isDefault: true,
       },

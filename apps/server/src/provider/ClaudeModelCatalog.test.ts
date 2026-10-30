@@ -171,7 +171,18 @@ describe("Claude model catalog", () => {
   });
 
   it("appends custom models with their own descriptors and keeps bare slugs opaque", () => {
-    const catalog = scopeClaudeModelCatalog(catalogFromManifest(manifest()), [
+    const original = catalogFromManifest(manifest());
+    const override = {
+      slug: "claude-synthetic-next",
+      name: "Team Claude",
+      capabilities: {
+        optionDescriptors: (original.models[0]!.model.capabilities?.optionDescriptors ?? []).filter(
+          (option) => option.id === "effort",
+        ),
+      },
+    };
+    const catalog = scopeClaudeModelCatalog(original, [
+      override,
       "synthetic",
       {
         slug: "claude-custom-tuned",
@@ -191,6 +202,18 @@ describe("Claude model catalog", () => {
         },
       },
     ]);
+
+    assert.deepStrictEqual(catalog.models[0]!.model.capabilities, override.capabilities);
+    assert.strictEqual(catalog.models[0]!.model.name, override.name);
+    assert.deepStrictEqual(catalog.models[0]!.runtime, original.models[0]!.runtime);
+    assert.deepStrictEqual(catalog.models[0]!.compatibility, original.models[0]!.compatibility);
+    assert.strictEqual(
+      resolveClaudeCatalogApiModelId(catalog, {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: override.slug,
+      }),
+      override.slug,
+    );
 
     assert.strictEqual(resolveClaudeModelSlug(catalog, "synthetic"), "synthetic");
     assert.isUndefined(resolveClaudeCatalogEffort(catalog, "synthetic", "extreme"));
