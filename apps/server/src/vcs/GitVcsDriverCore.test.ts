@@ -4744,42 +4744,83 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect("pushes with upstream setup and skips when already up to date", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTmpDir();
-        const remote = yield* makeTmpDir("git-remote-");
-        yield* initRepoWithCommit(cwd);
-        yield* git(remote, ["init", "--bare"]);
-        yield* git(cwd, ["remote", "add", "origin", remote]);
-        yield* (yield* GitVcsDriver.GitVcsDriver).createRef({
-          cwd,
-          refName: "feature/push",
-        });
-        yield* (yield* GitVcsDriver.GitVcsDriver).switchRef({
-          cwd,
-          refName: "feature/push",
-        });
-        yield* writeTextFile(cwd, "feature.txt", "feature\n");
-        yield* git(cwd, ["add", "-A"]);
-        yield* (yield* GitVcsDriver.GitVcsDriver).commit(cwd, "Add feature", "");
+    it.effect.each([
+      { name: "wildcard fetch", restrictedFetch: false, alreadyPushed: false },
+      { name: "restricted fetch", restrictedFetch: true, alreadyPushed: false },
+      {
+        name: "restricted fetch after an external push",
+        restrictedFetch: true,
+        alreadyPushed: true,
+      },
+    ])(
+      "pushes with upstream setup and skips when already up to date ($name)",
+      ({ restrictedFetch, alreadyPushed }) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const remote = yield* makeTmpDir("git-remote-");
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          yield* git(remote, ["init", "--bare"]);
+          yield* git(cwd, ["remote", "add", "origin", remote]);
+          const originalFetch = restrictedFetch
+            ? `+refs/heads/${initialBranch}:refs/remotes/origin/${initialBranch}`
+            : "+refs/heads/*:refs/remotes/origin/*";
+          yield* git(cwd, ["config", "remote.origin.fetch", originalFetch]);
+          yield* (yield* GitVcsDriver.GitVcsDriver).createRef({
+            cwd,
+            refName: "feature/push",
+          });
+          yield* (yield* GitVcsDriver.GitVcsDriver).switchRef({
+            cwd,
+            refName: "feature/push",
+          });
+          yield* writeTextFile(cwd, "feature.txt", "feature\n");
+          yield* git(cwd, ["add", "-A"]);
+          yield* (yield* GitVcsDriver.GitVcsDriver).commit(cwd, "Add feature", "");
 
-        const pushed = yield* (yield* GitVcsDriver.GitVcsDriver).pushCurrentBranch(cwd, null);
-        assert.deepInclude(pushed, {
-          status: "pushed",
-          branch: "feature/push",
-          setUpstream: true,
-        });
-        assert.equal(
-          yield* git(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]),
-          "origin/feature/push",
-        );
+          if (alreadyPushed) {
+            yield* git(cwd, ["push", "-u", "origin", "feature/push"]);
+            assert.equal(
+              (yield* (yield* GitVcsDriver.GitVcsDriver).statusDetails(cwd)).hasUpstream,
+              false,
+            );
+          }
 
-        const skipped = yield* (yield* GitVcsDriver.GitVcsDriver).pushCurrentBranch(cwd, null);
-        assert.deepInclude(skipped, {
-          status: "skipped_up_to_date",
-          branch: "feature/push",
-        });
-      }),
+          const pushed = yield* (yield* GitVcsDriver.GitVcsDriver).pushCurrentBranch(cwd, null);
+          assert.deepInclude(pushed, {
+            status: "pushed",
+            branch: "feature/push",
+            setUpstream: true,
+          });
+          assert.equal(
+            yield* git(remote, ["--git-dir=.", "rev-parse", "refs/heads/feature/push"]),
+            yield* git(cwd, ["rev-parse", "HEAD"]),
+          );
+          assert.deepInclude(yield* (yield* GitVcsDriver.GitVcsDriver).statusDetails(cwd), {
+            hasUpstream: true,
+            aheadCount: 0,
+            behindCount: 0,
+          });
+          assert.equal(
+            yield* git(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]),
+            "origin/feature/push",
+          );
+
+          const skipped = yield* (yield* GitVcsDriver.GitVcsDriver).pushCurrentBranch(cwd, null);
+          assert.deepInclude(skipped, {
+            status: "skipped_up_to_date",
+            branch: "feature/push",
+          });
+          assert.equal(
+            yield* git(remote, ["--git-dir=.", "rev-parse", "refs/heads/feature/push"]),
+            yield* git(cwd, ["rev-parse", "@{upstream}"]),
+          );
+          assert.equal(
+            yield* git(cwd, ["config", "--get-all", "remote.origin.fetch"]),
+            restrictedFetch
+              ? `${originalFetch}\n+refs/heads/feature/push:refs/remotes/origin/feature/push`
+              : originalFetch,
+          );
+        }),
     );
 
     it.effect("rebases a pushed branch's pulls when branch.autoSetupRebase asks for it", () =>
