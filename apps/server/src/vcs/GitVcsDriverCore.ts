@@ -2538,7 +2538,38 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       if (autoSetupRebase === "always" || autoSetupRebase === "remote") {
         yield* writeConfigValue({ cwd, key: `branch.${branch}.rebase`, value: "true" });
       }
-      return true;
+      if ((yield* readCurrentUpstreamRef(cwd)) !== null) {
+        return true;
+      }
+
+      const mappedUpstream = yield* runGitStdout(
+        "GitVcsDriver.pushCurrentBranch.readUpstreamMapping",
+        cwd,
+        ["for-each-ref", "--format=%(upstream)", `refs/heads/${branch}`],
+      ).pipe(Effect.map((stdout) => stdout.trim()));
+      if (mappedUpstream.length === 0) {
+        const fetchRefspec = `+refs/heads/${publishBranch}:refs/remotes/${remoteName}/${publishBranch}`;
+        yield* executeGitWithStableDiagnostics(
+          "GitVcsDriver.pushCurrentBranch.recordFetchMapping",
+          cwd,
+          [
+            "config",
+            "--fixed-value",
+            "--replace-all",
+            `remote.${remoteName}.fetch`,
+            fetchRefspec,
+            fetchRefspec,
+          ],
+          { writesSharedConfig: true },
+        ).pipe(retryWhileConfigLocked);
+      }
+      yield* runGit(
+        "GitVcsDriver.pushCurrentBranch.fetchUpstream",
+        cwd,
+        ["fetch", "--no-tags", "--no-auto-gc", "--", remoteName, `refs/heads/${publishBranch}`],
+        { timeoutMs: null },
+      );
+      return (yield* readCurrentUpstreamRef(cwd)) !== null;
     },
     Effect.catch((cause) =>
       Effect.logWarning("pushed, but could not record the branch upstream", { cause }).pipe(
