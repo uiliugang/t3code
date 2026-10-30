@@ -1,3 +1,4 @@
+import { skillMessages } from "./skillMessages.ts";
 export type UiLocale = "en" | "zh-CN";
 
 export type UiTranslator = (
@@ -11,6 +12,7 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  ...skillMessages,
   "Local worktrees": "本地 worktree",
   "Nested worktrees must be cleaned manually.": "嵌套的工作目录需要通过 Git 手动清理。",
   "Ready to clean": "可清理",

@@ -558,6 +558,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["automatically open diff pull request pr right panel agent completion"],
   },
   {
+    id: "skill-management",
+    title: "Skill management",
+    to: "/settings/skills",
+    searchTerms: [
+      "skills automatic updates import sources targets 技能 纳管 自动更新 安装来源 使用位置",
+    ],
+  },
+  {
     id: "skills-in-slash-menu",
     title: "Show skills in slash menu",
     to: "/settings/chat",

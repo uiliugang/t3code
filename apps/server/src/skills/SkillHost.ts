@@ -86,11 +86,26 @@ const make = Effect.gen(function* () {
       if (directory)
         result.push({
           id,
-          label: instance.displayName || id,
+          label:
+            instance.displayName ||
+            new Map([
+              ["codex", "Codex"],
+              ["claudeAgent", "Claude Code"],
+              ["cursor", "Cursor"],
+              ["grok", "Grok"],
+              ["opencode", "OpenCode"],
+              ["antigravity", "Antigravity"],
+            ]).get(instance.driver) ||
+            id,
           directory: path.resolve(directory),
           providerInstanceId: ProviderInstanceId.make(id),
         });
     }
+    result.push({
+      id: "directory:shared",
+      label: "Shared skills",
+      directory: path.join(home, ".agents", "skills"),
+    });
     result.push({
       id: "directory:codebuddy",
       label: "CodeBuddy",

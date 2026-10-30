@@ -24,10 +24,30 @@ const handlers = {
       );
     }),
   ),
+  inspect_skill: McpToolAccess.writesEnvironment(({ inspection }) =>
+    Effect.gen(function* () {
+      const service = yield* SkillManager.SkillManager;
+      return yield* service
+        .inspect(inspection)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
+          ),
+        );
+    }),
+  ),
   manage_skills: McpToolAccess.writesEnvironment(({ operation }) =>
     Effect.gen(function* () {
       const service = yield* SkillManager.SkillManager;
-      yield* service.mutate(operation);
+      yield* service
+        .mutate(operation)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
+          ),
+        );
       return { queued: true };
     }),
   ),

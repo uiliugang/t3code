@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 
 import {
   completeConfirmDialogClose,
@@ -22,7 +23,10 @@ type ConfirmationCopy = {
   readonly description: string | null;
 };
 
-function resolveConfirmDialogCopy(message: string): ConfirmationCopy {
+function resolveConfirmDialogCopy(
+  message: string,
+  t: (message: string) => string,
+): ConfirmationCopy {
   const normalizedMessage = message.trim();
   const lines = normalizedMessage.split("\n");
   const questionLineIndex = lines.findIndex((line) => line.trim().endsWith("?"));
@@ -45,19 +49,20 @@ function resolveConfirmDialogCopy(message: string): ConfirmationCopy {
   }
 
   return {
-    title: "Confirm action",
-    description: normalizedMessage || "This action requires your confirmation.",
+    title: t("Confirm action"),
+    description: normalizedMessage || t("This action requires your confirmation."),
   };
 }
 
 export function ConfirmDialogHost() {
+  const t = useUiTranslation();
   const state = useSyncExternalStore(
     subscribeConfirmDialogHost,
     readConfirmDialogState,
     readConfirmDialogState,
   );
 
-  const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
+  const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message, t);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => respondToConfirmDialog(true);
@@ -82,9 +87,9 @@ export function ConfirmDialogHost() {
           ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <AlertDialogClose render={<Button variant="outline" />}>{t("Cancel")}</AlertDialogClose>
           <Button variant={confirmVariant} onClick={onConfirm}>
-            Confirm
+            {t("Confirm")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>
