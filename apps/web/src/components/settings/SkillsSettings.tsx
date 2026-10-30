@@ -18,6 +18,7 @@ import {
   FolderIcon,
   GlobeIcon,
   LinkIcon,
+  ListFilterIcon,
   PackageIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -25,6 +26,7 @@ import {
   SearchIcon,
   ServerIcon,
   TriangleAlertIcon,
+  XIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useEnvironmentQuery } from "../../state/query";
@@ -37,6 +39,14 @@ import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
+import {
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRadioItemIndicator,
+} from "../ui/menu";
 import { Checkbox } from "../ui/checkbox";
 import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
@@ -233,23 +243,20 @@ function InstallDialog({
                 }
               />
             </label>
-            <details className="border-y border-border py-3">
-              <summary className="cursor-pointer text-sm font-medium">Package options</summary>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="block space-y-2 text-sm">
-                  <span>Skill name / market ID (optional)</span>
-                  <Input
-                    aria-label="Skill name"
-                    value={skill}
-                    onChange={(event) => setSkill(event.target.value)}
-                  />
-                </label>
-                <div className="space-y-2">
-                  <div className="text-sm">Update policy</div>
-                  <PolicySelect value={policy} onChange={setPolicy} />
-                </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block space-y-2 text-sm">
+                <span>Skill name / market ID (optional)</span>
+                <Input
+                  aria-label="Skill name"
+                  value={skill}
+                  onChange={(event) => setSkill(event.target.value)}
+                />
+              </label>
+              <div className="space-y-2">
+                <div className="text-sm">Update policy</div>
+                <PolicySelect value={policy} onChange={setPolicy} />
               </div>
-            </details>
+            </div>
             <fieldset>
               <legend className="mb-1 text-sm font-medium">
                 Agent targets{" "}
@@ -356,18 +363,8 @@ function SkillRow({
   return (
     <article className="border-b border-border px-3 py-5 sm:px-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="hidden size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground sm:flex">
-            <PackageIcon aria-hidden="true" className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold wrap-anywhere">{displayName}</h3>
-            <p
-              className={`${expanded ? "" : "line-clamp-2 "}mt-1 text-sm leading-relaxed text-muted-foreground wrap-anywhere`}
-            >
-              {skill.description}
-            </p>
-          </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold wrap-anywhere">{displayName}</h3>
         </div>
         <div className="max-w-[40%] shrink-0">
           <Tooltip>
@@ -384,7 +381,14 @@ function SkillRow({
           </Tooltip>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 sm:pl-12">
+      {skill.description && (
+        <p
+          className={`${expanded ? "" : "line-clamp-2 "}mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground wrap-anywhere`}
+        >
+          {skill.description}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <Badge
           variant={
             skill.status === "failed"
@@ -445,7 +449,7 @@ function SkillRow({
         </div>
       </div>
       {skill.bindings.length > 0 && (
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground wrap-anywhere sm:pl-12">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground wrap-anywhere">
           {skill.bindings.map((target) => target.label).join(", ")}
         </p>
       )}
@@ -455,7 +459,7 @@ function SkillRow({
         </p>
       )}
       {expanded && (
-        <div id={detailsId} className="mt-4 space-y-5 border-t border-border pt-4 text-xs sm:ml-12">
+        <div id={detailsId} className="mt-4 space-y-5 border-t border-border pt-4 text-xs">
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="space-y-4">
               <h4 className="text-sm font-medium">Installation</h4>
@@ -848,22 +852,32 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const attention = data.skills.filter((skill) => skill.status === "failed").length;
   return (
     <>
-      <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 px-3 text-xs text-muted-foreground sm:px-4">
-        <span>
-          <span className="font-semibold tabular-nums text-foreground">
-            {data.skills.filter((skill) => skill.activeDigest !== null).length}
-          </span>{" "}
-          installed
-        </span>
-        <span>
-          <span className="font-semibold tabular-nums text-foreground">{updates}</span> updates
-        </span>
-        <span>
-          <span className="font-semibold tabular-nums text-foreground">{attention}</span> need
-          attention
-        </span>
+      <div className="mb-3 flex items-start justify-between gap-3 px-3 sm:px-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 py-2 text-xs text-muted-foreground">
+          <span>
+            <span className="font-semibold tabular-nums text-foreground">
+              {data.skills.filter((skill) => skill.activeDigest !== null).length}
+            </span>{" "}
+            installed
+          </span>
+          {updates > 0 && (
+            <span>
+              <span className="font-semibold tabular-nums text-foreground">{updates}</span> updates
+            </span>
+          )}
+          {attention > 0 && (
+            <span>
+              <span className="font-semibold tabular-nums text-foreground">{attention}</span> need
+              attention
+            </span>
+          )}
+        </div>
+        <Button disabled={!canManage} onClick={() => setInstall({})}>
+          <PlusIcon />
+          Install skill
+        </Button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 pb-3 sm:px-4">
+      <div className="border-b border-border px-3 sm:px-4">
         <div role="tablist" aria-label="Skill management" className="flex gap-4">
           {(["installed", "sources", "targets"] as const).map((item) => (
             <button
@@ -896,10 +910,6 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             </button>
           ))}
         </div>
-        <Button disabled={!canManage} onClick={() => setInstall({})}>
-          <PlusIcon />
-          Install skill
-        </Button>
       </div>
       {data.lastFailure && (
         <p
@@ -923,8 +933,8 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
           id={`${tabsId}-installed-panel`}
           aria-labelledby={`${tabsId}-installed`}
         >
-          <div className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-4 sm:px-4">
-            <div className="min-w-40 flex-1">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-3 sm:px-4">
+            <div className="min-w-0 flex-1">
               <InputGroup>
                 <InputGroupAddon>
                   <SearchIcon aria-hidden="true" />
@@ -937,25 +947,63 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                 />
               </InputGroup>
             </div>
-            <div className="w-44 max-w-full shrink-0">
-              <Select value={filter} onValueChange={(value) => value && setFilter(value)}>
-                <SelectTrigger aria-label="Filter skills">
-                  <SelectValue>
-                    {filter === "all"
-                      ? "All skills"
-                      : filter === "updates"
-                        ? "Updates"
-                        : "Needs attention"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup alignItemWithTrigger={false}>
-                  <SelectItem value="all">All skills</SelectItem>
-                  <SelectItem value="updates">Updates ({updates})</SelectItem>
-                  <SelectItem value="attention">Needs attention ({attention})</SelectItem>
-                </SelectPopup>
-              </Select>
-            </div>
+            <Menu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <MenuTrigger
+                      render={
+                        <Button
+                          size="icon"
+                          variant={filter === "all" ? "outline" : "secondary"}
+                          aria-label="Filter skills"
+                        />
+                      }
+                    />
+                  }
+                >
+                  <ListFilterIcon />
+                </TooltipTrigger>
+                <TooltipPopup>Filter skills</TooltipPopup>
+              </Tooltip>
+              <MenuPopup align="end">
+                <MenuRadioGroup
+                  value={filter}
+                  onValueChange={(value) => {
+                    if (value === "all" || value === "updates" || value === "attention")
+                      setFilter(value);
+                  }}
+                >
+                  <MenuRadioItem value="all" closeOnClick>
+                    <span className="flex items-center justify-between gap-4">
+                      All skills
+                      <MenuRadioItemIndicator />
+                    </span>
+                  </MenuRadioItem>
+                  <MenuRadioItem value="updates" closeOnClick>
+                    <span className="flex items-center justify-between gap-4">
+                      Updates ({updates})<MenuRadioItemIndicator />
+                    </span>
+                  </MenuRadioItem>
+                  <MenuRadioItem value="attention" closeOnClick>
+                    <span className="flex items-center justify-between gap-4">
+                      Needs attention ({attention})<MenuRadioItemIndicator />
+                    </span>
+                  </MenuRadioItem>
+                </MenuRadioGroup>
+              </MenuPopup>
+            </Menu>
           </div>
+          {filter !== "all" && (
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-1 text-xs text-muted-foreground">
+              <span>
+                {filter === "updates" ? "Updates" : "Needs attention"} ({filtered.length})
+              </span>
+              <Action label="Clear status filter" onClick={() => setFilter("all")}>
+                <XIcon />
+              </Action>
+            </div>
+          )}
           {filtered.length === 0 && (
             <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
               <PackageIcon className="size-7 text-muted-foreground" aria-hidden="true" />
