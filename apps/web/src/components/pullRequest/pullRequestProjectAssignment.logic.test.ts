@@ -11,10 +11,17 @@ const project = (
   id: string,
   environmentId: string,
   canonicalKey?: string,
+  originKey?: string,
 ): AssignableProject & { workspaceRoot: string } => ({
   id: id as ProjectId,
   environmentId: environmentId as EnvironmentId,
-  repositoryIdentity: canonicalKey === undefined ? null : { canonicalKey },
+  repositoryIdentity:
+    canonicalKey === undefined
+      ? null
+      : {
+          canonicalKey,
+          ...(originKey === undefined ? {} : { origin: { canonicalKey: originKey } }),
+        },
   workspaceRoot: `/srv/${environmentId}/${id}`,
 });
 
@@ -31,11 +38,12 @@ describe("one server per repository", () => {
         project("b1", "env-1", "github.com/acme/tools"),
         project("a2", "env-2", "github.com/acme/app"),
         project("c2", "env-2", "github.com/acme/site"),
+        project("fork2", "env-2", "github.com/acme/app", "github.com/me/app"),
       ],
       envs("env-1", "env-2"),
       "env-1" as EnvironmentId,
     );
-    expect(plain(assignment)).toEqual({ "env-1": ["a1", "b1"], "env-2": ["c2"] });
+    expect(plain(assignment)).toEqual({ "env-1": ["a1", "b1"], "env-2": ["c2", "fork2"] });
   });
 
   it("prefers the named server over the first one", () => {
@@ -116,6 +124,7 @@ describe("where a pull request can be acted on", () => {
         project("a1", "env-1", "github.com/acme/app"),
         project("a2", "env-2", "github.com/acme/app"),
         project("c3", "env-3", "github.com/acme/site"),
+        project("fork3", "env-3", "github.com/acme/app", "github.com/me/app"),
       ],
       connected("env-1", "env-2", "env-3"),
     );

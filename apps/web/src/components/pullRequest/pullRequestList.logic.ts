@@ -960,6 +960,12 @@ export function findProjectForRepository<
       return false;
     }
     const identity = project.repositoryIdentity;
+    if (identity?.origin) {
+      const [originHost, ...path] = identity.origin.canonicalKey.toLowerCase().split("/");
+      if (path.join("/") === repository && (host === undefined || host === originHost)) {
+        return true;
+      }
+    }
     if (
       !identity ||
       sourceControlClients.repositorySelector(identity)?.toLowerCase() !== repository

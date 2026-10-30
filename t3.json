@@ -4,7 +4,7 @@
   "scripts": [
     {
       "name": "Setup Worktree",
-      "command": "node scripts/setup-worktree.ts",
+      "command": "vp env exec --node 26.12.1 node scripts/setup-worktree.ts",
       "icon": "configure",
       "runOnWorktreeCreate": true
     }
