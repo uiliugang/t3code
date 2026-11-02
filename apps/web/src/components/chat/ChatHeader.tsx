@@ -45,6 +45,7 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { ProviderWeeklyUsage } from "./ProviderWeeklyUsage";
+import { NavigationHistoryControls } from "../NavigationHistoryControls";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -288,7 +289,7 @@ export const ChatHeader = memo(function ChatHeader({
     <div
       ref={breadcrumbContainerRef}
       className={cn(
-        "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+        "@container/thread-header flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
         rightPanelOpen ? "pr-10" : "pr-24",
       )}
       onContextMenu={handleHeaderContextMenu}
@@ -361,7 +362,7 @@ export const ChatHeader = memo(function ChatHeader({
             </WorkspaceBreadcrumbSeparator>
           </>
         ) : null}
-        <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
+        <WorkspaceBreadcrumbItem current className="min-w-10 flex-1 gap-2">
           {renamingTitle !== null ? (
             <input
               autoFocus
@@ -416,7 +417,7 @@ export const ChatHeader = memo(function ChatHeader({
                 render={
                   <h2
                     aria-label={activeThreadTitle}
-                    className="min-w-0 flex-1"
+                    className="min-w-0"
                     dir={textDirection(activeThreadTitle)}
                   />
                 }
@@ -436,6 +437,7 @@ export const ChatHeader = memo(function ChatHeader({
               </TooltipPopup>
             </Tooltip>
           ) : null}
+          <NavigationHistoryControls />
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       <ProviderWeeklyUsage providers={providers} />
