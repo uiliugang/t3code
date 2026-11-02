@@ -20,6 +20,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectLabel } from "../ProjectLabel";
 
 export function ArchivedThreadsPanel() {
   const t = useUiTranslation();
@@ -206,7 +207,7 @@ export function ArchivedThreadsPanel() {
           <SettingsSection
             key={key}
             id={index === 0 ? searchableSetting("archive").id : undefined}
-            title={title}
+            title={<ProjectLabel name={title} project={project} />}
             icon={<ProjectFavicon project={project} />}
           >
             {projectThreads.map((thread) => (

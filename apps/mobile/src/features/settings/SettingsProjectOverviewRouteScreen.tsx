@@ -4,6 +4,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { ProjectLabel } from "../../components/ProjectLabel";
 import * as Dialog from "../../components/ui/Dialog";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
@@ -345,15 +346,18 @@ function ProjectOverviewContent(props: {
         <ProjectFavicon
           environmentId={representative.environmentId}
           projectTitle={representative.title}
+          workspaceConfig={representative.workspaceConfig}
           workspaceRoot={representative.workspaceRoot}
           faviconPath={representative.faviconPath}
           projectIcon={representative.projectIcon}
           size={48}
         />
         <View className="min-w-0 flex-1">
-          <Text className="text-xl font-t3-semibold text-foreground" numberOfLines={2}>
-            {displayName}
-          </Text>
+          <ProjectLabel
+            name={displayName}
+            project={representative}
+            textClassName="text-xl font-t3-semibold text-foreground"
+          />
           <Text className="text-sm text-foreground-muted">
             {props.members.length === 1 ? "1 checkout" : `${props.members.length} checkouts`}
           </Text>

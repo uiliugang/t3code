@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./projectPresentation": {
+      "types": "./src/projectPresentation.ts",
+      "import": "./src/projectPresentation.ts"
+    },
     "./skillsUi": {
       "types": "./src/skillsUi.ts",
       "import": "./src/skillsUi.ts"

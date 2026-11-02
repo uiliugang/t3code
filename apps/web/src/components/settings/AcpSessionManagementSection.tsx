@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../ProjectLabel";
 import {
   AuthOrchestrationOperateScope,
   AuthProvidersManageScope,
@@ -9,6 +10,7 @@ import type {
   AcpRegistrySession,
   EnvironmentId,
   ProjectId,
+  ProjectWorkspaceConfig,
   ProviderInstanceId,
   ServerProvider,
 } from "@t3tools/contracts";
@@ -32,6 +34,7 @@ interface AcpSessionProject {
   readonly id: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
+  readonly workspaceConfig?: ProjectWorkspaceConfig | undefined;
 }
 
 function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>) {
@@ -359,13 +362,18 @@ export function AcpSessionManagementSection(props: {
                 >
                   <SelectTrigger aria-label="Project for ACP sessions" className="w-40" size="sm">
                     <SelectValue>
-                      {props.projects.find((project) => project.id === projectId)?.title}
+                      <ProjectLabel
+                        name={
+                          props.projects.find((project) => project.id === projectId)?.title ?? ""
+                        }
+                        project={props.projects.find((project) => project.id === projectId)}
+                      />
                     </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     {props.projects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
-                        {project.title}
+                        <ProjectLabel name={project.title} project={project} />
                       </SelectItem>
                     ))}
                   </SelectPopup>
@@ -492,13 +500,16 @@ export function AcpSessionManagementSection(props: {
             >
               <SelectTrigger aria-label="Project for ACP providers" className="min-w-48" size="xs">
                 <SelectValue>
-                  {props.projects.find((project) => project.id === projectId)?.title}
+                  <ProjectLabel
+                    name={props.projects.find((project) => project.id === projectId)?.title ?? ""}
+                    project={props.projects.find((project) => project.id === projectId)}
+                  />
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup>
                 {props.projects.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
-                    {project.title}
+                    <ProjectLabel name={project.title} project={project} />
                   </SelectItem>
                 ))}
               </SelectPopup>

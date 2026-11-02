@@ -344,7 +344,16 @@ it("persists language changes across hydration while preserving other device set
   });
   await ensureClientSettingsHydrated();
   expect(getClientSettings().showRepositoryTerminalButton).toBe(false);
-  await persistClientSettingsPatch({ uiLanguage: "zh-CN", showRepositoryTerminalButton: true });
+  expect(getClientSettings().showRepositoryIcons).toBe(true);
+  expect(getClientSettings().showGroupIcons).toBe(true);
+  expect(getClientSettings().capitalizeProjectNames).toBe(true);
+  await persistClientSettingsPatch({
+    uiLanguage: "zh-CN",
+    showRepositoryTerminalButton: true,
+    showRepositoryIcons: false,
+    showGroupIcons: false,
+    capitalizeProjectNames: false,
+  });
   const stored = persistenceMocks.setClientSettings.mock.calls.at(-1)![0];
   expect(stored.uiLanguage).toBe("zh-CN");
   expect(stored.chatWidth).toBe("wide");
@@ -354,9 +363,20 @@ it("persists language changes across hydration while preserving other device set
   await ensureClientSettingsHydrated();
   expect(getClientSettings().uiLanguage).toBe("zh-CN");
   expect(getClientSettings().showRepositoryTerminalButton).toBe(true);
+  expect(getClientSettings().showRepositoryIcons).toBe(false);
+  expect(getClientSettings().showGroupIcons).toBe(false);
+  expect(getClientSettings().capitalizeProjectNames).toBe(false);
   await persistClientSettingsPatch({ uiLanguage: "en" });
   expect(getClientSettings().uiLanguage).toBe("en");
   expect(getClientSettings().chatWidth).toBe("wide");
-  await persistClientSettingsPatch({ showRepositoryTerminalButton: false });
+  await persistClientSettingsPatch({
+    showRepositoryTerminalButton: false,
+    showRepositoryIcons: true,
+    showGroupIcons: true,
+    capitalizeProjectNames: true,
+  });
   expect(getClientSettings().showRepositoryTerminalButton).toBe(false);
+  expect(getClientSettings().showRepositoryIcons).toBe(true);
+  expect(getClientSettings().showGroupIcons).toBe(true);
+  expect(getClientSettings().capitalizeProjectNames).toBe(true);
 });

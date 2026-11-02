@@ -31,6 +31,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectLabel } from "../ProjectLabel";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -312,7 +313,10 @@ export const ChatHeader = memo(function ChatHeader({
                 >
                   <ProjectFavicon project={activeProject} className="size-3.5" />
                   <WorkspaceBreadcrumbText className="max-w-40">
-                    {activeProjectName}
+                    <ProjectLabel
+                      name={activeProjectName ?? activeProject.title}
+                      project={activeProject}
+                    />
                   </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
                 <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>

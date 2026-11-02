@@ -364,6 +364,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["wide full width column layout messages composer monitor"],
   },
   {
+    id: "repository-icons",
+    title: "Show repository icons",
+    to: "/settings/appearance",
+    searchTerms: ["repo", "icon", "favicon", "show", "hide"],
+  },
+  {
+    id: "group-icons",
+    title: "Show group icons",
+    to: "/settings/appearance",
+    searchTerms: ["workspace", "group", "icon", "show", "hide"],
+  },
+  {
+    id: "capitalize-project-names",
+    title: "Capitalize repository and group names",
+    to: "/settings/appearance",
+    searchTerms: ["repo", "workspace", "name", "uppercase", "first letter", "capitalization"],
+  },
+  {
     id: "repository-terminal-button",
     title: "Repository terminal menu item",
     to: "/settings/appearance",

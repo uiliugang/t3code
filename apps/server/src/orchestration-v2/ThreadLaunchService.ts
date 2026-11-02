@@ -322,6 +322,44 @@ const make = Effect.gen(function* () {
       yield* serverSettings.getSettings,
       input.projectId,
     ).settings;
+    const initialMessage = input.initialMessage;
+    const generateBranchNameFor = Effect.fn("ThreadLaunchService.generateBranchNameFor")(function* (
+      cwd: string,
+      message: ThreadLaunchInitialMessage,
+    ) {
+      const settings = resolveProjectSettings(
+        yield* serverSettings.getSettings,
+        input.projectId,
+      ).settings;
+      const modelSelection =
+        settings.sourceControlWriterModelSelection === null
+          ? settings.textGenerationModelSelection
+          : ServerSettings.resolveSourceControlWriterModelSelection(
+              settings,
+              yield* providerRegistry.getProviders,
+              input.projectId,
+            );
+      return yield* textGeneration
+        .generateBranchName({
+          naming: {
+            mode: settings.branchNamingMode,
+            prefix: settings.branchNamePrefix,
+            instructions: settings.branchNameInstructions,
+          },
+          cwd,
+          message: message.text,
+          attachments: message.attachments,
+          ...(message.context ? { context: message.context } : {}),
+          modelSelection,
+        })
+        .pipe(
+          Effect.map((result) => ({
+            branch: result.branch,
+            exactName: settings.branchNamingMode === "custom",
+          })),
+        );
+    });
+
     if (workspaceThread?.workspaceConfiguration !== undefined) {
       if (workspaceThread.workspace === undefined) {
         if (Option.isNone(workspaceProvisioner))
@@ -339,6 +377,20 @@ const make = Effect.gen(function* () {
           fiber: yield* Effect.fiber,
         });
         yield* setupTracker.stageStatus(threadId, "checkout", "running");
+        const requestedBranch = input.workspaceStrategy.branch;
+        const generatedBranchName =
+          input.workspaceStrategy.type === "worktree" &&
+          (requestedBranch === undefined || isTemporaryWorktreeBranch(requestedBranch)) &&
+          initialMessage !== undefined
+            ? yield* generateBranchNameFor(project.workspaceRoot, initialMessage).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Worktree branch name generation failed", {
+                    threadId,
+                    cause,
+                  }).pipe(Effect.as(undefined)),
+                ),
+              )
+            : undefined;
         const workspace = yield* workspaceProvisioner.value
           .prepare({
             threadId,
@@ -346,6 +398,7 @@ const make = Effect.gen(function* () {
             config: workspaceThread.workspaceConfiguration,
             scripts: project.scripts,
             strategy: input.workspaceStrategy,
+            ...(generatedBranchName === undefined ? {} : { generatedBranchName }),
           })
           .pipe(
             Effect.mapError(mapError(input, "provision-worktree", threadId)),
@@ -406,43 +459,6 @@ const make = Effect.gen(function* () {
       });
     }
     yield* Effect.gen(function* () {
-      const initialMessage = input.initialMessage;
-      const generateBranchNameFor = Effect.fn("ThreadLaunchService.generateBranchNameFor")(
-        function* (cwd: string, message: ThreadLaunchInitialMessage) {
-          const settings = resolveProjectSettings(
-            yield* serverSettings.getSettings,
-            input.projectId,
-          ).settings;
-          const modelSelection =
-            settings.sourceControlWriterModelSelection === null
-              ? settings.textGenerationModelSelection
-              : ServerSettings.resolveSourceControlWriterModelSelection(
-                  settings,
-                  yield* providerRegistry.getProviders,
-                  input.projectId,
-                );
-          return yield* textGeneration
-            .generateBranchName({
-              naming: {
-                mode: settings.branchNamingMode,
-                prefix: settings.branchNamePrefix,
-                instructions: settings.branchNameInstructions,
-              },
-              cwd,
-              message: message.text,
-              attachments: message.attachments,
-              ...(message.context ? { context: message.context } : {}),
-              modelSelection,
-            })
-            .pipe(
-              Effect.map((result) => ({
-                branch: result.branch,
-                exactName: settings.branchNamingMode === "custom",
-              })),
-            );
-        },
-      );
-
       const requestedBranch = input.workspaceStrategy.branch;
       let branch: string | null;
       if (input.workspaceStrategy.type === "worktree" && requestedBranch === undefined) {

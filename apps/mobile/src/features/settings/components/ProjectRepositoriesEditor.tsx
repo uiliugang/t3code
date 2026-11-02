@@ -117,6 +117,11 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
             <AppText>Repository context</AppText>
             <AppTextInput
               accessibilityLabel="Repository context"
+              multiline
+              numberOfLines={2}
+              textAlignVertical="top"
+              className="min-h-27"
+              maxLength={2000}
               editable={allowed && !saving}
               value={root.description}
               onChangeText={(description) => change(root.id, { description })}

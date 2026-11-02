@@ -380,19 +380,6 @@ export function AppearanceSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          {...searchableSetting("repository-terminal-button")}
-          description={t("Show Terminal in each repository's Open in menu.")}
-          control={
-            <Switch
-              checked={settings.showRepositoryTerminalButton}
-              onCheckedChange={(checked) =>
-                updateSettings({ showRepositoryTerminalButton: Boolean(checked) })
-              }
-              aria-label={t("Repository terminal menu item")}
-            />
-          }
-        />
         <AdvancedSettings
           targetIds={[
             searchableSetting("panel-animations").id,
@@ -525,6 +512,61 @@ export function AppearanceSettingsPanel() {
             }
           />
         </AdvancedSettings>
+      </SettingsSection>
+
+      <SettingsSection id="repository-group-display" title={t("Repositories & groups")}>
+        <SettingsRow
+          {...searchableSetting("repository-icons")}
+          description={t("Show icons wherever repositories are displayed.")}
+          control={
+            <Switch
+              checked={settings.showRepositoryIcons}
+              onCheckedChange={(checked) =>
+                updateSettings({ showRepositoryIcons: Boolean(checked) })
+              }
+              aria-label={t("Show repository icons")}
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("group-icons")}
+          description={t("Show icons wherever groups are displayed.")}
+          control={
+            <Switch
+              checked={settings.showGroupIcons}
+              onCheckedChange={(checked) => updateSettings({ showGroupIcons: Boolean(checked) })}
+              aria-label={t("Show group icons")}
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("capitalize-project-names")}
+          description={t(
+            "Uppercase the first letter for display. Original names and paths are kept.",
+          )}
+          control={
+            <Switch
+              checked={settings.capitalizeProjectNames}
+              onCheckedChange={(checked) =>
+                updateSettings({ capitalizeProjectNames: Boolean(checked) })
+              }
+              aria-label={t("Capitalize repository and group names")}
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("repository-terminal-button")}
+          description={t("Show Terminal in each repository's Open in menu.")}
+          control={
+            <Switch
+              checked={settings.showRepositoryTerminalButton}
+              onCheckedChange={(checked) =>
+                updateSettings({ showRepositoryTerminalButton: Boolean(checked) })
+              }
+              aria-label={t("Repository terminal menu item")}
+            />
+          }
+        />
       </SettingsSection>
 
       <TypographySection />

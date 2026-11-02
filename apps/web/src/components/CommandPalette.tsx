@@ -1,3 +1,4 @@
+import { ProjectLabel } from "./ProjectLabel";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { openCreateWorkspace } from "./CreateWorkspaceDialog";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
@@ -1261,7 +1262,12 @@ function OpenCommandPaletteDialog(props: {
         searchTerms: ["new thread", "chat", "create", "draft"],
         title: (
           <>
-            New thread in <span className="font-semibold">{activeProjectTitle}</span>
+            New thread in{" "}
+            <ProjectLabel
+              name={activeProjectTitle}
+              project={projectPickerEntries.find((entry) => entry.isPreferred)?.group}
+              className="font-semibold"
+            />
           </>
         ),
         searchTitle: `New thread in ${activeProjectTitle}`,

@@ -40,6 +40,9 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { projectDisplayKind } from "@t3tools/shared/projectPresentation";
+import { useProjectPresentation } from "../../lib/useProjectPresentation";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
 import { useNowAfter } from "../../lib/clock";
 import { cn } from "../../lib/cn";
@@ -263,7 +266,8 @@ const SHELF_LABEL = { working: "Working", snoozed: "Snoozed", settled: "Settled"
 function ThreadListV2ShelfHeader(
   props: ThreadListV2ShelfHeaderProps & { readonly kind: keyof typeof SHELF_LABEL },
 ) {
-  const label = SHELF_LABEL[props.kind];
+  const t = useUiTranslation();
+  const label = t(SHELF_LABEL[props.kind]);
   return (
     <ThreadListV2Section
       label={props.expanded ? label : `${label} (${props.count})`}
@@ -427,11 +431,17 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
     [onDeletePendingTask, pendingTask],
   );
 
-  const titleTextInset = props.project ? projectIconSize + 8 : 0;
+  const projectPresentation = useProjectPresentation();
+  const showProjectIcon =
+    props.project != null &&
+    (projectDisplayKind(props.project) === "group"
+      ? projectPresentation.showGroupIcons
+      : projectPresentation.showRepositoryIcons);
+  const titleTextInset = showProjectIcon ? projectIconSize + 8 : 0;
   const rowContent = (
     <>
       <View className="flex-row items-start gap-2">
-        {props.project ? (
+        {props.project && showProjectIcon ? (
           <View className="justify-center" style={{ height: titleLineHeight }}>
             <ProjectFavicon
               environmentId={pendingTask.environmentId}
@@ -439,6 +449,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
               projectIcon={props.project.projectIcon}
               size={projectIconSize}
               projectTitle={projectTitle}
+              workspaceConfig={props.project.workspaceConfig}
               workspaceRoot={props.project.workspaceRoot}
             />
           </View>
@@ -677,6 +688,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly simultaneousSwipeGesture?: ComponentProps<typeof ThreadSwipeable>["simultaneousWith"];
 }) {
   const { width: windowWidth, fontScale } = useWindowDimensions();
+  const t = useUiTranslation();
   const titleTypography = useScaledTextRole("body");
   const metadataTypography = useScaledTextRole("label");
   const projectIconSize = titleTypography.fontSize * 1.25 * fontScale;
@@ -1102,11 +1114,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
-  const titleTextInset = props.project ? projectIconSize + 8 : 0;
+  const projectPresentation = useProjectPresentation();
+  const showProjectIcon =
+    props.project != null &&
+    (projectDisplayKind(props.project) === "group"
+      ? projectPresentation.showGroupIcons
+      : projectPresentation.showRepositoryIcons);
+  const titleTextInset = showProjectIcon ? projectIconSize + 8 : 0;
   const cardContent = (
     <>
       <View className="flex-row items-start gap-2">
-        {props.project ? (
+        {props.project && showProjectIcon ? (
           <View className="justify-center" style={{ height: titleLineHeight }}>
             <ProjectFavicon
               environmentId={thread.environmentId}
@@ -1114,6 +1132,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               projectIcon={props.project.projectIcon}
               size={projectIconSize}
               projectTitle={props.project.title}
+              workspaceConfig={props.project.workspaceConfig}
               workspaceRoot={props.project.workspaceRoot}
             />
           </View>
@@ -1155,7 +1174,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             <Pressable
               className="-m-2.5 flex-row items-center gap-1 p-2.5"
               accessibilityRole="button"
-              accessibilityLabel="Dismiss Woke notification"
+              accessibilityLabel={t("Dismiss Woke notification")}
               onPress={handleAcknowledgeWoke}
               onLongPress={() => undefined}
               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
@@ -1177,7 +1196,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                     : "text-warning-foreground",
                 )}
               >
-                Woke
+                {t("Woke")}
               </Text>
             </Pressable>
           ) : statusLabel ? (
@@ -1200,7 +1219,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                   selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
                 )}
               >
-                {statusLabel.label}
+                {t(statusLabel.label)}
                 {status === "working" ? (
                   <ThreadListV2Duration startedAt={resolveThreadWorkingStartedAt(thread)} />
                 ) : status === "waiting" ? (
@@ -1412,6 +1431,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 projectIcon={props.project.projectIcon}
                 size={projectIconSize}
                 projectTitle={props.project.title}
+                workspaceConfig={props.project.workspaceConfig}
                 workspaceRoot={props.project.workspaceRoot}
               />
             </View>

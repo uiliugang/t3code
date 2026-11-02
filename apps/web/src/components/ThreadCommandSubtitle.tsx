@@ -1,6 +1,7 @@
 import type { ProviderDriverKind } from "@t3tools/contracts";
 import { FolderGit2Icon, FolderIcon, GitBranchIcon } from "lucide-react";
 import { ProjectFavicon, type ProjectFaviconProject } from "./ProjectFavicon";
+import { ProjectLabel } from "./ProjectLabel";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
 
@@ -67,7 +68,7 @@ export function ThreadCommandSubtitle(props: {
           {props.project ? (
             <ProjectFavicon project={props.project} className="size-3 shrink-0" />
           ) : null}
-          <span className="min-w-0 truncate">{projectLabel}</span>
+          <ProjectLabel name={projectLabel} project={props.project ?? undefined} />
           {props.environmentLabel ? (
             <>
               <CommandPaletteMetaDot />

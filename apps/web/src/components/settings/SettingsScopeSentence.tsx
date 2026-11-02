@@ -1,14 +1,16 @@
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useLocation } from "@tanstack/react-router";
-import { CheckIcon, ChevronDownIcon, LayersIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, InfoIcon, LayersIcon } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectLabel } from "../ProjectLabel";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   Combobox,
   ComboboxEmpty,
@@ -27,7 +29,8 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
-import { useOptionalSettingsScope } from "./SettingsScopeContext";
+import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
+import { ProjectTypeFilterControl } from "./ProjectTypeFilterControl";
 import { resolveSettingsScope, type SettingsScopeSearch } from "./settingsScope";
 import {
   ALL_ENVIRONMENTS_VALUE,
@@ -87,13 +90,31 @@ export function SettingsScopeSentence() {
         />
       </div>
     );
+  const projectSettingsHint = t(
+    "Can't find a setting? Keep this project picked above and hop to any other settings page.",
+  );
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-sm text-muted-foreground sm:px-4">
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 max-w-full items-center gap-1.5">
         <span className="shrink-0">{t("Applying settings for")}</span>
         <ProjectScopeMenu {...props} />
+        {pathname === "/settings/projects" &&
+        (scope.scope.kind === "project" || scope.scope.kind === "checkout") ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button size="icon-xs" variant="ghost-muted" aria-label={projectSettingsHint} />
+              }
+            >
+              <InfoIcon aria-hidden className="size-3.5 text-info" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom" align="start">
+              {projectSettingsHint}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
       </span>
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 max-w-full items-center gap-1.5">
         <span className="shrink-0">
           {t(scope.search.machine || scope.scope.kind === "checkout" ? "on" : "across")}
         </span>
@@ -106,6 +127,7 @@ export function SettingsScopeSentence() {
 interface ScopeOption {
   value: string;
   label: string;
+  displayLabel?: ReactNode;
   secondary?: string;
   icon?: ReactNode;
   offline?: boolean;
@@ -117,7 +139,7 @@ function ScopeOptionLabel({ option }: { option: ScopeOption }) {
     <>
       {option.icon}
       <span className="min-w-0 flex-1">
-        <span className="block truncate">{option.label}</span>
+        <span className="block truncate">{option.displayLabel ?? option.label}</span>
         {option.secondary ? (
           <span className="block truncate text-xs text-muted-foreground">{option.secondary}</span>
         ) : null}
@@ -133,31 +155,39 @@ function ScopeMenu({
   ariaLabel,
   icon,
   label,
+  displayLabel,
   value,
   options,
   allOption,
   searchLabel,
+  header,
+  searchable = false,
   onChange,
 }: {
   ariaLabel: string;
   icon: ReactNode;
   label: string;
+  displayLabel?: ReactNode;
   value: string;
   options: ScopeOption[];
   allOption: ScopeOption | null;
   searchLabel: string;
+  header?: ReactNode;
+  searchable?: boolean;
   onChange: (next: string) => void;
 }) {
+  const t = useUiTranslation();
   const [query, setQuery] = useState("");
-  const Trigger = options.length > 6 ? ComboboxTrigger : MenuTrigger;
+  const useSearch = searchable || options.length > 6;
+  const Trigger = useSearch ? ComboboxTrigger : MenuTrigger;
   const trigger = (
     <Trigger
       aria-label={`${ariaLabel}: ${label}`}
       render={<Button variant="outline" size="sm" />}
-      className="min-w-0 max-w-72"
+      className="min-w-0 max-w-72 shrink"
     >
       {icon}
-      <span className="min-w-0 truncate">{label}</span>
+      <span className="min-w-0 truncate">{displayLabel ?? label}</span>
       <ChevronDownIcon
         aria-hidden
         strokeWidth={1.75}
@@ -166,7 +196,7 @@ function ScopeMenu({
     </Trigger>
   );
   const choices = allOption ? [allOption, ...options] : options;
-  if (options.length > 6) {
+  if (useSearch) {
     const needle = query.trim().toLowerCase();
     const filteredItems = choices.filter((option) =>
       `${option.label} ${option.secondary ?? ""} ${option.value}`.toLowerCase().includes(needle),
@@ -195,7 +225,8 @@ function ScopeMenu({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <ComboboxEmpty>No matches found.</ComboboxEmpty>
+          {header ? <div className="px-2 py-2">{header}</div> : null}
+          <ComboboxEmpty>{t("No matches found.")}</ComboboxEmpty>
           <ComboboxList>
             {(option: ScopeOption) => (
               <ComboboxItem key={option.value} value={option}>
@@ -320,8 +351,9 @@ function EnvironmentScopeMenu({
 
 function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsScopeMenuProps) {
   const t = useUiTranslation();
+  const { projectTypeFilter } = useSettingsScope();
   const selected = groups.find((group) => group.projectKey === value.project);
-  const projects = projectScopeMenuGroups(groups, value).map((group) => ({
+  const projects = projectScopeMenuGroups(groups, value, projectTypeFilter).map((group) => ({
     group,
     machines: settingsScopeProjectMachines(group, environments, true).join(", "),
   }));
@@ -330,9 +362,14 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
       ariaLabel={t("Project scope")}
       icon={selected ? <ProjectFavicon project={selected} className="size-3.5 shrink-0" /> : null}
       label={selected?.displayName ?? t(value.project ? "Unavailable project" : "All projects")}
+      displayLabel={
+        selected ? <ProjectLabel name={selected.displayName} project={selected} /> : undefined
+      }
       value={projectAxisValue(value)}
       onChange={(next) => onChange(selectProjectAxis(value, next))}
       searchLabel={t("Search projects")}
+      searchable
+      header={<ProjectTypeFilterControl />}
       allOption={{ value: ALL_PROJECTS_VALUE, label: t("All projects") }}
       options={projects.map(({ group, machines }) => {
         const sameName = projects.filter(
@@ -351,7 +388,10 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
         return {
           value: group.projectKey,
           label: group.displayName,
-          secondary: group.archived ? ["Archived", location].filter(Boolean).join(" · ") : location,
+          displayLabel: <ProjectLabel name={group.displayName} project={group} />,
+          secondary: group.archived
+            ? [t("Archived"), location].filter(Boolean).join(" · ")
+            : location,
           icon: <ProjectFavicon project={group} className="size-3.5 shrink-0" />,
         };
       })}

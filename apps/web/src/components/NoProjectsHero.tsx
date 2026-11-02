@@ -42,7 +42,7 @@ export function NoProjectsHero() {
                   <PlusIcon className="size-4" />
                   Add project
                 </Button>
-                <Button size="sm" variant="outline" onClick={openCreateWorkspace}>
+                <Button size="sm" variant="outline" onClick={() => openCreateWorkspace()}>
                   <LayersIcon />
                   {t("Create group")}
                 </Button>

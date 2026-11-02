@@ -2,14 +2,14 @@ import { type EnvironmentId, T3_PROJECT_FILE_NAME, type T3ProjectFile } from "@t
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useState } from "react";
 
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { getProjectFileQueryAtom, optimisticFileAtom } from "../files/projectFilesQueryState";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { resolveScopedSettingsTargets, selectScopedSettingsEnvironments } from "./scopedSettings";
 import { resolveSettingsScope, type SettingsScopeSearch } from "./settingsScope";
-import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
+import { selectSingleEnvironmentScope, type ProjectTypeFilter } from "./settingsScopeAxis";
 
 type ProjectFileMember = readonly [
   environmentId: EnvironmentId,
@@ -87,6 +87,8 @@ const SettingsScopeContext = createContext<
       singleEnvironment: boolean;
       search: SettingsScopeSearch;
       selectScope: (next: SettingsScopeSearch) => void;
+      projectTypeFilter: ProjectTypeFilter;
+      setProjectTypeFilter: (filter: ProjectTypeFilter) => void;
     })
   | null
 >(null);
@@ -103,7 +105,14 @@ export function SettingsScopeProvider({
   children: ReactNode;
 }) {
   const resolved = useResolvedSettingsScope(search, singleEnvironment);
-  const value = { ...resolved, singleEnvironment, selectScope: onChange };
+  const [projectTypeFilter, setProjectTypeFilter] = useState<ProjectTypeFilter>("all");
+  const value = {
+    ...resolved,
+    singleEnvironment,
+    selectScope: onChange,
+    projectTypeFilter,
+    setProjectTypeFilter,
+  };
   return <SettingsScopeContext value={value}>{children}</SettingsScopeContext>;
 }
 

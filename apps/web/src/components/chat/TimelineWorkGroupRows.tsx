@@ -54,6 +54,7 @@ import {
   workEntryIconName,
 } from "./TimelineWorkEntryRow.logic";
 import { formatWorkingTimerNow } from "./TimelineWorkGroupRows.logic";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
@@ -276,20 +277,21 @@ function ExpandedWorkGroupEntries({
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
+  const t = useUiTranslation();
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
     use(TimelineRowActivityCtx);
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
   const label = isPreparingWorktree ? (
-    "Setting up worktree…"
+    t("Setting up worktree…")
   ) : compacting ? (
     <CompactingLabel createdAt={row.createdAt} />
   ) : row.createdAt ? (
     <>
-      Working for <WorkingTimer createdAt={row.createdAt} />
+      {t("Working for")} <WorkingTimer createdAt={row.createdAt} />
     </>
   ) : (
-    "Working..."
+    t("Working...")
   );
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
@@ -344,15 +346,16 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
 }
 
 function CompactingLabel({ createdAt }: { createdAt: string | null }) {
+  const t = useUiTranslation();
   return (
     <span className="inline-flex items-center gap-1.5">
       <Minimize2Icon aria-hidden="true" className="size-3" />
       {createdAt ? (
         <span>
-          Compacting for <WorkingTimer createdAt={createdAt} />
+          {t("Compacting for")} <WorkingTimer createdAt={createdAt} />
         </span>
       ) : (
-        "Compacting…"
+        t("Compacting…")
       )}
     </span>
   );

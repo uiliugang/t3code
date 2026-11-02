@@ -36,6 +36,7 @@ import {
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { isProjectPinShortcut, ProjectPinButton } from "../ProjectPinButton";
+import { ProjectLabel } from "../ProjectLabel";
 import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
 import {
   Combobox,
@@ -301,9 +302,9 @@ export function DraftHeroHeadline({
             />
           }
         >
-          <DraftProjectName
-            value={isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
-            singleLine
+          <ProjectLabel
+            name={isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
+            project={isScratchDraft ? undefined : (activeProjectGroup ?? undefined)}
           />
         </TooltipTrigger>
         {activeProjectDisplayName && !isScratchDraft ? (
@@ -340,7 +341,7 @@ export function DraftHeroHeadline({
                 ) : null}
                 <Tooltip>
                   <TooltipTrigger render={<span className="min-w-0 flex-1 text-sm" />}>
-                    <DraftProjectName value={item.label} />
+                    <ProjectLabel name={item.label} project={entry?.group} />
                   </TooltipTrigger>
                   <TooltipPopup side="top">{item.label}</TooltipPopup>
                 </Tooltip>

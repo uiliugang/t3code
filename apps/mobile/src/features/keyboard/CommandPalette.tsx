@@ -33,6 +33,7 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { ProjectLabel } from "../../components/ProjectLabel";
 import { GlassSurface } from "../../components/ui/GlassSurface";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -139,6 +140,7 @@ function PaletteRow(props: {
             faviconPath={props.item.project.faviconPath}
             projectIcon={props.item.project.projectIcon}
             projectTitle={props.item.project.title}
+            workspaceConfig={props.item.project.workspaceConfig}
             size={20}
             workspaceRoot={props.item.project.workspaceRoot}
           />
@@ -154,18 +156,26 @@ function PaletteRow(props: {
       </View>
       <View className="flex-1">
         <View className="flex-row items-baseline gap-2">
-          <Text numberOfLines={1} className={cn("shrink text-base", foregroundClassName)}>
-            {props.item.titleRanges?.length
-              ? splitSearchText(props.item.title, props.item.titleRanges).map((part) => (
-                  <Text
-                    key={part.start}
-                    className={cn("text-base", part.highlighted && "font-t3-bold")}
-                  >
-                    {part.text}
-                  </Text>
-                ))
-              : props.item.title}
-          </Text>
+          {props.item.kind === "project" ? (
+            <ProjectLabel
+              name={props.item.title}
+              project={props.item.project}
+              textClassName={cn("text-base", foregroundClassName)}
+            />
+          ) : (
+            <Text numberOfLines={1} className={cn("shrink text-base", foregroundClassName)}>
+              {props.item.titleRanges?.length
+                ? splitSearchText(props.item.title, props.item.titleRanges).map((part) => (
+                    <Text
+                      key={part.start}
+                      className={cn("text-base", part.highlighted && "font-t3-bold")}
+                    >
+                      {part.text}
+                    </Text>
+                  ))
+                : props.item.title}
+            </Text>
+          )}
           {/* The second line shows the snippet or hint, so keep where the thread
               lives, unless the hint already names it. */}
           {(props.searchMatch ||

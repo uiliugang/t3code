@@ -1,5 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { FolderPlusIcon, PlusIcon } from "lucide-react";
+import { FolderPlusIcon, LayersIcon, PlusIcon } from "lucide-react";
 import {
   getBrowseParentPath,
   ensureBrowseDirectoryPath,
@@ -8,6 +8,8 @@ import { openProjectFolderImport } from "../../projectFolderImport";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { Button } from "../ui/button";
+import { openCreateWorkspace } from "../CreateWorkspaceDialog";
+import { useSettingsScope } from "./SettingsScopeContext";
 
 export function ProjectImportActions({
   environmentId,
@@ -17,6 +19,7 @@ export function ProjectImportActions({
   workspaceRoot?: string | undefined;
 }) {
   const t = useUiTranslation();
+  const { selectScope, setProjectTypeFilter } = useSettingsScope();
   const siblingPath = workspaceRoot
     ? getBrowseParentPath(ensureBrowseDirectoryPath(workspaceRoot))
     : null;
@@ -44,6 +47,22 @@ export function ProjectImportActions({
       >
         <PlusIcon />
         {t("Add project")}
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          openCreateWorkspace({
+            initialEnvironmentId: environmentId,
+            onCreated: (project) => {
+              setProjectTypeFilter("group");
+              selectScope({ machine: project.environmentId });
+            },
+          })
+        }
+      >
+        <LayersIcon />
+        {t("Add group")}
       </Button>
       <Button
         size="sm"

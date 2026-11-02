@@ -26,6 +26,9 @@ import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { ProjectLabel } from "../../components/ProjectLabel";
+import { formatProjectDisplayName } from "@t3tools/shared/projectPresentation";
+import { useProjectPresentation } from "../../lib/useProjectPresentation";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -153,6 +156,7 @@ function NewTaskHeader(props: {
 }
 
 export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRouteParams | undefined>) {
+  const { capitalizeProjectNames } = useProjectPresentation();
   const projects = useProjects();
   const [searchText, setSearchText] = useState("");
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
@@ -478,7 +482,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     <NavigationRow
                       className="bg-grouped-card"
                       key={scope.key}
-                      title={scope.title}
+                      title={formatProjectDisplayName(scope.title, capitalizeProjectNames)}
                       subtitle={
                         hasMultipleProjects
                           ? `${scope.projects.length} workspaces`
@@ -495,6 +499,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           projectIcon={scope.representative.projectIcon}
                           size={24}
                           projectTitle={scope.title}
+                          workspaceConfig={scope.representative.workspaceConfig}
                           workspaceRoot={scope.representative.workspaceRoot}
                         />
                       }
@@ -520,13 +525,16 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           projectIcon={scope.representative.projectIcon}
                           size={20}
                           projectTitle={scope.title}
+                          workspaceConfig={scope.representative.workspaceConfig}
                           workspaceRoot={scope.representative.workspaceRoot}
                         />
                       </View>
                       <View className="min-w-0 flex-1">
-                        <Text className={cn("text-base leading-snug", "font-t3-bold")}>
-                          {scope.title}
-                        </Text>
+                        <ProjectLabel
+                          name={scope.title}
+                          project={scope.representative}
+                          textClassName="text-base font-t3-bold text-foreground"
+                        />
                         <Text
                           className="text-xs leading-snug text-foreground-muted"
                           ellipsizeMode="middle"

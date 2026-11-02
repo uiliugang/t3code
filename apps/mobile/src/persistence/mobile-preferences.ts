@@ -87,6 +87,9 @@ const ThreadProject = Schema.Struct({
 const isThreadProject = Schema.is(ThreadProject);
 
 export interface Preferences {
+  readonly showRepositoryIcons?: boolean;
+  readonly showGroupIcons?: boolean;
+  readonly capitalizeProjectNames?: boolean;
   readonly uiLanguage?: "en" | "zh-CN";
   readonly navigationTabOrder?: readonly string[];
   readonly hiddenNavigationTabs?: readonly string[];
@@ -171,6 +174,9 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    showRepositoryIcons?: boolean;
+    showGroupIcons?: boolean;
+    capitalizeProjectNames?: boolean;
     navigationTabOrder?: readonly string[];
     hiddenNavigationTabs?: readonly string[];
     pullRequestHideTestFiles?: boolean;
@@ -265,6 +271,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.uiLanguage === "en" || parsed.uiLanguage === "zh-CN")
     preferences.uiLanguage = parsed.uiLanguage;
+  if (typeof parsed.showRepositoryIcons === "boolean")
+    preferences.showRepositoryIcons = parsed.showRepositoryIcons;
+  if (typeof parsed.showGroupIcons === "boolean")
+    preferences.showGroupIcons = parsed.showGroupIcons;
+  if (typeof parsed.capitalizeProjectNames === "boolean")
+    preferences.capitalizeProjectNames = parsed.capitalizeProjectNames;
   if (parsed.androidNavigationStyle === "one-ui" || parsed.androidNavigationStyle === "material") {
     preferences.androidNavigationStyle = parsed.androidNavigationStyle;
   }

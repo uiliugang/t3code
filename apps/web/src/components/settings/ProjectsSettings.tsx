@@ -8,8 +8,11 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import { SettingsPageContainer } from "./settingsLayout";
 import { ALL_ENVIRONMENTS_VALUE, selectEnvironmentAxis } from "./settingsScopeAxis";
+import { ProjectTypeFilterControl } from "./ProjectTypeFilterControl";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export function ProjectsSettings() {
+  const t = useUiTranslation();
   const { search: value, scope, selectScope } = useSettingsScope();
   const unavailable =
     scope.kind === "unavailable" ? (
@@ -23,7 +26,7 @@ export function ProjectsSettings() {
               onClick={() => selectScope(selectEnvironmentAxis(value, ALL_ENVIRONMENTS_VALUE))}
             >
               <LayersIcon />
-              Show all environments
+              {t("Show all environments")}
             </Button>
           ) : null}
         </div>
@@ -50,12 +53,15 @@ export function ProjectsSettings() {
         <SettingsScopeNotice
           target="project"
           actions={
-            <ProjectImportActions
-              environmentId={value.machine ? EnvironmentId.make(value.machine) : undefined}
-            />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <ProjectTypeFilterControl />
+              <ProjectImportActions
+                environmentId={value.machine ? EnvironmentId.make(value.machine) : undefined}
+              />
+            </div>
           }
         >
-          Choose a project to manage its name, icon, checkouts and actions.
+          {t("Choose a project or group to manage its name, icon, repositories and actions.")}
         </SettingsScopeNotice>
       )}
     </div>

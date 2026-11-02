@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../ProjectLabel";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -428,7 +429,7 @@ export function SettingInheritance({
                               className="min-w-0 max-w-full justify-start"
                               onClick={project.open}
                             >
-                              <span className="truncate">{project.label}</span>
+                              <ProjectLabel name={project.label} />
                             </InlineButton>
                             {hasMultipleEnvironments ? (
                               <span className="max-w-full truncate text-xs text-muted-foreground">

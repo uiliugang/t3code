@@ -25,6 +25,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { RelativeTime } from "../../components/RelativeTime";
+import { ProjectLabel } from "../../components/ProjectLabel";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useServerConfigs } from "../../state/entities";
 import { useEnvironmentScope } from "../../state/session";
@@ -151,15 +152,16 @@ function ProjectGroupLabel(props: {
         faviconPath={props.project.faviconPath}
         projectIcon={props.project.projectIcon}
         projectTitle={props.project.title}
+        workspaceConfig={props.project.workspaceConfig}
         size={18}
         workspaceRoot={props.project.workspaceRoot}
       />
-      <Text
-        className="flex-1 text-xs font-t3-medium tracking-[0.5px] uppercase text-foreground-muted"
-        numberOfLines={1}
-      >
-        {props.project.title}
-      </Text>
+      <ProjectLabel
+        name={props.project.title}
+        project={props.project}
+        className="flex-1"
+        textClassName="text-xs font-t3-medium"
+      />
       {props.environmentLabel ? (
         <View className="max-w-[42%] flex-row items-center gap-1">
           <EnvironmentMachineSymbol

@@ -11,6 +11,7 @@ import {
 } from "./CommandPalette.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { ProjectLabel } from "./ProjectLabel";
 import { COMMAND_PALETTE_META_ICON_CLASS, CommandPaletteMetaDot } from "./ThreadCommandSubtitle";
 
 export interface CommandPaletteProjectLocation {
@@ -67,6 +68,7 @@ export function buildProjectSearchItems(input: ProjectItemsInput) {
       );
     },
     icon: projectFaviconIcon,
+    renderTitle: (project) => <ProjectLabel name={project.displayName} project={project} />,
     runProject: input.runProject,
     ...(input.pin ? { pin: input.pin } : {}),
   });
@@ -92,6 +94,7 @@ export function buildNewThreadInProjectItems(input: ProjectItemsInput) {
       />
     ),
     icon: projectFaviconIcon,
+    renderTitle: (project) => <ProjectLabel name={project.displayName} project={project} />,
     runProject: input.runProject,
     ...(input.pin ? { pin: input.pin } : {}),
   });

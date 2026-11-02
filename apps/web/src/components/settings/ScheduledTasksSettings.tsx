@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../ProjectLabel";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
@@ -1493,12 +1494,16 @@ function ScheduledTaskEditorForm({
                 }
               >
                 <SelectTrigger size="sm" id="scheduled-task-project">
-                  <SelectValue placeholder="Select a project">{selectedProject?.title}</SelectValue>
+                  <SelectValue placeholder="Select a project">
+                    {selectedProject ? (
+                      <ProjectLabel name={selectedProject.title} project={selectedProject} />
+                    ) : null}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id} label={project.title}>
-                      <span className="block truncate">{project.title}</span>
+                      <ProjectLabel name={project.title} project={project} />
                       {allProjects.some(
                         (other) =>
                           other.title === project.title &&

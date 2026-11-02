@@ -1,3 +1,5 @@
+import { formatProjectDisplayName } from "@t3tools/shared/projectPresentation";
+import { useProjectPresentation } from "../../lib/useProjectPresentation";
 import { uuidv4 } from "../../lib/uuid";
 import { ThreadUndoNotice } from "./ThreadUndoNotice";
 import { Toolbar } from "../../components/ui/Toolbar";
@@ -40,6 +42,7 @@ import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 
 export function HomeRouteScreen() {
+  const { capitalizeProjectNames } = useProjectPresentation();
   const { width: windowWidth } = useWindowDimensions();
   const nativePrimaryColumn = use(NativePrimaryColumnContext);
   const columnMetrics = useNativeColumnLayoutMetrics();
@@ -149,9 +152,9 @@ export function HomeRouteScreen() {
         }),
       ).map((scope) => ({
         key: scope.key,
-        label: scope.title,
+        label: formatProjectDisplayName(scope.title, capitalizeProjectNames),
       })),
-    [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
+    [capitalizeProjectNames, listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
   const selectedProjectKey = projectFilterOptions.some(
     (project) => project.key === resolvedProjectKey,

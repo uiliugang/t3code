@@ -3,7 +3,13 @@ import { AppText } from "./ui/AppText";
 import { Image } from "expo-image";
 import { memo, useLayoutEffect, useState } from "react";
 import { View } from "react-native";
-import type { EnvironmentId, ProjectIconOverride } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectIconOverride,
+  ProjectWorkspaceConfig,
+} from "@t3tools/contracts";
+import { projectDisplayKind } from "@t3tools/shared/projectPresentation";
+import { useProjectPresentation } from "../lib/useProjectPresentation";
 import {
   getProjectFaviconCacheKey,
   getProjectFaviconResourceKey,
@@ -31,7 +37,7 @@ import {
 
 const EMPTY_FAVICON_URL = Atom.make<string | null>(null);
 
-export const ProjectFavicon = memo(function ProjectFavicon(props: {
+interface ProjectFaviconProps {
   readonly environmentId: EnvironmentId;
   readonly open?: boolean;
   readonly size?: number;
@@ -39,7 +45,17 @@ export const ProjectFavicon = memo(function ProjectFavicon(props: {
   readonly workspaceRoot?: string | null;
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
-}) {
+  readonly workspaceConfig?: ProjectWorkspaceConfig | undefined;
+}
+
+export const ProjectFavicon = memo(function ProjectFavicon(props: ProjectFaviconProps) {
+  const settings = useProjectPresentation();
+  const visible =
+    projectDisplayKind(props) === "group" ? settings.showGroupIcons : settings.showRepositoryIcons;
+  return visible ? <VisibleProjectFavicon {...props} /> : null;
+});
+
+function VisibleProjectFavicon(props: ProjectFaviconProps) {
   const size = props.size ?? 42;
   const symbol = resolveProjectIconSymbol(props.projectIcon);
   const glyph = resolveProjectIconGlyph(props.projectIcon, props.projectTitle);
@@ -86,7 +102,7 @@ export const ProjectFavicon = memo(function ProjectFavicon(props: {
       size={size}
     />
   );
-});
+}
 
 function ProjectIconGlyphView(props: { readonly glyph: ProjectIconGlyph; readonly size: number }) {
   const { glyph, size } = props;
