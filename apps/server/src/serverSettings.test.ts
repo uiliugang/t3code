@@ -375,6 +375,10 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       yield* serverSettings.updateSettings({
         observability: { otlpTracesUrl: "http://localhost:4318/v1/traces" },
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "custom-default-model",
+        },
         textGenerationModelSelection: {
           instanceId: ProviderInstanceId.make("codex"),
           model: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
@@ -398,6 +402,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       assert.equal(next.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
       assert.equal(next.observability.otlpMetricsUrl, "http://localhost:4318/v1/metrics");
+      assert.deepEqual(next.defaultModelSelection, {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "custom-default-model",
+      });
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const stored = JSON.parse(yield* fs.readFileString(config.settingsPath));
+      assert.deepEqual(stored.defaultModelSelection, next.defaultModelSelection);
       assert.deepEqual(
         next.textGenerationModelSelection,
         createModelSelection(
@@ -2150,7 +2162,10 @@ it.layer(NodeServices.layer)("server settings under a managed policy", (it) => {
         rejected.message,
         "enableAgentDeviceAccess is managed by Example Corp and cannot be changed.",
       );
-      assert.isFalse((yield* service.getSettings).defaultAutoPull);
+      assert.equal(
+        (yield* service.getSettings).defaultAutoPull,
+        DEFAULT_SERVER_SETTINGS.defaultAutoPull,
+      );
 
       const projectRejected = yield* service
         .updateSettings({

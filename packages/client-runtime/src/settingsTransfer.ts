@@ -1,5 +1,6 @@
 import {
   ClientSettingsPatch,
+  CustomModelSetting,
   KeybindingsConfig,
   MAX_KEYBINDINGS_COUNT,
   ProjectSettingsOverrides,
@@ -7,7 +8,9 @@ import {
   ProjectImportDefinition,
   ProviderDriverKind,
   ProviderInstanceId,
+  ServerSettings,
   ServerSettingsPatch,
+  globalIdleCompaction,
   TrimmedNonEmptyString,
   WorkspaceRootId,
   type ClientSettings,
@@ -16,7 +19,6 @@ import {
   type ResolvedKeybindingsConfig,
   type KeybindingWhenNode,
   type ResolvedKeybindingRule,
-  type ServerSettings,
 } from "@t3tools/contracts";
 import { canonicalRepositoryCloneKey } from "@t3tools/shared/git";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -38,42 +40,65 @@ const ApplicationClientSettings = Schema.Struct(
   ]),
 );
 
+const APPLICATION_SERVER_SETTINGS_KEYS = [
+  "favorites",
+  "providerModelPreferences",
+  "worktreeCleanup",
+  "storageCleanup",
+  "responseStreamingMode",
+  "enableProviderUpdateChecks",
+  "continueThreadsAfterServerUpdate",
+  "enableAgentBrowserAccess",
+  "defaultAutoPull",
+  "defaultProjectScripts",
+  "defaultRuntimeMode",
+  "defaultModelSelection",
+  "fallbackModelSelection",
+  "enableAgentDeviceAccess",
+  "enableDeviceSupport",
+  "simlockDeviceHostsEnabled",
+  "defaultThreadEnvMode",
+  "newWorktreesStartFromOrigin",
+  "newWorktreesMainBranchOnly",
+  "remoteBranchDisplayDays",
+  "hideMergedRemoteBranches",
+  "autoDeleteMergedBranches",
+  "worktreeSubmodules",
+  "sidebarAutoSettleAfterDays",
+  "sidebarAutoSettleOnMerge",
+  "sidebarAutoSettleKeepPullRequests",
+  "compactIdleThreads",
+  "idleCompaction",
+  "autoResumeLimitedThreads",
+  "snoozeLimitedThreads",
+  "snoozePresets",
+  "guestSharingEnabled",
+  "linkedEnvironmentsEnabled",
+  "backgroundActivity",
+  "automaticGitFetchInterval",
+  "providerHealthRefreshInterval",
+  "backgroundActivityProfile",
+  "textGenerationModelSelection",
+  "threadTitleInstructions",
+  "branchNamingMode",
+  "branchNamePrefix",
+  "branchNameInstructions",
+  "sourceControlWritingStyle",
+  "sourceControlWriterModelSelection",
+  "removeAgentCreditsOnMerge",
+  "reviewGuidesEnabled",
+  "reviewGuideModelSelection",
+  "reviewGuideInstructions",
+  "pullRequestMergeMethod",
+  "usagePriceOverrides",
+  "usageModelAliases",
+] as const;
+
 const ApplicationServerSettings = Schema.Struct(
-  Struct.pick(ServerSettingsPatch.fields, [
-    "favorites",
-    "providerModelPreferences",
-    "responseStreamingMode",
-    "enableProviderUpdateChecks",
-    "continueThreadsAfterServerUpdate",
-    "defaultAutoPull",
-    "defaultProjectScripts",
-    "defaultRuntimeMode",
-    "defaultModelSelection",
-    "defaultThreadEnvMode",
-    "newWorktreesStartFromOrigin",
-    "newWorktreesMainBranchOnly",
-    "worktreeSubmodules",
-    "sidebarAutoSettleAfterDays",
-    "sidebarAutoSettleOnMerge",
-    "sidebarAutoSettleKeepPullRequests",
-    "autoResumeLimitedThreads",
-    "snoozeLimitedThreads",
-    "snoozePresets",
-    "textGenerationModelSelection",
-    "threadTitleInstructions",
-    "branchNamingMode",
-    "branchNamePrefix",
-    "branchNameInstructions",
-    "sourceControlWritingStyle",
-    "sourceControlWriterModelSelection",
-    "removeAgentCreditsOnMerge",
-    "reviewGuidesEnabled",
-    "reviewGuideModelSelection",
-    "reviewGuideInstructions",
-    "pullRequestMergeMethod",
-    "usagePriceOverrides",
-    "usageModelAliases",
-  ]),
+  Struct.pick(ServerSettingsPatch.fields, APPLICATION_SERVER_SETTINGS_KEYS),
+);
+const encodeApplicationServerSettings = Schema.encodeSync(
+  Schema.Struct(Struct.pick(ServerSettings.fields, APPLICATION_SERVER_SETTINGS_KEYS)),
 );
 
 const ThemeSelection = Schema.Struct({
@@ -99,12 +124,15 @@ const commonFields = {
   version: Schema.Literal(1),
   providers: Schema.Record(ProviderInstanceId, ProviderDriverKind),
 };
+const ProviderModels = Schema.Record(ProviderInstanceId, Schema.Array(CustomModelSetting));
+const decodeProviderModels = Schema.decodeUnknownSync(ProviderModels);
 
 const ApplicationSettingsFile = Schema.Struct({
   ...commonFields,
   scope: Schema.Literal("application"),
   clientSettings: ApplicationClientSettings,
   server: ApplicationServerSettings,
+  providerModels: Schema.optionalKey(ProviderModels),
   keybindings: KeybindingsConfig,
   theme: Schema.optionalKey(ThemeSelection),
   mobile: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
@@ -125,8 +153,9 @@ const ProjectSettingsFile = Schema.Struct({
 
 const SettingsFile = Schema.Union([ApplicationSettingsFile, ProjectSettingsFile]);
 const decodeSettingsFile = Schema.decodeUnknownSync(SettingsFile);
+const encodeSettingsFile = Schema.encodeSync(SettingsFile);
 const decodeApplicationClientSettings = Schema.decodeSync(ApplicationClientSettings);
-const decodeApplicationServerSettings = Schema.decodeSync(ApplicationServerSettings);
+const decodeApplicationServerSettings = Schema.decodeUnknownSync(ApplicationServerSettings);
 export type SettingsFile = typeof SettingsFile.Type;
 type ApplicationSettingsFile = typeof ApplicationSettingsFile.Type;
 type ProjectSettingsFile = typeof ProjectSettingsFile.Type;
@@ -172,6 +201,7 @@ function providerReferences(settings: ProjectSettingsOverrides | ServerSettingsP
   return new Set([
     ...[
       settings.defaultModelSelection,
+      "fallbackModelSelection" in settings ? settings.fallbackModelSelection : null,
       settings.textGenerationModelSelection,
       settings.sourceControlWriterModelSelection,
       settings.reviewGuideModelSelection,
@@ -189,9 +219,10 @@ function providerReferences(settings: ProjectSettingsOverrides | ServerSettingsP
 function providerDrivers(
   settings: ProjectSettingsOverrides | ServerSettingsPatch,
   source: ServerSettings,
+  extraProviderIds: ReadonlyArray<ProviderInstanceId> = [],
 ) {
   return Object.fromEntries(
-    [...providerReferences(settings)].map((id) => [
+    [...new Set([...providerReferences(settings), ...extraProviderIds])].map((id) => [
       id,
       source.providerInstances[id]?.driver ?? ProviderDriverKind.make(id),
     ]),
@@ -200,7 +231,11 @@ function providerDrivers(
 
 function checkProviders(file: SettingsFile, target: ServerSettings) {
   const settings = file.scope === "project" ? file.settings : file.server;
-  for (const id of providerReferences(settings)) {
+  const modelProviders =
+    file.scope === "application"
+      ? Object.keys(file.providerModels ?? {}).map((id) => ProviderInstanceId.make(id))
+      : [];
+  for (const id of new Set([...providerReferences(settings), ...modelProviders])) {
     const driver = file.providers[id];
     // Default instances use the driver ID and need no persisted configuration.
     const defaultDriver = getProviderClient(id);
@@ -221,8 +256,24 @@ export function createApplicationSettingsFile(input: {
   readonly keybindings: ApplicationSettingsFile["keybindings"];
   readonly theme?: ApplicationSettingsFile["theme"];
 }): ApplicationSettingsFile {
+  const providerModels = decodeProviderModels(
+    Object.fromEntries(
+      Object.entries(input.server.providerInstances).flatMap(([id, instance]) => {
+        const config = instance.config;
+        return config !== null &&
+          typeof config === "object" &&
+          !Array.isArray(config) &&
+          "customModels" in config &&
+          config.customModels !== undefined
+          ? [[id, config.customModels]]
+          : [];
+      }),
+    ),
+  );
   const server = decodeApplicationServerSettings({
-    ...input.server,
+    ...encodeApplicationServerSettings(input.server),
+    defaultThreadEnvMode: input.server.defaultThreadEnvMode,
+    idleCompaction: globalIdleCompaction(input.server),
     favorites: input.server.favorites ?? input.clientSettings.favorites ?? [],
     providerModelPreferences:
       input.server.providerModelPreferences ?? input.clientSettings.providerModelPreferences ?? {},
@@ -234,7 +285,12 @@ export function createApplicationSettingsFile(input: {
     clientSettings: decodeApplicationClientSettings(input.clientSettings),
     server,
     keybindings: input.keybindings.filter((rule) => !rule.command.startsWith("script.")),
-    providers: providerDrivers(server, input.server),
+    providers: providerDrivers(
+      server,
+      input.server,
+      Object.keys(providerModels).map((id) => ProviderInstanceId.make(id)),
+    ),
+    ...(Object.keys(providerModels).length > 0 ? { providerModels } : {}),
     ...(input.theme ? { theme: input.theme } : {}),
   };
 }
@@ -259,7 +315,7 @@ export function createProjectSettingsFile(
 }
 
 export function serializeSettingsFile(file: SettingsFile): string {
-  const contents = `${JSON.stringify(file, null, 2)}\n`;
+  const contents = `${JSON.stringify(encodeSettingsFile(file), null, 2)}\n`;
   assertSettingsFileSize(new TextEncoder().encode(contents).byteLength);
   return contents;
 }
@@ -295,7 +351,36 @@ export function applicationSettingsImportPatch(
   target: ServerSettings,
 ): ServerSettingsPatch {
   checkProviders(file, target);
-  return file.server;
+  const providerInstances = Object.fromEntries(
+    Object.entries(file.providerModels ?? {}).map(([providerId, customModels]) => {
+      const id = ProviderInstanceId.make(providerId);
+      const instance = target.providerInstances[id];
+      const config = instance?.config;
+      if (
+        config !== undefined &&
+        config !== null &&
+        (typeof config !== "object" || Array.isArray(config))
+      ) {
+        throw new Error(
+          `Repair provider "${id}" settings on the destination before importing model edits.`,
+        );
+      }
+      return [
+        id,
+        {
+          ...instance,
+          driver: instance?.driver ?? file.providers[id]!,
+          config: { ...config, customModels },
+        },
+      ];
+    }),
+  );
+  return {
+    ...file.server,
+    ...(Object.keys(providerInstances).length > 0
+      ? { providerInstances: { ...target.providerInstances, ...providerInstances } }
+      : {}),
+  };
 }
 
 export function projectSettingsImportPatch(

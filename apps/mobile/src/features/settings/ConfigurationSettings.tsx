@@ -33,9 +33,8 @@ import { SettingsSection } from "./components/SettingsSection";
 import {
   decodeMobileTransferPreferences,
   exportMobileTransferPreferences,
-  pickSettingsFile,
-  shareSettingsFile,
-} from "./mobileSettingsTransfer";
+} from "./mobileSettingsTransfer.logic";
+import { pickSettingsFile, shareSettingsFile } from "./mobileSettingsTransfer";
 import type { SettingsTarget } from "./settings-environment-filter";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { ProjectImportHistory } from "./ProjectImportHistory";
@@ -112,7 +111,7 @@ function ConfigurationTransfer({
     const details =
       file.scope === "project"
         ? `Source: ${file.name}\n${file.identity.id}\nSettings: ${Object.keys(file.settings).join(", ")}\n${(file.settings.defaultProjectScripts ?? []).map((script) => `${script.name}: ${script.command}`).join("\n")}`
-        : `Environment settings: ${Object.keys(file.server).join(", ")}\nShortcuts: ${file.keybindings.length}\nNative preferences: ${Object.keys(file.mobile ?? {}).join(", ")}`;
+        : `Environment settings: ${Object.keys(file.server).join(", ")}\nProvider models: ${Object.keys(file.providerModels ?? {}).join(", ")}\nShortcuts: ${file.keybindings.length}\nNative preferences: ${Object.keys(file.mobile ?? {}).join(", ")}`;
     Dialog.confirm({
       title: `Import into ${title}?`,
       message: `${details.slice(0, 6000)}\n\n${materialize ? `Create projects/workspace groups in ${destinationDirectory.trim() || "~/projects"} on this environment. Repositories are deduplicated and failed imports can be retried.` : file.scope === "project" ? "This replaces the checkout's project overrides. Missing settings inherit their defaults." : "Matching values will be replaced; other settings stay as they are. Web-only preferences stay on web and desktop."}`,

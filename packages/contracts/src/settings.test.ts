@@ -62,8 +62,8 @@ const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
 describe("composer prediction settings", () => {
-  it("keeps predictions opt-in and preserves the saved toggle", () => {
-    expect(decodeClientSettings({}).showPredictedMessages).toBe(false);
+  it("enables predictions by default and preserves the saved toggle", () => {
+    expect(decodeClientSettings({}).showPredictedMessages).toBe(true);
     expect(
       decodeClientSettings(
         encodeClientSettings(decodeClientSettings({ showPredictedMessages: true })),
@@ -75,9 +75,73 @@ describe("composer prediction settings", () => {
   });
 });
 
+describe("built-in preferences", () => {
+  it("starts with portable preferences and preserves explicit overrides", () => {
+    const preferences = {
+      uiLanguage: "zh-CN",
+      inAppNotificationsEnabled: true,
+      showRepositoryTerminalButton: true,
+      effortDisplay: "bars",
+      appearanceContrast: 130,
+      browserLinkTarget: "app",
+      browserSearchEngine: "google",
+      environmentIdentificationMode: "none",
+      glassOpacity: 50,
+      fontSizeInterface: 15,
+      persistComposerContextStrip: true,
+      contextWindowMeterEnabled: true,
+      followUpBehavior: "queue",
+      proactivePanelsEnabled: true,
+      boringSidebarEnabled: true,
+      boringSidebarMultilineRows: true,
+      timestampFormat: "24-hour",
+      snapShotPlaySound: false,
+      wordWrap: false,
+      mathRenderingEnabled: true,
+    };
+    expect(decodeClientSettings({})).toMatchObject(preferences);
+    const overrides = {
+      uiLanguage: "en",
+      showPredictedMessages: false,
+      contextWindowMeterEnabled: false,
+      appearanceContrast: 100,
+      followUpBehavior: "steer",
+    };
+    expect(
+      decodeClientSettings(encodeClientSettings(decodeClientSettings(overrides))),
+    ).toMatchObject(overrides);
+    expect(decodeServerSettings({})).toMatchObject({
+      defaultAutoPull: true,
+      defaultModelSelection: { instanceId: "codex", model: "gpt-6.1-sol" },
+      fallbackModelSelection: { instanceId: "codex", model: "gpt-6.1-sol" },
+      textGenerationModelSelection: { instanceId: "codex", model: "gpt-6.1-terra" },
+      reviewGuideModelSelection: { instanceId: "codex", model: "gpt-6.1-sol" },
+      reviewGuidesEnabled: true,
+      removeAgentCreditsOnMerge: true,
+      sidebarAutoSettleOnMerge: false,
+      snoozeLimitedThreads: true,
+      defaultThreadEnvMode: "worktree",
+      providerInstances: {},
+      sourceControlHosts: {},
+      worktreesDirectory: "",
+    });
+    const serverOverrides = {
+      defaultAutoPull: false,
+      defaultModelSelection: null,
+      fallbackModelSelection: null,
+      reviewGuideModelSelection: null,
+      reviewGuidesEnabled: false,
+      snoozeLimitedThreads: false,
+    };
+    expect(
+      decodeServerSettings(encodeServerSettings(decodeServerSettings(serverOverrides))),
+    ).toMatchObject(serverOverrides);
+  });
+});
+
 describe("storage cleanup settings", () => {
-  it("keeps cleanup disabled for existing installations", () => {
-    expect(decodeServerSettings({}).autoDeleteMergedBranches).toBe(false);
+  it("uses the configured cleanup defaults and preserves explicit opt-outs", () => {
+    expect(decodeServerSettings({}).autoDeleteMergedBranches).toBe(true);
     expect(decodeServerSettings({}).newWorktreesMainBranchOnly).toBe(true);
     expect(decodeServerSettings({}).remoteBranchDisplayDays).toBe(21);
     expect(decodeServerSettings({}).hideMergedRemoteBranches).toBe(true);
@@ -85,13 +149,26 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
       worktreeSettledAfterDays: null,
-      worktreeOnMerge: false,
-      worktreeOnDelete: false,
-      worktreeUnchanged: false,
+      worktreeOnMerge: true,
+      worktreeOnDelete: true,
+      worktreeUnchanged: true,
       worktreeKeepWhen: "uncommitted-changes",
-      browserArtifactsAfterDays: null,
-      logsAfterDays: null,
+      browserArtifactsAfterDays: 21,
+      logsAfterDays: 21,
     });
+    const overrides = {
+      autoDeleteMergedBranches: false,
+      storageCleanup: {
+        worktreeOnMerge: false,
+        worktreeOnDelete: false,
+        worktreeUnchanged: false,
+        browserArtifactsAfterDays: null,
+        logsAfterDays: null,
+      },
+    };
+    expect(
+      decodeServerSettings(encodeServerSettings(decodeServerSettings(overrides))),
+    ).toMatchObject(overrides);
   });
 
   it("accepts partial custom patches but requires complete stored project rules", () => {
@@ -347,9 +424,9 @@ describe("resolveIdleCompaction", () => {
 });
 
 describe("ClientSettings notifications", () => {
-  it("requires opt-in when existing settings omit notification preferences", () => {
+  it("enables in-app notifications without enabling system notifications", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
-    expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(false);
+    expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(true);
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("inAppNotificationsEnabled");
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
   });
@@ -391,8 +468,12 @@ describe("provider enabled defaults", () => {
 });
 
 describe("ServerSettings worktree defaults", () => {
-  it("defaults the thread env mode to inherit and keeps stored values", () => {
-    expect(decodeServerSettings({}).defaultThreadEnvMode).toBeNull();
+  it("defaults to worktree and keeps stored values and explicit inheritance", () => {
+    expect(decodeServerSettings({}).defaultThreadEnvMode).toBe("worktree");
+    expect(decodeServerSettings({ defaultThreadEnvMode: "local" }).defaultThreadEnvMode).toBe(
+      "local",
+    );
+    expect(decodeServerSettings({ defaultThreadEnvMode: null }).defaultThreadEnvMode).toBeNull();
     expect(decodeServerSettings({ defaultThreadEnvMode: "worktree" }).defaultThreadEnvMode).toBe(
       "worktree",
     );
@@ -406,7 +487,9 @@ describe("ServerSettings worktree defaults", () => {
 
   it("keeps an inherited thread env mode off the wire for older clients", () => {
     const encode = Schema.encodeSync(ServerSettings);
-    expect("defaultThreadEnvMode" in encode(decodeServerSettings({}))).toBe(false);
+    expect(
+      "defaultThreadEnvMode" in encode(decodeServerSettings({ defaultThreadEnvMode: null })),
+    ).toBe(false);
     expect(
       encode(decodeServerSettings({ defaultThreadEnvMode: "worktree" })).defaultThreadEnvMode,
     ).toBe("worktree");
@@ -550,8 +633,8 @@ describe("server model preferences", () => {
 });
 
 describe("device UI language", () => {
-  it("defaults old settings to English and round trips Chinese", () => {
-    expect(decodeClientSettings({}).uiLanguage).toBe("en");
+  it("defaults to Chinese and round trips a saved language", () => {
+    expect(decodeClientSettings({}).uiLanguage).toBe("zh-CN");
     const stored = encodeClientSettings(decodeClientSettings({ uiLanguage: "zh-CN" }));
     expect(decodeClientSettings(stored).uiLanguage).toBe("zh-CN");
     expect(decodeClientSettingsPatch({ uiLanguage: "en" })).toEqual({ uiLanguage: "en" });
