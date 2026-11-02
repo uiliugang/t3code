@@ -1,7 +1,10 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { WorkspaceRecoveryControl } from "./WorkspaceRecoveryControl";
 import { useProject, useQuietThreadShell } from "../../state/entities";
+import { useClientSettings } from "../../hooks/useSettings";
 import { useDiffPanelStore } from "../../diffPanelStore";
+import { useRightPanelStore } from "../../rightPanelStore";
+import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { RepositoryDetails } from "./RepositoryDetails";
 import type {
   EditorId,
@@ -77,6 +80,7 @@ interface ThreadDetailsPanelProps extends Pick<
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const t = useUiTranslation();
+  const showTerminalButton = useClientSettings((settings) => settings.showRepositoryTerminalButton);
   const project = useProject({ environmentId: props.environmentId, projectId: props.projectId });
   const thread = useQuietThreadShell({
     environmentId: props.environmentId,
@@ -108,6 +112,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     props.activeProjectScripts ? props.gitCwd : null,
   );
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
+  const terminals = useThreadTerminalActions(workspace ? null : activeThreadRef);
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
     environmentId: props.environmentId,
@@ -234,7 +239,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               separated={density === "full"}
             >
               <div className="flex flex-col">
-                {density !== "essential" && props.showOpenInPicker ? (
+                {(density !== "essential" && props.showOpenInPicker) || showTerminalButton ? (
                   <OpenInPicker
                     keybindings={props.keybindings}
                     environmentId={props.environmentId}
@@ -242,6 +247,25 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     openInCwd={props.gitCwd}
                     enableShortcut={props.openInShortcutEnabled}
                     displayMode="panel"
+                    canOpenTerminal={terminals.canWrite()}
+                    onOpenTerminal={
+                      showTerminalButton
+                        ? () => {
+                            if (!props.gitCwd) return;
+                            const launched = terminals.launchTerminal({
+                              location: {
+                                cwd: props.gitCwd,
+                                worktreePath: props.worktreePath,
+                              },
+                              place: (terminalId) =>
+                                useRightPanelStore
+                                  .getState()
+                                  .openTerminal(activeThreadRef, terminalId),
+                            });
+                            if (launched) void launched.result;
+                          }
+                        : undefined
+                    }
                   />
                 ) : null}
 

@@ -243,7 +243,7 @@ function WorkspaceForm({
         void submit();
       }}
     >
-      <fieldset disabled={busy} className="space-y-4">
+      <fieldset disabled={busy} className="space-y-4 pb-4">
         <div className="space-y-2">
           <Label htmlFor={`${id}-name`}>{t("Group name")}</Label>
           <Input

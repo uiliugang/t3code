@@ -1,8 +1,18 @@
-import { AuthOrchestrationOperateScope, EnvironmentId, type EditorId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  AuthTerminalReadScope,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  type EditorId,
+} from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { Cause } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 import { act, fakeTimers, render as renderUi } from "../../../test/render";
 import type { RemoteOpenState } from "../../remoteOpen";
@@ -16,12 +26,16 @@ const state = vi.hoisted(() => ({
   setPreferred: vi.fn(),
   markHintSeen: vi.fn(),
   listeners: new Set<() => void>(),
+  worktreePath: null as string | null,
 }));
 
 vi.mock(import("../../state/session"), async (importOriginal) => {
   const { useSyncExternalStore } = await import("react");
   const readEnvironmentScope = (environmentId: string, scope: string) =>
-    scope === AuthOrchestrationOperateScope && state.allowed.has(environmentId);
+    (scope === AuthOrchestrationOperateScope ||
+      scope === AuthTerminalOperateScope ||
+      scope === AuthTerminalReadScope) &&
+    state.allowed.has(environmentId);
   return {
     ...(await importOriginal()),
     readEnvironmentScope: readEnvironmentScope as never,
@@ -64,8 +78,42 @@ vi.mock(import("../../remoteOpen"), async (importOriginal) => ({
   useRemoteOpenHint: () => [false, state.markHintSeen] as const,
   openRemoteEditorUrl: state.openUrl,
 }));
+vi.mock(import("../../state/entities"), () => ({
+  useProject: (() => ({
+    id: projectId,
+    environmentId: selected,
+    workspaceRoot: "/work/project",
+  })) as never,
+  useQuietThreadShell: (() => ({
+    environmentId: selected,
+    projectId,
+    worktreePath: state.worktreePath,
+  })) as never,
+}));
+vi.mock(import("../../state/terminalSessions"), () => ({ useKnownTerminalSessions: () => [] }));
+vi.mock(import("../../hooks/useT3ProjectFileScripts"), () => ({
+  useT3ProjectFileScripts: () => [],
+}));
+vi.mock(import("./ThreadDetailsCard"), () => ({
+  ThreadDetailsCard: ({ children }: { children: (density: "full") => React.ReactNode }) => (
+    <>{children("full")}</>
+  ),
+}));
+vi.mock(import("../BranchToolbar"), () => ({ BranchToolbar: (() => <></>) as never }));
+vi.mock(import("../GitActionsControl"), () => ({ default: () => null }));
+vi.mock(import("../ProjectScriptsControl"), () => ({ default: () => <></> }));
+vi.mock(import("./RepositoryDetails"), () => ({ RepositoryDetails: () => <></> }));
+vi.mock(import("./WorkspaceRecoveryControl"), () => ({ WorkspaceRecoveryControl: () => <></> }));
+vi.mock(import("./ThreadAutomationsPanel"), () => ({ ThreadAutomationsPanel: () => null }));
+vi.mock(import("./ThreadRelationshipsControl"), () => ({ ThreadRelationshipsPanel: () => null }));
+vi.mock(import("./ThreadServersPanel"), () => ({ ThreadServersPanel: () => null }));
 
+import { __setClientSettingsForTests, persistClientSettingsPatch } from "../../hooks/useSettings";
+import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
+import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import { OpenInPicker } from "./OpenInPicker";
+import { ThreadDetailsPanel } from "./ThreadDetailsPanel";
+import { PopoverCreateHandle } from "../ui/popover";
 import {
   registerOpenFavoriteEditorCommand,
   useOpenFavoriteEditorShortcut,
@@ -73,6 +121,8 @@ import {
 
 const primary = EnvironmentId.make("primary");
 const selected = EnvironmentId.make("selected");
+const projectId = ProjectId.make("project");
+const threadId = ThreadId.make("thread");
 const editors: readonly EditorId[] = ["vscode"];
 
 async function setup() {
@@ -84,6 +134,10 @@ async function setup() {
   state.setPreferred.mockReset();
   state.markHintSeen.mockReset();
   state.listeners.clear();
+  state.worktreePath = null;
+  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+  useRightPanelStore.setState({ byThreadKey: {} });
+  useTerminalUiStateStore.setState({ terminalUiStateByThreadKey: {} });
   window.localStorage.clear();
 
   await using stack = new AsyncDisposableStack();
@@ -188,6 +242,88 @@ describe("host editor access", () => {
     expect((await pressOpenFavorite()).defaultPrevented).toBe(false);
   });
 });
+
+it.each([null, "/work/project-worktree"])(
+  "opens a single-repository terminal with the setting enabled (worktree: %s)",
+  async (worktreePath) => {
+    await using fixture = await setup();
+    state.allowed.add(selected);
+    state.worktreePath = worktreePath;
+    const cwd = worktreePath ?? "/work/project";
+    const handle = PopoverCreateHandle();
+    const panel = (showOpenInPicker: boolean) => (
+      <ThreadDetailsPanel
+        anchor={{ current: null }}
+        handle={handle}
+        environmentId={selected}
+        threadId={threadId}
+        projectId={projectId}
+        worktreePath={worktreePath}
+        isServerThread
+        activeProjectName="Project"
+        activeProjectScripts={undefined}
+        preferredScriptId={null}
+        keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+        availableEditors={editors}
+        showOpenInPicker={showOpenInPicker}
+        openInShortcutEnabled
+        gitCwd={cwd}
+        isGitRepo={false}
+        envLocked
+        availableEnvironments={[]}
+        onEnvModeChange={() => {}}
+        envMode={worktreePath ? "worktree" : "local"}
+        startFromOrigin={false}
+        onStartFromOriginChange={() => {}}
+        onComposerFocusRequest={() => {}}
+        onRunProjectScript={() => {}}
+        onAddProjectScript={async () => AsyncResult.success(undefined)}
+        onUpdateProjectScript={async () => AsyncResult.success(undefined)}
+        onDeleteProjectScript={async () => AsyncResult.success(undefined)}
+      />
+    );
+    await fixture.screen.rerender(panel(true));
+    await fixture.click(fixture.byLabel("Choose editor"));
+    await expect
+      .element(page.getByRole("menuitem", { name: "Terminal", exact: true }))
+      .not.toBeInTheDocument();
+    await fixture.click(fixture.byLabel("Choose editor"));
+
+    await act(() =>
+      persistClientSettingsPatch({ showRepositoryTerminalButton: true }, async () => {}),
+    );
+    await fixture.click(fixture.byLabel("Choose editor"));
+    await page.getByRole("menuitem", { name: "Terminal", exact: true }).click();
+    expect(state.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId: selected,
+      input: {
+        threadId,
+        terminalId: "term-1",
+        cwd,
+        ...(worktreePath ? { worktreePath } : {}),
+        env: {
+          T3CODE_PROJECT_ROOT: "/work/project",
+          ...(worktreePath ? { T3CODE_WORKTREE_PATH: worktreePath } : {}),
+        },
+      },
+    });
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, {
+        environmentId: selected,
+        threadId,
+      }).surfaces,
+    ).toEqual([expect.objectContaining({ kind: "terminal", terminalIds: ["term-1"] })]);
+
+    await fixture.screen.rerender(panel(false));
+    await expect.element(page.getByRole("button", { name: "Choose editor" })).toBeVisible();
+    await act(() =>
+      persistClientSettingsPatch({ showRepositoryTerminalButton: false }, async () => {}),
+    );
+    await expect
+      .element(page.getByRole("button", { name: "Choose editor" }))
+      .not.toBeInTheDocument();
+  },
+);
 
 describe("open in editor announcement", () => {
   it("speaks only after the shortcut opened the editor, from the picker or the fallback", async () => {
