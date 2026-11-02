@@ -20,7 +20,7 @@ import {
   Rows3Icon,
   TextWrapIcon,
 } from "lucide-react";
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide";
+import { ChevronDown, ChevronRight } from "lucide";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
@@ -49,11 +49,11 @@ import {
   buildFileDiffContentVersion,
   buildFileDiffIdentityKey,
   getDiffLineStat,
+  getDiffFileStatus,
   getRenderablePatch,
   resolveFileDiffPath,
 } from "../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../lib/syntaxHighlighting";
-import { areAllDiffFilesCollapsed, toggleAllDiffFiles } from "../lib/diffCollapse";
 import { LIVE_REFRESH_MIN_INTERVAL_MS, useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
   useProject,
@@ -101,10 +101,11 @@ import { serverEnvironment } from "../state/server";
 import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
+import { useUiTranslation } from "../hooks/useUiTranslation";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
 
 import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
-import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
 import { DiffFileStatus } from "./diffs/DiffFileStatus";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
 import { projectCommitUrl } from "@t3tools/client-runtime/change-request-links";
@@ -174,20 +175,39 @@ function DiffFileCollapseToggle({
 }
 
 function DiffFileHeaderSuffix({
+  fileDiff,
   filePath,
   hasStat,
   error,
   truncated,
   onRetry,
 }: {
+  fileDiff: FileDiffMetadata;
   filePath: string;
   hasStat: boolean;
   error: boolean;
   truncated: boolean;
   onRetry: (path: string) => void;
 }) {
+  const t = useUiTranslation();
+  const status = getDiffFileStatus(fileDiff);
+  const label = {
+    addition: "Added",
+    deletion: "Deleted",
+    modified: "Modified",
+    conflict: "Conflict",
+  }[status];
   return (
     <>
+      <span
+        className="rounded px-1.5 py-0.5 text-2xs font-medium"
+        style={{
+          color: `var(--diff-${status}-foreground)`,
+          backgroundColor: `color-mix(in srgb, var(--diff-${status}) 12%, transparent)`,
+        }}
+      >
+        {t(label)}
+      </span>
       <span data-diff-copy-path className="inline-flex">
         <DiffFilePathCopyButton filePath={filePath} />
       </span>
@@ -214,7 +234,6 @@ export default function DiffPanel({
   const resolvedTheme = useRenderedAppearance();
   const codeTheme = useCodeTheme();
   const settings = useClientSettings((settings) => ({
-    diffFilesCollapsed: settings.diffFilesCollapsed,
     diffIgnoreWhitespace: settings.diffIgnoreWhitespace,
     diffLayout: settings.diffLayout,
     timestampFormat: settings.timestampFormat,
@@ -225,14 +244,18 @@ export default function DiffPanel({
   const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
     DIFF_FILE_TREE_STORAGE_KEY,
-    false,
+    true,
     Schema.Boolean,
   );
   const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
   const [baseRefQuery, setBaseRefQuery] = useState("");
   // The open commit menu keeps the list it opened with, so rows do not move under the pointer.
   const [openCommitMenu, setOpenCommitMenu] = useState<ReviewBranchCommitsResult | null>(null);
-  const [codeViewRevision, setCodeViewRevision] = useState(0);
+  const t = useUiTranslation();
+  const [previewSelection, setPreviewSelection] = useState<{
+    scope: string | null;
+    path: string;
+  } | null>(null);
 
   const routeThreadRef = useThreadRouteRef();
   const activeThreadId = routeThreadRef?.threadId ?? null;
@@ -362,7 +385,7 @@ export default function DiffPanel({
   const collapseScopeKey = routeThreadRef
     ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}:${repository?.id ?? "legacy"}:${reviewSectionId}`
     : null;
-  const codeViewMountKey = `${collapseScopeKey ?? reviewSectionId}:${codeViewRevision}`;
+  const codeViewMountKey = collapseScopeKey ?? reviewSectionId;
   const selectedCheckpointRange =
     typeof selectedCheckpointTurnCount === "number"
       ? {
@@ -614,7 +637,6 @@ export default function DiffPanel({
     readyFilePaths,
     renderableFiles,
     settledFileCount,
-    loadNextFiles,
   } = useReviewFilePatches({
     environmentId: activeThread?.environmentId,
     cwd: branchDiffPreview.data?.cwd,
@@ -650,7 +672,6 @@ export default function DiffPanel({
 
   const isRefreshingDiff = branchDiffPreview.isPending || areFilePatchesPending;
   const renderableFileEntries = renderableFiles.map(getCachedFileEntry);
-  const diffFileKeys = renderableFileEntries.map((file) => file.fileKey);
   const testFileCount = renderableFiles.filter((file) =>
     isTestChangedFile(resolveFileDiffPath(file)),
   ).length;
@@ -660,10 +681,27 @@ export default function DiffPanel({
     return !hideTestFiles || path === selectedFilePath || !isTestChangedFile(path);
   };
   const shownFileEntries = renderableFileEntries.filter(({ fileDiff }) => isFileShown(fileDiff));
-  const shownFileKeys = shownFileEntries.map((file) => file.fileKey);
-  const defaultCollapsedDiffFileKeys = settings.diffFilesCollapsed
-    ? new Set(diffFileKeys)
-    : EMPTY_COLLAPSED_DIFF_FILE_KEYS;
+  const previewFilePath =
+    previewSelection?.scope === collapseScopeKey &&
+    shownFileEntries.some(({ fileDiff }) => resolveFileDiffPath(fileDiff) === previewSelection.path)
+      ? previewSelection.path
+      : shownFileEntries.some(({ fileDiff }) => resolveFileDiffPath(fileDiff) === selectedFilePath)
+        ? selectedFilePath
+        : shownFileEntries[0]
+          ? resolveFileDiffPath(shownFileEntries[0].fileDiff)
+          : null;
+  const previewFileEntries = shownFileEntries.filter(
+    ({ fileDiff }) => resolveFileDiffPath(fileDiff) === previewFilePath,
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests the preview's patch from the external query cache, including fallbacks beyond the initial batch
+  useEffect(() => {
+    if (!lazySource || previewFilePath === null || readyFilePaths.has(previewFilePath)) return;
+    const index = renderableFileEntries.findIndex(
+      ({ fileDiff }) => resolveFileDiffPath(fileDiff) === previewFilePath,
+    );
+    if (index >= 0) requestFile(index);
+  }, [lazySource, previewFilePath, readyFilePaths, renderableFileEntries, requestFile]);
+  const defaultCollapsedDiffFileKeys = EMPTY_COLLAPSED_DIFF_FILE_KEYS;
   const storedCollapsedDiffFileKeys = useDiffPanelSessionStore((state) =>
     collapseScopeKey ? state.collapsedFileKeysByScopeKey[collapseScopeKey] : undefined,
   );
@@ -676,14 +714,7 @@ export default function DiffPanel({
       .getState()
       .updateCollapsedFileKeys(collapseScopeKey, defaultCollapsedDiffFileKeys, update);
   };
-  const renderLoadingBoundary = () =>
-    settledFileCount < renderableFiles.length ? (
-      <DiffFileLoadingBoundary
-        load={loadNextFiles}
-        count={renderableFiles.length - settledFileCount}
-      />
-    ) : null;
-  const codeViewFiles = shownFileEntries
+  const codeViewFiles = previewFileEntries
     .filter(
       ({ fileDiff }) =>
         !lazySource || !readyFilePaths || readyFilePaths.has(resolveFileDiffPath(fileDiff)),
@@ -697,9 +728,8 @@ export default function DiffPanel({
         collapsedDiffFileKeys.has(fileKey) || fileDiff.cacheKey?.endsWith(":pending") === true,
     }));
   const pendingFiles = renderableFiles.filter(
-    (file) => file.cacheKey?.endsWith(":pending") && isFileShown(file),
+    (file) => file.cacheKey?.endsWith(":pending") && resolveFileDiffPath(file) === previewFilePath,
   );
-  const allDiffFilesCollapsed = areAllDiffFilesCollapsed(shownFileKeys, collapsedDiffFileKeys);
   const diffLineStat = sourceLineStat ?? getDiffLineStat(renderableFiles);
   const fileTreeEntries = diffFileTreeEntries(renderableFiles.filter(isFileShown));
   const codeViewReveal = useCodeViewFileReveal();
@@ -709,6 +739,7 @@ export default function DiffPanel({
     );
     const file = renderableFileEntries[index];
     if (!file) return false;
+    setPreviewSelection({ scope: collapseScopeKey, path: filePath });
     updateCollapsedDiffFiles((current) => {
       const next = new Set(current);
       next.delete(file.fileKey);
@@ -783,11 +814,6 @@ export default function DiffPanel({
     });
   });
 
-  const toggleDiffFileCollapse = () => {
-    setCodeViewRevision((current) => current + 1);
-    updateCollapsedDiffFiles((current) => toggleAllDiffFiles(shownFileKeys, current));
-  };
-
   const selectTurn = (runId: RunId) => {
     if (!routeThreadRef) return;
     if (repository) useDiffPanelStore.getState().selectRepository(routeThreadRef, repository.id);
@@ -831,7 +857,47 @@ export default function DiffPanel({
 
   const headerRow = (
     <>
-      <div className="@container/diff-refs flex min-w-0 flex-1 items-center gap-3 [-webkit-app-region:no-drag]">
+      <div className="@container/diff-refs flex min-w-0 flex-1 items-center gap-2 [-webkit-app-region:no-drag]">
+        {activeThread?.workspace &&
+        activeThread.workspace.resources.length > 1 &&
+        routeThreadRef ? (
+          <Select
+            value={repository?.id ?? ""}
+            onValueChange={(value) => {
+              const resource = activeThread.workspace!.resources.find(
+                (entry) => entry.id === value,
+              );
+              if (resource)
+                useDiffPanelStore.getState().selectRepository(routeThreadRef, resource.id);
+            }}
+          >
+            <SelectTrigger
+              size="xs"
+              variant="ghost"
+              className="w-auto min-w-0 max-w-36 shrink"
+              aria-label={t("Diff repository")}
+            >
+              <SelectValue>
+                <span className="block truncate">
+                  {activeThread.workspace.bindings
+                    .filter((binding) => binding.resourceId === repository?.id)
+                    .map((binding) => binding.alias)
+                    .join(" / ")}
+                </span>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="start" alignItemWithTrigger={false}>
+              {activeThread.workspace.resources.map((resource) => (
+                <SelectItem key={resource.id} value={resource.id}>
+                  {activeThread
+                    .workspace!.bindings.filter((binding) => binding.resourceId === resource.id)
+                    .map((binding) => binding.alias)
+                    .join(" / ")}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={<Button size="xs" variant="secondary" />}
@@ -1161,29 +1227,6 @@ export default function DiffPanel({
             </TooltipPopup>
           </Tooltip>
         )}
-        {diffFileKeys.length > 0 && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={allDiffFilesCollapsed ? "Expand all files" : "Collapse all files"}
-                  onClick={toggleDiffFileCollapse}
-                />
-              }
-            >
-              <MorphIcon
-                className="size-3.5"
-                icon={allDiffFilesCollapsed ? ChevronsUpDown : ChevronsDownUp}
-              />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {allDiffFilesCollapsed ? "Expand all files" : "Collapse all files"}
-            </TooltipPopup>
-          </Tooltip>
-        )}
         <ToggleGroup
           aria-label="Diff layout"
           className="shrink-0"
@@ -1267,7 +1310,7 @@ export default function DiffPanel({
             </TooltipPopup>
           </Tooltip>
         )}
-        {diffFileKeys.length > 0 && (
+        {renderableFileEntries.length > 0 && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1293,34 +1336,6 @@ export default function DiffPanel({
 
   return (
     <DiffPanelShell mode={mode} header={headerRow}>
-      {activeThread?.workspace && activeThread.workspace.resources.length > 1 && routeThreadRef ? (
-        <div className="border-b border-border px-3 py-2">
-          <label className="flex items-center gap-2 text-xs">
-            Repository
-            <select
-              aria-label="Diff repository"
-              className="min-w-0 flex-1 rounded border border-border bg-background p-1"
-              value={repository?.id ?? ""}
-              onChange={(event) => {
-                const resource = activeThread.workspace!.resources.find(
-                  (entry) => entry.id === event.target.value,
-                );
-                if (resource)
-                  useDiffPanelStore.getState().selectRepository(routeThreadRef, resource.id);
-              }}
-            >
-              {activeThread.workspace.resources.map((resource) => (
-                <option key={resource.id} value={resource.id}>
-                  {activeThread
-                    .workspace!.bindings.filter((binding) => binding.resourceId === resource.id)
-                    .map((binding) => binding.alias)
-                    .join(" / ")}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      ) : null}
       {!activeThread ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           Select a thread to inspect turn diffs.
@@ -1457,82 +1472,86 @@ export default function DiffPanel({
                     );
                   }}
                 >
-                  <AnnotatableCodeView
-                    key={collapseScopeKey ?? reviewSectionId}
-                    viewerRef={codeViewReveal.attach}
-                    codeViewKey={`${codeViewMountKey}:${lazySource ? filePatchScope : "preview"}`}
-                    className="h-full min-h-0 overflow-auto"
-                    files={codeViewFiles}
-                    pendingFiles={pendingFiles}
-                    renderCodeViewFooter={renderLoadingBoundary}
-                    sectionId={reviewSectionId}
-                    sectionTitle={reviewSectionTitle}
-                    composerDraftTarget={composerDraftTarget}
-                    renderHeaderFilenameSuffix={(fileDiff) => {
-                      const path = resolveFileDiffPath(fileDiff);
-                      const state = fileStates.get(path);
-                      return (
-                        <DiffFileHeaderSuffix
-                          filePath={path}
-                          hasStat={fileStats.has(path)}
-                          error={state?.error ?? false}
-                          truncated={state?.truncated ?? false}
-                          onRetry={retry}
-                        />
-                      );
-                    }}
-                    {...(lazySource
-                      ? {
-                          unsafeCSSExtra:
-                            "[data-additions-count], [data-deletions-count] { display: none; }",
-                          renderHeaderMetadata: (fileDiff: FileDiffMetadata) => {
-                            const stat = fileStats.get(resolveFileDiffPath(fileDiff));
-                            return stat ? (
-                              <DiffStatLabel
-                                additions={stat.additions}
-                                deletions={stat.deletions}
-                              />
-                            ) : null;
-                          },
-                        }
-                      : {})}
-                    onRevealSearchMatch={unfoldDiffFile}
-                    renderHeaderPrefix={(fileDiff, fileKey) => {
-                      const unavailable = fileDiff.cacheKey?.endsWith(":pending") === true;
-                      return (
-                        <DiffFileCollapseToggle
-                          filePath={resolveFileDiffPath(fileDiff)}
-                          fileKey={fileKey}
-                          collapsed={unavailable || collapsedDiffFileKeys.has(fileKey)}
-                          unavailable={unavailable}
-                          onToggle={toggleDiffFileCollapsed}
-                        />
-                      );
-                    }}
-                    options={{
-                      diffStyle: diffLayout === "split" ? "split" : "unified",
-                      lineDiffType: "none",
-                      overflow: wordWrap ? "wrap" : "scroll",
-                      theme: codeTheme,
-                      preferredHighlighter: PREFERRED_HIGHLIGHTER,
-                      themeType: resolvedTheme as DiffThemeType,
-                      stickyHeaders: true,
-                      onPostRender: codeViewReveal.flush,
-                      ...(currentLoadDiffFiles ? { loadDiffFiles } : {}),
-                    }}
-                  />
+                  {pendingFiles.length > 0 && codeViewFiles.length === 0 ? (
+                    <DiffPanelLoadingState label={t("Loading file diff...")} />
+                  ) : (
+                    <AnnotatableCodeView
+                      key={collapseScopeKey ?? reviewSectionId}
+                      viewerRef={codeViewReveal.attach}
+                      codeViewKey={`${codeViewMountKey}:${previewFilePath}:${lazySource ? filePatchScope : "preview"}`}
+                      className="h-full min-h-0 overflow-auto"
+                      files={codeViewFiles}
+                      pendingFiles={pendingFiles}
+                      sectionId={reviewSectionId}
+                      sectionTitle={reviewSectionTitle}
+                      composerDraftTarget={composerDraftTarget}
+                      renderHeaderFilenameSuffix={(fileDiff) => {
+                        const path = resolveFileDiffPath(fileDiff);
+                        const state = fileStates.get(path);
+                        return (
+                          <DiffFileHeaderSuffix
+                            fileDiff={fileDiff}
+                            filePath={path}
+                            hasStat={fileStats.has(path)}
+                            error={state?.error ?? false}
+                            truncated={state?.truncated ?? false}
+                            onRetry={retry}
+                          />
+                        );
+                      }}
+                      {...(lazySource
+                        ? {
+                            unsafeCSSExtra:
+                              "[data-additions-count], [data-deletions-count] { display: none; }",
+                            renderHeaderMetadata: (fileDiff: FileDiffMetadata) => {
+                              const stat = fileStats.get(resolveFileDiffPath(fileDiff));
+                              return stat ? (
+                                <DiffStatLabel
+                                  additions={stat.additions}
+                                  deletions={stat.deletions}
+                                />
+                              ) : null;
+                            },
+                          }
+                        : {})}
+                      onRevealSearchMatch={unfoldDiffFile}
+                      renderHeaderPrefix={(fileDiff, fileKey) => {
+                        const unavailable = fileDiff.cacheKey?.endsWith(":pending") === true;
+                        return (
+                          <DiffFileCollapseToggle
+                            filePath={resolveFileDiffPath(fileDiff)}
+                            fileKey={fileKey}
+                            collapsed={unavailable || collapsedDiffFileKeys.has(fileKey)}
+                            unavailable={unavailable}
+                            onToggle={toggleDiffFileCollapsed}
+                          />
+                        );
+                      }}
+                      options={{
+                        diffStyle: diffLayout === "split" ? "split" : "unified",
+                        lineDiffType: "none",
+                        overflow: wordWrap ? "wrap" : "scroll",
+                        theme: codeTheme,
+                        preferredHighlighter: PREFERRED_HIGHLIGHTER,
+                        themeType: resolvedTheme as DiffThemeType,
+                        stickyHeaders: true,
+                        onPostRender: codeViewReveal.flush,
+                        ...(currentLoadDiffFiles ? { loadDiffFiles } : {}),
+                      }}
+                    />
+                  )}
                 </div>
                 {fileTreeOpen ? (
                   <FileExplorerPane
                     resizable
                     storageKey="t3code:diff-file-tree-width"
-                    defaultWidthFraction={0.4}
+                    defaultWidthFraction={0.3}
                     resizeLabel="Resize Changes files"
                   >
                     <DiffFileTree
                       ariaLabel={`${reviewSectionTitle} files`}
                       entries={fileTreeEntries}
-                      selectedPath={selectedFilePath}
+                      selectedPath={previewFilePath}
                       revealRequestId={selectedFileRevealRequestId}
                       onSelectFile={revealDiffFile}
                     />

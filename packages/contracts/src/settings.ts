@@ -324,7 +324,28 @@ export const LoadBalancingWeights = Schema.Record(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
 );
 
-export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
+export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange", "custom"]);
+const DiffColor = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/));
+export const DiffCustomColors = Schema.Struct({
+  addition: DiffColor,
+  deletion: DiffColor,
+  modified: DiffColor,
+  conflict: DiffColor,
+});
+export const DIFF_COLOR_PRESETS = {
+  "red-green": {
+    addition: "#16a34a",
+    deletion: "#dc2626",
+    modified: "#2563eb",
+    conflict: "#d97706",
+  },
+  "blue-orange": {
+    addition: "#2563eb",
+    deletion: "#ea580c",
+    modified: "#9333ea",
+    conflict: "#be185d",
+  },
+} as const;
 
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
@@ -360,6 +381,9 @@ export const ClientSettingsSchema = Schema.Struct({
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
+  ),
+  diffCustomColors: DiffCustomColors.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DIFF_COLOR_PRESETS["red-green"])),
   ),
   chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),
   showRepositoryIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -1774,6 +1798,7 @@ export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
+  diffCustomColors: Schema.optionalKey(DiffCustomColors),
   chatWidth: Schema.optionalKey(ChatWidth),
   showRepositoryIcons: Schema.optionalKey(Schema.Boolean),
   showGroupIcons: Schema.optionalKey(Schema.Boolean),

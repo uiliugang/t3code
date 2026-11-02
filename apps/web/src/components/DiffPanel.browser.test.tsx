@@ -8,6 +8,7 @@ import {
   type ClientSettings,
   type ReviewBranchCommitsResult,
   type ReviewDiffPreviewResult,
+  type ReviewDiffPreviewSource,
   type ScopedThreadRef,
   type VcsListRefsResult,
   type VcsStatusResult,
@@ -27,6 +28,7 @@ const state = vi.hoisted(() => ({
   thread: null as ReturnType<typeof makeThreadFixture> | null,
   threadRef: null as ScopedThreadRef | null,
   previews: new Map<string | null, ResultAtom<ReviewDiffPreviewResult>>(),
+  filePatches: new Map<string, ResultAtom<ReviewDiffPreviewSource>>(),
   config: null as unknown as Atom.Atom<null>,
   status: null as unknown as ResultAtom<VcsStatusResult>,
   localRefs: null as unknown as ResultAtom<VcsListRefsResult>,
@@ -42,6 +44,8 @@ vi.mock("~/state/review", () => ({
     diffPreview: ({ input }: { input: { baseRef?: string } }) =>
       state.previews.get(input.baseRef ?? null)!,
     branchCommits: () => state.commits,
+    diffFilePatch: ({ input }: { input: { request: { file: { path: string } } } }) =>
+      state.filePatches.get(input.request.file.path)!,
     diffFileContents: {},
   },
 }));
@@ -81,8 +85,34 @@ vi.mock("~/editorPreferences", () => ({ useOpenInPreferredEditor: () => async ()
 vi.mock("~/fileContextMenu", () => ({ useFileContextMenuHandler: () => () => {} }));
 vi.mock("~/browser/useOpenLink", () => ({ useOpenLink: () => async () => {} }));
 // The test drives comparison controls, without mounting virtualized diff viewers or their workers.
-vi.mock("./diffs/AnnotatableCodeView", () => ({ AnnotatableCodeView: () => null }));
-vi.mock("./diffs/DiffFileTree", () => ({ DiffFileTree: () => null }));
+vi.mock("./diffs/AnnotatableCodeView", () => ({
+  AnnotatableCodeView: ({ files }: { files: Array<{ filePath: string; collapsed: boolean }> }) => (
+    <div aria-label="Previewed diff">
+      {files.map((file) => (
+        <span key={file.filePath}>
+          {file.filePath}:{file.collapsed ? "collapsed" : "expanded"}
+        </span>
+      ))}
+    </div>
+  ),
+}));
+vi.mock("./diffs/DiffFileTree", () => ({
+  DiffFileTree: ({
+    entries,
+    onSelectFile,
+  }: {
+    entries: Array<{ path: string }>;
+    onSelectFile: (path: string) => void;
+  }) => (
+    <nav aria-label="Changed files">
+      {entries.map((entry) => (
+        <button key={entry.path} onClick={() => onSelectFile(entry.path)}>
+          {entry.path}
+        </button>
+      ))}
+    </nav>
+  ),
+}));
 vi.mock("./DiffFilePathCopyButton", () => ({ DiffFilePathCopyButton: () => null }));
 
 import DiffPanel from "./DiffPanel";
@@ -118,6 +148,7 @@ function setup(failedBaseRef: string | null) {
       keepSelectionOnOpenThreadKey: null,
     });
     useDiffPanelSessionStore.setState({ collapsedFileKeysByScopeKey: {} });
+    state.filePatches.clear();
   };
   reset();
   state.threadRef = {
@@ -216,3 +247,57 @@ it.each([
     });
   },
 );
+
+it("previews the first file, switches from the tree, and falls back when the file disappears", async () => {
+  using context = setup(null);
+  const patch = (paths: string[]) =>
+    paths
+      .map(
+        (path) =>
+          `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new\n`,
+      )
+      .join("");
+  const result = preview();
+  const previewAtom = Atom.make(AsyncResult.success(result));
+  state.previews.set(null, previewAtom);
+  const setFiles = (paths: string[]) =>
+    context.registry.set(
+      previewAtom,
+      AsyncResult.success({
+        ...result,
+        sources: result.sources.map((source) => ({ ...source, diff: patch(paths) })),
+      }),
+    );
+  setFiles(["a.ts", "b.ts"]);
+  localStorage.removeItem("t3code.diffFileTreeOpen");
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+    </RegistryContext.Provider>,
+  );
+  await expect.element(screen.getByText("a.ts:expanded", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("b.ts:expanded", { exact: true })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "b.ts", exact: true }));
+  await expect.element(screen.getByText("b.ts:expanded", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("a.ts:expanded", { exact: true })).not.toBeInTheDocument();
+  setFiles(["a.ts"]);
+  await expect.element(screen.getByText("a.ts:expanded", { exact: true })).toBeVisible();
+  const paths = ["a0.test.ts", "a1.test.ts", "a2.test.ts", "a3.test.ts", "z.ts"];
+  const source = {
+    ...result.sources[0]!,
+    diffHash: "large-preview",
+    truncated: true,
+    files: paths.map((path) => ({ path, previousPath: null, additions: 1, deletions: 1 })),
+  };
+  for (const path of paths) {
+    state.filePatches.set(
+      path,
+      Atom.make(AsyncResult.success({ ...source, diff: patch([path]), truncated: false })),
+    );
+  }
+  context.registry.set(previewAtom, AsyncResult.success({ ...result, sources: [source] }));
+  await expect.element(screen.getByText("a0.test.ts:expanded", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Hide test files", exact: true }));
+  await expect.element(screen.getByText("z.ts:expanded", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Hide test files", exact: true }));
+});

@@ -1,8 +1,9 @@
-import type { GitStatusEntry } from "@pierre/trees";
+import type { GitStatusEntry, FileTreeRowDecorationRenderer } from "@pierre/trees";
 import { FileTree, useFileTree, useFileTreeSelector } from "@pierre/trees/react";
 import { ChevronsDownUp, ChevronsUpDown } from "lucide";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
@@ -45,6 +46,7 @@ export function DiffFileTree({
   className,
 }: DiffFileTreeProps) {
   const { resolvedTheme } = useTheme();
+  const t = useUiTranslation();
   const paths = entries.map((entry) => entry.path);
   const presented = diffFileTreeModel(paths);
   const modelPaths = presented.paths;
@@ -79,6 +81,21 @@ export function DiffFileTree({
       onSelectFile(presented.selectionPath(modelPath));
     }
   });
+  const conflictPaths = new Set(
+    entries.filter((entry) => entry.conflict).map((entry) => entry.path),
+  );
+  const renderRowDecoration = useStableCallback(
+    ({ item }: Parameters<FileTreeRowDecorationRenderer>[0]) => {
+      const path = presented.selectionPath(item.path);
+      return conflictPaths.has(path)
+        ? {
+            text: "!",
+            title: t("Unresolved conflict"),
+            parts: [{ text: "!", color: "var(--diff-conflict-foreground)" }],
+          }
+        : null;
+    },
+  );
 
   const { model } = useFileTree({
     density: "compact",
@@ -86,10 +103,18 @@ export function DiffFileTree({
     initialExpansion: "open",
     icons,
     onSelectionChange: handleSelectionChange,
+    renderRowDecoration,
     paths: [],
     search: false,
     sort: ordering.sort,
-    unsafeCSS: PIERRE_TREE_UNSAFE_CSS,
+    unsafeCSS: `${PIERRE_TREE_UNSAFE_CSS}
+      [data-type="item"]:has([data-item-section="decoration"] > span) {
+        --trees-status-modified: var(--diff-conflict-foreground);
+        --trees-git-modified-color: var(--diff-conflict-foreground);
+        color: var(--diff-conflict-foreground);
+      }
+      [data-type="item"]:has([data-item-section="decoration"] > span) [data-item-section="git"] { display: none; }
+    `,
   });
   const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
     areAllDirectoriesExpanded(currentModel, directoryPaths),

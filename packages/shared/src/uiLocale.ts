@@ -12,6 +12,23 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Diff repository": "差异仓库",
+  "Choose a preset or customize colors for added, deleted, modified, and conflicted files.":
+    "选择预设，或自定义新增、删除、改动和冲突文件的颜色。",
+  "Added files": "新增文件",
+  "Deleted files": "删除文件",
+  "Modified files": "改动文件",
+  Conflicts: "冲突",
+  Added: "新增",
+  Deleted: "删除",
+  Modified: "改动",
+  Conflict: "冲突",
+  "Unresolved conflict": "未解决的冲突",
+  "Loading file diff...": "正在加载文件差异...",
+  "{label} color": "{label}颜色",
+  "{label} hex color": "{label}十六进制颜色",
+  "Preview one file at a time in Changes. This setting controls the initial file state in pull requests.":
+    "Changes 中逐个预览文件。此设置控制合并请求中文件的初始展开状态。",
   ...skillMessages,
   "Full path": "完整路径",
   "This connection cannot manage worktrees.": "当前连接没有管理工作树的权限。",

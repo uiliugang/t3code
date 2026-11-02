@@ -213,6 +213,13 @@ describe("settings transfer", () => {
       clientSettings: {
         ...DEFAULT_CLIENT_SETTINGS,
         uiLanguage: "zh-CN",
+        diffColorScheme: "custom",
+        diffCustomColors: {
+          addition: "#15803d",
+          deletion: "#b91c1c",
+          modified: "#1d4ed8",
+          conflict: "#a16207",
+        },
         sidebarProjectGroupingOverrides: { privatePath: "separate" },
       },
       server: { ...source, worktreesDirectory: "/private/path" },
@@ -228,6 +235,8 @@ describe("settings transfer", () => {
     expect(contents).not.toContain("/private/path");
     expect(contents).not.toContain("privatePath");
     expect(file.clientSettings.uiLanguage).toBe("zh-CN");
+    expect(file.clientSettings.diffColorScheme).toBe("custom");
+    expect(file.clientSettings.diffCustomColors?.conflict).toBe("#a16207");
     expect(file.keybindings).toEqual([{ key: "mod+j", command: "terminal.toggle" }]);
     expect(applicationSettingsImportPatch(file, source)).toEqual(file.server);
     const implicitProviderSettings = {

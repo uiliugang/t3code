@@ -36,6 +36,27 @@ const decodeStringOnlyEnvironment = Schema.decodeUnknownSync(
   ),
 );
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
+
+describe("custom diff colors", () => {
+  it("round trips all four colors and rejects invalid CSS values", () => {
+    const diffCustomColors = {
+      addition: "#16a34a",
+      deletion: "#dc2626",
+      modified: "#2563eb",
+      conflict: "#d97706",
+    };
+    const input = { diffColorScheme: "custom", diffCustomColors };
+    expect(decodeClientSettings(encodeClientSettings(decodeClientSettings(input)))).toMatchObject(
+      input,
+    );
+    expect(decodeClientSettingsPatch(input)).toEqual(input);
+    expect(() =>
+      decodeClientSettingsPatch({
+        diffCustomColors: { ...diffCustomColors, conflict: "url(https://example.com)" },
+      }),
+    ).toThrow();
+  });
+});
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);

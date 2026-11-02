@@ -6,12 +6,13 @@ import type {
   GitStatus,
 } from "@pierre/trees";
 
-import { resolveFileDiffPath } from "~/lib/diffRendering";
+import { getDiffFileStatus, resolveFileDiffPath } from "~/lib/diffRendering";
 import { basenameOfPath, resolvePierreIconForEntry, T3_PIERRE_ICONS } from "~/pierre-icons";
 
 export interface DiffFileTreeEntry {
   readonly path: string;
   readonly status: GitStatus;
+  readonly conflict?: boolean;
 }
 
 function toGitStatus(file: FileDiffMetadata): GitStatus {
@@ -32,13 +33,19 @@ export function diffFileTreeEntries(
   files: ReadonlyArray<FileDiffMetadata>,
 ): ReadonlyArray<DiffFileTreeEntry> {
   const statusByPath = new Map<string, GitStatus>();
+  const conflicts = new Set<string>();
   for (const file of files) {
     const path = resolveFileDiffPath(file);
     const status = toGitStatus(file);
+    if (getDiffFileStatus(file) === "conflict") conflicts.add(path);
     const previous = statusByPath.get(path);
     statusByPath.set(path, previous === undefined || previous === status ? status : "modified");
   }
-  return [...statusByPath].map(([path, status]) => ({ path, status }));
+  return [...statusByPath].map(([path, status]) => ({
+    path,
+    status,
+    ...(conflicts.has(path) ? { conflict: true } : {}),
+  }));
 }
 
 // Pierre cannot store a file and a directory at the same path. Give only those

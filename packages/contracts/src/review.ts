@@ -51,6 +51,9 @@ export const ReviewDiffFileStat = Schema.Struct({
   previousPath: Schema.NullOr(Schema.String),
   additions: Schema.Number,
   deletions: Schema.Number,
+  changeType: Schema.optionalKey(
+    Schema.Literals(["change", "rename-pure", "rename-changed", "new", "deleted"]),
+  ),
 });
 export type ReviewDiffFileStat = typeof ReviewDiffFileStat.Type;
 
