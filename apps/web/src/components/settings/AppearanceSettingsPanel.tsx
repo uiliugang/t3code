@@ -321,6 +321,32 @@ export function AppearanceSettingsPanel() {
         />
         <ThreadDetailsItemsRow />
         <SettingsRow
+          {...searchableSetting("terminal-drawer-button")}
+          description={t("Show the terminal drawer button in the thread header.")}
+          resetAction={
+            settings.showTerminalDrawerButton !==
+            DEFAULT_UNIFIED_SETTINGS.showTerminalDrawerButton ? (
+              <SettingResetButton
+                label={t("Show terminal button")}
+                onClick={() =>
+                  updateSettings({
+                    showTerminalDrawerButton: DEFAULT_UNIFIED_SETTINGS.showTerminalDrawerButton,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showTerminalDrawerButton}
+              onCheckedChange={(checked) =>
+                updateSettings({ showTerminalDrawerButton: Boolean(checked) })
+              }
+              aria-label={t("Show terminal button")}
+            />
+          }
+        />
+        <SettingsRow
           {...searchableSetting("effort-display")}
           description="Show reasoning effort in the composer as its name, such as High, or as bars."
           resetAction={

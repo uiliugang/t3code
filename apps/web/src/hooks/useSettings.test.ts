@@ -344,12 +344,14 @@ it("persists language changes across hydration while preserving other device set
   });
   await ensureClientSettingsHydrated();
   expect(getClientSettings().showRepositoryTerminalButton).toBe(false);
+  expect(getClientSettings().showTerminalDrawerButton).toBe(false);
   expect(getClientSettings().showRepositoryIcons).toBe(true);
   expect(getClientSettings().showGroupIcons).toBe(true);
   expect(getClientSettings().capitalizeProjectNames).toBe(true);
   await persistClientSettingsPatch({
     uiLanguage: "zh-CN",
     showRepositoryTerminalButton: true,
+    showTerminalDrawerButton: true,
     showRepositoryIcons: false,
     showGroupIcons: false,
     capitalizeProjectNames: false,
@@ -358,11 +360,13 @@ it("persists language changes across hydration while preserving other device set
   expect(stored.uiLanguage).toBe("zh-CN");
   expect(stored.chatWidth).toBe("wide");
   expect(stored.showRepositoryTerminalButton).toBe(true);
+  expect(stored.showTerminalDrawerButton).toBe(true);
   __resetClientSettingsPersistenceForTests();
   persistenceMocks.getClientSettings.mockResolvedValue(stored);
   await ensureClientSettingsHydrated();
   expect(getClientSettings().uiLanguage).toBe("zh-CN");
   expect(getClientSettings().showRepositoryTerminalButton).toBe(true);
+  expect(getClientSettings().showTerminalDrawerButton).toBe(true);
   expect(getClientSettings().showRepositoryIcons).toBe(false);
   expect(getClientSettings().showGroupIcons).toBe(false);
   expect(getClientSettings().capitalizeProjectNames).toBe(false);
@@ -371,11 +375,13 @@ it("persists language changes across hydration while preserving other device set
   expect(getClientSettings().chatWidth).toBe("wide");
   await persistClientSettingsPatch({
     showRepositoryTerminalButton: false,
+    showTerminalDrawerButton: false,
     showRepositoryIcons: true,
     showGroupIcons: true,
     capitalizeProjectNames: true,
   });
   expect(getClientSettings().showRepositoryTerminalButton).toBe(false);
+  expect(getClientSettings().showTerminalDrawerButton).toBe(false);
   expect(getClientSettings().showRepositoryIcons).toBe(true);
   expect(getClientSettings().showGroupIcons).toBe(true);
   expect(getClientSettings().capitalizeProjectNames).toBe(true);

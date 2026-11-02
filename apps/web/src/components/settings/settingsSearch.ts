@@ -388,6 +388,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["terminal", "repository", "workspace", "button", "menu", "show", "hide"],
   },
   {
+    id: "terminal-drawer-button",
+    title: "Show terminal button",
+    to: "/settings/appearance",
+    searchTerms: ["terminal", "drawer", "header", "toolbar", "button", "icon", "show", "hide"],
+  },
+  {
     id: "thread-details-items",
     title: "Thread details",
     to: "/settings/appearance",
