@@ -1,6 +1,9 @@
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import type { EnvironmentPresentation } from "../../state/environments";
 import type { ResolvedSettingsScope, SettingsScopeSearch } from "./settingsScope";
+import { projectDisplayKind } from "@t3tools/shared/projectPresentation";
+
+export type ProjectTypeFilter = "all" | "repo" | "group";
 
 type ScopeEnvironment = Pick<EnvironmentPresentation, "environmentId" | "label" | "displayUrl">;
 
@@ -72,11 +75,14 @@ export function projectAxisValue(search: SettingsScopeSearch): string {
 export function projectScopeMenuGroups(
   groups: readonly SidebarProjectSnapshot[],
   search: Pick<SettingsScopeSearch, "machine">,
+  type: ProjectTypeFilter = "all",
 ) {
   const { machine } = search;
-  if (machine === undefined) return groups;
-  return groups.filter((group) =>
-    group.memberProjects.some((member) => member.environmentId === machine),
+  return groups.filter(
+    (group) =>
+      (type === "all" || projectDisplayKind(group) === type) &&
+      (machine === undefined ||
+        group.memberProjects.some((member) => member.environmentId === machine)),
   );
 }
 

@@ -44,6 +44,8 @@ it.live(
       const sql = yield* SqlClient.SqlClient;
       const temp = yield* fs.makeTempDirectoryScoped({ prefix: "workspace-group-test-" });
       const fail = yield* Ref.make(true);
+      const setupBranches = yield* Ref.make<string[]>([]);
+      const generatedBranch = "lg/fix-group-branches";
       const roots: Array<ProjectWorkspaceRoot> = [];
       for (const alias of ["frontend", "backend"]) {
         const cwd = path.join(temp, alias);
@@ -83,6 +85,14 @@ it.live(
       const setupLayer = Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
         runForThread: (input) =>
           Effect.gen(function* () {
+            const branch = (yield* git
+              .execute({
+                operation: "test",
+                cwd: input.worktreePath,
+                args: ["branch", "--show-current"],
+              })
+              .pipe(Effect.orDie)).stdout.trim();
+            yield* Ref.update(setupBranches, (branches) => [...branches, branch]);
             const isFailure = input.worktreePath.endsWith("backend") && (yield* Ref.get(fail));
             yield* fs
               .writeFileString(path.join(input.worktreePath, "setup.txt"), "prepared")
@@ -118,11 +128,17 @@ it.live(
           projectId: ProjectId.make("multi"),
           config: { version: 1, primaryRootId: roots[0]!.id, roots },
           strategy: { type: "worktree" as const, baseRef: "main" },
+          generatedBranchName: { branch: generatedBranch, exactName: false },
         };
         yield* git.execute({
           operation: "test",
           cwd: roots[1]!.sourcePath,
           args: ["checkout", "-b", "feature/backend"],
+        });
+        yield* git.execute({
+          operation: "test",
+          cwd: roots[1]!.sourcePath,
+          args: ["branch", generatedBranch],
         });
         const invalidBase = yield* provisioner
           .prepare({
@@ -137,6 +153,7 @@ it.live(
         assert.lengthOf(yield* sql`SELECT * FROM workspace_preparations`, 0);
         const error = yield* provisioner.prepare(input).pipe(Effect.flip);
         assert.include(error.message, "Setup failed");
+        assert.deepEqual(yield* Ref.get(setupBranches), [generatedBranch, `${generatedBranch}-1`]);
         const [row] = yield* sql<{
           payload_json: string;
         }>`SELECT payload_json FROM workspace_preparations`;
@@ -155,6 +172,7 @@ it.live(
         yield* Ref.set(fail, false);
         const workspace = yield* provisioner.prepare({
           ...input,
+          generatedBranchName: { branch: "lg/different-on-retry", exactName: false },
           config: {
             ...input.config,
             version: 2,
@@ -163,6 +181,15 @@ it.live(
         });
         assert.equal(workspace.sourceProjectVersion, 1);
         assert.lengthOf(workspace.resources, 2);
+        assert.deepEqual(
+          workspace.bindings.map((binding) => binding.launchBranch),
+          [generatedBranch, `${generatedBranch}-1`],
+        );
+        assert.deepEqual(yield* Ref.get(setupBranches), [
+          generatedBranch,
+          `${generatedBranch}-1`,
+          `${generatedBranch}-1`,
+        ]);
         assert.equal(workspace.resources[0]!.checkoutRoot, prepared);
         assert.equal(yield* fs.readFileString(path.join(prepared, "keep.txt")), "user work");
         for (const resource of workspace.resources) {
@@ -241,6 +268,21 @@ it.live(
         assert.isTrue(
           yield* fs.exists(path.join(selected.resources[1]!.checkoutRoot, "setup.txt")),
         );
+        const explicit = yield* provisioner.prepare({
+          ...input,
+          threadId: ThreadId.make("explicit-group-branch"),
+          strategy: { type: "worktree", baseRef: "main", branch: "feature/user-choice" },
+        });
+        assert.deepEqual(
+          explicit.bindings.map((binding) => binding.launchBranch),
+          ["feature/user-choice", "feature/user-choice"],
+        );
+        const fallback = yield* provisioner.prepare({
+          ...input,
+          threadId: ThreadId.make("group-name-unavailable"),
+          generatedBranchName: undefined,
+        });
+        for (const binding of fallback.bindings) assert.match(binding.launchBranch!, /^t3-multi-/);
         yield* git.execute({
           operation: "test",
           cwd: roots[0]!.sourcePath,

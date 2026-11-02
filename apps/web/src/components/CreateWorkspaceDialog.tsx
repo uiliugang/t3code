@@ -5,6 +5,7 @@ import {
   WorkspaceRootId,
   type EnvironmentId,
   type ProjectWorkspaceRoot,
+  type ScopedProjectRef,
 } from "@t3tools/contracts";
 import { LayersIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useId, useState } from "react";
@@ -30,28 +31,40 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Radio, RadioGroup } from "./ui/radio-group";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
-const useRequest = create<{ open: boolean; session: number }>(() => ({ open: false, session: 0 }));
+interface CreateWorkspaceRequest {
+  readonly initialEnvironmentId?: EnvironmentId | undefined;
+  readonly onCreated?: ((project: ScopedProjectRef) => void) | undefined;
+}
 
-export function openCreateWorkspace() {
+const useRequest = create<{ open: boolean; session: number; request: CreateWorkspaceRequest }>(
+  () => ({
+    open: false,
+    session: 0,
+    request: {},
+  }),
+);
+
+export function openCreateWorkspace(request: CreateWorkspaceRequest = {}) {
   if (useRequest.getState().open) return;
-  useRequest.setState((state) => ({ open: true, session: state.session + 1 }));
+  useRequest.setState((state) => ({ open: true, session: state.session + 1, request }));
 }
 
 function close() {
-  useRequest.setState({ open: false });
+  useRequest.setState({ open: false, request: {} });
 }
 
 export function CreateWorkspaceDialogHost() {
-  const { open, session } = useRequest();
-  return open ? <CreateWorkspaceDialog key={session} /> : null;
+  const { open, session, request } = useRequest();
+  return open ? <CreateWorkspaceDialog key={session} {...request} /> : null;
 }
 
-function CreateWorkspaceDialog() {
+function CreateWorkspaceDialog({ initialEnvironmentId, onCreated }: CreateWorkspaceRequest) {
   const t = useUiTranslation();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -64,6 +77,7 @@ function CreateWorkspaceDialog() {
   );
   const [environmentId, setEnvironmentId] = useState<EnvironmentId | null>(
     () =>
+      initialEnvironmentId ??
       available.find((environment) => environment.environmentId === primaryEnvironmentId)
         ?.environmentId ??
       available[0]?.environmentId ??
@@ -138,6 +152,7 @@ function CreateWorkspaceDialog() {
               allowed={allowed}
               busy={busy}
               setBusy={setBusy}
+              onCreated={onCreated}
             />
           ) : null}
         </DialogPanel>
@@ -162,11 +177,13 @@ function WorkspaceForm({
   allowed,
   busy,
   setBusy,
+  onCreated,
 }: {
   environmentId: EnvironmentId;
   allowed: boolean;
   busy: boolean;
   setBusy: (value: boolean) => void;
+  onCreated: CreateWorkspaceRequest["onCreated"];
 }) {
   const t = useUiTranslation();
   const id = useId();
@@ -225,6 +242,10 @@ function WorkspaceForm({
       return;
     }
     close();
+    if (onCreated) {
+      onCreated(scopeProjectRef(environmentId, projectId));
+      return;
+    }
     const navigation = await settlePromise(() =>
       handleNewThread(scopeProjectRef(environmentId, projectId), { envMode: "worktree" }),
     );
@@ -358,8 +379,10 @@ function WorkspaceForm({
               </div>
               <div className="space-y-1">
                 <Label htmlFor={`${root.id}-context`}>{t("Repository context")}</Label>
-                <Input
+                <Textarea
                   id={`${root.id}-context`}
+                  size="compact"
+                  rows={2}
                   maxLength={2000}
                   value={root.description}
                   onChange={(event) => change(root.id, { description: event.target.value })}

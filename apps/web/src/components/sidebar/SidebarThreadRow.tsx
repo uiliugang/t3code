@@ -103,6 +103,7 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { ProjectLabel } from "../ProjectLabel";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -281,7 +282,11 @@ function SidebarThreadTooltip({
         {projectDisplayName ? (
           <div className="flex min-w-0 items-center gap-2">
             {project ? <ProjectFavicon project={project} className="size-3 shrink-0" /> : null}
-            <div className="min-w-0 truncate text-foreground/75">{projectDisplayName}</div>
+            <ProjectLabel
+              name={projectDisplayName}
+              project={project ?? undefined}
+              className="text-foreground/75"
+            />
           </div>
         ) : null}
         {environmentLabel ? (
@@ -730,7 +735,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const topStatus =
     status === "working"
       ? {
-          label: thread.goal?.status === "active" ? "Goal" : "Working",
+          label: t(thread.goal?.status === "active" ? "Goal" : "Working"),
           icon: "working" as const,
           className: "text-info-foreground",
         }
@@ -1442,11 +1447,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 label for the wider row controls. */}
               {pinIndicator}
               {props.projectDisplayName ? (
-                <span
-                  className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
-                >
-                  {props.projectDisplayName}
-                </span>
+                <ProjectLabel
+                  name={props.projectDisplayName}
+                  project={props.project ?? undefined}
+                  className="flex-1 text-xs font-normal text-secondary-label"
+                />
               ) : (
                 <span className="flex-1" />
               )}

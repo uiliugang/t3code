@@ -1,3 +1,5 @@
+import { formatProjectDisplayName } from "@t3tools/shared/projectPresentation";
+import { useProjectPresentation } from "../../lib/useProjectPresentation";
 import { useActiveNewTask } from "../../state/active-new-task";
 import { ThreadUndoNotice } from "../home/ThreadUndoNotice";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
@@ -147,6 +149,7 @@ function NativeSidebarContainer(props: ThreadNavigationSidebarProps) {
 function ThreadNavigationSidebarPane(
   props: ThreadNavigationSidebarProps & { readonly nativeChrome: boolean },
 ) {
+  const { capitalizeProjectNames } = useProjectPresentation();
   const floatingTabsEnabled = useAndroidFloatingTabs();
   const { themeVariables: materialTheme } = useAppearancePreferences();
   const drawerColor = materialTheme["--color-drawer"];
@@ -224,7 +227,7 @@ function ThreadNavigationSidebarPane(
   );
   const projectFilterOptions = pickableProjectGroups(projectScopes).map((scope) => ({
     key: scope.key,
-    label: scope.title,
+    label: formatProjectDisplayName(scope.title, capitalizeProjectNames),
   }));
   const projectTitleByProjectKey = useMemo(
     () =>

@@ -371,6 +371,7 @@ export function buildProjectActionItems(input: {
   runProject: (project: CommandPaletteProject) => Promise<void>;
   searchTerms?: (project: CommandPaletteProject) => ReadonlyArray<string>;
   renderDescription?: (project: CommandPaletteProject) => ReactNode;
+  renderTitle?: (project: CommandPaletteProject) => ReactNode;
   shortcutCommand?: KeybindingCommand;
   pin?: (project: CommandPaletteProject) => CommandPaletteItemPin | null;
 }): CommandPaletteActionItem[] {
@@ -385,7 +386,8 @@ export function buildProjectActionItems(input: {
         project.workspaceRoot,
         ...(input.searchTerms?.(project) ?? []),
       ],
-      title: project.displayName,
+      title: input.renderTitle?.(project) ?? project.displayName,
+      ...(input.renderTitle ? { searchTitle: project.displayName } : {}),
       description: input.renderDescription?.(project) ?? project.workspaceRoot,
       icon: input.icon(project),
       ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),

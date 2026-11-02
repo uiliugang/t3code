@@ -18,6 +18,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { randomUUID } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsSection } from "./settingsLayout";
 
@@ -141,7 +142,10 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
             </label>
             <label className="flex flex-col gap-1 text-xs">
               {t("Repository context")}
-              <Input
+              <Textarea
+                size="compact"
+                rows={2}
+                maxLength={2000}
                 value={root.description}
                 placeholder={t("Frontend, backend API, shared schemas...")}
                 onChange={(event) => change(root.id, { description: event.target.value })}

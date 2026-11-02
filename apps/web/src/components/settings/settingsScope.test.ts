@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, WorkspaceRootId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type {
@@ -6,6 +6,7 @@ import type {
   SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { resolveSettingsScope, validateSettingsScopeSearch } from "./settingsScope";
+import { projectScopeMenuGroups } from "./settingsScopeAxis";
 
 const laptopId = EnvironmentId.make("laptop");
 const serverId = EnvironmentId.make("server");
@@ -75,6 +76,43 @@ describe("settings scope search", () => {
 });
 
 describe("settings scope resolution", () => {
+  it("combines project type and environment filters without treating repository checkouts as groups", () => {
+    const primaryRootId = WorkspaceRootId.make("primary");
+    const configuredGroups: readonly SidebarProjectSnapshot[] = [
+      groups[0]!,
+      {
+        ...groups[1]!,
+        workspaceConfig: {
+          version: 1,
+          primaryRootId,
+          roots: [
+            {
+              id: primaryRootId,
+              alias: "other",
+              sourcePath: other.workspaceRoot,
+              description: "",
+              accessIntent: "write",
+              defaultSelected: true,
+            },
+          ],
+        },
+      },
+    ];
+    expect(projectScopeMenuGroups(configuredGroups, {}, "all")).toEqual(configuredGroups);
+    expect(projectScopeMenuGroups(configuredGroups, {}, "repo")).toEqual([configuredGroups[0]]);
+    expect(projectScopeMenuGroups(configuredGroups, {}, "group")).toEqual([configuredGroups[1]]);
+    expect(projectScopeMenuGroups(configuredGroups, { machine: laptopId }, "group")).toEqual([]);
+    expect(projectScopeMenuGroups(configuredGroups, { machine: serverId }, "repo")).toEqual([
+      configuredGroups[0],
+    ]);
+    expect(
+      resolveSettingsScope({ project: "t3code" }, configuredGroups, environments),
+    ).toMatchObject({
+      kind: "project",
+      members: [first, second, third],
+    });
+  });
+
   it("keeps all physical members in a project aggregate, including several on one environment", () => {
     expect(resolveSettingsScope({ project: "t3code" }, groups, environments)).toMatchObject({
       kind: "project",

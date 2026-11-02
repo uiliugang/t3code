@@ -12,6 +12,8 @@ import { deriveProjectIdentity } from "../projectIdentity";
 import { projectIconColorClassName } from "../projectIconColors";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { cn } from "~/lib/utils";
+import { projectDisplayKind } from "@t3tools/shared/projectPresentation";
+import { useClientSettings } from "../hooks/useSettings";
 
 // All lucide icons load as one chunk, only once a project uses a lucide override.
 const LucideProjectIcon = lazy(() =>
@@ -31,8 +33,22 @@ function DynamicProjectIconFallback() {
 export type ProjectFaviconProject = Pick<
   EnvironmentProject,
   "environmentId" | "workspaceRoot" | "title" | "faviconPath" | "projectIcon"
->;
+> &
+  Pick<Partial<EnvironmentProject>, "workspaceConfig">;
 export function ProjectFavicon(input: {
+  project: ProjectFaviconProject;
+  className?: string | undefined;
+  fallbackIcon?: ComponentType<{ className?: string }>;
+}) {
+  const visible = useClientSettings((settings) =>
+    projectDisplayKind(input.project) === "group"
+      ? settings.showGroupIcons
+      : settings.showRepositoryIcons,
+  );
+  return visible ? <VisibleProjectFavicon {...input} /> : null;
+}
+
+function VisibleProjectFavicon(input: {
   project: ProjectFaviconProject;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;

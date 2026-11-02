@@ -9,6 +9,7 @@ import { TerminalAppearanceSection } from "./appearance/sections/TerminalAppeara
 import { TextAppearanceSection } from "./appearance/sections/TextAppearanceSection";
 import { LanguageSection } from "./appearance/sections/LanguageSection";
 import { ThemeAppearanceSection } from "./appearance/sections/ThemeAppearanceSection";
+import { ProjectPresentationSection } from "./appearance/sections/ProjectPresentationSection";
 
 export function SettingsAppearanceRouteScreen() {
   const insets = useSafeAreaInsets();
@@ -26,6 +27,7 @@ export function SettingsAppearanceRouteScreen() {
       >
         <LanguageSection />
         <ThemeAppearanceSection />
+        <ProjectPresentationSection />
         {Platform.OS === "android" ? <AndroidNavigationAppearanceSection /> : null}
         <TextAppearanceSection />
         <TerminalAppearanceSection />

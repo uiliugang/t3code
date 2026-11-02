@@ -244,11 +244,16 @@ async function mountPanel(search: Omit<SettingsScopeSearch, "project"> = {}) {
     getParentRoute: () => settingsRoute,
     path: "projects",
     component: () => (
-      <ProjectSettingsPanel
-        projectKey={key}
-        environmentId={search.machine ? EnvironmentId.make(search.machine) : null}
-        checkoutKey={search.checkout ?? null}
-      />
+      <SettingsScopeProvider
+        search={projectsRoute.useSearch()}
+        onChange={(next) => void router.navigate({ to: "/settings/projects", search: () => next })}
+      >
+        <ProjectSettingsPanel
+          projectKey={key}
+          environmentId={search.machine ? EnvironmentId.make(search.machine) : null}
+          checkoutKey={search.checkout ?? null}
+        />
+      </SettingsScopeProvider>
     ),
   });
   const query = new URLSearchParams({ project: key });
@@ -682,7 +687,7 @@ describe("project settings scope", () => {
     });
 
     await expect.element(page.getByText(message, { exact: true })).toBeVisible();
-    await expect.element(page.getByRole("button", { name: /^Project scope:/ })).toBeVisible();
+    await expect.element(page.getByRole("combobox", { name: /^Project scope:/ })).toBeVisible();
     await expect
       .element(page.getByRole("button", { name: "Environment scope: remote" }))
       .toBeVisible();

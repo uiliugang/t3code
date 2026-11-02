@@ -17,6 +17,7 @@ import { vcsEnvironment } from "../../state/vcs";
 import { BranchToolbarBranchSelector } from "../BranchToolbarBranchSelector";
 import GitActionsControl from "../GitActionsControl";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { ProjectLabel } from "../ProjectLabel";
 
 export function RepositoryDetails({
   environmentId,
@@ -50,6 +51,7 @@ export function RepositoryDetails({
 }) {
   const t = useUiTranslation();
   const showTerminalButton = useClientSettings((settings) => settings.showRepositoryTerminalButton);
+  const showIcon = useClientSettings((settings) => settings.showRepositoryIcons);
   const terminals = useThreadTerminalActions({ environmentId, threadId });
   const target = { threadId, workspaceRevisionId: workspace.id, resourceId: resource.id };
   const status = useEnvironmentQuery(
@@ -68,10 +70,12 @@ export function RepositoryDetails({
           aria-expanded={expanded}
         >
           <span className="flex w-full min-w-0 items-center gap-2 text-sm font-medium">
-            <FolderGit2Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            {showIcon ? (
+              <FolderGit2Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            ) : null}
             <Tooltip>
               <TooltipTrigger render={<span className="min-w-0 flex-1 truncate" />}>
-                {name}
+                <ProjectLabel name={name} project={{}} />
               </TooltipTrigger>
               <TooltipPopup>{resource.checkoutRoot}</TooltipPopup>
             </Tooltip>

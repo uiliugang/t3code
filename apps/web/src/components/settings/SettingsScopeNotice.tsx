@@ -8,13 +8,17 @@ import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectLabel } from "../ProjectLabel";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import type { SettingsScopeSearch } from "./settingsScope";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
+  projectScopeMenuGroups,
+  selectProjectAxis,
   settingsScopeEnvironmentAddress,
   settingsScopeEnvironmentLabels,
   settingsScopeProjectMachines,
@@ -25,6 +29,7 @@ interface ScopeChoice {
   secondary?: string;
   icon: ReactNode;
   search: SettingsScopeSearch;
+  project?: SidebarProjectSnapshot;
 }
 
 export function SettingsScopeNotice({
@@ -43,7 +48,8 @@ export function SettingsScopeNotice({
   targetId?: string;
   eligibleEnvironmentIds?: readonly EnvironmentId[];
 }) {
-  const { selectScope, search, groups } = useSettingsScope();
+  const t = useUiTranslation();
+  const { selectScope, search, groups, projectTypeFilter } = useSettingsScope();
   const navigate = useNavigate({ from: "/settings" });
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
@@ -83,7 +89,8 @@ export function SettingsScopeNotice({
           };
         })
       : target === "project"
-        ? groups.map((group) => ({
+        ? projectScopeMenuGroups(groups, search, projectTypeFilter).map((group) => ({
+            project: group,
             label: group.displayName,
             secondary: [
               ...(group.archived ? ["Archived"] : []),
@@ -96,7 +103,7 @@ export function SettingsScopeNotice({
               group.workspaceRoot,
             ].join(" · "),
             icon: <ProjectFavicon project={group} className="size-4 shrink-0" />,
-            search: { project: group.projectKey },
+            search: selectProjectAxis(search, group.projectKey),
           }))
         : target === "environment"
           ? environments
@@ -121,6 +128,12 @@ export function SettingsScopeNotice({
                 search: {},
               },
             ];
+    if (choices.length === 0 && target === "project")
+      return (
+        <p role="status" className="px-3 py-6 text-sm text-muted-foreground sm:px-4">
+          {t("No matching projects or groups.")}
+        </p>
+      );
     return choices.map((choice) => (
       <button
         key={JSON.stringify(choice.search)}
@@ -146,7 +159,15 @@ export function SettingsScopeNotice({
       >
         {choice.icon}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{choice.label}</span>
+          {choice.project ? (
+            <ProjectLabel
+              name={choice.label}
+              project={choice.project}
+              className="text-sm font-medium"
+            />
+          ) : (
+            <span className="block truncate text-sm font-medium">{choice.label}</span>
+          )}
           {choice.secondary ? (
             <Tooltip>
               <TooltipTrigger
@@ -171,7 +192,10 @@ export function SettingsScopeNotice({
       <div className="space-y-4">
         {choiceGroups.map((group) =>
           group?.displayName ? (
-            <SettingsSection key={group.projectKey} title={group.displayName}>
+            <SettingsSection
+              key={group.projectKey}
+              title={<ProjectLabel name={group.displayName} project={group} />}
+            >
               {renderChoices(group)}
             </SettingsSection>
           ) : (

@@ -1,3 +1,5 @@
+import { formatProjectDisplayName } from "@t3tools/shared/projectPresentation";
+import { useProjectPresentation } from "../../lib/useProjectPresentation";
 import { useActiveNewTask } from "../../state/active-new-task";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
@@ -241,6 +243,7 @@ function renderHomeScrollView(props: ScrollViewProps) {
 }
 
 export function HomeScreen(props: HomeScreenProps) {
+  const { capitalizeProjectNames } = useProjectPresentation();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
   const [initialScrollOffset] = useState(() => workspace?.getScrollOffset("threads") ?? 0);
@@ -723,7 +726,7 @@ export function HomeScreen(props: HomeScreenProps) {
           environments={props.environments}
           projects={pickableProjectGroups(projectScopes).map((scope) => ({
             key: scope.key,
-            label: scope.title,
+            label: formatProjectDisplayName(scope.title, capitalizeProjectNames),
           }))}
           selectedEnvironmentId={props.selectedEnvironmentId}
           selectedProjectKey={props.selectedProjectKey}

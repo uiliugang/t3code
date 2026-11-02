@@ -9,7 +9,7 @@ import {
   resolveProjectFileBackedSetting,
 } from "@t3tools/shared/projectSettings";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
-import { isMainOrMasterBranch } from "@t3tools/shared/git";
+import { isMainOrMasterBranch, isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import * as ServerSettings from "../serverSettings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Option from "effect/Option";
@@ -61,6 +61,9 @@ export const Preparation = Schema.Struct({
   projectId: ProjectId,
   config: ProjectWorkspaceConfig,
   mode: Schema.Literals(["existing", "isolated"]),
+  generatedBranchName: Schema.optional(
+    Schema.Struct({ branch: Schema.String, exactName: Schema.Boolean }),
+  ),
   bindings: Schema.Array(WorkspaceRootBinding),
   resources: Schema.Array(PreparedResource),
   createdAt: Schema.String,
@@ -85,6 +88,7 @@ export class WorkspaceProvisioner extends Context.Service<
       readonly config: ProjectWorkspaceConfig;
       readonly scripts?: readonly ProjectScript[];
       readonly strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
+      readonly generatedBranchName?: GitVcsDriver.CreateWorktreeOptions["generatedBranchName"];
     }) => Effect.Effect<ThreadWorkspaceRevision, WorkspacePreparationError>;
   }
 >()("t3/workspace/WorkspaceProvisioner") {}
@@ -251,6 +255,12 @@ export const layer = Layer.effect(
                 }
                 const resolved = yield* resolver.resolve({ ...config, roots: launchRoots });
                 const isolated = input.strategy.type === "worktree";
+                const generatedBranchName =
+                  isolated &&
+                  (input.strategy.branch === undefined ||
+                    isTemporaryWorktreeBranch(input.strategy.branch))
+                    ? input.generatedBranchName
+                    : undefined;
                 const resources = [];
                 for (const [index, source] of resolved.resources.entries()) {
                   const binding = resolved.bindings.find((item) => item.resourceId === source.id)!;
@@ -281,6 +291,7 @@ export const layer = Layer.effect(
                   projectId: input.projectId,
                   config,
                   mode: isolated ? "isolated" : "existing",
+                  ...(generatedBranchName === undefined ? {} : { generatedBranchName }),
                   bindings: resolved.bindings.map((binding) => ({
                     ...binding,
                     launchBaseRef: baseRefs.get(binding.rootId)!,
@@ -307,7 +318,7 @@ export const layer = Layer.effect(
                 if (item.resource === undefined) {
                   yield* fs.makeDirectory(path.dirname(item.path), { recursive: true });
                   if (!(yield* fs.exists(item.path))) {
-                    yield* withWorkspaceLease(
+                    const created = yield* withWorkspaceLease(
                       item.source.identity.commonDir,
                       git.createWorktree(
                         {
@@ -317,9 +328,15 @@ export const layer = Layer.effect(
                           newRefName: item.branch!,
                           path: item.path,
                         },
-                        { submodules: "none" },
+                        {
+                          submodules: "none",
+                          ...(state.generatedBranchName === undefined
+                            ? {}
+                            : { generatedBranchName: state.generatedBranchName }),
+                        },
                       ),
                     );
+                    yield* update({ branch: created.worktree.refName });
                   }
                   const identity = yield* resolver.inspect(item.path);
                   const branch = (yield* git.execute({
