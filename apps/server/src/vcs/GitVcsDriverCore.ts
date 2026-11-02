@@ -211,8 +211,30 @@ function parseBranchAb(value: string): { ahead: number; behind: number } {
 function parseReviewNumstat(stdout: string): ReviewDiffFileStat[] {
   const fields = stdout.split("\0");
   const files: ReviewDiffFileStat[] = [];
+  // Git emits all raw status records before the numstat records when both formats are requested.
+  const changeTypes = new Map<string, NonNullable<ReviewDiffFileStat["changeType"]>>();
   for (let index = 0; index < fields.length; index++) {
     const field = fields[index]!;
+    const raw = /^:[0-7]{6} [0-7]{6} [a-f0-9]+ [a-f0-9]+ ([A-Z])(\d*)$/.exec(field);
+    if (raw) {
+      const oldPath = fields[++index]!;
+      const status = raw[1];
+      const renamed = status === "R" || status === "C";
+      const path = renamed ? fields[++index]! : oldPath;
+      changeTypes.set(
+        path,
+        status === "A" || status === "C"
+          ? "new"
+          : status === "D"
+            ? "deleted"
+            : status === "R"
+              ? raw[2] === "100"
+                ? "rename-pure"
+                : "rename-changed"
+              : "change",
+      );
+      continue;
+    }
     const match = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(field);
     if (!match) continue;
     const previousPath = match[3] === "" ? fields[++index]! : null;
@@ -222,6 +244,7 @@ function parseReviewNumstat(stdout: string): ReviewDiffFileStat[] {
       previousPath,
       additions: match[1] === "-" ? 0 : Number(match[1]),
       deletions: match[2] === "-" ? 0 : Number(match[2]),
+      ...(changeTypes.has(path) ? { changeType: changeTypes.get(path)! } : {}),
     });
   }
   return files;
@@ -3425,7 +3448,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const stat = yield* executeGit(
         "GitVcsDriver.getReviewDiffPreview.commitStat",
         cwd,
-        [...diffArgs, "--numstat", "-z", commit.parent, commit.sha, "--", ...pathArgs],
+        [...diffArgs, "--raw", "--numstat", "-z", commit.parent, commit.sha, "--", ...pathArgs],
         { maxOutputBytes: REVIEW_METADATA_MAX_OUTPUT_BYTES },
       );
       const files = parseReviewNumstat(stat.stdout);
@@ -3471,7 +3494,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ref: string,
       env?: NodeJS.ProcessEnv,
     ) {
-      const args = [...diffArgs, "--numstat", "-z"];
+      const args = [...diffArgs, "--raw", "--numstat", "-z"];
       const result = yield* executeGit(
         "GitVcsDriver.getReviewDiffPreview.stat",
         cwd,

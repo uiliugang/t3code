@@ -1,5 +1,6 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ClientSettings } from "@t3tools/contracts/settings";
+import { DIFF_COLOR_PRESETS } from "@t3tools/contracts/settings";
 import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
@@ -72,8 +73,18 @@ function startClientAppearance(): void {
     );
     const previousSeparateFonts = appliedSeparateFonts;
     appliedSeparateFonts = separateFonts;
-    if (previous?.diffColorScheme !== settings.diffColorScheme) {
+    if (
+      previous?.diffColorScheme !== settings.diffColorScheme ||
+      previous?.diffCustomColors !== settings.diffCustomColors
+    ) {
       root.dataset.diffColorScheme = settings.diffColorScheme;
+      const colors =
+        settings.diffColorScheme === "custom"
+          ? settings.diffCustomColors
+          : DIFF_COLOR_PRESETS[settings.diffColorScheme];
+      for (const [kind, color] of Object.entries(colors)) {
+        root.style.setProperty(`--diff-${kind}`, color);
+      }
     }
     if (previous?.chatWidth !== settings.chatWidth) {
       root.dataset.chatWidth = settings.chatWidth;

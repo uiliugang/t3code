@@ -124,7 +124,6 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
       "/settings/general",
       "/settings/appearance",
       "/settings/chat",
-      "/settings/diffs",
       "/settings/keybindings",
       "/settings/snap-shot",
     ],
@@ -142,7 +141,12 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   },
   {
     heading: "Code",
-    paths: ["/settings/projects", "/settings/source-control", "/settings/worktrees"],
+    paths: [
+      "/settings/projects",
+      "/settings/source-control",
+      "/settings/diffs",
+      "/settings/worktrees",
+    ],
   },
   {
     heading: "Connections",
@@ -355,7 +359,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "diff-color-scheme",
     title: "Diff colors",
     to: "/settings/diffs",
-    searchTerms: ["red green blue orange additions deletions changes counts palette colorblind"],
+    searchTerms: [
+      "red green blue orange additions deletions modified conflicts custom counts palette colorblind 新增 删除 改动 冲突 自定义 配色",
+    ],
   },
   {
     id: "chat-width",

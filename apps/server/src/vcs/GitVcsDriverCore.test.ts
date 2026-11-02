@@ -30,6 +30,7 @@ import {
   VcsRef,
   VcsListRefsResult,
   type ReviewDiffFileContentsInput,
+  type ReviewDiffFileStat,
   type ReviewDiffPreviewResult,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
@@ -47,6 +48,10 @@ import { gitConfigEnv } from "./VcsProcess.ts";
 const encodeGitCommandError = Schema.encodeEffect(Schema.fromJsonString(GitCommandError));
 const decodeVcsRef = Schema.decodeUnknownSync(VcsRef);
 const decodeVcsListRefsResult = Schema.decodeUnknownSync(VcsListRefsResult);
+
+function reviewLineStats(files: ReadonlyArray<ReviewDiffFileStat> | undefined) {
+  return files?.map(({ changeType: _changeType, ...stat }) => stat);
+}
 
 const layerServerConfig = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-git-vcs-driver-test-",
@@ -2197,7 +2202,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           file: { path: "untracked.txt", previousPath: null, sourceKind: "working-tree" },
         });
         const source = dirty.sources.find((source) => source.kind === "working-tree")!;
-        assert.deepStrictEqual(source.files, [
+        assert.deepStrictEqual(reviewLineStats(source.files), [
           { path: "untracked.txt", previousPath: null, additions: 1, deletions: 0 },
         ]);
         assert.include(source.diff, "+untracked content");
@@ -2289,7 +2294,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           },
         });
         const scopedSource = scoped.sources.find((source) => source.kind === "working-tree")!;
-        assert.deepStrictEqual(scopedSource.files, [
+        assert.deepStrictEqual(reviewLineStats(scopedSource.files), [
           { path: ":(exclude)after.ts", previousPath: null, additions: 1, deletions: 0 },
         ]);
         assert.include(scopedSource.diff, "+literal pathspec contents");
@@ -2334,7 +2339,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           .sort();
 
         const source = preview.sources.find((candidate) => candidate.kind === "working-tree")!;
-        assert.deepStrictEqual(source.files, [
+        assert.deepStrictEqual(reviewLineStats(source.files), [
           { path: "after.ts", previousPath: "before.ts", additions: 1, deletions: 1 },
         ]);
         const scoped = yield* driver.getReviewDiffPreview({
@@ -2399,6 +2404,12 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.include(diff, "deleted file mode");
         assert.include(diff, "-remove me");
         assert.notInclude(diff, "new file mode");
+        assert.strictEqual(
+          preview.sources
+            .find((source) => source.kind === "working-tree")
+            ?.files?.find((file) => file.path === "removed.txt")?.changeType,
+          "deleted",
+        );
       }),
     );
 
@@ -2431,7 +2442,9 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           yield* writeTextFile(cwd, "untracked.txt", "new\n");
           const preview = yield* driver.getReviewDiffPreview({ cwd });
           assert.deepStrictEqual(
-            preview.sources.find((source) => source.kind === "working-tree")!.files,
+            reviewLineStats(
+              preview.sources.find((source) => source.kind === "working-tree")!.files,
+            ),
             [{ path: "untracked.txt", previousPath: null, additions: 1, deletions: 0 }],
           );
           assert.strictEqual(yield* fs.readFileString(path.join(cwd, ".git/filter-runs")), "");
@@ -2471,7 +2484,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
           const preview = yield* driver.getReviewDiffPreview({ cwd });
           const dirty = preview.sources.find((source) => source.kind === "working-tree")!;
-          assert.deepStrictEqual(dirty.files, [
+          assert.deepStrictEqual(reviewLineStats(dirty.files), [
             { path: "tracked.txt", previousPath: null, additions: 1, deletions: 1 },
             { path: "untracked.txt", previousPath: null, additions: 1, deletions: 0 },
           ]);
@@ -2503,6 +2516,14 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.isTrue(branch.truncated);
         assert.isTrue(dirty.truncated);
         assert.notInclude(branch.diff, "z-last.txt");
+        assert.deepStrictEqual(
+          branch.files?.map((file) => file.changeType),
+          ["new", "new", "new"],
+        );
+        assert.deepStrictEqual(
+          dirty.files?.map((file) => file.changeType),
+          ["change", "new", "change"],
+        );
         for (const source of [branch, dirty]) {
           for (const file of source.files ?? []) {
             const individual = yield* driver.getReviewDiffPreview({
@@ -2520,12 +2541,12 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           }
         }
 
-        assert.deepStrictEqual(branch.files, [
+        assert.deepStrictEqual(reviewLineStats(branch.files), [
           { path: "a-large.txt", previousPath: null, additions: 4000, deletions: 0 },
           { path: "untracked.txt", previousPath: null, additions: 4000, deletions: 0 },
           { path: "z-last.txt", previousPath: null, additions: 1, deletions: 0 },
         ]);
-        assert.deepStrictEqual(dirty.files, [
+        assert.deepStrictEqual(reviewLineStats(dirty.files), [
           { path: "a-large.txt", previousPath: null, additions: 4000, deletions: 4000 },
           { path: "untracked.txt", previousPath: null, additions: 4000, deletions: 0 },
           { path: "z-last.txt", previousPath: null, additions: 1, deletions: 1 },
@@ -2579,20 +2600,24 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         }
         assert.include(branch.diff, "rename from README.md");
         assert.include(branch.diff, "rename to renamed.md");
-        assert.deepInclude(branch.files ?? [], {
+        assert.strictEqual(
+          branch.files?.find((file) => file.path === "renamed.md")?.changeType,
+          "rename-pure",
+        );
+        assert.deepInclude(reviewLineStats(branch.files) ?? [], {
           path: "renamed.md",
           previousPath: "README.md",
           additions: 0,
           deletions: 0,
         });
-        assert.deepInclude(branch.files ?? [], {
+        assert.deepInclude(reviewLineStats(branch.files) ?? [], {
           path: "binary.dat",
           previousPath: null,
           additions: 0,
           deletions: 0,
         });
         if ((yield* HostProcess.Platform) !== "win32") {
-          assert.deepInclude(branch.files ?? [], {
+          assert.deepInclude(reviewLineStats(branch.files) ?? [], {
             path: "tab\tand\nnewline.txt",
             previousPath: null,
             additions: 1,
@@ -2612,7 +2637,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const driver = yield* GitVcsDriver.GitVcsDriver;
         const preview = yield* driver.getReviewDiffPreview({ cwd });
         const dirty = preview.sources.find((source) => source.kind === "working-tree")!;
-        assert.deepStrictEqual(dirty.files, [
+        assert.deepStrictEqual(reviewLineStats(dirty.files), [
           { path: "staged.txt", previousPath: null, additions: 1, deletions: 0 },
           { path: "untracked.txt", previousPath: null, additions: 1, deletions: 0 },
         ]);
@@ -2779,7 +2804,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const sourceFiles = (
           preview: ReviewDiffPreviewResult,
           kind: "working-tree" | "branch-range",
-        ) => preview.sources.find((source) => source.kind === kind)!.files;
+        ) => reviewLineStats(preview.sources.find((source) => source.kind === kind)!.files);
         yield* git(cwd, ["checkout", "-b", "feature/combined"]);
         yield* writeTextFile(cwd, "README.md", "# test\ncommitted\n");
         yield* git(cwd, ["commit", "-am", "commit edit"]);
@@ -2794,7 +2819,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         yield* writeTextFile(cwd, "new.txt", "new\n");
         const dirty = yield* driver.getReviewDiffPreview({ cwd, baseRef: initialBranch });
         const changes = dirty.sources.find((source) => source.kind === "branch-range")!;
-        assert.deepStrictEqual(changes.files, [
+        assert.deepStrictEqual(reviewLineStats(changes.files), [
           { path: "README.md", previousPath: null, additions: 2, deletions: 0 },
           { path: "new.txt", previousPath: null, additions: 1, deletions: 0 },
         ]);
@@ -2830,7 +2855,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const preview = yield* driver.getReviewDiffPreview({ cwd });
         const changes = preview.sources.find((source) => source.kind === "branch-range")!;
         assert.strictEqual(changes.baseRef, "origin/main");
-        assert.deepStrictEqual(changes.files, [
+        assert.deepStrictEqual(reviewLineStats(changes.files), [
           { path: "unpushed.txt", previousPath: null, additions: 1, deletions: 0 },
         ]);
       }),
@@ -2869,7 +2894,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           const preview = yield* driver.getReviewDiffPreview({ cwd });
           const changes = preview.sources.find((source) => source.kind === "branch-range")!;
           assert.strictEqual(changes.baseRef, baseRef);
-          assert.deepStrictEqual(changes.files, [
+          assert.deepStrictEqual(reviewLineStats(changes.files), [
             { path: "feature.txt", previousPath: null, additions: 1, deletions: 0 },
           ]);
         }
@@ -2903,7 +2928,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           const preview = yield* driver.getReviewDiffPreview({ cwd });
           const changes = preview.sources.find((source) => source.kind === "branch-range")!;
           assert.strictEqual(changes.baseRef, "refs/remotes/upstream/main");
-          assert.deepStrictEqual(changes.files, [
+          assert.deepStrictEqual(reviewLineStats(changes.files), [
             { path: "feature.txt", previousPath: null, additions: 1, deletions: 0 },
             { path: "upstream.txt", previousPath: null, additions: 1, deletions: 1 },
           ]);
@@ -2952,7 +2977,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           const preview = yield* driver.getReviewDiffPreview({ cwd });
           const changes = preview.sources.find((source) => source.kind === "branch-range")!;
           assert.strictEqual(changes.baseRef, baseRef);
-          assert.deepStrictEqual(changes.files, [
+          assert.deepStrictEqual(reviewLineStats(changes.files), [
             { path: "README.md", previousPath: null, additions: 1, deletions: 0 },
           ]);
           const scoped = yield* driver.getReviewDiffPreview({
@@ -3001,7 +3026,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
         const explicit = yield* driver.getReviewDiffPreview({ cwd, baseRef: initialBranch });
         assert.deepStrictEqual(
-          explicit.sources.find((source) => source.kind === "branch-range")!.files,
+          reviewLineStats(explicit.sources.find((source) => source.kind === "branch-range")!.files),
           [{ path: "detached.txt", previousPath: null, additions: 1, deletions: 0 }],
         );
         const implicit = yield* driver.getReviewDiffPreview({ cwd });
@@ -3031,7 +3056,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const preview = yield* driver.getReviewDiffPreview({ cwd });
         const changes = preview.sources.find((source) => source.kind === "branch-range")!;
         assert.isNull(changes.baseRef);
-        assert.deepStrictEqual(changes.files, [
+        assert.deepStrictEqual(reviewLineStats(changes.files), [
           { path: "new.txt", previousPath: null, additions: 2, deletions: 0 },
         ]);
         const status = yield* driver.statusDetailsLocal(cwd, { includeBranchChanges: true });
@@ -3062,7 +3087,9 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           if (rebase) yield* git(cwd, ["rebase", initialBranch]);
           const preview = yield* driver.getReviewDiffPreview({ cwd, baseRef: initialBranch });
           assert.deepStrictEqual(
-            preview.sources.find((source) => source.kind === "branch-range")!.files,
+            reviewLineStats(
+              preview.sources.find((source) => source.kind === "branch-range")!.files,
+            ),
             [{ path: "feature.txt", previousPath: null, additions: 1, deletions: 0 }],
           );
         }
@@ -3158,7 +3185,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         ]);
         const preview = yield* driver.getReviewDiffPreview({ cwd });
         for (const source of preview.sources) {
-          assert.deepStrictEqual(source.files, [
+          assert.deepStrictEqual(reviewLineStats(source.files), [
             {
               path: "repeated.txt",
               previousPath: null,
@@ -5883,7 +5910,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
         const preview = yield* driver.getReviewDiffPreview({ cwd: worktreePath });
         const changes = preview.sources.find((source) => source.kind === "branch-range")!;
-        assert.deepStrictEqual(changes.files, [
+        assert.deepStrictEqual(reviewLineStats(changes.files), [
           { path: "feature.txt", previousPath: null, additions: 1, deletions: 0 },
         ]);
         assert.include(changes.diff, "+feature work");
@@ -6258,7 +6285,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
         const preview = yield* driver.getReviewDiffPreview({ cwd });
         const changes = preview.sources.find((source) => source.kind === "branch-range")!;
-        assert.deepStrictEqual(changes.files, [
+        assert.deepStrictEqual(reviewLineStats(changes.files), [
           { path: "feature.txt", previousPath: null, additions: 1, deletions: 0 },
         ]);
         assert.equal(changes.baseRef, "upstream/dev");

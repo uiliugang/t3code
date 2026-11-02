@@ -6,6 +6,7 @@ import {
   buildFileDiffIdentityKey,
   buildFileDiffRenderKey,
   getDiffLineStat,
+  getDiffFileStatus,
   getRenderablePatch,
   resolveFileDiffPath,
   resolveFileDiffPreviousPath,
@@ -403,5 +404,32 @@ describe("a file whose name a patch header cannot carry plainly", () => {
 
     expect(resolveFileDiffPath(file)).toBe("new\tname.ts");
     expect(resolveFileDiffPreviousPath(file)).toBe("old\tname.ts");
+  });
+});
+
+describe("getDiffFileStatus", () => {
+  it.each([
+    { content: "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", expected: "conflict" },
+    {
+      content:
+        "<<<<<<<<<< HEAD\nours\n|||||||||| base\nbase\n==========\ntheirs\n>>>>>>>>>> branch\n",
+      expected: "conflict",
+    },
+    { content: "<<<<<<< example\njust a heading\n", expected: "addition" },
+    { content: "<<<<<<< HEAD\nours\n========\ntheirs\n>>>>>>> branch\n", expected: "addition" },
+    { content: "resolved\n", expected: "addition" },
+  ])("classifies marker regions in $content", ({ content, expected }) => {
+    const patch = getRenderablePatch(
+      `diff --git a/conflict.txt b/conflict.txt\nnew file mode 100644\n--- /dev/null\n+++ b/conflict.txt\n@@ -0,0 +1,${content.trimEnd().split("\n").length} @@\n${content
+        .trimEnd()
+        .split("\n")
+        .map((line) => `+${line}`)
+        .join("\n")}\n`,
+    );
+    if (patch?.kind !== "files") throw new Error("Expected parsed file");
+    expect(getDiffFileStatus(patch.files[0]!)).toBe(expected);
+    expect(getDiffFileStatus({ ...patch.files[0]!, type: "deleted", additionLines: [] })).toBe(
+      "deletion",
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { ApplicationConfigurationSettings } from "./ConfigurationSettings";
 import { useAtomValue } from "@effect/atom-react";
+import { DiffColorsSettings } from "./DiffColorsSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
@@ -451,7 +452,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Contrast"]
       : []),
     ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
-    ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
+    ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme ||
+    !Equal.equals(settings.diffCustomColors, DEFAULT_UNIFIED_SETTINGS.diffCustomColors)
       ? ["Diff colors"]
       : []),
     ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
@@ -644,6 +646,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     updateSettings({
       appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
       diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
+      diffCustomColors: DEFAULT_UNIFIED_SETTINGS.diffCustomColors,
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
       mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
@@ -1299,60 +1302,6 @@ export function ChatSettingsPanel() {
   );
 }
 
-function DiffColorsSettingsRow() {
-  const t = useUiTranslation();
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  return (
-    <SettingsRow
-      {...searchableSetting("diff-color-scheme")}
-      description="Choose colors for additions and deletions, including change counts."
-      resetAction={
-        settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme ? (
-          <SettingResetButton
-            label={t("diff colors")}
-            onClick={() =>
-              updateSettings({ diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme })
-            }
-          />
-        ) : null
-      }
-      control={
-        <div className="w-full sm:w-40">
-          <Select
-            value={settings.diffColorScheme}
-            onValueChange={(value) => {
-              if (value === "red-green" || value === "blue-orange")
-                updateSettings({ diffColorScheme: value });
-            }}
-          >
-            <SelectTrigger size="sm" className="w-full min-w-0" aria-label={t("Diff colors")}>
-              <span
-                aria-hidden="true"
-                className={
-                  settings.diffColorScheme === "blue-orange"
-                    ? "flex shrink-0 flex-row-reverse gap-1"
-                    : "flex shrink-0 gap-1"
-                }
-              >
-                <span className="size-2 rounded-full bg-diff-deletion" />
-                <span className="size-2 rounded-full bg-diff-addition" />
-              </span>
-              <SelectValue>
-                {settings.diffColorScheme === "blue-orange" ? t("Blue & orange") : t("Red & green")}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem value="red-green">{t("Red & green (default)")}</SelectItem>
-              <SelectItem value="blue-orange">{t("Blue & orange")}</SelectItem>
-            </SelectPopup>
-          </Select>
-        </div>
-      }
-    />
-  );
-}
-
 export function DiffsSettingsPanel() {
   const t = useUiTranslation();
   const settings = useScopedSettings();
@@ -1422,7 +1371,7 @@ export function DiffsSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("default-diff-file-state")}
-          description="Start with files expanded or collapsed when opening diffs or a pull request's Code tab."
+          description="Preview one file at a time in Changes. This setting controls the initial file state in pull requests."
           resetAction={
             settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed ? (
               <SettingResetButton
@@ -1464,7 +1413,7 @@ export function DiffsSettingsPanel() {
             </Select>
           }
         />
-        <DiffColorsSettingsRow />
+        <DiffColorsSettings />
       </SettingsSection>
 
       <SettingsSection id="pull-requests" title="Pull requests">

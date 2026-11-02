@@ -195,6 +195,23 @@ export function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
   return fileDiff.name ?? fileDiff.prevName ?? "";
 }
 
+export function getDiffFileStatus(file: FileDiffMetadata) {
+  let markerSize = 0;
+  let separator = false;
+  for (const line of file.additionLines ?? []) {
+    const start = /^(<{7,}) /.exec(line);
+    if (start) {
+      markerSize = start[1]!.length;
+      separator = false;
+    } else if (markerSize > 0 && line.trimEnd() === "=".repeat(markerSize)) {
+      separator = true;
+    } else if (separator && line.startsWith(`${">".repeat(markerSize)} `)) {
+      return "conflict" as const;
+    }
+  }
+  return file.type === "new" ? "addition" : file.type === "deleted" ? "deletion" : "modified";
+}
+
 export function resolveFileDiffPreviousPath(fileDiff: FileDiffMetadata): string {
   return fileDiff.prevName ?? fileDiff.name ?? "";
 }
@@ -294,14 +311,8 @@ export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
   );
   --diffs-bg-buffer-override: color-mix(in srgb, var(--code-background) 90%, var(--code-foreground));
 
-  --diffs-bg-addition-override: light-dark(
-    color-mix(in srgb, var(--code-background) 50%, var(--diff-addition)),
-    color-mix(in srgb, var(--code-background) 70%, var(--diff-addition))
-  );
-  --diffs-bg-addition-number-override: light-dark(
-    color-mix(in srgb, var(--code-background) 35%, var(--diff-addition)),
-    color-mix(in srgb, var(--code-background) 60%, var(--diff-addition))
-  );
+  --diffs-bg-addition-override: var(--diff-addition);
+  --diffs-bg-addition-number-override: var(--diff-addition);
   --diffs-bg-addition-hover-override: color-mix(in srgb, var(--code-background) 85%, var(--diff-addition));
   --diffs-bg-addition-emphasis-override: color-mix(
     in srgb,
@@ -309,14 +320,8 @@ export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
     var(--diff-addition)
   );
 
-  --diffs-bg-deletion-override: light-dark(
-    color-mix(in srgb, var(--code-background) 50%, var(--diff-deletion)),
-    color-mix(in srgb, var(--code-background) 70%, var(--diff-deletion))
-  );
-  --diffs-bg-deletion-number-override: light-dark(
-    color-mix(in srgb, var(--code-background) 35%, var(--diff-deletion)),
-    color-mix(in srgb, var(--code-background) 60%, var(--diff-deletion))
-  );
+  --diffs-bg-deletion-override: var(--diff-deletion);
+  --diffs-bg-deletion-number-override: var(--diff-deletion);
   --diffs-bg-deletion-hover-override: color-mix(
     in srgb,
     var(--code-background) 85%,
@@ -340,9 +345,8 @@ export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
   ) !important;
 }
 [data-change-icon="deleted"] {
-  color: light-dark(var(--diff-deletion-foreground), var(--diffs-deletion-base)) !important;
+  color: var(--diff-deletion-foreground) !important;
 }
-/* The page sets --diff-modified-icon to a muted T3 blue, so the common case stays quiet. */
 [data-change-icon="change"],
 [data-change-icon="rename-pure"],
 [data-change-icon="rename-changed"] {

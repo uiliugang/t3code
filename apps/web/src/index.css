@@ -1277,29 +1277,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
-/* Modified files get a muted blue so added and deleted files lead. Built from the info token,
-   which themes do not override, so it stays blue in every theme. */
-:root {
-  --diff-modified-icon: color-mix(in srgb, var(--info-foreground) 50%, var(--muted-foreground));
-
-  @variant dark {
-    /* On black a gray mix stays as bright as the blue, so dim with transparency instead. */
-    --diff-modified-icon: color-mix(in srgb, var(--info-foreground) 65%, transparent);
-    --diff-added-icon: var(--success-foreground);
-  }
-}
-
-/* Blue-orange already spends blue on additions. Same specificity as the dark block above and
-   later, so it wins there too. */
-:root[data-diff-color-scheme="blue-orange"] {
-  --diff-modified-icon: var(--muted-foreground);
-  --diff-added-icon: initial;
-
-  @variant dark {
-    --diff-modified-icon: color-mix(in srgb, var(--muted-foreground) 65%, transparent);
-  }
-}
-
 /* Sections in the provider detail pane sit flat in its card instead of nesting cards inside
    it. Headings and row dividers still separate them. */
 [data-provider-detail] [data-slot="settings-group"] {
@@ -2271,10 +2248,41 @@ code {
 }
 
 :root {
-  --diff-addition: var(--success);
-  --diff-deletion: var(--destructive);
-  --diff-addition-foreground: light-dark(var(--color-emerald-700), var(--color-emerald-400));
-  --diff-deletion-foreground: light-dark(var(--color-red-700), var(--color-red-400));
+  --diff-addition: #16a34a;
+  --diff-deletion: #dc2626;
+  --diff-modified: #2563eb;
+  --diff-conflict: #d97706;
+  --diff-addition-foreground: light-dark(
+    color-mix(in srgb, var(--diff-addition) 75%, black),
+    color-mix(in srgb, var(--diff-addition) 65%, white)
+  );
+  --diff-deletion-foreground: light-dark(
+    color-mix(in srgb, var(--diff-deletion) 85%, black),
+    color-mix(in srgb, var(--diff-deletion) 65%, white)
+  );
+  --diff-modified-foreground: light-dark(
+    color-mix(in srgb, var(--diff-modified) 85%, black),
+    color-mix(in srgb, var(--diff-modified) 65%, white)
+  );
+  --diff-conflict-foreground: light-dark(
+    color-mix(in srgb, var(--diff-conflict) 75%, black),
+    color-mix(in srgb, var(--diff-conflict) 65%, white)
+  );
+  --diff-added-icon: var(--diff-addition-foreground);
+  --diff-modified-icon: var(--diff-modified-foreground);
+  --diffs-addition-color-override: var(--diff-addition-foreground);
+  --diffs-deletion-color-override: var(--diff-deletion-foreground);
+  --diffs-modified-color-override: var(--diff-modified-foreground);
+  --trees-status-added-override: var(--diff-addition-foreground);
+  --trees-status-deleted-override: var(--diff-deletion-foreground);
+  --trees-status-modified-override: var(--diff-modified-foreground);
+  --trees-status-renamed-override: var(--diff-modified-foreground);
+  --trees-status-untracked-override: var(--diff-addition-foreground);
+  --trees-git-added-color-override: var(--diff-addition-foreground);
+  --trees-git-deleted-color-override: var(--diff-deletion-foreground);
+  --trees-git-modified-color-override: var(--diff-modified-foreground);
+  --trees-git-renamed-color-override: var(--diff-modified-foreground);
+  --trees-git-untracked-color-override: var(--diff-addition-foreground);
 }
 
 /* Chat width setting. Comfortable keeps the default --chat-content-max-width,
@@ -2285,21 +2293,6 @@ code {
 
 :root[data-chat-width="full"] {
   --chat-content-max-width: 100%;
-}
-
-:root[data-diff-color-scheme="blue-orange"] {
-  --diff-addition: light-dark(var(--color-blue-600), var(--color-blue-400));
-  --diff-deletion: light-dark(var(--color-orange-600), var(--color-orange-400));
-  --diff-addition-foreground: var(--diff-addition);
-  --diff-deletion-foreground: var(--diff-deletion);
-  --diffs-addition-color-override: var(--diff-addition);
-  --diffs-deletion-color-override: var(--diff-deletion);
-  --trees-status-added-override: var(--diff-addition);
-  --trees-status-deleted-override: var(--diff-deletion);
-  --trees-status-untracked-override: var(--diff-addition);
-  --trees-git-added-color-override: var(--diff-addition);
-  --trees-git-deleted-color-override: var(--diff-deletion);
-  --trees-git-untracked-color-override: var(--diff-addition);
 }
 
 .diff-render-surface diffs-container {
