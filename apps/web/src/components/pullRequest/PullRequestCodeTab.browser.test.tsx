@@ -6,6 +6,7 @@ import {
   type PullRequestDiffResult,
 } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
@@ -189,6 +190,18 @@ it("scrolls to a file asked for as the tab opens", async () => {
   const container = pagedContainer();
   await using screen = await render(tab(0, { path: "early-39.ts", nonce: 1 }), { container });
 
+  await expectFileHeaderShown(screen, container, "early-39.ts");
+  await vi.waitFor(() => {
+    const titles = [...container.querySelectorAll("diffs-container")].flatMap((element) =>
+      [...(element.shadowRoot?.querySelectorAll("[data-title]") ?? [])].map(
+        (title) => title.textContent,
+      ),
+    );
+    expect(titles).toEqual(["early-39.ts"]);
+  });
+  await userEvent.click(screen.getByRole("treeitem", { name: "early-38.ts", exact: true }));
+  await expectFileHeaderShown(screen, container, "early-38.ts");
+  await screen.rerender(tab(0, { path: "early-39.ts", nonce: 2 }));
   await expectFileHeaderShown(screen, container, "early-39.ts");
 });
 
