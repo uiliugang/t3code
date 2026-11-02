@@ -270,19 +270,29 @@ it("previews the first file, switches from the tree, and falls back when the fil
     );
   setFiles(["a.ts", "b.ts"]);
   localStorage.removeItem("t3code.diffFileTreeOpen");
+  localStorage.setItem("t3code.diffHideTestFiles", "true");
+  localStorage.removeItem("t3code.diffHideMarkdownFiles");
   await using screen = await render(
     <RegistryContext.Provider value={context.registry}>
       <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
     </RegistryContext.Provider>,
   );
   await expect.element(screen.getByText("a.ts:expanded", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Filter files", exact: true }));
+  const legacyTestFilter = page.getByRole("menuitemcheckbox", {
+    name: "Hide test files",
+    exact: true,
+  });
+  await expect.element(legacyTestFilter).toHaveAttribute("aria-checked", "true");
+  await userEvent.click(legacyTestFilter);
+  await userEvent.keyboard("{Escape}");
   await expect.element(screen.getByText("b.ts:expanded", { exact: true })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "b.ts", exact: true }));
   await expect.element(screen.getByText("b.ts:expanded", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("a.ts:expanded", { exact: true })).not.toBeInTheDocument();
   setFiles(["a.ts"]);
   await expect.element(screen.getByText("a.ts:expanded", { exact: true })).toBeVisible();
-  const paths = ["a0.test.ts", "a1.test.ts", "a2.test.ts", "a3.test.ts", "z.ts"];
+  const paths = ["a0.test.ts", "a1.test.ts", "a2.test.ts", "a3.test.ts", "guide.MD", "z.ts"];
   const source = {
     ...result.sources[0]!,
     diffHash: "large-preview",
@@ -297,7 +307,20 @@ it("previews the first file, switches from the tree, and falls back when the fil
   }
   context.registry.set(previewAtom, AsyncResult.success({ ...result, sources: [source] }));
   await expect.element(screen.getByText("a0.test.ts:expanded", { exact: true })).toBeVisible();
-  await userEvent.click(screen.getByRole("button", { name: "Hide test files", exact: true }));
+  const toggleFilter = async (name: string) => {
+    await userEvent.click(screen.getByRole("button", { name: "Filter files", exact: true }));
+    await userEvent.click(page.getByRole("menuitemcheckbox", { name, exact: true }));
+    await userEvent.keyboard("{Escape}");
+  };
+  await toggleFilter("Hide test files");
+  await expect.element(screen.getByText("guide.MD:expanded", { exact: true })).toBeVisible();
+  await toggleFilter("Hide .md files");
   await expect.element(screen.getByText("z.ts:expanded", { exact: true })).toBeVisible();
-  await userEvent.click(screen.getByRole("button", { name: "Hide test files", exact: true }));
+  await expect
+    .element(screen.getByRole("button", { name: "guide.MD", exact: true }))
+    .not.toBeInTheDocument();
+  setFiles(["guide.MD", "a0.test.ts"]);
+  await expect.element(screen.getByText("All files are hidden by filters.")).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Show all files", exact: true }));
+  await expect.element(screen.getByText("a0.test.ts:expanded", { exact: true })).toBeVisible();
 });

@@ -14,7 +14,6 @@ import {
   CheckIcon,
   ChevronDownIcon,
   Columns2Icon,
-  FlaskConicalOffIcon,
   FolderTreeIcon,
   PilcrowIcon,
   Rows3Icon,
@@ -41,8 +40,8 @@ import {
   useDiffPanelStore,
 } from "../diffPanelStore";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
-import { useHideTestFiles } from "./diffs/useHideTestFiles";
+import { useDiffFileFilters } from "./diffs/useDiffFileFilters";
+import { DiffFileFilterMenu } from "./diffs/DiffFileFilterMenu";
 import { useRenderedAppearance } from "../hooks/useTheme";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
@@ -247,7 +246,7 @@ export default function DiffPanel({
     true,
     Schema.Boolean,
   );
-  const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
+  const fileFilters = useDiffFileFilters();
   const [baseRefQuery, setBaseRefQuery] = useState("");
   // The open commit menu keeps the list it opened with, so rows do not move under the pointer.
   const [openCommitMenu, setOpenCommitMenu] = useState<ReviewBranchCommitsResult | null>(null);
@@ -672,14 +671,9 @@ export default function DiffPanel({
 
   const isRefreshingDiff = branchDiffPreview.isPending || areFilePatchesPending;
   const renderableFileEntries = renderableFiles.map(getCachedFileEntry);
-  const testFileCount = renderableFiles.filter((file) =>
-    isTestChangedFile(resolveFileDiffPath(file)),
-  ).length;
   // Hiding is display-only: lazy loading indexes into the full list. A requested file stays visible.
-  const isFileShown = (file: FileDiffMetadata) => {
-    const path = resolveFileDiffPath(file);
-    return !hideTestFiles || path === selectedFilePath || !isTestChangedFile(path);
-  };
+  const isFileShown = (file: FileDiffMetadata) =>
+    fileFilters.isFileVisible(resolveFileDiffPath(file), selectedFilePath);
   const shownFileEntries = renderableFileEntries.filter(({ fileDiff }) => isFileShown(fileDiff));
   const previewFilePath =
     previewSelection?.scope === collapseScopeKey &&
@@ -1288,28 +1282,7 @@ export default function DiffPanel({
             {diffIgnoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}
           </TooltipPopup>
         </Tooltip>
-        {testFileCount > 0 && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  aria-label="Hide test files"
-                  variant="ghost"
-                  size="sm"
-                  pressed={hideTestFiles}
-                  onPressedChange={(pressed) => setHideTestFiles(Boolean(pressed))}
-                />
-              }
-            >
-              <FlaskConicalOffIcon className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {hideTestFiles
-                ? `Show ${testFileCount} hidden test ${testFileCount === 1 ? "file" : "files"}`
-                : "Hide test files"}
-            </TooltipPopup>
-          </Tooltip>
-        )}
+        <DiffFileFilterMenu filters={fileFilters} />
         {renderableFileEntries.length > 0 && (
           <Tooltip>
             <TooltipTrigger
@@ -1472,7 +1445,14 @@ export default function DiffPanel({
                     );
                   }}
                 >
-                  {pendingFiles.length > 0 && codeViewFiles.length === 0 ? (
+                  {shownFileEntries.length === 0 && renderableFileEntries.length > 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-xs text-muted-foreground">
+                      <p>{t("All files are hidden by filters.")}</p>
+                      <Button size="xs" variant="link" onClick={fileFilters.clear}>
+                        {t("Show all files")}
+                      </Button>
+                    </div>
+                  ) : pendingFiles.length > 0 && codeViewFiles.length === 0 ? (
                     <DiffPanelLoadingState label={t("Loading file diff...")} />
                   ) : (
                     <AnnotatableCodeView

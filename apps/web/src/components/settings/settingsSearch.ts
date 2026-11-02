@@ -143,8 +143,8 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: "Code",
     paths: [
       "/settings/projects",
-      "/settings/diffs",
       "/settings/source-control",
+      "/settings/diffs",
       "/settings/worktrees",
     ],
   },

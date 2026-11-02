@@ -21,7 +21,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   Columns2Icon,
-  FlaskConicalOffIcon,
   FolderTreeIcon,
   InfoIcon,
   MessageSquareOffIcon,
@@ -54,7 +53,6 @@ import {
   canEditPullRequestComment,
   canResolvePullRequestThread,
 } from "@t3tools/client-runtime/pull-request-editing";
-import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
 import { orderDiffFiles } from "./pullRequestFileOrder.logic";
 import {
   buildFileDiffRenderKey,
@@ -84,7 +82,8 @@ import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { DiffFileTree } from "../diffs/DiffFileTree";
 import { FileExplorerPane } from "../files/FileExplorerPane";
 import { useCodeViewFileReveal } from "../diffs/useCodeViewFileReveal";
-import { useHideTestFiles } from "../diffs/useHideTestFiles";
+import { useDiffFileFilters } from "../diffs/useDiffFileFilters";
+import { DiffFileFilterMenu } from "../diffs/DiffFileFilterMenu";
 import { diffFileTreeEntries, orderDiffFilesLikeTree } from "../diffs/diffFileTree.logic";
 import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
 import { Button } from "../ui/button";
@@ -315,7 +314,7 @@ function PullRequestCodeTab({
     false,
     Schema.Boolean,
   );
-  const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
+  const fileFilters = useDiffFileFilters();
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
     range: SelectedLineRange;
@@ -510,17 +509,10 @@ function PullRequestCodeTab({
       parsed?.kind === "files" ? orderDiffFiles(parsed.files) : [],
     ),
   );
-  const testFileCount = loadedFiles.filter((file) =>
-    isTestChangedFile(resolveFileDiffPath(file)),
-  ).length;
-  // A requested file stays visible so a jump to a hidden test still lands.
-  const files = hideTestFiles
-    ? loadedFiles.filter((file) => {
-        const path = resolveFileDiffPath(file);
-        return path === revealRequest?.path || !isTestChangedFile(path);
-      })
-    : loadedFiles;
-  const hiddenTestFileCount = loadedFiles.length - files.length;
+  const files = loadedFiles.filter((file) =>
+    fileFilters.isFileVisible(resolveFileDiffPath(file), revealRequest?.path),
+  );
+  const hiddenFileCount = loadedFiles.length - files.length;
   const filePaths = files.map((file) => resolveFileDiffPath(file));
   const omittedFileStats = new Map(
     loadedSlices.flatMap((slice) =>
@@ -1095,9 +1087,11 @@ function PullRequestCodeTab({
             {t(files.length === 1 ? "{count} file" : "{count} files", { count: files.length })}
             {nextCursor === null ? "" : "+"}
           </span>
-          {hiddenTestFileCount > 0 ? (
-            <Button type="button" size="xs" variant="link" onClick={() => setHideTestFiles(false)}>
-              {hiddenTestFileCount} test {hiddenTestFileCount === 1 ? "file" : "files"} hidden
+          {hiddenFileCount > 0 ? (
+            <Button type="button" size="xs" variant="link" onClick={fileFilters.clear}>
+              {t(hiddenFileCount === 1 ? "{count} file hidden" : "{count} files hidden", {
+                count: hiddenFileCount,
+              })}
             </Button>
           ) : null}
           {filesViewed.enabled && files.length > 0 ? (
@@ -1323,26 +1317,7 @@ function PullRequestCodeTab({
             </TooltipPopup>
           </Tooltip>
         ) : null}
-        {testFileCount > 0 ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  aria-label="Hide test files"
-                  variant="ghost"
-                  size="sm"
-                  pressed={hideTestFiles}
-                  onPressedChange={(pressed) => setHideTestFiles(Boolean(pressed))}
-                />
-              }
-            >
-              <FlaskConicalOffIcon className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {hideTestFiles ? "Show test files" : "Hide test files"}
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
+        <DiffFileFilterMenu filters={fileFilters} />
         {fileKeys.length > 0 ? (
           <Tooltip>
             <TooltipTrigger
@@ -1417,9 +1392,11 @@ function PullRequestCodeTab({
   if (items.length === 0 && nextCursor === null) {
     return withToolbar(
       <p className="px-4 py-5 text-sm text-muted-foreground">
-        {commit === null
-          ? t("This {term} has no file changes.", { term: t(term) })
-          : t("This commit has no file changes.")}
+        {hiddenFileCount > 0
+          ? t("All files are hidden by filters.")
+          : commit === null
+            ? t("This {term} has no file changes.", { term: t(term) })
+            : t("This commit has no file changes.")}
       </p>,
     );
   }
