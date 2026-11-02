@@ -39,7 +39,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
       .newWorktreesMainBranchOnly;
   const liveRepository = useThreadRepository();
   const [resourceId] = useState(liveRepository.selectionTarget);
-  const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree(resourceId);
+  const { selectedThreadCwd } = useSelectedThreadWorktree(resourceId);
   const gitState = useSelectedThreadGitState(resourceId);
   const gitActions = useSelectedThreadGitActions(resourceId);
   const { canChangeThreadBranch } = gitActions;
@@ -54,19 +54,20 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   );
 
   const currentBranchLabel = gitStatus.data?.refName ?? selectedThread?.branch ?? "Detached HEAD";
-  const currentWorktreePath = selectedThreadWorktreePath;
+  const currentWorktreePath = selectedThreadCwd;
   const availableBranches = gitState.selectedThreadBranches;
   const branchesLoading = gitState.selectedThreadBranchesLoading;
   const busy = gitState.gitOperationLabel !== null;
 
   const [newBranchName, setNewBranchName] = useState("");
-  const [worktreeBaseBranch, setWorktreeBaseBranch] = useState(
-    mainBranchOnly
+  const [worktreeBaseBranchOverride, setWorktreeBaseBranchOverride] = useState<string | null>(null);
+  const worktreeBaseBranch =
+    worktreeBaseBranchOverride ??
+    (mainBranchOnly
       ? (availableBranches.find((branch) => isMainOrMasterBranch(branch.name))?.name ?? "main")
       : currentBranchLabel === "Detached HEAD"
         ? "main"
-        : currentBranchLabel,
-  );
+        : currentBranchLabel);
   const [worktreeBranchName, setWorktreeBranchName] = useState("");
 
   return (
@@ -148,7 +149,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
             ) : null}
             <TextInput
               value={worktreeBaseBranch}
-              onChangeText={setWorktreeBaseBranch}
+              onChangeText={setWorktreeBaseBranchOverride}
               placeholder="main"
               accessibilityLabel="Worktree base branch"
               className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"

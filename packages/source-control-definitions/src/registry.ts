@@ -29,7 +29,11 @@ export const knownSourceControlDefinitions = makeSourceControlDefinitionRegistry
     Meituan.definition,
   ],
   {
-    claimChangeRequestUrlsFirst: [GitCafe.definition.kind, Meituan.definition.kind],
+    claimChangeRequestUrlsFirst: [
+      GitCafe.definition.kind,
+      Meituan.definition.kind,
+      AzureDevOps.definition.kind,
+    ],
     recognizeRemotesIn: [
       Meituan.definition.kind,
       GitCafe.definition.kind,

@@ -1,3 +1,4 @@
+import "~/index.css";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";

@@ -59,33 +59,31 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
   const save = async () => {
     if (!allowed || saving || !valid) return;
     setSaving(true);
-    try {
-      const primary = roots.find((root) => root.id === primaryRootId)!;
-      const result = await update({
-        environmentId: project.environmentId,
-        input: {
-          projectId: project.id,
-          workspaceRoot: primary.sourcePath,
-          workspaceConfig: { primaryRootId, roots },
-          expectedWorkspaceVersion: editingVersion,
-        },
-      });
-      setSaved(result._tag === "Success");
-      if (result._tag === "Success") {
-        setEditingVersion((version) => version + 1);
-        toastManager.add({ type: "success", title: t("Repositories saved") });
-      } else if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: t("Failed to save repositories"),
-            description: t(error instanceof Error ? error.message : "An error occurred."),
-          }),
-        );
-      }
-    } finally {
+    const primary = roots.find((root) => root.id === primaryRootId)!;
+    const result = await update({
+      environmentId: project.environmentId,
+      input: {
+        projectId: project.id,
+        workspaceRoot: primary.sourcePath,
+        workspaceConfig: { primaryRootId, roots },
+        expectedWorkspaceVersion: editingVersion,
+      },
+    }).finally(() => {
       setSaving(false);
+    });
+    setSaved(result._tag === "Success");
+    if (result._tag === "Success") {
+      setEditingVersion((version) => version + 1);
+      toastManager.add({ type: "success", title: t("Repositories saved") });
+    } else if (!isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: t("Failed to save repositories"),
+          description: t(error instanceof Error ? error.message : "An error occurred."),
+        }),
+      );
     }
   };
   return (

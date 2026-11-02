@@ -27,15 +27,13 @@ export function WorkspaceRecoveryControl({
   const [busy, setBusy] = useState(false);
   const run = async (action: WorkspaceRecoveryInput["action"]) => {
     setBusy(true);
-    try {
-      const result = await recover({
-        environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId, expectedRevisionId: revisionId, action },
-      });
-      if (result._tag === "Success") setReport(result.value);
-    } finally {
+    const result = await recover({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, expectedRevisionId: revisionId, action },
+    }).finally(() => {
       setBusy(false);
-    }
+    });
+    if (result._tag === "Success") setReport(result.value);
   };
   return (
     <div className="px-3 py-2">

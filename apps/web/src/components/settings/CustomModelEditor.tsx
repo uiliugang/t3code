@@ -300,6 +300,7 @@ export function CustomModelEditor({
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
+          event.stopPropagation();
           onCancel();
         }
       }}

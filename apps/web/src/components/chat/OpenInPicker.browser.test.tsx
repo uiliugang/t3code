@@ -280,6 +280,7 @@ it.each([null, "/work/project-worktree"])(
         onAddProjectScript={async () => AsyncResult.success(undefined)}
         onUpdateProjectScript={async () => AsyncResult.success(undefined)}
         onDeleteProjectScript={async () => AsyncResult.success(undefined)}
+        usage={{ providerInstanceId: null, providers: [], sources: [], contextWindow: null }}
       />
     );
     await fixture.screen.rerender(panel(true));
@@ -317,6 +318,14 @@ it.each([null, "/work/project-worktree"])(
     await fixture.screen.rerender(panel(false));
     await expect.element(page.getByRole("button", { name: "Choose editor" })).toBeVisible();
     await act(() =>
+      persistClientSettingsPatch({ threadDetailsItems: { openIn: false } }, async () => {}),
+    );
+    await expect
+      .element(page.getByRole("button", { name: "Choose editor" }))
+      .not.toBeInTheDocument();
+    await act(() => persistClientSettingsPatch({ threadDetailsItems: {} }, async () => {}));
+    await expect.element(page.getByRole("button", { name: "Choose editor" })).toBeVisible();
+    await act(() =>
       persistClientSettingsPatch({ showRepositoryTerminalButton: false }, async () => {}),
     );
     await expect
@@ -324,6 +333,19 @@ it.each([null, "/work/project-worktree"])(
       .not.toBeInTheDocument();
   },
 );
+
+describe("remote editor links", () => {
+  it("opens the link from the fallback when the picker is not mounted", async () => {
+    await using fixture = await setup();
+    const { screen, pressOpenFavorite, FavoriteEditorFallback } = fixture;
+    state.remote = { mode: "remote-links", host: { kind: "ssh-alias", host: "sol" } };
+    await act(async () => screen.rerender(<FavoriteEditorFallback />));
+
+    expect((await pressOpenFavorite()).defaultPrevented).toBe(true);
+    expect(state.openUrl).toHaveBeenCalledWith(expect.stringContaining("ssh-remote+sol"));
+    expect(state.run).not.toHaveBeenCalled();
+  });
+});
 
 describe("open in editor announcement", () => {
   it("speaks only after the shortcut opened the editor, from the picker or the fallback", async () => {

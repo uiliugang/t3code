@@ -25,6 +25,9 @@ export function RepositoryDetails({
   resource,
   openInOptions,
   showOpenInPicker,
+  showBranch = true,
+  showActions = true,
+  showChanges = true,
   expanded,
   onToggle,
   onOpenChanges,
@@ -38,6 +41,9 @@ export function RepositoryDetails({
     "keybindings" | "availableEditors" | "enableShortcut"
   >;
   showOpenInPicker: boolean;
+  showBranch?: boolean;
+  showActions?: boolean;
+  showChanges?: boolean;
   expanded: boolean;
   onToggle: () => void;
   onOpenChanges: () => void;
@@ -128,21 +134,25 @@ export function RepositoryDetails({
               }
             />
           ) : null}
-          <BranchToolbarBranchSelector
-            repository={{ target, cwd: resource.checkoutRoot }}
-            environmentId={environmentId}
-            threadId={threadId}
-            displayMode="panel"
-            envLocked
-            effectiveEnvModeOverride="worktree"
-            startFromOrigin={false}
-            onStartFromOriginChange={() => {}}
-          />
+          {showBranch ? (
+            <BranchToolbarBranchSelector
+              repository={{ target, cwd: resource.checkoutRoot }}
+              environmentId={environmentId}
+              threadId={threadId}
+              displayMode="panel"
+              envLocked
+              effectiveEnvModeOverride="worktree"
+              startFromOrigin={false}
+              onStartFromOriginChange={() => {}}
+            />
+          ) : null}
           <GitActionsControl
             key={`${workspace.id}:${resource.id}`}
             gitCwd={resource.checkoutRoot}
             activeThreadRef={{ environmentId, threadId }}
             repositoryTarget={target}
+            showActions={showActions}
+            showChanges={showChanges}
             onOpenChanges={onOpenChanges}
           />
         </div>

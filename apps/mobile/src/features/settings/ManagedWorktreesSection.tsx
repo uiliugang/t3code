@@ -109,21 +109,19 @@ function WorktreeList({
       onConfirm: () => {
         void (async () => {
           setBusy(true);
-          try {
-            const result = await remove({
-              environmentId,
-              input: {
-                targets: groups.map(({ id, fingerprint }) => ({ id, fingerprint })),
-                deleteIgnoredFiles: ignored,
-              },
-            });
-            if (result._tag === "Success") {
-              setResults(result.value);
-              setSelected(new Set());
-              query.refresh();
-            }
-          } finally {
+          const result = await remove({
+            environmentId,
+            input: {
+              targets: groups.map(({ id, fingerprint }) => ({ id, fingerprint })),
+              deleteIgnoredFiles: ignored,
+            },
+          }).finally(() => {
             setBusy(false);
+          });
+          if (result._tag === "Success") {
+            setResults(result.value);
+            setSelected(new Set());
+            query.refresh();
           }
         })();
       },
@@ -133,14 +131,12 @@ function WorktreeList({
     const thread = group.threads[0];
     if (!thread) return;
     setBusy(true);
-    try {
-      const result = await restore({ environmentId, input: { threadId: thread.id } });
-      if (result._tag === "Success") {
-        setResults((current) => current.filter((entry) => entry.id !== group.id));
-        query.refresh();
-      }
-    } finally {
+    const result = await restore({ environmentId, input: { threadId: thread.id } }).finally(() => {
       setBusy(false);
+    });
+    if (result._tag === "Success") {
+      setResults((current) => current.filter((entry) => entry.id !== group.id));
+      query.refresh();
     }
   };
   return (

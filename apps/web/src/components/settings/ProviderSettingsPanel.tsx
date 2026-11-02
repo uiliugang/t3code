@@ -85,20 +85,16 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../ui/empty";
-import {
-  NumberField,
-  NumberFieldDecrement,
-  NumberFieldGroup,
-  NumberFieldIncrement,
-  NumberFieldInput,
-} from "../ui/number-field";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { useManagedPolicy } from "~/state/managedPolicy";
 import { ExpandableText } from "./ExpandableText";
+import { IntervalSecondsField } from "./IntervalSecondsField";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
+import { useSecretSources } from "./SecretSourceInput";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
@@ -111,7 +107,6 @@ import {
   backgroundActivityOverrideSettings,
   buildProviderInstanceUpdatePatch,
   durationToSeconds,
-  normalizeIntervalSeconds,
   PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
 import {
@@ -555,6 +550,10 @@ export function EnvironmentProviderSettings({
 }) {
   const t = useUiTranslation();
   const settings = useEnvironmentSettings(environmentId);
+  const managedPolicy = useManagedPolicy(environmentId);
+  // A policy that allows no provider leaves nothing to add.
+  const canAddProvider =
+    !readOnly && managedPolicy?.limits?.providers?.allowedDrivers?.length !== 0;
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const canRefreshProviders = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
@@ -643,7 +642,7 @@ export function EnvironmentProviderSettings({
     void (async () => {
       const result = await refreshServerProviders({
         environmentId,
-        input: { refreshModels: true },
+        input: { refreshModels: true, reloadSecrets: true },
       });
       refreshingRef.current = false;
       setIsRefreshingProviders(false);
@@ -969,7 +968,7 @@ export function EnvironmentProviderSettings({
         {...searchableSetting("providers")}
         variant="plain"
         titleAction={
-          !readOnly ? (
+          canAddProvider ? (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1044,7 +1043,7 @@ export function EnvironmentProviderSettings({
             >
               <div className="divide-y divide-border/50">
                 {rows.map((row) => renderProviderInstance(row, "list"))}
-                {!readOnly ? (
+                {canAddProvider ? (
                   <button
                     type="button"
                     className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
@@ -1130,32 +1129,22 @@ export function EnvironmentProviderSettings({
                 !canWriteSettings && "opacity-50 select-none",
               )}
             >
-              <NumberField
+              <IntervalSecondsField
+                label="provider health check interval"
                 value={providerHealthRefreshIntervalSeconds}
                 min={0}
                 step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
-                size="sm"
-                className="w-32"
-                onValueChange={(value) =>
+                onCommit={(seconds, options) =>
                   updateSettings(
                     backgroundActivityOverrideSettings(
                       settings.backgroundActivity,
                       resolvedBackgroundActivity,
-                      {
-                        providerHealthRefreshInterval: Duration.seconds(
-                          normalizeIntervalSeconds(value),
-                        ),
-                      },
+                      { providerHealthRefreshInterval: Duration.seconds(seconds) },
                     ),
+                    options,
                   )
                 }
-              >
-                <NumberFieldGroup>
-                  <NumberFieldDecrement aria-label={t("Decrease provider health check interval")} />
-                  <NumberFieldInput aria-label={t("Provider health check interval in seconds")} />
-                  <NumberFieldIncrement aria-label={t("Increase provider health check interval")} />
-                </NumberFieldGroup>
-              </NumberField>
+              />
               <span className="text-xs text-muted-foreground">{t("seconds")}</span>
             </div>
           }
@@ -1265,36 +1254,35 @@ function ProviderInstanceRow({
       return;
     syncingRef.current = true;
     setIsSyncingModels(true);
-    try {
-      const result = await refreshServerProviders({
-        environmentId,
-        input: { instanceId, refreshModels: true },
+    const result = await refreshServerProviders({
+      environmentId,
+      input: { instanceId, refreshModels: true },
+    }).finally(() => {
+      syncingRef.current = false;
+      setIsSyncingModels(false);
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Could not sync models",
+        description: error instanceof Error ? error.message : "The model sync failed.",
       });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
+    } else if (result._tag === "Success") {
+      const provider = result.value.providers.find(
+        (candidate) => candidate.instanceId === instanceId,
+      );
+      if (provider?.status !== "ready" && provider?.message) {
         toastManager.add({
           type: "error",
           title: "Could not sync models",
-          description: error instanceof Error ? error.message : "The model sync failed.",
+          description: provider.message,
         });
-      } else if (result._tag === "Success") {
-        const provider = result.value.providers.find(
-          (candidate) => candidate.instanceId === instanceId,
-        );
-        if (provider?.status !== "ready" && provider?.message) {
-          toastManager.add({
-            type: "error",
-            title: "Could not sync models",
-            description: provider.message,
-          });
-        }
       }
-    } finally {
-      syncingRef.current = false;
-      setIsSyncingModels(false);
     }
   };
   const allProjects = useProjects();
+  const secretSources = useSecretSources(environmentId);
   const acpProjects =
     mode === "editor" && liveProvider?.driver === "acpRegistry"
       ? allProjects.filter((project) => project.environmentId === environmentId)
@@ -1333,6 +1321,7 @@ function ProviderInstanceRow({
   return (
     <ProviderInstanceCard
       environmentId={environmentId}
+      secretSources={secretSources}
       acpProjects={acpProjects}
       projectOverride={projectOverride}
       onAcceptUrlAuth={
