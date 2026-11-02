@@ -1,4 +1,6 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+import * as Effect from "effect/Effect";
+import { makeProviderSettingsSchema, SourceControlProviderKind } from "@t3tools/contracts";
 import {
   defineSourceControl,
   isChangeRequestInProjectRepository,
@@ -50,9 +52,20 @@ export function parsePullRequestUrl(value: string) {
     : null;
 }
 
+export const settings = makeProviderSettingsSchema({
+  mis: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+});
+
+export function readMis(fields: Readonly<Record<string, unknown>> | undefined): string {
+  const mis = typeof fields?.mis === "string" ? fields.mis.trim() : "";
+  return /^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/u.test(mis) ? mis : "";
+}
+
 export const definition = defineSourceControl({
   kind: KIND,
   label: "Meituan Code",
+  settings,
+  searchKeywords: ["mis", "daxiang", "authorization", "授权", "大象"],
   pickerLabel: "Meituan Code",
   icon: {
     viewBox: "0 0 24 24",

@@ -152,7 +152,8 @@ export function SourceControlAppSignInSettings({
     if (result._tag === "Success") onChanged();
   };
 
-  const waiting = !signedIn && state.status === "waiting" ? state.prompt : null;
+  const waiting =
+    !signedIn && state.status === "waiting" && "userCode" in state.prompt ? state.prompt : null;
 
   let subtitle: ReactNode;
   let action: ReactNode;

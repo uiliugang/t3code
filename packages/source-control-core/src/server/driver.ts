@@ -29,7 +29,7 @@ export interface SourceControlMediaRequest {
 
 /** The server side of a definition's `credentials.appSignIn`. */
 export interface SourceControlSignIn {
-  /** Replaces any sign-in already pending for `host`; the driver finishes it on its own. */
+  /** Starts or resumes a sign-in for `host`; the driver finishes it on its own. */
   readonly start: (
     host: string,
   ) => Effect.Effect<SourceControlSignInPrompt, SourceControlSignInError>;

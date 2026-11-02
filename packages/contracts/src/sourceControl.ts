@@ -157,6 +157,12 @@ export const SourceControlProviderDiscoveryItem = Schema.Struct({
   auth: SourceControlProviderAuth,
   /** The server is configured to sign in through the host's app; clients offer it only then. */
   appSignIn: Schema.optionalKey(Schema.Boolean),
+  authorization: Schema.optionalKey(
+    Schema.Struct({
+      status: Schema.Literals(["idle", "pending", "succeeded", "failed"]),
+      detail: Schema.optionalKey(Schema.String),
+    }),
+  ),
 });
 export type SourceControlProviderDiscoveryItem = typeof SourceControlProviderDiscoveryItem.Type;
 
@@ -190,12 +196,18 @@ export const SourceControlSignInInput = Schema.Struct({
 });
 export type SourceControlSignInInput = typeof SourceControlSignInInput.Type;
 
-/** A device-flow code the user enters at `verificationUri` in any browser. */
-export const SourceControlSignInPrompt = Schema.Struct({
-  userCode: TrimmedNonEmptyString,
-  verificationUri: TrimmedNonEmptyString,
-  expiresAt: Schema.Number,
-});
+export const SourceControlSignInPrompt = Schema.Union([
+  Schema.Struct({
+    userCode: TrimmedNonEmptyString,
+    verificationUri: TrimmedNonEmptyString,
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    delivery: Schema.Literal("daxiang"),
+    mis: TrimmedNonEmptyString,
+    expiresAt: Schema.Number,
+  }),
+]);
 export type SourceControlSignInPrompt = typeof SourceControlSignInPrompt.Type;
 
 export const SourceControlSignInResult = Schema.Struct({

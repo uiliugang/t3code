@@ -11,6 +11,8 @@ import * as GitHub from "@t3tools/source-control-github/shared/definition";
 import * as GitLab from "@t3tools/source-control-gitlab/shared/definition";
 import * as Meituan from "@t3tools/source-control-meituan/shared/definition";
 
+export { readMis as readMeituanCodeMis } from "@t3tools/source-control-meituan/shared/definition";
+
 export { canonicalizePullRequestUrl as canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-gitcafe/shared/definition";
 
 /**

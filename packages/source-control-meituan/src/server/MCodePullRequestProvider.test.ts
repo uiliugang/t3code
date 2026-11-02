@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Layer from "effect/Layer";
 import * as TestHost from "@t3tools/source-control-testing/TestSourceControlHost";
@@ -14,6 +15,22 @@ const layerFor = (run: SourceControlHost.SourceControlHost["Service"]["process"]
 
 describe("Meituan pull requests", () => {
   it("does not treat cached offline authentication as verified", () => {
+    expect(
+      MCodeCli.parseMCodeAuth(
+        TestHost.processOutput("", {
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stderr: "error: fetch failed",
+        }),
+      ).status,
+    ).toBe("unknown");
+    expect(
+      MCodeCli.parseMCodeAuth(
+        TestHost.processOutput("", {
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stderr: "error: no token found. Run code-cli auth login",
+        }),
+      ).status,
+    ).toBe("unauthenticated");
     expect(
       MCodeCli.parseMCodeAuth(
         TestHost.processOutput("Logged in to http://git.sankuai.com as user (via CLI, offline)"),
