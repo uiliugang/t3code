@@ -392,6 +392,7 @@ export const ClientSettingsSchema = Schema.Struct({
   showRepositoryTerminalButton: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  showTerminalDrawerButton: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   effortDisplay: EffortDisplay.pipe(Schema.withDecodingDefault(Effect.succeed("label" as const))),
   loadBalancingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   loadBalancingWeights: LoadBalancingWeights.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -1804,6 +1805,7 @@ export const ClientSettingsPatch = Schema.Struct({
   showGroupIcons: Schema.optionalKey(Schema.Boolean),
   capitalizeProjectNames: Schema.optionalKey(Schema.Boolean),
   showRepositoryTerminalButton: Schema.optionalKey(Schema.Boolean),
+  showTerminalDrawerButton: Schema.optionalKey(Schema.Boolean),
   effortDisplay: Schema.optionalKey(EffortDisplay),
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
   loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),

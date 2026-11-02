@@ -27,22 +27,23 @@ export function usePreviewPanelInlineSize(
 ): PreviewPanelInlineSize {
   const enabled = options.enabled ?? true;
   const container = options.container;
-  const [maxWidth, setMaxWidth] = useState(() =>
-    getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1280 : window.innerWidth,
   );
+  const [maxWidth, setMaxWidth] = useState(() => getPreviewPanelMaxWidth(viewportWidth));
   const { width, handlers } = useResizableWidth({
     storageKey: options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
     defaultWidth: options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
-    minWidth: PREVIEW_PANEL_MIN_WIDTH,
+    minWidth: Math.min(maxWidth, Math.max(PREVIEW_PANEL_MIN_WIDTH, Math.floor(viewportWidth / 3))),
     maxWidth,
     edge: "left",
   });
   const observeRow = (host: HTMLElement) => {
     const row = container ?? (enabled ? host.parentElement : null) ?? null;
     // Ref callbacks run before paint, so the width is clamped without an over-wide
-    // flash on mount. Only the derived cap is stored: the row resizes every frame
-    // of a sidebar drag, but an unchanged cap skips re-rendering the owner.
+    // flash on mount.
     const measure = () => {
+      setViewportWidth(window.innerWidth);
       setMaxWidth(getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth));
     };
     measure();

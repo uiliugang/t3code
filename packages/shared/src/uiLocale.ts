@@ -284,6 +284,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Select at least one repository.": "请至少选择一个仓库。",
   "Runs once in each selected repository of this task.": "在当前任务的每个选中仓库中执行一次。",
   "Repository terminal menu item": "仓库终端菜单项",
+  "Show terminal button": "显示终端按钮",
+  "Show the terminal drawer button in the thread header.": "在线程顶部显示终端抽屉按钮。",
   "Repositories & groups": "仓库与分组",
   "Show repository icons": "显示仓库图标",
   "Show group icons": "显示分组图标",

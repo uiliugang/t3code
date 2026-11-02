@@ -16,7 +16,6 @@ export function navigateHistory(direction: HistoryDirection) {
   else window.history.forward();
 }
 
-/** Only for Electron: the Navigation API is Chromium-only. */
 export function useCanNavigateHistory(direction: HistoryDirection): boolean {
   return useSyncExternalStore(subscribeToNavigationHistory, () => canNavigateHistory(direction));
 }
