@@ -3749,6 +3749,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["push", "-u", "origin", initialBranch]);
         yield* git(cwd, ["remote", "add", "team/upstream", remote]);
         yield* git(cwd, ["push", "team/upstream", "HEAD:refs/heads/feature/a"]);
+        yield* git(cwd, ["remote", "add", "aaa-upstream", remote]);
+        yield* git(cwd, ["push", "aaa-upstream", "HEAD:refs/heads/upstream-only"]);
         yield* git(cwd, ["branch", "--track", "feature/a", "team/upstream/feature/a"]);
         yield* git(cwd, ["branch", "--no-track", "local-only"]);
         const driver = yield* GitVcsDriver.GitVcsDriver;
@@ -3780,6 +3782,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           complete.refs.some((ref) => ref.name === `origin/${initialBranch}`),
           true,
         );
+        assert.sameMembers(
+          complete.refs.map((ref) => ref.name),
+          [initialBranch, "feature/a", "local-only", `origin/${initialBranch}`],
+        );
+        assert.equal((yield* driver.listRefs({ cwd, query: "upstream-only" })).totalCount, 0);
 
         const remoteOnly = yield* driver.listRefs({
           cwd,
@@ -3790,6 +3797,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.equal(remoteOnly.refs.length, 1);
         assert.equal(remoteOnly.refs[0]?.name, `origin/${initialBranch}`);
         assert.equal(remoteOnly.refs[0]?.isRemote, true);
+        assert.equal(remoteOnly.totalCount, 1);
+        assert.equal(remoteOnly.nextCursor, null);
 
         const tracked = complete.refs.find((ref) => ref.name === "feature/a");
         assert.ok(tracked);
@@ -3950,24 +3959,34 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         }),
     );
 
-    it.effect("marks the origin default ref as default when no local copy exists", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTmpDir();
-        const remote = yield* makeTmpDir("git-vcs-driver-remote-");
-        const { initialBranch } = yield* initRepoWithCommit(cwd);
-        yield* git(remote, ["init", "--bare"]);
-        yield* git(cwd, ["remote", "add", "origin", remote]);
-        yield* git(cwd, ["push", "-u", "origin", initialBranch]);
-        yield* git(cwd, ["remote", "set-head", "origin", initialBranch]);
-        yield* git(cwd, ["checkout", "-b", "feature/only-local"]);
-        yield* git(cwd, ["branch", "-D", initialBranch]);
-        const driver = yield* GitVcsDriver.GitVcsDriver;
+    it.effect.each(["origin", "fork", "team/fork"])(
+      "marks the %s default ref as default when no local copy exists",
+      (remoteName) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          yield* git(remote, ["init", "--bare"]);
+          yield* git(cwd, ["remote", "add", remoteName, remote]);
+          yield* git(cwd, ["push", "-u", remoteName, initialBranch]);
+          yield* git(cwd, ["remote", "set-head", remoteName, initialBranch]);
+          yield* git(cwd, ["remote", "add", `${remoteName}/upstream`, remote]);
+          yield* git(cwd, ["push", `${remoteName}/upstream`, initialBranch]);
+          yield* git(cwd, ["checkout", "-b", "feature/only-local"]);
+          yield* git(cwd, ["branch", "-D", initialBranch]);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
 
-        const refs = yield* driver.listRefs({ cwd });
-        const remoteDefault = refs.refs.find((ref) => ref.name === `origin/${initialBranch}`);
-        assert.equal(remoteDefault?.isRemote, true);
-        assert.equal(remoteDefault?.isDefault, true);
-      }),
+          const refs = yield* driver.listRefs({ cwd });
+          const remoteDefault = refs.refs.find(
+            (ref) => ref.name === `${remoteName}/${initialBranch}`,
+          );
+          assert.equal(remoteDefault?.isRemote, true);
+          assert.equal(remoteDefault?.isDefault, true);
+          assert.sameMembers(
+            refs.refs.map((ref) => ref.name),
+            ["feature/only-local", `${remoteName}/${initialBranch}`],
+          );
+        }),
     );
 
     it.effect.each([

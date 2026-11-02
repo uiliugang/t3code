@@ -3852,7 +3852,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const fetchCwd =
       path.basename(gitCommonDir) === ".git" ? path.dirname(gitCommonDir) : gitCommonDir;
     const gitDirArgs = ["--git-dir", gitCommonDir] as const;
-    const [refsResult, defaultRefResult, worktreeListResult, remoteNamesResult] = yield* Effect.all(
+    const [refsResult, worktreeListResult, remoteNamesResult] = yield* Effect.all(
       [
         executeGitWithStableDiagnostics(
           "GitVcsDriver.listRefs.snapshotRefs",
@@ -3870,15 +3870,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             fallbackErrorDetail: "Git ref snapshot enumeration failed.",
           },
         ),
-        executeGit(
-          "GitVcsDriver.listRefs.defaultRef",
-          fetchCwd,
-          [...gitDirArgs, "symbolic-ref", "refs/remotes/origin/HEAD"],
-          {
-            timeoutMs: 5_000,
-            allowNonZeroExit: true,
-          },
-        ),
         executeWorktreeList("GitVcsDriver.listRefs.worktreeList", fetchCwd, gitDirArgs, {
           timeoutMs: 30_000,
           allowNonZeroExit: true,
@@ -3893,16 +3884,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
 
     const remoteNames =
-      remoteNamesResult.exitCode === 0 ? parseRemoteNames(remoteNamesResult.stdout) : [];
+      remoteNamesResult.exitCode === 0 ? parseRemoteNamesInGitOrder(remoteNamesResult.stdout) : [];
     if (remoteNamesResult.exitCode !== 0 && remoteNamesResult.stderr.trim().length > 0) {
       yield* Effect.logWarning(
         `GitVcsDriver.listRefs: remote name lookup returned code ${remoteNamesResult.exitCode} for ${gitCommonDir}: ${remoteNamesResult.stderr.trim()}. Falling back to an empty remote name list.`,
       );
     }
-    const defaultBranch =
-      defaultRefResult.exitCode === 0
-        ? defaultRefResult.stdout.trim().replace(/^refs\/remotes\/origin\//, "")
-        : null;
+    const primaryRemoteName = remoteNames.includes("origin") ? "origin" : remoteNames[0];
+    const remoteNamesByLength = remoteNames.toSorted((left, right) => right.length - left.length);
+    const primaryRemotePrefix = `refs/remotes/${primaryRemoteName}/`;
+    const refRows = refsResult.stdout.split("\n").map((line) => line.split("\t"));
+    const defaultRef = refRows.find(([name]) => name === `${primaryRemotePrefix}HEAD`)?.[2];
+    const defaultBranch = defaultRef?.startsWith(primaryRemotePrefix)
+      ? defaultRef.slice(primaryRemotePrefix.length)
+      : null;
     const parsedWorktreeEntries =
       worktreeListResult.exitCode === 0
         ? [...parseWorktreeBranchPaths(worktreeListResult.stdout)].map(
@@ -3928,9 +3923,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const remoteBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
     const refCommits = new Map<string, string>();
 
-    for (const line of refsResult.stdout.split("\n")) {
-      if (line.length === 0) continue;
-      const [fullRefName, lastCommitRaw, symbolicTarget, upstreamRef, commit] = line.split("\t");
+    for (const [fullRefName, lastCommitRaw, symbolicTarget, upstreamRef, commit] of refRows) {
       if (!fullRefName || symbolicTarget) continue;
       refCommits.set(fullRefName, commit || fullRefName);
       const parsedLastCommit = Number.parseInt(lastCommitRaw ?? "0", 10);
@@ -3951,20 +3944,18 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         });
         continue;
       }
-      if (!fullRefName.startsWith("refs/remotes/")) continue;
+      if (primaryRemoteName === undefined || !fullRefName.startsWith(primaryRemotePrefix)) continue;
 
       const name = fullRefName.slice("refs/remotes/".length);
-      const parsedRemoteRef = parseRemoteRefWithRemoteNames(name, remoteNames);
+      const parsedRemoteRef = parseRemoteRefWithRemoteNames(name, remoteNamesByLength);
+      if (parsedRemoteRef?.remoteName !== primaryRemoteName) continue;
       const remoteBranch: VcsRef = {
         name,
         current: false,
         isRemote: true,
-        isDefault:
-          defaultBranch !== null &&
-          parsedRemoteRef?.remoteName === "origin" &&
-          parsedRemoteRef.branchName === defaultBranch,
+        isDefault: fullRefName === defaultRef,
         worktreePath: null,
-        ...(parsedRemoteRef ? { remoteName: parsedRemoteRef.remoteName } : {}),
+        remoteName: primaryRemoteName,
       };
       remoteBranches.push({ ref: remoteBranch, lastCommit });
     }
@@ -3977,7 +3968,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ? right.lastCommit - left.lastCommit
         : left.ref.name.localeCompare(right.ref.name);
 
-    const baseRemotes = remoteNames.includes("origin") ? ["origin"] : remoteNames;
+    const baseRemotes = primaryRemoteName === undefined ? [] : [primaryRemoteName];
     const mergeBases = ["main", "master"].flatMap((name) => {
       const ref = [
         ...baseRemotes.map((remote) => `refs/remotes/${remote}/${name}`),
