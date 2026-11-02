@@ -258,7 +258,7 @@ export function RightPanelSurfaceContent(props: {
                 </select>
               </div>
             ) : null}
-            <div className="min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1 flex-col">
               <FilePreviewPanel
                 key={`${props.environmentId}:${attachment ? `attachment:${attachment.id}` : cwd}`}
                 environmentId={props.environmentId}
