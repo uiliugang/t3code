@@ -27,6 +27,7 @@ export class SkillHost extends Context.Service<
 const decodeHome = Schema.decodeUnknownEffect(
   Schema.Struct({ homePath: Schema.optionalKey(Schema.String) }),
 );
+const isSkillManagerError = Schema.is(SkillManagerError);
 const make = Effect.gen(function* () {
   const settings = yield* ServerSettings.ServerSettingsService;
   const providers = yield* ProviderRegistry.ProviderRegistry;
@@ -128,7 +129,7 @@ const make = Effect.gen(function* () {
     return result;
   }).pipe(
     Effect.mapError((cause) =>
-      Schema.is(SkillManagerError)(cause)
+      isSkillManagerError(cause)
         ? cause
         : new SkillManagerError({ operation: "targets", reason: "io", cause }),
     ),

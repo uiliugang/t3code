@@ -1,3 +1,4 @@
+import { useSyncLayout } from "@legendapp/list/react";
 import {
   type ExecutionResourceId,
   type OrchestrationV2CheckpointFileTotals,
@@ -55,6 +56,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     group.push(file);
     groupedFiles.set(file.resourceId, group);
   }
+  const syncTimelineLayout = useSyncLayout();
   const hiddenFileCount = totals.count - files.length;
   const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
 
@@ -93,7 +95,10 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                       allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
                     }
                     data-scroll-anchor-ignore
-                    onClick={onToggleAllDirectories}
+                    onClick={() => {
+                      onToggleAllDirectories();
+                      syncTimelineLayout();
+                    }}
                   />
                 }
               >
@@ -176,6 +181,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
     key: string | null;
     overrides: Record<string, boolean>;
   }>({ key: null, overrides: {} });
+  const syncTimelineLayout = useSyncLayout();
   const treeNodes = buildTurnDiffTree(files);
   const directoryPathsKey = collectDirectoryPaths(treeNodes).join("\u0000");
   const hasDirectoryNodes = directoryPathsKey.length > 0;
@@ -196,6 +202,8 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
         },
       };
     });
+    // Measure before paint instead of waiting for LegendList's deferred shrink measurement.
+    syncTimelineLayout();
   };
 
   const rows = collectExpandedRows(treeNodes, expandedDirectories, allDirectoriesExpanded);

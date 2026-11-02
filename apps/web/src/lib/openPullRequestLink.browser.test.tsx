@@ -1,4 +1,11 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ThreadId,
+  ExecutionResourceId,
+  WorkspaceRevisionId,
+  WorkspaceRootId,
+  type ThreadWorkspaceRevision,
+} from "@t3tools/contracts";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { AsyncResult } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
@@ -6,7 +13,16 @@ import { page } from "vite-plus/test/browser";
 
 import { act, render, stubGlobal } from "../../test/render";
 
-const state = vi.hoisted(() => ({ preview: vi.fn(), openLink: vi.fn() }));
+const state = vi.hoisted(() => ({
+  preview: vi.fn(),
+  openLink: vi.fn(),
+  workspace: undefined as
+    | (Pick<ThreadWorkspaceRevision, "id" | "primaryRootId"> & {
+        bindings: Array<Pick<ThreadWorkspaceRevision["bindings"][number], "rootId" | "resourceId">>;
+        resources: Array<Pick<ThreadWorkspaceRevision["resources"][number], "id" | "checkoutRoot">>;
+      })
+    | undefined,
+}));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => state.preview }));
 vi.mock("../browser/useOpenLink", () => ({ useOpenLink: () => state.openLink }));
 vi.mock(import("../state/environments"), async (original) => ({
@@ -18,7 +34,7 @@ vi.mock("../state/entities", async (original) => ({
   readProjects: () => [project],
   useProjects: () => [project],
   readProject: () => project,
-  readThreadShell: () => ({ projectId: "project", worktreePath: null }),
+  readThreadShell: () => ({ projectId: "project", worktreePath: null, workspace: state.workspace }),
 }));
 vi.mock("../state/server", async (original) => {
   const { Atom } = await import("effect/reactivity");
@@ -66,6 +82,7 @@ function CommitLink({ url = commitUrl }: { url?: string }) {
 }
 
 function setup() {
+  state.workspace = undefined;
   state.preview.mockReset().mockResolvedValue(AsyncResult.success({ sources: [] }));
   state.openLink.mockReset().mockResolvedValue(undefined);
   __setClientSettingsForTests({
@@ -74,6 +91,7 @@ function setup() {
     browserLinkTarget: "system",
   });
   useDiffPanelStore.setState({
+    selectedRepositoryByThreadKey: {},
     byThreadKey: {},
     branchBaseRefByThreadKey: {},
     keepSelectionOnOpenThreadKey: null,
@@ -138,23 +156,58 @@ it.each(["system", "app"] as const)(
   },
 );
 
-it("opens an available commit in the closed Diff pane without the pane resetting it", async () => {
-  setup();
-  const sha = "a".repeat(40);
-  state.preview.mockResolvedValue(
-    AsyncResult.success({ sources: [{ kind: "commit", headRef: sha }] }),
-  );
-  await using screen = await render(
-    <AppAtomRegistryProvider>
-      <CommitLink />
-    </AppAtomRegistryProvider>,
-  );
-  await screen.getByRole("link", { name: "Commit" }).click();
-  await vi.waitFor(() =>
-    expect(useDiffPanelStore.getState().byThreadKey).toEqual({
-      [scopedThreadKey(threadRef)]: { kind: "commit", sha, baseRef: null },
-    }),
-  );
-  // ChatView resets a pane opened without an explicit request to Changes unless this is set.
-  expect(useDiffPanelStore.getState().consumeKeepSelectionOnOpen(threadRef)).toBe(true);
-});
+it.each([false, true])(
+  "opens an available commit in its repository without the pane resetting it (workspace: %s)",
+  async (workspace) => {
+    setup();
+    const resourceId = ExecutionResourceId.make("primary");
+    const rootId = WorkspaceRootId.make("primary");
+    if (workspace) {
+      state.workspace = {
+        id: WorkspaceRevisionId.make("revision"),
+        primaryRootId: rootId,
+        bindings: [{ rootId, resourceId }],
+        resources: [{ id: resourceId, checkoutRoot: "/workspace/primary" }],
+      };
+      useDiffPanelStore
+        .getState()
+        .selectRepository(threadRef, ExecutionResourceId.make("secondary"));
+    }
+    const sha = "a".repeat(40);
+    state.preview.mockResolvedValue(
+      AsyncResult.success({ sources: [{ kind: "commit", headRef: sha }] }),
+    );
+    await using screen = await render(
+      <AppAtomRegistryProvider>
+        <CommitLink />
+      </AppAtomRegistryProvider>,
+    );
+    await screen.getByRole("link", { name: "Commit" }).click();
+    await vi.waitFor(() =>
+      expect(useDiffPanelStore.getState().byThreadKey).toEqual({
+        [workspace
+          ? `${scopedThreadKey(threadRef)}:repository:${resourceId}`
+          : scopedThreadKey(threadRef)]: { kind: "commit", sha, baseRef: null },
+      }),
+    );
+    expect(state.preview).toHaveBeenCalledWith({
+      environmentId,
+      input: {
+        cwd: workspace ? "/workspace/primary" : "/repo",
+        commitSha: sha,
+        ignoreWhitespace: DEFAULT_CLIENT_SETTINGS.diffIgnoreWhitespace,
+        ...(workspace
+          ? {
+              repositoryTarget: {
+                threadId: threadRef.threadId,
+                workspaceRevisionId: state.workspace!.id,
+                resourceId,
+              },
+            }
+          : {}),
+      },
+    });
+    // ChatView resets a pane opened without an explicit request to Changes unless this is set.
+    expect(useDiffPanelStore.getState().consumeKeepSelectionOnOpen(threadRef)).toBe(true);
+  },
+);

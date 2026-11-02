@@ -38,6 +38,7 @@
         "mobile-native-client.ts",
         "setup-worktree.ts",
         "sign-macos.ts",
+        "prepare-server-compile-cache.cjs",
         "smoke-desktop-app.ts",
         "verify-windows-desktop-artifact.ts",
       ],
@@ -78,6 +79,7 @@
         "@t3tools/source-control-forgejo",
         "@t3tools/source-control-gitcafe",
         "@t3tools/source-control-gitlab",
+        "ffi-rs",
       ],
     },
     "apps/desktop": {
@@ -90,6 +92,7 @@
         "src/snapShot/SnapShotAccessibilityWorker.ts!",
         "src/boot.ts!",
         "src/compileCache.ts!",
+        "src/serverCompileCache.ts!",
         "src/main.ts!",
         "src/preload.ts!",
         "src/preview-pick-preload.ts!",

@@ -9,6 +9,7 @@ import {
 } from "@t3tools/client-runtime/change-request-links";
 
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { canOpenLinksInApp } from "../browser/browserLinkTarget";
 import { useOpenLink } from "../browser/useOpenLink";
@@ -153,15 +154,39 @@ export function useOpenChangeRequestLink(
       event.preventDefault();
       event.stopPropagation();
       const userActionRevision = useRightPanelStore.getState().markUserAction(resolvedThreadRef);
-      const baseRef = selectThreadBranchBaseRef(useDiffPanelStore.getState(), resolvedThreadRef);
+      const workspace = commitThread.workspace;
+      const primaryResourceId = workspace?.bindings.find(
+        (binding) => binding.rootId === workspace.primaryRootId,
+      )?.resourceId;
+      const repository = workspace?.resources.find((resource) => resource.id === primaryResourceId);
+      const resourceId = repository?.id;
+      const selectedRepository =
+        useDiffPanelStore.getState().selectedRepositoryByThreadKey[
+          scopedThreadKey(resolvedThreadRef)
+        ];
+      const baseRef = selectThreadBranchBaseRef(
+        useDiffPanelStore.getState(),
+        resolvedThreadRef,
+        resourceId,
+      );
       const selection = selectThreadDiffPanelSelection(
         useDiffPanelStore.getState().byThreadKey,
         resolvedThreadRef,
+        resourceId,
       );
       void readDiffPreview({
         environmentId: resolvedThreadRef.environmentId,
         input: {
-          cwd: commitThread.worktreePath ?? commitProject.workspaceRoot,
+          cwd: repository?.checkoutRoot ?? commitThread.worktreePath ?? commitProject.workspaceRoot,
+          ...(workspace && repository
+            ? {
+                repositoryTarget: {
+                  threadId: resolvedThreadRef.threadId,
+                  workspaceRevisionId: workspace.id,
+                  resourceId: repository.id,
+                },
+              }
+            : {}),
           ...(baseRef ? { baseRef } : {}),
           commitSha: commit.sha,
           ignoreWhitespace,
@@ -171,9 +196,13 @@ export function useOpenChangeRequestLink(
           if (
             useRightPanelStore.getState().getUserActionRevision(resolvedThreadRef) !==
               userActionRevision ||
+            useDiffPanelStore.getState().selectedRepositoryByThreadKey[
+              scopedThreadKey(resolvedThreadRef)
+            ] !== selectedRepository ||
             selectThreadDiffPanelSelection(
               useDiffPanelStore.getState().byThreadKey,
               resolvedThreadRef,
+              resourceId,
             ) !== selection
           )
             return;
@@ -188,6 +217,9 @@ export function useOpenChangeRequestLink(
                 useRightPanelStore.getState().byThreadKey,
                 resolvedThreadRef,
               ) === "diff";
+            if (resourceId !== undefined) {
+              useDiffPanelStore.getState().selectRepository(resolvedThreadRef, resourceId);
+            }
             useDiffPanelStore.getState().selectCommit(resolvedThreadRef, commit.sha, !diffOpen);
             useRightPanelStore.getState().open(resolvedThreadRef, "diff");
             return;

@@ -69,7 +69,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79])("upgrades a database at exactly %s", (id) =>
+  it.effect.each([54, 78, 79, 80])("upgrades a database at exactly %s", (id) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: id });
