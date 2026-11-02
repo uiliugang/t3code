@@ -138,6 +138,7 @@
     "apps/mobile/modules/t3-source-text": {
       // React Native codegen discovers component specifications by filename.
       "entry": ["src/*NativeComponent.ts!"],
+      "ignoreDependencies": ["@types/react", "@types/react-native"],
     },
     "infra/task-cache": {
       "ignore": ["vendor/**"],

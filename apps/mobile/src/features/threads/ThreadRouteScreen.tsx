@@ -933,6 +933,7 @@ function ThreadRouteContent(
       composer.selectedThreadActivityRun?.status === "preparing" ||
       selectedThread?.runtime?.status === "preparing" ||
       selectedThread?.worktreePath != null ||
+      selectedThread?.workspace?.mode === "isolated" ||
       (selectedThreadCreation?.message.creation?.workspaceMode === "worktree" &&
         selectedThreadCreation.outcome == null),
     turnStarted: setupTurnStartedAt !== null,

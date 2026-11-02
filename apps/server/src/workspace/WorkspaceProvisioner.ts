@@ -28,6 +28,7 @@ import {
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -39,6 +40,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
@@ -89,7 +92,14 @@ export class WorkspaceProvisioner extends Context.Service<
       readonly scripts?: readonly ProjectScript[];
       readonly strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
       readonly generatedBranchName?: GitVcsDriver.CreateWorktreeOptions["generatedBranchName"];
-    }) => Effect.Effect<ThreadWorkspaceRevision, WorkspacePreparationError>;
+    }) => Effect.Effect<
+      {
+        readonly workspace: ThreadWorkspaceRevision;
+        readonly completion: Effect.Effect<void, WorkspacePreparationError>;
+        readonly cancel: Effect.Effect<void>;
+      },
+      WorkspacePreparationError
+    >;
   }
 >()("t3/workspace/WorkspaceProvisioner") {}
 
@@ -109,6 +119,8 @@ export const layer = Layer.effect(
     const git = yield* GitVcsDriver.GitVcsDriver;
     const setup = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
     const checkpoints = yield* CheckpointStore.CheckpointStore;
+    const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+    const terminals = yield* TerminalManager.TerminalManager;
     const save = Effect.fn("WorkspaceProvisioner.save")(function* (state: typeof Preparation.Type) {
       const payload = yield* Schema.encodeEffect(json)(state);
       yield* sql`INSERT INTO workspace_preparations (thread_id, payload_json)
@@ -119,6 +131,7 @@ export const layer = Layer.effect(
     return WorkspaceProvisioner.of({
       prepare: Effect.fn("WorkspaceProvisioner.prepare")(
         function* (input) {
+          const terminalIds: string[] = [];
           return yield* withWorkspaceLease(
             `prepare:${input.threadId}`,
             Effect.gen(function* () {
@@ -134,6 +147,7 @@ export const layer = Layer.effect(
                     detail: "Workspace preparation belongs to another project.",
                   });
               } else {
+                yield* tracker.stageStatus(input.threadId, "fetch", "running");
                 if (input.strategy.type === "existing_worktree")
                   return yield* new WorkspacePreparationError({
                     threadId: input.threadId,
@@ -302,18 +316,22 @@ export const layer = Layer.effect(
                 yield* save(state);
               }
 
+              yield* tracker.stageStatus(input.threadId, "fetch", "done");
+              const update = Effect.fn("WorkspaceProvisioner.updateResource")(function* (
+                index: number,
+                patch: Partial<typeof PreparedResource.Type>,
+              ) {
+                const item = { ...state.resources[index]!, ...patch };
+                state = {
+                  ...state,
+                  resources: state.resources.map((entry, i) => (i === index ? item : entry)),
+                };
+                yield* save(state);
+                return item;
+              });
+              yield* tracker.stageStatus(input.threadId, "checkout", "running");
               for (let index = 0; index < state.resources.length; index++) {
                 let item = state.resources[index]!;
-                const update = Effect.fn("WorkspaceProvisioner.updateResource")(function* (
-                  patch: Partial<typeof item>,
-                ) {
-                  item = { ...item, ...patch };
-                  state = {
-                    ...state,
-                    resources: state.resources.map((entry, i) => (i === index ? item : entry)),
-                  };
-                  yield* save(state);
-                });
                 yield* resolver.verify(item.source.identity);
                 if (item.resource === undefined) {
                   yield* fs.makeDirectory(path.dirname(item.path), { recursive: true });
@@ -336,7 +354,7 @@ export const layer = Layer.effect(
                         },
                       ),
                     );
-                    yield* update({ branch: created.worktree.refName });
+                    item = yield* update(index, { branch: created.worktree.refName });
                   }
                   const identity = yield* resolver.inspect(item.path);
                   const branch = (yield* git.execute({
@@ -375,7 +393,7 @@ export const layer = Layer.effect(
                       },
                     ],
                   });
-                  yield* update({
+                  item = yield* update(index, {
                     resource: {
                       ...resolved.resources[0]!,
                       name: item.source.name,
@@ -384,6 +402,11 @@ export const layer = Layer.effect(
                   });
                 }
                 yield* resolver.verify(item.resource!.identity);
+              }
+              yield* tracker.stageStatus(input.threadId, "checkout", "done");
+              let initializedSubmodules = false;
+              for (let index = 0; index < state.resources.length; index++) {
+                let item = state.resources[index]!;
                 if (item.ready) continue;
                 if (!item.submodulesReady) {
                   const file = yield* fs
@@ -397,7 +420,9 @@ export const layer = Layer.effect(
                     item.submodules,
                     file,
                   ).value;
-                  if (mode !== "none" && (yield* fs.exists(path.join(item.path, ".gitmodules"))))
+                  if (mode !== "none" && (yield* fs.exists(path.join(item.path, ".gitmodules")))) {
+                    initializedSubmodules = true;
+                    yield* tracker.stageStatus(input.threadId, "submodules", "running");
                     yield* withWorkspaceLease(
                       item.source.identity.commonDir,
                       git.execute({
@@ -411,71 +436,151 @@ export const layer = Layer.effect(
                         ],
                       }),
                     );
-                  yield* update({ submodulesReady: true });
+                  }
+                  item = yield* update(index, { submodulesReady: true });
                 }
                 if (item.setup === "running")
                   return yield* new WorkspacePreparationError({
                     threadId: input.threadId,
                     detail: `Setup completion is unknown in ${item.path}. Inspect the setup terminal before retrying; prepared checkouts have been retained.`,
                   });
-                if (item.setup !== "done") {
-                  const root = state.config.roots.find(
-                    (entry) =>
-                      entry.setupScript &&
-                      projectScriptAppliesToRoots(entry.setupScript, [entry.id]) &&
-                      state.bindings.some(
-                        (binding) =>
-                          binding.rootId === entry.id && binding.resourceId === item.source.id,
-                      ),
-                  );
-                  if (state.mode === "isolated" && root?.setupScript) {
-                    yield* update({ setup: "running" });
-                    const result = yield* setup.runForThread({
-                      threadId: input.threadId,
-                      repositoryRootIds: [root.id],
-                      script: { ...root.setupScript, id: `${root.id}-${root.setupScript.id}` },
-                      worktreePath: path.join(
-                        item.path,
-                        state.bindings.find((binding) => binding.rootId === root.id)!
-                          .relativeSubpath,
-                      ),
-                      project: {
-                        id: input.projectId,
-                        workspaceRoot: item.source.checkoutRoot,
-                        scripts: [
-                          {
-                            ...root.setupScript,
-                            id: `${root.id}-${root.setupScript.id}`,
-                            runOnWorktreeCreate: true,
-                          },
-                        ],
+              }
+              yield* tracker.stageStatus(
+                input.threadId,
+                "submodules",
+                initializedSubmodules ? "done" : "skipped",
+              );
+              const completions: Array<Effect.Effect<void, WorkspacePreparationError>> = [];
+              const scripts = state.resources.map((item, index) => ({
+                index,
+                root:
+                  state.mode === "isolated" && !item.ready && item.setup !== "done"
+                    ? state.config.roots.find(
+                        (entry) =>
+                          entry.setupScript &&
+                          projectScriptAppliesToRoots(entry.setupScript, [entry.id]) &&
+                          state.bindings.some(
+                            (binding) =>
+                              binding.rootId === entry.id && binding.resourceId === item.source.id,
+                          ),
+                      )
+                    : undefined,
+              }));
+              const runSetup = Effect.fn("WorkspaceProvisioner.runSetup")(function* (
+                index: number,
+                root: (typeof state.config.roots)[number],
+              ) {
+                const item = yield* update(index, { setup: "running" });
+                yield* tracker.stageStatus(input.threadId, "setup-script", "running");
+                const result = yield* setup.runForThread({
+                  threadId: input.threadId,
+                  repositoryRootIds: [root.id],
+                  script: { ...root.setupScript!, id: `${root.id}-${root.setupScript!.id}` },
+                  worktreePath: path.join(
+                    item.path,
+                    state.bindings.find((binding) => binding.rootId === root.id)!.relativeSubpath,
+                  ),
+                  project: {
+                    id: input.projectId,
+                    workspaceRoot: item.source.checkoutRoot,
+                    scripts: [
+                      {
+                        ...root.setupScript!,
+                        id: `${root.id}-${root.setupScript!.id}`,
+                        runOnWorktreeCreate: true,
                       },
-                      observeCompletion: {},
-                    });
-                    if (result.status === "started") {
-                      const completed =
-                        result.completion === undefined ? null : yield* result.completion;
-                      if (completed?.exitCode !== 0) {
-                        yield* update({
-                          setup: completed?.exitCode == null ? "running" : "failed",
-                        });
-                        return yield* new WorkspacePreparationError({
-                          threadId: input.threadId,
-                          detail: `Setup failed in ${item.path}; the worktree group was not bound. Prepared repositories are retained for retry.`,
-                        });
-                      }
+                    ],
+                  },
+                  observeCompletion: {
+                    onOutputLine: (line) =>
+                      tracker.appendTail(input.threadId, "setup-script", line),
+                  },
+                });
+                if (result.status === "started") {
+                  terminalIds.push(result.terminalId);
+                  yield* tracker.update(input.threadId, (snapshot) => ({
+                    ...snapshot,
+                    setupScript: {
+                      name: result.scriptName,
+                      command: result.scriptCommand,
+                      terminalId: result.terminalId,
+                    },
+                  }));
+                  const complete = Effect.gen(function* () {
+                    const completed =
+                      result.completion === undefined ? null : yield* result.completion;
+                    yield* tracker.appendTail(
+                      input.threadId,
+                      "setup-script",
+                      `${root.alias}: exited with ${completed?.exitCode ?? "no exit code"}`,
+                    );
+                    if (completed?.exitCode !== 0) {
+                      yield* update(index, {
+                        setup: completed?.exitCode == null ? "running" : "failed",
+                      });
+                      return yield* new WorkspacePreparationError({
+                        threadId: input.threadId,
+                        detail: result.async
+                          ? `Setup failed in ${item.path}; inspect the setup terminal. The agent has already been released.`
+                          : `Setup failed in ${item.path}; the worktree group was not bound. Prepared repositories are retained for retry.`,
+                      });
                     }
-                  }
-                  yield* update({ setup: "done" });
+                    yield* update(index, { setup: "done" });
+                  }).pipe(
+                    Effect.mapError((cause) =>
+                      isWorkspacePreparationError(cause)
+                        ? cause
+                        : new WorkspacePreparationError({
+                            threadId: input.threadId,
+                            detail: "Could not record setup completion.",
+                            cause,
+                          }),
+                    ),
+                  );
+                  if (result.async) completions.push(complete);
+                  else yield* complete;
+                } else {
+                  yield* update(index, { setup: "done" });
                 }
+              });
+              for (const { index, root } of scripts) {
+                if (root?.setupScript?.async === false) yield* runSetup(index, root);
+              }
+              if (
+                !scripts.some(({ root }) => root?.setupScript && root.setupScript.async !== false)
+              )
+                yield* tracker.stageStatus(
+                  input.threadId,
+                  "setup-script",
+                  scripts.some(({ root }) => root?.setupScript) ? "done" : "skipped",
+                );
+              yield* tracker.stageStatus(input.threadId, "baseline", "running");
+              for (const [index, item] of state.resources.entries()) {
+                if (item.ready) continue;
                 yield* checkpoints.captureCheckpoint({
                   cwd: item.path,
                   checkpointRef: CheckpointRef.make(
                     `refs/t3/workspace-baselines/${state.id}/${index}`,
                   ),
                 });
-                yield* update({ ready: true });
               }
+              yield* tracker.stageStatus(input.threadId, "baseline", "done");
+              for (const { index, root } of scripts) {
+                if (root?.setupScript && root.setupScript.async !== false)
+                  yield* runSetup(index, root);
+                const item = state.resources[index]!;
+                if (!item.ready)
+                  yield* update(index, {
+                    ready: true,
+                    ...(item.setup === "pending" ? { setup: "done" as const } : {}),
+                  });
+              }
+              if (completions.length === 0)
+                yield* tracker.stageStatus(
+                  input.threadId,
+                  "setup-script",
+                  scripts.some(({ root }) => root?.setupScript) ? "done" : "skipped",
+                );
               const resources = state.resources.map((item) => item.resource!);
               const bindings = [];
               for (const binding of state.bindings) {
@@ -499,7 +604,7 @@ export const layer = Layer.effect(
                   launchBranch: branch,
                 });
               }
-              return ThreadWorkspaceRevision.make({
+              const workspace = ThreadWorkspaceRevision.make({
                 id: state.id,
                 projectId: state.projectId,
                 sourceProjectVersion: state.config.version,
@@ -510,7 +615,64 @@ export const layer = Layer.effect(
                 bindings,
                 createdAt: state.createdAt,
               });
+              const primary = bindings.find(
+                (binding) => binding.rootId === state.config.primaryRootId,
+              );
+              yield* tracker.update(input.threadId, (snapshot) => ({
+                ...snapshot,
+                worktreePath: primary?.executionPath ?? null,
+                branch: primary?.launchBranch ?? null,
+              }));
+              const cancel = Effect.forEach(
+                terminalIds,
+                (terminalId) =>
+                  terminals
+                    .close({ threadId: input.threadId, terminalId, deleteHistory: true })
+                    .pipe(Effect.ignore),
+                { discard: true },
+              );
+              return {
+                workspace,
+                cancel,
+                completion: Effect.gen(function* () {
+                  let failure: WorkspacePreparationError | undefined;
+                  yield* Effect.forEach(
+                    completions,
+                    (completion) =>
+                      completion.pipe(
+                        Effect.catch((error) => {
+                          failure ??= error;
+                          return tracker.stageStatus(
+                            input.threadId,
+                            "setup-script",
+                            "failed",
+                            error.detail,
+                          );
+                        }),
+                      ),
+                    { discard: true },
+                  );
+                  if (failure) return yield* failure;
+                  if (completions.length > 0)
+                    yield* tracker.stageStatus(input.threadId, "setup-script", "done");
+                }),
+              };
             }),
+          ).pipe(
+            Effect.onError((cause) =>
+              Effect.forEach(
+                terminalIds,
+                (terminalId) =>
+                  terminals
+                    .close({
+                      threadId: input.threadId,
+                      terminalId,
+                      deleteHistory: Cause.hasInterruptsOnly(cause),
+                    })
+                    .pipe(Effect.ignore),
+                { discard: true },
+              ),
+            ),
           );
         },
         (effect, input) =>

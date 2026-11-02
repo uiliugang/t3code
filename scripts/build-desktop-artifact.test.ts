@@ -45,6 +45,7 @@ import {
   resolveBuildOptions,
   stageWslRuntimeArchive,
   ancestorNodeModulesPaths,
+  findStorePackageDirectory,
   copyDirectoryPreservingSymlinks,
   LinuxBrowserSecretHostError,
   MacPackagedAppMissingError,
@@ -1734,6 +1735,25 @@ it("keeps the prefix of a UNC path instead of going relative", () => {
   }
   assert.deepStrictEqual(paths[0], "\\\\server\\share\\tmp\\node_modules");
 });
+
+it.effect.each(["local", "global"])("finds native packages in the %s virtual store", (store) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-virtual-store-" });
+    const packageName = "@native/example";
+    const packageDir = path.join(
+      root,
+      "node_modules/.pnpm",
+      store === "global" ? "node_modules" : "@native+example@1/node_modules",
+      packageName,
+    );
+    yield* fs.makeDirectory(packageDir, { recursive: true });
+    yield* fs.writeFileString(path.join(packageDir, "binding.gyp"), "{}");
+    assert.equal(yield* findStorePackageDirectory(root, packageName), packageDir);
+    assert.isNull(yield* findStorePackageDirectory(root, "missing"));
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
 
 it.effect.skipIf(!symlinksSupported)("rebases packaged links into the isolated tree", () =>
   Effect.gen(function* () {

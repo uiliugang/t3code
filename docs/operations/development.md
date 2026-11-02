@@ -15,6 +15,12 @@ a new browser.
 
 Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Code and Codespaces setup.
 
+The Setup Worktree action reuses pnpm's global virtual store while keeping each worktree's
+workspace links independent. It does not share the main checkout's `node_modules`. Packages in
+that store are shared writable cache entries; do not patch installed dependency files in place.
+For tools that require the traditional per-project layout, reinstall with
+`vp i --frozen-lockfile -- --config.virtual-store-type=project`.
+
 ## GitCafe mirror (optional)
 
 GitHub is the source of truth. [git.cafe/pingdotgg/t3code](https://git.cafe/pingdotgg/t3code) is a

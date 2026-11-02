@@ -2099,7 +2099,7 @@ const decodeNativeMarkerManifest = Schema.decodeUnknownSync(
   Schema.fromJsonString(NativeMarkerManifest),
 );
 
-const findStorePackageDirectory = Effect.fn("findStorePackageDirectory")(function* (
+export const findStorePackageDirectory = Effect.fn("findStorePackageDirectory")(function* (
   repoRoot: string,
   packageName: string,
 ) {
@@ -2108,6 +2108,13 @@ const findStorePackageDirectory = Effect.fn("findStorePackageDirectory")(functio
   const storeDir = path.join(repoRoot, "node_modules/.pnpm");
   const exists = (candidate: string) =>
     fs.exists(candidate).pipe(Effect.orElseSucceed(() => false));
+  for (const modules of [
+    path.join(repoRoot, "node_modules"),
+    path.join(storeDir, "node_modules"),
+  ]) {
+    const candidate = path.join(modules, packageName);
+    if (yield* exists(candidate)) return candidate;
+  }
   if (!(yield* exists(storeDir))) return null;
 
   const flattened = `${packageName.replace("/", "+")}@`;

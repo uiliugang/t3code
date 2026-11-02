@@ -26,9 +26,7 @@ export function useWorktreeSetup(input: {
   readonly routeThreadRef: ScopedThreadRef;
   // Use the draft id until promotion: bootstrap rotates the thread id.
   readonly ownerKey: string;
-  readonly activeThread:
-    | { readonly id: ThreadId; readonly worktreePath: string | null }
-    | undefined;
+  readonly activeThread: Pick<Thread, "id" | "worktreePath" | "workspace"> | undefined;
   readonly threadRef: ScopedThreadRef | null;
   readonly serverProjection: ThreadStructure | null;
   readonly activityRun: Thread["latestRun"] | null;
@@ -65,7 +63,10 @@ export function useWorktreeSetup(input: {
   const snapshotQuery = useEnvironmentQuery(
     started ||
       (activeThread?.id === routeThreadRef.threadId &&
-        (localPreparing || runPreparing || activeThread.worktreePath !== null))
+        (localPreparing ||
+          runPreparing ||
+          activeThread.worktreePath !== null ||
+          activeThread.workspace?.mode === "isolated"))
       ? vcsEnvironment.worktreeSetup({
           environmentId: target.environmentId,
           input: { threadId: target.threadId },
