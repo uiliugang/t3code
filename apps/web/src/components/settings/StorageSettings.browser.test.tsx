@@ -168,6 +168,7 @@ it.each(["environment", "project"])(
             },
           }),
     };
+    state.targets = state.targets.map((target) => ({ ...target, settings: state.settings }));
     await using screen = await render(panel());
     expect(deleteButton(screen.container).disabled).toBe(false);
   },

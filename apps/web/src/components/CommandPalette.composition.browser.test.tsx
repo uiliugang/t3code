@@ -13,6 +13,8 @@ vi.mock("@effect/atom-react", async (original) => ({
     atom === primaryServerKeybindingsAtom ? DEFAULT_RESOLVED_KEYBINDINGS : [],
 }));
 vi.mock("../hooks/useTheme", () => ({
+  getRenderedAppearance: () => "light",
+  subscribeRenderedAppearance: () => () => {},
   useRenderedAppearance: () => "light",
   useTheme: () => ({ theme: "t3-chat", resolvedTheme: "light", appearanceMode: "light" }),
 }));
@@ -124,7 +126,7 @@ describe.each(["repository", "folder", "destination"] as const)("add-project %s"
       await expect.element(input()).toHaveValue("/workspace/計画");
     } else {
       await userEvent.keyboard("{Enter}");
-      await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
+      await expect.element(page.getByTestId("command-palette")).not.toBeInTheDocument();
     }
   });
 });

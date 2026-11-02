@@ -341,6 +341,8 @@ describe("automatic feature branch refs", () => {
   };
 
   it.each([false, true])("awaits fresh refs before naming, cached: %s", async (cached) => {
+    state.grouped = false;
+    state.readRefs.mockReset();
     const request = Promise.withResolvers<VcsListRefsResult>();
     state.cachedRefs = cached
       ? [

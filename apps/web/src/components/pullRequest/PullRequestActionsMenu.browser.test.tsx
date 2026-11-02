@@ -1,6 +1,7 @@
 import "~/index.css";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { Cause } from "effect";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
@@ -20,9 +21,16 @@ vi.mock(
 );
 
 vi.mock(import("../ui/toast"), () => ({ toastManager: { add: mocks.notify } }) as never);
+vi.mock(import("~/hooks/useUiTranslation"), () => ({
+  useUiTranslation: () => (text: string, values?: Parameters<typeof translateUi>[2]) =>
+    translateUi("en", text, values),
+}));
 vi.mock(import("~/state/server"), async () => {
   const { Atom } = await import("effect/reactivity");
-  return { primaryServerKeybindingsAtom: Atom.make([]) } as never;
+  return {
+    primaryServerKeybindingsAtom: Atom.make([]),
+    primaryServerEnvironmentThemesAtom: Atom.make([]),
+  } as never;
 });
 vi.mock(import("./PullRequestThreadLinks"), () => ({ PullRequestThreadLinks: () => null }));
 vi.mock(

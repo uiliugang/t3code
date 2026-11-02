@@ -1254,33 +1254,31 @@ function ProviderInstanceRow({
       return;
     syncingRef.current = true;
     setIsSyncingModels(true);
-    try {
-      const result = await refreshServerProviders({
-        environmentId,
-        input: { instanceId, refreshModels: true },
+    const result = await refreshServerProviders({
+      environmentId,
+      input: { instanceId, refreshModels: true },
+    }).finally(() => {
+      syncingRef.current = false;
+      setIsSyncingModels(false);
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Could not sync models",
+        description: error instanceof Error ? error.message : "The model sync failed.",
       });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
+    } else if (result._tag === "Success") {
+      const provider = result.value.providers.find(
+        (candidate) => candidate.instanceId === instanceId,
+      );
+      if (provider?.status !== "ready" && provider?.message) {
         toastManager.add({
           type: "error",
           title: "Could not sync models",
-          description: error instanceof Error ? error.message : "The model sync failed.",
+          description: provider.message,
         });
-      } else if (result._tag === "Success") {
-        const provider = result.value.providers.find(
-          (candidate) => candidate.instanceId === instanceId,
-        );
-        if (provider?.status !== "ready" && provider?.message) {
-          toastManager.add({
-            type: "error",
-            title: "Could not sync models",
-            description: provider.message,
-          });
-        }
       }
-    } finally {
-      syncingRef.current = false;
-      setIsSyncingModels(false);
     }
   };
   const allProjects = useProjects();

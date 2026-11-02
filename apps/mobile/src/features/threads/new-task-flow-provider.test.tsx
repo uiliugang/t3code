@@ -308,7 +308,7 @@ it("owns a status stream only while the draft is active, retaining draft choices
   const chosenWorkspace = screen.snapshot(draftKey).workspaceSelection;
   expect(chosenWorkspace).toEqual({
     mode: "worktree",
-    branch: "feature",
+    branch: "main",
     worktreePath: null,
     startFromOrigin: true,
   });

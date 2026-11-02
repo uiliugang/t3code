@@ -82,6 +82,15 @@ vi.mock("./gitSheetComponents", () => ({
 
 import { GitBranchesSheet } from "./GitBranchesSheet";
 
+vi.mock("../use-new-task-project-defaults", () => ({
+  useNewTaskProjectDefaults: () => ({
+    projectSettings: { settings: { newWorktreesMainBranchOnly: false } },
+  }),
+}));
+vi.mock("../../../state/use-thread-repository", () => ({
+  useThreadRepository: () => ({ selectionTarget: undefined }),
+}));
+
 function setup(branch: string | null = null) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.refName = null;

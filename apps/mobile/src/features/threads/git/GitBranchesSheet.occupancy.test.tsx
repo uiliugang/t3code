@@ -41,6 +41,11 @@ vi.mock("../../../state/use-thread-selection", () => ({
 vi.mock("../../../state/use-thread-detail", () => ({
   useSelectedThreadWorktreePath: () => checkout.worktreePath,
 }));
+vi.mock("../../../state/use-selected-thread-worktree", () => ({
+  useSelectedThreadWorktree: () => ({
+    selectedThreadCwd: checkout.worktreePath ?? checkout.projectRoot,
+  }),
+}));
 vi.mock("../../../state/use-selected-thread-git-state", () => ({
   useSelectedThreadGitState: () => ({
     selectedThreadBranches: checkout.branches,
@@ -55,6 +60,15 @@ vi.mock("../../../state/query", () => ({ useEnvironmentQuery: () => ({ data: nul
 vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { status: () => null } }));
 
 import { GitBranchesSheet } from "./GitBranchesSheet";
+
+vi.mock("../use-new-task-project-defaults", () => ({
+  useNewTaskProjectDefaults: () => ({
+    projectSettings: { settings: { newWorktreesMainBranchOnly: false } },
+  }),
+}));
+vi.mock("../../../state/use-thread-repository", () => ({
+  useThreadRepository: () => ({ selectionTarget: undefined }),
+}));
 
 it("recognizes both the main checkout and a linked worktree as this thread's checkout", () => {
   const directory = "/repo";
@@ -86,7 +100,7 @@ it("recognizes both the main checkout and a linked worktree as this thread's che
     checkout.worktreePath = null;
     expect(rows()).toEqual([
       { name: "feature/available", subtitle: "Local branch", disabled: false },
-      { name: "feature/linked", subtitle: "Checked out in another worktree", disabled: true },
+      { name: "feature/linked", subtitle: "Checked out in another worktree", disabled: false },
       { name: "main", subtitle: "Checked out in this thread", disabled: false },
     ]);
 
@@ -94,7 +108,7 @@ it("recognizes both the main checkout and a linked worktree as this thread's che
     expect(rows()).toEqual([
       { name: "feature/available", subtitle: "Local branch", disabled: false },
       { name: "feature/linked", subtitle: "Checked out in this thread", disabled: false },
-      { name: "main", subtitle: "Checked out in another worktree", disabled: true },
+      { name: "main", subtitle: "Checked out in another worktree", disabled: false },
     ]);
   } finally {
     act(() => root.unmount());

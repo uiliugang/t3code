@@ -59,32 +59,30 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
   const save = async () => {
     if (!allowed || saving || !valid) return;
     setSaving(true);
-    try {
-      const result = await update({
-        environmentId: project.environmentId,
-        input: {
-          projectId: project.id,
-          workspaceRoot: roots.find((root) => root.id === primary)!.sourcePath,
-          workspaceConfig: { primaryRootId: primary, roots },
-          expectedWorkspaceVersion: version,
-        },
-      });
-      if (result._tag === "Success") {
-        setVersion(result.value.workspaceConfig?.version ?? version);
-        if (getSelectedProjectKey() === selectedProjectKey)
-          selectProject(
-            derivePhysicalProjectKey({ ...result.value, environmentId: project.environmentId }),
-          );
-        Dialog.alert(t("Repositories saved"));
-      } else if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        Dialog.alert(
-          t("Failed to save repositories"),
-          t(error instanceof Error ? error.message : "An error occurred."),
-        );
-      }
-    } finally {
+    const result = await update({
+      environmentId: project.environmentId,
+      input: {
+        projectId: project.id,
+        workspaceRoot: roots.find((root) => root.id === primary)!.sourcePath,
+        workspaceConfig: { primaryRootId: primary, roots },
+        expectedWorkspaceVersion: version,
+      },
+    }).finally(() => {
       setSaving(false);
+    });
+    if (result._tag === "Success") {
+      setVersion(result.value.workspaceConfig?.version ?? version);
+      if (getSelectedProjectKey() === selectedProjectKey)
+        selectProject(
+          derivePhysicalProjectKey({ ...result.value, environmentId: project.environmentId }),
+        );
+      Dialog.alert(t("Repositories saved"));
+    } else if (!isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      Dialog.alert(
+        t("Failed to save repositories"),
+        t(error instanceof Error ? error.message : "An error occurred."),
+      );
     }
   };
   return (

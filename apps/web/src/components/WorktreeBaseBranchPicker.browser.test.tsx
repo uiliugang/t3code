@@ -5,7 +5,14 @@ import { page, userEvent } from "vite-plus/test/browser";
 const mocks = vi.hoisted(() => ({ resolvedQueries: new Set<string>() }));
 
 const REFS: VcsRef[] = ["develop", "main", "origin/main", "origin/feature/main-nav"].map(
-  (name) => ({ name, current: false, isDefault: false, worktreePath: null }),
+  (name) => ({
+    name,
+    current: false,
+    isDefault: false,
+    worktreePath: null,
+    isRemote: name.startsWith("origin/"),
+    ...(name.startsWith("origin/") ? { remoteName: "origin" } : {}),
+  }),
 );
 
 // Like the real hook, a query has no refs until the server answers it.
