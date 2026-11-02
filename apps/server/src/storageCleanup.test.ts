@@ -316,6 +316,7 @@ const cleanupFixture = (
     worktreeAfterDays: 8,
     worktreeOnDelete: true,
   },
+  settingsOverrides: Partial<import("@t3tools/contracts").ServerSettings> = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -337,6 +338,7 @@ const cleanupFixture = (
     let settings: import("@t3tools/contracts").ServerSettings = {
       ...DEFAULT_SERVER_SETTINGS,
       storageCleanup,
+      ...settingsOverrides,
     };
     let threads = [shell({ branch: "feature", worktreePath: worktree })];
     let deletedThreads: OrchestrationV2ThreadShell[] = [];
@@ -2362,12 +2364,16 @@ describe("storage cleanup reports and local file policies", () => {
       runCleanupTest(
         Effect.gen(function* () {
           yield* TestClock.setTime(NOW_MS);
-          const fixture = yield* cleanupFixture();
-          fixture.disable();
-          fixture.setSettings({ autoDeleteMergedBranches: true });
+          const fixture = yield* cleanupFixture(
+            {
+              ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+              worktreeAfterDays: null,
+              worktreeOnDelete: false,
+            },
+            { autoDeleteMergedBranches: true },
+          );
           fixture.setOpenSessionCwd(fixture.worktree);
           const release = yield* Deferred.make<void>();
-          const delivered = yield* Deferred.make<void>();
           const event: OrchestrationV2DomainEvent = {
             id: EventId.make("session-stopped"),
             type: "provider-session.updated",
@@ -2387,14 +2393,9 @@ describe("storage cleanup reports and local file policies", () => {
             },
           };
           yield* fixture.activate(
-            Stream.fromEffect(Deferred.await(release)).pipe(
-              Stream.map(() => event),
-              Stream.concat(
-                Stream.fromEffect(Deferred.succeed(delivered, undefined)).pipe(Stream.drain),
-              ),
-            ),
+            Stream.fromEffect(Deferred.await(release)).pipe(Stream.map(() => event)),
           );
-          yield* fixture.service.reports.pipe(
+          const [initialReport] = yield* fixture.service.reports.pipe(
             Stream.filter((report) => report !== null),
             Stream.take(1),
             Stream.runCollect,
@@ -2402,8 +2403,15 @@ describe("storage cleanup reports and local file policies", () => {
           expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
           fixture.setSessionLive(false);
           yield* Deferred.succeed(release, undefined);
-          yield* Deferred.await(delivered);
+          yield* fixture.service.reports.pipe(
+            Stream.filter((report) => report !== null && report !== initialReport),
+            Stream.take(1),
+            Stream.runCollect,
+          );
           yield* fixture.service.drain;
+          expect((yield* fixture.service.latestReport)?.entries).toContainEqual(
+            expect.objectContaining({ outcome: "removed" }),
+          );
           expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
           expect(yield* fixture.service.latestReport).toMatchObject({
             trigger: "automatic",

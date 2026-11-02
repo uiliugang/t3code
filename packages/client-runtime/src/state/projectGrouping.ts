@@ -81,7 +81,7 @@ export function derivePhysicalProjectKey(
     : derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
 }
 
-export function deriveProjectGroupingOverrideKey(
+function deriveProjectGroupingOverrideKey(
   project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot"> &
     Partial<Pick<EnvironmentProject, "id" | "workspaceConfig">>,
 ): string {
