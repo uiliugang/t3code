@@ -8,7 +8,6 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import { SettingsPageContainer } from "./settingsLayout";
 import { ALL_ENVIRONMENTS_VALUE, selectEnvironmentAxis } from "./settingsScopeAxis";
-import { ProjectTypeFilterControl } from "./ProjectTypeFilterControl";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export function ProjectsSettings() {
@@ -53,12 +52,9 @@ export function ProjectsSettings() {
         <SettingsScopeNotice
           target="project"
           actions={
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <ProjectTypeFilterControl />
-              <ProjectImportActions
-                environmentId={value.machine ? EnvironmentId.make(value.machine) : undefined}
-              />
-            </div>
+            <ProjectImportActions
+              environmentId={value.machine ? EnvironmentId.make(value.machine) : undefined}
+            />
           }
         >
           {t("Choose a project or group to manage its name, icon, repositories and actions.")}
