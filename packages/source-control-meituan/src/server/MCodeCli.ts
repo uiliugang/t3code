@@ -61,8 +61,12 @@ export function parseMCodeAuth(input: SourceControlAuthProbeInput) {
   const host = match ? URL.parse(match[1]!)?.hostname : undefined;
   if (input.exitCode !== 0)
     return providerAuth({
-      status: "unauthenticated",
-      detail: "Run code-cli auth login on the server.",
+      status: /no token|invalid|expired|not authenticated|auth login/iu.test(input.stderr)
+        ? "unauthenticated"
+        : "unknown",
+      detail: /no token|invalid|expired|not authenticated|auth login/iu.test(input.stderr)
+        ? "Run code-cli auth login on the server."
+        : "Could not verify the Meituan Code account.",
     });
   if (!match || host !== "git.sankuai.com")
     return providerAuth({

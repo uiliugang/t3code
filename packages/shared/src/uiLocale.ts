@@ -758,6 +758,39 @@ const zhCN: Readonly<Record<string, string>> = {
   "Rescan Git and hosting integrations": "重新扫描 Git 和代码托管集成",
   "Connect an environment to inspect its version control tools and hosting integrations.":
     "连接环境后可查看其版本控制工具和代码托管集成。",
+  "MIS ID": "MIS 号",
+  "Enter your MIS ID": "输入你的 MIS 号",
+  "Save your MIS ID to receive authorization requests in DaXiang. The first unauthenticated check sends one request automatically; send later requests manually.":
+    "保存 MIS 号后可通过大象接收授权申请。首次检测到未认证时自动发送一次，后续需手动发送。",
+  "No authorization requests are sent without a saved MIS ID. Clear it and save to stop future requests.":
+    "未保存 MIS 号时不发送授权申请。清空并保存后，将停止后续申请。",
+  "Use letters, numbers, dots, underscores or hyphens, starting with a letter.":
+    "请以字母开头，仅使用字母、数字、点、下划线或连字符。",
+  "Authorization in progress. Confirm the request in DaXiang when it arrives.":
+    "正在申请授权，请在收到大象通知后确认。",
+  "The automatic request has been used. Send another request manually if needed.":
+    "已使用首次自动申请，如需再次授权，请手动发送。",
+  "Save a MIS ID to enable the first automatic authorization request.":
+    "保存 MIS 号后，首次检测到未认证时会自动申请授权。",
+  "Cancel authorization": "取消授权申请",
+  "Send authorization request": "发送授权申请",
+  "Send again": "再次发送",
+  "Could not save the MIS ID. Try again.": "MIS 号保存失败，请重试。",
+  "Could not start authorization. Rescan the server and try again.":
+    "未能发起授权申请，请重新扫描服务器后重试。",
+  "Expand to configure your MIS ID and request authorization in DaXiang.":
+    "展开后可配置 MIS 号，并通过大象申请授权。",
+  "CIBA requires the server's sandbox IDENTIFIER. Configure it on the server, then send again.":
+    "CIBA 授权需要服务器配置沙箱 IDENTIFIER，请在服务器配置后手动重发。",
+  "Authorization expired. Send a new request when you are ready.":
+    "授权申请已过期，请在方便确认时手动重发。",
+  "Authorization was declined. Send again when you are ready.":
+    "授权申请被拒绝，可在方便确认时手动重发。",
+  "Could not complete authorization. Check code-cli on the server, then send again.":
+    "授权未完成，请检查服务器上的 code-cli 后手动重发。",
+  "Could not run code-cli authorization. Check the server and send again.":
+    "无法运行 code-cli 授权，请检查服务器后手动重发。",
+  "Authorization was cancelled.": "已取消授权申请。",
   "Source control providers": "代码托管平台",
   "Version Control": "版本控制",
   Authenticated: "已认证",

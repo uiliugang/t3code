@@ -64,6 +64,20 @@ over that choice; a host turned off stays off either way.
 For GitHub Enterprise, sign in with `gh auth login --hostname YOUR_HOST`. T3 Code treats a
 custom server name as GitHub once it has a credential for that host.
 
+### Meituan Code
+
+Install code-cli 0.1.27 or newer on your T3 Code server. MOA seamless login is used automatically
+when available, without configuring a MIS ID in T3 Code. If you are still unauthenticated, open
+**Settings → Source control → Meituan Code** and save your MIS ID to receive an authorization request in DaXiang the first time
+T3 Code detects that you are not authenticated. Confirm it in DaXiang to finish signing in.
+Later requests, including after a decline or timeout, require **Send again**. Refreshing or
+restarting the server does not send another automatic request for the same MIS ID.
+
+Without a saved MIS ID, T3 Code sends no authorization requests. Clear it and save to stop future
+requests; cancel a pending request first. DaXiang authorization requires a server with a configured
+CIBA sandbox identifier. On other servers, sign in with `code-cli auth login` on that machine,
+then rescan in T3 Code.
+
 ### Forgejo and Gitea
 
 Install [Forgejo CLI (`fj`)](https://codeberg.org/forgejo-contrib/forgejo-cli) or

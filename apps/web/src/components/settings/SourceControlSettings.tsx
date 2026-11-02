@@ -31,6 +31,7 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 import { GitIcon, JujutsuIcon, type Icon } from "../Icons";
+import { MeituanCodeSettings, MeituanCodeAuthorizationObserver } from "./MeituanCodeSettings";
 import { SourceControlHostSettings } from "./SourceControlHostSettings";
 import { SourceControlAccountSettings } from "./SourceControlAccountSettings";
 import { SourceControlAppSignInSettings } from "./SourceControlAppSignInSettings";
@@ -192,6 +193,12 @@ function ItemSummary({
         <span>
           {optionLabel(auth.detail) ?? t("Every {name} host is turned off.", { name: item.label })}
         </span>
+      );
+    }
+
+    if (auth.status === "unauthenticated" && item.kind === "meituan") {
+      return (
+        <span>{t("Expand to configure your MIS ID and request authorization in DaXiang.")}</span>
       );
     }
 
@@ -418,6 +425,17 @@ export function SourceControlSettingsPanel() {
   const hostSettingsPanel = (item: SourceControlProviderDiscoveryItem) => {
     const definition = sourceControlClients.find(item.kind);
     if (!definition?.settings || environmentId === null) return undefined;
+    if (item.kind === "meituan")
+      return (
+        <SettingsSearchTarget id={sourceControlHostSettingsSearchId(item.kind)}>
+          <MeituanCodeSettings
+            key={environmentId}
+            environmentId={environmentId}
+            item={item}
+            onChanged={handleScan}
+          />
+        </SettingsSearchTarget>
+      );
     const { credentials } = definition;
     if (credentials) {
       return (
@@ -493,6 +511,15 @@ export function SourceControlSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      {environmentId !== null ? (
+        <MeituanCodeAuthorizationObserver
+          environmentId={environmentId}
+          pending={result.sourceControlProviders.some(
+            (item) => item.kind === "meituan" && item.authorization?.status === "pending",
+          )}
+          onChanged={handleScan}
+        />
+      ) : null}
       <ProjectDefaultsSettings category="source-control" />
       {environmentId === null ? (
         <SettingsSection id={searchableSetting("source-control").id} title="Server environment">

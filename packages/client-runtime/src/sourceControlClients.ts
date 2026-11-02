@@ -23,6 +23,8 @@ export {
   type SourceControlIcon,
 } from "@t3tools/source-control-core/shared/definition";
 
+export { readMeituanCodeMis } from "@t3tools/source-control-definitions/registry";
+
 export const sourceControlClients = builtInSourceControlDefinitions;
 
 /** The saved per-hostname accounts and tokens of a host whose definition has `credentials`. */

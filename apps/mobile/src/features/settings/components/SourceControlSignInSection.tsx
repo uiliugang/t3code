@@ -16,6 +16,7 @@ import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import type { SettingsTarget } from "../settings-environment-filter";
 import { SettingsRow } from "./SettingsRow";
+import { MeituanCodeSettingsSection } from "./MeituanCodeSettingsSection";
 import { SettingsSection } from "./SettingsSection";
 
 const failureMessage = (cause: Cause.Cause<unknown>) => {
@@ -41,6 +42,14 @@ export function SourceControlSignInSection(props: {
 }) {
   return (
     <>
+      {props.environments.map((environment) => (
+        <MeituanCodeSettingsSection
+          key={environment.environmentId}
+          environment={environment}
+          disabled={!props.canWrite(environment.environmentId)}
+          multiple={props.environments.length > 1}
+        />
+      ))}
       {appSignInHosts.flatMap(({ definition, appSignIn }) =>
         props.environments.map((environment) => (
           <OfferedAppSignIn
@@ -118,6 +127,7 @@ function AppSignInRow(props: {
   const [pending, setPending] = useState<SourceControlSignInPrompt | "starting" | null>(null);
 
   const showCode = (prompt: SourceControlSignInPrompt) => {
+    if (!("userCode" in prompt)) return;
     void Clipboard.setStringAsync(prompt.userCode).catch(() => undefined);
     Alert.alert(
       prompt.userCode,
@@ -197,7 +207,9 @@ function AppSignInRow(props: {
           : pending === "starting"
             ? "Starting…"
             : pending !== null
-              ? `Enter ${pending.userCode}`
+              ? "userCode" in pending
+                ? `Enter ${pending.userCode}`
+                : "Confirm in DaXiang"
               : "Sign in"
       }
       disabled={props.disabled}
