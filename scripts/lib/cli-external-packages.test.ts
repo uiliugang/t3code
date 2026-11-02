@@ -66,8 +66,14 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
     const installed = new Map<string, PackageManifest>();
     if (!(yield* isPresent(storeDir))) return installed;
 
-    for (const entry of yield* fileSystem.readDirectory(storeDir)) {
-      const modulesDir = path.join(storeDir, entry, "node_modules");
+    const modulesDirs = [
+      path.dirname(storeDir),
+      path.join(storeDir, "node_modules"),
+      ...(yield* fileSystem.readDirectory(storeDir)).map((entry) =>
+        path.join(storeDir, entry, "node_modules"),
+      ),
+    ];
+    for (const modulesDir of modulesDirs) {
       if (!(yield* isPresent(modulesDir))) continue;
 
       for (const owner of yield* fileSystem.readDirectory(modulesDir)) {
@@ -93,6 +99,7 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
   it.effect("keeps every runtime dependency of an external package external too", () =>
     Effect.gen(function* () {
       const installed = yield* readInstalledPackages;
+      assert.isAbove(installed.size, 0);
       const violations: string[] = [];
       const seen = new Set<string>();
       const queue = [...installed.keys()].filter(isRuntimeExternal);

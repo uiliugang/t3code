@@ -373,11 +373,27 @@ const make = Effect.gen(function* () {
           branch: input.workspaceStrategy.branch ?? null,
           baseRef:
             input.workspaceStrategy.type === "worktree" ? input.workspaceStrategy.baseRef : "HEAD",
-          stages: ["checkout", "setup-script", "agent"],
+          stages: [
+            "naming",
+            "fetch",
+            "checkout",
+            "submodules",
+            "setup-script",
+            "baseline",
+            "agent",
+          ],
           fiber: yield* Effect.fiber,
         });
-        yield* setupTracker.stageStatus(threadId, "checkout", "running");
         const requestedBranch = input.workspaceStrategy.branch;
+        const shouldNameBranch =
+          input.workspaceStrategy.type === "worktree" &&
+          (requestedBranch === undefined || isTemporaryWorktreeBranch(requestedBranch)) &&
+          initialMessage !== undefined;
+        yield* setupTracker.stageStatus(
+          threadId,
+          "naming",
+          shouldNameBranch ? "running" : "skipped",
+        );
         const generatedBranchName =
           input.workspaceStrategy.type === "worktree" &&
           (requestedBranch === undefined || isTemporaryWorktreeBranch(requestedBranch)) &&
@@ -391,7 +407,8 @@ const make = Effect.gen(function* () {
                 ),
               )
             : undefined;
-        const workspace = yield* workspaceProvisioner.value
+        if (shouldNameBranch) yield* setupTracker.stageStatus(threadId, "naming", "done");
+        const prepared = yield* workspaceProvisioner.value
           .prepare({
             threadId,
             projectId: input.projectId,
@@ -406,18 +423,46 @@ const make = Effect.gen(function* () {
               setupTracker.finish(threadId, "failed", failureDetail(error)),
             ),
           );
-        yield* threads
-          .dispatch({
-            type: "thread.workspace.bind",
-            commandId: CommandId.make(`${input.commandId}:workspace-group`),
-            threadId,
-            expectedWorkspaceRevisionId: null,
-            ...(runId === null ? {} : { preparingRunId: runId }),
-            workspace,
-          })
-          .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
-        yield* setupTracker.stageStatus(threadId, "checkout", "done");
-        yield* setupTracker.stageStatus(threadId, "setup-script", "done");
+        yield* Effect.gen(function* () {
+          yield* threads
+            .dispatch({
+              type: "thread.workspace.bind",
+              commandId: CommandId.make(`${input.commandId}:workspace-group`),
+              threadId,
+              expectedWorkspaceRevisionId: null,
+              ...(runId === null ? {} : { preparingRunId: runId }),
+              workspace: prepared.workspace,
+            })
+            .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+          yield* setupTracker.markUncancellable(threadId);
+          yield* setupTracker.stageStatus(threadId, "agent", "running");
+          if (runId !== null)
+            yield* threads
+              .dispatch({
+                type: "prepared-run.release",
+                commandId: CommandId.make(`${input.commandId}:release`),
+                threadId,
+                runId,
+              })
+              .pipe(Effect.mapError(mapError(input, "release-run", threadId)));
+          yield* setupTracker.stageStatus(threadId, "agent", "done");
+          yield* prepared.completion.pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Workspace setup failed after launch", { threadId, cause }),
+            ),
+          );
+          yield* setupTracker.finish(threadId, "done");
+        }).pipe(
+          Effect.onInterrupt(() => prepared.cancel),
+          Effect.onError((cause) =>
+            setupTracker.finish(
+              threadId,
+              Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
+              failureDetail(Cause.squash(cause)),
+            ),
+          ),
+        );
+        return;
       }
       if (runId !== null)
         yield* threads
@@ -446,7 +491,7 @@ const make = Effect.gen(function* () {
         threadId,
         branch: input.workspaceStrategy.branch ?? null,
         baseRef: input.workspaceStrategy.baseRef,
-        stages: ["fetch", "checkout", "setup-script", "agent"],
+        stages: ["naming", "fetch", "checkout", "setup-script", "agent"],
         fiber: yield* Effect.fiber,
       });
     } else if (reused !== undefined) {
@@ -535,7 +580,13 @@ const make = Effect.gen(function* () {
         ) {
           branch = flattenTemporaryWorktreeBranchName(branch);
         }
-        yield* setupTracker.stageStatus(threadId, "checkout", "running");
+        const shouldNameBranch =
+          branch !== null && isTemporaryWorktreeBranch(branch) && initialMessage !== undefined;
+        yield* setupTracker.stageStatus(
+          threadId,
+          "naming",
+          shouldNameBranch ? "running" : "skipped",
+        );
         // Finalize the name before checkout so setup scripts and providers only see one path.
         const generatedBranchName =
           branch !== null && isTemporaryWorktreeBranch(branch) && initialMessage !== undefined
@@ -548,6 +599,8 @@ const make = Effect.gen(function* () {
                 ),
               )
             : undefined;
+        if (shouldNameBranch) yield* setupTracker.stageStatus(threadId, "naming", "done");
+        yield* setupTracker.stageStatus(threadId, "checkout", "running");
         const worktree = yield* git
           .createWorktree(
             {
@@ -730,10 +783,12 @@ const make = Effect.gen(function* () {
         if (setup.completion) {
           const awaitCompletion = Effect.gen(function* () {
             const completion = yield* setup.completion!;
-            yield* setupTracker.stage(threadId, "setup-script", {
-              status: completion.exitCode === 0 ? "done" : "failed",
-              detail: `exited with ${completion.exitCode ?? "no exit code"}`,
-            });
+            yield* setupTracker.stageStatus(
+              threadId,
+              "setup-script",
+              completion.exitCode === 0 ? "done" : "failed",
+              `exited with ${completion.exitCode ?? "no exit code"}`,
+            );
             if (completion.exitCode !== 0 && !setup.async)
               return yield* mapError(
                 input,

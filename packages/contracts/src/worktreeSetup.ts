@@ -8,10 +8,12 @@ export const WORKTREE_SETUP_TAIL_LINE_MAX_LENGTH = 400;
 export const WORKTREE_SETUP_ERROR_MAX_LENGTH = 1000;
 
 export const WorktreeSetupStageId = Schema.Literals([
+  "naming",
   "fetch",
   "checkout",
   "submodules",
   "setup-script",
+  "baseline",
   "agent",
 ]);
 export type WorktreeSetupStageId = typeof WorktreeSetupStageId.Type;
@@ -80,15 +82,19 @@ export const WorktreeSetupCancelResult = Schema.Struct({
 export type WorktreeSetupCancelResult = typeof WorktreeSetupCancelResult.Type;
 
 export const WORKTREE_SETUP_STAGE_ORDER: ReadonlyArray<WorktreeSetupStageId> = [
+  "naming",
   "fetch",
   "checkout",
   "submodules",
   "setup-script",
+  "baseline",
   "agent",
 ];
 
 export function worktreeSetupStageLabel(id: WorktreeSetupStageId): string {
   switch (id) {
+    case "naming":
+      return "Name branch";
     case "fetch":
       return "Fetch base branch";
     case "checkout":
@@ -97,6 +103,8 @@ export function worktreeSetupStageLabel(id: WorktreeSetupStageId): string {
       return "Init submodules";
     case "setup-script":
       return "Run setup script";
+    case "baseline":
+      return "Capture workspace baseline";
     case "agent":
       return "Start agent";
   }

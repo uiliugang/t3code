@@ -3924,6 +3924,23 @@ it("keeps the working header in place across worktree setup handoff", () => {
   });
   expect(asyncRows.map((row) => row.kind)).toEqual(["message", "working", "thinking"]);
 
+  const backgroundRows = deriveMessagesTimelineRows({
+    timelineEntries: [
+      userEntry,
+      { ...assistantEntry, message: { ...assistantEntry.message, streaming: false } },
+    ],
+    latestRun: { ...liveTurn, status: "completed", completedAt: "2026-01-01T00:00:30Z" },
+    isWorking: false,
+    activeTurnStartedAt: null,
+    turnDiffSummaries: [],
+    supportsConversationRollback: false,
+    worktreeSetup: asyncSnapshot,
+  });
+  expect(backgroundRows.find((row) => row.kind === "worktree-setup")).toMatchObject({
+    embedded: true,
+    snapshot: asyncSnapshot,
+  });
+
   const handoffRows = deriveMessagesTimelineRows({
     timelineEntries: [userEntry],
     isWorking: true,
@@ -3934,6 +3951,14 @@ it("keeps the working header in place across worktree setup handoff", () => {
   });
   expect(handoffRows.map((row) => row.kind)).toEqual(["message", "working", "worktree-setup"]);
   expect(handoffRows[2]).toMatchObject({ kind: "worktree-setup", embedded: false });
+
+  const stableBackgroundRows = computeStableMessagesTimelineRows(
+    backgroundRows,
+    computeStableMessagesTimelineRows(handoffRows, { byId: new Map(), result: [] }),
+  );
+  expect(stableBackgroundRows.result.find((row) => row.kind === "worktree-setup")).toMatchObject({
+    embedded: true,
+  });
 
   const settledRows = deriveMessagesTimelineRows({
     timelineEntries: [userEntry],

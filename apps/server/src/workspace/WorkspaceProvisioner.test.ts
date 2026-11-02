@@ -9,22 +9,29 @@ import {
   type ProjectWorkspaceRoot,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import * as WorkspaceProvisioner from "./WorkspaceProvisioner.ts";
 
 const infrastructure = Layer.mergeAll(
+  WorktreeSetupTracker.layer,
+  Layer.mock(TerminalManager.TerminalManager)({ close: () => Effect.void }),
   Sqlite.layerMemory,
   GitVcsDriver.layer,
   WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer)),
@@ -32,6 +39,164 @@ const infrastructure = Layer.mergeAll(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "workspace-preparation-" })),
   Layer.provide(VcsProcess.layer),
   Layer.provideMerge(NodeServices.layer),
+);
+
+it.live.each([
+  { async: true, exitCode: 0, cancel: false },
+  { async: true, exitCode: 1, cancel: false },
+  { async: true, exitCode: null, cancel: false },
+  { async: false, exitCode: 0, cancel: false },
+  { async: false, exitCode: null, cancel: true },
+])(
+  "honors async=$async with exit $exitCode without racing the workspace baseline",
+  ({ async, exitCode, cancel }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const temp = yield* fs.makeTempDirectoryScoped({ prefix: "workspace-async-" });
+      const started = yield* Deferred.make<void>();
+      const completion =
+        yield* Deferred.make<ProjectSetupScriptRunner.ProjectSetupScriptCompletion>();
+      const baselines = yield* Ref.make<boolean[]>([]);
+      const closedTerminals = yield* Ref.make<Array<string | undefined>>([]);
+      const cwd = path.join(temp, "source");
+      yield* fs.makeDirectory(cwd);
+      yield* git.execute({ operation: "test", cwd, args: ["init", "-b", "main"] });
+      yield* fs.writeFileString(path.join(cwd, "file.txt"), "initial");
+      yield* git.execute({ operation: "test", cwd, args: ["add", "."] });
+      yield* git.execute({
+        operation: "test",
+        cwd,
+        args: [
+          "-c",
+          "user.name=Test",
+          "-c",
+          "user.email=test@example.com",
+          "commit",
+          "-m",
+          "initial",
+        ],
+      });
+      const threadId = ThreadId.make("async-group");
+      const rootId = WorkspaceRootId.make("source");
+      yield* tracker.begin({
+        threadId,
+        branch: null,
+        baseRef: "main",
+        stages: ["fetch", "checkout", "submodules", "setup-script", "agent"],
+        fiber: null,
+      });
+      const layer = WorkspaceProvisioner.layer.pipe(
+        Layer.provide(
+          Layer.mock(TerminalManager.TerminalManager)({
+            close: (input) =>
+              Ref.update(closedTerminals, (current) => [...current, input.terminalId]),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+            runForThread: (input) =>
+              Effect.gen(function* () {
+                yield* Deferred.succeed(started, undefined);
+                assert.deepEqual(yield* Ref.get(baselines), async ? [false] : []);
+                const snapshot = yield* tracker.get(threadId);
+                assert.equal(
+                  snapshot?.stages.find((stage) => stage.id === "checkout")?.status,
+                  "done",
+                );
+                if (input.observeCompletion?.onOutputLine)
+                  yield* input.observeCompletion.onOutputLine("installing dependencies");
+                yield* fs
+                  .writeFileString(path.join(input.worktreePath, "generated.txt"), "setup output")
+                  .pipe(Effect.orDie);
+                return {
+                  status: "started" as const,
+                  scriptId: "setup",
+                  scriptName: "Setup",
+                  scriptCommand: "setup",
+                  terminalId: "setup",
+                  cwd: input.worktreePath,
+                  async,
+                  completion: Deferred.await(completion),
+                };
+              }),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(CheckpointStore.CheckpointStore)({
+            captureCheckpoint: (input) =>
+              fs.exists(path.join(input.cwd, "generated.txt")).pipe(
+                Effect.flatMap((generated) =>
+                  Ref.update(baselines, (current) => [...current, generated]),
+                ),
+                Effect.orDie,
+              ),
+          }),
+        ),
+        Layer.provide(ServerConfig.layerTest(temp, path.join(temp, "state"))),
+      );
+      yield* Effect.gen(function* () {
+        const provisioner = yield* WorkspaceProvisioner.WorkspaceProvisioner;
+        const preparing = yield* provisioner
+          .prepare({
+            threadId,
+            projectId: ProjectId.make("async-project"),
+            config: {
+              version: 1,
+              primaryRootId: rootId,
+              roots: [
+                {
+                  id: rootId,
+                  alias: "source",
+                  sourcePath: cwd,
+                  description: "",
+                  accessIntent: "write",
+                  defaultSelected: true,
+                  setupScript: {
+                    id: "setup",
+                    name: "Setup",
+                    command: "setup",
+                    icon: "configure",
+                    runOnWorktreeCreate: true,
+                    async,
+                  },
+                },
+              ],
+            },
+            strategy: { type: "worktree", baseRef: "main", startFromOrigin: false },
+          })
+          .pipe(Effect.forkScoped);
+        yield* Deferred.await(started);
+        if (cancel) {
+          yield* tracker.stream(threadId).pipe(
+            Stream.filter((snapshot) => snapshot?.setupScript?.terminalId === "setup"),
+            Stream.runHead,
+          );
+          yield* Fiber.interrupt(preparing);
+          assert.deepEqual(yield* Ref.get(closedTerminals), ["setup"]);
+          assert.deepEqual(yield* Ref.get(baselines), []);
+          return;
+        }
+        if (!async) yield* Deferred.succeed(completion, { exitCode: 0, durationMs: 1 });
+        const prepared = yield* Fiber.join(preparing);
+        assert.equal(yield* Deferred.isDone(completion), !async);
+        assert.deepEqual(yield* Ref.get(baselines), [!async]);
+        const snapshot = yield* tracker.get(threadId);
+        assert.include(
+          snapshot?.stages.find((stage) => stage.id === "setup-script")?.tail ?? [],
+          "installing dependencies",
+        );
+        if (async) yield* Deferred.succeed(completion, { exitCode, durationMs: 1 });
+        if (exitCode === 0) yield* prepared.completion;
+        else assert.include((yield* prepared.completion.pipe(Effect.flip)).message, "Setup failed");
+        const settled = yield* tracker.get(threadId);
+        const setupStage = settled?.stages.find((stage) => stage.id === "setup-script");
+        assert.equal(setupStage?.status, exitCode === 0 ? "done" : "failed");
+        assert.isNotNull(setupStage?.endedAt);
+      }).pipe(Effect.provide(layer));
+    }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );
 
 it.live(
@@ -79,6 +244,7 @@ it.live(
             command: "setup",
             icon: "configure" as const,
             runOnWorktreeCreate: true,
+            async: false,
           },
         });
       }
@@ -170,7 +336,7 @@ it.live(
           .slice(9);
         yield* fs.writeFileString(path.join(prepared, "keep.txt"), "user work");
         yield* Ref.set(fail, false);
-        const workspace = yield* provisioner.prepare({
+        const { workspace } = yield* provisioner.prepare({
           ...input,
           generatedBranchName: { branch: "lg/different-on-retry", exactName: false },
           config: {
@@ -248,7 +414,7 @@ it.live(
           for (const resource of workspace.resources)
             assert.isFalse(yield* fs.exists(resource.checkoutRoot));
         }).pipe(Effect.provide(WorkspaceCleanup.layer));
-        const selected = yield* provisioner.prepare({
+        const { workspace: selected } = yield* provisioner.prepare({
           ...input,
           threadId: ThreadId.make("scoped-setup"),
           scripts: [
@@ -268,7 +434,7 @@ it.live(
         assert.isTrue(
           yield* fs.exists(path.join(selected.resources[1]!.checkoutRoot, "setup.txt")),
         );
-        const explicit = yield* provisioner.prepare({
+        const { workspace: explicit } = yield* provisioner.prepare({
           ...input,
           threadId: ThreadId.make("explicit-group-branch"),
           strategy: { type: "worktree", baseRef: "main", branch: "feature/user-choice" },
@@ -277,7 +443,7 @@ it.live(
           explicit.bindings.map((binding) => binding.launchBranch),
           ["feature/user-choice", "feature/user-choice"],
         );
-        const fallback = yield* provisioner.prepare({
+        const { workspace: fallback } = yield* provisioner.prepare({
           ...input,
           threadId: ThreadId.make("group-name-unavailable"),
           generatedBranchName: undefined,
@@ -288,7 +454,7 @@ it.live(
           cwd: roots[0]!.sourcePath,
           args: ["checkout", "main"],
         });
-        const local = yield* provisioner.prepare({
+        const { workspace: local } = yield* provisioner.prepare({
           ...input,
           threadId: ThreadId.make("local-protected-main"),
           strategy: { type: "root" },
