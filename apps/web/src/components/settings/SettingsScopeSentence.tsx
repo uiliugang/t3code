@@ -352,6 +352,9 @@ function EnvironmentScopeMenu({
 function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsScopeMenuProps) {
   const t = useUiTranslation();
   const { projectTypeFilter } = useSettingsScope();
+  const filterLabel = t(
+    projectTypeFilter === "repo" ? "Projects" : projectTypeFilter === "group" ? "Groups" : "All",
+  );
   const selected = groups.find((group) => group.projectKey === value.project);
   const projects = projectScopeMenuGroups(groups, value, projectTypeFilter).map((group) => ({
     group,
@@ -361,7 +364,7 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
     <ScopeMenu
       ariaLabel={t("Project scope")}
       icon={selected ? <ProjectFavicon project={selected} className="size-3.5 shrink-0" /> : null}
-      label={selected?.displayName ?? t(value.project ? "Unavailable project" : "All projects")}
+      label={selected?.displayName ?? (value.project ? t("Unavailable project") : filterLabel)}
       displayLabel={
         selected ? <ProjectLabel name={selected.displayName} project={selected} /> : undefined
       }
@@ -370,7 +373,7 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
       searchLabel={t("Search projects")}
       searchable
       header={<ProjectTypeFilterControl />}
-      allOption={{ value: ALL_PROJECTS_VALUE, label: t("All projects") }}
+      allOption={{ value: ALL_PROJECTS_VALUE, label: filterLabel }}
       options={projects.map(({ group, machines }) => {
         const sameName = projects.filter(
           (other) =>

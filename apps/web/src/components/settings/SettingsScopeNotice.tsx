@@ -185,10 +185,12 @@ export function SettingsScopeNotice({
   };
   const notice = (
     <div className="space-y-3">
-      {actions}
-      <p role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
-        {children}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="status" className="min-w-48 flex-1 px-3 text-sm text-muted-foreground sm:px-4">
+          {children}
+        </p>
+        {actions}
+      </div>
       <div className="space-y-4">
         {choiceGroups.map((group) =>
           group?.displayName ? (
