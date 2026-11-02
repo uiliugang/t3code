@@ -238,7 +238,7 @@ export function RightPanelSurfaceContent(props: {
               <div className="border-b border-border px-3 py-2">
                 <select
                   aria-label={t("Repository")}
-                  className="w-full bg-transparent text-sm"
+                  className="w-full bg-transparent p-0.5 text-sm"
                   value={repository?.id}
                   onChange={(event) => {
                     const selected = workspace.resources.find(
