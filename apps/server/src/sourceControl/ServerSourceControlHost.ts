@@ -20,7 +20,7 @@ export const layer = Layer.effect(
     const git = yield* GitVcsDriver.GitVcsDriver;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     return SourceControlHost.SourceControlHost.of({
-      settings: { get: serverSettings.getSettings },
+      settings: { get: serverSettings.getSettings, update: serverSettings.updateSettings },
       process: {
         run: (input) =>
           resolveMCodeCommand(input).pipe(

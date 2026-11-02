@@ -1,7 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
@@ -66,7 +69,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78])("upgrades a database at exactly %s", (id) =>
+  it.effect.each([54, 78, 79])("upgrades a database at exactly %s", (id) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: id });
@@ -78,6 +81,18 @@ describe("runMigrations", () => {
       assert.isAbove(yield* v2TableCount, 0);
       yield* sql`INSERT INTO managed_worktree_snapshots (group_id, payload_json) VALUES ('group', '{}')`;
       yield* sql`INSERT INTO skill_catalog (id, payload) VALUES (1, '{}')`;
+      const indexes = yield* sql<{ name: string }>`
+        SELECT name FROM sqlite_master WHERE type = 'index'
+        AND name LIKE 'orchestration_v2_projection_turn_items_active_%'
+        ORDER BY name
+      `;
+      assert.deepStrictEqual(
+        indexes.map(({ name }) => name),
+        [
+          "orchestration_v2_projection_turn_items_active_ordinal_idx",
+          "orchestration_v2_projection_turn_items_active_run_idx",
+        ],
+      );
       assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
@@ -130,3 +145,20 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });
+
+// The npm launcher reads the highest migration id from these file names.
+it.effect("registers every migration file", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dir = path.join(import.meta.dirname, "Migrations");
+    const files = (yield* fs.readDirectory(dir)).flatMap((name) => {
+      const match = /^(\d+)_(\w+)\.ts$/.exec(name);
+      return match ? [[Number(match[1]), match[2]] as const] : [];
+    });
+    assert.deepStrictEqual(
+      files.toSorted(([a], [b]) => a - b),
+      migrationManifest,
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);

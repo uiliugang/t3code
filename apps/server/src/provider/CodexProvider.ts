@@ -1,3 +1,4 @@
+import { pipe } from "effect/Function";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -868,14 +869,13 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     presentation: CODEX_PRESENTATION,
     enabled: codexSettings.enabled,
     checkedAt,
-    models: applyConfiguredCodexServiceTier(
-      applyPreferredCodexDefaultModel(
-        appendCustomCodexModels(
-          snapshot.models ?? (snapshot.modelCatalogError ? previousModels : []),
-          codexSettings.customModels,
-        ),
+    models: pipe(
+      appendCustomCodexModels(
+        snapshot.models ?? (snapshot.modelCatalogError ? previousModels : []),
+        codexSettings.customModels,
       ),
-      snapshot.serviceTier,
+      applyPreferredCodexDefaultModel,
+      (models) => applyConfiguredCodexServiceTier(models, snapshot.serviceTier),
     ),
     skills: snapshot.skills,
     slashCommands: [

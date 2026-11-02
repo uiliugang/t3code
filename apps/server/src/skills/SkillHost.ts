@@ -1,5 +1,6 @@
 import { ProviderInstanceId, SkillManagerError, type SkillTarget } from "@t3tools/contracts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -33,6 +34,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const home = yield* HostProcess.HomeDirectory;
   const environment = yield* HostProcess.Environment;
+  const secrets = yield* SecretResolver.SecretResolver;
   const targets = Effect.gen(function* () {
     const current = yield* settings.getSettings;
     const result: SkillTarget[] = [];
@@ -40,14 +42,26 @@ const make = Effect.gen(function* () {
       const config = yield* decodeHome(instance.config ?? {}).pipe(
         Effect.orElseSucceed(() => ({}) as { homePath?: string }),
       );
-      const env = {
-        ...environment,
-        ...Object.fromEntries(
-          (instance.environment ?? [])
-            .filter((entry) => !entry.valueRedacted)
-            .map((entry) => [entry.name, entry.value]),
-        ),
-      };
+      const env = { ...environment };
+      for (const entry of instance.environment ?? []) {
+        if (
+          entry.valueRedacted ||
+          ![
+            "HOME",
+            "USERPROFILE",
+            "CODEX_HOME",
+            "CLAUDE_CONFIG_DIR",
+            "GROK_HOME",
+            "XDG_CONFIG_HOME",
+          ].includes(entry.name)
+        )
+          continue;
+        const value =
+          typeof entry.value === "string" ? entry.value : (yield* secrets.read([entry.value]))[0];
+        if (value === undefined)
+          return yield* new SkillManagerError({ operation: "targets", reason: "authentication" });
+        env[entry.name] = value;
+      }
       const userHome = env.HOME || env.USERPROFILE || home;
       const configuredHome = config.homePath?.trim()
         ? expandHomePath(config.homePath, home)
@@ -113,8 +127,10 @@ const make = Effect.gen(function* () {
     });
     return result;
   }).pipe(
-    Effect.mapError(
-      (cause) => new SkillManagerError({ operation: "targets", reason: "io", cause }),
+    Effect.mapError((cause) =>
+      Schema.is(SkillManagerError)(cause)
+        ? cause
+        : new SkillManagerError({ operation: "targets", reason: "io", cause }),
     ),
   );
   const busy = sql<{

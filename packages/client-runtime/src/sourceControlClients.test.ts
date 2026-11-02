@@ -1,7 +1,7 @@
 import { ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { sourceControlClients } from "./sourceControlClients.ts";
+import { appSignInTargetForRemote, sourceControlClients } from "./sourceControlClients.ts";
 import { normalizeThreadPullRequestKey } from "./threadPullRequests.ts";
 
 const parse = (url: string) => {
@@ -381,4 +381,24 @@ it("only offers GitHub and Meituan Code while retaining saved link metadata", ()
     )?.definition.kind,
   ).toBe("meituan");
   expect(kindOf("https://gitlab.com/team/repo/-/merge_requests/42")).toBe("gitlab");
+});
+
+describe("appSignInTargetForRemote", () => {
+  it("names the repository a GitHub remote points at, in the remote's casing", () => {
+    for (const remote of [
+      "https://github.com/octocat/Hello-World.git",
+      "git@github.com:octocat/Hello-World.git",
+    ]) {
+      expect(appSignInTargetForRemote(remote)?.input).toEqual({
+        provider: "github",
+        host: "github.com",
+        repository: "octocat/Hello-World",
+      });
+    }
+  });
+
+  it("skips hosts the app is not registered on", () => {
+    expect(appSignInTargetForRemote("https://ghe.acme.test/acme/web.git")).toBeNull();
+    expect(appSignInTargetForRemote("https://gitlab.com/acme/web.git")).toBeNull();
+  });
 });
