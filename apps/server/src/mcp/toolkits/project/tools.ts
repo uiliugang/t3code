@@ -34,6 +34,14 @@ import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
+import * as BranchIssueService from "../../../sourceControl/BranchIssueService.ts";
+import {
+  BranchIssuesInput,
+  BranchIssuesResult,
+  BranchIssueDetailInput,
+  BranchIssueDetail,
+  BranchIssuesUpdateInput,
+} from "@t3tools/contracts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -177,6 +185,46 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
   .annotate(Tool.OpenWorld, true);
 
 export const ProjectToolkit = Toolkit.make(
+  Tool.make("t3_branch_issues_list", {
+    ...shared,
+    description:
+      "List issues associated with a repository branch. GitHub links are stored in T3; Meituan Code includes MEP ONES branch associations.",
+    parameters: Schema.Struct({
+      environmentId: OrchestratorMcpEnvironmentTarget,
+      ...BranchIssuesInput.fields,
+    }),
+    success: BranchIssuesResult,
+    dependencies: [...shared.dependencies, BranchIssueService.BranchIssueService],
+  })
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("t3_branch_issue_read", {
+    ...shared,
+    description:
+      "Read the title, state and description of a GitHub issue or MEP ONES work item for this repository's platform.",
+    parameters: Schema.Struct({
+      environmentId: OrchestratorMcpEnvironmentTarget,
+      ...BranchIssueDetailInput.fields,
+    }),
+    success: BranchIssueDetail,
+    dependencies: [...shared.dependencies, BranchIssueService.BranchIssueService],
+  })
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("t3_branch_issues_update", {
+    ...shared,
+    description:
+      "Associate or disassociate multiple issue URLs with a repository branch. GitHub stores branch links in T3 without closing issues. Meituan Code updates MEP ONES branch associations. Successful links remain if a later link fails; list before retrying.",
+    parameters: Schema.Struct({
+      environmentId: OrchestratorMcpEnvironmentTarget,
+      ...BranchIssuesUpdateInput.fields,
+    }),
+    success: Schema.Void,
+    dependencies: [...shared.dependencies, BranchIssueService.BranchIssueService],
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true)
+    .annotate(Tool.OpenWorld, true),
   ThreadLaunchTool,
   ProjectListTool,
   ProjectReadTool,

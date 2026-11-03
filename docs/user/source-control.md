@@ -23,6 +23,21 @@ the matching existing local base branch, including when it is checked out in ano
 This also runs with automatic cleanup disabled. Local commits, uncommitted files, locked worktrees,
 active work, and branches tracking a different repository or branch are kept as they are.
 
+## Link issues to a branch
+
+Use **Linked issues** in the repository details to add GitHub Issue or MEP ONES links,
+one per line. A branch can have multiple links; descriptions stay collapsed until opened.
+On mobile, open the repository overview. Unlinking keeps the issue and its status unchanged.
+
+GitHub associations are saved in T3 Code for that environment's repository and branch;
+they do not close issues when a pull request merges. Meituan Code associations are written
+to MEP and can satisfy the repository's ONES requirement for pull requests. Install and
+authenticate `ones2` on the server to read MEP descriptions or change these associations.
+
+In **Settings → Appearance → Thread details**, choose whether linked issues appear,
+whether they use a separate card, and whether descriptions start expanded. Mobile has
+the same preferences under **Settings → Appearance → Linked issues**.
+
 ## Review turn changes
 
 A turn's changed files and diff show only the turn's own work. When a turn pulls, merges, or

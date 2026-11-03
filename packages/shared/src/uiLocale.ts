@@ -12,6 +12,30 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Linked issues": "关联需求",
+  "Link issues": "关联需求",
+  "Issue links": "需求链接",
+  "Refresh issues": "刷新需求",
+  "Unlink issue": "解除关联",
+  "View original": "查看原文",
+  "MEP branch association": "MEP 分支关联",
+  "T3 branch association": "T3 分支关联",
+  "No description.": "暂无需求描述。",
+  "No issues linked to this branch.": "此分支暂无关联需求。",
+  "Could not load issue details.": "无法加载需求详情。",
+  "Could not load linked issues.": "无法加载关联需求。",
+  "Some links could not be updated. Refresh and retry.": "部分关联未能更新，请刷新后重试。",
+  "The issue association could not be updated. Refresh to check which links succeeded.":
+    "需求关联未能更新，请刷新查看哪些链接已成功。",
+  "MEP could not unlink this issue. Check your access and the work item and branch workflow states.":
+    "MEP 未能解除关联，请检查访问权限及工作项、分支的流程状态。",
+  "Enter valid issue links for this repository's hosting platform.":
+    "请输入当前仓库平台的有效需求链接。",
+  "One MEP ONES work item link per line": "每行一个 MEP ONES 工作项链接",
+  "One GitHub Issue link per line": "每行一个 GitHub Issue 链接",
+  "Separate card": "独立卡片",
+  "Expand issue descriptions by default": "默认展开需求正文",
+  "Show when no issues are linked": "无关联时显示入口",
   "Filter files": "过滤文件",
   "Hide test files": "隐藏测试文件",
   "Hide .md files": "隐藏 .md 文件",

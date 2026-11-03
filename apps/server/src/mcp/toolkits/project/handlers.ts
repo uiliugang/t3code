@@ -20,6 +20,7 @@ import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import { mutateProjectWithClone } from "../../../project/ProjectMutation.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
+import * as BranchIssueService from "../../../sourceControl/BranchIssueService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
@@ -82,6 +83,24 @@ const access = Effect.gen(function* () {
   return yield* Project.ProjectService;
 });
 export const layer = McpToolAccess.toLayer(ProjectToolkit, {
+  t3_branch_issues_list: McpToolAccess.reads((input) =>
+    Effect.gen(function* () {
+      const service = yield* BranchIssueService.BranchIssueService;
+      return yield* service.list(input).pipe(Effect.mapError(unavailable));
+    }),
+  ),
+  t3_branch_issue_read: McpToolAccess.reads((input) =>
+    Effect.gen(function* () {
+      const service = yield* BranchIssueService.BranchIssueService;
+      return yield* service.read(input).pipe(Effect.mapError(unavailable));
+    }),
+  ),
+  t3_branch_issues_update: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      const service = yield* BranchIssueService.BranchIssueService;
+      return yield* service.update(input).pipe(Effect.mapError(unavailable));
+    }),
+  ),
   t3_thread_launch: McpToolAccess.startsThreads(
     (input) => input,
     (input, { runtimeMode, interactionMode, linkOrigin }) =>

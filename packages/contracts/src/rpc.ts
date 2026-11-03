@@ -62,6 +62,14 @@ import {
   ThreadPredictionError,
 } from "./threadPrediction.ts";
 import * as Schema from "effect/Schema";
+import {
+  BranchIssuesInput,
+  BranchIssuesResult,
+  BranchIssueDetailInput,
+  BranchIssueDetail,
+  BranchIssuesUpdateInput,
+  BranchIssueError,
+} from "./branchIssues.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -646,6 +654,9 @@ export const WS_METHODS = {
   pullRequestsSetLabels: "pullRequests.setLabels",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
+  branchIssuesList: "sourceControl.branchIssuesList",
+  branchIssuesRead: "sourceControl.branchIssuesRead",
+  branchIssuesUpdate: "sourceControl.branchIssuesUpdate",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
   sourceControlSignInStart: "sourceControl.signInStart",
@@ -1290,6 +1301,22 @@ const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLook
   payload: SourceControlRepositoryLookupInput,
   success: SourceControlRepositoryInfo,
   error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+const WsBranchIssuesListRpc = Rpc.make(WS_METHODS.branchIssuesList, {
+  payload: BranchIssuesInput,
+  success: BranchIssuesResult,
+  error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
+});
+const WsBranchIssuesReadRpc = Rpc.make(WS_METHODS.branchIssuesRead, {
+  payload: BranchIssueDetailInput,
+  success: BranchIssueDetail,
+  error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
+});
+const WsBranchIssuesUpdateRpc = Rpc.make(WS_METHODS.branchIssuesUpdate, {
+  payload: BranchIssuesUpdateInput,
+  success: Schema.Void,
+  error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
 });
 
 const WsSourceControlCloneRepositoryRpc = Rpc.make(WS_METHODS.sourceControlCloneRepository, {
@@ -2223,6 +2250,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,
+  WsBranchIssuesListRpc,
+  WsBranchIssuesReadRpc,
+  WsBranchIssuesUpdateRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
   WsSourceControlSignInStartRpc,

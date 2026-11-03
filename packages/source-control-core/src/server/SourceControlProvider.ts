@@ -10,6 +10,9 @@ import type {
   SourceControlProviderKind,
   SourceControlRepositoryCloneUrls,
   SourceControlRepositoryVisibility,
+  BranchIssue,
+  BranchIssueRef,
+  BranchIssueDetail,
 } from "@t3tools/contracts";
 
 export interface SourceControlLinkSubject {
@@ -117,6 +120,24 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
+    readonly issues?: {
+      readonly read: (input: {
+        readonly cwd: string;
+        readonly issue: BranchIssueRef;
+      }) => Effect.Effect<BranchIssueDetail, SourceControlProviderError>;
+      readonly list?: (input: {
+        readonly cwd: string;
+        readonly branch: string;
+        readonly context: SourceControlProviderContext;
+      }) => Effect.Effect<ReadonlyArray<BranchIssue>, SourceControlProviderError>;
+      readonly update?: (input: {
+        readonly cwd: string;
+        readonly branch: string;
+        readonly context: SourceControlProviderContext;
+        readonly issue: BranchIssueRef;
+        readonly action: "associate" | "disassociate";
+      }) => Effect.Effect<void, SourceControlProviderError>;
+    };
     /** The caller verifies owners, so hosts may drop unsupported `owner:branch` selectors. */
     readonly headBranchProbe?: (input: {
       readonly headSelectors: ReadonlyArray<string>;

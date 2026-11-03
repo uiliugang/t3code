@@ -520,6 +520,11 @@ export const ClientSettingsSchema = Schema.Struct({
   threadDetailsItems: Schema.Record(Schema.String, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  branchIssuesPlacement: Schema.Literals(["inline", "separate"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("inline")),
+  ),
+  branchIssuesExpanded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  branchIssuesShowEmpty: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Opt-in for the removed legacy sidebar. Still read so those users land in
   // the boring sidebar; the boring sidebar toggle clears it.
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -1875,6 +1880,9 @@ export const ClientSettingsPatch = Schema.Struct({
   boringSidebarMultilineRows: Schema.optionalKey(Schema.Boolean),
   threadDetailsUsageEnabled: Schema.optionalKey(Schema.Boolean),
   threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
+  branchIssuesPlacement: Schema.optionalKey(Schema.Literals(["inline", "separate"])),
+  branchIssuesExpanded: Schema.optionalKey(Schema.Boolean),
+  branchIssuesShowEmpty: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),

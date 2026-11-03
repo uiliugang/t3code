@@ -5,6 +5,7 @@ import { useDiffPanelStore } from "../../diffPanelStore";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { RepositoryDetails } from "./RepositoryDetails";
+import { BranchIssuesPanel } from "./BranchIssuesPanel";
 import type {
   EditorId,
   EnvironmentId,
@@ -124,6 +125,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       : primaryResourceId;
 
   const visible = useClientSettings(resolveThreadDetailsVisibility);
+  const issuesPlacement = useClientSettings((settings) => settings.branchIssuesPlacement);
+  const showIssues = visible.issues && !(props.draftId && props.envMode === "worktree");
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
@@ -162,6 +165,22 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
       anchor={props.anchor}
       handle={props.handle}
+      supplementary={
+        showIssues && issuesPlacement === "separate" ? (
+          workspace ? (
+            workspace.resources.map((resource) => (
+              <BranchIssuesPanel
+                key={resource.id}
+                environmentId={props.environmentId}
+                cwd={resource.checkoutRoot}
+                separate
+              />
+            ))
+          ) : props.gitCwd ? (
+            <BranchIssuesPanel environmentId={props.environmentId} cwd={props.gitCwd} separate />
+          ) : null
+        ) : null
+      }
       contentKey={THREAD_DETAILS_ITEMS.filter((item) => visible[item.id])
         .map((item) => item.id)
         .join(",")}
@@ -346,6 +365,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     ) : null}
                   </div>
                 </ThreadDetailsSection>
+              ) : null}
+
+              {!workspace && props.gitCwd && showIssues && issuesPlacement === "inline" ? (
+                <BranchIssuesPanel environmentId={props.environmentId} cwd={props.gitCwd} />
               ) : null}
 
               {density === "full" && !props.draftId && visible.servers ? (

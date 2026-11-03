@@ -87,6 +87,10 @@ const ThreadProject = Schema.Struct({
 const isThreadProject = Schema.is(ThreadProject);
 
 export interface Preferences {
+  readonly branchIssuesVisible?: boolean;
+  readonly branchIssuesExpanded?: boolean;
+  readonly branchIssuesShowEmpty?: boolean;
+  readonly branchIssuesSeparate?: boolean;
   readonly showRepositoryIcons?: boolean;
   readonly showGroupIcons?: boolean;
   readonly capitalizeProjectNames?: boolean;
@@ -174,6 +178,10 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    branchIssuesVisible?: boolean;
+    branchIssuesExpanded?: boolean;
+    branchIssuesShowEmpty?: boolean;
+    branchIssuesSeparate?: boolean;
     showRepositoryIcons?: boolean;
     showGroupIcons?: boolean;
     capitalizeProjectNames?: boolean;
@@ -273,6 +281,14 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     preferences.uiLanguage = parsed.uiLanguage;
   if (typeof parsed.showRepositoryIcons === "boolean")
     preferences.showRepositoryIcons = parsed.showRepositoryIcons;
+  if (typeof parsed.branchIssuesVisible === "boolean")
+    preferences.branchIssuesVisible = parsed.branchIssuesVisible;
+  if (typeof parsed.branchIssuesExpanded === "boolean")
+    preferences.branchIssuesExpanded = parsed.branchIssuesExpanded;
+  if (typeof parsed.branchIssuesShowEmpty === "boolean")
+    preferences.branchIssuesShowEmpty = parsed.branchIssuesShowEmpty;
+  if (typeof parsed.branchIssuesSeparate === "boolean")
+    preferences.branchIssuesSeparate = parsed.branchIssuesSeparate;
   if (typeof parsed.showGroupIcons === "boolean")
     preferences.showGroupIcons = parsed.showGroupIcons;
   if (typeof parsed.capitalizeProjectNames === "boolean")

@@ -25,6 +25,7 @@ import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.t
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
+import * as BranchIssueService from "../sourceControl/BranchIssueService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
@@ -165,7 +166,7 @@ const boxLaunches = (seen: Ref.Ref<Seen>) =>
 
 /** B clones and registers whatever it is asked to, and records it. */
 const boxProjects = (seen: Ref.Ref<Seen>) =>
-  Layer.merge(
+  Layer.mergeAll(
     Layer.mock(ProjectService.ProjectService)({
       getById: () => Effect.succeedNone,
       create: (input) =>
@@ -185,6 +186,7 @@ const boxProjects = (seen: Ref.Ref<Seen>) =>
           }),
         ),
     }),
+    Layer.mock(BranchIssueService.BranchIssueService)({}),
     Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
       cloneRepository: (input) =>
         Ref.update(seen, (current) => ({ ...current, clones: [...current.clones, input] })).pipe(
@@ -278,7 +280,12 @@ const makeLaptop = Effect.gen(function* () {
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
-    Layer.provide(Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({})),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
+        Layer.mock(BranchIssueService.BranchIssueService)({}),
+      ),
+    ),
     Layer.provide(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-forwarding-laptop-" }).pipe(
         Layer.provide(NodeServices.layer),

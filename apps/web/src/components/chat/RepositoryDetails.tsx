@@ -18,6 +18,8 @@ import { BranchToolbarBranchSelector } from "../BranchToolbarBranchSelector";
 import GitActionsControl from "../GitActionsControl";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { ProjectLabel } from "../ProjectLabel";
+import { BranchIssuesPanel } from "./BranchIssuesPanel";
+import { resolveThreadDetailsVisibility } from "./threadDetailsItems";
 
 export function RepositoryDetails({
   environmentId,
@@ -52,6 +54,11 @@ export function RepositoryDetails({
   const t = useUiTranslation();
   const showTerminalButton = useClientSettings((settings) => settings.showRepositoryTerminalButton);
   const showIcon = useClientSettings((settings) => settings.showRepositoryIcons);
+  const showIssues = useClientSettings(
+    (settings) =>
+      resolveThreadDetailsVisibility(settings).issues &&
+      settings.branchIssuesPlacement === "inline",
+  );
   const terminals = useThreadTerminalActions({ environmentId, threadId });
   const target = { threadId, workspaceRevisionId: workspace.id, resourceId: resource.id };
   const status = useEnvironmentQuery(
@@ -159,6 +166,9 @@ export function RepositoryDetails({
             showChanges={showChanges}
             onOpenChanges={onOpenChanges}
           />
+          {showIssues ? (
+            <BranchIssuesPanel environmentId={environmentId} cwd={resource.checkoutRoot} />
+          ) : null}
         </div>
       ) : null}
     </section>
