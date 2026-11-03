@@ -391,7 +391,7 @@ function SidebarUpdateControl() {
     );
   };
 
-  if (!isElectron && !runsEverything && !isRunningEverything) return null;
+  if (!showUpdateDetails || (!isElectron && !runsEverything && !isRunningEverything)) return null;
 
   const statusIcon = (
     <DesktopUpdateStatusIcon
