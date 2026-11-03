@@ -91,7 +91,7 @@ it("keeps each registry image when adding a model from another ACP agent", async
 
 it("keeps a docked picker open after a pick and hands focus to that model's effort", async () => {
   const instanceId = ProviderInstanceId.make("codex");
-  const entries = deriveProviderInstanceEntries([
+  let entries = deriveProviderInstanceEntries([
     {
       instanceId,
       driver: ProviderDriverKind.make("codex"),
@@ -116,6 +116,24 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
       ],
     ],
   ]);
+  const otherInstanceId = ProviderInstanceId.make("other-codex");
+  entries = [
+    ...entries,
+    {
+      ...entries[0]!,
+      instanceId: otherInstanceId,
+      displayName: "Other Codex",
+      snapshot: {
+        ...entries[0]!.snapshot,
+        instanceId: otherInstanceId,
+        usageLimits: {
+          checkedAt: "2026-01-01T00:00:00.000Z",
+          windows: [{ id: "secondary", kind: "weekly", label: "Weekly", usedPercent: 28 }],
+        },
+      },
+    },
+  ];
+  options.set(otherInstanceId, [{ slug: "original", name: "Original model" }]);
   // The last level is the selected one; "plain" has no effort to pick.
   const levels: Record<string, ReadonlyArray<string>> = {
     original: ["Low", "High"],
@@ -135,6 +153,7 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
         modelOptionsByInstance={options}
         triggerAriaLabel="Choose model"
         onInstanceModelChange={(_, selected) => setModel(selected)}
+        renderFooter={(usage) => <div aria-label="Provider usage">{usage}</div>}
         effortColumn={(levels[model] ?? []).map((level, index, all) => (
           <button
             key={level}
@@ -153,7 +172,7 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
 
   await using screen = await render(<Picker />);
   await screen.getByRole("button", { name: "Choose model" }).click();
-  const search = page.getByPlaceholder("Search models...");
+  const search = page.getByPlaceholder(/Search models\.\.\.|搜索模型…/);
   await expect.element(search).toHaveFocus();
   await userEvent.keyboard("{ArrowRight}");
   await expect.element(page.getByRole("radio", { name: "High" })).toHaveFocus();
@@ -162,6 +181,23 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
 
   await page.getByRole("option", { name: /Second model/ }).click();
   await expect.element(page.getByRole("radio", { name: "Medium" })).toHaveFocus();
+  await expect
+    .element(page.getByLabelText("Provider usage").getByText("Codex", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(page.getByLabelText("Provider usage").getByText("--", { exact: true }))
+    .toBeVisible();
+  await page.getByRole("button", { name: "Other Codex", exact: true }).click();
+  await expect
+    .element(page.getByLabelText("Provider usage").getByText("Other Codex", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(page.getByLabelText("Provider usage").getByText("72%", { exact: true }))
+    .toBeVisible();
+  await page.getByRole("button", { name: "Codex", exact: true }).click();
+  await expect
+    .element(page.getByLabelText("Provider usage").getByText("--", { exact: true }))
+    .toBeVisible();
 
   await page.getByRole("option", { name: /Plain model/ }).click();
   await page.getByRole("option", { name: /Second model/ }).click();
