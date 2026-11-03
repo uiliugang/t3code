@@ -11,7 +11,8 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as YAML from "yaml";
 import { SkillManagerError, type SkillSource } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { resolveCommandPath, resolveSpawnCommand, setWindowsPath } from "@t3tools/shared/shell";
+import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import * as ServerConfig from "../config.ts";
@@ -94,7 +95,29 @@ const make = Effect.gen(function* () {
         CI: "1",
         ...(registry ? { npm_config_registry: registry } : {}),
       };
-      const resolved = yield* resolveSpawnCommand(binary, args, { env });
+      let resolved = yield* resolveSpawnCommand(binary, args, { env });
+      const executable = yield* resolveCommandPath(resolved.command, { env }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+      );
+      if (executable && !resolved.shell) {
+        const script = yield* fs.realPath(executable);
+        const contents = yield* fs.readFileString(script).pipe(Effect.orElseSucceed(() => ""));
+        // npm shebangs can select an older shell Node than the server runtime.
+        if (/^#![^\r\n]*\bnode(?:\s|$)/u.test(contents)) {
+          const node = yield* resolveNodeExecutable("Skill installation", env).pipe(
+            Effect.provideService(FileSystem.FileSystem, fs),
+            Effect.provideService(Path.Path, path),
+          );
+          resolved = { command: node, args: [script, ...resolved.args], shell: false };
+          if (/^node(?:\.exe)?$/iu.test(path.basename(node))) {
+            const searchPath = `${path.dirname(node)}${platform === "win32" ? ";" : ":"}${environment.PATH ?? environment.Path ?? environment.path ?? ""}`;
+            if (platform === "win32") setWindowsPath(env, searchPath);
+            else Object.assign(env, { PATH: searchPath });
+          }
+          Object.assign(env, { ELECTRON_RUN_AS_NODE: "1" });
+        }
+      }
       const result = yield* spawnAndCollect(
         binary,
         ChildProcess.make(resolved.command, resolved.args, { cwd, env, shell: resolved.shell }),

@@ -20,8 +20,10 @@ it.live(
         script,
         `#!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
+if (spawnSync("node", ["--version"]).status !== 0) process.exit(3);
 const { values, positionals } = parseArgs({ allowPositionals: true, options: { "target-dir": { type: "string" }, yes: { type: "boolean", short: "y" }, id: { type: "string" } } });
 if (positionals[0] !== "i" || !values.yes || !values["target-dir"] || realpathSync(dirname(values["target-dir"])) !== realpathSync(process.cwd())) process.exit(2);
 const target = join(values["target-dir"], "custom-skill");
@@ -31,6 +33,10 @@ writeFileSync(join(target, "resource.txt"), "bundled");
 `,
       );
       yield* fs.chmod(script, 0o755);
+      const staleBin = `${directory}/stale-bin`;
+      yield* fs.makeDirectory(staleBin);
+      yield* fs.writeFileString(`${staleBin}/node`, "#!/bin/sh\nexit 42\n");
+      yield* fs.chmod(`${staleBin}/node`, 0o755);
       const executable = platform === "win32" ? `${directory}/installer.cmd` : script;
       if (platform === "win32")
         yield* fs.writeFileString(executable, '@node "%~dp0installer.mjs" %*\r\n');
@@ -53,6 +59,10 @@ writeFileSync(join(target, "resource.txt"), "bundled");
         Effect.provide(
           SkillPackages.layer.pipe(Layer.provide(ServerConfig.layerTest(directory, directory))),
         ),
+        Effect.provideService(HostProcess.Environment, {
+          ...process.env,
+          PATH: `${staleBin}${platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+        }),
       );
       expect(result.name).toBe("custom-skill");
       expect(yield* fs.readFileString(`${result.directory}/resource.txt`)).toBe("bundled");
