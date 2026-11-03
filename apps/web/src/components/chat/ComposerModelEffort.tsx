@@ -639,6 +639,7 @@ function PermissionsMenu(props: {
 
 /** The model picker's footer: speed stays one click away, permissions sit one menu deeper. */
 export function ComposerPickerFooter(props: {
+  usage: ReactNode;
   traits: TraitsSelectionInput | null;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
@@ -647,6 +648,7 @@ export function ComposerPickerFooter(props: {
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2">
       {props.traits ? <SpeedControl traits={props.traits} /> : null}
+      {props.usage}
       <PermissionsMenu
         runtimeMode={props.runtimeMode}
         options={props.runtimeModeOptions}

@@ -13,6 +13,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
+import { ProviderWeeklyUsage } from "./ProviderWeeklyUsage";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
@@ -112,11 +113,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
    * until Escape or an outside press, and picking a model moves focus to its levels.
    */
   effortColumn?: ReactNode;
-  footer?: ReactNode;
+  renderFooter?: (usage: ReactNode) => ReactNode;
 }) {
   const t = useUiTranslation();
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
+  const [browsedInstanceId, setBrowsedInstanceId] = useState<
+    ProviderInstanceId | "favorites" | null
+  >(null);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -150,6 +154,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
 
   const setIsMenuOpen = (open: boolean) => {
+    if (!open) setBrowsedInstanceId(null);
     props.onOpenChange?.(open);
     if (props.open === undefined) {
       setUncontrolledIsMenuOpen(open);
@@ -188,6 +193,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
     if (props.disabled) return;
+    setBrowsedInstanceId(instanceId);
     props.onInstanceModelChange(instanceId, model);
     if (!docked) {
       setIsMenuOpen(false);
@@ -276,6 +282,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           : (props.getModelDisabledReason?.(instanceId, model) ?? null)
       }
       onInstanceModelChange={handleInstanceModelChange}
+      onBrowseInstanceChange={setBrowsedInstanceId}
       {...(docked
         ? {
             docked,
@@ -443,7 +450,17 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                   {props.effortColumn}
                 </div>
               </div>
-              {props.footer}
+              {props.renderFooter?.(
+                <ProviderWeeklyUsage
+                  providers={props.instanceEntries.filter(
+                    (entry) =>
+                      entry.instanceId ===
+                      (browsedInstanceId === "favorites" || browsedInstanceId === null
+                        ? activeInstanceId
+                        : browsedInstanceId),
+                  )}
+                />,
+              )}
             </div>
           </DockedPickerContext>
         ) : (
