@@ -83,6 +83,24 @@ function publish(update: DesktopUpdateState | null) {
 
 const releaseNotes = () => document.querySelector('[aria-label="Update release notes"]');
 
+describe("SidebarUpdatePill visibility", () => {
+  it.each([null, "idle", "checking", "disabled", "error"] as const)(
+    "hides the update entry without an available update (%s)",
+    async (status) => {
+      setup(status === null ? null : { ...nightlyUpdate([]), status });
+      await using screen = await render(<SidebarUpdatePill />);
+      await expect.element(screen.getByRole("button")).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps the update entry visible while downloading", async () => {
+    setup({ ...nightlyUpdate([]), status: "downloading", downloadPercent: 42 });
+    await using screen = await render(<SidebarUpdatePill />);
+    await expect.element(screen.getByRole("button")).toBeVisible();
+    await expect.element(screen.getByRole("button")).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
 describe("SidebarUpdatePill release notes", () => {
   it("closes when the release notes stop applying", async () => {
     setup(nightlyUpdate(RELEASE_NOTES));
