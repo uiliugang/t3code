@@ -339,26 +339,101 @@ const make = Effect.gen(function* () {
               yield* providerRegistry.getProviders,
               input.projectId,
             );
-      return yield* textGeneration
-        .generateBranchName({
-          naming: {
-            mode: settings.branchNamingMode,
-            prefix: settings.branchNamePrefix,
-            instructions: settings.branchNameInstructions,
-          },
-          cwd,
-          message: message.text,
-          attachments: message.attachments,
-          ...(message.context ? { context: message.context } : {}),
-          modelSelection,
-        })
-        .pipe(
-          Effect.map((result) => ({
-            branch: result.branch,
-            exactName: settings.branchNamingMode === "custom",
-          })),
-        );
+      const namingInput = {
+        naming: {
+          mode: settings.branchNamingMode,
+          prefix: settings.branchNamePrefix,
+          instructions: settings.branchNameInstructions,
+        },
+        cwd,
+        message: message.text,
+        attachments: message.attachments,
+        ...(message.context ? { context: message.context } : {}),
+      };
+      return yield* textGeneration.generateBranchName({ ...namingInput, modelSelection }).pipe(
+        Effect.catch((cause) =>
+          Effect.gen(function* () {
+            const current = yield* threads.getThreadShell(threadId);
+            if (
+              !current ||
+              (modelSelection?.instanceId === current.modelSelection.instanceId &&
+                modelSelection.model === current.modelSelection.model)
+            )
+              return yield* cause;
+            yield* Effect.logWarning("Branch naming failed; retrying with the thread model", {
+              threadId,
+              cause,
+            });
+            return yield* textGeneration.generateBranchName({
+              ...namingInput,
+              modelSelection: current.modelSelection,
+            });
+          }),
+        ),
+        Effect.map((result) => ({
+          branch: result.branch,
+          exactName: settings.branchNamingMode === "custom",
+        })),
+      );
     });
+
+    const renameBranchForThreads = Effect.fn("ThreadLaunchService.renameBranchForThreads")(
+      function* (
+        cwd: string,
+        oldBranch: string,
+        worktreePath: string | null,
+        name: { readonly branch: string; readonly exactName: boolean },
+      ) {
+        const current = yield* threads.getThreadShell(threadId);
+        if (!current || current.deletedAt !== null || (yield* git.currentBranch(cwd)) !== oldBranch)
+          return null;
+        const renamed = yield* git.renameBranch({
+          cwd,
+          oldBranch,
+          newBranch: name.branch,
+          exactName: name.exactName,
+        });
+        const owner = yield* threads.getThreadShell(threadId);
+        if (owner?.worktreePath === worktreePath && owner.branch === oldBranch) {
+          yield* threads.dispatch({
+            type: "thread.metadata.update",
+            commandId: CommandId.make(`${input.commandId}:branch-rename`),
+            threadId,
+            branch: renamed.branch,
+            expectedBranch: oldBranch,
+            expectedWorktreePath: worktreePath,
+          });
+        }
+        const visited = new Set([threadId]);
+        // Reread after each pass so descendants that inherit their parent's branch are included.
+        while (true) {
+          const snapshot = yield* threads.getShellSnapshot(
+            worktreePath === null ? { projectId: input.projectId } : { worktreePath },
+          );
+          const sharing = [...snapshot.threads, ...snapshot.archivedThreads].filter(
+            (thread) =>
+              !visited.has(thread.id) &&
+              (worktreePath !== null || thread.projectId === input.projectId) &&
+              thread.worktreePath === worktreePath &&
+              thread.branch === oldBranch,
+          );
+          if (sharing.length === 0) break;
+          for (const thread of sharing) {
+            visited.add(thread.id);
+            yield* threads.dispatch({
+              type: "thread.metadata.update",
+              commandId: CommandId.make(`${input.commandId}:branch-rename:${thread.id}`),
+              threadId: thread.id,
+              branch: renamed.branch,
+              expectedBranch: oldBranch,
+              expectedWorktreePath: worktreePath,
+            });
+          }
+        }
+        yield* git.invalidateLocalStatus(cwd);
+        return renamed.branch;
+      },
+    );
 
     if (workspaceThread?.workspaceConfiguration !== undefined) {
       if (workspaceThread.workspace === undefined) {
@@ -394,20 +469,6 @@ const make = Effect.gen(function* () {
           "naming",
           shouldNameBranch ? "running" : "skipped",
         );
-        const generatedBranchName =
-          input.workspaceStrategy.type === "worktree" &&
-          (requestedBranch === undefined || isTemporaryWorktreeBranch(requestedBranch)) &&
-          initialMessage !== undefined
-            ? yield* generateBranchNameFor(project.workspaceRoot, initialMessage).pipe(
-                Effect.catch((cause) =>
-                  Effect.logWarning("Worktree branch name generation failed", {
-                    threadId,
-                    cause,
-                  }).pipe(Effect.as(undefined)),
-                ),
-              )
-            : undefined;
-        if (shouldNameBranch) yield* setupTracker.stageStatus(threadId, "naming", "done");
         const prepared = yield* workspaceProvisioner.value
           .prepare({
             threadId,
@@ -415,7 +476,6 @@ const make = Effect.gen(function* () {
             config: workspaceThread.workspaceConfiguration,
             scripts: project.scripts,
             strategy: input.workspaceStrategy,
-            ...(generatedBranchName === undefined ? {} : { generatedBranchName }),
           })
           .pipe(
             Effect.mapError(mapError(input, "provision-worktree", threadId)),
@@ -423,6 +483,7 @@ const make = Effect.gen(function* () {
               setupTracker.finish(threadId, "failed", failureDetail(error)),
             ),
           );
+        let naming: Fiber.Fiber<unknown> | null = null;
         yield* Effect.gen(function* () {
           yield* threads
             .dispatch({
@@ -434,6 +495,50 @@ const make = Effect.gen(function* () {
               workspace: prepared.workspace,
             })
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+          if (shouldNameBranch && initialMessage !== undefined) {
+            naming = yield* generateBranchNameFor(project.workspaceRoot, initialMessage).pipe(
+              Effect.flatMap((name) =>
+                Effect.forEach(
+                  prepared.workspace.resources,
+                  (resource) => {
+                    const binding = prepared.workspace.bindings.find(
+                      (item) => item.resourceId === resource.id,
+                    )!;
+                    return binding.launchBranch === null
+                      ? Effect.void
+                      : renameBranchForThreads(
+                          resource.checkoutRoot,
+                          binding.launchBranch,
+                          resource.checkoutRoot,
+                          name,
+                        ).pipe(
+                          Effect.tap((branch) =>
+                            branch !== null &&
+                            prepared.workspace.bindings.some(
+                              (item) =>
+                                item.resourceId === resource.id &&
+                                item.rootId === prepared.workspace.primaryRootId,
+                            )
+                              ? setupTracker.update(threadId, (snapshot) => ({
+                                  ...snapshot,
+                                  branch,
+                                }))
+                              : Effect.void,
+                          ),
+                          Effect.asVoid,
+                        );
+                  },
+                  { discard: true },
+                ),
+              ),
+              Effect.matchEffect({
+                onFailure: (cause) =>
+                  setupTracker.stageStatus(threadId, "naming", "failed", failureDetail(cause)),
+                onSuccess: () => setupTracker.stageStatus(threadId, "naming", "done"),
+              }),
+              Effect.forkChild,
+            );
+          }
           yield* setupTracker.markUncancellable(threadId);
           yield* setupTracker.stageStatus(threadId, "agent", "running");
           if (runId !== null)
@@ -446,6 +551,7 @@ const make = Effect.gen(function* () {
               })
               .pipe(Effect.mapError(mapError(input, "release-run", threadId)));
           yield* setupTracker.stageStatus(threadId, "agent", "done");
+          if (naming !== null) yield* Fiber.join(naming);
           yield* prepared.completion.pipe(
             Effect.catch((cause) =>
               Effect.logWarning("Workspace setup failed after launch", { threadId, cause }),
@@ -453,7 +559,12 @@ const make = Effect.gen(function* () {
           );
           yield* setupTracker.finish(threadId, "done");
         }).pipe(
-          Effect.onInterrupt(() => prepared.cancel),
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              if (naming !== null) yield* Fiber.interrupt(naming);
+              yield* prepared.cancel;
+            }),
+          ),
           Effect.onError((cause) =>
             setupTracker.finish(
               threadId,
@@ -587,19 +698,6 @@ const make = Effect.gen(function* () {
           "naming",
           shouldNameBranch ? "running" : "skipped",
         );
-        // Finalize the name before checkout so setup scripts and providers only see one path.
-        const generatedBranchName =
-          branch !== null && isTemporaryWorktreeBranch(branch) && initialMessage !== undefined
-            ? yield* generateBranchNameFor(project.workspaceRoot, initialMessage).pipe(
-                Effect.catch((cause) =>
-                  Effect.logWarning("Worktree branch name generation failed", {
-                    threadId,
-                    cause,
-                  }).pipe(Effect.as(undefined)),
-                ),
-              )
-            : undefined;
-        if (shouldNameBranch) yield* setupTracker.stageStatus(threadId, "naming", "done");
         yield* setupTracker.stageStatus(threadId, "checkout", "running");
         const worktree = yield* git
           .createWorktree(
@@ -611,7 +709,6 @@ const make = Effect.gen(function* () {
               path: null,
             },
             {
-              ...(generatedBranchName === undefined ? {} : { generatedBranchName }),
               progress: {
                 onWorktreeClaimed: (path) =>
                   Effect.sync(() => {
@@ -646,7 +743,6 @@ const make = Effect.gen(function* () {
 
       if (
         reused === undefined &&
-        input.workspaceStrategy.type !== "worktree" &&
         (worktreePath !== null || createdTaskBranch) &&
         branch !== null &&
         initialMessage !== undefined &&
@@ -655,80 +751,20 @@ const make = Effect.gen(function* () {
         const oldBranch = branch;
         const worktreeCwd = worktreePath ?? project.workspaceRoot;
         branchRename = yield* generateBranchNameFor(worktreeCwd, initialMessage).pipe(
-          Effect.flatMap(({ branch: newBranch, exactName }) =>
-            git.renameBranch({
-              cwd: worktreeCwd,
-              oldBranch,
-              newBranch,
-              ...(exactName ? { exactName: true } : {}),
-            }),
+          Effect.flatMap((name) =>
+            renameBranchForThreads(worktreeCwd, oldBranch, worktreePath, name),
           ),
-          Effect.flatMap((renamed) =>
-            Effect.gen(function* () {
-              yield* threads
-                .dispatch({
-                  type: "thread.metadata.update",
-                  commandId: CommandId.make(`${input.commandId}:branch-rename`),
-                  threadId,
-                  branch: renamed.branch,
-                  worktreePath,
-                  expectedBranch: oldBranch,
-                  expectedWorktreePath: worktreePath,
-                })
-                .pipe(
-                  Effect.catchCause((cause) =>
-                    Effect.logWarning("Parent thread worktree branch update failed", {
-                      threadId,
-                      cause,
-                    }),
-                  ),
-                );
-              // Update parents first so children inherit names; reread each pass for newly updated descendants.
-              const visited = new Set([threadId]);
-              while (true) {
-                const snapshot = yield* threads.getShellSnapshot(
-                  worktreePath === null ? { projectId: input.projectId } : { worktreePath },
-                );
-                const sharing = [...snapshot.threads, ...snapshot.archivedThreads].filter(
-                  (thread) =>
-                    !visited.has(thread.id) &&
-                    (worktreePath !== null || thread.projectId === input.projectId) &&
-                    thread.worktreePath === worktreePath &&
-                    thread.branch === oldBranch,
-                );
-                if (sharing.length === 0) break;
-                for (const thread of sharing) {
-                  visited.add(thread.id);
-                  yield* threads
-                    .dispatch({
-                      type: "thread.metadata.update",
-                      commandId: CommandId.make(`${input.commandId}:branch-rename:${thread.id}`),
-                      threadId: thread.id,
-                      branch: renamed.branch,
-                      expectedBranch: oldBranch,
-                      expectedWorktreePath: worktreePath,
-                    })
-                    .pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning("Shared thread worktree branch update failed", {
-                          threadId: thread.id,
-                          cause,
-                        }),
-                      ),
-                    );
-                }
-              }
-            }),
+          Effect.tap((branch) =>
+            branch === null
+              ? Effect.void
+              : setupTracker.update(threadId, (snapshot) => ({ ...snapshot, branch })),
           ),
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Thread worktree branch rename failed", {
-              commandId: input.commandId,
-              threadId,
-              oldBranch,
-              cause,
-            }),
-          ),
-          Effect.forkIn(preparationScope),
+          Effect.matchEffect({
+            onFailure: (cause) =>
+              setupTracker.stageStatus(threadId, "naming", "failed", failureDetail(cause)),
+            onSuccess: () => setupTracker.stageStatus(threadId, "naming", "done"),
+          }),
+          Effect.forkChild,
         );
       }
 
@@ -835,6 +871,7 @@ const make = Effect.gen(function* () {
           );
       }
       yield* setupTracker.stageStatus(threadId, "agent", "done");
+      if (branchRename !== null) yield* Fiber.join(branchRename);
       yield* awaitAsyncSetup;
       yield* setupTracker.finish(threadId, "done");
     }).pipe(
