@@ -684,6 +684,7 @@ it.effect.each(["pending", "cached"] as const)(
     Effect.gen(function* () {
       const keybindings = yield* Keybindings.Keybindings;
       const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({ defaultAutoPull: false });
       const keybindingsSubscribed = yield* Deferred.make<void>();
       const settingsSubscribed = yield* Deferred.make<void>();
       const keybindingsChanges = keybindings.subscribeChanges.pipe(
