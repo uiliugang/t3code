@@ -145,10 +145,11 @@ are replaced with hyphens. Custom instructions are appended to
 the naming prompt and can specify issue IDs, namespaces, and casing.
 
 These settings apply to automatically named branches for new tasks and worktrees. Select a project
-to override its environment defaults. New worktree directories use the final branch name,
-with slashes replaced by hyphens, before setup scripts and the agent start.
-If generation fails, or a custom name is invalid or already taken, the temporary
-branch name remains.
+to override its environment defaults. Tasks and worktree groups start on temporary branches
+while naming runs in the background. The branch name updates when naming finishes; the
+worktree directory stays in place. If the naming model request fails, T3 Code retries with
+the thread's current model. If both requests fail, or a custom name is invalid or already
+taken, the temporary branch name remains.
 
 ## Scheduled tasks on mobile
 
