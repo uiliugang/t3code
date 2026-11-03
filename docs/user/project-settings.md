@@ -252,7 +252,14 @@ also lets an earlier export restore inheritance. Application imports merge match
 and shortcuts, leaving other values intact. Project action shortcuts
 remain environment-local. Repository-specific actions are matched by repository alias;
 create the matching repositories before importing. Custom provider instances must already
-exist on the destination with the same ID and driver.
+exist on the destination with the same ID and driver, including providers used by a fallback model.
+Application exports include custom model definitions and built-in model edits. Importing them
+preserves the destination provider's credentials, installation paths and launch arguments.
+
+Application exports also preserve cleanup rules, idle compaction, background activity,
+remote branch filtering and deletion, and browser/device access switches. Host definitions,
+credentials and machine-specific directories stay on the destination. Older exports only
+change the settings they contain; importing one does not reset newer preferences.
 
 Imports show their contents before saving. Export files exclude account credentials,
 connection addresses, machine paths, browser profiles and conversation history. Application

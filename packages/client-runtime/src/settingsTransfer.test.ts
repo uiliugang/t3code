@@ -9,7 +9,9 @@ import {
   ProviderInstanceId,
   WorkspaceRootId,
   type ServerSettings,
+  ServerSettingsPatch,
 } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
 
 import {
   applicationSettingsImportPatch,
@@ -118,6 +120,108 @@ describe("projectTransferIdentity", () => {
 });
 
 describe("settings transfer", () => {
+  it("transfers model edits while preserving destination provider credentials and installation settings", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const models = [
+      { slug: "built-in-model", name: "Renamed model", capabilities: { optionDescriptors: [] } },
+    ];
+    const source = settings();
+    const file = createApplicationSettingsFile({
+      clientSettings: {},
+      server: {
+        ...source,
+        providerInstances: {
+          ...source.providerInstances,
+          [codex]: {
+            driver: ProviderDriverKind.make("codex"),
+            config: {
+              customModels: models,
+              binaryPath: "/private/codex",
+              apiKey: "source-secret",
+              launchArgs: "--token source-secret",
+            },
+          },
+        },
+      },
+      keybindings: [],
+    });
+    const contents = serializeSettingsFile(file);
+    expect(contents).toContain("Renamed model");
+    expect(contents).not.toContain("source-secret");
+    expect(contents).not.toContain("/private/codex");
+    const restored = parseSettingsFile(contents);
+    if (restored.scope !== "application") throw new Error("Expected application settings");
+    const destinationCodex = {
+      driver: ProviderDriverKind.make("codex"),
+      environment: [{ name: "TOKEN", value: "destination-secret", sensitive: true }],
+      config: {
+        binaryPath: "/destination/codex",
+        launchArgs: "--destination",
+        customModels: ["old-model"],
+      },
+    };
+    const target = {
+      ...source,
+      providerInstances: {
+        [codex]: destinationCodex,
+        [claude]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          config: { homePath: "/destination/claude" },
+        },
+      },
+    };
+    const patch = applicationSettingsImportPatch(restored, target);
+    expect(patch.providerInstances).toEqual({
+      ...target.providerInstances,
+      [codex]: {
+        ...destinationCodex,
+        config: { ...destinationCodex.config, customModels: models },
+      },
+    });
+    expect(
+      applicationSettingsImportPatch(restored, { ...target, providerInstances: {} })
+        .providerInstances?.[codex],
+    ).toEqual({
+      driver: "codex",
+      config: { customModels: models },
+    });
+    expect(() =>
+      applicationSettingsImportPatch(restored, {
+        ...target,
+        providerInstances: { [codex]: { driver: ProviderDriverKind.make("claudeAgent") } },
+      }),
+    ).toThrow("same driver");
+    expect(() =>
+      applicationSettingsImportPatch(restored, {
+        ...target,
+        providerInstances: {
+          ...target.providerInstances,
+          [codex]: { driver: ProviderDriverKind.make("codex"), config: "opaque" },
+        },
+      }),
+    ).toThrow("Repair provider");
+    const cleared = { ...restored, providerModels: { [codex]: [] } };
+    expect(
+      applicationSettingsImportPatch(cleared, target).providerInstances?.[codex]?.config,
+    ).toMatchObject({ customModels: [], binaryPath: "/destination/codex" });
+    const legacy = { ...restored };
+    delete legacy.providerModels;
+    expect(applicationSettingsImportPatch(legacy, target)).toEqual(restored.server);
+    const custom = ProviderInstanceId.make("custom-codex");
+    const customFile = createApplicationSettingsFile({
+      clientSettings: {},
+      server: {
+        ...source,
+        providerInstances: {
+          [custom]: { driver: ProviderDriverKind.make("codex"), config: { customModels: models } },
+        },
+      },
+      keybindings: [],
+    });
+    expect(customFile.providers[custom]).toBe("codex");
+    expect(() => applicationSettingsImportPatch(customFile, target)).toThrow("custom-codex");
+  });
   it("keeps multi-repository groups and incomplete origin metadata environment-local", () => {
     const source = project();
     expect(
@@ -239,6 +343,80 @@ describe("settings transfer", () => {
     expect(file.clientSettings.diffCustomColors?.conflict).toBe("#a16207");
     expect(file.keybindings).toEqual([{ key: "mod+j", command: "terminal.toggle" }]);
     expect(applicationSettingsImportPatch(file, source)).toEqual(file.server);
+    const excludedServerFields = [
+      "setModelFavorites",
+      "setModelsHidden",
+      "setProviderModelOrder",
+      "migrateModelPreferences",
+      "worktreesDirectory",
+      "projectAgentBrowserAccessOverrides",
+      "projectScriptOverrides",
+      "projectAutoPullOverrides",
+      "projectSettingsOverrides",
+      "deviceOnboardingCompleted",
+      "deviceHosts",
+      "easDeviceHosts",
+      "simlockDeviceHosts",
+      "environmentIcon",
+      "addProjectBaseDirectory",
+      "observability",
+      "sourceControlHosts",
+      "providerInstances",
+      "usageLimitSources",
+      "secretProviders",
+      "cursorKeychainUsageEnabled",
+    ];
+    expect(Object.keys(file.server).sort()).toEqual(
+      Object.keys(ServerSettingsPatch.fields)
+        .filter((field) => !excludedServerFields.includes(field))
+        .sort(),
+    );
+    const updatedPreferences = {
+      fallbackModelSelection: {
+        instanceId: ProviderInstanceId.make("fallback-codex"),
+        model: "fallback-model",
+      },
+      idleCompaction: "beforeCacheExpires" as const,
+      compactIdleThreads: true,
+      remoteBranchDisplayDays: 45,
+      hideMergedRemoteBranches: false,
+      autoDeleteMergedBranches: true,
+      storageCleanup: { ...source.storageCleanup, browserArtifactsAfterDays: 21 },
+      worktreeCleanup: { mode: "off" as const },
+      backgroundActivity: { ...source.backgroundActivity, profile: "battery-saver" as const },
+      automaticGitFetchInterval: Duration.minutes(10),
+      providerHealthRefreshInterval: Duration.minutes(3),
+    };
+    const updatedSource = {
+      ...source,
+      providerInstances: {
+        ...source.providerInstances,
+        [ProviderInstanceId.make("fallback-codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+        },
+      },
+    };
+    const updated = createApplicationSettingsFile({
+      clientSettings: {},
+      server: { ...updatedSource, ...updatedPreferences },
+      keybindings: [],
+    });
+    const restored = parseSettingsFile(serializeSettingsFile(updated));
+    expect(restored.scope).toBe("application");
+    if (restored.scope !== "application") throw new Error("Expected application settings");
+    expect(applicationSettingsImportPatch(restored, updatedSource)).toMatchObject(
+      updatedPreferences,
+    );
+    expect(updated.providers[ProviderInstanceId.make("fallback-codex")]).toBe("codex");
+    expect(JSON.parse(serializeSettingsFile(updated)).server.automaticGitFetchInterval).toBe(
+      600_000,
+    );
+    expect(() => applicationSettingsImportPatch(restored, source)).toThrow("fallback-codex");
+    const legacyFile = { ...file, server: { defaultAutoPull: false } };
+    const legacy = parseSettingsFile(serializeSettingsFile(legacyFile));
+    expect(
+      legacy.scope === "application" && applicationSettingsImportPatch(legacy, source),
+    ).toEqual(legacyFile.server);
     const implicitProviderSettings = {
       ...DEFAULT_SERVER_SETTINGS,
       defaultModelSelection: {

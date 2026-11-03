@@ -343,7 +343,7 @@ it("persists language changes across hydration while preserving other device set
     chatWidth: "wide",
   });
   await ensureClientSettingsHydrated();
-  expect(getClientSettings().showRepositoryTerminalButton).toBe(false);
+  expect(getClientSettings().showRepositoryTerminalButton).toBe(true);
   expect(getClientSettings().showTerminalDrawerButton).toBe(false);
   expect(getClientSettings().showRepositoryIcons).toBe(true);
   expect(getClientSettings().showGroupIcons).toBe(true);
