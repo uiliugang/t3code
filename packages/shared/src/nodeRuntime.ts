@@ -12,6 +12,7 @@ const NodeRuntimeFeature = Schema.Literals([
   "Device automation",
   "Antigravity",
   "Meituan Code",
+  "Skill installation",
   "Antigravity sign-in",
 ]);
 
