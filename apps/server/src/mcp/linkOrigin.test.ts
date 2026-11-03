@@ -41,6 +41,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as SkillManager from "../skills/SkillManager.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
+import * as BranchIssueService from "../sourceControl/BranchIssueService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -174,7 +175,12 @@ const layerTools = Layer.mergeAll(
   Layer.provide(
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
   ),
-  Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+      Layer.mock(BranchIssueService.BranchIssueService)({}),
+    ),
+  ),
   Layer.provide(
     Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
       cloneRepository: (input) =>

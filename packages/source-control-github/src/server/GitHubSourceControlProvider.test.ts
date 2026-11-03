@@ -921,6 +921,48 @@ it.effect.each(["pull", "issues"])(
     }),
 );
 
+it.effect.each([false, true])(
+  "reads branch issue descriptions and rejects PRs returned by the issues endpoint (%s)",
+  (isPr) =>
+    Effect.gen(function* () {
+      const provider = yield* makeProvider({
+        rest: () =>
+          Effect.succeed(
+            restResponse({
+              title: "Fix search",
+              state: "open",
+              body: null,
+              ...(isPr
+                ? { pull_request: { url: "https://api.github.com/repos/acme/app/pulls/42" } }
+                : {}),
+            }),
+          ),
+      });
+      assert.ok(provider.issues);
+      const result = provider.issues.read({
+        cwd: "/repo",
+        issue: {
+          provider: "github",
+          id: "42",
+          repository: "acme/app",
+          url: "https://github.com/acme/app/issues/42",
+        },
+      });
+      if (isPr)
+        assert.strictEqual(
+          (yield* Effect.flip(result)).detail,
+          "Link an issue rather than a pull request.",
+        );
+      else
+        assert.deepStrictEqual(yield* result, {
+          title: "Fix search",
+          state: "open",
+          body: "",
+          bodyFormat: "markdown",
+        });
+    }),
+);
+
 it.effect.each(["read", "decode"] as const)(
   "retains the %s failure without exposing its raw contents",
   (stage) =>

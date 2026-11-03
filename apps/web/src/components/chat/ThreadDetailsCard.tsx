@@ -26,6 +26,7 @@ export function ThreadDetailsCard({
   contentKey,
   onContextMenu,
   children,
+  supplementary,
 }: {
   threadRef: ScopedThreadRef;
   anchor: RefObject<Element | null>;
@@ -34,6 +35,7 @@ export function ThreadDetailsCard({
   contentKey: string;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
+  supplementary?: ReactNode;
 }) {
   const detailsArea = workspaceAreaProps("details", 3, "Thread details");
   const canvas = useChatCanvas();
@@ -128,6 +130,17 @@ export function ThreadDetailsCard({
       </ScrollArea>
     </div>
   );
+  const contents = supplementary ? (
+    <div
+      className="flex max-h-full flex-col gap-2 overflow-auto"
+      style={height > 0 ? { maxHeight: height } : undefined}
+    >
+      <div className="min-h-0 shrink-0">{card}</div>
+      {supplementary}
+    </div>
+  ) : (
+    card
+  );
   return (
     <Popover
       handle={handle}
@@ -164,7 +177,7 @@ export function ThreadDetailsCard({
           data-density={density}
           data-thread-details-panel="inline"
         >
-          {card}
+          {contents}
         </aside>
       ) : null}
       {/* Rendered in both modes: base-ui keeps a popup that unmounts mid-open
@@ -190,7 +203,7 @@ export function ThreadDetailsCard({
       >
         {mode === "popover" ? (
           <div data-density={density} data-thread-details-panel="popover">
-            {card}
+            {contents}
           </div>
         ) : null}
       </PopoverPopup>

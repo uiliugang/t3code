@@ -17,6 +17,20 @@ export function createSourceControlEnvironmentAtoms<R, E>(
 ) {
   const commandScheduler = createAtomCommandScheduler();
   return {
+    branchIssues: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:source-control:branch-issues",
+      tag: WS_METHODS.branchIssuesList,
+    }),
+    branchIssueDetail: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:source-control:branch-issue-detail",
+      tag: WS_METHODS.branchIssuesRead,
+    }),
+    updateBranchIssues: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:source-control:update-branch-issues",
+      tag: WS_METHODS.branchIssuesUpdate,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+    }),
     exportProjectConfigurations: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:export-configuration",
       tag: WS_METHODS.projectsExportConfiguration,

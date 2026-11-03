@@ -1,5 +1,10 @@
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { WorkspaceRecoveryControl } from "./WorkspaceRecoveryControl";
+import { BranchIssuesPanel } from "./BranchIssuesPanel";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { mobilePreferencesAtom } from "../../../state/preferences";
+import type { Preferences } from "../../../persistence/mobile-preferences";
 import type { ThreadWorkspaceRevision, WorkspaceExecutionResource } from "@t3tools/contracts";
 import { useThreadRepository } from "../../../state/use-thread-repository";
 import * as Dialog from "../../../components/ui/Dialog";
@@ -136,6 +141,10 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     runtime: selectedEnvironmentRuntime,
   });
   const gitState = useSelectedThreadGitState();
+  const issuePreferences = AsyncResult.getOrElse(
+    useAtomValue(mobilePreferencesAtom),
+    (): Preferences => ({}),
+  );
   const gitActions = useSelectedThreadGitActions();
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
 
@@ -150,6 +159,18 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
 
   const currentBranchLabel =
     gitStatus.data?.refName ?? (repository ? null : selectedThread?.branch) ?? "Detached HEAD";
+  const issueProvider = gitStatus.data?.sourceControlProvider?.kind;
+  const linkedIssues =
+    selectedThreadCwd &&
+    gitStatus.data?.refName &&
+    issuePreferences.branchIssuesVisible !== false &&
+    (issueProvider === "github" || issueProvider === "meituan") ? (
+      <BranchIssuesPanel
+        key={`${environmentId}:${selectedThreadCwd}:${gitStatus.data.refName}`}
+        target={{ environmentId, cwd: selectedThreadCwd, branch: gitStatus.data.refName }}
+        provider={issueProvider}
+      />
+    ) : null;
   const currentStatusSummary = statusSummary(gitStatus.data);
   const currentWorktreePath = selectedThreadWorktreePath;
   const gitOperationLabel = gitState.gitOperationLabel;
@@ -386,7 +407,12 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
             onPress={linkedPrActions.promptLink}
           />
         ) : null}
+        {!issuePreferences.branchIssuesSeparate ? linkedIssues : null}
       </ListSection>
+
+      {issuePreferences.branchIssuesSeparate && linkedIssues ? (
+        <ListSection>{linkedIssues}</ListSection>
+      ) : null}
 
       {linkedPrLines.length > 0 ? (
         <ListSection title={`Linked ${linkedPrActions.terminology.plural}`}>

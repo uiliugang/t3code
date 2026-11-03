@@ -7,6 +7,7 @@ import * as SourceControlProvider from "@t3tools/source-control-core/server/Sour
 import { definition, parsePullRequestUrl } from "../shared/definition.ts";
 import * as MCodeCli from "./MCodeCli.ts";
 import * as Json from "./mcodeJson.ts";
+import * as MCodeIssues from "./MCodeIssues.ts";
 
 const isRepositoryName = Schema.is(Json.RepositoryName);
 
@@ -14,6 +15,7 @@ export const make = Effect.gen(function* () {
   const cli = yield* MCodeCli.MCodeCli;
   const host = yield* SourceControlHost.SourceControlHost;
   const fileSystem = yield* FileSystem.FileSystem;
+  const issues = yield* MCodeIssues.make;
   const failure = (cwd: string, operation: string) => (cause: MCodeCli.MCodeError) =>
     new SourceControlProviderError({
       provider: definition.kind,
@@ -79,6 +81,7 @@ export const make = Effect.gen(function* () {
   });
 
   return SourceControlProvider.SourceControlProvider.of({
+    issues,
     kind: definition.kind,
     repositoryNameFromRemoteUrl: (url) =>
       SourceControlProvider.repositoryPathFromRemoteUrl(url)?.replace(/^scm\//u, "") ?? null,

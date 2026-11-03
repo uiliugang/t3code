@@ -91,6 +91,16 @@ const decodeLinkSubject = Schema.decodeUnknownEffect(
     Schema.Struct({ title: Schema.String, body: Schema.optional(Schema.NullOr(Schema.String)) }),
   ),
 );
+const decodeBranchIssue = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      title: Schema.String,
+      state: Schema.String,
+      body: Schema.NullOr(Schema.String),
+      pull_request: Schema.optional(Schema.Unknown),
+    }),
+  ),
+);
 
 function toChangeRequest(record: NormalizedGitHubPullRequestRecord): ChangeRequest {
   return { provider: SourceControlProviderKind.make("github"), ...record };
@@ -858,6 +868,54 @@ export const make = Effect.gen(function* () {
   });
 
   return SourceControlProvider.SourceControlProvider.of({
+    issues: {
+      read: Effect.fn("GitHubSourceControlProvider.readIssue")(function* (input) {
+        const result = yield* api
+          .rest({
+            host: "github.com",
+            operation: "readIssue",
+            path: `repos/${input.issue.repository}/issues/${input.issue.id}`,
+            maxResponseBytes: 1_000_000,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new SourceControlProviderError({
+                  provider: SourceControlProviderKind.make("github"),
+                  cwd: input.cwd,
+                  operation: "readIssue",
+                  detail: "The GitHub issue could not be read.",
+                  cause,
+                }),
+            ),
+          );
+        const issue = yield* decodeBranchIssue(result.body).pipe(
+          Effect.mapError(
+            (cause) =>
+              new SourceControlProviderError({
+                provider: SourceControlProviderKind.make("github"),
+                cwd: input.cwd,
+                operation: "readIssue",
+                detail: "The GitHub issue response could not be read.",
+                cause,
+              }),
+          ),
+        );
+        if (issue.pull_request !== undefined)
+          return yield* new SourceControlProviderError({
+            provider: SourceControlProviderKind.make("github"),
+            cwd: input.cwd,
+            operation: "readIssue",
+            detail: "Link an issue rather than a pull request.",
+          });
+        return {
+          title: issue.title,
+          state: issue.state,
+          body: issue.body ?? "",
+          bodyFormat: "markdown" as const,
+        };
+      }),
+    },
     kind: SourceControlProviderKind.make("github"),
     resolveRemoteWebHost: Effect.fn("GitHubSourceControlProvider.resolveRemoteWebHost")(
       ({ context }) => Effect.succeed(gitHubApiHostForRemote(context.remoteUrl)),

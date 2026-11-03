@@ -130,6 +130,7 @@ import * as SourceControlProviderRegistry from "./sourceControl/SourceControlPro
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as BranchIssueService from "./sourceControl/BranchIssueService.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as Observability from "./observability/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
@@ -437,7 +438,10 @@ const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provideMerge(layerGit),
 );
 
-const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
+const layerSourceControlRepositoryService = Layer.mergeAll(
+  SourceControlRepositoryService.layer,
+  BranchIssueService.layer,
+).pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerSourceControlProviderRegistry),
 );

@@ -60,6 +60,7 @@ import * as SkillManager from "../skills/SkillManager.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
+import * as BranchIssueService from "../sourceControl/BranchIssueService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as PeerForwarding from "./PeerForwarding.ts";
 import * as PeerLinks from "./PeerLinks.ts";
@@ -479,7 +480,12 @@ const boxToolkitLayer = (thread: BoxThread) => {
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
-    Layer.provide(Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({})),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
+        Layer.mock(BranchIssueService.BranchIssueService)({}),
+      ),
+    ),
     Layer.provide(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-remote-delegation-box-" }).pipe(
         Layer.provide(NodeServices.layer),

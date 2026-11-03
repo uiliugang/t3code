@@ -576,7 +576,11 @@ it.effect("a retried worktree launch replays after its base ref is gone", () =>
 it.effect("a client launches with the fallback for an exhausted default", () =>
   Effect.gen(function* () {
     const launched: ThreadLaunch.ThreadLaunchInput[] = [];
-    const fallbackModel = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" };
+    const fallbackModel = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-6.1-sol",
+      options: [],
+    };
     const providers: ServerProvider[] = ["claudeAgent", "codex"].map((driver) => ({
       instanceId: ProviderInstanceId.make(driver),
       driver: ProviderDriverKind.make(driver),

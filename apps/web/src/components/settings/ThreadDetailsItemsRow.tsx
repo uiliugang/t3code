@@ -15,13 +15,19 @@ import { searchableSetting } from "./settingsSearch";
 
 export function ThreadDetailsItemsRow() {
   const visibility = useClientSettings(resolveThreadDetailsVisibility);
+  const issuesDefault = useClientSettings(
+    (settings) =>
+      settings.branchIssuesPlacement === "inline" &&
+      !settings.branchIssuesExpanded &&
+      settings.branchIssuesShowEmpty,
+  );
   const enabled = THREAD_DETAILS_ITEMS.filter((item) => visibility[item.id]).length;
   return (
     <SettingsRow
       {...searchableSetting("thread-details-items")}
       description="Choose what the thread details card shows. You can also right-click the card."
       resetAction={
-        isDefaultThreadDetailsVisibility(visibility) ? null : (
+        isDefaultThreadDetailsVisibility(visibility) && issuesDefault ? null : (
           <SettingResetButton
             label="thread details"
             onClick={() => updateClientSettings(RESET_THREAD_DETAILS_ITEMS)}
