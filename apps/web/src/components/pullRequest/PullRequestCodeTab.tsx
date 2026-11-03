@@ -301,6 +301,10 @@ function PullRequestCodeTab({
     wordWrap: settings.wordWrap,
   }));
   const [toggledFiles, setToggledFiles] = useState<ReadonlySet<string>>(() => new Set());
+  const [previewSelection, setPreviewSelection] = useState<{
+    scope: string;
+    path: string;
+  } | null>(null);
   const [lastViewedFileKey, setLastViewedFileKey] = useState<string | null>(null);
   const [visibleCommitCount, setVisibleCommitCount] = useState(COMMIT_PAGE_SIZE);
   const [foldOverride, setFoldOverride] = useState<DiffFoldOverride>(null);
@@ -311,7 +315,7 @@ function PullRequestCodeTab({
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
     PULL_REQUEST_FILE_TREE_STORAGE_KEY,
-    false,
+    true,
     Schema.Boolean,
   );
   const fileFilters = useDiffFileFilters();
@@ -678,6 +682,16 @@ function PullRequestCodeTab({
     },
   );
   const fileKeys = items.map((item) => item.id);
+  const previewFilePath =
+    previewSelection?.scope === scopeKey &&
+    files.some((file) => resolveFileDiffPath(file) === previewSelection.path)
+      ? previewSelection.path
+      : files[0]
+        ? resolveFileDiffPath(files[0])
+        : null;
+  const previewItems = items.filter(
+    (item) => resolveFileDiffPath(item.fileDiff) === previewFilePath,
+  );
   const collapsedFileKeys = new Set(
     items.filter((item) => item.collapsed === true).map((item) => item.id),
   );
@@ -738,6 +752,7 @@ function PullRequestCodeTab({
   const revealFile = (path: string) => {
     const item = items.find((candidate) => resolveFileDiffPath(candidate.fileDiff) === path);
     if (item === undefined) return;
+    setPreviewSelection({ scope: scopeKey, path });
     // Unfold only: a second reveal before the unfold renders must not fold the file again.
     if (item.collapsed === true) {
       setToggledFiles((current) =>
@@ -834,16 +849,19 @@ function PullRequestCodeTab({
     return (
       <Button
         size="icon-micro"
-        variant="ghost-muted"
+        variant="ghost"
         aria-expanded={!collapsed}
         aria-label={collapsed ? t("Expand diff") : t("Collapse diff")}
-        className="mr-1"
+        className="-ms-0.5"
         onClick={(event) => {
           event.stopPropagation();
           toggleFile(item.id);
         }}
       >
-        <MorphIcon className="size-4" icon={collapsed ? ChevronRight : ChevronDown} />
+        <MorphIcon
+          className="size-4 text-muted-foreground/80"
+          icon={collapsed ? ChevronRight : ChevronDown}
+        />
       </Button>
     );
   };
@@ -1497,7 +1515,7 @@ function PullRequestCodeTab({
               className="@container h-full overflow-auto [scrollbar-gutter:stable]"
               containerRef={scrollerRef}
               viewerRef={codeViewReveal.attach}
-              items={items}
+              items={previewItems}
               selectedLines={selectedLines}
               onSelectedLinesChange={setSelectedLines}
               options={diffViewOptions}
@@ -1519,9 +1537,7 @@ function PullRequestCodeTab({
           <FileExplorerPane
             resizable
             storageKey="t3code:diff-file-tree-width"
-            defaultWidth={320}
-            defaultWidthFraction={0.4}
-            minWidth={192}
+            defaultWidthFraction={0.3}
             resizeLabel="Resize PR Code files"
           >
             <DiffFileTree
@@ -1530,6 +1546,8 @@ function PullRequestCodeTab({
                 number: detail.number,
               })}
               entries={fileTreeEntries}
+              selectedPath={previewFilePath}
+              revealRequestId={revealRequest?.nonce ?? 0}
               onSelectFile={revealFile}
               footer={
                 nextCursor === null ? null : (
