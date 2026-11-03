@@ -157,7 +157,6 @@ const MermaidFilePreview = lazy(() =>
 );
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
-const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
 const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
 const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
 type FilePostRender = <LAnnotation>(
@@ -1075,11 +1074,17 @@ export default function FilePreviewPanel({
     explorerOpen,
     attachmentOpen: attachment !== undefined,
   });
-  const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
-    RENDER_MARKDOWN_STORAGE_KEY,
-    true,
-    Schema.Boolean,
-  );
+  const [markdownSource, setMarkdownSource] = useState<{
+    path: string | null;
+    requestId: number;
+  } | null>(null);
+  const renderMarkdownPreferred =
+    markdownSource?.path !== relativePath || markdownSource?.requestId !== revealRequestId;
+  if (markdownSource !== null && renderMarkdownPreferred) {
+    setMarkdownSource(null);
+  }
+  const setRenderMarkdownPreferred = (rendered: boolean) =>
+    setMarkdownSource(rendered ? null : { path: relativePath, requestId: revealRequestId });
   const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
     RENDER_BROWSER_FILE_STORAGE_KEY,
     true,
@@ -1107,7 +1112,8 @@ export default function FilePreviewPanel({
   const revealHandled =
     revealLine === null ||
     (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
-  const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
+  const renderMarkdown =
+    isMarkdown && renderMarkdownPreferred && (revealHandled || revealLine === 1);
   const renderMermaid = isMermaid && renderMermaidPreferred && revealHandled;
   const renderBrowserFile = isPdf || (isHtml && renderBrowserFilePreferred && revealHandled);
   const renderTable = tableDelimiter !== null && renderTablePreferred && revealHandled;

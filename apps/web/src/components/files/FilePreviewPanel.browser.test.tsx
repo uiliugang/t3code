@@ -77,11 +77,12 @@ import FilePreviewPanel from "./FilePreviewPanel";
 
 const environmentId = EnvironmentId.make("markdown-preview-test");
 const threadRef = { environmentId, threadId: ThreadId.make("thread") };
-function setup() {
+function setup(renderMarkdown: boolean | null = null) {
   const keys = ["t3code.fileExplorerOpen", "t3code.renderMarkdown"];
   const previous = keys.map((key) => localStorage.getItem(key));
   localStorage.setItem(keys[0]!, "false");
-  localStorage.removeItem(keys[1]!);
+  if (renderMarkdown === null) localStorage.removeItem(keys[1]!);
+  else localStorage.setItem(keys[1]!, JSON.stringify(renderMarkdown));
   state.optimistic = null;
   state.writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   return {
@@ -95,9 +96,16 @@ function setup() {
   };
 }
 
-function markdownPreview(truncated: boolean) {
+function markdownPreview(
+  truncated: boolean,
+  {
+    relativePath = "tasks.md",
+    revealLine = null,
+    revealRequestId = 0,
+  }: { relativePath?: string; revealLine?: number | null; revealRequestId?: number } = {},
+) {
   state.file = {
-    relativePath: "tasks.md",
+    relativePath,
     contents: "- [ ] Keep the rest of this file\n",
     byteLength: truncated ? 1_200_000 : 32,
     truncated,
@@ -107,14 +115,14 @@ function markdownPreview(truncated: boolean) {
       environmentId={environmentId}
       cwd="/workspace"
       projectName="Project"
-      relativePath="tasks.md"
+      relativePath={relativePath}
       threadRef={threadRef}
       composerDraftTarget={threadRef}
       keybindings={[]}
       availableEditors={[]}
       openInShortcutEnabled={false}
-      revealLine={null}
-      revealRequestId={0}
+      revealLine={revealLine}
+      revealRequestId={revealRequestId}
       onOpenFile={vi.fn()}
       onNavigateFolder={vi.fn()}
       folderTrail={undefined}
@@ -141,22 +149,74 @@ describe("rendered Markdown task saves", () => {
     expect(state.writeFile).not.toHaveBeenCalled();
   });
 
-  it("still toggles and saves tasks from a complete read", async () => {
+  it.each([null, false, true])(
+    "still toggles and saves tasks with legacy preference %s",
+    async (preference) => {
+      using _settings = setup(preference);
+      await using screen = await render(markdownPreview(false));
+      using _timers = fakeTimers();
+      const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      expect(checkbox).not.toBeNull();
+      expect(checkbox.disabled).toBe(false);
+      await act(async () => checkbox.click());
+      await vi.advanceTimersByTimeAsync(500);
+      expect(state.writeFile).toHaveBeenCalledExactlyOnceWith({
+        environmentId,
+        input: {
+          cwd: "/workspace",
+          relativePath: "tasks.md",
+          contents: "- [x] Keep the rest of this file\n",
+        },
+      });
+    },
+  );
+
+  it("keeps Source local to the current file opening", async () => {
     using _settings = setup();
     await using screen = await render(markdownPreview(false));
-    using _timers = fakeTimers();
-    const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(checkbox).not.toBeNull();
-    expect(checkbox.disabled).toBe(false);
-    await act(async () => checkbox.click());
-    await vi.advanceTimersByTimeAsync(500);
-    expect(state.writeFile).toHaveBeenCalledExactlyOnceWith({
-      environmentId,
-      input: {
-        cwd: "/workspace",
-        relativePath: "tasks.md",
-        contents: "- [x] Keep the rest of this file\n",
-      },
-    });
+    await screen.getByRole("button", { name: "Show markdown source", exact: true }).click();
+    await expect
+      .element(screen.getByRole("button", { name: "Show rendered markdown", exact: true }))
+      .toBeVisible();
+    await screen.rerender(markdownPreview(false));
+    await expect
+      .element(screen.getByRole("button", { name: "Show rendered markdown", exact: true }))
+      .toBeVisible();
+    await screen.rerender(markdownPreview(false, { relativePath: "other.md" }));
+    await expect
+      .element(screen.getByRole("button", { name: "Show markdown source", exact: true }))
+      .toBeVisible();
+    await screen.rerender(markdownPreview(false));
+    await expect
+      .element(screen.getByRole("button", { name: "Show markdown source", exact: true }))
+      .toBeVisible();
+    await screen.getByRole("button", { name: "Show markdown source", exact: true }).click();
+    await screen.rerender(markdownPreview(false, { revealRequestId: 1 }));
+    await expect
+      .element(screen.getByRole("button", { name: "Show markdown source", exact: true }))
+      .toBeVisible();
+    expect(localStorage.getItem("t3code.renderMarkdown")).toBeNull();
+  });
+
+  it("renders first-line links while preserving specific source-line reveals", async () => {
+    using _settings = setup();
+    await using screen = await render(
+      markdownPreview(false, { revealLine: 1, revealRequestId: 1 }),
+    );
+    await expect
+      .element(screen.getByRole("button", { name: "Show markdown source", exact: true }))
+      .toBeVisible();
+    await screen.rerender(markdownPreview(false, { revealLine: 2, revealRequestId: 2 }));
+    await expect
+      .element(screen.getByRole("button", { name: "Show rendered markdown", exact: true }))
+      .toBeVisible();
+    await screen.getByRole("button", { name: "Show rendered markdown", exact: true }).click();
+    await expect
+      .element(screen.getByRole("button", { name: "Show markdown source", exact: true }))
+      .toBeVisible();
+    await screen.rerender(markdownPreview(false, { revealLine: 2, revealRequestId: 3 }));
+    await expect
+      .element(screen.getByRole("button", { name: "Show rendered markdown", exact: true }))
+      .toBeVisible();
   });
 });
