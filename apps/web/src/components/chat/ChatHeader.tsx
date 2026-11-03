@@ -43,8 +43,6 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
-import type { ProviderInstanceEntry } from "../../providerInstances";
-import { ProviderWeeklyUsage } from "./ProviderWeeklyUsage";
 import { NavigationHistoryControls } from "../NavigationHistoryControls";
 
 interface ChatHeaderProps {
@@ -57,7 +55,6 @@ interface ChatHeaderProps {
   parentThreadLink: { threadId: ThreadId; title: string } | null;
   onOpenThread: (threadId: ThreadId) => void;
   rightPanelOpen: boolean;
-  providers: ReadonlyArray<ProviderInstanceEntry>;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
@@ -85,7 +82,6 @@ export const ChatHeader = memo(function ChatHeader({
   parentThreadLink,
   onOpenThread,
   rightPanelOpen,
-  providers,
   onNewThreadInProject,
   onOpenProjectSettings,
   onFindInThread,
@@ -440,7 +436,6 @@ export const ChatHeader = memo(function ChatHeader({
           <NavigationHistoryControls />
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
-      <ProviderWeeklyUsage providers={providers} />
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );

@@ -27,7 +27,6 @@ function header(title: string) {
   return (
     <>
       <ChatHeader
-        providers={[]}
         activeThreadEnvironmentId={EnvironmentId.make("environment")}
         activeThreadId={ThreadId.make("thread")}
         activeThreadTitle={title}

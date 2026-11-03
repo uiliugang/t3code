@@ -6,10 +6,8 @@ import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
 export function ProviderWeeklyUsage({
   providers,
-  showLabel = false,
 }: {
   providers: ReadonlyArray<ProviderInstanceEntry>;
-  showLabel?: boolean;
 }) {
   const t = useUiTranslation();
   const items = collectProviderWeeklyUsage(providers);
@@ -45,11 +43,9 @@ export function ProviderWeeklyUsage({
                 showBadge
                 size="compact"
               />
-              {showLabel ? (
-                <span className="max-w-24 truncate text-foreground/85 sm:max-w-40">
-                  {item.displayName}
-                </span>
-              ) : null}
+              <span className="max-w-24 truncate text-foreground/85 sm:max-w-40">
+                {item.displayName}
+              </span>
               <span className="tabular-nums text-muted-foreground">
                 {item.remaining === null ? "--" : `${item.remaining}%`}
               </span>

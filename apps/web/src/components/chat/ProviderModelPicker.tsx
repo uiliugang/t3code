@@ -459,7 +459,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                         ? activeInstanceId
                         : browsedInstanceId),
                   )}
-                  showLabel
                 />,
               )}
             </div>
