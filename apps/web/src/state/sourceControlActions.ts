@@ -360,6 +360,9 @@ export function usePreparePullRequestThreadAction(scope: SourceControlActionScop
         cwd: target.cwd,
         reference: input.reference,
         mode: input.mode,
+        ...(scope.repositoryTarget === undefined
+          ? {}
+          : { repositoryTarget: scope.repositoryTarget }),
         ...(input.threadId ? { threadId: input.threadId } : {}),
       },
     });

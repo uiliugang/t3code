@@ -464,6 +464,70 @@ it.live(
         assert.match(local.bindings[0]!.launchBranch!, /^t3\//);
         assert.equal(local.bindings[1]!.launchBranch, "feature/backend");
         assert.equal(local.resources[0]!.checkoutRoot, yield* fs.realPath(roots[0]!.sourcePath));
+        const preparedPath = path.join(temp, "prepared-pr");
+        yield* git.execute({
+          operation: "test",
+          cwd: roots[0]!.sourcePath,
+          args: ["worktree", "add", "-b", "feature/prepared-pr", preparedPath, "main"],
+        });
+        yield* fs.writeFileString(path.join(preparedPath, "pr.txt"), "PR head");
+        yield* git.execute({ operation: "test", cwd: preparedPath, args: ["add", "."] });
+        yield* git.execute({
+          operation: "test",
+          cwd: preparedPath,
+          args: ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "PR"],
+        });
+        const preparedHead = (yield* git.execute({
+          operation: "test",
+          cwd: preparedPath,
+          args: ["rev-parse", "HEAD"],
+        })).stdout.trim();
+        const existingInput = {
+          ...input,
+          threadId: ThreadId.make("prepared-pr"),
+          config: { ...input.config, roots: [roots[0]!] },
+          strategy: {
+            type: "existing_worktree" as const,
+            worktreePath: preparedPath,
+            branch: "feature/prepared-pr",
+          },
+        };
+        const { workspace: existing } = yield* provisioner.prepare(existingInput);
+        assert.equal(existing.mode, "isolated");
+        assert.equal(existing.resources[0]!.checkoutRoot, yield* fs.realPath(preparedPath));
+        assert.equal(existing.resources[0]!.ownership, "borrowed");
+        assert.equal(existing.bindings[0]!.launchBranch, "feature/prepared-pr");
+        assert.equal(existing.bindings[0]!.launchBaseCommit, preparedHead);
+        assert.equal(
+          existing.bindings[0]!.sourcePathAtBind,
+          yield* fs.realPath(roots[0]!.sourcePath),
+        );
+        assert.isFalse(yield* fs.exists(path.join(preparedPath, "setup.txt")));
+        for (const [suffix, config, strategy, message] of [
+          ["multi", input.config, existingInput.strategy, "single existing worktree"],
+          [
+            "branch",
+            existingInput.config,
+            { ...existingInput.strategy, branch: "changed" },
+            "branch",
+          ],
+          [
+            "repository",
+            existingInput.config,
+            { ...existingInput.strategy, worktreePath: roots[1]!.sourcePath },
+            "another repository",
+          ],
+        ] as const) {
+          const denied = yield* provisioner
+            .prepare({
+              ...existingInput,
+              threadId: ThreadId.make(`prepared-pr-${suffix}`),
+              config,
+              strategy,
+            })
+            .pipe(Effect.flip);
+          assert.include(denied.message, message);
+        }
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );
