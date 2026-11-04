@@ -12,6 +12,56 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "View environment": "查看环境",
+  "Read threads, status, checkpoints, and configuration.": "读取对话、状态、检查点和配置。",
+  "Operate tasks": "操作任务",
+  "Start, update, and stop tasks.": "启动、更新和停止任务。",
+  "Change environment settings": "更改环境设置",
+  "Edit environment preferences and keybindings.": "编辑环境偏好和快捷键。",
+  "Manage providers": "管理提供商",
+  "Configure, install, sign in to, and update providers and usage sources.":
+    "配置、安装、登录和更新提供商及用量来源。",
+  "Maintain environment": "维护环境",
+  "Update the server and control environment processes.": "更新服务器并控制环境进程。",
+  "Control previews": "控制预览",
+  "Open browser previews and host browser automation.": "打开浏览器预览并运行主机浏览器自动化。",
+  "View diagnostics and usage": "查看诊断与用量",
+  "Read process diagnostics, resource history, and usage totals.":
+    "读取进程诊断、资源历史和用量汇总。",
+  "View terminals": "查看终端",
+  "Read existing terminal output and status.": "读取已有终端的输出和状态。",
+  "Use terminals": "使用终端",
+  "Create terminals and send input to running shells.": "创建终端并向运行中的 Shell 发送输入。",
+  "Change source control": "修改源代码管理",
+  "Commit, push, manage branches and repositories, and change pull requests.":
+    "提交、推送、管理分支与仓库，以及修改合并请求。",
+  "Browse host files, search workspaces, and inspect local changes.":
+    "浏览主机文件、搜索工作区并查看本地变更。",
+  "Edit workspace files and save plans to disk.": "编辑工作区文件并将计划保存到磁盘。",
+  "View access": "查看访问权限",
+  "Inspect pairing links and authorized clients.": "查看配对链接和授权客户端。",
+  "Manage access": "管理访问权限",
+  "Issue and revoke credentials for other clients.": "为其他客户端签发或撤销凭据。",
+  "View relay": "查看中继",
+  "Inspect managed relay connectivity.": "查看受管理中继的连接状态。",
+  "Manage relay": "管理中继",
+  "Change managed tunnel connectivity.": "更改受管理隧道的连接配置。",
+  "{count} scope": "{count} 项权限",
+  "{count} scopes": "{count} 项权限",
+  "{label}: show {count}": "{label}：显示 {count}",
+  "Creating…": "正在创建…",
+  Routes: "连接路由",
+  "Your permissions": "当前权限",
+  Allowed: "已允许",
+  "Not granted": "未授权",
+  "Applies to the route marked In use. Other routes may have different permissions and have not been checked.":
+    "适用于标记为“使用中”的路由。其他路由的权限可能不同，且尚未验证。",
+  "Connect to this environment to view this session’s permissions.":
+    "连接此环境后可查看当前会话的权限。",
+  "This environment did not accept your session. Reconnect to try again.":
+    "此环境未接受当前会话，请重新连接后重试。",
+  "Could not verify your permissions. Retrying automatically.": "无法验证权限，正在自动重试。",
+  "Checking permissions…": "正在检查权限…",
   "Up to date": "已是最新版本",
   "Downloading update": "正在下载更新",
   "Downloading update {version}": "正在下载更新 {version}",

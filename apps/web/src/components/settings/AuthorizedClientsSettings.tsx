@@ -78,7 +78,9 @@ function AccessScopeSummary({
   readonly label: string;
 }) {
   const t = useUiTranslation();
-  const scopeCountLabel = `${scopes.length} ${scopes.length === 1 ? "scope" : "scopes"}`;
+  const scopeCountLabel = t(scopes.length === 1 ? "{count} scope" : "{count} scopes", {
+    count: scopes.length,
+  });
 
   return (
     <Popover>
@@ -89,7 +91,7 @@ function AccessScopeSummary({
         render={
           <button
             type="button"
-            aria-label={`${label}: show ${scopeCountLabel}`}
+            aria-label={t("{label}: show {count}", { label, count: scopeCountLabel })}
             className="cursor-help underline decoration-border underline-offset-2 outline-hidden hover:text-foreground focus-visible:text-foreground"
           />
         }
@@ -756,9 +758,11 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
                         onCheckedChange={(checked) => togglePairingScope(scope, checked === true)}
                       />
                       <span className="min-w-0">
-                        <span className="block text-xs font-medium text-foreground">{title}</span>
+                        <span className="block text-xs font-medium text-foreground">
+                          {t(title)}
+                        </span>
                         <span className="block text-xs leading-snug text-muted-foreground">
-                          {description}
+                          {t(description)}
                         </span>
                       </span>
                     </label>
@@ -786,7 +790,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
               disabled={isCreatingPairingLink || selectedScopes.length === 0}
               onClick={() => void handleCreatePairingLink()}
             >
-              {isCreatingPairingLink ? "Creating…" : "Create link"}
+              {t(isCreatingPairingLink ? "Creating…" : "Create link")}
             </Button>
           </DialogFooter>
         </DialogPopup>

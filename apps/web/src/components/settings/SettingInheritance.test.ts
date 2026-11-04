@@ -64,15 +64,16 @@ describe("settingInheritanceLayers", () => {
   });
 
   it("shows the checkout's t3.json as a layer for file-backed keys", () => {
+    const inheritedSettings = { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: null };
     const file = { defaultThreadEnvMode: "worktree" as const };
     const fromFile = settingInheritanceLayers(
       {
         environmentId,
         label: "Laptop",
         projectId,
-        ...resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, file),
+        ...resolveProjectSettings(inheritedSettings, projectId, null, file),
       },
-      DEFAULT_SERVER_SETTINGS,
+      inheritedSettings,
       "defaultThreadEnvMode",
     );
     expect(fromFile.map((layer) => [layer.label, layer.value, layer.effective])).toEqual([

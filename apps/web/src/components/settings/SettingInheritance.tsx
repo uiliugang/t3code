@@ -106,8 +106,10 @@ export function settingInheritanceLayers(
 ): readonly InheritanceLayer[] {
   const environmentValue = environmentSettings[key];
   const source = isProjectScopedSettingKey(key) ? target.sources[key] : "environment";
-  const environmentSet = !Equal.equals(environmentValue, DEFAULT_SERVER_SETTINGS[key]);
   const fileBacked = isProjectFileBackedSettingKey(key);
+  const environmentSet = fileBacked
+    ? environmentValue !== null
+    : !Equal.equals(environmentValue, DEFAULT_SERVER_SETTINGS[key]);
   const layers: InheritanceLayer[] = [];
   if (target.projectId !== null && isProjectScopedSettingKey(key)) {
     layers.push({
