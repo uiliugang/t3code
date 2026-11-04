@@ -65,6 +65,13 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitManager from "./GitManager.ts";
+import * as WorkspaceAccess from "../workspace/WorkspaceAccess.ts";
+import * as WorkspaceRepositoryResolver from "../workspace/WorkspaceRepositoryResolver.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import {
+  workspaceFixture,
+  workspaceThreadFixture,
+} from "../orchestration-v2/testkit/workspaceFixtures.ts";
 
 /** A change request the fake host reports. Omitted fields read as an open, undated request. */
 type FakeChangeRequest = Omit<ChangeRequest, "provider" | "state" | "updatedAt"> & {
@@ -740,6 +747,12 @@ function makeManager(input?: {
 const asThreadId = (threadId: string) => threadId as ThreadId;
 
 const layerGitManagerTest = GitVcsDriver.layer.pipe(
+  Layer.provideMerge(
+    Layer.mock(WorkspaceAccess.WorkspaceAccess)({
+      validate: () => Effect.void,
+      run: (_input, operation) => operation,
+    }),
+  ),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-manager-test-" })),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
@@ -5554,11 +5567,64 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         });
 
         // Fetching directly into this checked-out branch would fail with git exit 128.
-        const result = yield* preparePullRequestThread(manager, {
+        const protectedAccess = (checkoutRoot: string) => {
+          const workspace = workspaceFixture();
+          const thread = workspaceThreadFixture({
+            ...workspace,
+            resources: workspace.resources.map((resource, index) =>
+              index === 0
+                ? { ...resource, checkoutRoot: NodeFS.realpathSync.native(checkoutRoot) }
+                : resource,
+            ),
+          });
+          const projection = ProjectionStore.emptyProjection({
+            type: "thread.created",
+            id: EventId.make("protected-pr-worktree"),
+            threadId: thread.id,
+            occurredAt: thread.createdAt,
+            payload: thread,
+          });
+          return WorkspaceAccess.layer.pipe(
+            Layer.provide(
+              Layer.mock(ThreadManagement.ThreadManagementService)({
+                getShellSnapshot: () =>
+                  Effect.succeed({
+                    schemaVersion: 2,
+                    snapshotSequence: 1,
+                    threads: [ProjectionStore.threadShellFromProjection(projection)],
+                    archivedThreads: [],
+                  }),
+              }),
+            ),
+            Layer.provide(WorkspaceRepositoryResolver.layer),
+          );
+        };
+        const denied = yield* preparePullRequestThread(manager, {
           cwd: repoDir,
           reference: "78",
           mode: "worktree",
-        });
+        }).pipe(Effect.provide(protectedAccess(worktreePath)), Effect.result);
+        expect(Result.isFailure(denied)).toBe(true);
+        if (Result.isFailure(denied)) {
+          expect(denied.failure).toMatchObject({
+            _tag: "GitCommandError",
+            operation: "WorkspaceAccess.validate",
+            cwd: NodeFS.realpathSync.native(worktreePath),
+          });
+        }
+
+        const result = yield* Effect.gen(function* () {
+          const access = yield* WorkspaceAccess.WorkspaceAccess;
+          return yield* access.run(
+            { cwd: repoDir },
+            preparePullRequestThread(manager, {
+              cwd: repoDir,
+              reference: "78",
+              mode: "worktree",
+            }),
+            false,
+          );
+        }).pipe(Effect.provide(protectedAccess(repoDir)));
         expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
           NodeFS.realpathSync.native(worktreePath),
         );

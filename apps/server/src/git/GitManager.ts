@@ -82,6 +82,7 @@ import {
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import * as WorkspaceAccess from "../workspace/WorkspaceAccess.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
@@ -154,7 +155,11 @@ export class GitManager extends Context.Service<
     ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
     readonly preparePullRequestThread: (
       input: GitPreparePullRequestThreadInput,
-    ) => Effect.Effect<GitPreparePullRequestThreadResult, GitManagerServiceError>;
+    ) => Effect.Effect<
+      GitPreparePullRequestThreadResult,
+      GitManagerServiceError,
+      WorkspaceAccess.WorkspaceAccess
+    >;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
       options?: GitRunStackedActionOptions,
@@ -2959,6 +2964,10 @@ export const make = Effect.gen(function* () {
             isOnPullRequestHead: false,
           };
         }
+
+        // Workspace access depends on orchestration, so resolve it after service construction.
+        const workspaceAccess = yield* WorkspaceAccess.WorkspaceAccess;
+        yield* workspaceAccess.validate({ cwd: worktreePath });
 
         // Capture upstream before its forced fetch so rewritten heads remain distinguishable from local commits.
         const upstreamCommitBeforeFetch = yield* gitCore

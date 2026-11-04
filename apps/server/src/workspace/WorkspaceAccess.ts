@@ -20,6 +20,7 @@ export class WorkspaceAccess extends Context.Service<
         readonly repositoryTarget?: ThreadRepositoryTarget | undefined;
       },
       operation: Effect.Effect<A, E, R>,
+      write?: boolean,
     ) => Effect.Effect<A, E | GitCommandError, R>;
     readonly validate: (
       input: {
@@ -60,20 +61,27 @@ export const layer = Layer.effect(
           if (!write) return;
           const shell = yield* threads.getShellSnapshot();
           const cwd = yield* fs.realPath(input.cwd);
-          if (
-            [...shell.threads, ...shell.archivedThreads].some((thread) =>
-              thread.workspace?.resources.some(
-                (resource) =>
-                  resource.checkoutRoot === cwd ||
-                  (path.relative(resource.checkoutRoot, cwd) !== ".." &&
-                    !path.relative(resource.checkoutRoot, cwd).startsWith(`..${path.sep}`) &&
-                    !path.isAbsolute(path.relative(resource.checkoutRoot, cwd))),
-              ),
+          const containingResources = [...shell.threads, ...shell.archivedThreads]
+            .flatMap((thread) => thread.workspace?.resources ?? [])
+            .filter((resource) => {
+              const relative = path.relative(resource.checkoutRoot, cwd);
+              return (
+                relative !== ".." &&
+                !relative.startsWith(`..${path.sep}`) &&
+                !path.isAbsolute(relative)
+              );
+            });
+          if (containingResources.length > 0) {
+            const checkoutRoot = containingResources.some(
+              (resource) => resource.checkoutRoot === cwd,
             )
-          )
-            return yield* reject(
-              "Select a repository from the task workspace. This client did not supply a workspace revision.",
-            );
+              ? cwd
+              : (yield* resolver.inspect(cwd)).checkoutRoot;
+            if (containingResources.some((resource) => resource.checkoutRoot === checkoutRoot))
+              return yield* reject(
+                "Select a repository from the task workspace. This client did not supply a workspace revision.",
+              );
+          }
           return;
         }
         const projection = yield* threads.getThreadRecords(target.threadId, ["runs"]);
@@ -119,14 +127,14 @@ export const layer = Layer.effect(
     );
     return WorkspaceAccess.of({
       validate,
-      run: Effect.fn("WorkspaceAccess.run")((input, operation) =>
-        validate(input).pipe(
+      run: Effect.fn("WorkspaceAccess.run")((input, operation, write = true) =>
+        validate(input, write).pipe(
           Effect.andThen(
             input.repositoryTarget === undefined
               ? operation
               : withWorkspaceLease(
                   `resource:${input.repositoryTarget.resourceId}`,
-                  validate(input).pipe(Effect.andThen(operation)),
+                  validate(input, write).pipe(Effect.andThen(operation)),
                 ),
           ),
         ),

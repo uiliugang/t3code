@@ -2,6 +2,7 @@ import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
   type ThreadId,
+  type ThreadRepositoryTarget,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -41,6 +42,7 @@ interface PullRequestThreadDialogProps {
   environmentId: EnvironmentId;
   threadId: ThreadId;
   cwd: string | null;
+  repositoryTarget?: ThreadRepositoryTarget;
   initialReference: string | null;
   onOpenChange: (open: boolean) => void;
   onPrepared: (input: { branch: string; worktreePath: string | null }) => Promise<void> | void;
@@ -64,6 +66,7 @@ export function PullRequestThreadDialog({
   environmentId,
   threadId,
   cwd,
+  repositoryTarget,
   initialReference,
   onOpenChange,
   onPrepared,
@@ -103,7 +106,11 @@ export function PullRequestThreadDialog({
       cwd,
       reference: parsedReference,
     })?.pullRequest ?? null;
-  const preparePullRequestThreadAction = usePreparePullRequestThreadAction({ environmentId, cwd });
+  const preparePullRequestThreadAction = usePreparePullRequestThreadAction({
+    environmentId,
+    cwd,
+    ...(repositoryTarget === undefined ? {} : { repositoryTarget }),
+  });
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
 
   const liveResolvedPullRequest =

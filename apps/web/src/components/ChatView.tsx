@@ -1612,6 +1612,9 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const boundWorkspace = isServerThread ? serverThread?.workspace : undefined;
+  const pullRequestSourceRepository = boundWorkspace?.resources.find(
+    (resource) => resource.checkoutRoot === activeProject?.workspaceRoot,
+  );
   const primaryBinding = boundWorkspace?.bindings.find(
     (binding) => binding.rootId === boundWorkspace.primaryRootId,
   );
@@ -3926,6 +3929,15 @@ export default function ChatView(props: ChatViewProps) {
                   environmentId={activeThread.environmentId}
                   threadId={activeThread.id}
                   cwd={activeProject?.workspaceRoot ?? null}
+                  {...(boundWorkspace && pullRequestSourceRepository
+                    ? {
+                        repositoryTarget: {
+                          threadId: activeThread.id,
+                          workspaceRevisionId: boundWorkspace.id,
+                          resourceId: pullRequestSourceRepository.id,
+                        },
+                      }
+                    : {})}
                   onPrepared={handlePreparedPullRequestThreadStable}
                 />
               </>

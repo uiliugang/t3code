@@ -3175,7 +3175,7 @@ export const layerWsRpc = (
         [WS_METHODS.gitResolvePullRequest]: (input) => gitWorkflow.resolvePullRequest(input),
         [WS_METHODS.gitPreparePullRequestThread]: (input) =>
           workspaceAccess
-            .run(input, gitWorkflow.preparePullRequestThread(input))
+            .run(input, gitWorkflow.preparePullRequestThread(input), input.mode === "local")
             .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.vcsListRefs]: (input) => gitWorkflow.listRefs(input),
         [WS_METHODS.vcsCreateWorktree]: (input) =>
