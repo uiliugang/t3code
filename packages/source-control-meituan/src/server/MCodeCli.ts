@@ -19,6 +19,7 @@ export class MCodeError extends Schema.TaggedError<MCodeError>()("MCodeError", {
     "rate-limited",
     "not-found",
     "failed",
+    "invalid-json",
     "invalid-response",
     "invalid-repository",
     "unsupported",
@@ -38,8 +39,16 @@ export class MCodeError extends Schema.TaggedError<MCodeError>()("MCodeError", {
         return "Meituan Code rate limit exceeded.";
       case "not-found":
         return "The Meituan Code repository, branch, or pull request was not found.";
-      case "invalid-response":
-        return "Meituan Code returned an unreadable response. Check the code-cli version.";
+      case "invalid-json":
+      case "invalid-response": {
+        const detail =
+          this.reason === "invalid-json"
+            ? "Meituan Code returned invalid JSON."
+            : "Meituan Code returned unexpected response fields.";
+        return this.operation === "createChangeRequest"
+          ? `${detail} The pull request may already have been created; check the repository before retrying.`
+          : `${detail} Check the server logs for details.`;
+      }
       case "invalid-repository":
         return "Select a Meituan Code repository in project/repository format.";
       case "unsupported":
@@ -115,6 +124,8 @@ export class MCodeCli extends Context.Service<
   }
 >()("@t3tools/source-control-meituan/server/MCodeCli") {}
 
+const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
+
 const make = Effect.gen(function* () {
   const host = yield* SourceControlHost.SourceControlHost;
   const run = Effect.fn("MCodeCli.run")(function* (input: CommandInput) {
@@ -156,10 +167,18 @@ const make = Effect.gen(function* () {
   const json = <A>(input: CommandInput, schema: Schema.Codec<A, unknown, never, never>) =>
     run(input).pipe(
       Effect.flatMap((output) =>
-        Schema.decodeEffect(Schema.fromJsonString(schema))(output.stdout).pipe(
+        decodeJson(output.stdout).pipe(
           Effect.mapError(
             (cause) =>
-              new MCodeError({ operation: input.operation, reason: "invalid-response", cause }),
+              new MCodeError({ operation: input.operation, reason: "invalid-json", cause }),
+          ),
+          Effect.flatMap((value) =>
+            Schema.decodeEffect(schema)(value).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new MCodeError({ operation: input.operation, reason: "invalid-response", cause }),
+              ),
+            ),
           ),
         ),
       ),

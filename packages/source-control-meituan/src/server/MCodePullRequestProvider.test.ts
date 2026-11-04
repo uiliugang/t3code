@@ -179,7 +179,11 @@ describe("Meituan pull requests", () => {
         Effect.provide(
           layerFor((input) => {
             if (input.args.includes("view"))
-              return Effect.succeed(TestHost.processOutput(JSON.stringify(pullRequest)));
+              return Effect.succeed(
+                TestHost.processOutput(
+                  JSON.stringify({ ...pullRequest, additions: -1, deletions: -1 }),
+                ),
+              );
             if (input.args[0] === "auth")
               return Effect.succeed(
                 TestHost.processOutput("Logged in to http://git.sankuai.com as reviewer (via CLI)"),
@@ -196,14 +200,22 @@ describe("Meituan pull requests", () => {
       );
       const result = yield* provider.getChangeRequest(repositoryRef);
       expect(result.changedFiles).toBe(2);
+      expect(result.additions).toBe(0);
+      expect(result.deletions).toBe(0);
       expect(result.viewerPermissions?.verdicts).toContain("approve");
     }),
   );
 
-  it.effect("reports malformed CLI JSON instead of an empty PR list", () =>
+  it.effect.each([
+    { stdout: "not json", message: "invalid JSON" },
+    {
+      stdout: JSON.stringify([{ ...pullRequest, additions: "invalid" }]),
+      message: "unexpected response fields",
+    },
+  ])("reports malformed CLI responses: $message", ({ stdout, message }) =>
     Effect.gen(function* () {
       const provider = yield* Provider.make.pipe(
-        Effect.provide(layerFor(() => Effect.succeed(TestHost.processOutput("not json")))),
+        Effect.provide(layerFor(() => Effect.succeed(TestHost.processOutput(stdout)))),
       );
       const result = yield* provider
         .listChangeRequests({
@@ -214,7 +226,7 @@ describe("Meituan pull requests", () => {
           limit: 20,
         })
         .pipe(Effect.result);
-      expect(Result.isFailure(result) && result.failure.detail).toContain("unreadable response");
+      expect(Result.isFailure(result) && result.failure.detail).toContain(message);
     }),
   );
 

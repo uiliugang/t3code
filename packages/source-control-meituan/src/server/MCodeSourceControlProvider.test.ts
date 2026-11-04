@@ -145,7 +145,7 @@ describe("Meituan source control", () => {
                 : input.args.includes("settings")
                   ? { requireIssueAssociated: true }
                   : input.args.includes("create")
-                    ? pullRequest
+                    ? { ...pullRequest, additions: -1, deletions: -1, commitNum: -1 }
                     : input.args.includes("reviewers")
                       ? input.args.includes("--target")
                         ? { candidates: fallback ? [] : [{ mis: "reviewer", name: "Reviewer" }] }
@@ -161,6 +161,33 @@ describe("Meituan source control", () => {
         expect(create).not.toContain("--no-default-reviewers");
         expect(create).toContain("--reviewer");
         expect(create).toContain("reviewer");
+      }),
+  );
+
+  it.effect.each(["not json", JSON.stringify({ ...pullRequest, additions: "invalid" })])(
+    "warns that creation may have succeeded when its response cannot be decoded: %s",
+    (stdout) =>
+      Effect.gen(function* () {
+        const provider = yield* Provider.make.pipe(
+          Effect.provide(
+            layerFor((input) => {
+              if (input.args.includes("create"))
+                return Effect.succeed(TestHost.processOutput(stdout));
+              const response = input.args.includes("list")
+                ? []
+                : input.args.includes("settings")
+                  ? { requireIssueAssociated: false }
+                  : input.args.includes("reviewers")
+                    ? []
+                    : { name: "master" };
+              return Effect.succeed(TestHost.processOutput(JSON.stringify(response)));
+            }),
+          ),
+        );
+        const result = yield* provider.createChangeRequest(createInput).pipe(Effect.result);
+        expect(Result.isFailure(result) && result.failure.detail).toContain(
+          "may already have been created",
+        );
       }),
   );
 
