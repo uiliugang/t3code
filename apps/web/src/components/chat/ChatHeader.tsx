@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { projectDisplayKind } from "@t3tools/shared/projectPresentation";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -315,6 +316,11 @@ export const ChatHeader = memo(function ChatHeader({
                       project={activeProject}
                     />
                   </WorkspaceBreadcrumbText>
+                  {!activeProject.isScratch && projectDisplayKind(activeProject) === "group" ? (
+                    <Badge variant="secondary" size="sm">
+                      group
+                    </Badge>
+                  ) : null}
                 </TooltipTrigger>
                 <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
               </Tooltip>
