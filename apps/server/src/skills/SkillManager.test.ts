@@ -10,6 +10,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { SkillCatalog } from "@t3tools/contracts";
+import { skillSelection } from "@t3tools/shared/skillsUi";
 import * as ServerConfig from "../config.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as SkillManager from "./SkillManager.ts";
@@ -28,12 +29,15 @@ const harness = Effect.gen(function* () {
   );
   yield* fs.writeFileString(`${source}/script.sh`, "first");
   const busy = yield* Ref.make(false);
+  const reported = yield* Ref.make<ReadonlyArray<{ name: string; path: string; provider: string }>>(
+    [],
+  );
   const dependencies = yield* Layer.build(
     Layer.mergeAll(
       SkillPackages.layer,
       Layer.succeed(SkillHost.SkillHost, {
         targets: Effect.succeed([{ id: "fixture", label: "Fixture", directory: target }]),
-        discovered: Effect.succeed([]),
+        discovered: Ref.get(reported),
         busy: Ref.get(busy),
         refresh: () => Effect.void,
       }),
@@ -54,11 +58,153 @@ const harness = Effect.gen(function* () {
       targetIds: ["fixture"],
     })
     .pipe(Effect.andThen(manager.drain));
-  return { fs, directory, source, target, manager, install, busy, restart, sql };
+  return { fs, directory, source, target, manager, install, busy, reported, restart, sql };
 });
 const encodeCatalog = Schema.encodeEffect(Schema.fromJsonString(SkillCatalog));
 
 describe("SkillManager", () => {
+  it.effect(
+    "removes empty physical locations across aliases and preserves shared or populated locations",
+    () =>
+      Effect.gen(function* () {
+        const { fs, directory, source, target, manager, reported, restart } = yield* harness;
+        yield* fs.makeDirectory(target, { recursive: true });
+        yield* fs.writeFileString(`${target}/notes.txt`, "Keep non-skill files");
+        yield* fs.symlink(target, `${directory}/alias`);
+        yield* manager.mutate({
+          type: "target.save",
+          target: { id: "alias", label: "Alias", directory: `${directory}/alias` },
+        });
+        yield* manager.mutate({
+          type: "target.save",
+          target: { id: "directory:shared", label: "Shared", directory: `${directory}/shared` },
+        });
+        yield* manager.drain;
+        yield* manager.mutate({ type: "target.remove", targetId: "directory:shared" });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).lastFailureReason).toBe("conflict");
+        yield* fs.copy(source, `${target}/review`);
+        yield* manager.mutate({ type: "target.remove", targetId: "alias" });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).lastFailureReason).toBe("conflict");
+        expect(
+          (yield* manager.snapshot).targets.find((entry) => entry.id === "fixture")?.hasSkills,
+        ).toBe(true);
+        yield* fs.remove(`${target}/review`, { recursive: true });
+        yield* fs.makeDirectory(`${target}/bundle`);
+        yield* fs.copy(source, `${target}/bundle/review`);
+        yield* Ref.set(reported, [
+          { name: "review", path: `${target}/bundle/review/SKILL.md`, provider: "Fixture" },
+        ]);
+        yield* manager.mutate({ type: "target.remove", targetId: "alias" });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).lastFailureReason).toBe("conflict");
+        yield* fs.remove(`${target}/bundle`, { recursive: true });
+        yield* Ref.set(reported, []);
+        yield* manager.mutate({ type: "target.remove", targetId: "alias" });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).targets.map((entry) => entry.id)).toEqual([
+          "directory:shared",
+        ]);
+        expect(yield* fs.readFileString(`${target}/notes.txt`)).toBe("Keep non-skill files");
+        yield* fs.copy(source, `${target}/review`);
+        yield* Ref.set(reported, [
+          { name: "review", path: `${directory}/alias/review/SKILL.md`, provider: "Fixture" },
+        ]);
+        const recovered = yield* restart;
+        expect((yield* recovered.snapshot).targets.map((entry) => entry.id)).toEqual([
+          "directory:shared",
+        ]);
+        expect((yield* recovered.snapshot).discovered).toEqual([]);
+        yield* recovered.mutate({
+          type: "target.save",
+          target: { id: "fixture", label: "Fixture", directory: target },
+        });
+        yield* recovered.drain;
+        expect(
+          (yield* recovered.snapshot).targets.find((entry) => entry.id === "fixture")?.enabled,
+        ).toBe(true);
+        expect((yield* recovered.snapshot).discovered.map((entry) => entry.name)).toEqual([
+          "review",
+        ]);
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect(
+    "disables a physical location, detaches managed links and keeps original files through restart",
+    () =>
+      Effect.gen(function* () {
+        const { fs, directory, source, target, manager, install, busy, reported, restart } =
+          yield* harness;
+        yield* install;
+        const first = (yield* manager.snapshot).skills[0]!;
+        yield* fs.copy(source, `${target}/notes`);
+        yield* fs.writeFileString(
+          `${target}/notes/SKILL.md`,
+          "---\nname: notes\ndescription: Original notes\n---\n",
+        );
+        yield* fs.symlink(target, `${directory}/alias`);
+        yield* Ref.set(reported, [
+          { name: "notes", path: `${directory}/alias/notes/SKILL.md`, provider: "Fixture" },
+        ]);
+        yield* manager.mutate({
+          type: "target.save",
+          target: { id: "alias", label: "Alias", directory: `${directory}/alias` },
+        });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).discovered.map((entry) => entry.name)).toContain("notes");
+        yield* Ref.set(busy, true);
+        yield* manager.mutate({ type: "target.configure", targetId: "alias", enabled: false });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).lastFailureReason).toBe("busy");
+        expect((yield* manager.snapshot).skills[0]?.bindings).toHaveLength(1);
+        yield* Ref.set(busy, false);
+        yield* manager.mutate({ type: "target.configure", targetId: "alias", enabled: false });
+        yield* manager.drain;
+        const disabled = yield* manager.snapshot;
+        expect(disabled.targets).toHaveLength(2);
+        expect(disabled.targets.every((entry) => entry.enabled === false && entry.hasSkills)).toBe(
+          true,
+        );
+        expect(disabled.skills[0]?.bindings).toEqual([]);
+        expect(disabled.discovered).toEqual([]);
+        expect(yield* fs.exists(`${target}/review`)).toBe(false);
+        expect(yield* fs.readFileString(`${target}/notes/script.sh`)).toBe("first");
+        const recovered = yield* restart;
+        expect((yield* recovered.snapshot).targets.every((entry) => entry.enabled === false)).toBe(
+          true,
+        );
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: ["fixture"],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).lastFailureReason).toBe("target-disabled");
+        expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
+        yield* recovered.mutate({ type: "target.remove", targetId: "fixture" });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).lastFailureReason).toBe("conflict");
+        yield* recovered.mutate({ type: "target.configure", targetId: "fixture", enabled: true });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).targets.every((entry) => entry.enabled)).toBe(true);
+        expect((yield* recovered.snapshot).discovered.map((entry) => entry.name)).toContain(
+          "notes",
+        );
+        expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: ["fixture", "alias"],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]?.bindings).toHaveLength(1);
+        expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.live("persists installer diagnostics and clears them after a successful retry", () =>
     Effect.gen(function* () {
       const { fs, directory, source, manager, restart } = yield* harness;
@@ -250,6 +396,20 @@ describe("SkillManager", () => {
       expect(failed.status).toBe("failed");
       expect(failed.activeDigest).toBeNull();
       expect(failed.versions).toHaveLength(0);
+      yield* fs.remove(`${source}/outside`);
+      yield* fs.copy(source, `${directory}/external-skill`);
+      yield* fs.symlink(`${directory}/external-skill`, `${source}/external`);
+      yield* manager.mutate({
+        type: "install",
+        sourceId: "local",
+        locator: source,
+        skill: "external",
+        targetIds: [],
+      });
+      yield* manager.drain;
+      const escaped = (yield* manager.snapshot).skills.at(-1)!;
+      expect(escaped.failureReason).toBe("invalid-package");
+      expect(escaped.activeDigest).toBeNull();
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
   it.effect("deduplicates physical discoveries, previews and restores a taken-over directory", () =>
@@ -257,6 +417,10 @@ describe("SkillManager", () => {
       const { fs, source, target, manager, install, restart, sql } = yield* harness;
       yield* fs.makeDirectory(target, { recursive: true });
       yield* fs.copy(source, `${target}/review`);
+      yield* fs.writeFileString(
+        `${target}/review/SKILL.md`,
+        "---\nname: review-skill\ndescription: Review a change\n---\n",
+      );
       yield* fs.writeFileString(
         `${target}/.mtskills-source.jsonl`,
         '{"skillName":"review","sourceType":"mt-name","sourceId":"review-package"}\n',
@@ -268,7 +432,9 @@ describe("SkillManager", () => {
       yield* fs.symlink(target, `${target}/../alias`);
       yield* manager.mutate({ type: "refresh" });
       yield* manager.drain;
-      const discovered = (yield* manager.snapshot).discovered;
+      const refreshed = yield* manager.snapshot;
+      expect(new Set(refreshed.targets.map((entry) => entry.directory)).size).toBe(1);
+      const discovered = refreshed.discovered;
       expect(discovered).toHaveLength(1);
       expect(discovered[0]?.targetIds).toHaveLength(2);
       expect(discovered[0]?.origin?.locator).toBe("review-package");
@@ -286,6 +452,15 @@ describe("SkillManager", () => {
       expect(adopted.bindings).toHaveLength(1);
       expect(adopted.sourceId).toBe("meituan");
       expect(adopted.backups).toHaveLength(1);
+      yield* manager.mutate({
+        type: "configure",
+        id: adopted.id,
+        policy: adopted.policy,
+        targetIds: ["alias"],
+      });
+      yield* manager.drain;
+      expect((yield* manager.snapshot).skills[0]?.bindings[0]?.entryName).toBe("review");
+      expect(yield* fs.exists(`${target}/review-skill`)).toBe(false);
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
       yield* manager.mutate({ type: "unmanage", id: adopted.id, restore: true });
       yield* manager.drain;
@@ -555,6 +730,15 @@ describe("SkillManager", () => {
       yield* fs.copy(source, `${packageRoot}/one`);
       yield* fs.copy(source, `${packageRoot}/two`);
       yield* fs.writeFileString(
+        `${packageRoot}/SKILL.md`,
+        "---\nname: suite\ndescription: Team suite\n---\n",
+      );
+      yield* fs.makeDirectory(`${packageRoot}/templates`);
+      yield* fs.writeFileString(
+        `${packageRoot}/templates/SKILL.md`,
+        "Skill template without metadata",
+      );
+      yield* fs.writeFileString(
         `${packageRoot}/two/SKILL.md`,
         "---\nname: second\ndescription: Another skill\n---\n",
       );
@@ -568,9 +752,20 @@ describe("SkillManager", () => {
       yield* manager.drain;
       const snapshot = yield* manager.snapshot;
       const failed = snapshot.skills[0]!;
-      expect(failed.choices).toEqual(["review", "second"]);
+      expect(failed.choices).toEqual(["suite", "review", "second"]);
+      yield* manager.mutate({
+        type: "configure",
+        id: failed.id,
+        policy: failed.policy,
+        targetIds: ["fixture"],
+      });
+      yield* manager.drain;
+      const configured = (yield* manager.snapshot).skills[0]!;
+      expect(configured.failureReason).toBe("select-skill");
+      expect(configured.status).toBe("failed");
+      expect(configured.bindings.map((target) => target.id)).toEqual(["fixture"]);
       const payload = yield* encodeCatalog({
-        ...snapshot,
+        ...(yield* manager.snapshot),
         jobs: [
           ...(snapshot.jobs ?? []),
           {
@@ -591,6 +786,16 @@ describe("SkillManager", () => {
       expect(
         (yield* recovered.snapshot).jobs?.find((job) => job.id === "queued-selection")?.status,
       ).toBe("completed");
+      yield* recovered.mutate(
+        skillSelection((yield* recovered.snapshot).skills[0]!, ["second", "review"]),
+      );
+      yield* recovered.drain;
+      expect(
+        (yield* recovered.snapshot).skills.map((entry) => [entry.name, entry.status]).sort(),
+      ).toEqual([
+        ["review", "ready"],
+        ["second", "ready"],
+      ]);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
