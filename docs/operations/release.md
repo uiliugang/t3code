@@ -14,7 +14,9 @@ replacing the key prevents installed APKs from upgrading in place.
 
 Run **Fork macOS and Android release** manually on a branch to validate the build and
 download its Actions artifacts. Push a plain `vX.Y.Z` tag to publish one GitHub Release
-after both builds pass. Tags with prerelease suffixes are rejected. The workflow builds
+after both builds pass. The manual Actions entry becomes available once the workflow is
+merged into the default branch; packaging changes in same-repository PRs also build
+automatically. Tags with prerelease suffixes are rejected. The workflow builds
 only an Apple Silicon arm64 DMG and a standalone, signed universal Android APK, with
 `SHA256SUMS`. Android uses `com.uiliugang.t3code` and epoch minutes as its versionCode;
 allow at least a minute between builds intended to upgrade each other.
