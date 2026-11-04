@@ -253,6 +253,27 @@ const zhCN: Readonly<Record<string, string>> = {
   "Read your existing Cursor CLI login from macOS Keychain to show account history and monthly limits. macOS may ask you to allow access.":
     "从 macOS 钥匙串读取已有的 Cursor CLI 登录信息，以显示账户历史和月度额度。macOS 可能请求访问授权。",
   "No hubs configured.": "尚未配置 Hub。",
+  Communication: "通讯",
+  DaXiang: "大象",
+  "Send PR link": "发送 PR 链接",
+  "Send PR link to {mis}": "向 {mis} 发送 PR 链接",
+  "PR link sent": "PR 链接已发送",
+  "Send failed": "发送失败",
+  "Delivery could not be confirmed. Check DaXiang before resending.":
+    "无法确认发送结果，请先在大象中确认再重发。",
+  "Configure DaXiang in Connections > Communication on this environment.":
+    "请在当前环境的连接 → 通讯中配置大象。",
+  "Could not authenticate DaXiang. Check this environment's application credentials and permissions.":
+    "大象认证失败，请检查当前环境的应用凭证和权限。",
+  "Could not resolve DaXiang recipients. No message was sent.": "无法查询大象收件人，未发送消息。",
+  "DaXiang rejected the recipient lookup. No message was sent.":
+    "大象拒绝了收件人查询，未发送消息。",
+  "Could not read the pull request. No message was sent.": "无法读取 PR，未发送消息。",
+  "Select current reviewers of a Meituan Code pull request.": "请选择美团 PR 的当前评审人。",
+  "Delivery unknown; check DaXiang before resending": "发送结果未知，请先在大象中确认再重发",
+  "Could not save DaXiang credentials.": "无法保存大象凭证。",
+  "Could not send the PR link. Check DaXiang in Connections > Communication.":
+    "无法发送 PR 链接，请检查连接 → 通讯中的大象配置。",
   "Linked issues": "关联需求",
   "Link issues": "关联需求",
   "Issue links": "需求链接",

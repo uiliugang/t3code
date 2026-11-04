@@ -37,6 +37,7 @@ export * from "./branchIssues.ts";
 export * from "./projectClone.ts";
 export * from "./projectImport.ts";
 export * from "./pullRequest.ts";
+export * from "./communication.ts";
 export * from "./pullRequestReviewGuide.ts";
 export * from "./orchestrationDispatch.ts";
 export * from "./orchestrationProject.ts";

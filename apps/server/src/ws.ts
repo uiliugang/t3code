@@ -1,4 +1,7 @@
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
+import * as PullRequestNotifications from "./communication/PullRequestNotificationService.ts";
+import * as DaxiangMessages from "./communication/DaxiangMessageService.ts";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
 import * as WorkspaceCheckout from "./workspace/WorkspaceCheckout.ts";
 import * as WorkspaceAccess from "./workspace/WorkspaceAccess.ts";
@@ -1343,6 +1346,8 @@ export const layerWsRpc = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
+      const pullRequestNotifications =
+        yield* PullRequestNotifications.PullRequestNotificationService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
@@ -2754,6 +2759,8 @@ export const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.reviewerCandidates(input)),
         [WS_METHODS.pullRequestsRequestReviewers]: (input) =>
           withPullRequestViewer(input, pullRequests.requestReviewers(input)),
+        [WS_METHODS.pullRequestsSendReviewLink]: (input) =>
+          pullRequestNotifications.sendReviewLink(input),
         [WS_METHODS.pullRequestsLabelCandidates]: (input) =>
           withPullRequestViewer(input, pullRequests.labelCandidates(input)),
         [WS_METHODS.pullRequestsSetLabels]: (input) =>
@@ -3402,6 +3409,12 @@ export const layerWsRpc = (
         yield* OtherWsRpcGroup.toHandlers(otherHandlers),
       );
     }),
+  ).pipe(
+    Layer.provide(
+      PullRequestNotifications.layer.pipe(
+        Layer.provide(DaxiangMessages.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+      ),
+    ),
   );
 
 // Default socket-level Defect frames end every pending client request.

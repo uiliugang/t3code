@@ -525,6 +525,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       concurrency: serialPerEnvironment,
     }),
     reviewerCandidates,
+    sendReviewLink: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pull-requests:send-review-link",
+      tag: WS_METHODS.pullRequestsSendReviewLink,
+      scheduler: commandScheduler,
+      concurrency: serialPerEnvironment,
+    }),
     requestReviewers: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:request-reviewers",
       tag: WS_METHODS.pullRequestsRequestReviewers,
