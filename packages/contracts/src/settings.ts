@@ -1407,6 +1407,10 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  daxiang: Schema.Struct({
+    clientId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+    clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
+  }).pipe(Schema.withDecodingDefault(Effect.succeed({ clientId: "", clientSecret: "" }))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -1755,6 +1759,12 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   /** Merges per host, replacing patched fields whole; redaction markers retain secrets, empty or omitted secrets remove them. */
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
+  daxiang: Schema.optionalKey(
+    Schema.Struct({
+      clientId: Schema.String,
+      clientSecret: secretSetting(Schema.String),
+    }),
+  ),
   // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
   // Merge per source to avoid racing other edits; null removes an entry.

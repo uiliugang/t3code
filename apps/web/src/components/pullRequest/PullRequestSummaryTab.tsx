@@ -56,6 +56,8 @@ import {
 } from "./pullRequestPresentation";
 import { PullRequestLabelPicker } from "./PullRequestLabelPicker";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
+import { Checkbox } from "../ui/checkbox";
+import { PullRequestSendReviewLink } from "./PullRequestSendReviewLink";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import {
   filterPullRequestConversationItems,
@@ -493,6 +495,16 @@ export function PullRequestSummaryTab({
       })),
   ];
   const showReviewerLogins = detail.provider === "meituan";
+  const [reviewSelection, setReviewSelection] = useState<{
+    url: string;
+    logins: ReadonlyArray<string>;
+  }>({ url: detail.url, logins: [] });
+  const selectedReviewers =
+    reviewSelection.url === detail.url
+      ? reviewSelection.logins.filter((login) =>
+          detail.reviewers.some((actor) => actor.login === login),
+        )
+      : [];
 
   const openLink = useOpenLink(threadRef);
   const openCheck = (url: string) => {
@@ -708,7 +720,23 @@ export function PullRequestSummaryTab({
                           }
                         >
                           {showReviewerLogins ? (
-                            <span className="break-all font-medium text-foreground">{login}</span>
+                            <label className="inline-flex items-center gap-1.5">
+                              {detail.reviewers.some((actor) => actor.login === login) ? (
+                                <Checkbox
+                                  aria-label={t("Send PR link to {mis}", { mis: login })}
+                                  checked={selectedReviewers.includes(login)}
+                                  onCheckedChange={(checked) =>
+                                    setReviewSelection({
+                                      url: detail.url,
+                                      logins: checked
+                                        ? [...selectedReviewers, login]
+                                        : selectedReviewers.filter((value) => value !== login),
+                                    })
+                                  }
+                                />
+                              ) : null}
+                              <span className="break-all font-medium text-foreground">{login}</span>
+                            </label>
                           ) : (
                             <PullRequestActorLabel
                               actor={entry.actor}
@@ -745,6 +773,24 @@ export function PullRequestSummaryTab({
                 </span>
               )}
               {/* Azure DevOps accepts reviewers but cannot list candidates. */}
+              {showReviewerLogins ? (
+                <PullRequestSendReviewLink
+                  key={detail.url}
+                  environmentId={environmentId}
+                  reference={reference}
+                  selected={selectedReviewers}
+                  onSent={(sent) =>
+                    setReviewSelection((current) =>
+                      current.url === detail.url
+                        ? {
+                            url: detail.url,
+                            logins: current.logins.filter((login) => !sent.includes(login)),
+                          }
+                        : current,
+                    )
+                  }
+                />
+              ) : null}
               {detail.capabilities.reviewers.request &&
               detail.capabilities.reviewers.listCandidates ? (
                 <PullRequestReviewerPicker

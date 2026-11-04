@@ -175,6 +175,11 @@ export function mapSettingsSecrets(
 
   return {
     ...settings,
+    daxiang: mapFields(
+      settings.daxiang,
+      ["clientSecret"],
+      () => "daxiang-client-secret",
+    ) as ServerSettings["daxiang"],
     providerInstances,
     sourceControlHosts,
     usageLimitSources,
