@@ -936,7 +936,7 @@ function DeviceIntegrationControls({
             >
               {pending === `update-${tool}`
                 ? t("Updating…")
-                : `Update to v${version.requiredVersion}`}
+                : t("Update to v{version}", { version: version.requiredVersion })}
             </Button>
           ) : null}
           {state.supportsToolInspection ? (
@@ -973,7 +973,7 @@ function DeviceIntegrationControls({
         settingKeys={["enableDeviceSupport"]}
         description={
           <>
-            Open simulators and emulators in the Device panel. Hub:{" "}
+            {t("Open simulators and emulators in the Device panel. Hub:")}{" "}
             <DeviceToolVersions
               action={versionActions("hub")}
               kind="hub"
@@ -1012,7 +1012,7 @@ function DeviceIntegrationControls({
         settingKeys={["enableAgentDeviceAccess"]}
         description={
           <>
-            New agent sessions can open and drive these devices. agent-device:{" "}
+            {t("New agent sessions can open and drive these devices. agent-device:")}{" "}
             <DeviceToolVersions
               action={versionActions("agent")}
               kind="agent"

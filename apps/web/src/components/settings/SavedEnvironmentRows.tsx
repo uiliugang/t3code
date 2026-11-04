@@ -135,7 +135,7 @@ export function SavedBackendListRow({
     onCopy: ({ traceId }) => {
       toastManager.add({
         type: "success",
-        title: "Trace ID copied",
+        title: t("Trace ID copied"),
         description: traceId,
       });
     },
@@ -143,7 +143,7 @@ export function SavedBackendListRow({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not copy trace ID",
+          title: t("Could not copy trace ID"),
           description: error.message,
         }),
       );
@@ -157,15 +157,17 @@ export function SavedBackendListRow({
     onCopy: ({ url }) => {
       toastManager.add({
         type: "success",
-        title: "MCP URL copied",
-        description: `Add it to an agent, e.g. claude mcp add --transport http t3 ${url}`,
+        title: t("MCP URL copied"),
+        description: t("Add it to an agent, e.g. claude mcp add --transport http t3 {url}", {
+          url,
+        }),
       });
     },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not copy MCP URL",
+          title: t("Could not copy MCP URL"),
           description: error.message,
         }),
       );
@@ -218,7 +220,7 @@ export function SavedBackendListRow({
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
     // The headline below names the failure in full.
-    diagnosis ? null : resumingServerUpdate ? "Restarting" : status.text,
+    diagnosis ? null : t(resumingServerUpdate ? "Restarting" : status.text),
     enabled && versionMismatch ? serverVersion : null,
   ]
     .filter((value): value is string => value !== null)
@@ -234,11 +236,11 @@ export function SavedBackendListRow({
     unsupported
       ? (environment.connection.error ?? connectionStatusText(environment.connection))
       : enabled
-        ? connectionStatusText(environment.connection)
-        : "Switched off"
+        ? t(connectionStatusText(environment.connection))
+        : t("Switched off")
   }${
     versionMismatch
-      ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
+      ? `\n${t("Update available: {from} → {to}", { from: versionMismatch.serverVersion, to: versionMismatch.clientVersion })}`
       : ""
   }`;
 
@@ -282,7 +284,7 @@ export function SavedBackendListRow({
             onClick={() => setRoutesOpen((open) => !open)}
             className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
           >
-            {routeCount === 1 ? "Routes" : `${routeCount} routes`}
+            {routeCount === 1 ? t("Routes") : t("{count} routes", { count: routeCount })}
             <ChevronRightIcon
               aria-hidden
               className={cn(
@@ -369,7 +371,7 @@ export function SavedBackendListRow({
           serverLabel={`${environment.label} server`}
           fromVersion={lastDescriptor?.serverVersion}
           targetVersion={APP_VERSION}
-          label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
+          label={t(serverUpdateState.status === "failed" ? "Retry update" : "Update")}
         />
       ) : null}
       {showUpdateAction ? (
@@ -380,7 +382,7 @@ export function SavedBackendListRow({
           installation={environment.serverConfig?.environment.capabilities.serverInstallation}
           desktopAppUpdate={supportsDesktopAppUpdate(environment.serverConfig)}
           targetVersion={versionMismatch.clientVersion}
-          label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
+          label={t(serverUpdateState.status === "failed" ? "Retry update" : "Update")}
           appearance="icon"
         />
       ) : null}
@@ -391,13 +393,15 @@ export function SavedBackendListRow({
               size="sm"
               checked={enabled}
               disabled={isRemoving || blocked}
-              aria-label={`${enabled ? "Switch off" : "Switch on"} ${environment.label}`}
+              aria-label={t(enabled ? "Switch off {environment}" : "Switch on {environment}", {
+                environment: environment.label,
+              })}
               onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
             />
           }
         />
         <TooltipPopup side="top">
-          {blocked ? "Client not supported" : enabled ? "Switch off" : "Switch on"}
+          {t(blocked ? "Client not supported" : enabled ? "Switch off" : "Switch on")}
         </TooltipPopup>
       </Tooltip>
       <Menu>
@@ -408,7 +412,7 @@ export function SavedBackendListRow({
               variant="ghost-muted"
               size="icon-xs"
               disabled={isRemoving}
-              aria-label={`More actions for ${environment.label}`}
+              aria-label={t("More actions for {environment}", { environment: environment.label })}
             />
           }
         >
@@ -421,17 +425,19 @@ export function SavedBackendListRow({
           />
           <MenuItem onClick={() => setRoutesOpen((open) => !open)}>
             <RouteIcon />
-            {routesOpen ? "Hide routes" : "Routes"}
+            {t(routesOpen ? "Hide routes" : "Routes")}
           </MenuItem>
           {mcpUrl ? (
-            <MenuItem onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>Copy MCP URL</MenuItem>
+            <MenuItem onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>
+              {t("Copy MCP URL")}
+            </MenuItem>
           ) : null}
           {errorTraceId ? (
-            <MenuItem onClick={() => copyTraceId(errorTraceId)}>Copy trace ID</MenuItem>
+            <MenuItem onClick={() => copyTraceId(errorTraceId)}>{t("Copy trace ID")}</MenuItem>
           ) : null}
           <MenuSeparator />
           <MenuItem variant="destructive" onClick={() => onRemove(environment)}>
-            {isRemoving ? "Removing…" : "Remove from this device…"}
+            {t(isRemoving ? "Removing…" : "Remove from this device…")}
           </MenuItem>
         </MenuPopup>
       </Menu>

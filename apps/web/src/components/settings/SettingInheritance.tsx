@@ -1,7 +1,9 @@
 import { ProjectLabel } from "../ProjectLabel";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   DEFAULT_SERVER_SETTINGS,
+  IDLE_COMPACTION_MODES,
   PROJECT_FILE_BACKED_SETTINGS,
   type ProjectFileBackedSettingKey,
   resolveEnvironmentMachineKind,
@@ -46,56 +48,63 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<string, string> = {
   custom: "Advanced",
 };
 
-function formatValue(key: keyof ServerSettings, value: unknown): string {
+function formatValue(key: keyof ServerSettings, value: unknown, t: UiTranslator): string {
   if (value === null || value === undefined) {
-    return key === "pullRequestMergeMethod"
-      ? "Last selected"
-      : key === "sidebarAutoSettleAfterDays"
-        ? "Never"
-        : key === "defaultModelSelection"
-          ? "Automatic"
-          : key === "sourceControlWriterModelSelection"
-            ? "Text generation model"
-            : key === "reviewGuideModelSelection"
-              ? "Source control writer model"
-              : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
-                ? "Inherit"
-                : "Not set";
+    return t(
+      key === "pullRequestMergeMethod"
+        ? "Last selected"
+        : key === "sidebarAutoSettleAfterDays"
+          ? "Never"
+          : key === "defaultModelSelection"
+            ? "Automatic"
+            : key === "sourceControlWriterModelSelection"
+              ? "Text generation model"
+              : key === "reviewGuideModelSelection"
+                ? "Source control writer model"
+                : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
+                  ? "Inherit"
+                  : "Not set",
+    );
   }
-  if (typeof value === "boolean") return value ? "On" : "Off";
+  if (typeof value === "boolean") return t(value ? "On" : "Off");
   if (typeof value === "number") {
     return key === "sidebarAutoSettleAfterDays"
-      ? `${value} ${value === 1 ? "day" : "days"}`
+      ? t(value === 1 ? "{count} day" : "{count} days", { count: value })
       : String(value);
   }
   if (typeof value === "string") {
+    if (key === "idleCompaction") {
+      const mode = IDLE_COMPACTION_MODES.find((mode) => mode.value === value);
+      if (mode) return t(mode.label);
+    }
     if (key === "defaultThreadEnvMode" && (value === "local" || value === "worktree")) {
-      return resolveEnvModeLabel(value);
+      return t(resolveEnvModeLabel(value));
     }
     if (key === "worktreeSubmodules" && value in WORKTREE_SUBMODULES_LABELS) {
-      return WORKTREE_SUBMODULES_LABELS[value as WorktreeSubmodules];
+      return t(WORKTREE_SUBMODULES_LABELS[value as WorktreeSubmodules]);
     }
     if (key === "pullRequestMergeMethod" && value in PULL_REQUEST_MERGE_METHOD_LABELS) {
-      return PULL_REQUEST_MERGE_METHOD_LABELS[
-        value as keyof typeof PULL_REQUEST_MERGE_METHOD_LABELS
-      ];
+      return t(
+        PULL_REQUEST_MERGE_METHOD_LABELS[value as keyof typeof PULL_REQUEST_MERGE_METHOD_LABELS],
+      );
     }
-    return value === "" ? "Empty" : value;
+    return value === "" ? t("Empty") : value;
   }
-  if (Array.isArray(value)) return `${value.length} ${value.length === 1 ? "item" : "items"}`;
+  if (Array.isArray(value))
+    return t(value.length === 1 ? "{count} item" : "{count} items", { count: value.length });
   if (typeof value === "object") {
     if (key === "backgroundActivity" && "profile" in value && typeof value.profile === "string") {
-      return BACKGROUND_ACTIVITY_PROFILE_LABELS[value.profile] ?? value.profile;
+      return t(BACKGROUND_ACTIVITY_PROFILE_LABELS[value.profile] ?? value.profile);
     }
     if ("model" in value && typeof value.model === "string") return value.model;
     if ("mode" in value && typeof value.mode === "string") {
-      if (key === "worktreeCleanup") return value.mode === "off" ? "Off" : "Custom";
+      if (key === "worktreeCleanup") return t(value.mode === "off" ? "Off" : "Custom");
       return key === "sourceControlWritingStyle"
-        ? (WRITING_STYLE_LABELS[value.mode] ?? value.mode)
+        ? t(WRITING_STYLE_LABELS[value.mode] ?? value.mode)
         : value.mode;
     }
   }
-  return "Custom";
+  return t("Custom");
 }
 
 /** Matches resolveProjectSettings order. */
@@ -103,6 +112,7 @@ export function settingInheritanceLayers(
   target: ScopedSettingsTarget,
   environmentSettings: ServerSettings,
   key: keyof ServerSettings,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): readonly InheritanceLayer[] {
   const environmentValue = environmentSettings[key];
   const source = isProjectScopedSettingKey(key) ? target.sources[key] : "environment";
@@ -115,7 +125,7 @@ export function settingInheritanceLayers(
     layers.push({
       key: "project",
       label: "Project",
-      value: source === "project" ? formatValue(key, target.settings[key]) : "Inherits",
+      value: source === "project" ? formatValue(key, target.settings[key], t) : t("Inherits"),
       effective: source === "project",
       set: source === "project",
     });
@@ -123,7 +133,7 @@ export function settingInheritanceLayers(
   layers.push({
     key: "environment",
     label: target.label,
-    value: environmentSet ? formatValue(key, environmentValue) : "Inherits",
+    value: environmentSet ? formatValue(key, environmentValue, t) : t("Inherits"),
     effective: source === "environment" && environmentSet,
     set: environmentSet,
   });
@@ -131,7 +141,7 @@ export function settingInheritanceLayers(
     layers.push({
       key: "t3.json",
       label: "t3.json",
-      value: source === "t3.json" ? formatValue(key, target.settings[key]) : "Inherits",
+      value: source === "t3.json" ? formatValue(key, target.settings[key], t) : t("Inherits"),
       effective: source === "t3.json",
       set: source === "t3.json",
     });
@@ -143,7 +153,7 @@ export function settingInheritanceLayers(
   layers.push({
     key: "built-in",
     label: "Default",
-    value: formatValue(key, builtIn),
+    value: formatValue(key, builtIn, t),
     effective: source === "environment" && !environmentSet,
     set: true,
   });
@@ -209,7 +219,7 @@ export function SettingInheritance({
     const secondary = [labels.secondary, path?.split(/[\\/]/).filter(Boolean).slice(-2).join("/")]
       .filter(Boolean)
       .join(" · ");
-    const layers = settingInheritanceLayers(target, environment.serverConfig.settings, key);
+    const layers = settingInheritanceLayers(target, environment.serverConfig.settings, key, t);
     const winningLayer = layers.find((layer) => layer.effective);
     return [
       {
@@ -351,7 +361,7 @@ export function SettingInheritance({
                           <span className="text-xs text-muted-foreground">
                             {winningLayer?.key === "environment"
                               ? t("Environment")
-                              : winningLayer?.label}
+                              : winningLayer && t(winningLayer.label)}
                           </span>
                           <ChevronRightIcon
                             aria-hidden
@@ -410,7 +420,7 @@ export function SettingInheritance({
                       )}
                       {onClearOverrides ? (
                         <InlineButton onClick={() => onClearOverrides(overriding)}>
-                          {t("Reset")} {overriding.length === 1 ? "it" : "all"}
+                          {t(overriding.length === 1 ? "Reset it" : "Reset all")}
                         </InlineButton>
                       ) : null}
                     </div>
@@ -446,6 +456,7 @@ export function SettingInheritance({
                                     (member) =>
                                       member.target.environmentId === project.environmentId,
                                   )?.overrides[project.projectId]?.[key],
+                                  t,
                                 )
                               : null}
                           </span>

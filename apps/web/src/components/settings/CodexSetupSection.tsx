@@ -862,11 +862,13 @@ function ManagedCodexSetup({
                   else void setup();
                 }}
               >
-                {installActive || pending
-                  ? "Setting up..."
-                  : hasSavedAccount
-                    ? "Reconnect account"
-                    : "Continue with ChatGPT"}
+                {t(
+                  installActive || pending
+                    ? "Setting up..."
+                    : hasSavedAccount
+                      ? "Reconnect account"
+                      : "Continue with ChatGPT",
+                )}
               </ChatGptConnectionButton>
             )
           }
@@ -1000,11 +1002,13 @@ function ManagedCodexSetup({
                     else void setup();
                   }}
                 >
-                  {pending
-                    ? "Setting up..."
-                    : hasSavedAccount
-                      ? "Reconnect account"
-                      : "Continue with ChatGPT"}
+                  {t(
+                    pending
+                      ? "Setting up..."
+                      : hasSavedAccount
+                        ? "Reconnect account"
+                        : "Continue with ChatGPT",
+                  )}
                 </ChatGptConnectionButton>
                 {hasSavedAccount ? (
                   <Button

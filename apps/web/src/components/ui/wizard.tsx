@@ -5,6 +5,7 @@ import { cn } from "../../lib/utils";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { DialogPopup, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./dialog";
 import { ScrollArea } from "./scroll-area";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 
 export function WizardPopup({
   children,
@@ -78,11 +79,12 @@ export function WizardSteps({
   readonly onStepChange?: (step: number) => void;
 }) {
   const Step = onStepChange ? "button" : "div";
+  const t = useUiTranslation();
   return (
     <ol
       className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-background p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
       role="list"
-      aria-label="Setup progress"
+      aria-label={t("Setup progress")}
     >
       {steps.map((step, index) => (
         <li key={step} className="min-w-0">
@@ -98,7 +100,7 @@ export function WizardSteps({
                 "bg-card text-foreground shadow-xs ring-1 ring-inset ring-black/5 hover:bg-card dark:shadow-none dark:ring-white/5",
             )}
             aria-current={index === currentStep ? "step" : undefined}
-            aria-label={`${step}, step ${index + 1}${index < currentStep && summaries?.[index] ? `, ${summaries?.[index]}` : ""}`}
+            aria-label={`${t("{step}, step {number}", { step, number: index + 1 })}${index < currentStep && summaries?.[index] ? `, ${summaries?.[index]}` : ""}`}
             onClick={onStepChange ? () => onStepChange(index) : undefined}
           >
             <span

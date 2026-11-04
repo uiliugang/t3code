@@ -356,11 +356,11 @@ export function DeviceSourcesSettings(props: {
   rows.push({
     key: "local",
     shared: false,
-    title: "Local simulators",
+    title: t("Local simulators"),
     description:
       members.length > 1
-        ? "Simulators and emulators installed on each environment's own machine."
-        : "Simulators and emulators installed on this environment's machine.",
+        ? t("Simulators and emulators installed on each environment's own machine.")
+        : t("Simulators and emulators installed on this environment's machine."),
     environments: active.map((member) => {
       const local = member.state?.hosts.find((host) => host.kind === "local");
       const status = local ? hostStatus(member.state, local.id) : hostStatus(member.state, "");
@@ -436,7 +436,7 @@ export function DeviceSourcesSettings(props: {
         () =>
           setEditing({ kind: "ssh", host, original: host, ...(grouped ? {} : { only: holders }) }),
         () => void saveSsh(host, true, host, holders),
-        <MenuItem onClick={() => void testSsh(host)}>Test connection</MenuItem>,
+        <MenuItem onClick={() => void testSsh(host)}>{t("Test connection")}</MenuItem>,
       ),
     });
   }
@@ -523,7 +523,7 @@ export function DeviceSourcesSettings(props: {
       <MenuTrigger
         render={<Button size="sm" variant="outline" disabled={disabled || editing !== null} />}
       >
-        <PlusIcon className="size-3.5" /> Add source
+        <PlusIcon className="size-3.5" /> {t("Add source")}
         <ChevronDownIcon className="size-3.5" />
       </MenuTrigger>
       <MenuPopup align="end">
@@ -536,7 +536,7 @@ export function DeviceSourcesSettings(props: {
             })
           }
         >
-          Machine over SSH
+          {t("Machine over SSH")}
         </MenuItem>
         {props.supportsEas ? (
           <MenuItem
@@ -550,7 +550,7 @@ export function DeviceSourcesSettings(props: {
               })
             }
           >
-            EAS Simulator
+            {t("EAS Simulator")}
           </MenuItem>
         ) : null}
         {props.supportsSimlock && simlockEnabled ? (
@@ -559,7 +559,7 @@ export function DeviceSourcesSettings(props: {
               setEditing({ kind: "simlock", host: newSimlockDeviceHost(randomUUID()), isNew: true })
             }
           >
-            Simlock pool (alpha)
+            {t("Simlock pool (alpha)")}
           </MenuItem>
         ) : null}
       </MenuPopup>
@@ -742,6 +742,7 @@ function PlatformIcon(props: {
 }
 
 function DeviceSourceRow(props: { row: SourceRow }) {
+  const t = useUiTranslation();
   const { row } = props;
   const several = row.environments.length > 1;
   const issues = row.environments.filter(
@@ -775,11 +776,11 @@ function DeviceSourceRow(props: { row: SourceRow }) {
               {several ? `${environment.label}: ` : ""}
               {!several && environment.status.detail
                 ? environment.status.detail
-                : environment.status.label}
+                : t(environment.status.label)}
             </span>
             {environment.status.action ? (
               <InlineButton onClick={environment.status.action.run}>
-                {environment.status.action.label}
+                {t(environment.status.action.label)}
               </InlineButton>
             ) : null}
           </p>
@@ -791,7 +792,7 @@ function DeviceSourceRow(props: { row: SourceRow }) {
           className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
         >
           <Spinner size="xs" />
-          {pending.status.label}
+          {t(pending.status.label)}
         </span>
       ) : (
         <div className="flex shrink-0 items-center gap-0.5">
