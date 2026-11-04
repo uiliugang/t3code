@@ -10,6 +10,7 @@ import type { ProviderChangeRequest } from "@t3tools/source-control-core/server/
 import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import { definition } from "../shared/definition.ts";
 
 export const RepositoryName = TrimmedNonEmptyString.check(
@@ -25,6 +26,14 @@ const Ref = Schema.Struct({
   commitId: Schema.String,
 });
 
+// Meituan returns negative counts while a new PR's diff is still being computed.
+const DiffCount = Schema.Int.pipe(
+  Schema.decodeTo(NonNegativeInt, {
+    decode: SchemaGetter.transform((value) => Math.max(0, value)),
+    encode: SchemaGetter.passthrough(),
+  }),
+);
+
 export const PullRequest = Schema.Struct({
   id: PositiveInt,
   title: TrimmedNonEmptyString,
@@ -33,9 +42,9 @@ export const PullRequest = Schema.Struct({
   author: Schema.Struct({ mis: TrimmedNonEmptyString, name: Schema.String }),
   fromRef: Ref,
   toRef: Ref,
-  additions: NonNegativeInt,
-  deletions: NonNegativeInt,
-  commitNum: NonNegativeInt,
+  additions: DiffCount,
+  deletions: DiffCount,
+  commitNum: DiffCount,
   reviewers: Schema.Array(
     Schema.Struct({
       ...User.fields,
