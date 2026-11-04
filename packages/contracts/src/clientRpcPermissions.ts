@@ -17,6 +17,7 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  [WS_METHODS.providerEndpointValidate]: AuthProvidersManageScope,
   [WS_METHODS.skillsMutate]: AuthProvidersManageScope,
   [WS_METHODS.skillsInspect]: AuthProvidersManageScope,
   [WS_METHODS.projectsImportFolders]: AuthOrchestrationOperateScope,
@@ -93,6 +94,14 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  if (
+    method === WS_METHODS.providerEndpointValidate &&
+    typeof input === "object" &&
+    input !== null &&
+    "check" in input &&
+    input.check === "model"
+  )
+    return [AuthProvidersManageScope, AuthOrchestrationOperateScope];
   if (method === WS_METHODS.managedWorktreesRestore)
     return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
   if (method === WS_METHODS.projectsImportFolders)

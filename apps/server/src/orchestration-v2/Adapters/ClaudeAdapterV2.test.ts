@@ -237,6 +237,31 @@ function makeClaudeTestTurnInput(input: {
 }
 
 describe("ClaudeAdapterV2 runtime query policy", () => {
+  it("keeps BYOK model IDs opaque and credentials out of flag settings", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: { ...CLAUDE_TEST_MODEL_SELECTION, model: "CaseSensitive" },
+      nativeThreadId: "byok-thread",
+      resume: false,
+      cwd: "/workspace",
+      settings: {
+        ...DEFAULT_CLAUDE_SETTINGS,
+        customModelsOnly: true,
+        customModels: ["CaseSensitive"],
+      },
+      environment: { ANTHROPIC_BASE_URL: "https://ba.test", ANTHROPIC_AUTH_TOKEN: "private-token" },
+      sdkSettings: { env: { ANTHROPIC_API_KEY: "old-key" } },
+    });
+    assert.equal(options.model, "CaseSensitive");
+    assert.deepEqual(options.settingSources, []);
+    assert.isUndefined(options.thinking);
+    assert.equal(options.env?.ANTHROPIC_AUTH_TOKEN, "private-token");
+    assert.isObject(options.settings);
+    if (typeof options.settings === "object" && options.settings !== null) {
+      assert.equal(options.settings.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL, "CaseSensitive");
+      assert.isUndefined(options.settings.env?.ANTHROPIC_API_KEY);
+      assert.isUndefined(options.settings.env?.ANTHROPIC_AUTH_TOKEN);
+    }
+  });
   it.each([
     "-- --thinking-display omitted",
     "--thinking-display summarized -- --thinking-display omitted",

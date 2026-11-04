@@ -41,6 +41,30 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         );
 
         const explicit = path.resolve(NodeOS.homedir(), ".claude-work");
+        const byok = yield* makeClaudeEnvironment(
+          {
+            homePath: "~/.claude-byok-test",
+            customModelsOnly: true,
+            customModels: ["CaseSensitive"],
+          },
+          {
+            ANTHROPIC_BASE_URL: "https://ba.test",
+            ANTHROPIC_AUTH_TOKEN: "byok-key",
+            ANTHROPIC_API_KEY: "",
+            CLAUDE_CODE_OAUTH_TOKEN: "old",
+          },
+        );
+        expect(byok.CLAUDE_CODE_OAUTH_TOKEN).toBe("");
+        expect(byok.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("CaseSensitive");
+        const invalid = yield* makeClaudeEnvironment(
+          { homePath: "~/.claude-byok-test", customModelsOnly: true, customModels: [] },
+          {
+            ANTHROPIC_BASE_URL: "https://ba.test",
+            ANTHROPIC_API_KEY: "one",
+            ANTHROPIC_AUTH_TOKEN: "two",
+          },
+        ).pipe(Effect.flip);
+        expect(invalid.reason).toBe("auth");
         expect(yield* resolveClaudeHomePath({ homePath: "~/.claude-work" }, environment)).toBe(
           explicit,
         );

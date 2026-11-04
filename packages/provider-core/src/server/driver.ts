@@ -10,6 +10,9 @@ import type {
   ProviderInstanceId,
   ServerProvider,
   ServerProviderWorkspaceSnapshot,
+  ProviderEndpointValidateInput,
+  ProviderEndpointValidation,
+  ProviderSetupError,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
@@ -44,6 +47,9 @@ export interface ProviderInstance {
     cwd: string,
   ) => Effect.Effect<ProviderWorkspaceSnapshot, ProviderDriverError>;
   readonly refreshModels?: () => Effect.Effect<void, ProviderDriverError>;
+  readonly validateEndpoint?: (
+    input: ProviderEndpointValidateInput,
+  ) => Effect.Effect<ProviderEndpointValidation, ProviderSetupError>;
   readonly invalidateCaches?: Effect.Effect<void>;
   readonly consumeResetCredit?: () => Effect.Effect<
     ProviderConsumeResetCreditOutcome,

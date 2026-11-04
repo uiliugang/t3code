@@ -1290,6 +1290,10 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
       },
     }),
+    validateProviderEndpoint: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:provider:endpoint-validate",
+      tag: WS_METHODS.providerEndpointValidate,
+    }),
     respondProviderAuth: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:provider:auth-respond",
       tag: WS_METHODS.providerAuthRespond,

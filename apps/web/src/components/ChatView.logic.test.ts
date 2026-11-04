@@ -522,6 +522,18 @@ describe("resolveComposerProviderSelection", () => {
     });
   }
 
+  it("keeps an unavailable BYOK instance from falling back to another account", () => {
+    const byok = entry("claudeAgent", "claude_byok", { customModelsOnly: true, enabled: false });
+    expect(
+      resolveComposerProviderSelection({
+        entries: [entry("claudeAgent"), byok],
+        candidateInstanceIds: [byok.instanceId],
+        lockedProvider: null,
+        lockedInstanceId: null,
+      }).selectedProviderEntry,
+    ).toBeUndefined();
+  });
+
   it.each([
     ["claudeAgent", "claude_work"],
     ["codex", "codex_work"],

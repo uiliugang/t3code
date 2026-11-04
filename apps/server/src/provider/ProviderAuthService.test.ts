@@ -56,6 +56,7 @@ function makeInstance(input: {
   instanceId: ProviderInstanceId;
   enabled: boolean;
   auth?: ProviderAuthService.ProviderAuthController;
+  validateEndpoint?: NonNullable<ProviderInstance["validateEndpoint"]>;
 }): ProviderInstance {
   return {
     ...input,
@@ -317,6 +318,45 @@ const makeHarness = Effect.fn("ProviderAuthService.test.makeHarness")(function* 
     },
   };
 });
+
+it.effect("cancels only the caller's endpoint check and discards results after replacement", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness();
+    for (const cancel of [true, false]) {
+      const started = yield* Deferred.make<void>();
+      const finish = yield* Deferred.make<void>();
+      const interrupted = yield* Deferred.make<void>();
+      const instance = makeInstance({
+        instanceId,
+        enabled: true,
+        validateEndpoint: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, undefined);
+            yield* Deferred.await(finish);
+            return { authenticated: true, message: "passed" };
+          }).pipe(Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))),
+      });
+      harness.replaceInstance(instance);
+      const running = yield* harness.service
+        .validateEndpoint({ instanceId, check: "model", model: "CaseSensitive" }, owner)
+        .pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(started);
+      if (cancel) {
+        yield* harness.service.validateEndpoint({ instanceId, check: "cancel" }, otherOwner);
+        assert.isFalse(yield* Deferred.isDone(interrupted));
+        yield* harness.service.validateEndpoint({ instanceId, check: "cancel" }, owner);
+        yield* Deferred.await(interrupted);
+      } else {
+        harness.replaceInstance(makeInstance({ instanceId, enabled: true }));
+        yield* Deferred.succeed(finish, undefined);
+      }
+      const result = yield* Fiber.join(running);
+      assert.strictEqual(result._tag, "Failure");
+      if (result._tag === "Failure")
+        assert.include(result.failure.message, cancel ? "cancelled" : "changed");
+    }
+  }).pipe(Effect.scoped),
+);
 
 const makeStreamingController = Effect.fn("ProviderAuthService.test.makeStreamingController")(
   function* (flowOwner: string) {

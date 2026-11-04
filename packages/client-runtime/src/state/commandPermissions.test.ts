@@ -75,29 +75,34 @@ describe("command permissions", () => {
     WS_METHODS.projectsImportFolders,
     WS_METHODS.skillsMutate,
     WS_METHODS.skillsInspect,
+    WS_METHODS.providerEndpointValidate,
   ])("requires clone, project and settings grants on the destination for %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
         const command = createCommandPermissions(runtime, method);
+        const input =
+          method === WS_METHODS.providerEndpointValidate ? { check: "model" } : undefined;
         const required =
-          method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
-            ? [AuthProvidersManageScope]
-            : method === WS_METHODS.projectsImportFolders
-              ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
-              : [
-                  AuthSourceControlWriteScope,
-                  AuthOrchestrationOperateScope,
-                  AuthSettingsWriteScope,
-                ];
+          method === WS_METHODS.providerEndpointValidate
+            ? [AuthProvidersManageScope, AuthOrchestrationOperateScope]
+            : method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
+              ? [AuthProvidersManageScope]
+              : method === WS_METHODS.projectsImportFolders
+                ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
+                : [
+                    AuthSourceControlWriteScope,
+                    AuthOrchestrationOperateScope,
+                    AuthSettingsWriteScope,
+                  ];
         for (const missing of required) {
           const scopes = required.filter((scope) => scope !== missing);
           registry.set(
             sessions(env),
             AsyncResult.success({ ...grant(false), scopes, permissions: scopes }),
           );
-          expect(registry.get(command.permissionAtom(env))).toBe(false);
-          expect(yield* command.authorize(registry, env).pipe(Effect.flip)).toMatchObject({
+          expect(registry.get(command.permissionAtom(env, input))).toBe(false);
+          expect(yield* command.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
             requiredPermission: missing,
           });
         }
@@ -105,10 +110,22 @@ describe("command permissions", () => {
           sessions(env),
           AsyncResult.success({ ...grant(false), scopes: required, permissions: required }),
         );
-        expect(registry.get(command.permissionAtom(env))).toBe(true);
-        yield* command.authorize(registry, env);
+        expect(registry.get(command.permissionAtom(env, input))).toBe(true);
+        yield* command.authorize(registry, env, input);
+        if (method === WS_METHODS.providerEndpointValidate) {
+          registry.set(
+            sessions(env),
+            AsyncResult.success({
+              ...grant(false),
+              scopes: [AuthProvidersManageScope],
+              permissions: [AuthProvidersManageScope],
+            }),
+          );
+          expect(registry.get(command.permissionAtom(env, { check: "connection" }))).toBe(true);
+          expect(registry.get(command.permissionAtom(env, input))).toBe(false);
+        }
         registry.set(sessions(other), AsyncResult.success(grant(false)));
-        expect(registry.get(command.permissionAtom(other))).toBe(false);
+        expect(registry.get(command.permissionAtom(other, input))).toBe(false);
       }),
     ),
   );

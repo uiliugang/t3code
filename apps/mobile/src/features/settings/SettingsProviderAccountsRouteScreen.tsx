@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthProvidersManageScope,
+  ProviderDriverKind,
   isManagedDriverAllowed,
   type ProviderAuthResponse,
   type ServerProvider,
@@ -35,6 +36,8 @@ import {
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
+import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
+import { isClaudeByok } from "@t3tools/shared/claudeByok";
 
 export function SettingsProviderAccountsRouteScreen() {
   const { selectedTargets } = useSettingsEnvironmentFilter();
@@ -65,8 +68,21 @@ export function SettingsProviderAccountsRouteScreen() {
                   </View>
                 ) : (
                   <>
+                    {isManagedDriverAllowed(
+                      environment.serverConfig.managedPolicy,
+                      ProviderDriverKind.make("claudeAgent"),
+                    ) ? (
+                      <ClaudeByokProviderSettings environment={environment} />
+                    ) : null}
                     {managedProviders(environment, providersByEnvironment)
-                      .filter(canManageProvider)
+                      .filter(
+                        (provider) =>
+                          canManageProvider(provider) &&
+                          !isClaudeByok(
+                            environment.serverConfig.settings.providerInstances[provider.instanceId]
+                              ?.config,
+                          ),
+                      )
                       .map((provider, index) => (
                         <ProviderAccount
                           key={provider.instanceId}
@@ -79,7 +95,7 @@ export function SettingsProviderAccountsRouteScreen() {
                       canManageProvider,
                     ) ? (
                       <Text className="p-4 text-foreground-muted">
-                        Configure a provider with in-app sign-in in web or desktop Settings.
+                        No providers with in-app sign-in.
                       </Text>
                     ) : null}
                   </>

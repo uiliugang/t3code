@@ -7,6 +7,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { type ClaudeSettings, TextGenerationError } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { claudeByokModelError } from "@t3tools/shared/claudeByok";
 
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import {
@@ -90,7 +91,13 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
   const fileSystem = yield* FileSystem.FileSystem;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
   const scopedModelCatalog = modelCatalog.pipe(
-    Effect.map((catalog) => scopeClaudeModelCatalog(catalog, claudeSettings.customModels)),
+    Effect.map((catalog) =>
+      scopeClaudeModelCatalog(
+        catalog,
+        claudeSettings.customModels,
+        claudeSettings.customModelsOnly,
+      ),
+    ),
   );
 
   const readStreamAsString = <E>(
@@ -136,6 +143,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     TextGenerationError,
     S["DecodingServices"]
   > {
+    const modelError = claudeByokModelError(claudeSettings, modelSelection.model);
+    if (modelError) return yield* new TextGenerationError({ operation, detail: modelError });
     const catalog = yield* scopedModelCatalog;
     const resolvedModelSelection = {
       ...modelSelection,
@@ -175,6 +184,18 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       fastModeDescriptor?.type === "boolean" ? fastModeDescriptor.currentValue : undefined;
     const settings = {
       disableAllHooks: true,
+      ...(claudeSettings.customModelsOnly
+        ? {
+            env: {
+              ANTHROPIC_MODEL: resolvedModelSelection.model,
+              ANTHROPIC_DEFAULT_HAIKU_MODEL: resolvedModelSelection.model,
+              ANTHROPIC_DEFAULT_SONNET_MODEL: resolvedModelSelection.model,
+              ANTHROPIC_DEFAULT_OPUS_MODEL: resolvedModelSelection.model,
+              CLAUDE_CODE_SUBAGENT_MODEL: resolvedModelSelection.model,
+            },
+            alwaysThinkingEnabled: false,
+          }
+        : {}),
       ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
       ...(fastMode ? { fastMode: true } : {}),
       ...(ultracode ? { ultracode: true } : {}),
@@ -212,6 +233,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           ...(cliEffort ? ["--effort", cliEffort] : []),
           "--settings",
           settingsJson,
+          ...(claudeSettings.customModelsOnly ? ["--setting-sources", ""] : []),
           ...(investigate
             ? [
                 "--tools",

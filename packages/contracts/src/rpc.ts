@@ -84,6 +84,8 @@ import {
   ProviderInstallState,
   ProviderSetupError,
   ProviderSetupInput,
+  ProviderEndpointValidateInput,
+  ProviderEndpointValidation,
 } from "./providerSetup.ts";
 
 import {
@@ -492,6 +494,7 @@ export const WS_METHODS = {
 
   providerUploadFeedback: "provider.uploadFeedback",
   providerAuthStart: "provider.auth.start",
+  providerEndpointValidate: "provider.endpoint.validate",
   providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
   chatGptReconnectProfile: "provider.chatgpt.reconnect-profile",
@@ -735,6 +738,12 @@ const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
 });
 
 const ProviderSetupRpcError = Schema.Union([ProviderSetupError, EnvironmentAuthorizationError]);
+
+const WsProviderEndpointValidateRpc = Rpc.make(WS_METHODS.providerEndpointValidate, {
+  payload: ProviderEndpointValidateInput,
+  success: ProviderEndpointValidation,
+  error: ProviderSetupRpcError,
+});
 
 const WsProviderConsumeResetCreditRpc = Rpc.make(WS_METHODS.providerConsumeResetCredit, {
   payload: ProviderConsumeResetCreditInput,
@@ -2150,6 +2159,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,
   WsProviderAuthStartRpc,
+  WsProviderEndpointValidateRpc,
   WsProviderAuthCompleteRpc,
   WsChatGptReconnectProfileRpc,
   WsChatGptImportProfileRpc,

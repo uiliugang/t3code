@@ -2548,6 +2548,8 @@ export const layerWsRpc = (
             return { outcome };
           }),
         [WS_METHODS.providerAuthStart]: (input) => providerAuth.start(input, currentSessionId),
+        [WS_METHODS.providerEndpointValidate]: (input) =>
+          providerAuth.validateEndpoint(input, currentSessionId),
         [WS_METHODS.providerAuthRespond]: (input) =>
           Effect.annotateCurrentSpan({ instanceId: input.instanceId }).pipe(
             Effect.andThen(providerAuth.respond(input, currentSessionId)),

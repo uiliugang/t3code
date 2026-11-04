@@ -26,6 +26,7 @@ import * as Stream from "effect/Stream";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 
 import { buildUnavailableProviderSnapshot } from "./unavailableProviderSnapshot.ts";
+import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
 import type { AnyProviderDriver, ProviderInstance } from "@t3tools/provider-core/server/driver";
 
@@ -378,7 +379,12 @@ const makeReconcile = <R>(input: {
         if (result.kind === "live") {
           builtEntries.set(instanceId, result.live);
         } else {
-          builtUnavailable.set(instanceId, result.snapshot);
+          builtUnavailable.set(
+            instanceId,
+            entry.driver === "claudeAgent" && isClaudeByok(entry.config)
+              ? { ...result.snapshot, customModelsOnly: true }
+              : result.snapshot,
+          );
         }
       }
 

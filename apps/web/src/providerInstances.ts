@@ -204,7 +204,7 @@ export function getDefaultProviderInstanceModel(
     entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     entry.models.find((model) => !model.isCustom)?.slug ??
     entry.models[0]?.slug ??
-    DEFAULT_MODEL_BY_PROVIDER[entry.driverKind]
+    (entry.snapshot.customModelsOnly ? undefined : DEFAULT_MODEL_BY_PROVIDER[entry.driverKind])
   );
 }
 
@@ -217,6 +217,8 @@ export function resolveSelectableProviderInstanceEntry(
 ): ProviderInstanceEntry | undefined {
   if (instanceId !== undefined) {
     const requested = entries.find((entry) => entry.instanceId === instanceId);
+    if (requested?.snapshot.customModelsOnly && !isSelectableProviderInstanceEntry(requested))
+      return undefined;
     if (requested && isSelectableProviderInstanceEntry(requested)) {
       return requested;
     }

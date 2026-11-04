@@ -172,6 +172,13 @@ describe("Claude model catalog", () => {
 
   it("appends custom models with their own descriptors and keeps bare slugs opaque", () => {
     const original = catalogFromManifest(manifest());
+    const byok = scopeClaudeModelCatalog(original, ["CaseSensitive"], true);
+    assert.deepStrictEqual(
+      byok.models.map((entry) => entry.model.slug),
+      ["CaseSensitive"],
+    );
+    assert.deepStrictEqual(byok.models[0]!.model.capabilities, { optionDescriptors: [] });
+    assert.deepStrictEqual(scopeClaudeModelCatalog(original, [], true).models, []);
     const override = {
       slug: "claude-synthetic-next",
       name: "Team Claude",

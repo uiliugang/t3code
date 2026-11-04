@@ -58,6 +58,9 @@ import { AddManagedCodexAccountDialog } from "./CodexSetupSection";
 import { MultipleAccountsNote } from "./MultipleAccountsNote";
 import { ProviderEnvironmentSection } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
+import { CLAUDE_BYOK_LABEL, isClaudeByok } from "@t3tools/shared/claudeByok";
+import { ClaudeByokFields, claudeByokFormError } from "./ClaudeByokSettings";
+import { Radio } from "../ui/radio-group";
 
 /** Limit the slug to 48 chars so the composed ProviderInstanceId fits its 64-char cap. */
 function slugifyLabel(value: string): string {
@@ -195,6 +198,7 @@ export function AddProviderInstanceDialog({
   const [configByDriver, setConfigByDriver] = useState<Record<string, Record<string, unknown>>>({});
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [byokModelIds, setByokModelIds] = useState("");
   const [createdInstanceId, setCreatedInstanceId] = useState<ProviderInstanceId | null>(null);
 
   // Reserve Codex/Claude default ids because they run before configuration; other unconfigured slots are
@@ -240,6 +244,13 @@ export function AddProviderInstanceDialog({
   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
 
   const configDraft = configByDriver[driver] ?? EMPTY_CONFIG_DRAFT;
+  const isByok = driver === "claudeAgent" && isClaudeByok(configDraft);
+  const byokError = isByok
+    ? (claudeByokFormError(localEnvironment) ??
+      (Array.isArray(configDraft.customModels) && configDraft.customModels.length > 0
+        ? null
+        : "Enter at least one model ID."))
+    : null;
   const isLocalAcp = isAcpRegistry && isManualAcpConfiguration && configDraft.source === "local";
   const localCommandPath =
     typeof configDraft.commandPath === "string" ? configDraft.commandPath.trim() : "";
@@ -383,12 +394,19 @@ export function AddProviderInstanceDialog({
     if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
     if (isSaving || createdInstanceId) return;
     setHasAttemptedSubmit(true);
-    if (instanceIdError !== null || (isAcpRegistry && acpSelectionError !== null)) return;
+    if (
+      instanceIdError !== null ||
+      (isAcpRegistry && acpSelectionError !== null) ||
+      byokError !== null
+    )
+      return;
 
     const config =
       driver === "codex"
         ? { ...configByDriver[driver], setupMode: "existing" }
-        : (configByDriver[driver] ?? {});
+        : isByok
+          ? { ...configByDriver[driver], homePath: `~/.claude-t3/${instanceId}` }
+          : (configByDriver[driver] ?? {});
     const hasConfig = Object.keys(config).length > 0;
     const normalizedAccentColor = normalizeProviderAccentColor(accentColor);
 
@@ -398,7 +416,9 @@ export function AddProviderInstanceDialog({
       ...(label.trim().length > 0 ? { displayName: label.trim() } : {}),
       ...(normalizedAccentColor ? { accentColor: normalizedAccentColor } : {}),
       ...(hasConfig ? { config } : {}),
-      ...(isLocalAcp && localEnvironment.length > 0 ? { environment: localEnvironment } : {}),
+      ...((isLocalAcp || isByok) && localEnvironment.length > 0
+        ? { environment: localEnvironment }
+        : {}),
     };
     const brandedId = ProviderInstanceId.make(instanceId);
     setIsSaving(true);
@@ -492,6 +512,32 @@ export function AddProviderInstanceDialog({
                   aria-labelledby="add-instance-driver-label"
                 />
                 <MultipleAccountsNote environmentId={environmentId} driver={driver} />
+                {driver === "claudeAgent" ? (
+                  <RadioGroup
+                    aria-label="Claude connection"
+                    value={isByok ? "byok" : "subscription"}
+                    onValueChange={(value) => {
+                      setConfigDraft(
+                        value === "byok"
+                          ? { ...configDraft, customModelsOnly: true }
+                          : { ...configDraft, customModelsOnly: false },
+                      );
+                      setIdentityDraft({
+                        label: value === "byok" ? CLAUDE_BYOK_LABEL : driverOption.label,
+                        instanceIdOverride: null,
+                      });
+                    }}
+                  >
+                    <label className="flex items-center gap-2 py-1 text-sm">
+                      <Radio value="subscription" />
+                      Claude account
+                    </label>
+                    <label className="flex items-center gap-2 py-1 text-sm">
+                      <Radio value="byok" />
+                      {CLAUDE_BYOK_LABEL}
+                    </label>
+                  </RadioGroup>
+                ) : null}
               </div>
 
               {wizardStep === 0 && (moreDriverOptions.length > 0 || acpRegistryAllowed) ? (
@@ -696,7 +742,48 @@ export function AddProviderInstanceDialog({
                 />
               </SettingsGroup>
 
-              {!isAcpRegistry && driverSettingsFields.length > 0 ? (
+              {isByok ? (
+                <SettingsGroup variant="plain" className={cn(wizardStep !== 2 && "hidden")}>
+                  <ClaudeByokFields
+                    environment={localEnvironment}
+                    onChange={setLocalEnvironment}
+                    secretSources={secretSources}
+                    disabled={isSaving}
+                  />
+                  <SettingsRow
+                    title="Model IDs"
+                    status={
+                      hasAttemptedSubmit && byokError ? (
+                        <span role="alert" className="text-destructive">
+                          {byokError}
+                        </span>
+                      ) : undefined
+                    }
+                    control={
+                      <Input
+                        aria-label="BYOK model IDs"
+                        size="sm"
+                        placeholder="model-id, another-model-id"
+                        value={byokModelIds}
+                        onChange={(event) => {
+                          setByokModelIds(event.target.value);
+                          setConfigDraft({
+                            ...configDraft,
+                            customModels: [
+                              ...new Set(
+                                event.target.value
+                                  .split(",")
+                                  .map((id) => id.trim())
+                                  .filter(Boolean),
+                              ),
+                            ],
+                          });
+                        }}
+                      />
+                    }
+                  />
+                </SettingsGroup>
+              ) : !isAcpRegistry && driverSettingsFields.length > 0 ? (
                 <SettingsGroup variant="plain" className={cn(wizardStep !== 2 && "hidden")}>
                   <ProviderSettingsForm
                     definition={driverOption}
