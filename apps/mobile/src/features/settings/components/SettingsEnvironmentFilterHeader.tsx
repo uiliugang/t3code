@@ -7,10 +7,13 @@ import { ENVIRONMENT_MACHINE_SYMBOLS } from "../../../components/EnvironmentMach
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { withNativeGlassHeaderItem } from "../../layout/native-glass-header-items";
 import { useSettingsEnvironmentFilter } from "../settings-environment-filter";
+import { useUiTranslation } from "../../../lib/useUiTranslation";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 export function SettingsEnvironmentFilterHeader(props: {
   readonly trailingItems?: readonly NativeStackHeaderItem[];
 }) {
+  const t = useUiTranslation();
   const {
     availableTargets,
     selectedTargets,
@@ -28,6 +31,7 @@ export function SettingsEnvironmentFilterHeader(props: {
       ? "line.3.horizontal.decrease"
       : "line.3.horizontal.decrease.circle.fill";
   const filterVersion = JSON.stringify({
+    language: t("Settings scope"),
     selection: selectedIds === null ? null : [...selectedIds].sort(),
     targets: availableTargets.map((entry) => [
       entry.environmentId,
@@ -46,23 +50,28 @@ export function SettingsEnvironmentFilterHeader(props: {
       options={{
         unstable_headerRightItems: () => [
           withNativeGlassHeaderItem({
-            accessibilityLabel: "Filter settings environments and projects",
+            accessibilityLabel: t("Filter settings environments and projects"),
             icon: { name: filterIcon, type: "sfSymbol" },
             label: "",
             type: "menu",
             menu: {
-              title: "Settings scope",
+              title: t("Settings scope"),
               items: [
                 {
                   type: "submenu",
                   label:
                     selectedIds === null
-                      ? "All environments"
-                      : `${selectedTargets.length} ${selectedTargets.length === 1 ? "environment" : "environments"}`,
+                      ? t("All environments")
+                      : t(
+                          selectedTargets.length === 1
+                            ? "{count} environment"
+                            : "{count} environments",
+                          { count: selectedTargets.length },
+                        ),
                   items: [
                     {
                       type: "action",
-                      label: "All connected environments",
+                      label: t("All connected environments"),
                       state: selectedIds === null ? "on" : undefined,
                       onPress: selectAll,
                     },
@@ -89,17 +98,17 @@ export function SettingsEnvironmentFilterHeader(props: {
                   label:
                     selectableProjectGroups.find((group) => group.key === selectedProjectKey)
                       ?.label ??
-                    (selectedProjectKey === null ? "All projects" : "Unavailable project"),
+                    t(selectedProjectKey === null ? "All projects" : "Unavailable project"),
                   items: [
                     {
                       type: "action",
-                      label: "All projects",
+                      label: t("All projects"),
                       state: selectedProjectKey === null ? "on" : undefined,
                       onPress: () => selectProject(null),
                     },
                     ...selectableProjectGroups.map((group) => ({
                       type: "action" as const,
-                      label: projectMenuLabel(group),
+                      label: projectMenuLabel(group, t),
                       state: selectedProjectKey === group.key ? ("on" as const) : undefined,
                       onPress: () => selectProject(group.key),
                     })),
@@ -117,6 +126,7 @@ export function SettingsEnvironmentFilterHeader(props: {
 
 /** Android's settings scope filter, as an `AppBar` menu. */
 export function useSettingsEnvironmentMenu(): AppBarMenu {
+  const t = useUiTranslation();
   const {
     availableTargets,
     selectedIds,
@@ -127,7 +137,7 @@ export function useSettingsEnvironmentMenu(): AppBarMenu {
     selectProject,
   } = useSettingsEnvironmentFilter();
   return {
-    title: "Filter settings environments and projects",
+    title: t("Filter settings environments and projects"),
     icon:
       selectedIds === null && selectedProjectKey === null
         ? "line.3.horizontal.decrease.circle"
@@ -135,13 +145,13 @@ export function useSettingsEnvironmentMenu(): AppBarMenu {
     items: [
       {
         id: "all",
-        title: "All connected environments",
+        title: t("All connected environments"),
         selected: selectedIds === null,
         onPress: selectAll,
       },
       ...availableTargets.map((entry) => ({
         id: `environment:${entry.environmentId}`,
-        title: `Environment · ${entry.label}`,
+        title: t("Environment · {name}", { name: entry.label }),
         icon: ENVIRONMENT_MACHINE_SYMBOLS[resolveEnvironmentMachineKind(entry.serverConfig)],
         subtitle: entry.displayUrl ?? undefined,
         selected: selectedIds === null || selectedIds.has(entry.environmentId),
@@ -149,13 +159,13 @@ export function useSettingsEnvironmentMenu(): AppBarMenu {
       })),
       {
         id: "project:all",
-        title: "All projects",
+        title: t("All projects"),
         selected: selectedProjectKey === null,
         onPress: () => selectProject(null),
       },
       ...selectableProjectGroups.map((group) => ({
         id: `project:${group.key}`,
-        title: `Project · ${projectMenuLabel(group)}`,
+        title: t("Project · {name}", { name: projectMenuLabel(group, t) }),
         selected: selectedProjectKey === group.key,
         onPress: () => selectProject(group.key),
       })),
@@ -163,5 +173,7 @@ export function useSettingsEnvironmentMenu(): AppBarMenu {
   };
 }
 
-const projectMenuLabel = (group: { readonly label: string; readonly archived: boolean }) =>
-  group.archived ? `${group.label} · Archived` : group.label;
+const projectMenuLabel = (
+  group: { readonly label: string; readonly archived: boolean },
+  t: UiTranslator,
+) => (group.archived ? t("{name} · Archived", { name: group.label }) : group.label);

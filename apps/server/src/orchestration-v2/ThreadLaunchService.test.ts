@@ -2330,7 +2330,7 @@ it.effect("cancels tracked setup before provider work is released", () =>
       assert.isNull(projection.thread.worktreePath);
       assert.deepEqual(harness.deleteLocalBranch.mock.calls[0]?.[0], {
         cwd: "/repo",
-        refName: harness.createWorktree.mock.calls[0]?.[0].newRefName,
+        refName: harness.createWorktree.mock.calls[0]![0].newRefName!,
         force: true,
       });
       assert.isEmpty(yield* outbox.listByCommandId(CommandId.make(`${input.commandId}:release`)));

@@ -12,6 +12,11 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Filter settings environments and projects": "筛选设置环境和项目",
+  "All connected environments": "所有已连接的环境",
+  "Environment · {name}": "环境 · {name}",
+  "Project · {name}": "项目 · {name}",
+  "{name} · Archived": "{name} · 已归档",
   "Add environment": "添加环境",
   "No saved remote environments": "尚未保存远程环境",
   "Click “Add environment” to pair another environment.": "点击“添加环境”以配对其他环境。",

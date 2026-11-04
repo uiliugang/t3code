@@ -4376,7 +4376,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       if (options?.generatedBranchName) {
         targetBranch = yield* renameBranch({
           cwd: input.cwd,
-          oldBranch: input.newRefName,
+          oldBranch: newRefName,
           newBranch: options.generatedBranchName.branch,
           exactName: options.generatedBranchName.exactName,
         }).pipe(
