@@ -1,6 +1,6 @@
 import { useAtomValue, useAtomSet } from "@effect/atom-react";
 import {
-  EnvironmentId,
+  type EnvironmentId,
   PROJECT_FOLDER_BATCH_LIMIT,
   type ProjectFolderCandidate,
   type ProjectFolderImportResult,
@@ -10,24 +10,25 @@ import {
   selectProjectFolders,
   projectFolderStatus,
   type ProjectFolderSelection,
+  type ProjectFolderImportLocation,
 } from "@t3tools/client-runtime/operations/projects";
 import {
   ensureBrowseDirectoryPath,
   getBrowseParentPath,
 } from "@t3tools/client-runtime/state/projects";
 import {
-  ArrowLeftIcon,
+  ArrowUpIcon,
   ArrowRightIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   FolderIcon,
   FolderPlusIcon,
-  RefreshCwIcon,
-  XIcon,
+  CornerDownRightIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { projectFolderImportAtom } from "../projectFolderImport";
-import { useEnvironments } from "../state/environments";
+import { projectFolderImportAtom, type ProjectFolderImportRequest } from "../projectFolderImport";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -44,7 +45,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
-import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "./ui/select";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "./ui/tooltip";
 
 export function ProjectFolderImportDialog() {
@@ -59,17 +60,25 @@ function ProjectFolderImportSession({
   initial,
   onClose,
 }: {
-  initial: { environmentId?: EnvironmentId; parentPath?: string };
+  initial: ProjectFolderImportRequest;
   onClose: () => void;
 }) {
   const t = useUiTranslation();
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const available = environments.filter(
     (environment) => environment.connection.phase === "connected",
   );
-  const [target, setTarget] = useState(
-    initial.environmentId ?? (available.length === 1 ? available[0]!.environmentId : null),
-  );
+  const [location, setLocation] = useState({
+    environmentId:
+      initial.environmentId ??
+      initial.locations?.[0]?.environmentId ??
+      available.find((entry) => entry.environmentId === primaryEnvironmentId)?.environmentId ??
+      available[0]?.environmentId ??
+      null,
+    parentPath: initial.parentPath,
+  });
+  const target = location.environmentId;
   const [busy, setBusy] = useState(false);
   const environment = environments.find((entry) => entry.environmentId === target);
   return (
@@ -82,35 +91,17 @@ function ProjectFolderImportSession({
       <DialogPopup className="max-w-2xl" showCloseButton={!busy}>
         <DialogHeader>
           <DialogTitle>{t("Import folders")}</DialogTitle>
-          <DialogDescription>
-            {t("Environment")}: {environment?.label ?? t("Select environment")}
+          <DialogDescription className="sr-only">
+            {initial.projectTitle ?? t("Select folders to import.")}
           </DialogDescription>
         </DialogHeader>
-        <div className="px-6 pb-3">
-          <Select
-            value={target ?? ""}
-            onValueChange={(value) => {
-              if (value) setTarget(EnvironmentId.make(value));
-            }}
-            disabled={busy}
-          >
-            <SelectTrigger aria-label={t("Environment")}>
-              <SelectValue placeholder={t("Select environment")}>{environment?.label}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {available.map((entry) => (
-                <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                  {entry.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </div>
         {target ? (
           <ProjectFolderPicker
             key={target}
             environmentId={target}
-            initialPath={initial.environmentId === target ? initial.parentPath : undefined}
+            initialPath={location.parentPath}
+            locations={initial.locations ?? []}
+            onLocationChange={setLocation}
             baseDirectory={environment?.serverConfig?.settings.addProjectBaseDirectory}
             connected={environment?.connection.phase === "connected"}
             onBusyChange={setBusy}
@@ -127,6 +118,8 @@ function ProjectFolderImportSession({
 function ProjectFolderPicker({
   environmentId,
   initialPath,
+  locations,
+  onLocationChange,
   baseDirectory,
   connected,
   onBusyChange,
@@ -134,12 +127,15 @@ function ProjectFolderPicker({
 }: {
   environmentId: EnvironmentId;
   initialPath?: string | undefined;
+  locations: ReadonlyArray<ProjectFolderImportLocation>;
+  onLocationChange: (location: ProjectFolderImportLocation) => void;
   baseDirectory?: string | undefined;
   connected: boolean;
   onBusyChange: (busy: boolean) => void;
   onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const { environments } = useEnvironments();
   const [directory, setDirectory] = useState(
     initialPath ?? getAddProjectInitialQuery(baseDirectory),
   );
@@ -150,7 +146,6 @@ function ProjectFolderPicker({
   const [results, setResults] = useState<ReadonlyArray<ProjectFolderImportResult>>([]);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const [showSelected, setShowSelected] = useState(false);
   const canImport = useAtomValue(projectEnvironment.importFolders.permissionAtom(environmentId));
   const browse = useEnvironmentQuery(
     connected && canImport
@@ -178,11 +173,27 @@ function ProjectFolderPicker({
   const currentPath = browse.data?.parentPath ?? directory;
   const parent = getBrowseParentPath(ensureBrowseDirectoryPath(currentPath));
   const loading = browse.isPending || inspect.isPending;
+  const availableCandidates = candidates.filter(
+    (candidate) =>
+      !results.some(
+        (result) =>
+          result.path === candidate.path &&
+          (result.status === "created" || result.status === "existing"),
+      ),
+  );
+  const bulkSelection = selectProjectFolders(selected, availableCandidates);
+  const pageRoots = new Set(candidates.map((candidate) => candidate.workspaceRoot));
+  const hasSelectedOnPage = selected.some((entry) => pageRoots.has(entry.workspaceRoot));
+  const allAvailableSelected = hasSelectedOnPage && bulkSelection.length === selected.length;
   const navigate = (next: string) => {
     setDirectory(next);
     setPathInput(next);
     setFilter("");
     setPage(0);
+  };
+  const jumpToLocation = (next: ProjectFolderImportLocation) => {
+    if (next.environmentId === environmentId) navigate(next.parentPath);
+    else onLocationChange(next);
   };
   const toggle = (candidate: ProjectFolderCandidate, checked: boolean) =>
     setSelected((previous) =>
@@ -224,25 +235,12 @@ function ProjectFolderPicker({
     <>
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto px-6 pb-4">
         <form
-          className="flex items-center gap-2"
+          className="flex min-w-0 items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (pathInput.trim()) navigate(pathInput.trim());
           }}
         >
-          <Button
-            variant="outline"
-            size="icon"
-            type="button"
-            title={t("Parent folder")}
-            aria-label={t("Parent folder")}
-            disabled={!parent || busy}
-            onClick={() => {
-              if (parent) navigate(parent);
-            }}
-          >
-            <ArrowLeftIcon />
-          </Button>
           <div className="min-w-0 flex-1">
             <Input
               aria-label={t("Folder path")}
@@ -254,6 +252,19 @@ function ProjectFolderPicker({
           <Button
             variant="outline"
             size="icon"
+            type="button"
+            title={t("Parent folder")}
+            aria-label={t("Parent folder")}
+            disabled={!parent || busy}
+            onClick={() => {
+              if (parent) navigate(parent);
+            }}
+          >
+            <ArrowUpIcon />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
             type="submit"
             title={t("Open folder")}
             aria-label={t("Open folder")}
@@ -261,30 +272,108 @@ function ProjectFolderPicker({
           >
             <ArrowRightIcon />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            title={t("Refresh")}
-            aria-label={t("Refresh")}
-            disabled={busy}
-            onClick={() => {
-              browse.refresh();
-              inspect.refresh();
-            }}
-          >
-            <RefreshCwIcon />
-          </Button>
+
+          {locations.length === 1 ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={
+                      busy ||
+                      !environments.some(
+                        (entry) =>
+                          entry.environmentId === locations[0]!.environmentId &&
+                          entry.connection.phase === "connected",
+                      )
+                    }
+                    onClick={() => jumpToLocation(locations[0]!)}
+                  />
+                }
+              >
+                <CornerDownRightIcon />
+                {t("Sibling folders")}
+              </TooltipTrigger>
+              <TooltipPopup>{locations[0]!.parentPath}</TooltipPopup>
+            </Tooltip>
+          ) : locations.length > 1 ? (
+            <Menu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <MenuTrigger
+                      render={<Button variant="secondary" type="button" disabled={busy} />}
+                    />
+                  }
+                >
+                  <CornerDownRightIcon />
+                  {t("Sibling folders")}
+                  <ChevronDownIcon />
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {locations.map((entry) => (
+                    <div key={`${entry.environmentId}:${entry.parentPath}`}>{entry.parentPath}</div>
+                  ))}
+                </TooltipPopup>
+              </Tooltip>
+              <MenuPopup align="end">
+                {locations.map((entry) => {
+                  const source = environments.find(
+                    (candidate) => candidate.environmentId === entry.environmentId,
+                  );
+                  return (
+                    <MenuItem
+                      key={`${entry.environmentId}:${entry.parentPath}`}
+                      disabled={source?.connection.phase !== "connected"}
+                      onClick={() => jumpToLocation(entry)}
+                    >
+                      <div className="flex min-w-0 flex-col">
+                        <span>{entry.title}</span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {source?.label ?? entry.environmentId} · {entry.parentPath}
+                        </span>
+                      </div>
+                    </MenuItem>
+                  );
+                })}
+              </MenuPopup>
+            </Menu>
+          ) : null}
         </form>
-        <Input
-          aria-label={t("Filter folders")}
-          placeholder={t("Filter folders")}
-          value={filter}
-          disabled={busy}
-          onChange={(event) => {
-            setFilter(event.target.value);
-            setPage(0);
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="w-44 max-w-full">
+            <Input
+              size="sm"
+              aria-label={t("Filter folders")}
+              placeholder={t("Filter folders")}
+              value={filter}
+              disabled={busy}
+              onChange={(event) => {
+                setFilter(event.target.value);
+                setPage(0);
+              }}
+            />
+          </div>
+
+          <label className="flex items-center gap-2 whitespace-nowrap text-sm">
+            <Checkbox
+              checked={allAvailableSelected}
+              indeterminate={hasSelectedOnPage && !allAvailableSelected}
+              disabled={
+                busy || loading || (!hasSelectedOnPage && bulkSelection.length === selected.length)
+              }
+              onCheckedChange={(checked) =>
+                setSelected((previous) =>
+                  checked
+                    ? selectProjectFolders(previous, availableCandidates)
+                    : previous.filter((entry) => !pageRoots.has(entry.workspaceRoot)),
+                )
+              }
+            />
+            {t("Select available")}
+          </label>
+        </div>
         {!connected || !canImport ? (
           <p role="alert">{t("This connection cannot import folders.")}</p>
         ) : null}
@@ -293,30 +382,7 @@ function ProjectFolderPicker({
             {failure ?? browse.error ?? inspect.error}
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busy || loading}
-            onClick={() => setSelected((previous) => selectProjectFolders(previous, candidates))}
-          >
-            {t("Select available")}
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setShowSelected(!showSelected)}>
-              {t("Selected")}: {selected.length}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy || selected.length === 0}
-              onClick={() => setSelected([])}
-            >
-              {t("Clear")}
-            </Button>
-          </div>
-        </div>
-        <div className="h-64 shrink-0 overflow-y-auto rounded-md border" aria-busy={loading}>
+        <div className="h-72 shrink-0 overflow-y-auto rounded-md border" aria-busy={loading}>
           {loading ? (
             <p role="status" className="p-4 text-sm text-muted-foreground">
               {t("Checking folders...")}
@@ -333,7 +399,7 @@ function ProjectFolderPicker({
               return (
                 <div
                   key={candidate.path}
-                  className="flex min-h-14 items-center gap-3 border-b px-3 py-2 last:border-0"
+                  className="flex min-h-12 items-center gap-3 border-b px-3 py-2 last:border-0 has-[[data-slot=checkbox][data-checked]]:bg-primary/5"
                 >
                   <Checkbox
                     aria-label={`${t("Select folder")} ${candidate.title}`}
@@ -351,17 +417,21 @@ function ProjectFolderPicker({
                       </TooltipTrigger>
                       <TooltipPopup>{candidate.path}</TooltipPopup>
                     </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={<p className="truncate text-xs text-muted-foreground" />}
-                      >
-                        {added ? t("Already added") : t(projectFolderStatus(candidate))}
-                      </TooltipTrigger>
-                      <TooltipPopup>
-                        {added ? t("Already added") : t(projectFolderStatus(candidate))}
-                      </TooltipPopup>
-                    </Tooltip>
                   </div>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<p className="max-w-40 truncate text-xs text-muted-foreground" />}
+                    >
+                      {added
+                        ? t("Already added")
+                        : candidate.error || candidate.matchingRepositoryProjectId
+                          ? t(projectFolderStatus(candidate))
+                          : t(candidate.repositoryKey ? "Git repository" : "Folder")}
+                    </TooltipTrigger>
+                    <TooltipPopup>
+                      {added ? t("Already added") : t(projectFolderStatus(candidate))}
+                    </TooltipPopup>
+                  </Tooltip>
                   <Button
                     size="icon-sm"
                     variant="ghost"
@@ -376,6 +446,10 @@ function ProjectFolderPicker({
               );
             })
           )}
+        </div>
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate">{currentPath}</span>
+          <span className="shrink-0">{t("{count} folders", { count: entries.length })}</span>
         </div>
         {entries.length > PROJECT_FOLDER_BATCH_LIMIT ? (
           <div className="flex items-center justify-end gap-2 text-sm">
@@ -402,24 +476,6 @@ function ProjectFolderPicker({
             </Button>
           </div>
         ) : null}
-        {showSelected && selected.length > 0 ? (
-          <div className="max-h-32 overflow-auto">
-            {selected.map((entry) => (
-              <div key={entry.workspaceRoot} className="flex items-center gap-2 text-xs">
-                <span className="min-w-0 flex-1 break-all">{entry.path}</span>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={busy}
-                  aria-label={`${t("Remove")} ${entry.title}`}
-                  onClick={() => toggle(entry, false)}
-                >
-                  <XIcon />
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : null}
         {results.length > 0 ? (
           <div role="status" className="text-sm">
             {t("Imported")}: {results.filter((entry) => entry.status === "created").length},{" "}
@@ -441,6 +497,9 @@ function ProjectFolderPicker({
         ) : null}
       </div>
       <DialogFooter>
+        <p className="mr-auto text-xs text-muted-foreground">
+          {t("Each folder is imported as a project.")}
+        </p>
         <Button variant="outline" disabled={busy} onClick={onClose}>
           {t(results.length > 0 ? "Done" : "Cancel")}
         </Button>

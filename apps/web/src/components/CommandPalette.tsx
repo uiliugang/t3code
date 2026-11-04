@@ -15,6 +15,7 @@ import {
   getCloneDestinationPath,
   getCloneDirectoryName,
   getDefaultCloneUrl,
+  getProjectFolderImportLocations,
   getNewProjectPathPreview,
   getNewProjectPublishTarget,
   getNewProjectPublishTargets,
@@ -149,7 +150,6 @@ import {
   ensureBrowseDirectoryPath,
   findProjectByPath,
   getBrowseDirectoryPath,
-  getBrowseParentPath,
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
@@ -1005,12 +1005,17 @@ function OpenCommandPaletteDialog(props: {
       {
         kind: "action",
         value: `action:add-project:${environmentId}:bulk`,
-        searchTerms: ["import", "batch", "folders", "bulk"],
+        searchTerms: ["import", "batch", "folders", "bulk", "sibling"],
         title: t("Import folders"),
         icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
         run: async () => {
           setOpen(false);
-          openProjectFolderImport({ environmentId });
+          const project = currentProject?.environmentId === environmentId ? currentProject : null;
+          openProjectFolderImport({
+            environmentId,
+            ...(project ? { projectTitle: project.title } : {}),
+            locations: getProjectFolderImportLocations(project ? [project] : []),
+          });
         },
       },
       {
@@ -1026,23 +1031,6 @@ function OpenCommandPaletteDialog(props: {
         },
       },
     ];
-
-    const currentRoot = getBrowseCwdForEnvironment(environmentId);
-    const siblingPath = currentRoot
-      ? getBrowseParentPath(ensureBrowseDirectoryPath(currentRoot))
-      : null;
-    if (siblingPath)
-      sourceItems.push({
-        kind: "action",
-        value: `action:add-project:${environmentId}:siblings`,
-        searchTerms: ["import", "sibling", "folders"],
-        title: t("Import sibling folders"),
-        icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-        run: async () => {
-          setOpen(false);
-          openProjectFolderImport({ environmentId, parentPath: siblingPath });
-        },
-      });
 
     if (newProjectsRootFor(environmentId) !== null) {
       sourceItems.unshift({
