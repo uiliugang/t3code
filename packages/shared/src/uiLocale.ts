@@ -24,6 +24,11 @@ const zhCN: Readonly<Record<string, string>> = {
   "No issues linked to this branch.": "此分支暂无关联需求。",
   "Could not load issue details.": "无法加载需求详情。",
   "Could not load linked issues.": "无法加载关联需求。",
+  "Push this branch before linking an issue.": "请先推送分支，再关联需求。",
+  "Each branch can link one issue. Unlink the existing issue first.":
+    "每个分支最多关联一个需求，请先解除已有的关联。",
+  "Paste a MEP ONES work item link": "粘贴一个 MEP ONES 工作项链接",
+  "Paste a GitHub Issue link": "粘贴一个 GitHub Issue 链接",
   "Some links could not be updated. Refresh and retry.": "部分关联未能更新，请刷新后重试。",
   "The issue association could not be updated. Refresh to check which links succeeded.":
     "需求关联未能更新，请刷新查看哪些链接已成功。",

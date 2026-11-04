@@ -25,8 +25,9 @@ active work, and branches tracking a different repository or branch are kept as 
 
 ## Link issues to a branch
 
-Use **Linked issues** in the repository details to add GitHub Issue or MEP ONES links,
-one per line. A branch can have multiple links; descriptions stay collapsed until opened.
+Push the branch, then use **Linked issues** in the repository details to add a GitHub Issue
+or MEP ONES link. A branch can link one issue; unlink it before choosing another.
+Descriptions stay collapsed until opened.
 On mobile, open the repository overview. Unlinking keeps the issue and its status unchanged.
 
 GitHub associations are saved in T3 Code for that environment's repository and branch;

@@ -32,6 +32,7 @@ export const BranchIssuesInput = Schema.Struct({
 export type BranchIssuesInput = typeof BranchIssuesInput.Type;
 export const BranchIssuesResult = Schema.Struct({
   provider: Schema.String,
+  published: Schema.Boolean,
   issues: Schema.Array(BranchIssue),
 });
 export const BranchIssueDetailInput = Schema.Struct({
@@ -56,11 +57,17 @@ export class BranchIssueError extends Schema.TaggedError<BranchIssueError>()("Br
     "failed",
     "unavailable",
     "unlink-failed",
+    "unpublished",
+    "issue-limit",
   ]),
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
     switch (this.reason) {
+      case "unpublished":
+        return "Push this branch before linking an issue.";
+      case "issue-limit":
+        return "Each branch can link one issue. Unlink the existing issue first.";
       case "unsupported":
         return "Linked issues are supported for GitHub and Meituan Code repositories.";
       case "invalid-link":
@@ -117,7 +124,5 @@ export function parseBranchIssueUrl(value: string): BranchIssueRef | null {
 }
 
 export function branchIssuePlaceholder(provider: string): string {
-  return provider === "meituan"
-    ? "One MEP ONES work item link per line"
-    : "One GitHub Issue link per line";
+  return provider === "meituan" ? "Paste a MEP ONES work item link" : "Paste a GitHub Issue link";
 }

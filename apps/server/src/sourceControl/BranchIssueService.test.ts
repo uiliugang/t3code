@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { ChildProcessSpawner } from "effect/process";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Git from "../vcs/GitVcsDriver.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
@@ -29,12 +30,17 @@ function setup(
     remote?: boolean;
     failUnlink?: boolean;
     provider?: "github" | "meituan";
+    published?: boolean;
+    remotePublished?: boolean;
   } = {},
 ) {
   const kind = SourceControlProviderKind.make(options.provider ?? "github");
   const config = new Map<string, string>();
   const writes: string[] = [];
   const capability: NonNullable<Provider.SourceControlProvider["Service"]["issues"]> = {
+    ...(options.published === false && !options.remotePublished
+      ? { list: () => Effect.die("Unpublished branches must not query remote issues") }
+      : {}),
     read: ({ cwd, issue }) =>
       issue.url === options.failUrl
         ? Effect.fail(
@@ -68,6 +74,15 @@ function setup(
     Layer.provide(NodeCrypto.layer),
     Layer.provide(
       Layer.mock(Git.GitVcsDriver)({
+        remoteBranchExists: () => Effect.succeed(options.published ?? true),
+        execute: () =>
+          Effect.succeed({
+            stdout: options.remotePublished ? "abc\trefs/heads/feature/issues\n" : "",
+            stderr: "",
+            exitCode: ChildProcessSpawner.ExitCode(0),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          }),
         readConfigValue: (_cwd, key) => Effect.sync(() => config.get(key) ?? null),
         writeConfigValue: ({ key, value }) =>
           Effect.sync(() => {
@@ -102,6 +117,23 @@ function setup(
 }
 
 describe("branch issue associations", () => {
+  it.effect("recognizes a published branch missing from narrow local tracking refs", () =>
+    Effect.gen(function* () {
+      const service = yield* Service.BranchIssueService;
+      expect(yield* service.list(target)).toMatchObject({ published: true });
+      yield* service.update({ ...target, action: "associate", urls: [first] });
+    }).pipe(Effect.provide(setup({ published: false, remotePublished: true }).layer)),
+  );
+  it.effect("does not query or associate an unpublished branch", () =>
+    Effect.gen(function* () {
+      const service = yield* Service.BranchIssueService;
+      expect(yield* service.list(target)).toMatchObject({ published: false, issues: [] });
+      const error = yield* service
+        .update({ ...target, action: "associate", urls: [first] })
+        .pipe(Effect.flip);
+      expect(error.reason).toBe("unpublished");
+    }).pipe(Effect.provide(setup({ published: false }).layer)),
+  );
   it.effect("retains a MEP association when its workflow refuses unlinking", () =>
     Effect.gen(function* () {
       const url = "https://mep.sankuai.com/app/ones/space/123/workItem/requirement/detail/456";
@@ -124,54 +156,62 @@ describe("branch issue associations", () => {
           yield* service.update({
             ...target,
             action: "associate",
-            urls: [first, `${first}?view=1`, second],
+            urls: [first, `${first}?view=1`],
           });
           expect(
             (yield* service.list({ ...target, cwd: "/worktree" })).issues.map((issue) => issue.url),
-          ).toEqual([first, second]);
+          ).toEqual([first]);
           expect((yield* service.list({ ...target, branch: "another" })).issues).toEqual([]);
           expect((yield* service.list({ ...target, cwd: "/other" })).issues).toEqual([]);
           yield* service.update({ ...target, action: "disassociate", urls: [first] });
-          expect((yield* service.list(target)).issues.map((issue) => issue.url)).toEqual([second]);
+          expect((yield* service.list(target)).issues).toEqual([]);
           expect(fixture.writes).toEqual([]);
           expect([...fixture.config.values()].join()).not.toContain(detail.body);
         }).pipe(Effect.provide(fixture.layer));
       }),
   );
 
-  it.effect(
-    "validates the entire batch before writing and retains completed links on upstream failure",
-    () =>
-      Effect.gen(function* () {
-        const fixture = setup({ failUrl: second });
-        yield* Effect.gen(function* () {
-          const service = yield* Service.BranchIssueService;
-          const invalid = yield* service
-            .update({
-              ...target,
-              action: "associate",
-              urls: [first, "https://mep.sankuai.com/app/ones/space/1/workItem/devtask/detail/2"],
-            })
-            .pipe(Effect.flip);
-          expect(invalid).toBeInstanceOf(BranchIssueError);
-          expect(fixture.config.size).toBe(0);
-          yield* service
-            .update({ ...target, action: "associate", urls: [first, second] })
-            .pipe(Effect.flip);
-          expect((yield* service.list(target)).issues.map((issue) => issue.url)).toEqual([first]);
-        }).pipe(Effect.provide(fixture.layer));
-      }),
+  it.effect("rejects multiple issues before writing and preserves the existing association", () =>
+    Effect.gen(function* () {
+      const fixture = setup({ failUrl: second });
+      yield* Effect.gen(function* () {
+        const service = yield* Service.BranchIssueService;
+        const invalid = yield* service
+          .update({
+            ...target,
+            action: "associate",
+            urls: [first, "https://mep.sankuai.com/app/ones/space/1/workItem/devtask/detail/2"],
+          })
+          .pipe(Effect.flip);
+        expect(invalid).toBeInstanceOf(BranchIssueError);
+        expect(fixture.config.size).toBe(0);
+        const limitError = yield* service
+          .update({ ...target, action: "associate", urls: [first, second] })
+          .pipe(Effect.flip);
+        expect(limitError.reason).toBe("issue-limit");
+        expect(fixture.config.size).toBe(0);
+        yield* service.update({ ...target, action: "associate", urls: [first] });
+        expect(
+          (yield* service
+            .update({ ...target, action: "associate", urls: [second] })
+            .pipe(Effect.flip)).reason,
+        ).toBe("issue-limit");
+        expect((yield* service.list(target)).issues.map((issue) => issue.url)).toEqual([first]);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
   );
 
-  it.effect("serializes simultaneous associations without losing links", () =>
+  it.effect("allows only one simultaneous association", () =>
     Effect.gen(function* () {
       const service = yield* Service.BranchIssueService;
-      yield* Effect.forEach(
+      const results = yield* Effect.forEach(
         [first, second],
-        (url) => service.update({ ...target, action: "associate", urls: [url] }),
+        (url) =>
+          service.update({ ...target, action: "associate", urls: [url] }).pipe(Effect.result),
         { concurrency: "unbounded" },
       );
-      expect((yield* service.list(target)).issues).toHaveLength(2);
+      expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
+      expect((yield* service.list(target)).issues).toHaveLength(1);
     }).pipe(Effect.provide(setup().layer)),
   );
 

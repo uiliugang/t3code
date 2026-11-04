@@ -24,7 +24,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
 import ChatMarkdown from "../ChatMarkdown";
 import { Button } from "../ui/button";
-import { Textarea } from "../ui/textarea";
+import { Input } from "../ui/input";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 
 type Target = { environmentId: EnvironmentId; cwd: string; branch: string };
@@ -51,6 +51,7 @@ function IssueBody({ target, issue }: { target: Target; issue: BranchIssue }) {
     <div className="max-h-80 overflow-auto text-xs wrap-anywhere">
       {detail.data.body ? (
         <ChatMarkdown
+          className="text-xs leading-5 [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2"
           text={detail.data.body}
           cwd={undefined}
           environmentId={target.environmentId}
@@ -80,42 +81,52 @@ function IssueRow({
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
     <div className="border-t border-border/50">
-      <button
-        type="button"
-        className="flex w-full min-w-0 items-start gap-2 px-4 py-3 text-left hover:bg-accent/40"
-        aria-expanded={expanded}
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? (
-          <ChevronDownIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRightIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-        )}
-        <span className="min-w-0 flex-1">
-          <span className="mb-1 flex flex-wrap gap-x-2 text-2xs text-muted-foreground">
-            <span>
-              {issue.provider === "meituan" ? "MEP ONES" : issue.repository} #{issue.id}
+      <div className="flex items-start gap-1 pr-3">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-start gap-2 px-4 py-3 text-left hover:bg-accent/40"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? (
+            <ChevronDownIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRightIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="mb-1 block text-xs font-medium leading-5 wrap-anywhere">
+              {issue.title}
             </span>
-            <span>{issue.state}</span>
+            <span className="mb-1 flex flex-wrap gap-x-2 text-2xs text-muted-foreground">
+              <span>
+                {issue.provider === "meituan" ? "MEP ONES" : issue.repository} #{issue.id}
+              </span>
+              <span>{issue.state}</span>
+            </span>
           </span>
-          <span className="block text-xs leading-5 wrap-anywhere">{issue.title}</span>
-        </span>
-      </button>
-      {expanded ? (
-        <div className="space-y-3 px-4 pb-3 pl-9">
-          <IssueBody target={target} issue={issue} />
-          <p className="text-2xs text-muted-foreground">
-            {t(issue.association === "remote" ? "MEP branch association" : "T3 branch association")}
-          </p>
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="xs"
-              render={<a href={issue.url} target="_blank" rel="noopener noreferrer" />}
+        </button>
+        <div className="shrink-0 pt-3">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t("View original")}
+                  render={<a href={issue.url} target="_blank" rel="noopener noreferrer" />}
+                />
+              }
             >
               <ExternalLinkIcon />
-              {t("View original")}
-            </Button>
+            </TooltipTrigger>
+            <TooltipPopup>{t("View original")}</TooltipPopup>
+          </Tooltip>
+        </div>
+      </div>
+      {expanded ? (
+        <div className="space-y-2 px-4 pb-3 pl-9">
+          <IssueBody target={target} issue={issue} />
+          <div className="flex items-center justify-end gap-2">
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -166,6 +177,7 @@ function IssueList({
   const [error, setError] = useState<string | null>(null);
   const [limit, setLimit] = useState(4);
   const issues = query.data?.issues ?? [];
+  const unpublished = query.data?.published === false;
   async function mutate(urls: string[], action: "associate" | "disassociate") {
     if (!urls.length || urls.some((url) => parseBranchIssueUrl(url)?.provider !== provider)) {
       setError(t("Enter valid issue links for this repository's hosting platform."));
@@ -232,24 +244,29 @@ function IssueList({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={t("Link issues")}
-                disabled={!allowed || busy}
+                disabled={!allowed || busy || !query.data || unpublished || issues.length > 0}
                 onClick={() => setAdding(!adding)}
               />
             }
           >
             <PlusIcon />
           </TooltipTrigger>
-          <TooltipPopup>{t("Link issues")}</TooltipPopup>
+          <TooltipPopup>
+            {t(
+              unpublished
+                ? "Push this branch before linking an issue."
+                : issues.length > 0
+                  ? "Each branch can link one issue. Unlink the existing issue first."
+                  : "Link issues",
+            )}
+          </TooltipPopup>
         </Tooltip>
       </div>
-      <Tooltip>
-        <TooltipTrigger
-          render={<p className="truncate px-4 pb-2 text-2xs text-muted-foreground" />}
-        >
-          {target.branch}
-        </TooltipTrigger>
-        <TooltipPopup>{target.branch}</TooltipPopup>
-      </Tooltip>
+      {unpublished ? (
+        <p className="px-4 pb-3 text-xs text-muted-foreground">
+          {t("Push this branch before linking an issue.")}
+        </p>
+      ) : null}
       {query.error ? (
         <div role="alert" className="px-4 pb-3 text-xs text-destructive">
           {t("Could not load linked issues.")}{" "}
@@ -261,7 +278,7 @@ function IssueList({
       {!query.data && !query.error ? (
         <p className="px-4 pb-3 text-xs text-muted-foreground">{t("Loading...")}</p>
       ) : null}
-      {query.data && issues.length === 0 ? (
+      {query.data && !unpublished && issues.length === 0 ? (
         <p className="px-4 pb-3 text-xs text-muted-foreground">
           {t("No issues linked to this branch.")}
         </p>
@@ -283,7 +300,7 @@ function IssueList({
           </Button>
         </div>
       ) : null}
-      {adding ? (
+      {adding && !unpublished && issues.length === 0 ? (
         <form
           className="space-y-2 border-t border-border/50 p-3"
           onSubmit={(event) => {
@@ -297,7 +314,7 @@ function IssueList({
             );
           }}
         >
-          <Textarea
+          <Input
             size="sm"
             aria-label={t("Issue links")}
             placeholder={t(branchIssuePlaceholder(provider))}
