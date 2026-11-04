@@ -19,6 +19,7 @@ import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
   findProjectByPath,
+  getBrowseParentPath,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
   isUnsupportedWindowsProjectPath,
@@ -27,6 +28,38 @@ import {
 import type { EnvironmentProject } from "../state/models.ts";
 import { sourceControlClients } from "../sourceControlClients.ts";
 import type { SourceControlDefinition } from "../sourceControlClients.ts";
+
+export interface ProjectFolderImportLocation {
+  readonly environmentId: EnvironmentId;
+  readonly parentPath: string;
+  readonly title: string;
+}
+
+export function getProjectFolderImportLocations(
+  projects: ReadonlyArray<
+    Pick<
+      EnvironmentProject,
+      "environmentId" | "title" | "workspaceRoot" | "workspaceConfig" | "isScratch"
+    >
+  >,
+): ProjectFolderImportLocation[] {
+  const locations = new Map<string, ProjectFolderImportLocation>();
+  for (const project of projects) {
+    if (project.isScratch) continue;
+    const roots = project.workspaceConfig?.roots ?? [
+      { alias: project.title, sourcePath: project.workspaceRoot },
+    ];
+    for (const root of roots) {
+      const parentPath = getBrowseParentPath(ensureBrowseDirectoryPath(root.sourcePath));
+      if (!parentPath) continue;
+      const key = `${project.environmentId}:${parentPath}`;
+      if (!locations.has(key)) {
+        locations.set(key, { environmentId: project.environmentId, parentPath, title: root.alias });
+      }
+    }
+  }
+  return [...locations.values()];
+}
 
 export type ProjectFolderSelection = ProjectFolderCandidate & {
   readonly allowSameRepository: boolean;

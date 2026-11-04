@@ -1,9 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { FolderPlusIcon, LayersIcon, PlusIcon } from "lucide-react";
-import {
-  getBrowseParentPath,
-  ensureBrowseDirectoryPath,
-} from "@t3tools/client-runtime/state/projects";
+import { FolderPlusIcon, LayersIcon } from "lucide-react";
+import { getProjectFolderImportLocations } from "@t3tools/client-runtime/operations/projects";
+import type { Project } from "../../types";
 import { openProjectFolderImport } from "../../projectFolderImport";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -13,39 +11,24 @@ import { useSettingsScope } from "./SettingsScopeContext";
 
 export function ProjectImportActions({
   environmentId,
-  workspaceRoot,
+  projects = [],
+  projectTitle,
 }: {
   environmentId?: EnvironmentId | undefined;
-  workspaceRoot?: string | undefined;
+  projects?: ReadonlyArray<Project>;
+  projectTitle?: string;
 }) {
   const t = useUiTranslation();
-  const { selectScope, setProjectTypeFilter } = useSettingsScope();
-  const siblingPath = workspaceRoot
-    ? getBrowseParentPath(ensureBrowseDirectoryPath(workspaceRoot))
-    : null;
+  const { selectScope, setProjectTypeFilter, environment } = useSettingsScope();
+  const targetEnvironmentId = environmentId ?? environment?.environmentId;
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {environmentId && siblingPath ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            openProjectFolderImport({
-              environmentId,
-              parentPath: siblingPath,
-            })
-          }
-        >
-          <FolderPlusIcon />
-          {t("Import sibling folders")}
-        </Button>
-      ) : null}
       <Button
         variant="outline"
         size="sm"
         onClick={() => openCommandPalette({ open: "add-project" })}
       >
-        <PlusIcon />
+        <FolderPlusIcon />
         {t("Add project")}
       </Button>
       <Button
@@ -66,7 +49,13 @@ export function ProjectImportActions({
       </Button>
       <Button
         size="sm"
-        onClick={() => openProjectFolderImport(environmentId ? { environmentId } : {})}
+        onClick={() =>
+          openProjectFolderImport({
+            ...(targetEnvironmentId ? { environmentId: targetEnvironmentId } : {}),
+            ...(projectTitle ? { projectTitle } : {}),
+            locations: getProjectFolderImportLocations(projects),
+          })
+        }
       >
         <FolderPlusIcon />
         {t("Import folders")}

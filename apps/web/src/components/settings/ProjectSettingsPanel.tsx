@@ -532,9 +532,8 @@ function ProjectDetail({
           environmentId={
             group.memberProjects.length === 1 ? representative.environmentId : undefined
           }
-          workspaceRoot={
-            group.memberProjects.length === 1 ? representative.workspaceRoot : undefined
-          }
+          projects={group.memberProjects}
+          projectTitle={group.displayName}
         />
         <SettingsSection id="project-overview" title={t("Project")} hideTitle>
           {!canEditGroup ? (
