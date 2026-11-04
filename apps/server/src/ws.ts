@@ -260,6 +260,7 @@ import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.
 import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as BranchIssueService from "./sourceControl/BranchIssueService.ts";
+import * as IssueService from "./sourceControl/IssueService.ts";
 import * as SourceControlSignIn from "./sourceControl/SourceControlSignIn.ts";
 import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
@@ -1443,6 +1444,7 @@ export const layerWsRpc = (
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const sourceControlSignIn = yield* SourceControlSignIn.SourceControlSignIn;
       const branchIssues = yield* BranchIssueService.BranchIssueService;
+      const issues = yield* IssueService.IssueService;
       const withPullRequestViewer = pullRequests.withRoutingCredential;
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
       const sessions = yield* SessionStore.SessionStore;
@@ -2761,6 +2763,13 @@ export const layerWsRpc = (
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.branchIssuesList]: (input) => branchIssues.list(input),
+        [WS_METHODS.issuesList]: (input) => issues.list(input),
+        [WS_METHODS.issueBranches]: (input) => branchIssues.branches(input),
+        [WS_METHODS.issuesRead]: (input) => issues.read(input),
+        [WS_METHODS.issuesPeople]: (input) => issues.people(input),
+        [WS_METHODS.issuesMetadata]: (input) => issues.metadata(input),
+        [WS_METHODS.issuesCreate]: (input) => issues.create(input),
+        [WS_METHODS.issuesSetState]: (input) => issues.setState(input),
         [WS_METHODS.branchIssuesRead]: (input) => branchIssues.read(input),
         [WS_METHODS.branchIssuesUpdate]: (input) => branchIssues.update(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>

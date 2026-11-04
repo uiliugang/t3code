@@ -148,6 +148,10 @@ describe("MEP issue adapter", () => {
           "--yes",
           "--json",
         ]);
+        expect(yield* issues.branches({ cwd, context, issue: ref })).toEqual([
+          "feature/other",
+          "feature/search",
+        ]);
       }),
   );
 });

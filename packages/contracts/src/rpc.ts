@@ -69,8 +69,24 @@ import {
   BranchIssueDetail,
   BranchIssuesUpdateInput,
   BranchIssueError,
+  IssueBranchesInput,
+  IssueBranchesResult,
 } from "./branchIssues.ts";
 import * as Rpc from "effect/rpc/Rpc";
+import {
+  IssueListInput,
+  IssueListResult,
+  IssueReadInput,
+  IssueDetail,
+  IssuePeopleInput,
+  IssueOption,
+  IssueMetadataInput,
+  IssueMetadata,
+  IssueCreateInput,
+  Issue,
+  IssueSetStateInput,
+  IssueError,
+} from "./issues.ts";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -655,6 +671,13 @@ export const WS_METHODS = {
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   branchIssuesList: "sourceControl.branchIssuesList",
+  issuesList: "issues.list",
+  issueBranches: "issues.branches",
+  issuesRead: "issues.read",
+  issuesPeople: "issues.people",
+  issuesMetadata: "issues.metadata",
+  issuesCreate: "issues.create",
+  issuesSetState: "issues.setState",
   branchIssuesRead: "sourceControl.branchIssuesRead",
   branchIssuesUpdate: "sourceControl.branchIssuesUpdate",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -1307,6 +1330,41 @@ const WsBranchIssuesListRpc = Rpc.make(WS_METHODS.branchIssuesList, {
   payload: BranchIssuesInput,
   success: BranchIssuesResult,
   error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
+  payload: IssueListInput,
+  success: IssueListResult,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssueBranchesRpc = Rpc.make(WS_METHODS.issueBranches, {
+  payload: IssueBranchesInput,
+  success: IssueBranchesResult,
+  error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesReadRpc = Rpc.make(WS_METHODS.issuesRead, {
+  payload: IssueReadInput,
+  success: IssueDetail,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesPeopleRpc = Rpc.make(WS_METHODS.issuesPeople, {
+  payload: IssuePeopleInput,
+  success: Schema.Array(IssueOption),
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesMetadataRpc = Rpc.make(WS_METHODS.issuesMetadata, {
+  payload: IssueMetadataInput,
+  success: IssueMetadata,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesCreateRpc = Rpc.make(WS_METHODS.issuesCreate, {
+  payload: IssueCreateInput,
+  success: Issue,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesSetStateRpc = Rpc.make(WS_METHODS.issuesSetState, {
+  payload: IssueSetStateInput,
+  success: Schema.Void,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
 });
 const WsBranchIssuesReadRpc = Rpc.make(WS_METHODS.branchIssuesRead, {
   payload: BranchIssueDetailInput,
@@ -2251,6 +2309,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,
   WsBranchIssuesListRpc,
+  WsIssuesListRpc,
+  WsIssueBranchesRpc,
+  WsIssuesReadRpc,
+  WsIssuesPeopleRpc,
+  WsIssuesMetadataRpc,
+  WsIssuesCreateRpc,
+  WsIssuesSetStateRpc,
   WsBranchIssuesReadRpc,
   WsBranchIssuesUpdateRpc,
   WsSourceControlCloneRepositoryRpc,

@@ -2,6 +2,12 @@ import { isDraftThreadRoute } from "./features/threads/thread-route-state";
 import { ComponentCatalogScreen } from "./features/development/ComponentCatalogScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
 import { PullRequestInlineCommentScreen } from "./features/pull-requests/PullRequestInlineCommentScreen";
+import {
+  RequirementsScreen,
+  IssueDetailScreen,
+  IssueCreateScreen,
+} from "./features/requirements/RequirementsScreen";
+import { RequirementsSettingsScreen } from "./features/requirements/RequirementsSettingsScreen";
 import { PullRequestDiscussionScreen } from "./features/pull-requests/PullRequestDiscussionScreen";
 import { createWorkspaceStackNavigator } from "./features/layout/createWorkspaceStackNavigator";
 import {
@@ -232,6 +238,24 @@ const THREAD_SETTINGS_SHEET_OPTIONS = {
 const SETTINGS_PAGE_OPTIONS = SHEET_GLASS_HEADER_OPTIONS;
 
 const SETTINGS_SCREENS = {
+  SettingsRequirements: createNativeStackScreen({
+    screen: RequirementsSettingsScreen,
+    linking: "settings/requirements",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Issue management" },
+  }),
+  Requirements: createNativeStackScreen({
+    screen: RequirementsScreen,
+    linking: "requirements",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Requirements board" },
+  }),
+  IssueDetail: createNativeStackScreen({
+    screen: IssueDetailScreen,
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Issue details" },
+  }),
+  IssueCreate: createNativeStackScreen({
+    screen: IssueCreateScreen,
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "New issue" },
+  }),
   Settings: createNativeStackScreen({
     screen: SettingsRouteScreen,
     linking: "settings",

@@ -1,0 +1,351 @@
+import { useAtomValue } from "@effect/atom-react";
+import type {
+  EnvironmentId,
+  Issue,
+  IssueProvider,
+  IssueMetadataInput,
+  ProjectId,
+} from "@t3tools/contracts";
+import { useState } from "react";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useEnvironmentQuery } from "../../state/query";
+import { sourceControlEnvironment } from "../../state/sourceControl";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
+import { Label } from "../ui/label";
+import {
+  Dialog,
+  DialogPopup,
+  DialogTitle,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+} from "../ui/dialog";
+import { IssueSelect } from "./IssueSelect";
+import { Checkbox } from "../ui/checkbox";
+import { SearchIcon } from "lucide-react";
+
+export function IssueCreateDialog({
+  environmentId,
+  provider,
+  projects,
+  initialProjectId,
+  close,
+  created,
+}: {
+  environmentId: EnvironmentId;
+  provider: IssueProvider;
+  projects: ReadonlyArray<{ id: ProjectId; title: string }>;
+  initialProjectId?: ProjectId;
+  close: () => void;
+  created: (issue: Issue, projectId: ProjectId) => void;
+}) {
+  const t = useUiTranslation();
+  const [projectId, setProjectId] = useState(initialProjectId ?? projects[0]?.id);
+  const [type, setType] = useState<(typeof IssueMetadataInput.Type)["type"]>("REQUIREMENT");
+  const [subtype, setSubtype] = useState("");
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [personSearch, setPersonSearch] = useState("");
+  const [personQuery, setPersonQuery] = useState("");
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<
+    ReadonlyArray<{ variable: string; message: string }>
+  >([]);
+  const [uncertain, setUncertain] = useState(false);
+  const canCreate = useAtomValue(
+    sourceControlEnvironment.createIssue.permissionAtom(environmentId),
+  );
+  const command = useAtomCommand(sourceControlEnvironment.createIssue, { reportFailure: false });
+  const metadata = useEnvironmentQuery(
+    projectId
+      ? sourceControlEnvironment.issueMetadata({
+          environmentId,
+          input: { projectId, provider, type, subtype, query: personQuery },
+        })
+      : null,
+  );
+  const people = useEnvironmentQuery(
+    projectId
+      ? sourceControlEnvironment.issuePeople({
+          environmentId,
+          input: { projectId, provider, query: personQuery },
+        })
+      : null,
+  );
+  const submit = async () => {
+    if (!projectId || !title.trim()) return;
+    setBusy(true);
+    setError(null);
+    setFieldErrors([]);
+    const result = await command({
+      environmentId,
+      input: {
+        projectId,
+        provider,
+        type,
+        subtype,
+        title,
+        body,
+        assignees: assignee ? [assignee] : [],
+        fields,
+      },
+    });
+    setBusy(false);
+    if (result._tag === "Success") created(result.value, projectId);
+    else {
+      const failure = squashAtomCommandFailure(result);
+      setError(failure instanceof Error ? t(failure.message) : t("Could not create issue."));
+      if (
+        failure &&
+        typeof failure === "object" &&
+        "_tag" in failure &&
+        failure._tag === "IssueError" &&
+        "fields" in failure &&
+        Array.isArray(failure.fields)
+      )
+        setFieldErrors(failure.fields);
+      if (
+        failure &&
+        typeof failure === "object" &&
+        "reason" in failure &&
+        failure.reason === "outcome-unknown"
+      )
+        setUncertain(true);
+    }
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) close();
+      }}
+    >
+      <DialogPopup>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+          className="flex max-h-[calc(100dvh-6rem)] min-h-0 flex-col"
+        >
+          <DialogHeader>
+            <DialogTitle>{t("New issue")}</DialogTitle>
+            <div className="text-xs text-muted-foreground">
+              {provider === "meituan" ? "MEP ONES" : "GitHub Issues"}
+            </div>
+          </DialogHeader>
+          <DialogPanel>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>{t("Project")}</Label>
+                <IssueSelect
+                  label={t("Project")}
+                  value={projectId ?? ""}
+                  options={projects.map((project) => ({ value: project.id, label: project.title }))}
+                  onChange={(value) => {
+                    setProjectId(value as ProjectId);
+                    setSubtype("");
+                    setFields({});
+                  }}
+                  disabled={busy}
+                />
+              </div>
+              {provider === "meituan" ? (
+                <div className="space-y-1.5">
+                  <Label>{t("Work item type")}</Label>
+                  <IssueSelect
+                    label={t("Work item type")}
+                    value={type}
+                    options={[
+                      { value: "REQUIREMENT", label: t("Requirement") },
+                      { value: "DEVTASK", label: t("Task") },
+                      { value: "DEFECT", label: t("Defect") },
+                    ]}
+                    onChange={(value) => {
+                      setType(value as typeof type);
+                      setSubtype("");
+                      setFields({});
+                    }}
+                    disabled={busy}
+                  />
+                </div>
+              ) : null}
+            </div>
+            {provider === "meituan" ? (
+              <IssueSelect
+                label={t("Subtype")}
+                value={subtype}
+                options={[
+                  { value: "", label: t("Select subtype") },
+                  ...(metadata.data?.subtypes ?? []),
+                ]}
+                onChange={(value) => {
+                  setSubtype(value);
+                  setFields({});
+                }}
+                disabled={busy}
+              />
+            ) : null}
+            <div className="space-y-1.5">
+              <Label htmlFor="issue-title">{t("Title")} *</Label>
+              <Input
+                id="issue-title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                required
+                maxLength={256}
+                disabled={busy}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="issue-body">{t("Description")}</Label>
+              <Textarea
+                id="issue-body"
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                rows={5}
+                disabled={busy}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                aria-label={t("Search people")}
+                placeholder={t("Search people")}
+                value={personSearch}
+                onChange={(event) => setPersonSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    setPersonQuery(personSearch);
+                  }
+                }}
+                disabled={busy}
+              />
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label={t("Search people")}
+                onClick={() => setPersonQuery(personSearch)}
+                disabled={busy}
+              >
+                <SearchIcon />
+              </Button>
+            </div>
+            {!metadata.data?.fields.some((field) => field.variable === "assigned") ? (
+              <IssueSelect
+                label={t("Assignee")}
+                value={assignee}
+                options={[{ value: "", label: t("Unassigned") }, ...(people.data ?? [])]}
+                onChange={setAssignee}
+                disabled={busy}
+              />
+            ) : null}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {metadata.data?.fields.map((field) => (
+                <div key={field.variable} className="space-y-1.5">
+                  <Label htmlFor={`issue-field-${field.variable}`}>
+                    {field.label}
+                    {field.required ? " *" : ""}
+                  </Label>
+                  {field.options.length ? (
+                    field.multiple ? (
+                      <div className="max-h-36 space-y-2 overflow-auto">
+                        {field.options.map((option) => (
+                          <label key={option.value} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              disabled={busy}
+                              checked={(fields[field.variable] ?? "")
+                                .split(",")
+                                .includes(option.value)}
+                              onCheckedChange={(checked) => {
+                                const selected = (fields[field.variable] ?? "")
+                                  .split(",")
+                                  .filter(Boolean)
+                                  .filter((value) => value !== option.value);
+                                setFields({
+                                  ...fields,
+                                  [field.variable]: [
+                                    ...selected,
+                                    ...(checked ? [option.value] : []),
+                                  ].join(","),
+                                });
+                              }}
+                            />
+                            {option.label}
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <IssueSelect
+                        label={field.label}
+                        value={fields[field.variable] ?? ""}
+                        options={[{ value: "", label: t("Select...") }, ...field.options]}
+                        onChange={(value) => setFields({ ...fields, [field.variable]: value })}
+                        disabled={busy}
+                      />
+                    )
+                  ) : (
+                    <Input
+                      id={`issue-field-${field.variable}`}
+                      value={fields[field.variable] ?? ""}
+                      onChange={(event) =>
+                        setFields({ ...fields, [field.variable]: event.target.value })
+                      }
+                      type={field.type === "date" ? "date" : "text"}
+                      required={field.required}
+                      placeholder={field.type === "person" ? t("MIS ID") : undefined}
+                      disabled={busy}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            {metadata.error || error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error ?? metadata.error}
+              </p>
+            ) : null}
+            {fieldErrors.length ? (
+              <ul className="text-sm text-destructive">
+                {fieldErrors.map((field) => (
+                  <li key={field.variable}>{field.message}</li>
+                ))}
+              </ul>
+            ) : null}
+          </DialogPanel>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={close} disabled={busy}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              type="submit"
+              disabled={
+                !canCreate ||
+                busy ||
+                uncertain ||
+                !title.trim() ||
+                !projectId ||
+                metadata.isPending ||
+                Boolean(metadata.error) ||
+                metadata.data?.fields.some(
+                  (field) => field.required && !fields[field.variable]?.trim(),
+                ) ||
+                (provider === "meituan" && !subtype)
+              }
+            >
+              {t(busy ? "Creating..." : "Create issue")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogPopup>
+    </Dialog>
+  );
+}

@@ -59,6 +59,7 @@ import {
   ArrowLeftIcon,
   BugIcon,
   ChartNoAxesColumnIcon,
+  ClipboardListIcon,
   CheckIcon,
   ChevronRightIcon,
   CornerLeftUpIcon,
@@ -1622,6 +1623,17 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  actionItems.push({
+    kind: "action",
+    value: "action:requirements",
+    shortcutCommand: "requirements.open",
+    searchTerms: ["issue", "requirements", "MEP", "ONES", "需求", "看板"],
+    title: t("Requirements board"),
+    icon: <ClipboardListIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/requirements" });
+    },
+  });
   actionItems.push({
     kind: "action",
     value: "action:usage",

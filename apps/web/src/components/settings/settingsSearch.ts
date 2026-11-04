@@ -18,6 +18,7 @@ import type { ResolvedSettingsScope } from "./settingsScope";
 
 export type SettingsPath =
   | "/settings/projects"
+  | "/settings/requirements"
   | "/settings/general"
   | "/settings/diagnostics"
   | "/settings/appearance"
@@ -90,6 +91,7 @@ export interface SettingsSearchAvailability {
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/diagnostics": "Diagnostics",
   "/settings/projects": "Projects",
+  "/settings/requirements": "Issue management",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/chat": "Chat",
@@ -143,6 +145,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: "Code",
     paths: [
       "/settings/projects",
+      "/settings/requirements",
       "/settings/source-control",
       "/settings/diffs",
       "/settings/worktrees",
@@ -1056,6 +1059,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["auto pull default branch current checkout fast forward upstream"],
   },
   {
+    id: "issue-management",
+    title: "Issue management",
+    to: "/settings/requirements",
+    scope: "environment",
+    searchTerms: ["requirements MEP ONES Meituan GitHub issues project space 需求 看板 空间"],
+  },
+  {
     id: "remove-agent-credits-on-merge",
     title: "Remove agent credits when merging",
     to: "/settings/source-control",
@@ -1298,6 +1308,7 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/diagnostics": "environment",
   "/settings/projects": "project",
+  "/settings/requirements": "environment",
   "/settings/general": null,
   "/settings/appearance": null,
   "/settings/chat": null,
