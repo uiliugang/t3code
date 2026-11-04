@@ -5,6 +5,7 @@ import {
   type BranchIssuesInput,
   type BranchIssuesUpdateInput,
   type BranchIssueDetail,
+  type BranchIssuesResult,
   SourceControlProviderError,
 } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
@@ -23,7 +24,7 @@ export class BranchIssueService extends Context.Service<
   {
     readonly list: (
       input: BranchIssuesInput,
-    ) => Effect.Effect<{ provider: string; issues: ReadonlyArray<BranchIssue> }, BranchIssueError>;
+    ) => Effect.Effect<typeof BranchIssuesResult.Type, BranchIssueError>;
     readonly read: (
       input: BranchIssuesInput & { readonly url: string },
     ) => Effect.Effect<BranchIssueDetail, BranchIssueError>;
@@ -62,18 +63,21 @@ const make = Effect.gen(function* () {
   const list = Effect.fn("BranchIssueService.list")(
     function* (input: BranchIssuesInput) {
       const handle = yield* resolve(input);
+      const published = yield* git.remoteBranchExists({
+        cwd: input.cwd,
+        remoteName: handle.context.remoteName,
+        refName: input.branch,
+      });
+      if (!published) return { provider: handle.provider.kind, published, issues: [] };
       const local = yield* stored(input.cwd, handle.key);
       const remote = handle.capability.list
         ? yield* handle.capability.list({ ...input, context: handle.context })
         : [];
-      const merged = new Map(
-        local.map((issue) => [
-          issue.url,
-          handle.capability.list ? { ...issue, association: "local" as const } : issue,
-        ]),
-      );
-      for (const issue of remote) merged.set(issue.url, issue);
-      return { provider: handle.provider.kind, issues: [...merged.values()] };
+      return {
+        provider: handle.provider.kind,
+        published,
+        issues: handle.capability.list ? remote : local,
+      };
     },
     Effect.mapError((cause) =>
       isBranchIssueError(cause)
@@ -98,6 +102,15 @@ const make = Effect.gen(function* () {
   const update = Effect.fn("BranchIssueService.update")(
     function* (input: BranchIssuesUpdateInput) {
       const handle = yield* resolve(input);
+      if (
+        input.action === "associate" &&
+        !(yield* git.remoteBranchExists({
+          cwd: input.cwd,
+          remoteName: handle.context.remoteName,
+          refName: input.branch,
+        }))
+      )
+        return yield* new BranchIssueError({ operation: "update", reason: "unpublished" });
       const refs = input.urls.map(parseBranchIssueUrl);
       if (refs.some((issue) => !issue || issue.provider !== handle.provider.kind))
         return yield* new BranchIssueError({ operation: "update", reason: "invalid-link" });
@@ -110,6 +123,12 @@ const make = Effect.gen(function* () {
           const remote = handle.capability.list
             ? yield* handle.capability.list({ ...input, context: handle.context })
             : [];
+          const existingIssues = handle.capability.list ? remote : [...current.values()];
+          if (
+            input.action === "associate" &&
+            new Set([...existingIssues.map((issue) => issue.url), ...unique.keys()]).size > 1
+          )
+            return yield* new BranchIssueError({ operation: "update", reason: "issue-limit" });
           for (const issue of unique.values()) {
             const existing = current.get(issue.url);
             if (input.action === "associate") {

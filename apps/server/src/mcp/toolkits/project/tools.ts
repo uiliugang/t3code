@@ -214,7 +214,7 @@ export const ProjectToolkit = Toolkit.make(
   Tool.make("t3_branch_issues_update", {
     ...shared,
     description:
-      "Associate or disassociate multiple issue URLs with a repository branch. GitHub stores branch links in T3 without closing issues. Meituan Code updates MEP ONES branch associations. Successful links remain if a later link fails; list before retrying.",
+      "Associate or disassociate an issue URL with a published repository branch. Each branch can link one issue; unlink it before linking another. GitHub stores branch links in T3 without closing issues. Meituan Code updates MEP ONES branch associations.",
     parameters: Schema.Struct({
       environmentId: OrchestratorMcpEnvironmentTarget,
       ...BranchIssuesUpdateInput.fields,

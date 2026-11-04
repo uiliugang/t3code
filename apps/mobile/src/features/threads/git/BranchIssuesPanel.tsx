@@ -12,6 +12,7 @@ import { Linking, View } from "react-native";
 import { AppText, AppTextInput } from "../../../components/ui/AppText";
 import { Button } from "../../../components/ui/Button";
 import { ListRow } from "../../../components/ui/ListRow";
+import { IconButton } from "../../../components/ui/IconButton";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { SelectableMarkdownText } from "../../../native/SelectableMarkdownText";
 import { mobilePreferencesAtom } from "../../../state/preferences";
@@ -65,19 +66,24 @@ function IssueRow({
   const [expanded, setExpanded] = useState(expandedInitially);
   return (
     <View>
-      <ListRow
-        label={issue.title}
-        description={`${issue.provider === "meituan" ? "MEP ONES" : issue.repository} #${issue.id} · ${issue.state}`}
-        onPress={() => setExpanded(!expanded)}
-      />
+      <View className="flex-row items-start pr-3">
+        <View className="min-w-0 flex-1">
+          <ListRow
+            label={issue.title}
+            description={`${issue.provider === "meituan" ? "MEP ONES" : issue.repository} #${issue.id} · ${issue.state}`}
+            onPress={() => setExpanded(!expanded)}
+          />
+        </View>
+        <IconButton
+          accessibilityLabel={t("View original")}
+          icon="arrow.up.right"
+          onPress={() => void Linking.openURL(issue.url)}
+        />
+      </View>
       {expanded ? (
         <View className="gap-3 px-4 pb-4">
           <IssueBody target={target} issue={issue} />
-          <AppText className="text-xs text-foreground-muted">
-            {t(issue.association === "remote" ? "MEP branch association" : "T3 branch association")}
-          </AppText>
           <View className="flex-row flex-wrap gap-2">
-            <Button label={t("View original")} onPress={() => void Linking.openURL(issue.url)} />
             <Button label={t("Unlink issue")} disabled={!allowed || busy} onPress={remove} />
           </View>
         </View>
@@ -108,6 +114,7 @@ export function BranchIssuesPanel({ target, provider }: { target: Target; provid
   const [error, setError] = useState<string | null>(null);
   const [limit, setLimit] = useState(4);
   const issues = query.data?.issues ?? [];
+  const unpublished = query.data?.published === false;
   async function mutate(urls: string[], action: "associate" | "disassociate") {
     if (!urls.length || urls.some((url) => parseBranchIssueUrl(url)?.provider !== provider)) {
       setError(t("Enter valid issue links for this repository's hosting platform."));
@@ -148,17 +155,27 @@ export function BranchIssuesPanel({ target, provider }: { target: Target; provid
         </AppText>
         <Button
           label={t("Link issues")}
-          disabled={!allowed || busy}
+          disabled={!allowed || busy || !query.data || unpublished || issues.length > 0}
+          accessibilityHint={
+            issues.length > 0
+              ? t("Each branch can link one issue. Unlink the existing issue first.")
+              : undefined
+          }
           onPress={() => setAdding(!adding)}
         />
       </View>
+      {unpublished ? (
+        <AppText className="px-4 pb-3 text-foreground-muted">
+          {t("Push this branch before linking an issue.")}
+        </AppText>
+      ) : null}
       {query.error ? (
         <View className="px-4 py-2">
           <AppText>{t("Could not load linked issues.")}</AppText>
           <Button label={t("Retry")} onPress={query.refresh} />
         </View>
       ) : null}
-      {query.data && !issues.length ? (
+      {query.data && !unpublished && !issues.length ? (
         <AppText className="px-4 py-2 text-foreground-muted">
           {t("No issues linked to this branch.")}
         </AppText>
@@ -177,18 +194,17 @@ export function BranchIssuesPanel({ target, provider }: { target: Target; provid
       {issues.length > limit ? (
         <Button label={t("Show more")} onPress={() => setLimit(limit + 10)} />
       ) : null}
-      {adding ? (
+      {adding && !unpublished && issues.length === 0 ? (
         <View className="gap-2 p-4">
           <AppTextInput
             accessibilityLabel={t("Issue links")}
-            multiline
             autoCapitalize="none"
             autoCorrect={false}
             value={links}
             onChangeText={setLinks}
             placeholder={t(branchIssuePlaceholder(provider))}
             editable={!busy}
-            className="min-h-24 rounded-lg bg-subtle px-3 py-2 text-base"
+            className="rounded-lg bg-subtle px-3 py-2 text-base"
           />
           <View className="flex-row justify-end gap-2">
             <Button label={t("Cancel")} disabled={busy} onPress={() => setAdding(false)} />
