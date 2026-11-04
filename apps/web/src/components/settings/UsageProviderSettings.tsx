@@ -149,10 +149,7 @@ function RemoveUsageProviderButton({
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t("Remove")}
-              {label}?
-            </AlertDialogTitle>
+            <AlertDialogTitle>{t("Remove {name}?", { name: label })}</AlertDialogTitle>
             <AlertDialogDescription>
               The hub's management key is deleted from this server. Its accounts leave the Limits
               view; the hub itself is untouched. Add it again with the URL and key to bring them

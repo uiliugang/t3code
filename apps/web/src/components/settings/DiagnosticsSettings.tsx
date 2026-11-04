@@ -668,8 +668,8 @@ function DiagnosticsLastChecked({ checkedAt }: { checkedAt: DateTime.Utc | null 
     <span className="text-2xs text-muted-foreground/60">
       {relative.suffix ? (
         <>
-          {t("Checked")}
-          <span className="font-mono tabular-nums">{relative.value}</span> {relative.suffix}
+          {t("Checked")} <span className="font-mono tabular-nums">{relative.value}</span>{" "}
+          {relative.suffix}
         </>
       ) : (
         <>

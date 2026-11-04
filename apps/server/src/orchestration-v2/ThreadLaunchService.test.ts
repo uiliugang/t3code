@@ -2294,48 +2294,64 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
   }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerFiles)));
 });
 
-it.effect("cancels tracked setup before provider work is released", () =>
-  Effect.gen(function* () {
-    const entered = yield* Deferred.make<void>();
-    const namingStarted = yield* Deferred.make<void>();
-    const namingInterrupted = yield* Deferred.make<void>();
-    const harness = makeHarness({
-      runSetup: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
-      generateBranchName: () =>
-        Deferred.succeed(namingStarted, undefined).pipe(
-          Effect.andThen(Effect.never),
-          Effect.onInterrupt(() => Deferred.succeed(namingInterrupted, undefined)),
-        ),
-    });
-    yield* Effect.gen(function* () {
-      const launches = yield* ThreadLaunch.ThreadLaunchService;
-      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
-      const threads = yield* ThreadManagement.ThreadManagementService;
-      const outbox = yield* EffectOutbox.EffectOutboxV2;
-      const input = launchInput({
-        command: "launch:cancel-tracked",
-        thread: "thread:cancel-tracked",
-        message: "Start",
-        workspace: { type: "worktree", baseRef: "main" },
+it.effect.each([false, true])(
+  "cancels tracked setup before provider work is released (renamed: %s)",
+  (renamedBeforeCancel) =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const namingStarted = yield* Deferred.make<void>();
+      const namingInterrupted = yield* Deferred.make<void>();
+      const renamed = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        runSetup: () =>
+          (renamedBeforeCancel ? Deferred.await(renamed) : Effect.void).pipe(
+            Effect.andThen(Deferred.succeed(entered, undefined)),
+            Effect.andThen(Effect.never),
+          ),
+        ...(renamedBeforeCancel
+          ? {
+              renameBranch: (input: { newBranch: string }) =>
+                Deferred.succeed(renamed, undefined).pipe(Effect.as({ branch: input.newBranch })),
+            }
+          : {
+              generateBranchName: () =>
+                Deferred.succeed(namingStarted, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.onInterrupt(() => Deferred.succeed(namingInterrupted, undefined)),
+                ),
+            }),
       });
-      const launched = yield* launches.launch(input);
-      yield* Deferred.await(entered);
-      yield* Deferred.await(namingStarted);
-      assert.equal((yield* tracker.get(launched.threadId))?.phase, "running");
-      assert.isTrue(yield* tracker.cancel(launched.threadId));
-      yield* Deferred.await(namingInterrupted);
-      assert.equal((yield* tracker.get(launched.threadId))?.phase, "cancelled");
-      const projection = yield* threads.getThreadProjection(launched.threadId);
-      assert.equal(projection.runs[0]?.status, "failed");
-      assert.isNull(projection.thread.worktreePath);
-      assert.deepEqual(harness.deleteLocalBranch.mock.calls[0]?.[0], {
-        cwd: "/repo",
-        refName: harness.createWorktree.mock.calls[0]![0].newRefName!,
-        force: true,
-      });
-      assert.isEmpty(yield* outbox.listByCommandId(CommandId.make(`${input.commandId}:release`)));
-    }).pipe(Effect.provide(harness.layer));
-  }),
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const input = launchInput({
+          command: "launch:cancel-tracked",
+          thread: "thread:cancel-tracked",
+          message: "Start",
+          workspace: { type: "worktree", baseRef: "main" },
+        });
+        const launched = yield* launches.launch(input);
+        yield* Deferred.await(entered);
+        if (!renamedBeforeCancel) yield* Deferred.await(namingStarted);
+        assert.equal((yield* tracker.get(launched.threadId))?.phase, "running");
+        assert.isTrue(yield* tracker.cancel(launched.threadId));
+        if (!renamedBeforeCancel) yield* Deferred.await(namingInterrupted);
+        assert.equal((yield* tracker.get(launched.threadId))?.phase, "cancelled");
+        const projection = yield* threads.getThreadProjection(launched.threadId);
+        assert.equal(projection.runs[0]?.status, "failed");
+        assert.isNull(projection.thread.worktreePath);
+        assert.deepEqual(harness.deleteLocalBranch.mock.calls[0]?.[0], {
+          cwd: "/repo",
+          refName: renamedBeforeCancel
+            ? "generated-branch"
+            : harness.createWorktree.mock.calls[0]![0].newRefName!,
+          force: true,
+        });
+        assert.isEmpty(yield* outbox.listByCommandId(CommandId.make(`${input.commandId}:release`)));
+      }).pipe(Effect.provide(harness.layer));
+    }),
 );
 
 it.effect.each([false, true])(

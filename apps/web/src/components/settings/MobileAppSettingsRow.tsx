@@ -55,8 +55,7 @@ export function MobileAppSettingsRow() {
                     variant="outline"
                     render={<a href={url} target="_blank" rel="noreferrer noopener" />}
                   >
-                    {t("Open")}
-                    {store}
+                    {t("Open")} {store}
                   </Button>
                 </div>
               </PopoverPopup>

@@ -383,16 +383,22 @@ const make = Effect.gen(function* () {
         oldBranch: string,
         worktreePath: string | null,
         name: { readonly branch: string; readonly exactName: boolean },
+        onRenamed?: (branch: string) => void,
       ) {
         const current = yield* threads.getThreadShell(threadId);
         if (!current || current.deletedAt !== null || (yield* git.currentBranch(cwd)) !== oldBranch)
           return null;
-        const renamed = yield* git.renameBranch({
-          cwd,
-          oldBranch,
-          newBranch: name.branch,
-          exactName: name.exactName,
-        });
+        const renamed = yield* git
+          .renameBranch({
+            cwd,
+            oldBranch,
+            newBranch: name.branch,
+            exactName: name.exactName,
+          })
+          .pipe(
+            Effect.tap((renamed) => Effect.sync(() => onRenamed?.(renamed.branch))),
+            Effect.uninterruptible,
+          );
         const owner = yield* threads.getThreadShell(threadId);
         if (owner?.worktreePath === worktreePath && owner.branch === oldBranch) {
           yield* threads.dispatch({
@@ -755,14 +761,9 @@ const make = Effect.gen(function* () {
         const worktreeCwd = worktreePath ?? project.workspaceRoot;
         branchRename = yield* generateBranchNameFor(worktreeCwd, initialMessage).pipe(
           Effect.flatMap((name) =>
-            renameBranchForThreads(worktreeCwd, oldBranch, worktreePath, name).pipe(
-              Effect.tap((renamed) =>
-                Effect.sync(() => {
-                  if (renamed !== null) createdBranch = renamed;
-                }),
-              ),
-              Effect.uninterruptible,
-            ),
+            renameBranchForThreads(worktreeCwd, oldBranch, worktreePath, name, (renamed) => {
+              createdBranch = renamed;
+            }),
           ),
           Effect.tap((branch) =>
             branch === null

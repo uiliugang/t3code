@@ -564,7 +564,7 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
               disabled={!canRevoke || revokingClientSessionId === clientSession.sessionId}
               onClick={() => void onRevokeSession(clientSession.sessionId)}
             >
-              {revokingClientSessionId === clientSession.sessionId ? "Revoking…" : "Revoke"}
+              {t(revokingClientSessionId === clientSession.sessionId ? "Revoking…" : "Revoke")}
             </Button>
           ) : null}
         </div>
@@ -646,7 +646,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
         disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
         onClick={() => void onRevokeOtherClients()}
       >
-        {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
+        {t(isRevokingOtherClients ? "Revoking…" : "Revoke others")}
       </Button>
       {pairingDenial !== undefined ? (
         <ManagedControl reason={pairingDenial}>

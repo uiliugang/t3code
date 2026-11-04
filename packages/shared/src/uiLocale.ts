@@ -12,6 +12,25 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Up to date": "已是最新版本",
+  "Downloading update": "正在下载更新",
+  "Downloading update {version}": "正在下载更新 {version}",
+  "Update downloaded": "更新已下载",
+  "Update {version} downloaded": "更新 {version} 已下载",
+  "Update {version} available": "有可用更新 {version}",
+  "Revoke others": "撤销其他客户端",
+  "Revoking…": "正在撤销…",
+  Revoke: "撤销",
+  "{count} client": "{count} 个客户端",
+  "{count} clients": "{count} 个客户端",
+  "{count} pairing link": "{count} 个配对链接",
+  "{count} pairing links": "{count} 个配对链接",
+  "Only this machine can connect. Restart with a non-loopback host for remote pairing.":
+    "仅本机可以连接。如需远程配对，请使用非本地回环地址重启服务器。",
+  "This connection cannot view or change network exposure.": "此连接无法查看或更改网络访问范围。",
+  "Remote access is already configured. Change network exposure where the server starts.":
+    "已配置远程访问，请在启动服务器的位置更改网络访问范围。",
+  "Network exposure information is unavailable.": "无法获取网络访问范围信息。",
   "Filter settings environments and projects": "筛选设置环境和项目",
   "All connected environments": "所有已连接的环境",
   "Environment · {name}": "环境 · {name}",

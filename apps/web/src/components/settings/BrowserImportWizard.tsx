@@ -349,8 +349,7 @@ function ConfigureStep({
     <>
       <DialogHeader>
         <DialogTitle>
-          {t("Import from")}
-          {source.name}
+          {t("Import from")} {source.name}
         </DialogTitle>
         <DialogDescription>
           Choose which cookies to import for {destinationEnvironmentName}.

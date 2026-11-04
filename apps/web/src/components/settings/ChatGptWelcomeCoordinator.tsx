@@ -74,8 +74,7 @@ export function ChatGptWelcomeCoordinator() {
           </DialogDescription>
           <p className="text-xs text-muted-foreground">
             {next?.providerName}
-            {t("on")}
-            {next?.environmentLabel}
+            {t("on")} {next?.environmentLabel}
           </p>
         </DialogHeader>
         <DialogFooter>

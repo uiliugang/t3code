@@ -301,8 +301,7 @@ function AcpRegistryAgentRow({
                 }
               />
               <TooltipPopup>
-                {t("About")}
-                {agent.name}
+                {t("About")} {agent.name}
               </TooltipPopup>
             </Tooltip>
           ) : null}

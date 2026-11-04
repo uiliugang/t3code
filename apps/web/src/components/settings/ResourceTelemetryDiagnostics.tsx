@@ -443,8 +443,7 @@ function ResourceHistoryChart({
                   <div>CPU peak {bucket.maxCpuPercent.toFixed(1)}%</div>
                   <div>Read {formatBytes(bucket.ioReadBytes)}</div>
                   <div>
-                    {t("Write")}
-                    {formatBytes(bucket.ioWriteBytes)}
+                    {t("Write")} {formatBytes(bucket.ioWriteBytes)}
                   </div>
                 </div>
               </TooltipPopup>

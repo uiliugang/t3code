@@ -147,10 +147,11 @@ const BACKEND_VALUE_WSL_OFF = "backend:wsl-off";
 
 // Subscribes on its own so desktop download progress does not re-render the page.
 function LocalVersionStatusLabel() {
+  const t = useUiTranslation();
   const updateState = useDesktopUpdateState();
   return (
     <span className="text-xs text-muted-foreground">
-      {resolveLocalVersionStatusLabel(updateState)}
+      {resolveLocalVersionStatusLabel(updateState, t)}
     </span>
   );
 }
@@ -848,8 +849,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
               <span className="block text-destructive">{desktopWslError}</span>
             ) : desktopWslState.preflightError ? (
               <span className="block text-destructive">
-                {t("WSL backend couldn't start:")}
-                {desktopWslState.preflightError}
+                {t("WSL backend couldn't start:")} {desktopWslState.preflightError}
               </span>
             ) : null
           }
@@ -1181,6 +1181,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
               summary={summarizeAuthorizedClients(
                 desktopClientSessions,
                 visibleDesktopPairingLinks,
+                t,
               )}
               control={
                 canWriteAccess ? (
