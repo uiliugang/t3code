@@ -60,14 +60,24 @@ const make = Effect.gen(function* () {
     const value = yield* git.readConfigValue(cwd, key);
     return value === null ? [] : yield* decodeStored(value);
   });
+  const isPublished = Effect.fn("BranchIssueService.isPublished")(function* (
+    input: BranchIssuesInput,
+    remoteName: string,
+  ) {
+    if (yield* git.remoteBranchExists({ cwd: input.cwd, remoteName, refName: input.branch }))
+      return true;
+    // Narrow fetch refspecs can omit tracking refs even after a successful push.
+    const result = yield* git.execute({
+      cwd: input.cwd,
+      operation: "BranchIssueService.isPublished",
+      args: ["ls-remote", "--heads", "--", remoteName, `refs/heads/${input.branch}`],
+    });
+    return result.stdout.trim().length > 0;
+  });
   const list = Effect.fn("BranchIssueService.list")(
     function* (input: BranchIssuesInput) {
       const handle = yield* resolve(input);
-      const published = yield* git.remoteBranchExists({
-        cwd: input.cwd,
-        remoteName: handle.context.remoteName,
-        refName: input.branch,
-      });
+      const published = yield* isPublished(input, handle.context.remoteName);
       if (!published) return { provider: handle.provider.kind, published, issues: [] };
       const local = yield* stored(input.cwd, handle.key);
       const remote = handle.capability.list
@@ -102,14 +112,7 @@ const make = Effect.gen(function* () {
   const update = Effect.fn("BranchIssueService.update")(
     function* (input: BranchIssuesUpdateInput) {
       const handle = yield* resolve(input);
-      if (
-        input.action === "associate" &&
-        !(yield* git.remoteBranchExists({
-          cwd: input.cwd,
-          remoteName: handle.context.remoteName,
-          refName: input.branch,
-        }))
-      )
+      if (input.action === "associate" && !(yield* isPublished(input, handle.context.remoteName)))
         return yield* new BranchIssueError({ operation: "update", reason: "unpublished" });
       const refs = input.urls.map(parseBranchIssueUrl);
       if (refs.some((issue) => !issue || issue.provider !== handle.provider.kind))

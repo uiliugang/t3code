@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { ChildProcessSpawner } from "effect/process";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Git from "../vcs/GitVcsDriver.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
@@ -30,13 +31,14 @@ function setup(
     failUnlink?: boolean;
     provider?: "github" | "meituan";
     published?: boolean;
+    remotePublished?: boolean;
   } = {},
 ) {
   const kind = SourceControlProviderKind.make(options.provider ?? "github");
   const config = new Map<string, string>();
   const writes: string[] = [];
   const capability: NonNullable<Provider.SourceControlProvider["Service"]["issues"]> = {
-    ...(options.published === false
+    ...(options.published === false && !options.remotePublished
       ? { list: () => Effect.die("Unpublished branches must not query remote issues") }
       : {}),
     read: ({ cwd, issue }) =>
@@ -73,6 +75,14 @@ function setup(
     Layer.provide(
       Layer.mock(Git.GitVcsDriver)({
         remoteBranchExists: () => Effect.succeed(options.published ?? true),
+        execute: () =>
+          Effect.succeed({
+            stdout: options.remotePublished ? "abc\trefs/heads/feature/issues\n" : "",
+            stderr: "",
+            exitCode: ChildProcessSpawner.ExitCode(0),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          }),
         readConfigValue: (_cwd, key) => Effect.sync(() => config.get(key) ?? null),
         writeConfigValue: ({ key, value }) =>
           Effect.sync(() => {
@@ -107,6 +117,13 @@ function setup(
 }
 
 describe("branch issue associations", () => {
+  it.effect("recognizes a published branch missing from narrow local tracking refs", () =>
+    Effect.gen(function* () {
+      const service = yield* Service.BranchIssueService;
+      expect(yield* service.list(target)).toMatchObject({ published: true });
+      yield* service.update({ ...target, action: "associate", urls: [first] });
+    }).pipe(Effect.provide(setup({ published: false, remotePublished: true }).layer)),
+  );
   it.effect("does not query or associate an unpublished branch", () =>
     Effect.gen(function* () {
       const service = yield* Service.BranchIssueService;
