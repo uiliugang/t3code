@@ -1067,16 +1067,10 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                           {path}
                         </Text>
                       ))}
-                      {row.skill.external ? (
+                      {row.skill.external && (
                         <Text className="text-xs text-foreground-muted">
                           {t("Update this skill through its plugin or provider.")}
                         </Text>
-                      ) : (
-                        <ControlPill
-                          label={t("Adopt skill")}
-                          disabled={disabled || previewing}
-                          onPress={() => void preview([row.skill])}
-                        />
                       )}
                     </View>
                   )}

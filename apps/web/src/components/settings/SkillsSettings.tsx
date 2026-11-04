@@ -2080,22 +2080,11 @@ function EnvironmentSkills({
                             </p>
                           ))}
                         </div>
-                        <div className="mt-2">
-                          {row.skill.external ? (
-                            <p className="text-xs text-muted-foreground">
-                              {t("Update this skill through its plugin or provider.")}
-                            </p>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!canManage || previewing}
-                              onClick={() => void adopt([row.skill])}
-                            >
-                              {t(previewing ? "Preparing preview..." : "Adopt skill")}
-                            </Button>
-                          )}
-                        </div>
+                        {row.skill.external && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {t("Update this skill through its plugin or provider.")}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </article>
