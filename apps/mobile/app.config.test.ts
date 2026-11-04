@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 
 // Keep config parsing independent of local env files and build credentials.
 vi.mock("../../scripts/lib/public-config.ts", () => ({
-  loadRepoEnv: () => ({ APP_VARIANT: process.env.APP_VARIANT }),
+  loadRepoEnv: () => ({ ...process.env }),
 }));
 
 afterEach(() => {
@@ -30,4 +30,21 @@ it.each([
   const config = await loadConfig(value);
   expect(config.ios?.bundleIdentifier).toBe(identifier);
   expect(config.android?.package).toBe(identifier);
+});
+
+it("configures a standalone Android release without upstream OTA", async () => {
+  vi.stubEnv("T3CODE_ANDROID_PACKAGE", "com.uiliugang.t3code");
+  vi.stubEnv("T3CODE_ANDROID_VERSION_CODE", "42");
+  vi.stubEnv("T3CODE_MOBILE_VERSION", "1.2.3");
+  vi.stubEnv("T3CODE_MOBILE_UPDATES_ENABLED", "0");
+  const config = await loadConfig("production");
+  expect(config.android?.package).toBe("com.uiliugang.t3code");
+  expect(config.android?.versionCode).toBe(42);
+  expect(config.version).toBe("1.2.3");
+  expect(config.updates?.enabled).toBe(false);
+});
+
+it.each(["0", "1.5", "NaN", "2100000001"])("rejects Android versionCode=%s", async (value) => {
+  vi.stubEnv("T3CODE_ANDROID_VERSION_CODE", value);
+  await expect(loadConfig("production")).rejects.toThrow("T3CODE_ANDROID_VERSION_CODE must be");
 });

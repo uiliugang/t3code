@@ -4,6 +4,27 @@
 
 This document covers the unified release workflow for stable and nightly desktop releases.
 
+## Personal fork releases
+
+`uiliugang/t3code` uses `.github/workflows/fork-release.yml`. Enable GitHub Actions in
+the fork and configure these repository secrets with one persistent Android release key:
+`ANDROID_KEYSTORE_BASE64` (base64-encoded keystore), `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Back up the keystore and passwords;
+replacing the key prevents installed APKs from upgrading in place.
+
+Run **Fork macOS and Android release** manually on a branch to validate the build and
+download its Actions artifacts. Push a plain `vX.Y.Z` tag to publish one GitHub Release
+after both builds pass. Tags with prerelease suffixes are rejected. The workflow builds
+only an Apple Silicon arm64 DMG and a standalone, signed universal Android APK, with
+`SHA256SUMS`. Android uses `com.uiliugang.t3code` and epoch minutes as its versionCode;
+allow at least a minute between builds intended to upgrade each other.
+
+The macOS app is ad hoc signed without Apple notarization, so Gatekeeper can require
+approval in System Settings. It has no automatic update feed. Android disables the
+upstream Expo OTA feed and bundles its JavaScript; it needs no Metro server, Expo account,
+or Google Play credentials. Connect directly to your T3 server; these builds do not
+provision a private T3 Connect relay or configure fork-specific cloud authentication.
+
 Beta is the product label, not a release channel or version suffix. Release channels
 remain stable and nightly. To ship 0.1.0 Beta, use `channel=stable` and
 `version=0.1.0`. Removing the Beta label later is a branding change independent of

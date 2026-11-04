@@ -531,6 +531,27 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.isNull(preview.publish);
       assert.isNull(previewChannel.publish);
+      const standalone = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      ).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                GITHUB_REPOSITORY: "uiliugang/t3code",
+                T3CODE_DESKTOP_DISABLE_UPDATE_FEED: "true",
+              },
+            }),
+          ),
+        ),
+      );
+      assert.isNull(standalone.publish);
       assert.deepStrictEqual(release.publish, [
         {
           provider: "github",

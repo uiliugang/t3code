@@ -1,0 +1,13 @@
+// Expo's generated release build uses the debug key unless explicitly overridden.
+gradle.afterProject { project ->
+    if (project.plugins.hasPlugin('com.android.application')) {
+        def android = project.extensions.getByName('android')
+        def signing = android.signingConfigs.create('forkRelease') {
+            storeFile = new File(System.getenv('T3_ANDROID_KEYSTORE_FILE'))
+            storePassword = System.getenv('T3_ANDROID_KEYSTORE_PASSWORD')
+            keyAlias = System.getenv('T3_ANDROID_KEY_ALIAS')
+            keyPassword = System.getenv('T3_ANDROID_KEY_PASSWORD')
+        }
+        android.buildTypes.getByName('release').signingConfig = signing
+    }
+}
