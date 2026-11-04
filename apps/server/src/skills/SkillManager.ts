@@ -498,6 +498,7 @@ const make = Effect.gen(function* () {
       phase: "downloading",
       failureReason: null,
       failure: null,
+      failureDiagnostics: null,
       checkedAt: yield* now,
     });
     const staging = path.join(root, "staging", yield* crypto.randomUUIDv4().pipe(Effect.orDie));
@@ -525,6 +526,7 @@ const make = Effect.gen(function* () {
         phase: "prepared",
         failure: null,
         failureReason: null,
+        failureDiagnostics: null,
         availableDigest: fetched.digest === skill.activeDigest ? null : fetched.digest,
         versions: skill.versions.some((version) => version.digest === fetched.digest)
           ? skill.versions
@@ -709,7 +711,12 @@ const make = Effect.gen(function* () {
   });
   const execute = Effect.fn("SkillManager.execute")(function* (input: SkillAction) {
     const current = yield* Ref.get(state);
-    yield* save({ ...current, lastFailure: null, lastFailureReason: null });
+    yield* save({
+      ...current,
+      lastFailure: null,
+      lastFailureReason: null,
+      lastFailureDiagnostics: null,
+    });
     switch (input.type) {
       case "refresh":
         yield* refreshDiscovery;
@@ -724,7 +731,7 @@ const make = Effect.gen(function* () {
           reason: result._tag === "Failure" ? result.failure.reason : null,
           detail:
             result._tag === "Failure"
-              ? result.failure.message
+              ? (result.failure.diagnostics ?? result.failure.message)
               : source.kind === "local"
                 ? "Local storage is available."
                 : "Installer is available. Authentication and package access are checked during download.",
@@ -1073,6 +1080,7 @@ const make = Effect.gen(function* () {
             ...current,
             lastFailure: error.message,
             lastFailureReason: error.reason,
+            lastFailureDiagnostics: error.diagnostics ?? null,
             skills: current.skills.map((skill) =>
               skill.id === skillId
                 ? {
@@ -1083,6 +1091,7 @@ const make = Effect.gen(function* () {
                         : "failed",
                     failure: error.message,
                     failureReason: error.reason,
+                    failureDiagnostics: error.diagnostics ?? null,
                     choices: error.choices ?? skill.choices ?? [],
                     lastAttemptAt: attemptedAt,
                   }
@@ -1093,7 +1102,13 @@ const make = Effect.gen(function* () {
           yield* saveJobs((jobs) =>
             jobs.map((entry) =>
               entry.id === id
-                ? { ...entry, status: "failed", reason: error.reason, finishedAt }
+                ? {
+                    ...entry,
+                    status: "failed",
+                    reason: error.reason,
+                    ...(error.diagnostics ? { diagnostics: error.diagnostics } : {}),
+                    finishedAt,
+                  }
                 : entry,
             ),
           );

@@ -316,8 +316,9 @@ function Skill({
         </Text>
       ))}
       {failure && (
-        <Text accessibilityRole="alert" className="text-danger-foreground">
+        <Text selectable accessibilityRole="alert" className="text-danger-foreground">
           {t(failure)}
+          {skill.failureDiagnostics ? `\n${skill.failureDiagnostics}` : ""}
         </Text>
       )}
       <View className="flex-row flex-wrap gap-2">
@@ -548,7 +549,7 @@ function Source({
           }
         />
       </View>
-      <Text className="text-xs text-foreground-muted">
+      <Text selectable className="text-xs text-foreground-muted">
         {source.health
           ? t(
               source.health.reason
@@ -556,6 +557,9 @@ function Source({
                 : source.health.detail,
             )
           : t("Not checked")}
+        {source.health?.reason && source.health.detail !== skillFailureMessage(source.health.reason)
+          ? `\n${source.health.detail}`
+          : ""}
       </Text>
       <View className="flex-row flex-wrap gap-2">
         <ControlPill
@@ -722,6 +726,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
           {t(
             data.lastFailureReason ? skillFailureMessage(data.lastFailureReason) : data.lastFailure,
           )}
+          {data.lastFailureDiagnostics ? `\n${data.lastFailureDiagnostics}` : ""}
         </Text>
       )}
       {installing && (
@@ -1095,7 +1100,10 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                 : ""}
             </Text>
             {job.reason && (
-              <Text className="text-danger-foreground">{t(skillFailureMessage(job.reason))}</Text>
+              <Text selectable className="text-danger-foreground">
+                {t(skillFailureMessage(job.reason))}
+                {job.diagnostics ? `\n${job.diagnostics}` : ""}
+              </Text>
             )}
             {job.status === "failed" && (
               <ControlPill

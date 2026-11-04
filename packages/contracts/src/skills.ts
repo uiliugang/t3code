@@ -98,6 +98,7 @@ export const ManagedSkill = Schema.Struct({
   ),
   failure: Schema.NullOr(Schema.String),
   failureReason: Schema.optionalKey(Schema.NullOr(SkillFailureReason)),
+  failureDiagnostics: Schema.optionalKey(Schema.NullOr(Schema.String)),
   checkedAt: Schema.NullOr(Schema.String),
   lastAttemptAt: Schema.optionalKey(Schema.String),
   snapshotOnly: Schema.optionalKey(Schema.Boolean),
@@ -190,11 +191,13 @@ export const SkillJob = Schema.Struct({
   beforeDigest: Schema.optionalKey(Schema.NullOr(SkillKey)),
   afterDigest: Schema.optionalKey(Schema.NullOr(SkillKey)),
   reason: Schema.NullOr(SkillFailureReason),
+  diagnostics: Schema.optionalKey(Schema.String),
 });
 export type SkillJob = typeof SkillJob.Type;
 export const SkillCatalog = Schema.Struct({
   lastFailure: Schema.NullOr(Schema.String),
   lastFailureReason: Schema.optionalKey(Schema.NullOr(SkillFailureReason)),
+  lastFailureDiagnostics: Schema.optionalKey(Schema.NullOr(Schema.String)),
   sources: Schema.Array(SkillSource),
   skills: Schema.Array(ManagedSkill),
   customTargets: Schema.Array(SkillTarget),
@@ -238,6 +241,7 @@ export class SkillManagerError extends Schema.TaggedError<SkillManagerError>()(
     operation: Schema.String,
     reason: SkillFailureReason,
     choices: Schema.optionalKey(Schema.Array(Schema.String)),
+    diagnostics: Schema.optionalKey(Schema.String),
     cause: Schema.optionalKey(Schema.Defect()),
   },
 ) {

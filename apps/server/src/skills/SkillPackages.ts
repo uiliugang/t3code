@@ -15,6 +15,8 @@ import { resolveCommandPath, resolveSpawnCommand, setWindowsPath } from "@t3tool
 import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
+import { sanitizeFailureText } from "@t3tools/provider-core/server/failure";
+import * as NodeUtil from "node:util";
 import * as ServerConfig from "../config.ts";
 
 const metadataSchema = Schema.Struct({
@@ -110,11 +112,22 @@ const make = Effect.gen(function* () {
             Effect.provideService(Path.Path, path),
           );
           resolved = { command: node, args: [script, ...resolved.args], shell: false };
-          if (/^node(?:\.exe)?$/iu.test(path.basename(node))) {
-            const searchPath = `${path.dirname(node)}${platform === "win32" ? ";" : ":"}${environment.PATH ?? environment.Path ?? environment.path ?? ""}`;
-            if (platform === "win32") setWindowsPath(env, searchPath);
-            else Object.assign(env, { PATH: searchPath });
+          let nodeBin = path.dirname(node);
+          if (!/^node(?:\.exe)?$/iu.test(path.basename(node))) {
+            // npm's descendants must also use Electron's Node, not an older shell Node.
+            nodeBin = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skill-node-" });
+            const shim = path.join(nodeBin, platform === "win32" ? "node.cmd" : "node");
+            yield* fs.writeFileString(
+              shim,
+              platform === "win32"
+                ? `@echo off\r\n"${node.replaceAll("%", "%%")}" %*\r\n`
+                : `#!/bin/sh\nexec '${node.replaceAll("'", "'\"'\"'")}' "$@"\n`,
+            );
+            yield* fs.chmod(shim, 0o755);
           }
+          const searchPath = `${nodeBin}${platform === "win32" ? ";" : ":"}${environment.PATH ?? environment.Path ?? environment.path ?? ""}`;
+          if (platform === "win32") setWindowsPath(env, searchPath);
+          else Object.assign(env, { PATH: searchPath });
           Object.assign(env, { ELECTRON_RUN_AS_NODE: "1" });
         }
       }
@@ -129,14 +142,27 @@ const make = Effect.gen(function* () {
           : /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|fetch failed/i.test(diagnostic)
             ? "network"
             : "installer-failed";
-        return yield* new SkillManagerError({ operation: "install", reason });
+        return yield* new SkillManagerError({
+          operation: "install",
+          reason,
+          diagnostics: `Installer exited with exit code ${result.code}.\n${sanitizeFailureText(NodeUtil.stripVTControlCharacters(diagnostic), 4000)}`,
+        });
       }
     },
     Effect.timeout("5 minutes"),
+    Effect.scoped,
     Effect.mapError((cause) =>
       isSkillManagerError(cause)
         ? cause
-        : new SkillManagerError({ operation: "install", reason: "installer-missing", cause }),
+        : new SkillManagerError({
+            operation: "install",
+            reason: cause._tag === "TimeoutError" ? "installer-failed" : "installer-missing",
+            diagnostics: sanitizeFailureText(
+              NodeUtil.stripVTControlCharacters(cause.message),
+              4000,
+            ),
+            cause,
+          }),
     ),
   );
 
