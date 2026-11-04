@@ -12,6 +12,247 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Environment and worktree": "环境与工作树",
+  "Open in editor": "在编辑器中打开",
+  "Project scripts": "项目脚本",
+  "Branch and pull request": "分支与合并请求",
+  Servers: "服务器",
+  Automations: "自动化",
+  Lineage: "派生关系",
+  "Side chats": "侧边对话",
+  "Restore device defaults": "恢复设备默认设置",
+  Word: "文字",
+  "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open.":
+    "对话完成、失败或需要输入或审批时发送系统通知。仅在此设备打开 T3 Code 时生效。",
+  "Notifications need a supported browser over HTTPS, or the desktop app. Sound only is still available.":
+    "通知需要使用支持 HTTPS 的浏览器或桌面应用，仍可仅使用声音提醒。",
+  "Notifications are unavailable in this browser. Sound only is still available.":
+    "此浏览器不支持通知，仍可仅使用声音提醒。",
+  "Allow notifications in your browser or system settings, then choose this option again. Sound only is still available.":
+    "请在浏览器或系统设置中允许通知后重新选择此选项，仍可仅使用声音提醒。",
+  "Delete now": "立即删除",
+  "Import and export settings": "导入与导出设置",
+  "Fallback model": "备用模型",
+  "Snooze options": "稍后提醒选项",
+  "Boring sidebar (group by project)": "简洁侧边栏（按项目分组）",
+  "Two-line folder rows": "文件夹双行显示",
+  "Linked environments": "关联环境",
+  "Simlock device hosts (alpha)": "Simlock 设备主机（内测版）",
+  "Quit shortcut": "退出快捷键",
+  "t3 command": "t3 命令",
+  "Mobile app": "移动应用",
+  "Privacy policy": "隐私政策",
+  "Include app text": "包含应用文本",
+  "Capture shortcut": "捕获快捷键",
+  "Capture sound": "捕获音效",
+  "Capture flash": "捕获闪光提示",
+  "Capture animations": "捕获动画",
+  "Usage providers": "用量来源",
+  "Health check interval": "健康检查间隔",
+  "Device sources": "设备来源",
+  "Agents can use devices": "允许智能体使用设备",
+  "Use devices": "使用设备",
+  "Local simulators": "本地模拟器",
+  "Browser profiles": "浏览器配置文件",
+  "Default browser profile": "默认浏览器配置文件",
+  "Git fetch interval": "Git 获取间隔",
+  "Environment icon": "环境图标",
+  "Local environment": "本地环境",
+  "Network access": "网络访问",
+  "Tailscale HTTPS": "Tailscale HTTPS",
+  "WSL backend": "WSL 后端",
+  "Hold webhooks while offline": "离线时保留 Webhook",
+  "Publish agent activity": "发布智能体活动",
+  "This machine": "本机",
+  "Load balancing": "负载均衡",
+  "Pull request sharing": "合并请求共享",
+  "Secret providers": "密钥提供商",
+  "Add secret provider": "添加密钥提供商",
+  "Archived threads": "已归档对话",
+  "Thread details": "对话详情",
+  "thread details": "对话详情",
+  "Show in thread details": "在对话详情中显示",
+  "Thread details: {enabled} of {total} on": "对话详情：已启用 {enabled}/{total} 项",
+  "{enabled} of {total} on": "已启用 {enabled}/{total} 项",
+  "Effort display": "推理强度显示",
+  "effort display": "推理强度显示",
+  "Word (default)": "文字（默认）",
+  Bars: "条形标记",
+  "Reconnect this environment before exporting.": "请重新连接此环境后再导出。",
+  "Reconnect this environment before importing.": "请重新连接此环境后再导入。",
+  "Choose an application settings file.": "请选择应用设置文件。",
+  "Choose a project settings file.": "请选择项目设置文件。",
+  'Theme "{id}" is not included in this backup.': "此备份中不包含主题“{id}”。",
+  "Import incomplete: some settings were saved, but a shortcut failed.":
+    "导入未完成：部分设置已保存，但快捷键保存失败。",
+  "Import incomplete: settings were saved, but the theme could not be applied.":
+    "导入未完成：设置已保存，但主题无法应用。",
+  "Import incomplete: a theme preference could not be saved.": "导入未完成：主题偏好无法保存。",
+  "This project is no longer available.": "此项目已不可用。",
+  "Could not transfer settings.": "无法迁移设置。",
+  "Settings transfer failed": "设置迁移失败",
+  "Import did not finish. Some values may already have been saved. {error}":
+    "导入未完成，部分值可能已保存。{error}",
+  "Repository import queued": "仓库导入已加入队列",
+  "Settings imported": "设置已导入",
+  Export: "导出",
+  Import: "导入",
+  "Import settings into {title}?": "将设置导入到 {title}？",
+  "Repositories will be cloned on the selected environment and their projects or workspace groups restored.":
+    "将在所选环境中克隆仓库，并恢复对应的项目或工作区组。",
+  "This replaces the checkout's project overrides. Missing settings inherit their defaults.":
+    "这将替换检出目录的项目覆盖设置。缺失的设置将继承默认值。",
+  "Imported values replace matching settings. Other settings stay as they are.":
+    "导入值会替换对应设置，其他设置保持不变。",
+  " Source: {name}. Project identifiers may differ when copying a template.":
+    " 来源：{name}。复制模板时项目标识可能不同。",
+  " This updates this client's preferences and the selected environment. Shortcuts are merged. Mobile-only preferences stay on mobile.":
+    " 这将更新当前客户端的偏好和所选环境。快捷键将合并，仅移动端使用的偏好保留在移动端。",
+  "This export has no clone information. Export it again from an updated environment.":
+    "此导出文件缺少克隆信息，请更新来源环境后重新导出。",
+  "Clone repositories and create projects or workspace groups": "克隆仓库并创建项目或工作区组",
+  "Clone destination directory": "克隆目标目录",
+  "Optional directory on this environment (default: ~/projects)":
+    "此环境中的可选目录（默认：~/projects）",
+  "{count} project configurations. Repositories are deduplicated. Saved imports retain failures for retry.":
+    "{count} 个项目配置。仓库将去重，导入记录会保留失败项以供重试。",
+  "Importing…": "正在导入…",
+  "Import settings": "导入设置",
+  "Review guide model": "审查导览模型",
+  "Show service interfaces before implementations. Skip test files unless they change behavior. Keep summaries to two sentences.":
+    "先展示服务接口，再展示实现。除非涉及行为变化，否则跳过测试文件。摘要限制为两句话。",
+  "Resume agent-owned conversations as T3 threads.": "将智能体原生会话恢复为 T3 对话。",
+  "Each account has its own Codex instance and sign-in. Choose the other account on the sign-in page.":
+    "每个账户使用独立的 Codex 实例和登录状态。请在登录页面选择其他账户。",
+  "Preparing managed setup.": "正在准备托管配置。",
+  "Shown in the provider list and model picker.": "显示在提供商列表和模型选择器中。",
+  "Optional marker shown in the picker.": "在选择器中显示的可选标记。",
+  "Show reasoning effort in the composer as its name, such as High, or as bars.":
+    "在输入框中以名称（如“高”）或条形标记显示推理强度。",
+  "Pairing link. Scan to open on another device": "配对链接，扫码可在其他设备上打开",
+  "Created for these cookies": "为这些 Cookie 新建",
+  "Existing profile": "已有配置文件",
+  "Preparing sign-in.": "正在准备登录。",
+  "Selected by T3 Code.": "由 T3 Code 选择。",
+  "Shared Codex config, sessions, and state.": "共享的 Codex 配置、会话和状态。",
+  "Shadow home path": "影子主目录路径",
+  "Import and export": "导入与导出",
+  "Back up app preferences, themes, shortcuts, environment defaults and project/workspace definitions as JSON. Credentials and machine paths are excluded.":
+    "将应用偏好、主题、快捷键、环境默认值和项目或工作区定义备份为 JSON，不包含凭据和机器路径。",
+  "Project configuration": "项目配置",
+  "Transfer this checkout's explicit project overrides and actions. Inherited defaults and shortcuts stay in the environment.":
+    "迁移此检出目录的项目覆盖设置和操作。继承的默认值与快捷键保留在环境中。",
+  "Choose one connected environment to import or export app settings.":
+    "选择一个已连接的环境以导入或导出应用设置。",
+  "Local identity: Git metadata is unavailable, or this project contains multiple repositories.":
+    "本地标识：Git 元数据不可用，或此项目包含多个仓库。",
+  "Couldn't load the WSL backend state.": "无法加载 WSL 后端状态。",
+  "WSL is unavailable, so Windows is running instead. Turn WSL off to clear this preference.":
+    "WSL 不可用，当前使用 Windows。关闭 WSL 可清除此偏好。",
+  "Run the selected WSL distro alongside Windows. Projects remain on their current filesystem.":
+    "同时运行所选 WSL 发行版与 Windows。项目保留在当前文件系统中。",
+  "Run only the WSL backend. T3 Code restarts when this changes.":
+    "仅运行 WSL 后端。更改后 T3 Code 将重启。",
+  "Authorized clients": "已授权客户端",
+  "Connect an environment to view its settings and access.": "连接环境以查看其设置与访问权限。",
+  "Reclaim freed database space": "回收数据库空闲空间",
+  "Old history is cleaned up automatically, but these databases still hold the freed space. Run the command on each machine to return it to disk; it pauses and restarts the background service. Quit the desktop app first if it hosts the environment.":
+    "旧历史会自动清理，但数据库仍占用已释放的空间。在各机器上运行命令可回收磁盘空间，期间后台服务会暂停并重启。若环境由桌面应用托管，请先退出桌面应用。",
+  "Resource History": "资源历史",
+  "Trace Diagnostics": "追踪诊断",
+  "Most Common Failures": "常见故障",
+  "Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders.":
+    "将侧边栏对话按项目文件夹分组。置顶对话保留在顶部，稍后提醒与已完成对话位于文件夹下方。",
+  "In the boring sidebar, show folder threads on two lines: the title, then the branch, pull request, and agent.":
+    "在简洁侧边栏中，将文件夹内对话分两行显示：第一行为标题，第二行为分支、合并请求和智能体。",
+  "Share a thread with a guest who watches it live in their browser and sends messages you approve. Sign in to T3 Connect to use guest links.":
+    "向访客分享对话，允许其在浏览器中实时查看并发送需你批准的消息。登录 T3 Connect 后可使用访客链接。",
+  "Could not load linked environments": "无法加载关联环境",
+  "Loading linked environments…": "正在加载关联环境…",
+  "No linked environments": "暂无关联环境",
+  "Link another machine running T3 Code, such as a VPS, so agents here can launch and drive threads there.":
+    "关联另一台运行 T3 Code 的机器（如 VPS），让此处的智能体能够在远程机器上启动和操作对话。",
+  "Third-party notices": "第三方声明",
+  "Commands that run in this project's checkout or its worktree, with optional shortcuts.":
+    "在项目检出目录或工作树中运行的命令，可设置快捷键。",
+  "Different actions across environments": "各环境的操作不同",
+  "Choose one environment to edit its list. Adding an action here adds it on every selected environment.":
+    "选择一个环境以编辑其列表。在此添加操作会应用到所有所选环境。",
+  "t3.json is invalid": "t3.json 无效",
+  "A t3.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values.":
+    "此检出目录中的 t3.json 无法解析，其中声明的操作和图标均被忽略。请检查 JSON 语法与图标值。",
+  "Used for new threads when the default model's provider is out of usage.":
+    "默认模型的提供商额度耗尽时，用于新对话。",
+  "Could not load saved imports": "无法加载已保存的导入记录",
+  "The shared name for this project group in the sidebar and thread lists.":
+    "此项目组在侧边栏和对话列表中共用的名称。",
+  "Pinned projects come first in project pickers.": "置顶项目在项目选择器中优先显示。",
+  "API keys, base URLs, and other per-instance CLI settings.":
+    "此实例的 API 密钥、基础 URL 和其他 CLI 设置。",
+  "Device that runs this provider.": "运行此提供商的设备。",
+  "Setup unavailable": "无法配置",
+  "Provider setup is read-only.": "提供商配置为只读。",
+  "Update this environment to manage Antigravity.": "更新此环境后可管理 Antigravity。",
+  "Install and manage Antigravity.": "安装与管理 Antigravity。",
+  "Resource monitor": "资源监控",
+  "Host & collection": "主机与采集",
+  "Resource timeline": "资源时间线",
+  "Live process tree": "实时进程树",
+  "Instrumented application I/O": "应用 I/O 监测",
+  "This environment was removed from T3 Connect. Run `t3 connect link` on the host to link it again.":
+    "此环境已从 T3 Connect 移除。在主机上运行 `t3 connect link` 可重新关联。",
+  "Keep webhook requests for up to 24 hours while this environment is offline, then deliver them. Off: T3 Connect only forwards requests and stores nothing.":
+    "环境离线时保留 Webhook 请求最多 24 小时，待恢复后投递。关闭时 T3 Connect 仅转发请求，不存储内容。",
+  "To edit these settings, pair this connection with both View relay and Manage relay permissions.":
+    "编辑这些设置需要以“查看中继”和“管理中继”权限配对此连接。",
+  "Unavailable selection": "所选项不可用",
+  "Task unavailable": "任务不可用",
+  "This task was deleted or belongs to a different project. Check your project filter.":
+    "此任务已删除或属于其他项目。请检查项目筛选条件。",
+  "No scheduled tasks": "暂无定时任务",
+  "No tasks match this environment and project selection.": "没有匹配所选环境和项目的任务。",
+  "Could not load scheduled tasks": "无法加载定时任务",
+  "Loading scheduled tasks…": "正在加载定时任务…",
+  "No secret providers configured.": "尚未配置密钥提供商。",
+  "Add a 1Password account, then pick it as the source of a provider variable.":
+    "添加 1Password 账户后，可将其选为提供商变量的来源。",
+  "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section.":
+    "将执行中和监控中的对话折叠到“进行中”分区。需要你处理时，对话会返回收件箱顶部。实验功能中的简洁侧边栏没有此分区。",
+  "Open pull requests and changes panels proactively": "主动打开合并请求与变更面板",
+  "Automatically resume threads when their usage limits reset. You can cancel auto-resume in each thread.":
+    "额度重置后自动继续对话。可在各对话中取消自动继续。",
+  "Snooze threads until their usage limits reset. Enable auto-resume to continue the agent after the reset.":
+    "将对话延后至额度重置。启用自动继续后，智能体将在额度重置后继续工作。",
+  "Installer for {name}": "{name} 的安装器",
+  "Include text and controls when the app makes them available.": "应用支持时包含文本与控件。",
+  "Choose the sound played when capture starts.": "选择开始捕获时播放的声音。",
+  "Show a gentle cue on the captured window.": "在被捕获的窗口上显示轻微提示。",
+  "Animate captured windows into your draft.": "通过动画将捕获的窗口加入草稿。",
+  "Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today.":
+    "所有稍后提醒菜单中的选项，按时间从近到远排列。星期几指今天之后的下一个对应日期。",
+  "Add a Guide tab to pull requests. An agent explains the changes and points out decisions that need review.":
+    "为合并请求添加导览页，由智能体介绍变更并指出需要审查的决策。",
+  "Model for source control text and branch or bookmark names. When disabled, use the text generation model configured for this environment.":
+    "用于生成源码管理文本、分支名或书签名的模型。关闭时使用此环境配置的文本生成模型。",
+  "Artifacts and logs": "产物与日志",
+  "Delete old browser artifacts": "删除旧浏览器产物",
+  "Delete saved browser captures after this many days. Older capture links will no longer open.":
+    "删除超过指定天数的浏览器捕获记录。旧捕获链接将无法打开。",
+  "Delete old rotated logs": "删除旧轮转日志",
+  "Delete inactive rotated log files after this many days. Current logs are kept.":
+    "删除超过指定天数的非活动轮转日志文件。保留当前日志。",
+  "OpenTelemetry export": "OpenTelemetry 导出",
+  "Enter an HTTP or HTTPS endpoint, or leave empty to disable export.":
+    "输入 HTTP 或 HTTPS 端点，留空以禁用导出。",
+  "Choose what the thread details card shows. You can also right-click the card.":
+    "选择对话详情卡片显示的内容，也可右键点击卡片进行设置。",
+  "Wrap long lines in code blocks, diffs, and file previews by default.":
+    "默认在代码块、差异和文件预览中对长行自动换行。",
+  "Wrap code, diffs, and file previews by default": "默认在代码、差异和文件预览中自动换行",
+  "Cursor account usage": "Cursor 账户用量",
+  "Read your existing Cursor CLI login from macOS Keychain to show account history and monthly limits. macOS may ask you to allow access.":
+    "从 macOS 钥匙串读取已有的 Cursor CLI 登录信息，以显示账户历史和月度额度。macOS 可能请求访问授权。",
+  "No hubs configured.": "尚未配置 Hub。",
   Communication: "通讯",
   DaXiang: "大象",
   "Send PR link": "发送 PR 链接",

@@ -331,8 +331,8 @@ export function SourceControlWritingSettingsSection() {
                       instanceEntries={instanceEntries}
                       modelOptionsByInstance={reviewGuideModelOptionsByInstance}
                       triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                      triggerAriaLabel="Review guide model"
-                      {...(mixedReviewGuideModel ? { triggerLabel: "Mixed" } : {})}
+                      triggerAriaLabel={t("Review guide model")}
+                      {...(mixedReviewGuideModel ? { triggerLabel: t("Mixed") } : {})}
                       getModelDisabledReason={writerModelDisabledReason}
                       onInstanceModelChange={(instanceId, model) => {
                         const reason = writerModelDisabledReason(instanceId, model);
@@ -434,11 +434,11 @@ export function SourceControlWritingSettingsSection() {
                 }}
                 rows={4}
                 defaultValue={mixedReviewGuideInstructions ? "" : settings.reviewGuideInstructions}
-                placeholder={
+                placeholder={t(
                   mixedReviewGuideInstructions
                     ? "Mixed. Enter instructions to apply to all selected targets."
-                    : "Show service interfaces before implementations. Skip test files unless they change behavior. Keep summaries to two sentences."
-                }
+                    : "Show service interfaces before implementations. Skip test files unless they change behavior. Keep summaries to two sentences.",
+                )}
                 onBlur={(event) => {
                   const value = event.target.value.trim();
                   if (
@@ -522,8 +522,8 @@ export function SourceControlWritingSettingsSection() {
                     instanceEntries={instanceEntries}
                     modelOptionsByInstance={modelOptionsByInstance}
                     triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    triggerAriaLabel="Source control writer model"
-                    {...(mixedWriterModel ? { triggerLabel: "Mixed" } : {})}
+                    triggerAriaLabel={t("Source control writer model")}
+                    {...(mixedWriterModel ? { triggerLabel: t("Mixed") } : {})}
                     {...(environmentId
                       ? {
                           onOpenProviderSetup: (instanceId: ProviderInstanceId) => {

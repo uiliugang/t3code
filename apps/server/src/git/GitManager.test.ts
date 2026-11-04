@@ -574,6 +574,7 @@ function runStackedAction(
     commitMessage?: string;
     featureBranch?: boolean;
     filePaths?: readonly string[];
+    language?: "en" | "zh-CN";
   },
   options?: Parameters<GitManager.GitManager["Service"]["runStackedAction"]>[1],
 ) {
@@ -2644,13 +2645,17 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const result = yield* runStackedAction(manager, {
         cwd: repoDir,
         action: "commit",
+        language: "zh-CN",
       });
 
       expect(result.branch.status).toBe("skipped_not_requested");
       expect(result.commit.status).toBe("created");
       expect(result.push.status).toBe("skipped_not_requested");
       expect(result.pr.status).toBe("skipped_not_requested");
-      expect(generatedPolicy).toMatchObject({ commitInstructions: "Use a direct tone." });
+      expect(generatedPolicy).toMatchObject({
+        commitInstructions: expect.stringContaining("Use a direct tone."),
+        changeRequestInstructions: expect.stringContaining("Simplified Chinese"),
+      });
       expect(result.toast).toMatchObject({
         description: "Implement stacked git actions",
         cta: {
@@ -3613,8 +3618,11 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         cwd: repoDir,
         action: "create_pr",
         threadId,
+        language: "en",
       });
 
+      expect(generatedPrompt).toContain("Write the change request title and body in English");
+      expect(generatedPrompt).toContain("preserve repository template headings");
       expect(generatedPrompt).toContain("Command: vp test run\nExit code: 0");
       expect(generatedPrompt).toContain("Tests 12 passed");
       expect(generatedPrompt).toContain("Make the PR writer see the thread");
@@ -3902,9 +3910,15 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
         const preview = yield* driver.getReviewDiffPreview({ cwd: worktreePath });
         const changes = preview.sources.find((source) => source.kind === "branch-range")!;
-        expect
-          .soft(changes.files)
-          .toEqual([{ path: "feature.txt", previousPath: null, additions: 1, deletions: 0 }]);
+        expect.soft(changes.files).toEqual([
+          {
+            path: "feature.txt",
+            previousPath: null,
+            additions: 1,
+            deletions: 0,
+            changeType: "new",
+          },
+        ]);
         yield* runGit(worktreePath, ["push", "-u", "origin", "feature/remote-base"]);
 
         const generatedInputs: TextGeneration.PrContentGenerationInput[] = [];

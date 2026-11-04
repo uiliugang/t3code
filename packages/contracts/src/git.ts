@@ -127,6 +127,7 @@ export const VcsPullInput = Schema.Struct({
 export type VcsPullInput = typeof VcsPullInput.Type;
 
 export const GitRunStackedActionInput = Schema.Struct({
+  language: Schema.optional(Schema.Literals(["en", "zh-CN"])),
   actionId: TrimmedNonEmptyStringSchema,
   cwd: TrimmedNonEmptyStringSchema,
   repositoryTarget: Schema.optional(ThreadRepositoryTarget),

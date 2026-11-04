@@ -116,6 +116,7 @@ export type GitBranchPullRequest = NonNullable<VcsStatusResult["pr"]> & {
 };
 
 interface SourceControlTextGenerationSettings {
+  readonly language?: GitRunStackedActionInput["language"];
   readonly modelSelection: ModelSelection;
   readonly style: SourceControlWritingStyleSettings;
 }
@@ -851,56 +852,67 @@ export const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => []),
       );
 
-  const resolveStylePolicy = Effect.fn("GitManager.resolveStylePolicy")(function* (
-    cwd: string,
-    settings: SourceControlTextGenerationSettings,
-  ) {
-    switch (settings.style.mode) {
-      case "conventional_commits":
-        return conventionalCommitsTextGenerationPolicy;
-      case "custom":
-        return customTextGenerationPolicy(
-          settings.style.customInstructions
-            ? {
-                commitInstructions: settings.style.customInstructions,
-                changeRequestInstructions: settings.style.customInstructions,
-              }
-            : {},
-        );
-      case "repo_conventions": {
-        const subjects = yield* readRecentCommitSubjects(cwd);
-        const agentInstructions = yield* readRepositoryInstructions(cwd, "AGENTS.md");
-        const isClaudeWriter =
-          settings.modelSelection.instanceId === "claudeAgent" ||
-          (yield* providerRegistry.getProviders).some(
-            (provider) =>
-              provider.instanceId === settings.modelSelection.instanceId &&
-              provider.driver === "claudeAgent",
+  const resolveStylePolicy = Effect.fn("GitManager.resolveStylePolicy")(
+    function* (cwd: string, settings: SourceControlTextGenerationSettings) {
+      switch (settings.style.mode) {
+        case "conventional_commits":
+          return conventionalCommitsTextGenerationPolicy;
+        case "custom":
+          return customTextGenerationPolicy(
+            settings.style.customInstructions
+              ? {
+                  commitInstructions: settings.style.customInstructions,
+                  changeRequestInstructions: settings.style.customInstructions,
+                }
+              : {},
           );
-        const claudeInstructions = isClaudeWriter
-          ? yield* readRepositoryInstructions(cwd, "CLAUDE.md")
-          : "";
-        const examples = [
-          ...(subjects.length > 0
-            ? [["Recent commit subjects from this repository:", ...subjects].join("\n")]
-            : []),
-          ...(agentInstructions ? [`Local AGENTS.md:\n${agentInstructions}`] : []),
-          // CLAUDE.md is often a symlink or copy of AGENTS.md; skip the duplicate.
-          ...(claudeInstructions && claudeInstructions !== agentInstructions
-            ? [`Local CLAUDE.md:\n${claudeInstructions}`]
-            : []),
-        ].join("\n\n");
-        if (!examples) {
-          return repositoryConventionsTextGenerationPolicy;
+        case "repo_conventions": {
+          const subjects = yield* readRecentCommitSubjects(cwd);
+          const agentInstructions = yield* readRepositoryInstructions(cwd, "AGENTS.md");
+          const isClaudeWriter =
+            settings.modelSelection.instanceId === "claudeAgent" ||
+            (yield* providerRegistry.getProviders).some(
+              (provider) =>
+                provider.instanceId === settings.modelSelection.instanceId &&
+                provider.driver === "claudeAgent",
+            );
+          const claudeInstructions = isClaudeWriter
+            ? yield* readRepositoryInstructions(cwd, "CLAUDE.md")
+            : "";
+          const examples = [
+            ...(subjects.length > 0
+              ? [["Recent commit subjects from this repository:", ...subjects].join("\n")]
+              : []),
+            ...(agentInstructions ? [`Local AGENTS.md:\n${agentInstructions}`] : []),
+            // CLAUDE.md is often a symlink or copy of AGENTS.md; skip the duplicate.
+            ...(claudeInstructions && claudeInstructions !== agentInstructions
+              ? [`Local CLAUDE.md:\n${claudeInstructions}`]
+              : []),
+          ].join("\n\n");
+          if (!examples) {
+            return repositoryConventionsTextGenerationPolicy;
+          }
+          return {
+            ...repositoryConventionsTextGenerationPolicy,
+            commitInstructions: `${repositoryConventionsTextGenerationPolicy.commitInstructions}\n\n${examples}`,
+            changeRequestInstructions: `${repositoryConventionsTextGenerationPolicy.changeRequestInstructions}\n\n${examples}`,
+          };
         }
-        return {
-          ...repositoryConventionsTextGenerationPolicy,
-          commitInstructions: `${repositoryConventionsTextGenerationPolicy.commitInstructions}\n\n${examples}`,
-          changeRequestInstructions: `${repositoryConventionsTextGenerationPolicy.changeRequestInstructions}\n\n${examples}`,
-        };
       }
-    }
-  });
+    },
+    (effect, _cwd, settings) =>
+      effect.pipe(
+        Effect.map((policy) => {
+          if (!settings.language) return policy;
+          const language = settings.language === "zh-CN" ? "Simplified Chinese" : "English";
+          return {
+            ...policy,
+            commitInstructions: `${policy.commitInstructions ?? ""}\nWrite the commit subject and body in ${language}, regardless of the language of repository examples. Keep branch names in ASCII kebab-case.`,
+            changeRequestInstructions: `${policy.changeRequestInstructions ?? ""}\nWrite the change request title and body in ${language}, regardless of the language of repository examples. Translate default Summary and Testing headings into that language; preserve repository template headings.`,
+          };
+        }),
+      ),
+  );
   const randomUUIDv4 = (cwd: string) =>
     crypto.randomUUIDv4().pipe(
       Effect.mapError(
@@ -3147,6 +3159,7 @@ export const make = Effect.gen(function* () {
               ? Effect.succeed({
                   modelSelection: settings.textGenerationModelSelection,
                   style: settings.sourceControlWritingStyle,
+                  language: input.language,
                 })
               : providerRegistry.getProviders.pipe(
                   Effect.map((providers) => ({
@@ -3156,6 +3169,7 @@ export const make = Effect.gen(function* () {
                       projectId,
                     ),
                     style: settings.sourceControlWritingStyle,
+                    language: input.language,
                   })),
                 ),
           ),

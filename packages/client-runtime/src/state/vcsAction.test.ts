@@ -515,7 +515,7 @@ describe("vcsActionState", () => {
             ),
           ),
         );
-        const manager = createVcsActionManager(runtime);
+        const manager = createVcsActionManager(runtime, () => "zh-CN");
         const registry = yield* Effect.acquireRelease(Effect.sync(AtomRegistry.make), (registry) =>
           Effect.sync(() => registry.dispose()),
         );
@@ -538,7 +538,14 @@ describe("vcsActionState", () => {
         expect(registry.get(state).revision).toBe(1);
         expect(removed).toEqual([`${environmentId}:*`]);
         expect(rpcInputs).toEqual([
-          { actionId: successfulTransportActionId, cwd, action, threadId, projectId },
+          {
+            actionId: successfulTransportActionId,
+            cwd,
+            action,
+            threadId,
+            projectId,
+            language: "zh-CN",
+          },
         ]);
 
         const failedResult = yield* Effect.promise(() =>
