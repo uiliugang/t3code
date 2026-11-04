@@ -69,10 +69,10 @@ export function RepositoryDetails({
   const name = roots.map((binding) => binding.alias).join(" / ");
   return (
     <section aria-label={name} className="min-w-0 border-t border-border/50">
-      <div className="flex min-w-0 items-start gap-1 pr-3">
+      <div className="flex min-w-0 items-start">
         <button
           type="button"
-          className="flex min-w-0 flex-1 flex-col gap-1 py-3 pr-1 pl-4 text-left hover:bg-accent/40"
+          className="flex min-w-0 flex-1 flex-col gap-1 px-4 py-3 text-left hover:bg-accent/40"
           onClick={onToggle}
           aria-expanded={expanded}
         >
@@ -81,7 +81,7 @@ export function RepositoryDetails({
               <FolderGit2Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             ) : null}
             <Tooltip>
-              <TooltipTrigger render={<span className="min-w-0 truncate" />}>
+              <TooltipTrigger render={<span className="min-w-0 flex-1 truncate" />}>
                 <ProjectLabel name={name} />
               </TooltipTrigger>
               <TooltipPopup>{resource.checkoutRoot}</TooltipPopup>
@@ -91,7 +91,6 @@ export function RepositoryDetails({
                 {t("Primary repository")}
               </Badge>
             ) : null}
-            <span className="flex-1" />
             {expanded ? (
               <ChevronDownIcon className="size-3.5 shrink-0" />
             ) : (
@@ -116,13 +115,15 @@ export function RepositoryDetails({
             </span>
           ) : null}
         </button>
-        {showOpenInPicker || showTerminalButton ? (
-          <div className="shrink-0 py-3">
+      </div>
+      {expanded ? (
+        <div data-workspace-repository-content className="flex min-w-0 flex-col pb-2">
+          {showOpenInPicker || showTerminalButton ? (
             <OpenInPicker
               {...openInOptions}
               environmentId={environmentId}
               openInCwd={resource.checkoutRoot}
-              compact
+              displayMode="panel"
               canOpenTerminal={terminals.canWrite()}
               onOpenTerminal={
                 showTerminalButton
@@ -143,11 +144,7 @@ export function RepositoryDetails({
                   : undefined
               }
             />
-          </div>
-        ) : null}
-      </div>
-      {expanded ? (
-        <div data-workspace-repository-content className="flex min-w-0 flex-col pb-2">
+          ) : null}
           {showBranch ? (
             <BranchToolbarBranchSelector
               repository={{ target, cwd: resource.checkoutRoot }}
