@@ -335,8 +335,9 @@ const make = Effect.gen(function* () {
           input.source.registry,
         );
       }
+      root = yield* fs.realPath(root);
       const candidates: Array<{ name: string; description: string; directory: string }> = [];
-      let visited = 0;
+      const visited = new Set<string>();
       const discover = Effect.fn("SkillPackages.discover")(function* (
         directory: string,
         depth: number,
@@ -346,9 +347,19 @@ const make = Effect.gen(function* () {
         | import("effect/PlatformError").PlatformError
         | import("effect/Schema").SchemaError
       > {
-        if (++visited > 2000 || depth > 6) return;
+        const real = yield* fs.realPath(directory);
+        if (!inside(root, real))
+          return yield* new SkillManagerError({ operation: "discover", reason: "invalid-package" });
+        if (visited.has(real) || visited.size >= 2000 || depth > 6) return;
+        visited.add(real);
         if (yield* fs.exists(path.join(directory, "SKILL.md"))) {
-          const data = yield* readMetadata(directory);
+          const metadata = yield* readMetadata(directory).pipe(Effect.result);
+          if (metadata._tag === "Failure") {
+            if (directory === root) return yield* metadata.failure;
+            // Nested SKILL.md files can be templates rather than installable skills.
+            return;
+          }
+          const data = metadata.success;
           if (
             !input.skill ||
             input.locator === "mt" ||
@@ -356,7 +367,7 @@ const make = Effect.gen(function* () {
             path.basename(directory) === input.skill
           )
             candidates.push({ ...data, directory });
-          return;
+          if (input.skill && candidates.length) return;
         }
         for (const entry of (yield* fs.readDirectory(directory)).toSorted()) {
           if (entry === ".git" || entry === "node_modules") continue;
