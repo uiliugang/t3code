@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as WorkspaceCleanup from "./WorkspaceCleanup.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -38,7 +39,7 @@ const infrastructure = Layer.mergeAll(
 ).pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "workspace-preparation-" })),
   Layer.provide(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.live.each([

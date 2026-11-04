@@ -23,7 +23,7 @@ import {
 } from "../threads/thread-settings-options";
 import { SettingsScreen } from "./components/SettingsScreen";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { BranchNamingSettings } from "./components/BranchNamingSettings";
@@ -221,6 +221,7 @@ export function SettingsEnvironmentMaintenanceRouteScreen() {
 
 function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   const t = useUiTranslation();
+  const environmentMenu = useSettingsEnvironmentMenu();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
@@ -343,10 +344,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen
-        title={PAGE_TITLES[props.page]}
-        trailing={<AndroidSettingsEnvironmentFilter />}
-      >
+      <SettingsScreen title={PAGE_TITLES[props.page]} menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -377,7 +375,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               {props.page === "threads" ? (
                 <>
                   <SettingsSection
-                    title="Default workspace"
+                    title={t("Default workspace")}
                     footer={managed("defaultThreadEnvMode")}
                     trailing={
                       pendingWrites === 0 && isMixed("defaultThreadEnvMode") ? (
@@ -403,7 +401,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     ))}
                   </SettingsSection>
                   <SettingsSection
-                    title="Default permissions"
+                    title={t("Default permissions")}
                     footer={managed("defaultRuntimeMode")}
                     trailing={
                       pendingWrites === 0 && uniform("defaultRuntimeMode") === null ? (
@@ -426,7 +424,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     ))}
                   </SettingsSection>
                   <SettingsSection
-                    title="Response streaming"
+                    title={t("Response streaming")}
                     footer={managed("responseStreamingMode")}
                     trailing={
                       pendingWrites === 0 && uniform("responseStreamingMode") === null ? (
@@ -446,10 +444,10 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       />
                     ))}
                   </SettingsSection>
-                  <SettingsSection title="Preview browser">
+                  <SettingsSection title={t("Preview browser")}>
                     <SettingsSwitchRow
                       icon="globe"
-                      label="Agent browser access"
+                      label={t("Agent browser access")}
                       subtitle={managedSubtitle(
                         "enableAgentBrowserAccess",
                         "Allow agents to use the in-app preview browser.",
@@ -471,10 +469,10 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       canWrite={(environmentId) => writableEnvironments.has(environmentId)}
                     />
                   )}
-                  <SettingsSection title="Pull requests">
+                  <SettingsSection title={t("Pull requests")}>
                     <SettingsSwitchRow
                       icon={PullRequestGlyph.merged}
-                      label="Remove agent credits when merging"
+                      label={t("Remove agent credits when merging")}
                       subtitle={managedSubtitle(
                         "removeAgentCreditsOnMerge",
                         "Remove recognized agent credits from merge and squash messages on hosts that support it, keeping human co-authors. Includes auto-merge. Excludes merge queues, stack merges, and existing commits.",
@@ -484,10 +482,10 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       onValueChange={(value) => write({ removeAgentCreditsOnMerge: value })}
                     />
                   </SettingsSection>
-                  <SettingsSection title="Default branch">
+                  <SettingsSection title={t("Default branch")}>
                     <SettingsSwitchRow
                       icon="arrow.down.circle"
-                      label="Automatically pull"
+                      label={t("Automatically pull")}
                       subtitle={managedSubtitle(
                         "defaultAutoPull",
                         "Keep the default branch current when there are no local changes.",
@@ -503,7 +501,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               {props.page === "worktrees" ? (
                 <>
                   <SettingsSection
-                    title="Branches"
+                    title={t("Branches")}
                     footer={t(
                       "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.",
                     )}
@@ -535,7 +533,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       onValueChange={(value) => write({ hideMergedRemoteBranches: value })}
                     />
                   </SettingsSection>
-                  <SettingsSection title="Creation">
+                  <SettingsSection title={t("Creation")}>
                     <SettingsSwitchRow
                       icon="arrow.triangle.branch"
                       label={t("Start from remote")}
@@ -559,7 +557,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     />
                   </SettingsSection>
                   <SettingsSection
-                    title="Worktree submodules"
+                    title={t("Worktree submodules")}
                     footer={managed("worktreeSubmodules")}
                     trailing={
                       pendingWrites === 0 && isMixed("worktreeSubmodules") ? (
@@ -596,7 +594,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     }}
                     onChange={write}
                   />
-                  <SettingsSection title="Cleanup">
+                  <SettingsSection title={t("Cleanup")}>
                     <SettingsSwitchRow
                       icon="trash"
                       label={t("Automatically delete merged branches and worktrees")}
@@ -641,7 +639,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     />
                   ) : null}
                   {!projectSelected ? (
-                    <SettingsSection title="Manage environments">
+                    <SettingsSection title={t("Manage environments")}>
                       {selectedTargets.map((target) => (
                         <SettingsRow
                           key={target.environmentId}
@@ -657,10 +655,10 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       ))}
                     </SettingsSection>
                   ) : null}
-                  <SettingsSection title="Updates">
+                  <SettingsSection title={t("Updates")}>
                     <SettingsSwitchRow
                       icon="arrow.clockwise"
-                      label="Check provider updates"
+                      label={t("Check provider updates")}
                       subtitle={managedSubtitle(
                         "enableProviderUpdateChecks",
                         projectSelected
@@ -674,7 +672,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     <View className="border-t border-border-subtle">
                       <SettingsSwitchRow
                         icon="arrow.uturn.forward"
-                        label="Continue after restart"
+                        label={t("Continue after restart")}
                         subtitle={managedSubtitle(
                           "continueThreadsAfterServerUpdate",
                           "Resume interrupted threads after an update or restart.",
@@ -698,6 +696,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 }
 
 function MixedValuesLabel(props: { readonly projectSelected: boolean }) {
+  const t = useUiTranslation();
   return (
     <Text
       accessibilityLabel={
@@ -707,13 +706,14 @@ function MixedValuesLabel(props: { readonly projectSelected: boolean }) {
       }
       className="px-2 text-sm text-foreground-muted android:px-4"
     >
-      Mixed
+      {t("Mixed")}
     </Text>
   );
 }
 
 /** Locked settings are refused when saved; say so before the user tries. */
 function ManagedPolicyNotice(props: { readonly targets: readonly ScopedMobileSettingsTarget[] }) {
+  const t = useUiTranslation();
   const organizations = [
     ...new Set(
       props.targets.flatMap((target) => {
@@ -727,7 +727,9 @@ function ManagedPolicyNotice(props: { readonly targets: readonly ScopedMobileSet
   if (organizations.length === 0) return null;
   return (
     <Text className="px-2 text-sm text-foreground-muted android:px-4">
-      Some settings are managed by {organizations.join(", ")} and cannot be changed here.
+      {t("Some settings are managed by")}
+      {organizations.join(", ")}
+      {t("and cannot be changed here.")}
     </Text>
   );
 }

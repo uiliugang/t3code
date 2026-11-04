@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -218,7 +219,7 @@ describe("ProjectConfigurationService", () => {
         expect((yield* snapshot())[1]?.phase).toBe("done");
         expect(test.attempts).toHaveLength(1);
       }).pipe(Effect.provide(test.layer));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -298,7 +299,7 @@ describe("ProjectConfigurationService", () => {
           );
           expect(changedDestination._tag).toBe("Failure");
         }).pipe(Effect.provide(test.layer));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -353,7 +354,7 @@ describe("ProjectConfigurationService", () => {
           const fs = yield* FileSystem.FileSystem;
           expect(yield* fs.exists(partial!.repositories[1]!.stagingPath!)).toBe(true);
         }).pipe(Effect.scoped, Effect.provide(Layer.fresh(test.layer)));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -386,7 +387,7 @@ describe("ProjectConfigurationService", () => {
           expect((yield* snapshot())[0]?.phase).toBe("done");
           expect(test.attempts).toHaveLength(2);
         }).pipe(Effect.scoped, Effect.provide(Layer.fresh(test.layer)));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -417,7 +418,7 @@ describe("ProjectConfigurationService", () => {
           );
           expect(yield* fs.exists(repository.stagingPath!)).toBe(true);
         }).pipe(Effect.provide(test.layer));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reuses a completed staged clone when moving it into place failed", () =>
@@ -463,7 +464,7 @@ describe("ProjectConfigurationService", () => {
           test.layer.pipe(Layer.provide(Layer.succeed(FileSystem.FileSystem, fileSystem))),
         ),
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("exports every repository in a workspace without credentials or machine paths", () =>
@@ -544,7 +545,7 @@ describe("ProjectConfigurationService", () => {
         expect(roots[1]!.defaultBaseRef).toBe("develop");
         expect(roots.every((root) => !("sourcePath" in root))).toBe(true);
       }).pipe(Effect.provide(test.layer));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -622,6 +623,6 @@ describe("ProjectConfigurationService", () => {
               ?.defaultProjectScripts?.[0]?.repositoryRootIds,
           ).toEqual([imported.workspaceConfig!.primaryRootId]);
         }).pipe(Effect.provide(test.layer));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

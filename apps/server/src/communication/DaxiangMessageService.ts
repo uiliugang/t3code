@@ -5,7 +5,7 @@ import {
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -49,7 +49,7 @@ export class DaxiangMessageService extends Context.Service<
 
 const make = Effect.gen(function* () {
   const settings = yield* ServerSettings.ServerSettingsService;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const http = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const tokenLock = yield* Semaphore.make(1);
   let cached: { clientId: string; secret: string; token: string; expires: number } | undefined;
@@ -76,7 +76,7 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       if (cached?.clientId === clientId && cached.secret === clientSecret && now < cached.expires)
         return cached.token;
-      const jti = yield* crypto.randomUUIDv4();
+      const jti = yield* random.uuidV4();
       const assertion = yield* Effect.tryPromise(() =>
         new SignJWT({})
           .setProtectedHeader({ alg: "HS256" })

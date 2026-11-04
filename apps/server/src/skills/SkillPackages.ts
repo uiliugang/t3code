@@ -1,4 +1,4 @@
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Context from "effect/Context";
@@ -67,7 +67,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const home = yield* HostProcess.HomeDirectory;
   const environment = yield* HostProcess.Environment;
-  const crypto = yield* Crypto.Crypto;
+  const digester = yield* Digest.Digest;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig.ServerConfig;
   const platform = yield* HostProcess.Platform;
@@ -236,7 +236,9 @@ const make = Effect.gen(function* () {
           if (++files > 1000 || bytes > 25 * 1024 * 1024)
             return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
           const contents = yield* fs.readFile(file);
-          const digest = Hex.encode(yield* crypto.digest("SHA-256", contents).pipe(Effect.orDie));
+          const digest = Hex.encode(
+            yield* digester.digest(Digest.sha256, contents).pipe(Effect.orDie),
+          );
           hashes.push(
             `${path.join(relative, name).split(path.sep).join("/")}\0${info.mode & 0o111}\0${digest}`,
           );
@@ -262,8 +264,8 @@ const make = Effect.gen(function* () {
     });
     yield* copy(sourceRoot, "", new Set());
     const digest = Hex.encode(
-      yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(hashes.join("\0")))
+      yield* digester
+        .digest(Digest.sha256, new TextEncoder().encode(hashes.join("\0")))
         .pipe(Effect.orDie),
     );
     return {

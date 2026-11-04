@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { projectImportFailureMessage, type EnvironmentId } from "@t3tools/contracts";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -8,6 +9,7 @@ import { SettingsRow } from "./settingsLayout";
 import { requestConfirmDialog } from "../../confirmDialog";
 
 export function ProjectImportHistory({ environmentId }: { environmentId: EnvironmentId }) {
+  const t = useUiTranslation();
   const imports = useEnvironmentQuery(
     sourceControlEnvironment.projectImports({ environmentId, input: {} }),
   );
@@ -22,7 +24,7 @@ export function ProjectImportHistory({ environmentId }: { environmentId: Environ
   return (
     <>
       {imports.error ? (
-        <SettingsRow title="Could not load saved imports" description={imports.error} />
+        <SettingsRow title={t("Could not load saved imports")} description={imports.error} />
       ) : null}
       {imports.data?.map((record) => (
         <SettingsRow

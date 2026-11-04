@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { PlusIcon, XIcon } from "lucide-react";
 import { useRef, useState, type PointerEvent } from "react";
 
@@ -16,6 +17,7 @@ function ProviderCustomColorPanel(props: {
   readonly onCommit: (value: string) => void;
   readonly showAddButton: boolean;
 }) {
+  const t = useUiTranslation();
   const { onCommit, onPreview } = props;
   const [hsv, setHsv] = useState(() => hexToHsv(props.value));
   const currentColor = hsvToHex(hsv.h, hsv.s, hsv.v);
@@ -57,7 +59,7 @@ function ProviderCustomColorPanel(props: {
     <div className="w-56 bg-popover">
       <div onPointerDownCapture={startDrag}>
         <ColorSaturationValuePlane
-          label="Accent color"
+          label={t("Accent color")}
           value={hsv}
           onChange={changeHsv}
           onInteractionEnd={endDrag}
@@ -173,6 +175,7 @@ export function ProviderAccentColorPicker(props: {
   readonly description?: string;
   readonly layout?: "stacked" | "inline";
 }) {
+  const t = useUiTranslation();
   const { description, displayName, layout = "stacked", onCommit } = props;
   const value = props.value ?? "";
   // The draft shows a dragged or just-committed color only while `value` is
@@ -219,7 +222,7 @@ export function ProviderAccentColorPicker(props: {
 
   return (
     <div className="grid gap-2">
-      <span className="text-xs font-medium text-foreground">Accent color</span>
+      <span className="text-xs font-medium text-foreground">{t("Accent color")}</span>
       {picker}
       {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
     </div>

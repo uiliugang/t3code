@@ -21,7 +21,8 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -121,7 +122,8 @@ function pauseImport(record: SavedImport): SavedImport {
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const digester = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const home = yield* HostProcess.HomeDirectory;
   const config = yield* ServerConfig.ServerConfig;
   const projects = yield* ProjectService.ProjectService;
@@ -438,7 +440,7 @@ const make = Effect.gen(function* () {
           project =
             Option.getOrUndefined(sameWorkspace) ??
             (yield* projects.create({
-              commandId: CommandId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
+              commandId: CommandId.make(yield* random.uuidV4().pipe(Effect.orDie)),
               projectId: state.projectId,
               title: definition.name,
               workspaceRoot: primary.sourcePath,
@@ -488,7 +490,7 @@ const make = Effect.gen(function* () {
             !sameWorkspaceConfig(project.workspaceConfig, desiredWorkspace))
         ) {
           project = yield* projects.update({
-            commandId: CommandId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
+            commandId: CommandId.make(yield* random.uuidV4().pipe(Effect.orDie)),
             projectId: project.id,
             workspaceConfig: desiredWorkspace,
             expectedWorkspaceVersion: project.workspaceConfig?.version ?? 0,
@@ -614,7 +616,9 @@ const make = Effect.gen(function* () {
           keys.push(key);
           if (!rootStates.has(key)) {
             const hash = Hex.encode(
-              yield* crypto.digest("SHA-256", new TextEncoder().encode(key)).pipe(Effect.orDie),
+              yield* digester
+                .digest(Digest.sha256, new TextEncoder().encode(key))
+                .pipe(Effect.orDie),
             );
             rootStates.set(key, {
               key,
@@ -630,7 +634,7 @@ const make = Effect.gen(function* () {
         rootKeys.push(keys);
       }
       const projectStates = yield* Effect.forEach(configurations, (project) =>
-        crypto.randomUUIDv4().pipe(
+        random.uuidV4().pipe(
           Effect.orDie,
           Effect.map((uuid) => ({
             projectId: ProjectId.make(uuid),

@@ -1,11 +1,14 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { useId, useRef, useState } from "react";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import {
+  isSecretReference,
   type DeviceEasAccount,
   type EasDeviceHostConfig,
   type EnvironmentId,
+  type SettingsSecretValue,
 } from "@t3tools/contracts";
 import { XIcon } from "lucide-react";
 
@@ -25,7 +28,7 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { parseEasDeviceHostDraft } from "./easDeviceHostsSettings.logic";
-import { SecretInput } from "./SecretInput";
+import { SecretSourceInput, useSecretSources } from "./SecretSourceInput";
 
 const FROM_THREAD_PROJECT = "thread-project";
 
@@ -54,12 +57,16 @@ export function EasDeviceHostEditor(props: {
   onSave: (host: EasDeviceHostConfig) => void;
   onClose: () => void;
 }) {
+  const t = useUiTranslation();
   const check = useAtomCommand(deviceEnvironment.easAccount, { reportFailure: false });
   const [draft, setDraft] = useState(props.host);
   const tokenId = useId();
+  const secretSources = useSecretSources(props.environmentId);
+  const [tokenValid, setTokenValid] = useState(true);
+  const [tokenInputKey, setTokenInputKey] = useState(0);
   // A saved token arrives redacted; only a replacement or a clear changes it.
   const [token, setToken] = useState<
-    { kind: "saved" } | { kind: "new"; value: string } | { kind: "cleared" }
+    { kind: "saved" } | { kind: "new"; value: SettingsSecretValue } | { kind: "cleared" }
   >(props.host.accessToken ? { kind: "saved" } : { kind: "cleared" });
   // Checking on open names the saved project and shows a rejected credential
   // before anything is changed. A manual check or a token edit replaces it.
@@ -87,13 +94,15 @@ export function EasDeviceHostEditor(props: {
     accessToken:
       token.kind === "saved" ? props.host.accessToken : token.kind === "new" ? token.value : "",
   };
-  const valid = Option.isSome(parseEasDeviceHostDraft(next));
+  const valid = tokenValid && Option.isSome(parseEasDeviceHostDraft(next));
   // Why Save is off, for the limits the fields' ranges do not show.
   const problem = valid
     ? null
-    : draft.maxSessionMinutes > 0 && draft.idleMinutes >= draft.maxSessionMinutes
-      ? "Idle minutes must be smaller than session minutes."
-      : "Give the host a label and limits within the ranges shown.";
+    : !tokenValid
+      ? "Enter a valid secret reference."
+      : draft.maxSessionMinutes > 0 && draft.idleMinutes >= draft.maxSessionMinutes
+        ? "Idle minutes must be smaller than session minutes."
+        : "Give the host a label and limits within the ranges shown.";
   const apps = account.status === "signed-in" ? account.account.apps : [];
 
   // A check answers for the credential it was asked about: a later check or a
@@ -169,13 +178,14 @@ export function EasDeviceHostEditor(props: {
           <DialogHeader>
             <DialogTitle>{props.isNew ? "Add EAS host" : "Edit EAS host"}</DialogTitle>
             <DialogDescription>
-              The environment's server signs in to Expo and starts the sessions. Without a token
-              here it uses EXPO_TOKEN, then its eas login.
+              {t(
+                "The environment's server signs in to Expo and starts the sessions. Without a token here it uses EXPO_TOKEN, then its eas login.",
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <label className="block space-y-1.5 text-sm">
-              <span>Name</span>
+              <span>{t("Name")}</span>
               <Input
                 autoFocus
                 required
@@ -189,16 +199,33 @@ export function EasDeviceHostEditor(props: {
             </label>
             <div className="space-y-1.5 text-sm">
               <label htmlFor={tokenId} className="block">
-                Expo access token
+                {t("Expo access token")}
               </label>
               <div className="flex items-center gap-2">
-                <SecretInput
+                <SecretSourceInput
+                  key={tokenInputKey}
                   id={tokenId}
+                  aria-label={t("Expo access token")}
                   className="min-w-0 flex-1"
-                  configured={token.kind === "saved"}
-                  value={token.kind === "new" ? token.value : ""}
+                  configured={token.kind === "saved" && typeof props.host.accessToken === "string"}
+                  value={
+                    token.kind === "new"
+                      ? token.value
+                      : token.kind === "saved" && isSecretReference(props.host.accessToken)
+                        ? props.host.accessToken
+                        : ""
+                  }
+                  sources={secretSources}
+                  onValidityChange={(valid) => {
+                    setTokenValid(valid);
+                    resetAccount();
+                  }}
+                  onSecretChange={(secret) => {
+                    setToken(secret ? { kind: "new", value: secret } : { kind: "cleared" });
+                    resetAccount();
+                  }}
                   disabled={props.busy}
-                  placeholder="Optional"
+                  placeholder={t("Optional")}
                   onChange={(event) => {
                     const value = event.target.value;
                     // Emptying the field is not clearing the saved token; the
@@ -218,9 +245,11 @@ export function EasDeviceHostEditor(props: {
                     type="button"
                     size="icon-sm"
                     variant="ghost-destructive"
-                    aria-label="Clear access token"
+                    aria-label={t("Clear access token")}
                     onClick={() => {
                       setToken({ kind: "cleared" });
+                      setTokenValid(true);
+                      setTokenInputKey((key) => key + 1);
                       resetAccount();
                     }}
                   >
@@ -243,14 +272,15 @@ export function EasDeviceHostEditor(props: {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={props.busy || account.status === "checking"}
+                disabled={props.busy || !tokenValid || account.status === "checking"}
                 onClick={() => void checkAccount()}
               >
-                {account.status === "checking" ? <Spinner size="xs" /> : null} Check account
+                {account.status === "checking" ? <Spinner size="xs" /> : null}
+                {t("Check account")}
               </Button>
             </div>
             <div className="space-y-1.5 text-sm">
-              <span>EAS project</span>
+              <span>{t("EAS project")}</span>
               <Select
                 value={draft.appId ?? FROM_THREAD_PROJECT}
                 disabled={props.busy}
@@ -262,7 +292,7 @@ export function EasDeviceHostEditor(props: {
                   });
                 }}
               >
-                <SelectTrigger size="sm" aria-label="EAS project">
+                <SelectTrigger size="sm" aria-label={t("EAS project")}>
                   <SelectValue>
                     {(value: string) =>
                       value === FROM_THREAD_PROJECT
@@ -272,7 +302,9 @@ export function EasDeviceHostEditor(props: {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
-                  <SelectItem value={FROM_THREAD_PROJECT}>From the thread's project</SelectItem>
+                  <SelectItem value={FROM_THREAD_PROJECT}>
+                    {t("From the thread's project")}
+                  </SelectItem>
                   {draft.appId && !apps.some((app) => app.id === draft.appId) ? (
                     <SelectItem value={draft.appId}>{draft.appId}</SelectItem>
                   ) : null}
@@ -284,8 +316,9 @@ export function EasDeviceHostEditor(props: {
                 </SelectPopup>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Sessions bill the project's Expo account. "From the thread's project" reads
-                extra.eas.projectId from the project's app config.
+                {t(
+                  "Sessions bill the project's Expo account. \"From the thread's project\" reads extra.eas.projectId from the project's app config.",
+                )}
               </p>
             </div>
             <div className="grid grid-cols-3 gap-3 text-sm">
@@ -294,9 +327,9 @@ export function EasDeviceHostEditor(props: {
               {limit("idleMinutes", "Idle minutes", 60)}
             </div>
             <p className="text-xs text-muted-foreground">
-              Expo allows sessions of up to 40 minutes on free accounts and 115 on paid ones, and
-              ends one after the idle minutes without activity, so idle minutes must be smaller than
-              session minutes.
+              {t(
+                "Expo allows sessions of up to 40 minutes on free accounts and 115 on paid ones, and ends one after the idle minutes without activity, so idle minutes must be smaller than session minutes.",
+              )}
               {props.isNew ? null : " Saving restarts this host, which stops its running sessions."}
             </p>
             {problem === null ? null : (
@@ -307,10 +340,11 @@ export function EasDeviceHostEditor(props: {
           </DialogPanel>
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={props.busy} onClick={props.onClose}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button type="submit" disabled={props.busy || !valid}>
-              {props.busy ? <Spinner size="xs" /> : null} Save host
+              {props.busy ? <Spinner size="xs" /> : null}
+              {t("Save host")}
             </Button>
           </DialogFooter>
         </form>

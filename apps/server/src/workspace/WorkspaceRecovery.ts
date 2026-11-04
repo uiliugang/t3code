@@ -11,7 +11,7 @@ import {
   type WorkspaceRecoveryResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -46,7 +46,7 @@ export const layer = Layer.effect(
     const threads = yield* ThreadManagement.ThreadManagementService;
     const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const resolver = yield* WorkspaceRepositoryResolver.WorkspaceRepositoryResolver;
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     return WorkspaceRecovery.of({
       resolve: Effect.fn("WorkspaceRecovery.resolve")(
         function* (input) {
@@ -130,9 +130,7 @@ export const layer = Layer.effect(
                       journal.recoveryWorkspace ??
                       ThreadWorkspaceRevision.make({
                         ...workspace,
-                        id: WorkspaceRevisionId.make(
-                          yield* crypto.randomUUIDv4().pipe(Effect.orDie),
-                        ),
+                        id: WorkspaceRevisionId.make(yield* random.uuidV4().pipe(Effect.orDie)),
                         previousRevisionId: workspace.id,
                         createdAt: DateTime.formatIso(yield* DateTime.now),
                       });

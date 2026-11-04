@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -69,7 +70,7 @@ writeFileSync(join(target, "resource.txt"), "bundled");
       );
       expect(result.name).toBe("custom-skill");
       expect(yield* fs.readFileString(`${result.directory}/resource.txt`)).toBe("bundled");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.live("preserves installer diagnostics without credentials or terminal escapes", () =>
@@ -118,5 +119,5 @@ process.exit(1);
       expect(result.failure.diagnostics).not.toMatch(/password|private|\u001b/);
       expect(result.failure.diagnostics!.length).toBeLessThanOrEqual(4100);
     }
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

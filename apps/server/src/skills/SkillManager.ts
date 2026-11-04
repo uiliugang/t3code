@@ -1,4 +1,4 @@
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's symlink API cannot request Windows directory junctions.
 import * as NodeFSP from "node:fs/promises";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -92,7 +92,7 @@ const make = Effect.gen(function* () {
   const packages = yield* SkillPackages.SkillPackages;
   const host = yield* SkillHost.SkillHost;
   const discovery = yield* makeSkillDiscovery;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const platform = yield* HostProcess.Platform;
   const directoryLink = Effect.fn("SkillManager.directoryLink")(function* (
     target: string,
@@ -406,7 +406,7 @@ const make = Effect.gen(function* () {
         };
       }
     }
-    const workKey = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+    const workKey = yield* random.uuidV4().pipe(Effect.orDie);
     yield* packages.inspect(candidate.directory, path.join(root, "working", skill.id, workKey));
     const linked = yield* jobLock.withPermits(1)(
       Effect.gen(function* () {
@@ -501,7 +501,7 @@ const make = Effect.gen(function* () {
       failureDiagnostics: null,
       checkedAt: yield* now,
     });
-    const staging = path.join(root, "staging", yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+    const staging = path.join(root, "staging", yield* random.uuidV4().pipe(Effect.orDie));
     yield* Effect.gen(function* () {
       const fetched = yield* packages.fetch({
         source,
@@ -631,7 +631,7 @@ const make = Effect.gen(function* () {
     const data = yield* packages.inspect(description.identity);
     if (data.digest !== input.digest)
       return yield* new SkillManagerError({ operation: "adopt", reason: "candidate-changed" });
-    const id = (yield* Ref.get(runningJob)) ?? (yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+    const id = (yield* Ref.get(runningJob)) ?? (yield* random.uuidV4().pipe(Effect.orDie));
     const targets = yield* selectedTargets(input.targetIds);
     const requestedOrigin = input.origin ?? description.origin;
     const source = current.sources.find(
@@ -843,8 +843,7 @@ const make = Effect.gen(function* () {
         if (existing)
           return yield* new SkillManagerError({ operation: "install", reason: "conflict" });
         const targets = yield* selectedTargets(input.targetIds);
-        const id =
-          (yield* Ref.get(runningJob)) ?? (yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+        const id = (yield* Ref.get(runningJob)) ?? (yield* random.uuidV4().pipe(Effect.orDie));
         const sourceLabel =
           source.id === "community" &&
           (/^https:\/\/github\.com\//.test(input.locator) ||
@@ -1200,7 +1199,7 @@ const make = Effect.gen(function* () {
             )
               continue;
             const job: SkillJob = {
-              id: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
+              id: yield* random.uuidV4().pipe(Effect.orDie),
               input: action,
               origin,
               status: "queued",
