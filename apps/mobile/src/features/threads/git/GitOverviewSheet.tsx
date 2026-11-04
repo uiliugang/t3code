@@ -317,7 +317,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     >
       {selectedThread?.workspaceConfiguration ? (
         <WorkspaceRecoveryControl
-          key={workspace?.id ?? "preparation"}
+          key={`${environmentId}:${threadId}:${workspace?.id ?? "preparation"}`}
           threadRef={{ environmentId, threadId }}
           revisionId={workspace?.id ?? null}
         />

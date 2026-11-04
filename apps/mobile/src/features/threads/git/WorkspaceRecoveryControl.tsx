@@ -5,7 +5,7 @@ import type {
   WorkspaceRecoveryResult,
   WorkspaceRevisionId,
 } from "@t3tools/contracts";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { View } from "react-native";
 import { AppText } from "../../../components/ui/AppText";
 import { Button } from "../../../components/ui/Button";
@@ -27,6 +27,28 @@ export function WorkspaceRecoveryControl({
   const recover = useAtomCommand(serverEnvironment.workspaceRecovery, { reportFailure: true });
   const [report, setReport] = useState<WorkspaceRecoveryResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const inspect = useEffectEvent(
+    (target: WorkspaceRecoveryInput, environmentId: ScopedThreadRef["environmentId"]) => {
+      return recover({
+        environmentId,
+        input: target,
+      });
+    },
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Query the server's recovery journal when the panel opens or its target changes.
+  useEffect(() => {
+    let current = true;
+    if (allowed)
+      void inspect(
+        { threadId: threadRef.threadId, expectedRevisionId: revisionId, action: "inspect" },
+        threadRef.environmentId,
+      ).then((result) => {
+        if (current && result._tag === "Success") setReport(result.value);
+      });
+    return () => {
+      current = false;
+    };
+  }, [allowed, threadRef.environmentId, threadRef.threadId, revisionId]);
   const run = async (action: WorkspaceRecoveryInput["action"]) => {
     setBusy(true);
     const result = await recover({
@@ -37,6 +59,7 @@ export function WorkspaceRecoveryControl({
     });
     if (result._tag === "Success") setReport(result.value);
   };
+  if (!report || report.kind === "ready") return null;
   return (
     <View className="gap-2 px-4 py-3">
       <Button
@@ -44,29 +67,24 @@ export function WorkspaceRecoveryControl({
         onPress={() => void run("inspect")}
         label={t("Group recovery")}
       />
-      {report ? (
-        <>
-          <AppText>{t(report.detail)}</AppText>
-          {report.repositories.map((repository) => (
-            <AppText key={repository.path}>
-              {repository.name}: {repository.stage}
-            </AppText>
-          ))}
-          {report.kind !== "ready" ? (
-            <Button
-              disabled={!allowed || busy}
-              onPress={() =>
-                void run(report.kind === "restore" ? "accept-current-files" : "retry-setup")
-              }
-              label={
-                report.kind === "restore"
-                  ? "Accept files and reset conversation"
-                  : "Allow setup retry"
-              }
-            />
-          ) : null}
-        </>
-      ) : null}
+      <>
+        <AppText>{t(report.detail)}</AppText>
+        {report.repositories.map((repository) => (
+          <AppText key={repository.path}>
+            {repository.name}: {repository.stage}
+          </AppText>
+        ))}
+
+        <Button
+          disabled={!allowed || busy}
+          onPress={() =>
+            void run(report.kind === "restore" ? "accept-current-files" : "retry-setup")
+          }
+          label={
+            report.kind === "restore" ? "Accept files and reset conversation" : "Allow setup retry"
+          }
+        />
+      </>
     </View>
   );
 }

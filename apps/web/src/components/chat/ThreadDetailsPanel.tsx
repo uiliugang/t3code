@@ -393,7 +393,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {thread?.workspaceConfiguration ? (
                 <WorkspaceRecoveryControl
-                  key={workspace?.id ?? "preparation"}
+                  key={`${props.environmentId}:${props.threadId}:${workspace?.id ?? "preparation"}`}
                   threadRef={activeThreadRef}
                   revisionId={workspace?.id ?? null}
                 />
