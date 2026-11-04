@@ -63,6 +63,11 @@ import {
 } from "./threadPrediction.ts";
 import * as Schema from "effect/Schema";
 import {
+  DaxiangSendError,
+  DaxiangSendResult,
+  PullRequestSendReviewLinkInput,
+} from "./communication.ts";
+import {
   BranchIssuesInput,
   BranchIssuesResult,
   BranchIssueDetailInput,
@@ -650,6 +655,7 @@ export const WS_METHODS = {
   pullRequestsSubscribeRefreshes: "pullRequests.subscribeRefreshes",
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
+  pullRequestsSendReviewLink: "pullRequests.sendReviewLink",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
 
@@ -1283,6 +1289,12 @@ const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsReques
   payload: PullRequestReviewerRequestInput,
   success: Schema.Void,
   error: PullRequestRpcError,
+});
+
+const WsPullRequestsSendReviewLinkRpc = Rpc.make(WS_METHODS.pullRequestsSendReviewLink, {
+  payload: PullRequestSendReviewLinkInput,
+  success: DaxiangSendResult,
+  error: Schema.Union([DaxiangSendError, EnvironmentAuthorizationError]),
 });
 
 const WsPullRequestsLabelCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsLabelCandidates, {
@@ -2247,6 +2259,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsSubscribeRefreshesRpc,
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
+  WsPullRequestsSendReviewLinkRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,

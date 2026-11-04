@@ -1495,6 +1495,38 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("secures DaXiang credentials and retains or clears a saved secret", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const saved = yield* serverSettings.updateSettings({
+        daxiang: { clientId: "dx-app", clientSecret: "dx-secret" },
+      });
+      assert.notInclude(yield* fileSystem.readFileString(serverConfig.settingsPath), "dx-secret");
+      const clientDaxiang = ServerSettingsModule.redactServerSettingsForClient(saved).daxiang;
+      assert.notEqual(clientDaxiang.clientSecret, "dx-secret");
+      assert.isAbove(clientDaxiang.clientSecret.length, 0);
+      yield* serverSettings.updateSettings({
+        daxiang: { ...clientDaxiang, clientId: "other-app" },
+      });
+      assert.deepEqual((yield* serverSettings.getSettings).daxiang, {
+        clientId: "other-app",
+        clientSecret: "dx-secret",
+      });
+      yield* serverSettings.updateSettings({
+        daxiang: { clientId: "other-app", clientSecret: "" },
+      });
+      assert.equal((yield* serverSettings.getSettings).daxiang.clientSecret, "");
+      assert.deepEqual(
+        (yield* decodeServerSettingsJson(
+          yield* fileSystem.readFileString(serverConfig.settingsPath),
+        )).daxiang,
+        { clientId: "other-app", clientSecret: "" },
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect(
     "keeps source control host secrets in the secret store and tells clients only that one is set",
     () =>

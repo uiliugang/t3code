@@ -98,6 +98,12 @@ async function render(value = detail) {
 }
 
 it("keeps an unsaved description when collapsed and reopened", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
+  using _settings = {
+    [Symbol.dispose]() {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    },
+  };
   await using screen = await render();
   await act(async () =>
     screen.container.querySelector<HTMLButtonElement>('[aria-label="Edit description"]')!.click(),
@@ -132,7 +138,7 @@ it("switches the summary language without translating MIS or discarding an edite
   const editor = screen.getByRole("textbox", { name: "合并请求描述" });
   await userEvent.fill(editor, "Keep this draft: Summary/{count}");
 
-  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   await screen.rerender(tab(value));
   await expect.element(screen.getByText("Reviewers", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("liugang59", { exact: true })).toBeVisible();

@@ -123,6 +123,7 @@ describe("built-in preferences", () => {
       defaultThreadEnvMode: "worktree",
       providerInstances: {},
       sourceControlHosts: {},
+      daxiang: { clientId: "", clientSecret: "" },
       worktreesDirectory: "",
     });
     const serverOverrides = {
