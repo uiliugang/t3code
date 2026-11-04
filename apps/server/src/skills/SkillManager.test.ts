@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Context from "effect/Context";
@@ -107,7 +108,7 @@ describe("SkillManager", () => {
       expect(retried.skills[0]?.failure).toBeNull();
       expect(retried.skills[0]?.failureDiagnostics).toBeNull();
       expect(retried.lastFailureDiagnostics).toBeNull();
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -146,7 +147,7 @@ describe("SkillManager", () => {
         yield* manager.mutate({ type: "remove", id: first.id });
         yield* manager.drain;
         expect((yield* manager.snapshot).skills).toHaveLength(0);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("preserves conflicting directories and defers activation while agents are busy", () =>
@@ -177,7 +178,7 @@ describe("SkillManager", () => {
       });
       yield* manager.drain;
       expect((yield* manager.snapshot).skills[0]?.bindings[0]?.status).toBe("linked");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -226,7 +227,7 @@ describe("SkillManager", () => {
         });
         yield* recovered.drain;
         expect(yield* fs.exists(`${target}/review`)).toBe(false);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("rejects disabled sources and package links escaping their root", () =>
@@ -249,7 +250,7 @@ describe("SkillManager", () => {
       expect(failed.status).toBe("failed");
       expect(failed.activeDigest).toBeNull();
       expect(failed.versions).toHaveLength(0);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
   it.effect("deduplicates physical discoveries, previews and restores a taken-over directory", () =>
     Effect.gen(function* () {
@@ -340,7 +341,7 @@ describe("SkillManager", () => {
       expect(yield* interrupted.fs.readFileString(`${interrupted.target}/review/script.sh`)).toBe(
         "first",
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("protects local changes and the reviewed candidate, and pins preserved content", () =>
@@ -386,7 +387,7 @@ describe("SkillManager", () => {
       yield* manager.mutate({ type: "update", id: first.id, digest: candidate! });
       yield* manager.drain;
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("upstream");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -426,7 +427,7 @@ describe("SkillManager", () => {
           true,
         );
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -483,7 +484,7 @@ describe("SkillManager", () => {
         });
         yield* manager.drain;
         expect((yield* manager.snapshot).lastFailureReason).toBe("external");
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -544,7 +545,7 @@ describe("SkillManager", () => {
         yield* manager.mutate({ type: "update", id: first.id });
         yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("do not update");
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
   it.effect("replays durable queued jobs once and exposes multiple skill choices", () =>
     Effect.gen(function* () {
@@ -590,6 +591,6 @@ describe("SkillManager", () => {
       expect(
         (yield* recovered.snapshot).jobs?.find((job) => job.id === "queued-selection")?.status,
       ).toBe("completed");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

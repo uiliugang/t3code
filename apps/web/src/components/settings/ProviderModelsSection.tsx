@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -148,6 +149,7 @@ export function ProviderModelsSection({
   onSyncModels,
   isSyncingModels = false,
 }: ProviderModelsSectionProps) {
+  const t = useUiTranslation();
   const [input, setInput] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [filter, setFilter] = useState("");
@@ -344,11 +346,11 @@ export function ProviderModelsSection({
           <Input
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
-            placeholder="Filter models"
+            placeholder={t("Filter models")}
             size="sm"
             className="w-56 max-w-full"
             spellCheck={false}
-            aria-label="Filter models"
+            aria-label={t("Filter models")}
           />
         ) : null}
         <div className="flex items-center gap-2">
@@ -368,7 +370,7 @@ export function ProviderModelsSection({
             </Button>
           ) : null}
           <span className="text-xs text-muted-foreground">
-            {models.length} model{models.length === 1 ? "" : "s"}
+            {t(models.length === 1 ? "{count} model" : "{count} models", { count: models.length })}
             {favoriteCount > 0
               ? ` · ${favoriteCount} favorite${favoriteCount === 1 ? "" : "s"}`
               : ""}
@@ -383,7 +385,7 @@ export function ProviderModelsSection({
                     size="icon-xs"
                     variant="ghost-muted"
                     disabled={isSyncingModels}
-                    aria-label="Sync models from provider"
+                    aria-label={t("Sync models from provider")}
                     aria-busy={isSyncingModels}
                     onClick={onSyncModels}
                   >
@@ -392,8 +394,9 @@ export function ProviderModelsSection({
                 }
               />
               <TooltipPopup>
-                Sync models using this instance's saved configuration. Custom API providers use
-                /v1/models.
+                {t(
+                  "Sync models using this instance's saved configuration. Custom API providers use /v1/models.",
+                )}
               </TooltipPopup>
             </Tooltip>
           ) : null}
@@ -408,7 +411,7 @@ export function ProviderModelsSection({
             onClick={() => setIsAdding(true)}
           >
             <PlusIcon className="size-3" />
-            Add custom model
+            {t("Add custom model")}
           </Button>
         ) : null}
       </div>
@@ -418,7 +421,7 @@ export function ProviderModelsSection({
       >
         {visibleModels.length === 0 ? (
           <p className="px-2 py-2 text-xs text-muted-foreground">
-            {isFiltering ? "No models match." : "No models reported for this provider yet."}
+            {t(isFiltering ? "No models match." : "No models reported for this provider yet.")}
           </p>
         ) : null}
         {visibleModels.map((model, index) => {
@@ -491,10 +494,10 @@ export function ProviderModelsSection({
           />
           <div className="flex shrink-0 gap-2">
             <Button size="sm" variant="outline" onClick={handleAdd}>
-              Add
+              {t("Add")}
             </Button>
             <Button size="sm" variant="ghost" onClick={cancelAdd}>
-              Cancel
+              {t("Cancel")}
             </Button>
           </div>
         </div>
@@ -540,6 +543,7 @@ function ProviderModelRow({
   readonly onToggleEdit: (slug: string) => void;
   readonly onRemove: (slug: string) => void;
 }) {
+  const t = useUiTranslation();
   const capLabels = describeModelCapabilities(model, flagMissingReasoning);
   const nameClassName = cn("text-xs", isHidden ? "text-muted-foreground" : "text-foreground/90");
   const pickerTooltip = model.isCustom
@@ -598,7 +602,7 @@ function ProviderModelRow({
           </TooltipPopup>
         </Tooltip>
         {model.isCustom ? (
-          <span className="shrink-0 text-2xs text-muted-foreground/70">custom</span>
+          <span className="shrink-0 text-2xs text-muted-foreground/70">{t("custom")}</span>
         ) : null}
       </span>
       <span className="text-2xs text-muted-foreground/70">
@@ -623,7 +627,7 @@ function ProviderModelRow({
               >
                 <ArrowUpIcon className="size-3" />
               </TooltipTrigger>
-              <TooltipPopup side="top">Move up</TooltipPopup>
+              <TooltipPopup side="top">{t("Move up")}</TooltipPopup>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
@@ -639,7 +643,7 @@ function ProviderModelRow({
               >
                 <ArrowDownIcon className="size-3" />
               </TooltipTrigger>
-              <TooltipPopup side="top">Move down</TooltipPopup>
+              <TooltipPopup side="top">{t("Move down")}</TooltipPopup>
             </Tooltip>
           </>
         ) : null}
@@ -658,7 +662,7 @@ function ProviderModelRow({
             >
               <PencilIcon className="size-3" />
             </TooltipTrigger>
-            <TooltipPopup side="top">Edit model</TooltipPopup>
+            <TooltipPopup side="top">{t("Edit model")}</TooltipPopup>
           </Tooltip>
         ) : null}
         {model.isCustom || hasOverride ? (

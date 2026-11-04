@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { DEFAULT_SERVER_SETTINGS, ProviderDriverKind, SecretProviderId } from "@t3tools/contracts";
@@ -73,6 +74,6 @@ it.effect("includes default providers and respects per-account skill homes", () 
       ),
     ),
     Effect.scoped,
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   ),
 );

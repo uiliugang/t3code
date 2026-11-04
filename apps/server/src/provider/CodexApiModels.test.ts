@@ -1,3 +1,5 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -50,7 +52,7 @@ it.effect("discovers the selected API provider's exact model IDs using its insta
       "http://sub2api.test:8420/v1/models",
       "http://sub2api.test:8420/v1/models",
     ]);
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -95,7 +97,7 @@ it.effect(
         ),
       );
       assert.deepStrictEqual(models, []);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps empty API catalogs distinct from native discovery and reports failed syncs", () =>
@@ -148,5 +150,5 @@ it.effect("keeps empty API catalogs distinct from native discovery and reports f
         "/unused",
       ).pipe(Effect.provideService(HttpClient.HttpClient, unavailable)),
     );
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

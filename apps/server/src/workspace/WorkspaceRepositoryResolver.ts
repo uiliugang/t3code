@@ -10,7 +10,7 @@ import {
   WorkspaceRootId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -88,13 +88,13 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const git = yield* GitVcsDriver.GitVcsDriver;
-  const crypto = yield* Crypto.Crypto;
+  const digester = yield* Digest.Digest;
   const identityHash = Effect.fn("WorkspaceRepositoryResolver.identityHash")(function* (
     parts: ReadonlyArray<string>,
   ) {
     return Hex.encode(
-      yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(encodeIdentityParts(parts)))
+      yield* digester
+        .digest(Digest.sha256, new TextEncoder().encode(encodeIdentityParts(parts)))
         .pipe(Effect.orDie),
     );
   });

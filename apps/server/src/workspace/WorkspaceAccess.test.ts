@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EventId, WorkspaceRevisionId } from "@t3tools/contracts";
@@ -77,5 +78,5 @@ it.effect(
         yield* access.run({ cwd: resource.checkoutRoot, repositoryTarget: target }, write);
         assert.equal(yield* Ref.get(writes), 1);
       }).pipe(Effect.provide(WorkspaceAccess.layer.pipe(Layer.provide(dependencies))));
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

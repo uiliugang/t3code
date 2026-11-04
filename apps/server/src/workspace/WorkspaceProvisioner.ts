@@ -29,7 +29,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -111,7 +111,7 @@ export const layer = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     const serverConfig = yield* ServerConfig.ServerConfig;
     const settingsService = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
     const home = yield* HostProcess.HomeDirectory;
@@ -164,7 +164,7 @@ export const layer = Layer.effect(
                     detail:
                       "Read-only repository roots are not supported by the current providers.",
                   });
-                const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+                const token = yield* random.uuidV4().pipe(Effect.orDie);
                 const settings = Option.isSome(settingsService)
                   ? yield* settingsService.value.getSettings
                   : null;

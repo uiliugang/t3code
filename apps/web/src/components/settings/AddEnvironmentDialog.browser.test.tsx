@@ -8,6 +8,11 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { render, stubGlobal } from "../../../test/render";
 import { AppAtomRegistryProvider } from "../../rpc/atomRegistry";
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const mocks = vi.hoisted(() => ({
   connectSshEnvironment: vi.fn<() => Promise<AtomCommandResult<void, Error>>>(async () =>
     AsyncResult.success(undefined),

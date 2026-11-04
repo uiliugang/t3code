@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useCodeTheme } from "~/hooks/useCodeTheme";
 import {
   isModifierPairShortcut,
@@ -34,6 +35,7 @@ export function CaptureShortcutConfig({
   onSaved?: () => Promise<unknown>;
   onComplete?: () => Promise<void>;
 }) {
+  const t = useUiTranslation();
   const bridge = getDesktopSnapShotBridge();
   const codeTheme = useCodeTheme();
   const { copyToClipboard, isCopied } = useCopyToClipboard();
@@ -210,7 +212,7 @@ export function CaptureShortcutConfig({
               </Button>
             ) : null}
             <Button variant="ghost" disabled={actionBusy} onClick={() => setPreview(null)}>
-              Cancel
+              {t("Cancel")}
             </Button>
           </div>
         </>
@@ -242,7 +244,7 @@ export function CaptureShortcutConfig({
         </p>
       ) : null}
       <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer">Advanced</summary>
+        <summary className="cursor-pointer">{t("Advanced")}</summary>
         <div className="mt-3 space-y-3">
           {error?.detail || result?.warning ? (
             <div className="space-y-1">

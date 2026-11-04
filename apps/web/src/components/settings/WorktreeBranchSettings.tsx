@@ -31,7 +31,9 @@ export function RemoteBranchDisplayDaysRow() {
       serverScoped
       settingKeys={[key]}
       {...setting}
-      description="Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible."
+      description={t(
+        "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.",
+      )}
       resetAction={
         mixed || settings[key] !== DEFAULT_UNIFIED_SETTINGS[key] ? (
           <SettingResetButton
@@ -85,7 +87,9 @@ export function HideMergedRemoteBranchesRow() {
       serverScoped
       settingKeys={[key]}
       {...setting}
-      description="Hide remote branches already merged into main or master. Local and default branches remain visible."
+      description={t(
+        "Hide remote branches already merged into main or master. Local and default branches remain visible.",
+      )}
       resetAction={
         mixed || settings[key] !== DEFAULT_UNIFIED_SETTINGS[key] ? (
           <SettingResetButton
@@ -117,7 +121,9 @@ export function MainBranchOnlyRow() {
       serverScoped
       settingKeys={[key]}
       {...setting}
-      description="Create new worktree branches only from main or master. Existing branch checkouts are unaffected."
+      description={t(
+        "Create new worktree branches only from main or master. Existing branch checkouts are unaffected.",
+      )}
       resetAction={
         settings[key] !== DEFAULT_UNIFIED_SETTINGS[key] ? (
           <SettingResetButton

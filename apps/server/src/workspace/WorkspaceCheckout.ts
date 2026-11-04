@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { workspaceRelativeFilePath } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -41,7 +41,7 @@ const make = Effect.gen(function* () {
   const resolver = yield* WorkspaceRepositoryResolver.WorkspaceRepositoryResolver;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const status = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const path = yield* Path.Path;
 
   return WorkspaceCheckout.of({
@@ -116,7 +116,7 @@ const make = Effect.gen(function* () {
               checkout.gitDir !== previous.gitDir ||
               checkout.gitDirIdentity !== previous.gitDirIdentity;
             const current = yield* readCurrent(changingCheckout);
-            const commandId = CommandId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+            const commandId = CommandId.make(yield* random.uuidV4().pipe(Effect.orDie));
             let worktreePath: string | null = checkout.checkoutRoot;
 
             if (!workspace) {

@@ -36,7 +36,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -1118,12 +1118,13 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   );
 }
 export function SettingsSkillsRouteScreen() {
+  const environmentMenu = useSettingsEnvironmentMenu();
   const t = useUiTranslation();
   const { selectedTargets } = useSettingsEnvironmentFilter();
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title={t("Skill management")} trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title={t("Skill management")} menus={[environmentMenu]}>
         <ScreenScrollView
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"

@@ -10,7 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -40,7 +40,7 @@ const decodeStored = Schema.decodeEffect(StoredIssues);
 const encodeStored = Schema.encodeEffect(StoredIssues);
 
 const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const digester = yield* Digest.Digest;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const providers = yield* Providers.SourceControlProviderRegistry;
   const lock = yield* Semaphore.make(1);
@@ -52,7 +52,7 @@ const make = Effect.gen(function* () {
       normalizeGitRemoteUrl(handle.context.remoteUrl),
       input.branch,
     ]);
-    const hash = yield* crypto.digest("SHA-256", new TextEncoder().encode(identity));
+    const hash = yield* digester.digest(Digest.sha256, new TextEncoder().encode(identity));
     const key = `t3issues.${Hex.encode(hash)}.links`;
     return { ...handle, context: handle.context, capability: handle.provider.issues, key };
   });

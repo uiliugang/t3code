@@ -60,7 +60,7 @@ export function ApplicationConfigurationSettings() {
   if (scope.kind === "project" || scope.kind === "checkout") return null;
 
   return (
-    <SettingsSection id="settings-import-export" title="Import and export">
+    <SettingsSection id="settings-import-export" title={t("Import and export")}>
       {environment?.serverConfig ? (
         <SettingsTransfer
           key={environment.environmentId}
@@ -68,7 +68,9 @@ export function ApplicationConfigurationSettings() {
           environmentId={environment.environmentId}
           supportsProjectImport={supportsProjectImport}
           title={environment.label}
-          description="Back up app preferences, themes, shortcuts, environment defaults and project/workspace definitions as JSON. Credentials and machine paths are excluded."
+          description={t(
+            "Back up app preferences, themes, shortcuts, environment defaults and project/workspace definitions as JSON. Credentials and machine paths are excluded.",
+          )}
           canImport={canWrite && canWriteBindings}
           createFile={async () => {
             await ensureClientSettingsHydrated();
@@ -200,7 +202,7 @@ export function ProjectConfigurationSettings({
   });
   const identity = projectTransferIdentity(project);
   return (
-    <SettingsSection title="Project configuration">
+    <SettingsSection title={t("Project configuration")}>
       <div className="space-y-1 px-4 py-3 text-sm">
         <p>{project.workspaceRoot}</p>
         {identity.repository ? (
@@ -220,7 +222,9 @@ export function ProjectConfigurationSettings({
       </div>
       <SettingsTransfer
         title={project.title}
-        description="Transfer this checkout's explicit project overrides and actions. Inherited defaults and shortcuts stay in the environment."
+        description={t(
+          "Transfer this checkout's explicit project overrides and actions. Inherited defaults and shortcuts stay in the environment.",
+        )}
         scope="project"
         environmentId={project.environmentId}
         supportsProjectImport={supportsProjectImport}

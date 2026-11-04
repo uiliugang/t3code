@@ -106,7 +106,7 @@ vi.mock(import("./RepositoryDetails"), () => ({ RepositoryDetails: () => <></> }
 vi.mock(import("./WorkspaceRecoveryControl"), () => ({ WorkspaceRecoveryControl: () => <></> }));
 vi.mock(import("./ThreadAutomationsPanel"), () => ({ ThreadAutomationsPanel: () => null }));
 vi.mock(import("./ThreadRelationshipsControl"), () => ({ ThreadRelationshipsPanel: () => null }));
-vi.mock(import("./ThreadServersPanel"), () => ({ ThreadServersPanel: () => null }));
+vi.mock(import("./ThreadServersPanel"), () => ({ ThreadServersPanel: () => <></> }));
 
 import { __setClientSettingsForTests, persistClientSettingsPatch } from "../../hooks/useSettings";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";

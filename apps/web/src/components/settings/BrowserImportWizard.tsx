@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { PermissionChecklist, PermissionContinueButton } from "../permissions/PermissionChecklist";
 import { usePermissionStatus } from "../permissions/usePermissionStatus";
 import type { BrowserImportSource } from "@t3tools/contracts";
@@ -189,6 +190,7 @@ function QuitStep({
   readonly onCancel: () => void;
   readonly onRechecked: () => void;
 }) {
+  const t = useUiTranslation();
   return (
     <>
       <DialogHeader>
@@ -199,7 +201,7 @@ function QuitStep({
       </DialogHeader>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button onClick={onRechecked}>I&rsquo;ve quit it</Button>
       </DialogFooter>
@@ -246,6 +248,7 @@ function FullDiskAccessStep({
   readonly onGranted: () => void;
   readonly stillRequired: boolean;
 }) {
+  const t = useUiTranslation();
   const [opening, setOpening] = useState(false);
   const [openingError, setOpeningError] = useState<string | null>(null);
   const permission = usePermissionStatus(async () => ({ fullDiskAccess: await onCheck() }), {
@@ -304,14 +307,14 @@ function FullDiskAccessStep({
       </DialogPanel>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <PermissionContinueButton
           ready={permission.isReady(["fullDiskAccess"])}
           busy={opening}
           onClick={onGranted}
         >
-          Continue
+          {t("Continue")}
         </PermissionContinueButton>
       </DialogFooter>
     </>
@@ -330,6 +333,7 @@ function ConfigureStep({
   onCancel,
   onImport,
 }: ConfigureStepProps) {
+  const t = useUiTranslation();
   const targetMissing =
     target.kind === "existing" &&
     !targetProfiles.some((profile) => profile.id === target.profileId);
@@ -344,7 +348,9 @@ function ConfigureStep({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Import from {source.name}</DialogTitle>
+        <DialogTitle>
+          {t("Import from")} {source.name}
+        </DialogTitle>
         <DialogDescription>
           Choose which cookies to import for {destinationEnvironmentName}.
         </DialogDescription>
@@ -400,13 +406,13 @@ function ConfigureStep({
       </DialogPanel>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button
           disabled={sourceProfileDirectory === "" || targetMissing || targetUncreatable}
           onClick={onImport}
         >
-          Import
+          {t("Import")}
         </Button>
       </DialogFooter>
     </>
@@ -457,6 +463,7 @@ function SelectableTile({
 }
 
 function ImportingStep() {
+  const t = useUiTranslation();
   return (
     <>
       <DialogHeader>
@@ -466,7 +473,7 @@ function ImportingStep() {
       <DialogPanel>
         <div className="flex items-center gap-3 py-2">
           <Spinner size="md" tone="muted" />
-          <span className="text-sm text-muted-foreground">Importing…</span>
+          <span className="text-sm text-muted-foreground">{t("Importing…")}</span>
         </div>
       </DialogPanel>
     </>
@@ -517,6 +524,7 @@ function DoneStep({
   readonly destinationEnvironmentName: string;
   readonly onClose: () => void;
 }) {
+  const t = useUiTranslation();
   return (
     <>
       <DialogHeader>
@@ -538,14 +546,14 @@ function DoneStep({
       {skippedDomains.length > 0 ? (
         <DialogPanel>
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Skipped
+            {t("Skipped")}
           </p>
           <p className="mt-1 text-sm text-foreground">{formatSkippedDomains(skippedDomains)}</p>
         </DialogPanel>
       ) : null}
       <DialogFooter>
         <DialogClose render={<Button />} onClick={onClose}>
-          Done
+          {t("Done")}
         </DialogClose>
       </DialogFooter>
     </>
@@ -565,6 +573,7 @@ function BlockedStep({
   readonly onClose: () => void;
   readonly onRetry: (() => void) | undefined;
 }) {
+  const t = useUiTranslation();
   return (
     <>
       <DialogHeader>
@@ -573,9 +582,9 @@ function BlockedStep({
       </DialogHeader>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
-          Close
+          {t("Close")}
         </Button>
-        {onRetry ? <Button onClick={onRetry}>Try again</Button> : null}
+        {onRetry ? <Button onClick={onRetry}>{t("Try again")}</Button> : null}
       </DialogFooter>
     </>
   );

@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useState } from "react";
 
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
@@ -18,6 +19,7 @@ import { searchableSetting } from "./settingsSearch";
 
 // Toggling relaunches desktop; the switch reflects startup state.
 export function LocalEnvironmentSetting() {
+  const t = useUiTranslation();
   const setEnabled = window.desktopBridge?.setLocalEnvironmentEnabled;
   const [enabled] = useState(() => !isLocalEnvironmentDisabled());
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -50,7 +52,7 @@ export function LocalEnvironmentSetting() {
             checked={enabled}
             disabled={isUpdating}
             onCheckedChange={() => setConfirmOpen(true)}
-            aria-label="Local environment"
+            aria-label={t("Local environment")}
           />
         }
       />
@@ -76,7 +78,7 @@ export function LocalEnvironmentSetting() {
           {error ? <p className="px-6 pb-4 text-sm text-destructive">{error}</p> : null}
           <AlertDialogFooter>
             <AlertDialogClose disabled={isUpdating} render={<Button variant="outline" />}>
-              Cancel
+              {t("Cancel")}
             </AlertDialogClose>
             <Button
               variant={enabled ? "destructive" : "default"}
@@ -86,7 +88,7 @@ export function LocalEnvironmentSetting() {
               {isUpdating ? (
                 <>
                   <Spinner size="sm" />
-                  Restarting…
+                  {t("Restarting…")}
                 </>
               ) : enabled ? (
                 "Restart and turn off"
