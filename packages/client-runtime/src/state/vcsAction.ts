@@ -416,6 +416,7 @@ export function applyVcsActionProgressEvent(
 
 export function createVcsActionManager<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Persistence.EnvironmentCacheStore | R, E>,
+  getLanguage?: (registry: AtomRegistry.AtomRegistry) => GitRunStackedActionInput["language"],
 ) {
   const runStackedActionCommands = new Map<
     string,
@@ -470,6 +471,7 @@ export function createVcsActionManager<R, E>(
         );
 
         const rpcInput: GitRunStackedActionInput = {
+          ...(getLanguage ? { language: getLanguage(registry) } : {}),
           actionId: transportActionId,
           cwd: target.cwd,
           ...(requestedTarget.repositoryTarget === undefined

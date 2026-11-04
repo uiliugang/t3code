@@ -36,8 +36,10 @@ import { SettingsTransfer } from "./SettingsTransfer";
 import { SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectImportHistory } from "./ProjectImportHistory";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export function ApplicationConfigurationSettings() {
+  const t = useUiTranslation();
   const { scope, connectedEnvironments } = useSettingsScope();
   const environment = connectedEnvironments.length === 1 ? connectedEnvironments[0] : null;
   const environmentId = environment?.environmentId ?? null;
@@ -73,7 +75,7 @@ export function ApplicationConfigurationSettings() {
             const config = appAtomRegistry.get(
               serverEnvironment.configValueAtom(environment.environmentId),
             );
-            if (!config) throw new Error("Reconnect this environment before exporting.");
+            if (!config) throw new Error(t("Reconnect this environment before exporting."));
             const snapshot = getThemeSnapshot();
             const definitions = new Map(getCustomThemes().map((entry) => [entry.id, entry]));
             for (const id of [snapshot.theme, ...Object.values(readThemeHalvesRaw())]) {
@@ -111,11 +113,11 @@ export function ApplicationConfigurationSettings() {
           }}
           importFile={async (file) => {
             if (file.scope !== "application")
-              throw new Error("Choose an application settings file.");
+              throw new Error(t("Choose an application settings file."));
             const current = appAtomRegistry.get(
               serverEnvironment.settingsValueAtom(environment.environmentId),
             );
-            if (!current) throw new Error("Reconnect this environment before importing.");
+            if (!current) throw new Error(t("Reconnect this environment before importing."));
             const patch = applicationSettingsImportPatch(file, current);
             const bindings = settingsKeybindingsToImport(
               file.keybindings,
@@ -125,7 +127,7 @@ export function ApplicationConfigurationSettings() {
             const themes = file.theme?.customThemes.map(parseThemeFile) ?? [];
             for (const id of [file.theme?.preference, ...Object.values(file.theme?.halves ?? {})]) {
               if (id && !isKnownThemePreference(id) && !themes.some((entry) => entry.id === id))
-                throw new Error(`Theme "${id}" is not included in this backup.`);
+                throw new Error(t('Theme "{id}" is not included in this backup.', { id }));
             }
             await ensureClientSettingsHydrated();
             const saved = await update({
@@ -140,7 +142,7 @@ export function ApplicationConfigurationSettings() {
               });
               if (result._tag === "Failure")
                 throw new Error(
-                  "Import incomplete: some settings were saved, but a shortcut failed.",
+                  t("Import incomplete: some settings were saved, but a shortcut failed."),
                   { cause: squashAtomCommandFailure(result) },
                 );
             }
@@ -156,19 +158,19 @@ export function ApplicationConfigurationSettings() {
                 !theme.setAppearanceMode(file.theme.mode)
               )
                 throw new Error(
-                  "Import incomplete: settings were saved, but the theme could not be applied.",
+                  t("Import incomplete: settings were saved, but the theme could not be applied."),
                 );
               for (const appearance of ["light", "dark"] as const) {
                 const id = file.theme.halves[appearance];
                 if (id && !theme.setThemeHalf(appearance, id))
-                  throw new Error("Import incomplete: a theme preference could not be saved.");
+                  throw new Error(t("Import incomplete: a theme preference could not be saved."));
               }
             }
           }}
         />
       ) : (
         <p className="p-4 text-sm text-muted-foreground">
-          Choose one connected environment to import or export app settings.
+          {t("Choose one connected environment to import or export app settings.")}
         </p>
       )}
       {supportsProjectImport && environment ? (
@@ -185,6 +187,7 @@ export function ProjectConfigurationSettings({
   project: TransferProject;
   settings: ServerSettings;
 }) {
+  const t = useUiTranslation();
   const canWrite = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(project.environmentId),
   );
@@ -209,8 +212,9 @@ export function ProjectConfigurationSettings({
         <p className="break-all text-xs text-muted-foreground">{identity.id}</p>
         {identity.kind === "local" ? (
           <p className="text-xs text-muted-foreground">
-            Local identity: Git metadata is unavailable, or this project contains multiple
-            repositories.
+            {t(
+              "Local identity: Git metadata is unavailable, or this project contains multiple repositories.",
+            )}
           </p>
         ) : null}
       </div>
@@ -234,7 +238,7 @@ export function ProjectConfigurationSettings({
           });
           if (exported._tag === "Failure") throw squashAtomCommandFailure(exported);
           const definition = exported.value[0]?.configuration;
-          if (!definition) throw new Error("This project is no longer available.");
+          if (!definition) throw new Error(t("This project is no longer available."));
           return {
             ...file,
             settings: definition.settings,
@@ -243,11 +247,11 @@ export function ProjectConfigurationSettings({
           };
         }}
         importFile={async (file) => {
-          if (file.scope !== "project") throw new Error("Choose a project settings file.");
+          if (file.scope !== "project") throw new Error(t("Choose a project settings file."));
           const current = appAtomRegistry.get(
             serverEnvironment.settingsValueAtom(project.environmentId),
           );
-          if (!current) throw new Error("Reconnect this environment before importing.");
+          if (!current) throw new Error(t("Reconnect this environment before importing."));
           const result = await update({
             environmentId: project.environmentId,
             input: { patch: projectSettingsImportPatch(file, project, current) },

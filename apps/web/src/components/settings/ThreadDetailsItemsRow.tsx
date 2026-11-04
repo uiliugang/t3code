@@ -12,8 +12,10 @@ import { Button } from "../ui/button";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export function ThreadDetailsItemsRow() {
+  const t = useUiTranslation();
   const visibility = useClientSettings(resolveThreadDetailsVisibility);
   const issuesDefault = useClientSettings(
     (settings) =>
@@ -42,11 +44,14 @@ export function ThreadDetailsItemsRow() {
                 variant="outline"
                 size="sm"
                 className="w-full justify-between sm:w-40"
-                aria-label={`Thread details: ${enabled} of ${THREAD_DETAILS_ITEMS.length} on`}
+                aria-label={t("Thread details: {enabled} of {total} on", {
+                  enabled,
+                  total: THREAD_DETAILS_ITEMS.length,
+                })}
               />
             }
           >
-            {enabled} of {THREAD_DETAILS_ITEMS.length} on
+            {t("{enabled} of {total} on", { enabled, total: THREAD_DETAILS_ITEMS.length })}
             <ChevronDownIcon aria-hidden />
           </MenuTrigger>
           <MenuPopup align="end">
