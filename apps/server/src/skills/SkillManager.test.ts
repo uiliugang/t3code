@@ -58,6 +58,58 @@ const harness = Effect.gen(function* () {
 const encodeCatalog = Schema.encodeEffect(Schema.fromJsonString(SkillCatalog));
 
 describe("SkillManager", () => {
+  it.live("persists installer diagnostics and clears them after a successful retry", () =>
+    Effect.gen(function* () {
+      const { fs, directory, source, manager, restart } = yield* harness;
+      const executable = `${directory}/installer.mjs`;
+      yield* fs.writeFileString(
+        executable,
+        '#!/usr/bin/env node\nconsole.error("ERR_UNKNOWN_BUILTIN_MODULE: node:stream/promises");\nprocess.exit(1);\n',
+      );
+      yield* fs.chmod(executable, 0o755);
+      yield* manager.mutate({
+        type: "source.save",
+        source: {
+          id: "community",
+          label: "Git / HTTP",
+          kind: "skills",
+          enabled: true,
+          executable,
+          registry: "",
+        },
+      });
+      yield* manager.drain;
+      yield* manager.mutate({ type: "source.check", sourceId: "community" });
+      yield* manager.drain;
+      expect(
+        (yield* manager.snapshot).sources.find((entry) => entry.id === "community")?.health?.detail,
+      ).toContain("node:stream/promises");
+      yield* manager.mutate({
+        type: "install",
+        sourceId: "community",
+        locator: source,
+        skill: "",
+        targetIds: [],
+      });
+      yield* manager.drain;
+      const snapshot = yield* (yield* restart).snapshot;
+      const skill = snapshot.skills[0]!;
+      expect(skill.failureDiagnostics).toContain("node:stream/promises");
+      expect(snapshot.lastFailureDiagnostics).toBe(skill.failureDiagnostics);
+      expect(snapshot.jobs?.at(-1)?.diagnostics).toBe(skill.failureDiagnostics);
+      yield* fs.writeFileString(
+        executable,
+        '#!/usr/bin/env node\nimport { mkdirSync, cpSync } from "node:fs";\nmkdirSync(".agents/skills", { recursive: true });\ncpSync(process.argv[3], ".agents/skills/review", { recursive: true });\n',
+      );
+      yield* manager.mutate({ type: "check", id: skill.id });
+      yield* manager.drain;
+      const retried = yield* manager.snapshot;
+      expect(retried.skills[0]?.failure).toBeNull();
+      expect(retried.skills[0]?.failureDiagnostics).toBeNull();
+      expect(retried.lastFailureDiagnostics).toBeNull();
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect(
     "shares a full package, detects resource changes, rolls back and only removes managed links",
     () =>

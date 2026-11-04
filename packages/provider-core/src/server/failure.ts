@@ -223,7 +223,7 @@ function redactProviderFailureText(value: string): string {
     .trim();
 }
 
-function boundedText(value: string, maxLength: number): string {
+export function sanitizeFailureText(value: string, maxLength: number): string {
   const redacted = redactProviderFailureText(value);
   if (redacted.length <= maxLength) return redacted;
   let end = Math.max(0, maxLength - 1);
@@ -245,10 +245,12 @@ export function makeProviderFailure(input: {
   const curated = curatedCauseMessages(input.cause);
   const rawMessage =
     input.message ?? curated.known ?? curated.category ?? DEFAULT_PROVIDER_FAILURE_MESSAGE;
-  const message = boundedText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
+  const message = sanitizeFailureText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
   const rawCode = input.code ?? stringField(input.cause, "code") ?? null;
   const code =
-    rawCode === null ? null : boundedText(rawCode, MAX_PROVIDER_FAILURE_CODE_LENGTH) || null;
+    rawCode === null
+      ? null
+      : sanitizeFailureText(rawCode, MAX_PROVIDER_FAILURE_CODE_LENGTH) || null;
 
   return {
     class: input.class ?? "unknown",

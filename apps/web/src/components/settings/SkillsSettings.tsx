@@ -804,8 +804,13 @@ function SkillRow({
             </Button>
           </div>
           {failure && (
-            <p role="alert" className="mt-2 text-xs leading-relaxed text-destructive">
+            <p role="alert" className="mt-2 min-w-0 text-xs leading-relaxed text-destructive">
               {t(failure)}
+              {skill.failureDiagnostics && (
+                <span className="mt-1 block max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
+                  {skill.failureDiagnostics}
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -1065,7 +1070,7 @@ function SourceEditor({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span>
+        <span className="min-w-0">
           {source.health
             ? t(
                 source.health.reason
@@ -1073,6 +1078,12 @@ function SourceEditor({
                   : source.health.detail,
               )
             : t("Not checked")}
+          {source.health?.reason &&
+            source.health.detail !== skillFailureMessage(source.health.reason) && (
+              <span className="mt-1 block max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
+                {source.health.detail}
+              </span>
+            )}
         </span>
         <Button
           type="button"
@@ -1356,7 +1367,14 @@ function OperationHistory({
                   ` · ${job.beforeDigest?.slice(0, 8) ?? "–"} → ${job.afterDigest.slice(0, 8)}`}
               </p>
               {job.reason && (
-                <p className="text-destructive">{t(skillFailureMessage(job.reason))}</p>
+                <p className="min-w-0 text-destructive">
+                  {t(skillFailureMessage(job.reason))}
+                  {job.diagnostics && (
+                    <span className="mt-1 block max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
+                      {job.diagnostics}
+                    </span>
+                  )}
+                </p>
               )}
               {job.status === "failed" && (
                 <Button
@@ -1536,6 +1554,11 @@ function EnvironmentSkills({
         <p role="alert" className="text-sm text-destructive">
           {t(
             data.lastFailureReason ? skillFailureMessage(data.lastFailureReason) : data.lastFailure,
+          )}
+          {data.lastFailureDiagnostics && (
+            <span className="mt-1 block max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
+              {data.lastFailureDiagnostics}
+            </span>
           )}
         </p>
       )}
