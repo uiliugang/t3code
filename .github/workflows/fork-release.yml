@@ -154,6 +154,8 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v5
       - name: Generate native Android project
         working-directory: apps/mobile
