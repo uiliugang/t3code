@@ -6,6 +6,7 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
@@ -83,6 +84,265 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
 const ARCHIVE = { archiveVersion: "1.2.3-preview.20260911.4" } as const;
 
 describe("ssh tunnel scripts", () => {
+  it.effect("preserves SSH authentication failures during relay uploads", () => {
+    let launches = 0;
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.sync(() => {
+        const stderr =
+          launches++ === 0
+            ? "T3_DOWNLOAD_FAILED:t3-1.2.3-preview.20260911.4-linux-x64.tar.gz\n"
+            : "Permission denied (publickey,password).";
+        return {
+          ...makeSuccessfulProcess(""),
+          stderr: Stream.make(new TextEncoder().encode(stderr)),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(255)),
+        };
+      }),
+    );
+    return Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        SshTunnel.launchOrReuseRemoteServer(
+          { alias: "devbox", hostname: "devbox", username: null, port: null },
+          undefined,
+          ARCHIVE,
+        ),
+      );
+      assert.isTrue(SshAuth.isSshAuthFailure(error));
+      assert.equal(launches, 3);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Layer.succeed(HttpClient.HttpClient, testHttpClient),
+        ),
+      ),
+    );
+  });
+
+  it.effect.each([
+    "Permission denied (publickey).",
+    "Checksum mismatch for runtime.",
+    "T3_DOWNLOAD_FAILED:../../other.tar.gz",
+  ])("does not relay unrelated or invalid launch failures: %s", (stderr) => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed({
+        ...makeSuccessfulProcess(""),
+        stderr: Stream.make(new TextEncoder().encode(stderr)),
+        exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+      }),
+    );
+    return Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        SshTunnel.launchOrReuseRemoteServer(
+          { alias: "devbox", hostname: "devbox", username: null, port: null },
+          undefined,
+          ARCHIVE,
+        ),
+      );
+      assert.instanceOf(error, SshCommandError);
+      assert.equal(error.message, stderr);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("Unexpected download")),
+          ),
+        ),
+      ),
+    );
+  });
+
+  it.live("installs relayed archives only after checking their checksum", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-install-test-" });
+        yield* fs.writeFileString(
+          `${home}/runner.sh`,
+          SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
+        );
+        yield* fs.makeDirectory(`${home}/bin`);
+        yield* fs.writeFileString(`${home}/bin/curl`, "#!/bin/sh\nexit 28\n");
+        yield* fs.writeFileString(
+          `${home}/bin/uname`,
+          '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n',
+        );
+        yield* fs.chmod(`${home}/bin/curl`, 0o700);
+        yield* fs.chmod(`${home}/bin/uname`, 0o700);
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const child = yield* spawner.spawn(
+          ChildProcess.make(
+            "sh",
+            [
+              "-c",
+              `set -eu
+export PATH="$HOME/bin:$PATH"
+cd "$HOME"
+if T3_DOWNLOAD_ID=../outside sh runner.sh --version >out 2>err; then exit 1; fi
+grep -q 'Invalid t3 download ID' err
+if sh runner.sh --version >out 2>err; then exit 1; fi
+grep -q '^T3_DOWNLOAD_FAILED:' err
+echo 'Remote download failed; relay requested.'
+CACHE="$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/attempt"
+export T3_DOWNLOAD_ID=attempt
+mkdir -p "$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/other-attempt"
+ARCHIVE="t3-${ARCHIVE.archiveVersion}-linux-x64.tar.gz"
+mkdir -p source "$CACHE"
+printf '#!/bin/sh\\necho fixture-runtime\\n' > source/t3
+chmod 700 source/t3
+tar -czf archive.tar.gz source
+cp archive.tar.gz "$CACHE/$ARCHIVE"
+printf '%064d  %s\\n' 0 "$ARCHIVE" > "$CACHE/SHA256SUMS"
+if sh runner.sh --version >out 2>err; then exit 1; fi
+grep -q 'Checksum mismatch' err
+test ! -e "$CACHE"
+test -d "$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/other-attempt"
+echo 'Corrupt relay rejected; cache removed.'
+mkdir -p "$CACHE"
+cp archive.tar.gz "$CACHE/$ARCHIVE"
+(cd "$CACHE"; shasum -a 256 "$ARCHIVE" > SHA256SUMS)
+sh runner.sh --version >out
+grep -q '^fixture-runtime$' out
+test ! -e "$CACHE"
+test -d "$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/other-attempt"
+echo 'Verified relay installed and executed.'
+`,
+            ],
+            { env: { HOME: home } },
+          ),
+        );
+        const [code, stdout, stderr] = yield* Effect.all(
+          [
+            child.exitCode,
+            Stream.mkString(Stream.decodeText(child.stdout)),
+            Stream.mkString(Stream.decodeText(child.stderr)),
+          ],
+          { concurrency: "unbounded" },
+        );
+        assert.equal(Number(code), 0, stderr);
+        assert.include(stdout, "Verified relay installed and executed.");
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live.each([false, true])(
+    "relays downloads and cleans its cache (retry fails: %s)",
+    (retryFails) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const commands: Array<ReadonlyArray<string>> = [];
+          const downloads: string[] = [];
+          const fs = yield* FileSystem.FileSystem;
+          const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-relay-test-" });
+          const nativeSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const spawner = ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              commands.push(commandArgs(command));
+              if (commands.length === 1) {
+                return {
+                  ...makeSuccessfulProcess(""),
+                  stderr: Stream.make(
+                    new TextEncoder().encode(
+                      "T3_DOWNLOAD_FAILED:t3-1.2.3-preview.20260911.4-linux-x64.tar.gz\n",
+                    ),
+                  ),
+                  exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+                };
+              }
+              const root = `${home}/.t3/runtime/downloads/${ARCHIVE.archiveVersion}`;
+              const attempts = yield* fs.readDirectory(root);
+              assert.lengthOf(attempts, 1);
+              for (const file of ["SHA256SUMS", "t3-1.2.3-preview.20260911.4-linux-x64.tar.gz"]) {
+                assert.deepEqual(
+                  Array.from(yield* fs.readFile(`${root}/${attempts[0]}/${file}`)),
+                  [0, 255, 10, 13, 128],
+                );
+              }
+              return retryFails
+                ? {
+                    ...makeSuccessfulProcess(""),
+                    stderr: Stream.make(new TextEncoder().encode("Retry failed.")),
+                    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+                  }
+                : makeSuccessfulProcess('{"remotePort":3774}\n');
+            }),
+          );
+          const relaySpawner = ChildProcessSpawner.make((command) => {
+            if (commandArgs(command).at(-2) === "-c") {
+              commands.push(commandArgs(command));
+              return nativeSpawner.spawn(
+                ChildProcess.make("sh", ["-c", commandArgs(command).slice(-3).join(" ")], {
+                  env: { HOME: home },
+                  stdin: command._tag === "StandardCommand" ? command.options.stdin : "pipe",
+                }),
+              );
+            }
+            return spawner.spawn(command);
+          });
+          const client = HttpClient.make((request) => {
+            if (request.url.startsWith("https://github.com/")) {
+              return Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  new Response(null, {
+                    status: 302,
+                    headers: {
+                      location: `https://assets.example/${request.url.split("/").at(-1)}`,
+                    },
+                  }),
+                ),
+              );
+            }
+            downloads.push(request.url);
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(new Uint8Array([0, 255, 10, 13, 128])),
+              ),
+            );
+          });
+          return yield* Effect.gen(function* () {
+            const launch = SshTunnel.launchOrReuseRemoteServer(
+              { alias: "devbox", hostname: "devbox", username: null, port: null },
+              undefined,
+              ARCHIVE,
+            );
+            if (retryFails) {
+              const error = yield* Effect.flip(launch);
+              assert.instanceOf(error, SshCommandError);
+              assert.equal(error.message, "Retry failed.");
+            } else {
+              assert.equal((yield* launch).remotePort, 3774);
+            }
+            assert.equal(commands.length, 5);
+            assert.deepEqual(
+              downloads.map((url) => url.split("/").at(-1)),
+              ["SHA256SUMS", "t3-1.2.3-preview.20260911.4-linux-x64.tar.gz"],
+            );
+            assert.deepEqual(
+              yield* fs.readDirectory(`${home}/.t3/runtime/downloads/${ARCHIVE.archiveVersion}`),
+              [],
+            );
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                NodeCrypto.layer,
+                Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, relaySpawner),
+                Layer.succeed(HttpClient.HttpClient, client),
+              ),
+            ),
+          );
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it("rejects archive versions that are not a single exact version segment", () => {
     for (const archiveVersion of [
       "../other",
@@ -126,7 +386,9 @@ describe("ssh tunnel scripts", () => {
     );
 
     return Effect.gen(function* () {
-      const result = yield* SshTunnel.launchOrReuseRemoteServer(target, undefined, ARCHIVE);
+      const result = yield* SshTunnel.launchOrReuseRemoteServer(target, undefined, ARCHIVE).pipe(
+        Effect.provideService(HttpClient.HttpClient, testHttpClient),
+      );
       assert.equal(result.remotePort, 3774);
       assert.deepEqual(spawnedCommands[0]?.slice(-5, -1), ["sh", "-l", "-s", "--"]);
     }).pipe(Effect.provide(layerProcess));
