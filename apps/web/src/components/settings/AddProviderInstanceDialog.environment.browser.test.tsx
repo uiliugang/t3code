@@ -1,4 +1,9 @@
-import { EnvironmentId, ProviderDriverKind, type AcpRegistrySearchAgent } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  EnvironmentId,
+  ProviderDriverKind,
+  type AcpRegistrySearchAgent,
+} from "@t3tools/contracts";
 import { userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -36,6 +41,8 @@ vi.mock(import("../../hooks/useSettings"), async (original) => ({
   ...(await original()),
   useEnvironmentSettings: settingsHooks.read as never,
   usePersistEnvironmentProviderInstanceMutation: settingsHooks.useMutation as never,
+  useClientSettings: ((select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
+    select({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" })) as never,
 }));
 vi.mock(import("../../state/session"), async (original) => {
   const hasScope = (environmentId: EnvironmentId, scope: string) =>

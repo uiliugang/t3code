@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -41,7 +42,7 @@ const infrastructure = Layer.mergeAll(
   Layer.provideMerge(Sqlite.layerMemory),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "managed-worktrees-" })),
   Layer.provide(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const encodeThread = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2AppThread));

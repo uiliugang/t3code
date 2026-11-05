@@ -74,6 +74,7 @@ function setup(
     Layer.provide(NodeCrypto.layer),
     Layer.provide(
       Layer.mock(Git.GitVcsDriver)({
+        listLocalBranchNames: () => Effect.succeed([target.branch, "unlinked"]),
         remoteBranchExists: () => Effect.succeed(options.published ?? true),
         execute: () =>
           Effect.succeed({
@@ -163,8 +164,17 @@ describe("branch issue associations", () => {
           ).toEqual([first]);
           expect((yield* service.list({ ...target, branch: "another" })).issues).toEqual([]);
           expect((yield* service.list({ ...target, cwd: "/other" })).issues).toEqual([]);
+          expect(yield* service.branches({ cwd: target.cwd, url: first })).toEqual([
+            { name: target.branch, linked: true },
+            { name: "unlinked", linked: false },
+          ]);
           yield* service.update({ ...target, action: "disassociate", urls: [first] });
           expect((yield* service.list(target)).issues).toEqual([]);
+          expect(
+            (yield* service.branches({ cwd: target.cwd, url: first })).every(
+              (branch) => !branch.linked,
+            ),
+          ).toBe(true);
           expect(fixture.writes).toEqual([]);
           expect([...fixture.config.values()].join()).not.toContain(detail.body);
         }).pipe(Effect.provide(fixture.layer));

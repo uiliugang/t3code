@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -143,7 +144,7 @@ it.effect(
           ),
         ),
         Layer.provide(Sqlite.layerMemory),
-        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       );
       yield* Effect.gen(function* () {
         const restore = yield* WorkspaceRestore.WorkspaceRestore;
@@ -174,5 +175,5 @@ it.effect(
           "recovery is required",
         );
       }).pipe(Effect.provide(layer));
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
 );

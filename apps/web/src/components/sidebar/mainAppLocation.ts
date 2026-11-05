@@ -1,6 +1,7 @@
 import { useNavigate, type AnyRouter } from "@tanstack/react-router";
 
 import { GUEST_PAGE_PATH } from "../../guestPage";
+import { withoutAssistantCitationHash } from "../../lib/assistantCitationNavigation";
 
 /** Settings and Usage open as modals over the last main-app view. */
 export function isAppModalPage(pathname: string) {
@@ -8,7 +9,11 @@ export function isAppModalPage(pathname: string) {
 }
 
 export function isSidebarUtilityPage(pathname: string) {
-  return pathname.startsWith("/projects/") || pathname === "/pull-requests";
+  return (
+    pathname.startsWith("/projects/") ||
+    pathname === "/pull-requests" ||
+    pathname === "/requirements"
+  );
 }
 
 // Pages the root route always renders without the app shell, so they are never
@@ -22,8 +27,9 @@ let appModalReturnHref: string | null = null;
 /** Remembers where Settings, Usage, and the utility pages lead back to. */
 export function startMainAppLocationTracking(router: AnyRouter): () => void {
   const record = () => {
-    const { pathname, href } = router.state.location;
+    const { pathname } = router.state.location;
     if (isAppModalPage(pathname) || SHELL_LESS_PATHS.has(pathname)) return;
+    const href = withoutAssistantCitationHash(router.state.location.href);
     appModalReturnHref = href;
     if (!isSidebarUtilityPage(pathname)) mainAppHref = href;
   };

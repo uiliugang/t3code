@@ -1,4 +1,5 @@
 import * as DateTime from "effect/DateTime";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@t3tools/shared/remote";
@@ -95,12 +96,15 @@ export function isWslSettingsRowVisible(input: {
  * Once client/server versions match, this passive Version label follows the sidebar update action,
  * including retryable failures. Rechecks retain downloaded-update labels; `state` is null outside desktop.
  */
-export function resolveLocalVersionStatusLabel(state: DesktopUpdateState | null): string {
-  if (!state) return "Up to date";
+export function resolveLocalVersionStatusLabel(
+  state: DesktopUpdateState | null,
+  t: UiTranslator = translateUi.bind(null, "en"),
+): string {
+  if (!state) return t("Up to date");
   if (state.status === "downloading") {
     return state.availableVersion
-      ? `Downloading update ${state.availableVersion}`
-      : "Downloading update";
+      ? t("Downloading update {version}", { version: state.availableVersion })
+      : t("Downloading update");
   }
   const action = resolveDesktopUpdateButtonAction(state);
   if (
@@ -109,14 +113,14 @@ export function resolveLocalVersionStatusLabel(state: DesktopUpdateState | null)
     (state.status === "checking" && state.downloadedVersion !== null)
   ) {
     const version = getDesktopUpdateDownloadedVersion(state);
-    return version ? `Update ${version} downloaded` : "Update downloaded";
+    return version ? t("Update {version} downloaded", { version }) : t("Update downloaded");
   }
   if (action === "download") {
     return state.availableVersion
-      ? `Update ${state.availableVersion} available`
-      : "Update available";
+      ? t("Update {version} available", { version: state.availableVersion })
+      : t("Update available");
   }
-  return "Up to date";
+  return t("Up to date");
 }
 
 export type QrEndpointOption = {
@@ -301,11 +305,14 @@ export function sortDesktopPairingLinks(links: ReadonlyArray<ServerPairingLinkRe
 export function summarizeAuthorizedClients(
   sessions: ReadonlyArray<ServerClientSessionRecord>,
   links: ReadonlyArray<ServerPairingLinkRecord>,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): string {
   const parts = [
-    `${sessions.length} ${sessions.length === 1 ? "client" : "clients"}`,
+    t(sessions.length === 1 ? "{count} client" : "{count} clients", { count: sessions.length }),
     links.length > 0
-      ? `${links.length} ${links.length === 1 ? "pairing link" : "pairing links"}`
+      ? t(links.length === 1 ? "{count} pairing link" : "{count} pairing links", {
+          count: links.length,
+        })
       : null,
   ];
   return parts.filter((part): part is string => part !== null).join(" · ");

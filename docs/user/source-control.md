@@ -39,6 +39,19 @@ In **Settings → Appearance → Thread details**, choose whether linked issues 
 whether they use a separate card, and whether descriptions start expanded. Mobile has
 the same preferences under **Settings → Appearance → Linked issues**.
 
+## Manage requirements
+
+Open **Requirements board** to browse MEP ONES work items or GitHub Issues, filter by project
+and assignee, and open details. Configure project spaces or repositories in
+**Settings → Code → Issue management** on the environment that owns the project. GitHub also
+uses the project's repository when no mapping is configured. Accounts are shared with source control;
+MEP requires an authenticated `ones2` installation on the server.
+
+Create issues from the board and change their status in details. MEP creation fields depend on
+the selected subtype. GitHub supports closing as completed or not planned and reopening. Branch
+links follow the rules above. If a creation result is uncertain, check the original platform
+before submitting again to avoid a duplicate.
+
 ## Review turn changes
 
 A turn's changed files and diff show only the turn's own work. When a turn pulls, merges, or

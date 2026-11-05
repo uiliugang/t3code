@@ -29,6 +29,7 @@ const state = vi.hoisted(() => ({
   threadRef: null as ScopedThreadRef | null,
   previews: new Map<string | null, ResultAtom<ReviewDiffPreviewResult>>(),
   filePatches: new Map<string, ResultAtom<ReviewDiffPreviewSource>>(),
+  diffFilesCollapsed: false,
   config: null as unknown as Atom.Atom<null>,
   status: null as unknown as ResultAtom<VcsStatusResult>,
   localRefs: null as unknown as ResultAtom<VcsListRefsResult>,
@@ -68,7 +69,11 @@ vi.mock("~/state/filesystem", () => ({
 vi.mock("~/hooks/useThreadRouteTarget", () => ({ useThreadRouteRef: () => state.threadRef }));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: ClientSettings) => unknown) =>
-    select(DEFAULT_CLIENT_SETTINGS),
+    select({
+      ...DEFAULT_CLIENT_SETTINGS,
+      uiLanguage: "en",
+      diffFilesCollapsed: state.diffFilesCollapsed,
+    }),
   updateClientSettings: async () => {},
 }));
 vi.mock("~/hooks/useTheme", () => ({
@@ -135,6 +140,8 @@ function preview(): ReviewDiffPreviewResult {
         diff: "",
         diffHash: "empty",
         truncated: false,
+        patchesDeferred: true,
+        files: [],
       },
     ],
   };
@@ -151,6 +158,10 @@ function setup(failedBaseRef: string | null) {
     state.filePatches.clear();
   };
   reset();
+  state.diffFilesCollapsed = false;
+  const patch = Atom.make<AsyncResult.AsyncResult<ReviewDiffPreviewSource, Error>>(
+    AsyncResult.initial(),
+  );
   state.threadRef = {
     environmentId: EnvironmentId.make("environment"),
     threadId: ThreadId.make("thread"),
@@ -202,6 +213,7 @@ function setup(failedBaseRef: string | null) {
   const registry = AtomRegistry.make();
   return {
     registry,
+    patch,
     threadRef: state.threadRef,
     [Symbol.dispose]() {
       registry.dispose();

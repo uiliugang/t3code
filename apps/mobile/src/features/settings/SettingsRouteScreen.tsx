@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
   navigationCustomizationAvailable,
   overflowNavigationTabs,
@@ -18,7 +19,6 @@ import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform, View } from "react-native";
-import { useWorkspaceSurface } from "../workspace/useWorkspaceSurface";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,7 +31,7 @@ import { SettingsSection, SettingsSidebarContext } from "./components/SettingsSe
 import { SettingsScreen } from "./components/SettingsScreen";
 import type { SettingsPageTarget } from "./components/settings-page-targets";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
@@ -57,8 +57,9 @@ export function SettingsListScreen(props: {
   readonly sidebar: boolean;
   readonly selected: string | null;
 }) {
-  const surface = useWorkspaceSurface();
+  const t = useUiTranslation();
   const workspace = useWorkspaceTabs();
+  const environmentMenu = useSettingsEnvironmentMenu();
   const inSidebar = props.sidebar;
   const selected = props.selected;
   const sidebar = inSidebar ? { selected } : null;
@@ -70,13 +71,13 @@ export function SettingsListScreen(props: {
 
   return (
     <SettingsSidebarContext value={sidebar}>
-      <View className={`flex-1 ${inSidebar ? surface.className : "bg-screen"}`}>
+      <View className="flex-1 bg-screen">
         <SettingsEnvironmentFilterHeader />
         {Platform.OS === "android" ? (
           <SettingsScreen
-            title="Settings"
+            title={t("Settings")}
             workspaceRoot={inSidebar}
-            trailing={<AndroidSettingsEnvironmentFilter />}
+            menus={[environmentMenu]}
             search={
               workspace
                 ? {
@@ -156,6 +157,7 @@ function environmentsRow(count: number): SettingsListRow {
 }
 
 function SettingsList(props: { readonly connections: readonly SettingsListRow[] }) {
+  const t = useUiTranslation();
   // UIKit's scroll-edge material takes the scroll view's own color; like the chat list, match
   // the sidebar's surface so the bar doesn't darken over content at rest.
   // Grouped cards only lift off the screen surface; the drawer is as dark as they are.
@@ -200,7 +202,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
         ) : (
           <EmptyState
             variant="plain"
-            title="No results"
+            title={t("No results")}
             detail={`No settings match “${query.trim()}”.`}
           />
         )}
@@ -210,6 +212,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
 }
 
 function useSettingsIndexSections(): SettingsListSection[] {
+  const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
@@ -244,12 +247,8 @@ function useSettingsIndexSections(): SettingsListSection[] {
         ...(navigationCustomizationAvailable()
           ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
           : []),
-        ...(Platform.OS === "ios"
-          ? [
-              page("SettingsKeyboard", "keyboard", "Keyboard"),
-              page("SettingsMicrophone", "mic", "Microphone"),
-            ]
-          : []),
+        ...(Platform.OS === "ios" ? [page("SettingsKeyboard", "keyboard", "Keyboard")] : []),
+        page("SettingsMicrophone", "mic", "Microphone"),
       ],
     },
     {
@@ -270,6 +269,13 @@ function useSettingsIndexSections(): SettingsListSection[] {
           "Projects",
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
+        serverPage("SettingsRequirements", "ticket", "Issue management"),
+        {
+          id: "requirements-board",
+          icon: "ticket",
+          label: "Requirements board",
+          onPress: () => navigation.navigate("Requirements"),
+        },
         serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
         serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
       ],

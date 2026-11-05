@@ -36,7 +36,9 @@ export function DiffColorsSettings() {
     <>
       <SettingsRow
         {...searchableSetting("diff-color-scheme")}
-        description="Choose a preset or customize colors for added, deleted, modified, and conflicted files."
+        description={t(
+          "Choose a preset or customize colors for added, deleted, modified, and conflicted files.",
+        )}
         resetAction={
           dirty ? (
             <SettingResetButton

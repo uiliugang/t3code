@@ -383,16 +383,22 @@ const make = Effect.gen(function* () {
         oldBranch: string,
         worktreePath: string | null,
         name: { readonly branch: string; readonly exactName: boolean },
+        onRenamed?: (branch: string) => void,
       ) {
         const current = yield* threads.getThreadShell(threadId);
         if (!current || current.deletedAt !== null || (yield* git.currentBranch(cwd)) !== oldBranch)
           return null;
-        const renamed = yield* git.renameBranch({
-          cwd,
-          oldBranch,
-          newBranch: name.branch,
-          exactName: name.exactName,
-        });
+        const renamed = yield* git
+          .renameBranch({
+            cwd,
+            oldBranch,
+            newBranch: name.branch,
+            exactName: name.exactName,
+          })
+          .pipe(
+            Effect.tap((renamed) => Effect.sync(() => onRenamed?.(renamed.branch))),
+            Effect.uninterruptible,
+          );
         const owner = yield* threads.getThreadShell(threadId);
         if (owner?.worktreePath === worktreePath && owner.branch === oldBranch) {
           yield* threads.dispatch({
@@ -592,6 +598,7 @@ const make = Effect.gen(function* () {
     const reused = input.reusedWorktree;
     const tracked = input.workspaceStrategy.type === "worktree" || reused !== undefined;
     let createdWorktreePath: string | null = null;
+    let createdBranch: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
     let runReleased = false;
@@ -713,6 +720,7 @@ const make = Effect.gen(function* () {
                 onWorktreeClaimed: (path) =>
                   Effect.sync(() => {
                     createdWorktreePath = path;
+                    createdBranch = branch;
                   }),
                 onCheckoutProgress: (progress) =>
                   setupTracker.stage(threadId, "checkout", { percent: progress.percent }),
@@ -723,6 +731,7 @@ const make = Effect.gen(function* () {
         worktreePath = worktree.worktree.path;
         branch = worktree.worktree.refName;
         createdWorktreePath = worktreePath;
+        createdBranch = branch;
         yield* setupTracker.update(threadId, (snapshot) => ({ ...snapshot, worktreePath, branch }));
         yield* setupTracker.stageStatus(threadId, "checkout", "done");
       }
@@ -752,7 +761,9 @@ const make = Effect.gen(function* () {
         const worktreeCwd = worktreePath ?? project.workspaceRoot;
         branchRename = yield* generateBranchNameFor(worktreeCwd, initialMessage).pipe(
           Effect.flatMap((name) =>
-            renameBranchForThreads(worktreeCwd, oldBranch, worktreePath, name),
+            renameBranchForThreads(worktreeCwd, oldBranch, worktreePath, name, (renamed) => {
+              createdBranch = renamed;
+            }),
           ),
           Effect.tap((branch) =>
             branch === null
@@ -894,10 +905,22 @@ const make = Effect.gen(function* () {
           ) {
             if (branchRename !== null) yield* Fiber.interrupt(branchRename);
             const removedPath = createdWorktreePath;
+            const removedBranch = createdBranch;
             // Forget worktrees only after removal succeeds; failed removals must not reuse partially written checkouts.
             yield* git
               .removeWorktree({ cwd: project.workspaceRoot, path: removedPath, force: true })
               .pipe(
+                Effect.andThen(
+                  removedBranch === null
+                    ? Effect.void
+                    : git
+                        .deleteLocalBranch({
+                          cwd: project.workspaceRoot,
+                          refName: removedBranch,
+                          force: true,
+                        })
+                        .pipe(Effect.ignoreCause({ log: true })),
+                ),
                 Effect.andThen(
                   threads
                     .dispatch({

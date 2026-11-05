@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Switch, TextInput, View } from "react-native";
@@ -19,16 +19,22 @@ import {
   skillJobNames,
   skillFilters,
   skillRows,
+  skillGroups,
+  skillSelection,
+  skillTargetGroups,
   skillStatus,
   skillFailure,
   skillNextCheck,
   skillSourceName,
+  skillSourceFailure,
   type SkillFilter,
 } from "@t3tools/shared/skillsUi";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
+import { ErrorBanner } from "../../components/ui/ErrorBanner";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { Menu } from "../../components/ui/Menu";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
@@ -36,7 +42,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -149,30 +155,36 @@ function TargetSelection({
   const t = useUiTranslation();
   return (
     <View className="gap-3">
-      {data.targets.map((target) => (
-        <View key={target.id} className="flex-row items-center gap-3">
-          <View className="min-w-0 flex-1">
-            <Text className="text-foreground">
-              {target.id === "directory:shared" ? t("Shared skills") : target.label}
-            </Text>
-            <Text selectable className="text-xs text-foreground-muted">
-              {target.directory}
-            </Text>
+      {skillTargetGroups(data.targets)
+        .filter((group) => group.enabled)
+        .map((group) => (
+          <View key={group.directory} className="flex-row items-center gap-3">
+            <View className="min-w-0 flex-1">
+              <Text className="text-foreground">
+                {group.targets
+                  .map((target) =>
+                    target.id === "directory:shared" ? t("Shared skills") : target.label,
+                  )
+                  .join(" · ")}
+              </Text>
+              <Text selectable className="text-xs text-foreground-muted">
+                {group.directory}
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel={group.targets.map((target) => target.label).join(", ")}
+              value={group.targets.some((target) => selected.includes(target.id))}
+              disabled={disabled}
+              onValueChange={(enabled) =>
+                onChange(
+                  enabled
+                    ? [...new Set([...selected, ...group.targets.map((target) => target.id)])]
+                    : selected.filter((id) => !group.targets.some((target) => target.id === id)),
+                )
+              }
+            />
           </View>
-          <Switch
-            accessibilityLabel={
-              target.id === "directory:shared" ? t("Shared skills") : target.label
-            }
-            value={selected.includes(target.id)}
-            disabled={disabled}
-            onValueChange={(enabled) =>
-              onChange(
-                enabled ? [...selected, target.id] : selected.filter((id) => id !== target.id),
-              )
-            }
-          />
-        </View>
-      ))}
+        ))}
     </View>
   );
 }
@@ -270,6 +282,31 @@ function Install({
     </View>
   );
 }
+function SkillPackageGroup({
+  name,
+  count,
+  search,
+  children,
+}: {
+  name: string;
+  count: number;
+  search: string;
+  children: ReactNode;
+}) {
+  const t = useUiTranslation();
+  const [expanded, setExpanded] = useState(false);
+  if (count === 1) return children;
+  return (
+    <View className="gap-3 border-t border-border-subtle py-3">
+      <ControlPill
+        variant="pill"
+        label={`${name} · ${t("{count} subskills", { count })}`}
+        onPress={() => setExpanded(!expanded)}
+      />
+      {expanded || search.trim() ? children : null}
+    </View>
+  );
+}
 function Skill({
   skill,
   data,
@@ -285,6 +322,7 @@ function Skill({
 }) {
   const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [choices, setChoices] = useState<string[]>([]);
   const [origin, setOrigin] = useState(false);
   const [inspection, setInspection] = useState<SkillInspection | null>(null);
   const name = skill.description ? skill.name : skill.requestedSkill || skill.locator;
@@ -318,7 +356,7 @@ function Skill({
       {failure && (
         <Text selectable accessibilityRole="alert" className="text-danger-foreground">
           {t(failure)}
-          {skill.failureDiagnostics ? `\n${skill.failureDiagnostics}` : ""}
+          {expanded && skill.failureDiagnostics ? `\n${skill.failureDiagnostics}` : ""}
         </Text>
       )}
       <View className="flex-row flex-wrap gap-2">
@@ -440,14 +478,34 @@ function Skill({
               existing={skill}
             />
           )}
-          {skill.choices?.map((choice) => (
-            <ControlPill
-              key={choice}
-              label={choice}
-              disabled={disabled}
-              onPress={() => void mutate({ type: "select", id: skill.id, skill: choice })}
-            />
-          ))}
+          {skill.choices?.length ? (
+            <View className="gap-3">
+              <Text className="text-sm text-foreground">{t("Choose skills to install")}</Text>
+              {skill.choices.map((choice) => (
+                <View key={choice} className="flex-row items-center justify-between gap-2">
+                  <Text className="min-w-0 flex-1 text-foreground">{choice}</Text>
+                  <Switch
+                    accessibilityLabel={choice}
+                    disabled={disabled}
+                    value={choices.includes(choice)}
+                    onValueChange={(enabled) =>
+                      setChoices(
+                        enabled
+                          ? [...choices, choice]
+                          : choices.filter((value) => value !== choice),
+                      )
+                    }
+                  />
+                </View>
+              ))}
+              <ControlPill
+                variant="pill"
+                label={t("Install selected ({count})", { count: choices.length })}
+                disabled={disabled || !choices.length || choices.length > 200}
+                onPress={() => void mutate(skillSelection(skill, choices))}
+              />
+            </View>
+          ) : null}
           <TargetSelection
             data={data}
             selected={skill.bindings.map((target) => target.id)}
@@ -536,37 +594,57 @@ function Source({
   const t = useUiTranslation();
   const [draft, setDraft] = useState(source);
   const [expanded, setExpanded] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const failure = source.health?.reason ? skillFailureMessage(source.health.reason) : null;
+  const diagnostics =
+    failure && source.health?.detail && source.health.detail !== failure
+      ? source.health.detail
+      : null;
   return (
     <View className="gap-3 border-t border-border-subtle py-4">
-      <View className="flex-row items-center justify-between gap-2">
-        <Text className="text-foreground">{skillSourceName(source, t)}</Text>
-        <Switch
-          accessibilityLabel={t("Enable {name}", { name: skillSourceName(source, t) })}
-          disabled={disabled}
-          value={source.enabled}
-          onValueChange={(enabled) =>
-            void mutate({ type: "source.save", source: { ...source, enabled } })
-          }
-        />
+      <View className="flex-row flex-wrap items-center justify-between gap-2">
+        <Text className="min-w-0 flex-1 text-foreground">{skillSourceName(source, t)}</Text>
+        <View className="flex-row items-center gap-2">
+          <ControlPill
+            variant="pill"
+            label={t("Check availability")}
+            disabled={disabled}
+            onPress={() => void mutate({ type: "source.check", sourceId: source.id })}
+          />
+          <Switch
+            accessibilityLabel={t("Enable {name}", { name: skillSourceName(source, t) })}
+            disabled={disabled}
+            value={source.enabled}
+            onValueChange={(enabled) =>
+              void mutate({ type: "source.save", source: { ...source, enabled } })
+            }
+          />
+        </View>
       </View>
-      <Text selectable className="text-xs text-foreground-muted">
-        {source.health
-          ? t(
-              source.health.reason
-                ? skillFailureMessage(source.health.reason)
-                : source.health.detail,
-            )
-          : t("Not checked")}
-        {source.health?.reason && source.health.detail !== skillFailureMessage(source.health.reason)
-          ? `\n${source.health.detail}`
-          : ""}
-      </Text>
+      {failure ? (
+        <View className="gap-2">
+          <ErrorBanner message={t(failure)} />
+          {diagnostics && (
+            <>
+              <ControlPill
+                variant="pill"
+                label={t(showDiagnostics ? "Hide details" : "Error details")}
+                onPress={() => setShowDiagnostics(!showDiagnostics)}
+              />
+              {showDiagnostics && (
+                <Text selectable className="text-xs text-foreground-muted">
+                  {diagnostics}
+                </Text>
+              )}
+            </>
+          )}
+        </View>
+      ) : (
+        <Text selectable className="text-xs text-foreground-muted">
+          {source.health ? t(source.health.detail) : t("Not checked")}
+        </Text>
+      )}
       <View className="flex-row flex-wrap gap-2">
-        <ControlPill
-          label={t("Check availability")}
-          disabled={disabled}
-          onPress={() => void mutate({ type: "source.check", sourceId: source.id })}
-        />
         <ControlPill label={t("Configuration")} onPress={() => setExpanded(!expanded)} />
       </View>
       {expanded && (
@@ -630,6 +708,8 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [tab, setTab] = useState("skills");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
+  const [showExternal, setShowExternal] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
   const [previews, setPreviews] = useState<
@@ -678,14 +758,14 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       </Text>
     );
   const disabled = !permitted;
-  const { rows, counts } = skillRows(data, search, filter);
+  const failedSource = skillSourceFailure(data);
+  const { rows, counts } = skillRows(data, search, filter, showExternal);
   const chosen = data.skills.filter((skill) => selected.includes(skill.id));
   const discovered = data.discovered.filter(
     (skill) => selected.includes(skill.identity ?? skill.path) && !skill.external,
   );
   return (
     <View className="gap-3 p-4">
-      <Text className="text-xs text-foreground-muted">{t("Checks for updates once a day")}</Text>
       {disabled && (
         <Text className="text-foreground-muted">
           {t("Read-only access. Full access is required to manage skills.")}
@@ -721,14 +801,36 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
           )}
         />
       </Menu>
-      {data.lastFailure && (
-        <Text accessibilityRole="alert" className="text-danger-foreground">
-          {t(
-            data.lastFailureReason ? skillFailureMessage(data.lastFailureReason) : data.lastFailure,
-          )}
-          {data.lastFailureDiagnostics ? `\n${data.lastFailureDiagnostics}` : ""}
-        </Text>
-      )}
+      {data.lastFailure &&
+        data.lastFailureReason !== "select-skill" &&
+        (tab !== "sources" || !failedSource) && (
+          <View className="gap-2">
+            <ErrorBanner
+              message={t(
+                data.lastFailureReason
+                  ? skillFailureMessage(data.lastFailureReason)
+                  : data.lastFailure,
+              )}
+            />
+            {failedSource ? (
+              <ControlPill label={t("Installation sources")} onPress={() => setTab("sources")} />
+            ) : (
+              data.lastFailureDiagnostics && (
+                <>
+                  <ControlPill
+                    label={t(showDiagnostics ? "Hide details" : "Error details")}
+                    onPress={() => setShowDiagnostics(!showDiagnostics)}
+                  />
+                  {showDiagnostics && (
+                    <Text selectable className="text-xs text-foreground-muted">
+                      {data.lastFailureDiagnostics}
+                    </Text>
+                  )}
+                </>
+              )
+            )}
+          </View>
+        )}
       {installing && (
         <Install
           data={data}
@@ -814,17 +916,34 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       )}
       {tab === "skills" && (
         <>
-          {counts.all > 0 && (
+          {data.skills.length + data.discovered.length > 0 && (
             <>
               <Field label={t("Search skills")} value={search} onChange={setSearch} />
               <Menu
-                actions={Object.entries(skillFilters).map(([id, title]) => ({
-                  id,
-                  title: `${t(title)} (${counts[id as SkillFilter]})`,
-                }))}
-                onPressAction={({ nativeEvent }) => setFilter(nativeEvent.event as SkillFilter)}
+                actions={[
+                  ...Object.entries(skillFilters).map(([id, title]) => ({
+                    id,
+                    title: `${t(title)} (${counts[id as SkillFilter]})`,
+                  })),
+                  {
+                    id: "external",
+                    title: `${showExternal ? "✓ " : ""}${t("Show externally maintained skills")}`,
+                  },
+                ]}
+                onPressAction={({ nativeEvent }) => {
+                  if (nativeEvent.event === "external") setShowExternal(!showExternal);
+                  else setFilter(nativeEvent.event as SkillFilter);
+                  setSelected([]);
+                }}
               >
-                <ControlPill label={`${t(skillFilters[filter])} (${counts[filter]})`} />
+                <ControlPill
+                  icon={
+                    filter === "all" && !showExternal
+                      ? "line.3.horizontal.decrease.circle"
+                      : "line.3.horizontal.decrease.circle.fill"
+                  }
+                  accessibilityLabel={t("Filter skills")}
+                />
               </Menu>
               <ControlPill
                 label={t("Select all")}
@@ -899,60 +1018,65 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
               {t(counts.all ? "No matching skills" : "No skills found in this environment")}
             </Text>
           )}
-          {rows.map((row) => (
-            <View key={row.key}>
-              <View className="flex-row items-center justify-between gap-2">
-                <Text className="min-w-0 flex-1 text-xs text-foreground-muted">
-                  {t("Select {name}", { name: row.name })}
-                </Text>
-                <Switch
-                  accessibilityLabel={t("Select {name}", { name: row.name })}
-                  disabled={row.kind === "discovered" && row.skill.external}
-                  value={selected.includes(row.key)}
-                  onValueChange={(checked) =>
-                    setSelected(
-                      checked ? [...selected, row.key] : selected.filter((key) => key !== row.key),
-                    )
-                  }
-                />
-              </View>
-              {row.kind === "managed" ? (
-                <Skill
-                  skill={row.skill}
-                  data={data}
-                  disabled={disabled || row.skill.status === "fetching"}
-                  mutate={mutate}
-                  inspect={inspect}
-                />
-              ) : (
-                <View className="gap-2 border-t border-border-subtle py-4">
-                  <Text className="font-semibold text-foreground">{row.name}</Text>
-                  <Text className="text-xs text-foreground-muted">
-                    {t(row.skill.external ? "Maintained externally" : "Unmanaged")} ·{" "}
-                    {(row.skill.providers ?? [row.skill.provider]).join(", ")}
-                  </Text>
-                  <Text numberOfLines={2} className="text-sm text-foreground-muted">
-                    {row.skill.description}
-                  </Text>
-                  {(row.skill.paths ?? [row.skill.path]).map((path) => (
-                    <Text key={path} selectable className="text-xs text-foreground-muted">
-                      {path}
+          {skillGroups(rows).map((group) => (
+            <SkillPackageGroup
+              key={group.key}
+              name={group.name}
+              count={group.rows.length}
+              search={search}
+            >
+              {group.rows.map((row) => (
+                <View key={row.key}>
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Text className="min-w-0 flex-1 text-xs text-foreground-muted">
+                      {t("Select {name}", { name: row.name })}
                     </Text>
-                  ))}
-                  {row.skill.external ? (
-                    <Text className="text-xs text-foreground-muted">
-                      {t("Update this skill through its plugin or provider.")}
-                    </Text>
-                  ) : (
-                    <ControlPill
-                      label={t("Adopt skill")}
-                      disabled={disabled || previewing}
-                      onPress={() => void preview([row.skill])}
+                    <Switch
+                      accessibilityLabel={t("Select {name}", { name: row.name })}
+                      disabled={row.kind === "discovered" && row.skill.external}
+                      value={selected.includes(row.key)}
+                      onValueChange={(checked) =>
+                        setSelected(
+                          checked
+                            ? [...selected, row.key]
+                            : selected.filter((key) => key !== row.key),
+                        )
+                      }
                     />
+                  </View>
+                  {row.kind === "managed" ? (
+                    <Skill
+                      skill={row.skill}
+                      data={data}
+                      disabled={disabled || row.skill.status === "fetching"}
+                      mutate={mutate}
+                      inspect={inspect}
+                    />
+                  ) : (
+                    <View className="gap-2 border-t border-border-subtle py-4">
+                      <Text className="font-semibold text-foreground">{row.name}</Text>
+                      <Text className="text-xs text-foreground-muted">
+                        {t(row.skill.external ? "Maintained externally" : "Unmanaged")} ·{" "}
+                        {(row.skill.providers ?? [row.skill.provider]).join(", ")}
+                      </Text>
+                      <Text numberOfLines={2} className="text-sm text-foreground-muted">
+                        {row.skill.description}
+                      </Text>
+                      {(row.skill.paths ?? [row.skill.path]).map((path) => (
+                        <Text key={path} selectable className="text-xs text-foreground-muted">
+                          {path}
+                        </Text>
+                      ))}
+                      {row.skill.external && (
+                        <Text className="text-xs text-foreground-muted">
+                          {t("Update this skill through its plugin or provider.")}
+                        </Text>
+                      )}
+                    </View>
                   )}
                 </View>
-              )}
-            </View>
+              ))}
+            </SkillPackageGroup>
           ))}
         </>
       )}
@@ -1021,25 +1145,74 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       )}
       {tab === "targets" && (
         <>
-          {data.targets.map((target) => (
-            <View key={target.id} className="gap-2 border-t border-border-subtle py-4">
-              <Text className="text-foreground">{target.label}</Text>
+          {skillTargetGroups(data.targets).map((group) => (
+            <View key={group.directory} className="gap-2 border-t border-border-subtle py-4">
+              <View className="flex-row flex-wrap items-center gap-3">
+                <Text className="flex-1 text-foreground">
+                  {group.targets
+                    .map((target) =>
+                      target.id === "directory:shared" ? t("Shared skills") : target.label,
+                    )
+                    .join(" · ")}
+                </Text>
+                {!group.enabled && (
+                  <View className="flex-row items-center gap-1" accessibilityLabel={t("Disabled")}>
+                    <SymbolView
+                      name="slash.circle"
+                      size={16}
+                      tintColorClassName="text-foreground-muted"
+                    />
+                    <Text className="text-xs text-foreground-muted">{t("Disabled")}</Text>
+                  </View>
+                )}
+                {!group.shared && !group.hasSkills && (
+                  <ControlPill
+                    label={t("Remove location")}
+                    icon="trash"
+                    accessibilityLabel={t("Remove location {name}", {
+                      name: group.targets.map((target) => target.label).join(" · "),
+                    })}
+                    disabled={disabled}
+                    onPress={() =>
+                      void mutate({ type: "target.remove", targetId: group.targets[0]!.id })
+                    }
+                  />
+                )}
+                {(group.hasSkills || !group.enabled) && (
+                  <Switch
+                    accessibilityLabel={t("Enable location {name}", {
+                      name: group.targets.map((target) => target.label).join(" · "),
+                    })}
+                    value={group.enabled}
+                    disabled={disabled}
+                    onValueChange={(enabled) =>
+                      void mutate({
+                        type: "target.configure",
+                        targetId: group.targets[0]!.id,
+                        enabled,
+                      })
+                    }
+                  />
+                )}
+              </View>
               <Text selectable className="text-xs text-foreground-muted">
-                {target.directory}
+                {group.directory}
               </Text>
               <Text className="text-xs text-foreground-muted">
                 {t("{count} managed skills", {
                   count: data.skills.filter((skill) =>
-                    skill.bindings.some((binding) => binding.id === target.id),
+                    skill.bindings.some(
+                      (binding) =>
+                        group.targets.some((target) => target.id === binding.id) ||
+                        binding.directory === group.directory,
+                    ),
                   ).length,
                 })}
               </Text>
-              {data.customTargets.some((entry) => entry.id === target.id) && (
-                <ControlPill
-                  label={t("Remove location")}
-                  disabled={disabled}
-                  onPress={() => void mutate({ type: "target.remove", targetId: target.id })}
-                />
+              {group.targets.length > 1 && (
+                <Text className="text-xs text-foreground-muted">
+                  {t("This directory is shared by multiple instances.")}
+                </Text>
               )}
             </View>
           ))}
@@ -1118,12 +1291,13 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   );
 }
 export function SettingsSkillsRouteScreen() {
+  const environmentMenu = useSettingsEnvironmentMenu();
   const t = useUiTranslation();
   const { selectedTargets } = useSettingsEnvironmentFilter();
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title={t("Skill management")} trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title={t("Skill management")} menus={[environmentMenu]}>
         <ScreenScrollView
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"

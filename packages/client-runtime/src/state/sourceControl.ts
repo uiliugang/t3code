@@ -1,5 +1,6 @@
-import { WS_METHODS } from "@t3tools/contracts";
+import { WS_METHODS, type EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
+import * as Effect from "effect/Effect";
 
 import {
   createAtomCommandScheduler,
@@ -16,10 +17,51 @@ export function createSourceControlEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Persistence.EnvironmentCacheStore | R, E>,
 ) {
   const commandScheduler = createAtomCommandScheduler();
+  const issueRefresh = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
   return {
+    issues: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:issues:list",
+      tag: WS_METHODS.issuesList,
+      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
+    }),
+    issueBranches: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:issues:branches",
+      tag: WS_METHODS.issueBranches,
+      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
+    }),
+    issueDetail: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:issues:detail",
+      tag: WS_METHODS.issuesRead,
+      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
+    }),
+    issuePeople: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:issues:people",
+      tag: WS_METHODS.issuesPeople,
+    }),
+    issueMetadata: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:issues:metadata",
+      tag: WS_METHODS.issuesMetadata,
+    }),
+    createIssue: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:issues:create",
+      tag: WS_METHODS.issuesCreate,
+      scheduler: commandScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.update(issueRefresh(environmentId), (value) => value + 1)),
+    }),
+    setIssueState: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:issues:set-state",
+      tag: WS_METHODS.issuesSetState,
+      scheduler: commandScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.update(issueRefresh(environmentId), (value) => value + 1)),
+    }),
     branchIssues: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:branch-issues",
       tag: WS_METHODS.branchIssuesList,
+      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
     }),
     branchIssueDetail: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:branch-issue-detail",
@@ -30,6 +72,8 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       tag: WS_METHODS.branchIssuesUpdate,
       scheduler: vcsCommandScheduler,
       concurrency: vcsCommandConcurrency,
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.update(issueRefresh(environmentId), (value) => value + 1)),
     }),
     exportProjectConfigurations: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:export-configuration",
@@ -67,6 +111,10 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     checkStarred: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:check-starred",
       tag: WS_METHODS.sourceControlStarred,
+    }),
+    star: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:source-control:star",
+      tag: WS_METHODS.sourceControlStar,
     }),
     repository: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:repository",

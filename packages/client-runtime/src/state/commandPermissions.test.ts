@@ -75,21 +75,25 @@ describe("command permissions", () => {
     WS_METHODS.projectsImportFolders,
     WS_METHODS.skillsMutate,
     WS_METHODS.skillsInspect,
+    WS_METHODS.issuesCreate,
+    WS_METHODS.issuesSetState,
   ])("requires clone, project and settings grants on the destination for %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
         const command = createCommandPermissions(runtime, method);
         const required =
-          method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
-            ? [AuthProvidersManageScope]
-            : method === WS_METHODS.projectsImportFolders
-              ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
-              : [
-                  AuthSourceControlWriteScope,
-                  AuthOrchestrationOperateScope,
-                  AuthSettingsWriteScope,
-                ];
+          method === WS_METHODS.issuesCreate || method === WS_METHODS.issuesSetState
+            ? [AuthSourceControlWriteScope]
+            : method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
+              ? [AuthProvidersManageScope]
+              : method === WS_METHODS.projectsImportFolders
+                ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
+                : [
+                    AuthSourceControlWriteScope,
+                    AuthOrchestrationOperateScope,
+                    AuthSettingsWriteScope,
+                  ];
         for (const missing of required) {
           const scopes = required.filter((scope) => scope !== missing);
           registry.set(
@@ -109,6 +113,39 @@ describe("command permissions", () => {
         yield* command.authorize(registry, env);
         registry.set(sessions(other), AsyncResult.success(grant(false)));
         expect(registry.get(command.permissionAtom(other))).toBe(false);
+      }),
+    ),
+  );
+  it.effect("requires the destination read grant to refresh providers", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const refresh = createCommandPermissions(runtime, WS_METHODS.serverRefreshProviders);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(refresh.permissionAtom(env))).toBe(false);
+        expect((yield* refresh.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationReadScope],
+            permissions: [AuthOrchestrationReadScope],
+          }),
+        );
+        expect(registry.get(refresh.permissionAtom(env))).toBe(true);
+        yield* refresh.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(refresh.permissionAtom(other))).toBe(false);
+        expect((yield* refresh.authorize(registry, other).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(sessions(env), AsyncResult.success(grant(false)));
+        expect(registry.get(refresh.permissionAtom(env))).toBe(false);
+        expect((yield* refresh.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
       }),
     ),
   );

@@ -1,10 +1,19 @@
-import { type ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
-import { memo } from "react";
+import {
+  type EnvironmentId,
+  type ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { memo, useRef, useState } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button, InlineButton } from "../ui/button";
 import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { RefreshIcon } from "../ui/refresh-icon";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 
 function getIncompatibleVersion(status: ServerProvider) {
   const compatibility = status.compatibilityAdvisory;
@@ -86,14 +95,36 @@ export function getProviderStatusMessage(status: ServerProvider): string {
 }
 
 export const ProviderStatusBanner = memo(function ProviderStatusBanner({
+  environmentId,
   onDismiss,
   onOpenProviderSetup,
   status,
 }: {
+  environmentId: EnvironmentId;
   onDismiss: () => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   status: ServerProvider | null;
 }) {
+  const t = useUiTranslation();
+  const canRefresh = useAtomValue(serverEnvironment.refreshProviders.permissionAtom(environmentId));
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    label: t("Refresh provider status"),
+  });
+  const refreshingRef = useRef(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refresh = async () => {
+    if (!status || !canRefresh || refreshingRef.current) return;
+    refreshingRef.current = true;
+    setIsRefreshing(true);
+    await refreshProviders({
+      environmentId,
+      input: { instanceId: status.instanceId, refreshModels: true },
+    });
+    refreshingRef.current = false;
+    setIsRefreshing(false);
+  };
+
   if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }
@@ -102,10 +133,15 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
   const incompatible = getIncompatibleVersion(status);
   const title = isUnauthenticated
-    ? `${providerName} is unauthenticated`
+    ? t("{provider} is unauthenticated", { provider: providerName })
     : incompatible
-      ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
-      : `${providerName} provider status`;
+      ? t(
+          incompatible.status === "broken"
+            ? "{provider} {version} is known to be broken"
+            : "{provider} {version} is unsupported",
+          { provider: providerName, version: status.version ?? "" },
+        )
+      : t("{provider} provider status", { provider: providerName });
   const message = incompatible?.message ?? getProviderStatusMessage(status);
   const isWarning =
     incompatible?.status !== "broken" && (status.status === "warning" || incompatible !== null);
@@ -121,21 +157,38 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
         <InfoIcon />
         <AlertTitle>{title}</AlertTitle>
         <AlertDescription>
-          <Tooltip>
-            <TooltipTrigger render={<div className="line-clamp-3" />}>{message}</TooltipTrigger>
-            <TooltipPopup side="top" className="whitespace-pre-wrap">
-              {message}
-            </TooltipPopup>
-          </Tooltip>
-          {onOpenProviderSetup && hasProviderSetup(status) ? (
-            <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
-              Open provider setup
-            </InlineButton>
-          ) : null}
+          <div className="flex flex-col gap-2">
+            <Tooltip>
+              <TooltipTrigger render={<div className="line-clamp-3" />}>{message}</TooltipTrigger>
+              <TooltipPopup side="top" className="whitespace-pre-wrap">
+                {message}
+              </TooltipPopup>
+            </Tooltip>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {onOpenProviderSetup && hasProviderSetup(status) ? (
+                <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
+                  {t("Open provider setup")}
+                </InlineButton>
+              ) : null}
+              <Button
+                aria-label={t("Refresh {provider} provider status", { provider: providerName })}
+                disabled={!canRefresh || isRefreshing}
+                onClick={() => void refresh()}
+                size="xs"
+                variant="outline"
+              >
+                <RefreshIcon />
+                {t(isRefreshing ? "Refreshing..." : "Refresh")}
+              </Button>
+            </div>
+          </div>
         </AlertDescription>
         <AlertAction>
           <Button
-            aria-label={`Dismiss ${providerName} provider ${status.status}`}
+            aria-label={t("Dismiss {provider} provider {status}", {
+              provider: providerName,
+              status: t(status.status),
+            })}
             onClick={onDismiss}
             size="icon-xs"
             variant="ghost-muted"

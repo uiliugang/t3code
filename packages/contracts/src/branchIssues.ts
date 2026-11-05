@@ -48,6 +48,13 @@ export const BranchIssuesUpdateInput = Schema.Struct({
   action: Schema.Literals(["associate", "disassociate"]),
 });
 export type BranchIssuesUpdateInput = typeof BranchIssuesUpdateInput.Type;
+export const IssueBranchesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+});
+export const IssueBranchesResult = Schema.Array(
+  Schema.Struct({ name: Schema.String, linked: Schema.Boolean }),
+);
 
 export class BranchIssueError extends Schema.TaggedError<BranchIssueError>()("BranchIssueError", {
   operation: Schema.String,

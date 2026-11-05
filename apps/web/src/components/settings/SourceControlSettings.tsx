@@ -365,7 +365,7 @@ function EmptySourceControlDiscovery({
   const hasError = error !== null;
 
   return (
-    <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
+    <SettingsSection id={searchableSetting("source-control").id} title={t("Server environment")}>
       <Empty>
         <EmptyMedia variant="icon">
           <PullRequestGlyph.pullRequest />
@@ -393,7 +393,13 @@ function EmptySourceControlDiscovery({
   );
 }
 
-export function SourceControlSettingsPanel() {
+export function SourceControlSettingsPanel({
+  integrationsOnly = false,
+  children,
+}: {
+  integrationsOnly?: boolean;
+  children?: ReactNode;
+}) {
   const t = useUiTranslation();
   const { scope, environment, connectedEnvironments } = useSettingsScope();
 
@@ -412,8 +418,10 @@ export function SourceControlSettingsPanel() {
   const discovered = discovery.data ?? EMPTY_DISCOVERY_RESULT;
   const result = {
     ...discovered,
-    sourceControlProviders: discovered.sourceControlProviders.filter((item) =>
-      sourceControlClients.definitions.some((definition) => definition.kind === item.kind),
+    sourceControlProviders: discovered.sourceControlProviders.filter(
+      (item) =>
+        sourceControlClients.definitions.some((definition) => definition.kind === item.kind) &&
+        (!integrationsOnly || item.kind === "github" || item.kind === "meituan"),
     ),
   };
   const hasVersionControlSystems = result.versionControlSystems.length > 0;
@@ -511,6 +519,7 @@ export function SourceControlSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      {children}
       {environmentId !== null ? (
         <MeituanCodeAuthorizationObserver
           environmentId={environmentId}
@@ -520,9 +529,12 @@ export function SourceControlSettingsPanel() {
           onChanged={handleScan}
         />
       ) : null}
-      <ProjectDefaultsSettings category="source-control" />
+      {!integrationsOnly ? <ProjectDefaultsSettings category="source-control" /> : null}
       {environmentId === null ? (
-        <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
+        <SettingsSection
+          id={searchableSetting("source-control").id}
+          title={t("Server environment")}
+        >
           <p className="px-4 py-3 text-sm text-muted-foreground">
             {t(
               "Connect an environment to inspect its version control tools and hosting integrations.",
@@ -539,7 +551,7 @@ export function SourceControlSettingsPanel() {
         </>
       ) : hasDiscoveryItems ? (
         <>
-          {hasVersionControlSystems ? (
+          {hasVersionControlSystems && !integrationsOnly ? (
             <SettingsSection
               id={searchableSetting("source-control").id}
               title={`${t("Version Control")}${environmentSuffix}`}
@@ -577,7 +589,7 @@ export function SourceControlSettingsPanel() {
         />
       )}
 
-      <SourceControlWritingSettingsSection />
+      {!integrationsOnly ? <SourceControlWritingSettingsSection /> : null}
     </SettingsPageContainer>
   );
 }

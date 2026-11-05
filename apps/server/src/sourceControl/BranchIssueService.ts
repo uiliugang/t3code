@@ -6,11 +6,13 @@ import {
   type BranchIssuesUpdateInput,
   type BranchIssueDetail,
   type BranchIssuesResult,
+  type IssueBranchesInput,
+  type IssueBranchesResult,
   SourceControlProviderError,
 } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -29,6 +31,9 @@ export class BranchIssueService extends Context.Service<
       input: BranchIssuesInput & { readonly url: string },
     ) => Effect.Effect<BranchIssueDetail, BranchIssueError>;
     readonly update: (input: BranchIssuesUpdateInput) => Effect.Effect<void, BranchIssueError>;
+    readonly branches: (
+      input: typeof IssueBranchesInput.Type,
+    ) => Effect.Effect<typeof IssueBranchesResult.Type, BranchIssueError>;
   }
 >()("t3/sourceControl/BranchIssueService") {}
 
@@ -40,7 +45,7 @@ const decodeStored = Schema.decodeEffect(StoredIssues);
 const encodeStored = Schema.encodeEffect(StoredIssues);
 
 const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const digester = yield* Digest.Digest;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const providers = yield* Providers.SourceControlProviderRegistry;
   const lock = yield* Semaphore.make(1);
@@ -52,7 +57,7 @@ const make = Effect.gen(function* () {
       normalizeGitRemoteUrl(handle.context.remoteUrl),
       input.branch,
     ]);
-    const hash = yield* crypto.digest("SHA-256", new TextEncoder().encode(identity));
+    const hash = yield* digester.digest(Digest.sha256, new TextEncoder().encode(identity));
     const key = `t3issues.${Hex.encode(hash)}.links`;
     return { ...handle, context: handle.context, capability: handle.provider.issues, key };
   });
@@ -178,7 +183,36 @@ const make = Effect.gen(function* () {
         ),
       ),
   );
-  return BranchIssueService.of({ list, read, update });
+  const branches = Effect.fn("BranchIssueService.branches")(
+    function* (input: typeof IssueBranchesInput.Type) {
+      const handle = yield* resolve({ cwd: input.cwd, branch: "HEAD" });
+      const issue = parseBranchIssueUrl(input.url);
+      if (!issue || issue.provider !== handle.provider.kind)
+        return yield* new BranchIssueError({ operation: "branches", reason: "invalid-link" });
+      const names = yield* git.listLocalBranchNames(input.cwd);
+      const linked = handle.capability.branches
+        ? yield* handle.capability.branches({ cwd: input.cwd, issue, context: handle.context })
+        : yield* Effect.filter(
+            names,
+            (branch) =>
+              resolve({ cwd: input.cwd, branch }).pipe(
+                Effect.flatMap((target) => stored(input.cwd, target.key)),
+                Effect.map((items) => items.some((item) => item.url === issue.url)),
+              ),
+            { concurrency: 4 },
+          );
+      return [...new Set([...names, ...linked])].map((name) => ({
+        name,
+        linked: linked.includes(name),
+      }));
+    },
+    Effect.mapError((cause) =>
+      isBranchIssueError(cause)
+        ? cause
+        : new BranchIssueError({ operation: "branches", reason: "unavailable", cause }),
+    ),
+  );
+  return BranchIssueService.of({ list, read, update, branches });
 });
 
 export const layer = Layer.effect(BranchIssueService, make);

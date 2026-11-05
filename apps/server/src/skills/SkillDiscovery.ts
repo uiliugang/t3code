@@ -89,8 +89,11 @@ export const makeSkillDiscovery = Effect.gen(function* () {
     reported: ReadonlyArray<{ name: string; path: string; provider: string }>,
     managedRoot: string,
     managedPaths: ReadonlySet<string>,
+    excludedDirectories: ReadonlyArray<string> = [],
   ) {
     const found = new Map<string, DiscoveredSkill>();
+    const populatedDirectories = new Set<string>();
+    const locations = new Map(targets.map((target) => [target.directory, target.directory]));
     const add = Effect.fn("SkillDiscovery.add")(function* (
       file: string,
       provider: string,
@@ -99,6 +102,20 @@ export const makeSkillDiscovery = Effect.gen(function* () {
       const result = yield* describe(file).pipe(Effect.result);
       if (result._tag === "Failure") return;
       const item = result.success;
+      const parent = path.dirname(path.dirname(item.path));
+      const location =
+        locations.get(parent) ??
+        (yield* fs.realPath(parent).pipe(Effect.orElseSucceed(() => path.resolve(parent))));
+      locations.set(parent, location);
+      for (const target of targets)
+        if (location === target.directory || location.startsWith(target.directory + path.sep))
+          populatedDirectories.add(target.directory);
+      if (
+        excludedDirectories.some(
+          (directory) => location === directory || location.startsWith(directory + path.sep),
+        )
+      )
+        return;
       if (item.identity.startsWith(managedRoot + path.sep) || managedPaths.has(item.path)) return;
       const previous = found.get(item.identity);
       found.set(item.identity, {
@@ -119,9 +136,10 @@ export const makeSkillDiscovery = Effect.gen(function* () {
         yield* add(path.join(target.directory, name), target.label, target.id);
       }
     }
-    return [...found.values()].toSorted(
+    const discovered = [...found.values()].toSorted(
       (a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path),
     );
+    return { discovered, populatedDirectories };
   });
   return { describe, scan };
 });

@@ -8,6 +8,7 @@ import { definition, parsePullRequestUrl } from "../shared/definition.ts";
 import * as MCodeCli from "./MCodeCli.ts";
 import * as Json from "./mcodeJson.ts";
 import * as MCodeIssues from "./MCodeIssues.ts";
+import * as MepIssueBoard from "./MepIssueBoard.ts";
 
 const isRepositoryName = Schema.is(Json.RepositoryName);
 
@@ -81,6 +82,7 @@ export const make = Effect.gen(function* () {
   });
 
   return SourceControlProvider.SourceControlProvider.of({
+    issueBoard: yield* MepIssueBoard.make,
     issues,
     kind: definition.kind,
     repositoryNameFromRemoteUrl: (url) =>
