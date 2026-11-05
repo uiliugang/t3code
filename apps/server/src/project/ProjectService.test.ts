@@ -1,7 +1,9 @@
+import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -114,7 +116,7 @@ const layerTestFor = (
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-test-" })),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(layerEnrichmentCompletions),
   );
 
@@ -217,7 +219,7 @@ it.effect("resolves only the requested active project page in creation order", (
       const service = yield* ProjectService.ProjectService;
       const enrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
       const changes = yield* enrichment.subscribeChanges;
-      const rows = Array.from({ length: 6 }, (_, index) => ({
+      const rows = Arr.makeBy(6, (index) => ({
         project_id: `page:${index}`,
         title: `Project ${index}`,
         workspace_root: `/work/page-${index}`,
@@ -283,7 +285,7 @@ const layerProjectServiceDependencies = Layer.mergeAll(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-race-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const waitForProject = Effect.fn("ProjectServiceTest.waitForProject")(function* (

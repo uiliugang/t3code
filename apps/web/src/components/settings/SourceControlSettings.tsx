@@ -365,7 +365,7 @@ function EmptySourceControlDiscovery({
   const hasError = error !== null;
 
   return (
-    <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
+    <SettingsSection id={searchableSetting("source-control").id} title={t("Server environment")}>
       <Empty>
         <EmptyMedia variant="icon">
           <PullRequestGlyph.pullRequest />
@@ -531,7 +531,10 @@ export function SourceControlSettingsPanel({
       ) : null}
       {!integrationsOnly ? <ProjectDefaultsSettings category="source-control" /> : null}
       {environmentId === null ? (
-        <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
+        <SettingsSection
+          id={searchableSetting("source-control").id}
+          title={t("Server environment")}
+        >
           <p className="px-4 py-3 text-sm text-muted-foreground">
             {t(
               "Connect an environment to inspect its version control tools and hosting integrations.",

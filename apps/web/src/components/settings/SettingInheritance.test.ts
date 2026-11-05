@@ -1,5 +1,11 @@
-import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { describe, expect, it } from "vite-plus/test";
 
 import { settingInheritanceLayers } from "./SettingInheritance";
@@ -64,15 +70,16 @@ describe("settingInheritanceLayers", () => {
   });
 
   it("shows the checkout's t3.json as a layer for file-backed keys", () => {
+    const inheritedSettings = { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: null };
     const file = { defaultThreadEnvMode: "worktree" as const };
     const fromFile = settingInheritanceLayers(
       {
         environmentId,
         label: "Laptop",
         projectId,
-        ...resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, file),
+        ...resolveProjectSettings(inheritedSettings, projectId, null, file),
       },
-      DEFAULT_SERVER_SETTINGS,
+      inheritedSettings,
       "defaultThreadEnvMode",
     );
     expect(fromFile.map((layer) => [layer.label, layer.value, layer.effective])).toEqual([
@@ -98,5 +105,52 @@ describe("settingInheritanceLayers", () => {
       ["Inherits", false],
       ["Current checkout", false],
     ]);
+    const fromDefaults = settingInheritanceLayers(
+      {
+        environmentId,
+        label: "Laptop",
+        projectId,
+        ...resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, file),
+      },
+      DEFAULT_SERVER_SETTINGS,
+      "defaultThreadEnvMode",
+      translateUi.bind(null, "zh-CN"),
+    );
+    expect(fromDefaults.map((layer) => [layer.value, layer.effective])).toEqual([
+      ["继承", false],
+      ["新建工作树", true],
+      ["继承", false],
+      ["当前检出", false],
+    ]);
+  });
+
+  it("localizes values without translating model IDs", () => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      sidebarAutoSettleAfterDays: 2,
+      idleCompaction: "onReturn" as const,
+      defaultModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "Default" },
+    };
+    const target = {
+      environmentId,
+      label: "Default",
+      projectId,
+      ...resolveProjectSettings(settings, projectId),
+    };
+    const t = translateUi.bind(null, "zh-CN");
+    expect(
+      settingInheritanceLayers(target, settings, "idleCompaction", t).find(
+        (layer) => layer.key === "environment",
+      )?.value,
+    ).toBe("返回时");
+    expect(
+      settingInheritanceLayers(target, settings, "sidebarAutoSettleAfterDays", t)[1]?.value,
+    ).toBe("2 天");
+    expect(settingInheritanceLayers(target, settings, "defaultModelSelection", t)[1]?.value).toBe(
+      "Default",
+    );
+    expect(settingInheritanceLayers(target, settings, "defaultModelSelection", t)[1]?.label).toBe(
+      "Default",
+    );
   });
 });

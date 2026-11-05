@@ -34,6 +34,7 @@ import { connectionTone } from "../connection/connectionTone";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsDragHandle } from "./components/SettingsDragHandle";
 import { SettingsSection } from "./components/SettingsSection";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 const ICON_SIZE = Platform.OS === "android" ? 24 : 22;
 const REMOVE_SIZE = 20;
@@ -57,6 +58,7 @@ export function EnvironmentRoutesSection({
   readonly connected: boolean;
   readonly onAddRoute: () => void;
 }) {
+  const t = useUiTranslation();
   const entry = useAtomValue(environmentCatalog.catalogValueAtom).entries.get(environmentId);
   const prepared = useAtomValue(environmentSession.preparedConnectionValueAtom(environmentId));
   const sessionResult = useAtomValue(environmentSession.sessionStateAtom(environmentId));
@@ -130,11 +132,11 @@ export function EnvironmentRoutesSection({
 
   return (
     <SettingsSection
-      title="Routes"
+      title={t("Routes")}
       trailing={
         routes.length > 1 ? (
           <Button
-            label={editing ? "Done" : "Edit"}
+            label={t(editing ? "Done" : "Edit")}
             tone="text"
             onPress={() => setEditing((value) => !value)}
           />
@@ -143,7 +145,7 @@ export function EnvironmentRoutesSection({
     >
       <SettingsActionRow
         icon="checkmark.circle"
-        label="Your permissions"
+        label={t("Your permissions")}
         onPress={() => setPermissionsOpen((open) => !open)}
       />
       {permissionsOpen ? (
@@ -154,25 +156,28 @@ export function EnvironmentRoutesSection({
           session?.authenticated ? (
             <>
               <Text className="text-sm text-foreground-muted">
-                Applies to the route marked In use. Other routes may have different permissions and
-                have not been checked.
+                {t(
+                  "Applies to the route marked In use. Other routes may have different permissions and have not been checked.",
+                )}
               </Text>
               {AUTH_SCOPE_OPTIONS.map(({ scope, title }) => (
                 <Text key={scope} className="text-sm text-foreground">
-                  {title}: {sessionGrantsScope(session, scope) ? "Allowed" : "Not granted"}
+                  {t(title)}: {t(sessionGrantsScope(session, scope) ? "Allowed" : "Not granted")}
                 </Text>
               ))}
             </>
           ) : (
             <Text className="text-sm text-foreground-muted">
-              {sessionPermissionsUnavailableMessage({
-                connected: activeRouteId !== null,
-                failed: sessionResult._tag === "Failure",
-                rejected:
-                  sessionResult._tag !== "Failure" &&
-                  !sessionResult.waiting &&
-                  session?.authenticated === false,
-              })}
+              {t(
+                sessionPermissionsUnavailableMessage({
+                  connected: activeRouteId !== null,
+                  failed: sessionResult._tag === "Failure",
+                  rejected:
+                    sessionResult._tag !== "Failure" &&
+                    !sessionResult.waiting &&
+                    session?.authenticated === false,
+                }),
+              )}
             </Text>
           )}
         </View>

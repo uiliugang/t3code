@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -71,7 +71,7 @@ export const layer = Layer.effect(
     const terminals = yield* TerminalManager.TerminalManager;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     const checkpoints = yield* CheckpointStore.CheckpointStore;
     const resolver = yield* WorkspaceRepositoryResolver.WorkspaceRepositoryResolver;
     const assertReady: WorkspaceRestore["Service"]["assertReady"] = Effect.fn(
@@ -160,7 +160,7 @@ export const layer = Layer.effect(
               detail: `Repository ${resource.name} cannot be restored from this checkpoint.`,
             });
         }
-        const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+        const token = yield* random.uuidV4().pipe(Effect.orDie);
         const backups: Array<(typeof RestoreJournal.Type)["backups"][number]> = [];
         for (const [index, resource] of workspace.resources.entries()) {
           const indexPath = path.join(resource.identity.gitDir, "index");

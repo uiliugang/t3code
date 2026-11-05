@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -93,6 +94,7 @@ export function FontFamilyPicker({
   initialOpen?: boolean;
   onSelect: (family: string) => void;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   // Base UI needs an initial closed commit; mounting open loses exit transitionend and leaves the popup
@@ -152,7 +154,9 @@ export function FontFamilyPicker({
             {family}
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
-            {isDefault ? <span className="text-3xs text-muted-foreground/60">default</span> : null}
+            {isDefault ? (
+              <span className="text-3xs text-muted-foreground/60">{t("default")}</span>
+            ) : null}
             {item === selectedValue ? (
               <CheckIcon className="size-3.5 text-muted-foreground" />
             ) : null}

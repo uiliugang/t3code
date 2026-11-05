@@ -28,6 +28,7 @@ import {
   TurnItemId,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -63,6 +64,7 @@ import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import { workspaceFixture, workspaceThreadFixture } from "./testkit/workspaceFixtures.ts";
+import * as ProjectionReplay from "./testkit/ProjectionReplay.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
@@ -86,6 +88,9 @@ const layerCommandReceiptStoreProvided = CommandReceiptStore.layer.pipe(
 );
 const layerIsolatedOutbox = Layer.fresh(EffectOutbox.layer.pipe(Layer.provideMerge(layerDatabase)));
 const layerProjectionMaintenanceProvided = ProjectionMaintenance.layer.pipe(
+  Layer.provide(layerDatabase),
+);
+const layerProjectionReplayProvided = ProjectionReplay.layer.pipe(
   Layer.provide(layerStoresProvided),
 );
 const layerTest = Layer.mergeAll(
@@ -95,6 +100,7 @@ const layerTest = Layer.mergeAll(
   layerCommandReceiptStoreProvided,
   IdAllocator.layer,
   layerProjectionMaintenanceProvided,
+  layerProjectionReplayProvided,
 );
 
 const providerInstanceId = ProviderInstanceId.make("codex");
@@ -149,39 +155,39 @@ function threadCreatedEvent(input: {
   };
 }
 
-it.effect(
-  "retains historical workspace revisions through event compaction and projection rebuild",
-  () =>
-    Effect.gen(function* () {
-      const eventStore = yield* EventStore.EventStoreV2;
-      const store = yield* ProjectionStore.ProjectionStoreV2;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-      const original = workspaceFixture();
-      const current = workspaceFixture({
-        id: WorkspaceRevisionId.make("workspace:2"),
-        previousRevisionId: original.id,
-      });
-      const thread = workspaceThreadFixture();
-      const now = thread.createdAt;
-      yield* eventStore.append({
-        events: [
-          threadCreatedEvent({ id: "workspace-history:create", thread, now }),
-          ...[original, original, current, current].map((workspace, index) => ({
-            id: EventId.make(`workspace-history:${index}`),
-            type: "thread.metadata-updated" as const,
-            threadId: thread.id,
-            occurredAt: now,
-            payload: { ...thread, workspace, title: `Update ${index}` },
-          })),
-        ],
-      });
-      assert.isTrue((yield* maintenance.rebuild).valid);
-      yield* maintenance.compactEventStore();
-      assert.isTrue((yield* maintenance.rebuild).valid);
-      assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, original.id), original);
-      assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, current.id), current);
-      assert.deepEqual((yield* store.getThread(thread.id)).workspace, current);
-    }).pipe(Effect.provide(layerTest)),
+it.effect("retains historical workspace revisions through event pruning", () =>
+  Effect.gen(function* () {
+    const eventStore = yield* EventStore.EventStoreV2;
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const original = workspaceFixture();
+    const current = workspaceFixture({
+      id: WorkspaceRevisionId.make("workspace:2"),
+      previousRevisionId: original.id,
+    });
+    const thread = workspaceThreadFixture();
+    const now = thread.createdAt;
+    yield* eventStore.append({
+      events: [
+        threadCreatedEvent({ id: "workspace-history:create", thread, now }),
+        ...[original, original, current, current].map((workspace, index) => ({
+          id: EventId.make(`workspace-history:${index}`),
+          type: "thread.metadata-updated" as const,
+          threadId: thread.id,
+          occurredAt: now,
+          payload: { ...thread, workspace, title: `Update ${index}` },
+        })),
+      ],
+    });
+    const replay = yield* ProjectionReplay.ProjectionReplay;
+    assert.isTrue((yield* replay.rebuild).valid);
+    yield* maintenance.pruneEventStore();
+    yield* TestClock.adjust("2 days");
+    yield* maintenance.pruneEventStore();
+    assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, original.id), original);
+    assert.deepEqual(yield* store.getWorkspaceRevision(thread.id, current.id), current);
+    assert.deepEqual((yield* store.getThread(thread.id)).workspace, current);
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("rebuilds event history one bounded page at a time", () =>
@@ -234,12 +240,10 @@ it.effect("rebuilds event history one bounded page at a time", () =>
       }),
     );
     const rebuild = Effect.gen(function* () {
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const maintenance = yield* ProjectionReplay.ProjectionReplay;
       return yield* maintenance.rebuild;
     }).pipe(
-      Effect.provide(
-        Layer.fresh(ProjectionMaintenance.layer.pipe(Layer.provide(layerObservedStores))),
-      ),
+      Effect.provide(Layer.fresh(ProjectionReplay.layer.pipe(Layer.provide(layerObservedStores)))),
     );
     const rebuilt = yield* rebuild;
     assert.isTrue(rebuilt.valid);
@@ -258,11 +262,10 @@ it.effect("rebuilds event history one bounded page at a time", () =>
       (yield* projectionStore.getThreadProjection(threadId)).thread.title,
       "Rebuilt update 1004",
     );
-    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const maintenance = yield* ProjectionReplay.ProjectionReplay;
     assert.isTrue((yield* maintenance.verify).valid);
   }).pipe(Effect.provide(layerTest)),
 );
-
 const seedCompaction = Effect.fnUntraced(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`INSERT INTO orchestration_v2_legacy_imports (
@@ -276,6 +279,13 @@ const seedCompaction = Effect.fnUntraced(function* () {
   ) SELECT 'event-' || n, 'thread', 'thread', n,
     CASE WHEN n IN (1, 51, 101) THEN 'message.updated' ELSE 'thread.visited' END,
     '2026-10-17', 'server', '{"id":"message"}', '{}', 2 FROM history`;
+  // A pass a day ago marked the whole log; projections cover it.
+  yield* sql`INSERT INTO orchestration_v2_projection_metadata (
+    projection_name, schema_version, last_sequence, updated_at
+  ) VALUES
+    ('event-log-prune-mark', 2, 151, '1969-12-30T00:00:00.000Z'),
+    ('thread-projections', 2, 151, '1969-12-30T00:00:00.000Z')
+  ON CONFLICT(projection_name) DO UPDATE SET last_sequence = excluded.last_sequence`;
   yield* sql`WITH RECURSIVE history(n) AS (
     SELECT 1 UNION ALL SELECT n + 1 FROM history WHERE n < 100
   ) INSERT INTO orchestration_command_receipts (
@@ -320,11 +330,12 @@ it.effect("discovers on the reader worker and deletes on the writer", () =>
           }),
       );
       const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-      const result = yield* maintenance.compactEventStore();
-      assert.equal(result.deletedEventCount, 148);
+      const result = yield* maintenance.pruneEventStore();
+      assert.equal(result.deletedEventCount, 150);
       assert.equal(result.deletedReceiptCount, 100);
+      // Only the in-transaction check for rows appended during the pass reads on the writer.
       assert.deepEqual(
-        reads.filter((query) => /\bSELECT\b/.test(query)),
+        reads.filter((query) => /\bSELECT\b/.test(query) && !query.includes("AS prompt_sequence")),
         [],
       );
       assert(writes.some((query) => query.includes("DELETE FROM orchestration_events")));
@@ -332,7 +343,6 @@ it.effect("discovers on the reader worker and deletes on the writer", () =>
     }).pipe(
       Effect.provide(
         ProjectionMaintenance.layer.pipe(
-          Layer.provide(Layer.merge(EventStore.layer, ProjectionStore.layer)),
           Layer.provideMerge(SqlitePersistence.layerFromPath(filename)),
         ),
       ),
@@ -354,7 +364,7 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
     const tracer = Tracer.make({
       span(options) {
         const span = new Tracer.NativeSpan(options);
-        if (span.name === "ProjectionMaintenance.compactEventStore") compactionSpans.push(span);
+        if (span.name === "ProjectionMaintenance.pruneEventStore") compactionSpans.push(span);
         const end = span.end.bind(span);
         span.end = (time, exit) => {
           end(time, exit);
@@ -413,15 +423,13 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
         },
       }),
     );
-    assert.deepEqual(pauses, Array(5).fill(270));
+    assert.deepEqual(pauses, Array(8).fill(270));
     assert.deepEqual(
       compactionSpans.map((span) => span.status._tag),
       ["Ended"],
     );
+    // 151 stopped being the stream head when 152 committed mid-pass; 152 is past the bound.
     assert.deepEqual(yield* sql`SELECT sequence FROM orchestration_events ORDER BY sequence`, [
-      { sequence: 1 },
-      { sequence: 101 },
-      { sequence: 151 },
       { sequence: 152 },
     ]);
     assert.deepEqual(yield* sql`SELECT command_id FROM orchestration_command_receipts`, [
@@ -804,7 +812,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const maintenance = yield* ProjectionReplay.ProjectionReplay;
       const now = yield* DateTime.now;
       const firstThreadId = ThreadId.make("thread:foundation-shared-session:first");
       const secondThreadId = ThreadId.make("thread:foundation-shared-session:second");
@@ -865,7 +873,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     }),
   );
 
-  it.effect("compacts superseded state events, imported v1 events, and legacy receipts", () =>
+  it.effect("prunes covered history, imported v1 events, and legacy receipts", () =>
     Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
@@ -878,7 +886,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       const messageId = MessageId.make("message:foundation-compact");
       const threadStateEvent = (
         suffix: string,
-        type: "thread.visited" | "thread.metadata-updated",
+        type: "thread.visited" | "thread.metadata-updated" | "thread.tags-updated",
       ): OrchestrationV2DomainEvent => ({
         id: EventId.make(`event:foundation-compact:${suffix}`),
         type,
@@ -973,10 +981,13 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           ...Array.from({ length: 501 }, (_, index) =>
             threadStateEvent(`history-${index}`, "thread.visited"),
           ),
+          threadStateEvent("tags-1", "thread.tags-updated"),
           threadStateEvent("visit-2", "thread.visited"),
           messageEvent("message-2", "final"),
           nodeEvent("node-2", "completed"),
           itemEvent("item-2", "final"),
+          // Older clients skip tag events, so these must not remove the rename above.
+          threadStateEvent("tags-2", "thread.tags-updated"),
         ],
       });
       const beforeCompaction = yield* projections.getThreadProjection(threadId);
@@ -1016,9 +1027,12 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
         ON CONFLICT(command_id) DO NOTHING
       `;
 
-      const summary = yield* maintenance.compactEventStore();
+      // The first pass only marks the head and drops imported legacy rows.
+      const marked = yield* maintenance.pruneEventStore();
+      yield* TestClock.adjust("1 day");
+      const summary = yield* maintenance.pruneEventStore();
       assert.isAtLeast(summary.deletedEventCount, 504);
-      assert.isAtLeast(summary.deletedReceiptCount, 1);
+      assert.equal(marked.deletedReceiptCount + summary.deletedReceiptCount, 1);
 
       const remaining = yield* sql<{ readonly event_id: string }>`
         SELECT event_id
@@ -1029,17 +1043,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       `;
       assert.deepEqual(
         remaining.map((row) => row.event_id),
-        [
-          "event:foundation-compact:create",
-          "event:foundation-compact:meta",
-          "event:foundation-compact:message-1",
-          "event:foundation-compact:node-1",
-          "event:foundation-compact:item-1",
-          "event:foundation-compact:visit-2",
-          "event:foundation-compact:message-2",
-          "event:foundation-compact:node-2",
-          "event:foundation-compact:item-2",
-        ],
+        ["event:foundation-compact:create", "event:foundation-compact:tags-2"],
       );
 
       const remainingV1 = yield* sql<{ readonly stream_id: string }>`
@@ -1063,8 +1067,6 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
         ["command:foundation-compact:pending"],
       );
 
-      assert.isTrue((yield* maintenance.verify).valid);
-      assert.isTrue((yield* maintenance.rebuild).valid);
       assert.deepEqual(yield* projections.getThreadProjection(threadId), beforeCompaction);
     }),
   );
@@ -1073,7 +1075,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const maintenance = yield* ProjectionReplay.ProjectionReplay;
       const sql = yield* SqlClient.SqlClient;
       const now = yield* DateTime.now;
       const parentThreadId = ThreadId.make("thread:foundation-cross-thread:parent");
@@ -1389,9 +1391,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
         rows.push(eventRow(++ordinal, { commandId: exactPageCommandId }));
       }
       const inserted = yield* Effect.forEach(
-        Array.from({ length: Math.ceil(rows.length / 400) }, (_, chunk) =>
-          rows.slice(chunk * 400, (chunk + 1) * 400),
-        ),
+        Arr.chunksOf(rows, 400),
         (chunk) =>
           sql<{
             readonly sequence: number;
@@ -3186,7 +3186,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const maintenance = yield* ProjectionReplay.ProjectionReplay;
       const sql = yield* SqlClient.SqlClient;
       const now = yield* DateTime.now;
       const threadId = ThreadId.make("thread:foundation-many-items");
@@ -3418,10 +3418,7 @@ it.effect.each(["events", "receipts"] as const)(
       const path = yield* Path.Path;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "compaction-reader-" });
       const database = SqlitePersistence.layerFromPath(path.join(directory, "statev2.sqlite"));
-      const maintenanceLayer = ProjectionMaintenance.layer.pipe(
-        Layer.provide(Layer.merge(EventStore.layer, ProjectionStore.layer)),
-        Layer.provideMerge(database),
-      );
+      const maintenanceLayer = ProjectionMaintenance.layer.pipe(Layer.provideMerge(database));
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
@@ -3468,7 +3465,7 @@ it.effect.each(["events", "receipts"] as const)(
             : Effect.succeed(statement);
         };
         const compacted = yield* Deferred.make<void>();
-        const compaction = yield* maintenance.compactEventStore().pipe(
+        const compaction = yield* maintenance.pruneEventStore().pipe(
           Effect.provideService(Statement.CurrentTransformer, observeDiscovery),
           Effect.provideService(Statement.SpanPropagationEnabled, true),
           Effect.tap(() => Deferred.succeed(compacted, undefined)),

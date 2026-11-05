@@ -174,7 +174,7 @@ export function SourceControlWritingSettingsSection() {
   );
 
   return (
-    <SettingsSection id="source-control-text-generation" title="Writing & review">
+    <SettingsSection id="source-control-text-generation" title={t("Writing & review")}>
       <SettingsRow
         serverScoped
         settingKeys={["sourceControlWritingStyle"]}
@@ -297,7 +297,9 @@ export function SourceControlWritingSettingsSection() {
         settingKeys={["reviewGuidesEnabled"]}
         mixed={mixedReviewGuidesEnabled}
         {...searchableSetting("review-guides")}
-        description="Add a Guide tab to pull requests. An agent explains the changes and points out decisions that need review."
+        description={t(
+          "Add a Guide tab to pull requests. An agent explains the changes and points out decisions that need review.",
+        )}
         control={
           <Switch
             mixed={mixedReviewGuidesEnabled}
@@ -314,7 +316,9 @@ export function SourceControlWritingSettingsSection() {
             serverScoped
             settingKeys={["reviewGuideModelSelection"]}
             {...searchableSetting("review-guide-model")}
-            description="Model that reads a pull request to write its review guide. It reads the change itself over many steps, so a stronger model helps. Off uses the source control writer model."
+            description={t(
+              "Model that reads a pull request to write its review guide. It reads the change itself over many steps, so a stronger model helps. Off uses the source control writer model.",
+            )}
             control={
               !hasServerTargets ? (
                 <span className="text-sm text-muted-foreground">
@@ -331,8 +335,8 @@ export function SourceControlWritingSettingsSection() {
                       instanceEntries={instanceEntries}
                       modelOptionsByInstance={reviewGuideModelOptionsByInstance}
                       triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                      triggerAriaLabel="Review guide model"
-                      {...(mixedReviewGuideModel ? { triggerLabel: "Mixed" } : {})}
+                      triggerAriaLabel={t("Review guide model")}
+                      {...(mixedReviewGuideModel ? { triggerLabel: t("Mixed") } : {})}
                       getModelDisabledReason={writerModelDisabledReason}
                       onInstanceModelChange={(instanceId, model) => {
                         const reason = writerModelDisabledReason(instanceId, model);
@@ -415,7 +419,9 @@ export function SourceControlWritingSettingsSection() {
             serverScoped
             settingKeys={["reviewGuideInstructions"]}
             {...searchableSetting("review-guide-instructions")}
-            description="Your preferences for review guides: what to show first, dwell on, or skip. The guide's format and coverage stay the same."
+            description={t(
+              "Your preferences for review guides: what to show first, dwell on, or skip. The guide's format and coverage stay the same.",
+            )}
             resetAction={
               mixedReviewGuideInstructions || settings.reviewGuideInstructions !== "" ? (
                 <SettingResetButton
@@ -434,11 +440,11 @@ export function SourceControlWritingSettingsSection() {
                 }}
                 rows={4}
                 defaultValue={mixedReviewGuideInstructions ? "" : settings.reviewGuideInstructions}
-                placeholder={
+                placeholder={t(
                   mixedReviewGuideInstructions
                     ? "Mixed. Enter instructions to apply to all selected targets."
-                    : "Show service interfaces before implementations. Skip test files unless they change behavior. Keep summaries to two sentences."
-                }
+                    : "Show service interfaces before implementations. Skip test files unless they change behavior. Keep summaries to two sentences.",
+                )}
                 onBlur={(event) => {
                   const value = event.target.value.trim();
                   if (
@@ -464,7 +470,9 @@ export function SourceControlWritingSettingsSection() {
           settingKeys={["sourceControlWritingStyle"]}
           mixed={templatesMixed}
           {...searchableSetting("follow-change-request-templates")}
-          description="Use the repository's template for change request descriptions when available."
+          description={t(
+            "Use the repository's template for change request descriptions when available.",
+          )}
           resetAction={
             templatesMixed ||
             style.followChangeRequestTemplates !== defaults.followChangeRequestTemplates ? (
@@ -500,7 +508,9 @@ export function SourceControlWritingSettingsSection() {
           serverScoped
           settingKeys={["sourceControlWriterModelSelection"]}
           {...searchableSetting("source-control-writer-model")}
-          description="Model for source control text and branch or bookmark names. When disabled, use the text generation model configured for this environment."
+          description={t(
+            "Model for source control text and branch or bookmark names. When disabled, use the text generation model configured for this environment.",
+          )}
           control={
             !hasServerTargets ? (
               <span className="text-sm text-muted-foreground">
@@ -522,8 +532,8 @@ export function SourceControlWritingSettingsSection() {
                     instanceEntries={instanceEntries}
                     modelOptionsByInstance={modelOptionsByInstance}
                     triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    triggerAriaLabel="Source control writer model"
-                    {...(mixedWriterModel ? { triggerLabel: "Mixed" } : {})}
+                    triggerAriaLabel={t("Source control writer model")}
+                    {...(mixedWriterModel ? { triggerLabel: t("Mixed") } : {})}
                     {...(environmentId
                       ? {
                           onOpenProviderSetup: (instanceId: ProviderInstanceId) => {

@@ -35,6 +35,7 @@ export type SettingsPath =
   | "/settings/source-control"
   | "/settings/worktrees"
   | "/settings/connections"
+  | "/settings/communication"
   | "/settings/access"
   | "/settings/secrets"
   | "/settings/maintenance"
@@ -107,6 +108,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/source-control": "Source control",
   "/settings/worktrees": "Worktrees",
   "/settings/connections": "Environments",
+  "/settings/communication": "Communication",
   "/settings/access": "Sharing & access",
   "/settings/secrets": "Secrets",
   "/settings/maintenance": "Maintenance",
@@ -155,6 +157,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: "Connections",
     paths: [
       "/settings/connections",
+      "/settings/communication",
       "/settings/access",
       ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
     ],
@@ -685,7 +688,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/maintenance",
-    searchTerms: ["installed cli versions newer available codex claude cursor grok fx opencode"],
+    searchTerms: [
+      "installed cli versions newer available codex claude cursor grok fx kiro opencode",
+    ],
     scope: "environment-defaults",
   },
   {
@@ -915,7 +920,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Providers",
     to: "/settings/providers",
     searchTerms: [
-      "agents cli codex claude cursor grok fx opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
+      "agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
     ],
   },
   {
@@ -1279,6 +1284,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "communication",
+    title: "Communication",
+    to: "/settings/communication",
+    searchTerms: ["daxiang 大象 通讯 client id secret message PR link"],
+  },
+  {
     id: "secret-providers",
     title: "Secret providers",
     to: "/settings/secrets",
@@ -1323,6 +1334,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/source-control": "environment-defaults",
   "/settings/worktrees": "project-defaults",
   "/settings/connections": "connections",
+  "/settings/communication": "environment",
   "/settings/access": "connections",
   "/settings/secrets": null,
   "/settings/scheduled-tasks": null,

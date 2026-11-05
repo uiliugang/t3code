@@ -2,7 +2,9 @@ import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
   EnvironmentId,
+  ExecutionResourceId,
   ThreadId,
+  WorkspaceRevisionId,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -11,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   scopes: new Map<string, Set<string>>(),
-  requests: [] as { action: string; environmentId: string | null }[],
+  requests: [] as { action: string; environmentId: string | null; input: unknown }[],
 }));
 
 vi.mock("react", () => ({ useCallback: (callback: unknown) => callback }));
@@ -32,10 +34,11 @@ vi.mock("./query", () => ({ useEnvironmentQuery: () => ({ refresh: () => {} }) }
 vi.mock("./use-atom-command", () => ({
   useAtomCommand:
     (command: { action: string; environmentId?: string }) =>
-    async (input: { environmentId?: string }) => {
+    async (input: { environmentId?: string; input?: unknown }) => {
       state.requests.push({
         action: command.action,
         environmentId: input.environmentId ?? command.environmentId ?? null,
+        input: input.input,
       });
       return AsyncResult.success({});
     },
@@ -161,13 +164,19 @@ describe("pull request worktree attachment permission", () => {
     async (mode, attachedThreadId, operate, allowed) => {
       state.scopes.get(secondary)!.add(AuthSourceControlWriteScope);
       if (operate) state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
-      const result = await usePreparePullRequestThreadAction(scope).run({
+      const repositoryTarget = {
+        threadId,
+        workspaceRevisionId: WorkspaceRevisionId.make("workspace"),
+        resourceId: ExecutionResourceId.make("repository"),
+      };
+      const result = await usePreparePullRequestThreadAction({ ...scope, repositoryTarget }).run({
         reference: "1",
         mode,
         ...(attachedThreadId !== undefined ? { threadId: attachedThreadId } : {}),
       });
       expect(result._tag).toBe(allowed ? "Success" : "Failure");
       expect(state.requests).toHaveLength(allowed ? 1 : 0);
+      if (allowed) expect(state.requests[0]?.input).toMatchObject({ repositoryTarget });
       if (result._tag === "Failure") {
         expect(Cause.squash(result.cause)).toMatchObject({
           requiredScope: AuthOrchestrationOperateScope,

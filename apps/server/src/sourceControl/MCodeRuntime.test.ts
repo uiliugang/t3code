@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -52,6 +53,10 @@ it.effect.each([
     expect((yield* process.run(resolved)).stdout.trim()).toBe("verified");
   }).pipe(
     Effect.scoped,
-    Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      VcsProcess.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
   ),
 );

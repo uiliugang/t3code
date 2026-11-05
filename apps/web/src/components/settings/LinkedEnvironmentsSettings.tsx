@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { linkRequestFailureMessage } from "@t3tools/client-runtime/link-request";
 import {
@@ -58,6 +59,7 @@ export function LinkedEnvironmentsSettings({
   readonly environmentLabel: string | null;
   readonly isSearchTarget: boolean;
 }) {
+  const t = useUiTranslation();
   const links = useEnvironmentQuery(peerLinkEnvironment.list({ environmentId, input: {} }));
   const canLink = useAtomValue(peerLinkEnvironment.link.permissionAtom(environmentId));
   const search = searchableSetting("linked-environments");
@@ -68,13 +70,15 @@ export function LinkedEnvironmentsSettings({
       headerAction={canLink ? <LinkEnvironmentAction environmentId={environmentId} /> : null}
     >
       {links.error ? (
-        <SettingsRow title="Could not load linked environments" description={links.error} />
+        <SettingsRow title={t("Could not load linked environments")} description={links.error} />
       ) : !links.data ? (
-        <SettingsRow title="Loading linked environments…" role="status" />
+        <SettingsRow title={t("Loading linked environments…")} role="status" />
       ) : links.data.links.length === 0 ? (
         <SettingsRow
-          title="No linked environments"
-          description="Link another machine running T3 Code, such as a VPS, so agents here can launch and drive threads there."
+          title={t("No linked environments")}
+          description={t(
+            "Link another machine running T3 Code, such as a VPS, so agents here can launch and drive threads there.",
+          )}
         />
       ) : (
         links.data.links.map((link) => (
@@ -167,6 +171,7 @@ function LinkedEnvironmentRow({
 }
 
 function LinkEnvironmentAction({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const machines = useLinkableMachines(environmentId, open);
   // Null until the user picks; with no other machines known, only an address is left.
@@ -258,7 +263,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
         render={
           <Button size="xs" variant="default">
             <PlusIcon className="size-3" />
-            Link
+            {t("Link")}
           </Button>
         }
       />
@@ -346,7 +351,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
         </DialogPanel>
         <DialogFooter variant="bare">
           <DialogClose disabled={busy} render={<Button variant="outline" type="button" />}>
-            Cancel
+            {t("Cancel")}
           </DialogClose>
           <Button form={formId} type="submit" disabled={busy || !ready}>
             {busy ? "Linking…" : "Link"}

@@ -77,7 +77,7 @@ export function NotificationSettings() {
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {Object.entries(NOTIFICATION_MODE_LABELS).map(([value, label]) => (
               <SelectItem key={value} hideIndicator value={value}>
-                {label}
+                {t(label)}
               </SelectItem>
             ))}
           </SelectPopup>

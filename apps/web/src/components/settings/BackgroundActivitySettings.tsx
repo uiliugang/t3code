@@ -181,7 +181,7 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label="Git fetch interval"
+                  label={t("Git fetch interval")}
                   value={automaticGitFetchIntervalSeconds}
                   min={0}
                   step={5}

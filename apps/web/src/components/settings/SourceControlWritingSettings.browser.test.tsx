@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "../../index.css";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import type { ScopedSettingsPatch } from "./scopedSettings";
 
 type WritingStyle = typeof DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle;
@@ -60,7 +61,9 @@ vi.mock(import("./settingsLayout"), async (original) => ({
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 
 const resetButton = (label: string) =>
-  page.getByRole("button", { name: `Reset ${label} to default` });
+  page.getByRole("button", {
+    name: translateUi("zh-CN", "Reset {label} to default", { label: translateUi("zh-CN", label) }),
+  });
 
 const content = () => (
   <StrictMode>
@@ -99,7 +102,7 @@ describe("mixed source control instructions", () => {
       customInstructions,
     }));
 
-    await userEvent.click(page.getByRole("button", { name: "Advanced" }));
+    await userEvent.click(page.getByRole("button", { name: "高级" }));
     await userEvent.click(resetButton("change request templates"));
 
     expect(state.updateSettings).toHaveBeenCalledTimes(1);

@@ -3,9 +3,11 @@ import * as DateTime from "effect/DateTime";
 import {
   skillFailureMessage,
   type ManagedSkill,
+  type SkillMutation,
   type SkillSnapshot,
   type SkillSource,
   type SkillUpdatePolicy,
+  type SkillTarget,
 } from "@t3tools/contracts";
 import type { UiTranslator } from "./uiLocale.ts";
 
@@ -28,6 +30,14 @@ export function skillSourceName(source: Pick<SkillSource, "id" | "label">, t: Ui
     ? t(source.label)
     : source.label;
 }
+export function skillSourceFailure(data: SkillSnapshot) {
+  if (!data.lastFailure || !data.lastFailureReason) return;
+  return data.sources.find(
+    (source) =>
+      source.health?.reason === data.lastFailureReason &&
+      source.health?.detail === (data.lastFailureDiagnostics || data.lastFailure),
+  );
+}
 function skillAttention(skill: ManagedSkill) {
   return (
     skill.status === "failed" ||
@@ -37,6 +47,8 @@ function skillAttention(skill: ManagedSkill) {
   );
 }
 export function skillStatus(skill: ManagedSkill) {
+  if (skill.failureReason === "select-skill" && skill.choices?.length)
+    return "Choose skills to install";
   if (skill.status === "fetching") return "Downloading package";
   if (skill.status === "removing") return "Removing";
   if (skill.status === "pending") return "Waiting for idle agents";
@@ -46,21 +58,29 @@ export function skillStatus(skill: ManagedSkill) {
   return skill.bindings.length ? "Files ready" : "Saved to library";
 }
 export function skillFailure(skill: ManagedSkill) {
+  if (skill.failureReason === "select-skill" && skill.choices?.length) return null;
   return skill.failureReason ? skillFailureMessage(skill.failureReason) : skill.failure;
 }
-export function skillRows(data: SkillSnapshot, search = "", filter: SkillFilter = "all") {
+export function skillRows(
+  data: SkillSnapshot,
+  search = "",
+  filter: SkillFilter = "all",
+  showExternal = false,
+) {
   const managed = data.skills.map((skill) => ({
     kind: "managed" as const,
     key: skill.id,
     name: skill.name,
     skill,
   }));
-  const discovered = data.discovered.map((skill) => ({
-    kind: "discovered" as const,
-    key: skill.identity ?? skill.path,
-    name: skill.name,
-    skill,
-  }));
+  const discovered = data.discovered
+    .filter((skill) => showExternal || !skill.external)
+    .map((skill) => ({
+      kind: "discovered" as const,
+      key: skill.identity ?? skill.path,
+      name: skill.name,
+      skill,
+    }));
   const rows = [...managed, ...discovered];
   const counts = {
     all: rows.length,
@@ -71,6 +91,7 @@ export function skillRows(data: SkillSnapshot, search = "", filter: SkillFilter 
   const needle = search.trim().toLocaleLowerCase();
   return {
     counts,
+    hiddenExternal: showExternal ? 0 : data.discovered.filter((skill) => skill.external).length,
     rows: rows
       .filter((row) => {
         const words =
@@ -105,6 +126,70 @@ export function skillRows(data: SkillSnapshot, search = "", filter: SkillFilter 
       .sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key)),
   };
 }
+
+export function skillTargetGroups(targets: ReadonlyArray<SkillTarget>) {
+  const groups = new Map<string, { directory: string; targets: SkillTarget[] }>();
+  for (const target of targets) {
+    const group = groups.get(target.directory);
+    if (group) group.targets.push(target);
+    else groups.set(target.directory, { directory: target.directory, targets: [target] });
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    enabled: group.targets.every((target) => target.enabled !== false),
+    hasSkills: group.targets.some((target) => target.hasSkills),
+    shared: group.targets.some((target) => target.id === "directory:shared"),
+  }));
+}
+
+export function skillGroups(rows: ReturnType<typeof skillRows>["rows"]) {
+  const groups = new Map<string, { key: string; name: string; rows: typeof rows }>();
+  for (const row of rows) {
+    const origin = row.kind === "managed" ? row.skill : row.skill.origin;
+    const externalRoot =
+      row.kind === "discovered" && row.skill.external
+        ? row.skill.path
+            .replaceAll("\\", "/")
+            .match(/^(.*\/(?:plugins\/cache\/[^/]+\/[^/]+\/[^/]+|\.system))\//)?.[1]
+        : undefined;
+    const key = origin
+      ? JSON.stringify([origin.sourceId, origin.locator])
+      : (externalRoot ?? row.key);
+    const locator = origin?.locator ?? externalRoot ?? row.name;
+    const label =
+      externalRoot && !externalRoot.endsWith("/.system")
+        ? (externalRoot.split("/").at(-2) ?? locator)
+        : locator;
+    const name =
+      label
+        .replace(/\/$/, "")
+        .split(/[/\\]/)
+        .at(-1)
+        ?.replace(/\.git$/, "") || row.name;
+    const group = groups.get(key);
+    if (group) group.rows.push(row);
+    else groups.set(key, { key, name, rows: [row] });
+  }
+  return [...groups.values()];
+}
+
+export function skillSelection(skill: ManagedSkill, choices: ReadonlyArray<string>): SkillMutation {
+  return {
+    type: "batch",
+    operations: [...new Set(choices)].map((choice, index) =>
+      index === 0
+        ? { type: "select", id: skill.id, skill: choice }
+        : {
+            type: "install",
+            sourceId: skill.sourceId,
+            locator: skill.locator,
+            skill: choice,
+            targetIds: skill.bindings.map((target) => target.id),
+            policy: skill.policy,
+          },
+    ),
+  };
+}
 export function skillNextCheck(skill: ManagedSkill) {
   if (skill.policy === "manual" || skill.policy === "pinned" || skill.snapshotOnly) return null;
   const previous = Math.max(
@@ -135,4 +220,5 @@ export const skillJobNames: Record<SkillAction["type"], string> = {
   "source.remove": "Remove source",
   "target.save": "Save location",
   "target.remove": "Remove location",
+  "target.configure": "Configure location",
 };

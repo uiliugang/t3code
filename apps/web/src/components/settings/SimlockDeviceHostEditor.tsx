@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { useId, useState, type ReactNode } from "react";
 import type { EnvironmentId, SimlockDeviceHostConfig } from "@t3tools/contracts";
@@ -53,6 +54,7 @@ export function SimlockDeviceHostEditor(props: {
   ) => void;
   onClose: () => void;
 }) {
+  const t = useUiTranslation();
   const [draft, setDraft] = useState(props.host);
   const [urlEdited, setUrlEdited] = useState(false);
   const machineGateways = useAtomValue(
@@ -135,7 +137,7 @@ export function SimlockDeviceHostEditor(props: {
           </DialogHeader>
           <DialogPanel>
             <label className="block space-y-1.5 text-sm">
-              <span>Name</span>
+              <span>{t("Name")}</span>
               <Input
                 autoFocus
                 required
@@ -202,10 +204,11 @@ export function SimlockDeviceHostEditor(props: {
           </DialogPanel>
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={props.busy} onClick={props.onClose}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button type="submit" disabled={props.busy || problem !== null}>
-              {props.busy ? <Spinner size="xs" /> : null} Save host
+              {props.busy ? <Spinner size="xs" /> : null}
+              {t("Save host")}
             </Button>
           </DialogFooter>
         </form>
@@ -224,6 +227,7 @@ function SimlockTokenField(props: {
   busy: boolean;
   onChange: (token: SimlockTokenEntry) => void;
 }) {
+  const t = useUiTranslation();
   const id = useId();
   const entered = props.token.kind === "new" ? props.token.value.trim() : "";
   // A cleared field asks about the machine's own token, which a blank one falls back to.
@@ -245,7 +249,7 @@ function SimlockTokenField(props: {
   const identity = AsyncResult.isSuccess(check) ? check.value : null;
   const status =
     props.gatewayUrl === null ? null : check._tag === "Initial" || check.waiting ? (
-      <span className="text-muted-foreground">Checking…</span>
+      <span className="text-muted-foreground">{t("Checking…")}</span>
     ) : identity ? (
       <span className="text-muted-foreground">
         {identity.tokenSource === "env"

@@ -20,6 +20,7 @@ import { Input } from "../ui/input";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export function SettingsTransfer({
   title,
@@ -40,6 +41,7 @@ export function SettingsTransfer({
   environmentId?: EnvironmentId | null;
   supportsProjectImport?: boolean;
 }) {
+  const t = useUiTranslation();
   const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<SettingsFile | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,9 +59,9 @@ export function SettingsTransfer({
   const requiresProjectCreation = pending?.scope === "project" && scope === "application";
 
   const reportError = (cause: unknown) => {
-    const message = cause instanceof Error ? cause.message : "Could not transfer settings.";
+    const message = t(cause instanceof Error ? cause.message : "Could not transfer settings.");
     setError(message);
-    toastManager.add({ type: "error", title: "Settings transfer failed", description: message });
+    toastManager.add({ type: "error", title: t("Settings transfer failed"), description: message });
   };
 
   const exportFile = async () => {
@@ -88,7 +90,13 @@ export function SettingsTransfer({
         parsed.scope !== scope &&
         !(supportsProjectImport && scope === "application" && parsed.scope === "project")
       )
-        throw new Error(`Choose a ${scope} settings export.`);
+        throw new Error(
+          t(
+            scope === "application"
+              ? "Choose an application settings file."
+              : "Choose a project settings file.",
+          ),
+        );
       return parsed;
     });
     setBusy(false);
@@ -128,7 +136,9 @@ export function SettingsTransfer({
       const cause = squashAtomCommandFailure(result);
       reportError(
         new Error(
-          `Import did not finish. Some values may already have been saved. ${cause instanceof Error ? cause.message : "Try again."}`,
+          t("Import did not finish. Some values may already have been saved. {error}", {
+            error: t(cause instanceof Error ? cause.message : "Try again."),
+          }),
           { cause },
         ),
       );
@@ -136,7 +146,7 @@ export function SettingsTransfer({
       setPending(null);
       toastManager.add({
         type: "success",
-        title: materialize ? "Repository import queued" : "Settings imported",
+        title: t(materialize ? "Repository import queued" : "Settings imported"),
       });
     }
   };
@@ -149,7 +159,7 @@ export function SettingsTransfer({
         control={
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void exportFile()}>
-              <UploadIcon /> Export
+              <UploadIcon /> {t("Export")}
             </Button>
             <Button
               size="sm"
@@ -157,7 +167,7 @@ export function SettingsTransfer({
               disabled={busy || !canImport}
               onClick={() => fileInput.current?.click()}
             >
-              <DownloadIcon /> Import
+              <DownloadIcon /> {t("Import")}
             </Button>
             <input
               ref={fileInput}
@@ -181,23 +191,31 @@ export function SettingsTransfer({
       >
         <DialogPopup>
           <DialogHeader>
-            <DialogTitle>Import settings into {title}?</DialogTitle>
+            <DialogTitle>{t("Import settings into {title}?", { title })}</DialogTitle>
           </DialogHeader>
           <DialogPanel>
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                {materialize
-                  ? "Repositories will be cloned on the selected environment and their projects or workspace groups restored."
-                  : pending?.scope === "project"
-                    ? "This replaces the checkout's project overrides. Missing settings inherit their defaults."
-                    : "Imported values replace matching settings. Other settings stay as they are."}
+                {t(
+                  materialize
+                    ? "Repositories will be cloned on the selected environment and their projects or workspace groups restored."
+                    : pending?.scope === "project"
+                      ? "This replaces the checkout's project overrides. Missing settings inherit their defaults."
+                      : "Imported values replace matching settings. Other settings stay as they are.",
+                )}
                 {pending?.scope === "project"
-                  ? ` Source: ${pending.name}. Project identifiers may differ when copying a template.`
-                  : " This updates this client's preferences and the selected environment. Shortcuts are merged. Mobile-only preferences stay on mobile."}
+                  ? t(" Source: {name}. Project identifiers may differ when copying a template.", {
+                      name: pending.name,
+                    })
+                  : t(
+                      " This updates this client's preferences and the selected environment. Shortcuts are merged. Mobile-only preferences stay on mobile.",
+                    )}
               </p>
               {requiresProjectCreation && definitions.length === 0 ? (
                 <p role="alert" className="text-sm text-destructive">
-                  This export has no clone information. Export it again from an updated environment.
+                  {t(
+                    "This export has no clone information. Export it again from an updated environment.",
+                  )}
                 </p>
               ) : null}
               {supportsProjectImport && (definitions.length > 0 || requiresProjectCreation) ? (
@@ -208,20 +226,24 @@ export function SettingsTransfer({
                       disabled={busy || requiresProjectCreation || !canClone}
                       onCheckedChange={(checked) => setMaterialize(checked === true)}
                     />
-                    Clone repositories and create projects or workspace groups
+                    {t("Clone repositories and create projects or workspace groups")}
                   </label>
                   {materialize ? (
                     <div className="space-y-2">
                       <Input
-                        aria-label="Clone destination directory"
-                        placeholder="Optional directory on this environment (default: ~/projects)"
+                        aria-label={t("Clone destination directory")}
+                        placeholder={t(
+                          "Optional directory on this environment (default: ~/projects)",
+                        )}
                         value={destinationDirectory}
                         disabled={busy}
                         onChange={(event) => setDestinationDirectory(event.currentTarget.value)}
                       />
                       <p className="text-xs text-muted-foreground">
-                        {definitions.length} project configurations. Repositories are deduplicated.
-                        Saved imports retain failures for retry.
+                        {t(
+                          "{count} project configurations. Repositories are deduplicated. Saved imports retain failures for retry.",
+                          { count: definitions.length },
+                        )}
                       </p>
                     </div>
                   ) : null}
@@ -239,7 +261,7 @@ export function SettingsTransfer({
               ) : null}
               <div className="flex justify-end gap-2">
                 <Button variant="outline" disabled={busy} onClick={() => setPending(null)}>
-                  Cancel
+                  {t("Cancel")}
                 </Button>
                 <Button
                   disabled={
@@ -247,7 +269,7 @@ export function SettingsTransfer({
                   }
                   onClick={() => void confirmImport()}
                 >
-                  {busy ? "Importing…" : "Import settings"}
+                  {t(busy ? "Importing…" : "Import settings")}
                 </Button>
               </div>
             </div>

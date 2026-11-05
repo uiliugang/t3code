@@ -88,7 +88,7 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
     }
   };
   return (
-    <SettingsSection title="Repositories">
+    <SettingsSection title={t("Repositories")}>
       <div className="flex flex-col gap-4 px-3 py-3 sm:px-4">
         <p className="text-sm text-muted-foreground">
           {t("New tasks use these repositories. Existing tasks keep their bound group.")}

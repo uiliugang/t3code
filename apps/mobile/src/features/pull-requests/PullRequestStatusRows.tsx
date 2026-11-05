@@ -1,4 +1,5 @@
 import { usePullRequestConnected } from "./usePullRequestConnected";
+import { PullRequestSendReviewLink } from "./PullRequestSendReviewLink";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import type { PullRequestAction, PullRequestDetail } from "@t3tools/contracts";
@@ -86,12 +87,7 @@ export function PullRequestStatusMenu(props: RowProps) {
       onPressAction={({ nativeEvent }) => {
         const selected = actions.find((id) => id === nativeEvent.event);
         if (!selected) return;
-        if (selected === "close")
-          action.confirm(
-            selected,
-            pullRequestActionLabel("close", terminology),
-            `Close this ${terminology.singular} without merging its changes?`,
-          );
+        if (selected === "close") action.confirmClose();
         else if (selected === "revert")
           action.confirm(
             selected,
@@ -277,38 +273,53 @@ export function PullRequestReviewersRow(props: RowProps) {
           exiting={PR_ROW_EXIT}
           className="pl-8"
         >
-          {summary.reviews.map((review) => (
-            <View
-              key={review.id}
-              accessibilityLabel={`${review.author?.login ?? "Unknown reviewer"}, ${review.reviewState === "APPROVED" ? "Approved" : review.reviewState === "CHANGES_REQUESTED" ? "Changes requested" : "Commented"}`}
-              className="min-h-14 flex-row items-center gap-3 px-4 py-2"
-            >
-              <SymbolView
-                name={
-                  review.reviewState === "APPROVED"
-                    ? "checkmark"
-                    : review.reviewState === "CHANGES_REQUESTED"
-                      ? "plusminus"
-                      : "bubble.left"
-                }
-                size={18}
-                tintColorClassName={
-                  review.reviewState === "APPROVED"
-                    ? "accent-adaptive-emerald-600-400"
-                    : review.reviewState === "CHANGES_REQUESTED"
-                      ? "accent-danger-foreground"
-                      : "accent-icon-muted"
-                }
-              />
-              <PullRequestAvatar actor={review.author} size={32} />
-              <Text className="min-w-0 flex-1 text-sm font-t3-medium" numberOfLines={1}>
-                {review.author?.login ?? "Unknown reviewer"}
-              </Text>
-            </View>
-          ))}
+          {props.pr.provider === "meituan" ? (
+            <PullRequestSendReviewLink
+              key={props.pr.url}
+              pr={props.pr}
+              params={props.params}
+              reviews={summary.reviews}
+            />
+          ) : null}
+          {summary.reviews
+            .filter(
+              (review) =>
+                props.pr.provider !== "meituan" ||
+                !props.pr.reviewers.some((actor) => actor.login === review.author?.login),
+            )
+            .map((review) => (
+              <View
+                key={review.id}
+                accessibilityLabel={`${review.author?.login ?? "Unknown reviewer"}, ${review.reviewState === "APPROVED" ? "Approved" : review.reviewState === "CHANGES_REQUESTED" ? "Changes requested" : "Commented"}`}
+                className="min-h-14 flex-row items-center gap-3 px-4 py-2"
+              >
+                <SymbolView
+                  name={
+                    review.reviewState === "APPROVED"
+                      ? "checkmark"
+                      : review.reviewState === "CHANGES_REQUESTED"
+                        ? "plusminus"
+                        : "bubble.left"
+                  }
+                  size={18}
+                  tintColorClassName={
+                    review.reviewState === "APPROVED"
+                      ? "accent-adaptive-emerald-600-400"
+                      : review.reviewState === "CHANGES_REQUESTED"
+                        ? "accent-danger-foreground"
+                        : "accent-icon-muted"
+                  }
+                />
+                <PullRequestAvatar actor={review.author} size={32} />
+                <Text className="min-w-0 flex-1 text-sm font-t3-medium" numberOfLines={1}>
+                  {review.author?.login ?? "Unknown reviewer"}
+                </Text>
+              </View>
+            ))}
           {props.pr.reviewers
             .filter(
               (reviewer) =>
+                props.pr.provider !== "meituan" &&
                 !summary.reviews.some((review) => review.author?.login === reviewer.login),
             )
             .map((reviewer) => (

@@ -49,10 +49,14 @@ and other phone-only settings ignore the filter.
 ## Import existing folders
 
 Use **Settings > Projects > Import folders**, or choose **Import folders** when adding a project.
-Select the environment that owns the folders, browse to their parent directory, and select the
-folders to import. **Select available** skips existing projects and other copies of repositories
+On web and desktop, choose the environment in Settings or the add-project menu before opening
+the importer. Browse to the parent directory and select the folders to import.
+**Select available** skips existing projects and other copies of repositories
 already selected or added; you can select a different checkout explicitly. Selections remain
-while browsing other directories. A project's settings also offer **Import sibling folders**.
+while browsing other directories. With a project or group selected, **Sibling folders** in the
+importer jumps to a repository's parent directory. Groups with repositories in different directories
+offer a choice of locations. Switching to a location on another environment starts a new selection.
+On mobile, choose the environment in the import flow, or use **Import sibling folders** in project settings.
 
 Importing registers existing folders without copying files, initializing Git, or starting threads.
 Duplicate directories, including symbolic links to an existing project, are skipped. Successful
