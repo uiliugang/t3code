@@ -11,6 +11,7 @@ import {
   ThreadId,
   type OrchestrationV2Command,
   type OrchestrationV2ShellSnapshot,
+  type ClientSettings,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -87,6 +88,7 @@ const SNAPSHOT: OrchestrationV2ShellSnapshot = {
 };
 
 const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (options?: {
+  readonly getLanguage?: () => ClientSettings["uiLanguage"];
   readonly loadEarlier?: () => Effect.Effect<ThreadHistoryController.ThreadHistoryLoadEarlierResult>;
   readonly reconcilePendingWork?: (threadId: ThreadId) => Effect.Effect<void>;
 }) {
@@ -133,7 +135,7 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (optio
     ),
   );
   const snapshotAtom = Atom.family((_environmentId: EnvironmentId) => Atom.make(SNAPSHOT));
-  const commands = createThreadEnvironmentAtoms(runtime, snapshotAtom);
+  const commands = createThreadEnvironmentAtoms(runtime, snapshotAtom, options?.getLanguage);
   const registry = AtomRegistry.make();
   yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
   const visibleAtom = commands.snapshotAtom(ENVIRONMENT_ID);
@@ -142,6 +144,50 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (optio
 });
 
 describe("history loading", () => {
+  it.effect.each(["start", "auto", "queue", "steer", "restart"] as const)(
+    "sends the current language without changing the user text in %s mode",
+    (dispatchMode) =>
+      Effect.gen(function* () {
+        let language: ClientSettings["uiLanguage"] = "zh-CN";
+        const harness = yield* makeHarness({ getLanguage: () => language });
+        for (const currentLanguage of ["zh-CN", "en"] as const) {
+          language = currentLanguage;
+          const send = harness.commands.startTurn.run(harness.registry, {
+            environmentId: ENVIRONMENT_ID,
+            input: {
+              threadId: THREAD_ID,
+              message: {
+                messageId: MessageId.make(`message-${language}`),
+                role: "user",
+                text: "Commit and open a PR.",
+                attachments: [],
+                ...(language === "en"
+                  ? {
+                      context: {
+                        version: 1 as const,
+                        records: [],
+                        sourceControlLanguage: "zh-CN" as const,
+                      },
+                    }
+                  : {}),
+              },
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              dispatchMode,
+            },
+          });
+          const request = yield* Queue.take(harness.requests);
+          yield* Deferred.succeed(request.reply, { sequence: 1 });
+          yield* Effect.promise(() => send);
+          expect(request.command).toMatchObject({
+            type: "message.dispatch",
+            text: "Commit and open a PR.",
+            context: { version: 1, records: [], sourceControlLanguage: language },
+          });
+        }
+      }),
+  );
+
   it.effect("sends a message on the thread while earlier history is loading", () =>
     Effect.gen(function* () {
       const historyStarted = yield* Deferred.make<void>();

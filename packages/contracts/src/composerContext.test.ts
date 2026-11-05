@@ -190,6 +190,7 @@ describe("OrchestrationMessageContext", () => {
 
     const wire = encodeOrchestrationMessageContext({
       version: 1,
+      sourceControlLanguage: "zh-CN",
       records: [
         decodeContext({ version: 1, records: [knownRecords.terminal] }).records[0],
         {
@@ -204,6 +205,7 @@ describe("OrchestrationMessageContext", () => {
       ],
     });
     expect(decodeContext(wire).records.map((record) => record.contextId)).toEqual(["ctx_1"]);
+    expect(decodeContext(wire).sourceControlLanguage).toBe("zh-CN");
   });
 
   it("rejects oversized arrays before dropping malformed records", () => {

@@ -622,6 +622,7 @@ export const layer: Layer.Layer<
                 text: projectComposerContextForProvider({
                   text: message.text,
                   records: message.context?.records ?? [],
+                  sourceControlLanguage: message.context?.sourceControlLanguage,
                 }),
                 hasAttachments: false,
               }),
@@ -904,6 +905,7 @@ export const layer: Layer.Layer<
       const userText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
+        sourceControlLanguage: message.context?.sourceControlLanguage,
       });
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
