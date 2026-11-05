@@ -45,6 +45,17 @@ export function IssueCreateDialog({
 }) {
   const t = useUiTranslation();
   const [projectId, setProjectId] = useState(initialProjectId ?? projects[0]?.id);
+  const [selectedScope, setSelectedScope] = useState("");
+  const sourceQuery = useEnvironmentQuery(
+    projectId
+      ? sourceControlEnvironment.issueSources({ environmentId, input: { projectIds: [projectId] } })
+      : null,
+  );
+  const scopes =
+    sourceQuery.data?.[0]?.sources
+      .filter((source) => source.provider === provider)
+      .map((source) => source.scope) ?? [];
+  const scope = scopes.includes(selectedScope) ? selectedScope : scopes[0];
   const [type, setType] = useState<(typeof IssueMetadataInput.Type)["type"]>("REQUIREMENT");
   const [subtype, setSubtype] = useState("");
   const [title, setTitle] = useState("");
@@ -64,23 +75,23 @@ export function IssueCreateDialog({
   );
   const command = useAtomCommand(sourceControlEnvironment.createIssue, { reportFailure: false });
   const metadata = useEnvironmentQuery(
-    projectId
+    projectId && scope
       ? sourceControlEnvironment.issueMetadata({
           environmentId,
-          input: { projectId, provider, type, subtype, query: personQuery },
+          input: { projectId, provider, type, subtype, query: personQuery, scope },
         })
       : null,
   );
   const people = useEnvironmentQuery(
-    projectId
+    projectId && scope
       ? sourceControlEnvironment.issuePeople({
           environmentId,
-          input: { projectId, provider, query: personQuery },
+          input: { projectId, provider, query: personQuery, scope },
         })
       : null,
   );
   const submit = async () => {
-    if (!projectId || !title.trim()) return;
+    if (!projectId || !scope || !title.trim()) return;
     setBusy(true);
     setError(null);
     setFieldErrors([]);
@@ -88,6 +99,7 @@ export function IssueCreateDialog({
       environmentId,
       input: {
         projectId,
+        scope,
         provider,
         type,
         subtype,
@@ -157,6 +169,22 @@ export function IssueCreateDialog({
                   disabled={busy}
                 />
               </div>
+              {scopes.length > 1 ? (
+                <div className="space-y-1.5">
+                  <Label>{t("MEP space ID")}</Label>
+                  <IssueSelect
+                    label={t("MEP space ID")}
+                    value={scope ?? ""}
+                    options={scopes.map((value) => ({ value, label: value }))}
+                    onChange={(value) => {
+                      setSelectedScope(value);
+                      setSubtype("");
+                      setFields({});
+                    }}
+                    disabled={busy}
+                  />
+                </div>
+              ) : null}
               {provider === "meituan" ? (
                 <div className="space-y-1.5">
                   <Label>{t("Work item type")}</Label>
@@ -333,6 +361,7 @@ export function IssueCreateDialog({
                 uncertain ||
                 !title.trim() ||
                 !projectId ||
+                !scope ||
                 metadata.isPending ||
                 Boolean(metadata.error) ||
                 metadata.data?.fields.some(

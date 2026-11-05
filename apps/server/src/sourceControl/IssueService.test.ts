@@ -36,12 +36,41 @@ describe("IssueService", () => {
           ]),
         );
         const searched: string[] = [];
+        let discovered = false;
+        let discoveries = 0;
+        sources[projects[0]!.id]!.push({
+          provider: "meituan",
+          host: "mep.sankuai.com",
+          scope: "456",
+        });
         const provider = yield* Provider.SourceControlProvider.pipe(
           Effect.provide(
             Layer.mock(Provider.SourceControlProvider)({
               kind: SourceControlProviderKind.make("meituan"),
+              discoverIssueSources: () => {
+                discoveries++;
+                return Effect.succeed(
+                  discovered
+                    ? [{ provider: "meituan", host: "mep.sankuai.com", scope: "789" }]
+                    : [],
+                );
+              },
               issueBoard: {
-                read: () => Effect.die("unexpected read"),
+                read: ({ source }) =>
+                  Effect.succeed({
+                    id: "1",
+                    url: "https://mep.sankuai.com/",
+                    title: source.scope,
+                    state: "",
+                    stateCategory: "todo",
+                    type: "",
+                    assignees: [],
+                    priority: "",
+                    updatedAt: "",
+                    body: "",
+                    bodyFormat: "markdown",
+                    transitions: [],
+                  }),
                 people: () => Effect.die("unexpected people"),
                 metadata: () => Effect.die("unexpected metadata"),
                 create: () => Effect.die("unexpected create"),
@@ -64,10 +93,25 @@ describe("IssueService", () => {
             query: "",
             page: 1,
           });
-          expect(searched.toSorted()).toEqual(["1031008", "123"]);
+          expect(searched.toSorted()).toEqual(["1031008", "123", "456"]);
+          expect(discoveries).toBe(1);
           expect(result.groups.map((group) => group.projectIds)).toEqual([
             [projects[0]!.id, projects[1]!.id],
+            [projects[0]!.id],
           ]);
+          expect(
+            (yield* service.read({
+              provider: "meituan",
+              projectId: projects[0]!.id,
+              scope: "456",
+              id: "1",
+            })).title,
+          ).toBe("456");
+          expect(
+            (yield* service
+              .read({ provider: "meituan", projectId: projects[0]!.id, id: "1" })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-target");
           expect(result.failures.map((failure) => failure.projectId)).toEqual([projects[2]!.id]);
           expect(
             (yield* service
@@ -81,6 +125,21 @@ describe("IssueService", () => {
               .read({ provider: "meituan", projectId: projects[0]!.id, id: "1" })
               .pipe(Effect.flip)).reason,
           ).toBe("invalid-target");
+          discovered = true;
+          const before = discoveries;
+          yield* service.sources({ projectIds: [projects[0]!.id] });
+          expect(discoveries).toBe(before);
+          expect(
+            (yield* service.sources({ projectIds: [projects[0]!.id], refresh: true }))[0]?.sources,
+          ).toEqual([{ provider: "meituan", host: "mep.sankuai.com", scope: "789" }]);
+          expect(
+            (yield* service.read({
+              provider: "meituan",
+              projectId: projects[0]!.id,
+              scope: "789",
+              id: "1",
+            })).title,
+          ).toBe("789");
         }).pipe(
           Effect.provide(
             Service.layer.pipe(
@@ -103,6 +162,19 @@ describe("IssueService", () => {
                 Layer.mock(Providers.SourceControlProviderRegistry)({
                   resolveLink: () => undefined,
                   get: () => Effect.succeed(provider),
+                  resolveHandle: () =>
+                    Effect.succeed({
+                      provider,
+                      context: {
+                        provider: {
+                          kind: provider.kind,
+                          name: "Meituan",
+                          baseUrl: "https://git.sankuai.com",
+                        },
+                        remoteName: "origin",
+                        remoteUrl: "https://git.sankuai.com/team/shared.git",
+                      },
+                    }),
                 }),
               ),
               Layer.provideMerge(

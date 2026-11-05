@@ -1,6 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { EnvironmentId, ProjectId, type Issue, type IssueListResult } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  parseBranchIssueUrl,
+  type Issue,
+  type IssueListResult,
+} from "@t3tools/contracts";
 import {
   ClipboardListIcon,
   LayoutGridIcon,
@@ -59,11 +65,6 @@ export function RequirementsPage() {
   const settings = useAtomValue(
     environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noSettings,
   );
-  const createProjects = projects.filter(
-    (project) =>
-      provider === "github" ||
-      settings?.issueProjectSources[project.id]?.some((source) => source.provider === provider),
-  );
   const allowed = useAtomValue(sourceControlEnvironment.createIssue.permissionAtom(environmentId));
   const query = useEnvironmentQuery(
     environmentId
@@ -79,12 +80,26 @@ export function RequirementsPage() {
         })
       : null,
   );
+  const createProjects = projects.filter(
+    (project) =>
+      provider === "github" ||
+      settings?.issueProjectSources[project.id]?.some((source) => source.provider === provider) ||
+      query.data?.groups.some((group) => group.projectIds.includes(project.id)),
+  );
   const peopleProjectId = search.projectId ?? query.data?.groups[0]?.projectIds[0];
+  const peopleScope = query.data?.groups.find((group) =>
+    group.projectIds.includes(peopleProjectId!),
+  )?.source.scope;
   const people = useEnvironmentQuery(
     environmentId && peopleProjectId
       ? sourceControlEnvironment.issuePeople({
           environmentId,
-          input: { projectId: peopleProjectId, provider, query: "" },
+          input: {
+            projectId: peopleProjectId,
+            provider,
+            query: "",
+            ...(peopleScope ? { scope: peopleScope } : {}),
+          },
         })
       : null,
   );
@@ -100,13 +115,17 @@ export function RequirementsPage() {
   } else if (query.data && pages.last !== query.data)
     setPages({ key, data: [...pages.data.slice(0, page - 1), query.data], last: query.data });
   const shownPages = pages.key === key ? pages.data : [];
-  const rows = new Map<string, { issue: Issue; projectId: ProjectId }>();
+  const rows = new Map<string, { issue: Issue; projectId: ProjectId; scope: string }>();
   for (const data of shownPages)
     for (const group of data.groups)
       for (const issue of group.issues) {
         const projectId = group.projectIds[0];
         if (projectId)
-          rows.set(`${group.source.host}/${group.source.scope}/${issue.id}`, { issue, projectId });
+          rows.set(`${group.source.host}/${group.source.scope}/${issue.id}`, {
+            issue,
+            projectId,
+            scope: group.source.scope,
+          });
       }
   const entries = [...rows.values()];
   const assigneeOptions = [
@@ -131,14 +150,21 @@ export function RequirementsPage() {
     });
   };
   const selectedProject = projects.find((project) => project.id === search.issueProjectId);
-  const open = (issue: Issue, projectId: ProjectId) =>
+  const open = (issue: Issue, projectId: ProjectId, scope?: string) => {
+    const issueScope = scope ?? parseBranchIssueUrl(issue.url)?.repository;
     void navigate({
-      search: (previous) => ({ ...previous, issueId: issue.id, issueProjectId: projectId }),
+      search: (previous) => ({
+        ...previous,
+        issueId: issue.id,
+        issueProjectId: projectId,
+        ...(issueScope ? { issueScope } : {}),
+      }),
     });
+  };
   const close = () =>
     void navigate({
       search: (previous) => {
-        const { issueId: _id, issueProjectId: _project, ...rest } = previous;
+        const { issueId: _id, issueProjectId: _project, issueScope: _scope, ...rest } = previous;
         return rest;
       },
     });
@@ -370,11 +396,11 @@ export function RequirementsPage() {
               </div>
             ) : view === "list" ? (
               <div className="divide-y divide-border">
-                {entries.map(({ issue, projectId }) => (
+                {entries.map(({ issue, projectId, scope }) => (
                   <button
                     type="button"
-                    key={`${projectId}/${issue.id}`}
-                    onClick={() => open(issue, projectId)}
+                    key={`${projectId}/${scope}/${issue.id}`}
+                    onClick={() => open(issue, projectId, scope)}
                     className="grid w-full grid-cols-[4rem_minmax(0,1fr)_7rem] items-center gap-3 py-4 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                   >
                     <span className="text-xs text-muted-foreground">#{issue.id}</span>
@@ -410,11 +436,11 @@ export function RequirementsPage() {
                     <div className="space-y-3">
                       {entries
                         .filter(({ issue }) => issue.stateCategory === category)
-                        .map(({ issue, projectId }) => (
+                        .map(({ issue, projectId, scope }) => (
                           <button
                             type="button"
-                            key={`${projectId}/${issue.id}`}
-                            onClick={() => open(issue, projectId)}
+                            key={`${projectId}/${scope}/${issue.id}`}
+                            onClick={() => open(issue, projectId, scope)}
                             className="flex w-full flex-col gap-3 rounded-md border border-border bg-card p-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                           >
                             <span className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -455,9 +481,13 @@ export function RequirementsPage() {
         </div>
         {environmentId && search.issueId && selectedProject ? (
           <IssueDetailPanel
-            key={`${environmentId}/${provider}/${selectedProject.id}/${search.issueId}`}
+            key={`${environmentId}/${provider}/${selectedProject.id}/${search.issueScope}/${search.issueId}`}
             environmentId={environmentId}
-            target={{ projectId: selectedProject.id, provider }}
+            target={{
+              projectId: selectedProject.id,
+              provider,
+              ...(search.issueScope ? { scope: search.issueScope } : {}),
+            }}
             id={search.issueId}
             cwd={selectedProject.workspaceRoot}
             close={close}

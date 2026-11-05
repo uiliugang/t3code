@@ -29,7 +29,12 @@ import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { IssuePicker } from "./IssuePicker";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 
-type Target = { environmentId: EnvironmentId; projectId: ProjectId; provider: IssueProvider };
+type Target = {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  provider: IssueProvider;
+  scope?: string;
+};
 const isBranchIssueError = Schema.is(BranchIssueError);
 const isIssueError = Schema.is(IssueError);
 
@@ -62,7 +67,13 @@ export function RequirementsScreen() {
     environmentId && peopleProject
       ? sourceControlEnvironment.issuePeople({
           environmentId,
-          input: { projectId: peopleProject, provider, query: "" },
+          input: {
+            projectId: peopleProject,
+            provider,
+            query: "",
+            scope: result.data?.groups.find((group) => group.projectIds.includes(peopleProject))
+              ?.source.scope,
+          },
         })
       : null,
   );
@@ -186,6 +197,7 @@ export function RequirementsScreen() {
                     projectId: target,
                     provider,
                     id: issue.id,
+                    scope: group.source.scope,
                   });
               }}
             />
@@ -342,7 +354,19 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
 export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
   const t = useUiTranslation();
   const navigation = useNavigation();
-  const target = route.params;
+  const [selectedScope, setSelectedScope] = useState("");
+  const sources = useEnvironmentQuery(
+    sourceControlEnvironment.issueSources({
+      environmentId: route.params.environmentId,
+      input: { projectIds: [route.params.projectId] },
+    }),
+  );
+  const scopes =
+    sources.data?.[0]?.sources
+      .filter((source) => source.provider === route.params.provider)
+      .map((source) => source.scope) ?? [];
+  const scope = scopes.includes(selectedScope) ? selectedScope : scopes[0];
+  const target = { ...route.params, ...(scope ? { scope } : {}) };
   const [type, setType] = useState<(typeof IssueMetadataInput.Type)["type"]>("REQUIREMENT");
   const [subtype, setSubtype] = useState("");
   const [title, setTitle] = useState("");
@@ -370,6 +394,7 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
     }),
   );
   const submit = async () => {
+    if (!scope) return;
     setBusy(true);
     setError(null);
     const result = await command({
@@ -408,6 +433,18 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
   return (
     <SettingsScreen title="New issue">
       <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
+        {scopes.length > 1 ? (
+          <IssuePicker
+            label={t("MEP space ID")}
+            value={scope ?? ""}
+            options={scopes.map((value) => ({ value, label: value }))}
+            onChange={(value) => {
+              setSelectedScope(value);
+              setSubtype("");
+              setFields({});
+            }}
+          />
+        ) : null}
         {target.provider === "meituan" ? (
           <>
             <IssuePicker

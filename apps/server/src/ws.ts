@@ -2842,6 +2842,7 @@ export const layerWsRpc = (
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.branchIssuesList]: (input) => branchIssues.list(input),
         [WS_METHODS.issuesList]: (input) => issues.list(input),
+        [WS_METHODS.issuesSources]: (input) => issues.sources(input),
         [WS_METHODS.issueBranches]: (input) => branchIssues.branches(input),
         [WS_METHODS.issuesRead]: (input) => issues.read(input),
         [WS_METHODS.issuesPeople]: (input) => issues.people(input),

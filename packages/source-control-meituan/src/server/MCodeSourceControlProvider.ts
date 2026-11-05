@@ -1,4 +1,4 @@
-import { SourceControlProviderError } from "@t3tools/contracts";
+import { SourceControlProviderError, parseBranchIssueUrl } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
@@ -85,6 +85,68 @@ export const make = Effect.gen(function* () {
     issueBoard: yield* MepIssueBoard.make,
     issues,
     kind: definition.kind,
+    discoverIssueSources: Effect.fn("MCodeSourceControlProvider.discoverIssueSources")(
+      function* (input) {
+        const repo = yield* repository(input);
+        const rows = yield* cli.json(
+          {
+            cwd: input.cwd,
+            operation: "discoverIssueSources",
+            args: [
+              "pr",
+              "-R",
+              repo,
+              "list",
+              "--state",
+              "all",
+              "--order",
+              "DESC",
+              "--order-by",
+              "id",
+              "--limit",
+              "10",
+              "--json",
+            ],
+          },
+          Schema.Array(Json.PullRequest),
+        );
+        const scopes = new Set<string>();
+        for (const pr of rows) {
+          const links = pr.description.match(/https:\/\/mep\.sankuai\.com\/[^\s<>")]+/gu) ?? [];
+          for (const link of links) {
+            const issue = parseBranchIssueUrl(link);
+            if (issue?.provider === definition.kind) scopes.add(issue.repository);
+          }
+          const branchIssues = yield* issues.list({
+            cwd: input.cwd,
+            context: {
+              ...input.context,
+              remoteUrl: `https://git.sankuai.com/scm/${pr.fromRef.repo}.git`,
+            },
+            branch: pr.fromRef.branch,
+          });
+          for (const issue of branchIssues) scopes.add(issue.repository);
+        }
+        return [...scopes].map((scope) => ({
+          provider: "meituan" as const,
+          scope,
+          host: "mep.sankuai.com",
+        }));
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError(
+            (cause) =>
+              new SourceControlProviderError({
+                provider: definition.kind,
+                cwd: input.cwd,
+                operation: "discoverIssueSources",
+                detail: "Could not discover MEP spaces from recent pull requests.",
+                cause,
+              }),
+          ),
+        ),
+    ),
     repositoryNameFromRemoteUrl: (url) =>
       SourceControlProvider.repositoryPathFromRemoteUrl(url)?.replace(/^scm\//u, "") ?? null,
     listChangeRequests: Effect.fn("MCodeSourceControlProvider.listChangeRequests")(

@@ -18,7 +18,22 @@ export function createSourceControlEnvironmentAtoms<R, E>(
 ) {
   const commandScheduler = createAtomCommandScheduler();
   const issueRefresh = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
+  const issueSources = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:issues:sources",
+    tag: WS_METHODS.issuesSources,
+  });
   return {
+    issueSources,
+    refreshIssueSources: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:issues:refresh-sources",
+      tag: WS_METHODS.issuesSources,
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() => {
+          registry.update(issueRefresh(environmentId), (value) => value + 1);
+          for (const projectId of input.projectIds)
+            registry.refresh(issueSources({ environmentId, input: { projectIds: [projectId] } }));
+        }),
+    }),
     issues: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:list",
       tag: WS_METHODS.issuesList,
