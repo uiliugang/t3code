@@ -43,6 +43,7 @@ export const skillMessages: Readonly<Record<string, string>> = {
   "Original backups": "原文件备份",
   "Backup: {path}": "备份：{path}",
   "All skills": "全部",
+  Managed: "已纳管",
   Unmanaged: "未纳管",
   Updates: "待更新",
   "Needs attention": "需处理",
