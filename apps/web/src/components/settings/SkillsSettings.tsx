@@ -770,10 +770,13 @@ function SkillPackageGroup({
   if (group.rows.length === 1) return children;
   return (
     <>
-      <details className="border-b border-border" open={search ? true : undefined}>
+      <details
+        className="group/skill-package border-b border-border"
+        open={search ? true : undefined}
+      >
         <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 py-4">
           <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold">
-            <ChevronDownIcon className="size-4 shrink-0" />
+            <ChevronDownIcon className="size-4 shrink-0 -rotate-90 group-open/skill-package:rotate-0" />
             <span className="wrap-anywhere">{group.name}</span>
             <Badge variant="secondary">
               {t("{count} subskills", { count: group.rows.length })}
@@ -1924,9 +1927,9 @@ function EnvironmentSkills({
                         )
                       }
                     >
-                      {t("Apply available updates")}
+                      {t("Update skills")}
                     </Button>
-                    <div className="min-w-40">
+                    <div className="w-36">
                       <PolicySelect
                         value={batchPolicy}
                         onChange={setBatchPolicy}
@@ -1948,6 +1951,29 @@ function EnvironmentSkills({
                       }
                     >
                       {t("Set policy")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canManage}
+                      onClick={async () => {
+                        if (
+                          await requestConfirmDialog(
+                            t(
+                              "Uninstall {count} selected skills and their managed links? Original adoption backups will be restored.",
+                              {
+                                count: selectedManaged.length,
+                              },
+                            ),
+                          )
+                        )
+                          await batch(
+                            selectedManaged.map((skill) => ({ type: "remove", id: skill.id })),
+                          );
+                      }}
+                    >
+                      <Trash2Icon />
+                      {t("Uninstall")}
                     </Button>
                   </>
                 )}
