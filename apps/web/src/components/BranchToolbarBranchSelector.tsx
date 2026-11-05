@@ -26,6 +26,7 @@ import {
 import { GitBranchIcon } from "lucide-react";
 import {
   useEffect,
+  useContext,
   useImperativeHandle,
   useOptimistic,
   useState,
@@ -48,6 +49,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
 import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./chat/threadDetailsPanelStyles";
+import { BranchIssueAssociationContext } from "./chat/branchIssueAssociation";
 import { ThreadDetailsPrRows } from "./chat/ThreadDetailsPrRows";
 import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-link-input";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
@@ -201,6 +203,7 @@ export function BranchToolbarBranchSelector({
     (forceNewWorktree ? null : (serverThread?.worktreePath ?? draftThread?.worktreePath ?? null));
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
+  const issueAssociation = useContext(BranchIssueAssociationContext);
   const hasServerThread = serverThread !== null;
   const checkoutBusy =
     threadRuntimeIsActive(serverThread?.runtime) ||
@@ -831,7 +834,14 @@ export function BranchToolbarBranchSelector({
           />
         ) : null}
         <span
-          className="flex min-w-0"
+          className={cn(
+            "flex min-w-0 rounded-lg",
+            displayMode === "panel" &&
+              issueAssociation?.target?.environmentId === environmentId &&
+              issueAssociation.target.cwd === branchCwd &&
+              issueAssociation.target.branch === resolvedActiveBranch &&
+              "bg-primary/10 ring-1 ring-primary",
+          )}
           onMouseDownCapture={(event) => {
             if (event.button !== 0 || event.ctrlKey) {
               event.stopPropagation();

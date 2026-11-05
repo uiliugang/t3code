@@ -6,6 +6,8 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { RepositoryDetails } from "./RepositoryDetails";
 import { BranchIssuesPanel } from "./BranchIssuesPanel";
+import { GroupedBranchIssuesPanel } from "./GroupedBranchIssuesPanel";
+import { BranchIssueAssociationProvider } from "./branchIssueAssociation";
 import type {
   EditorId,
   EnvironmentId,
@@ -96,6 +98,14 @@ interface ThreadDetailsPanelProps extends Pick<
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  return (
+    <BranchIssueAssociationProvider key={`${props.environmentId}:${props.threadId}`}>
+      <ThreadDetailsPanelContents {...props} />
+    </BranchIssueAssociationProvider>
+  );
+}
+
+function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
   const t = useUiTranslation();
   const showTerminalButton = useClientSettings((settings) => settings.showRepositoryTerminalButton);
   const project = useProject({ environmentId: props.environmentId, projectId: props.projectId });
@@ -167,18 +177,18 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       handle={props.handle}
       supplementary={
         showIssues && issuesPlacement === "separate" ? (
-          workspace ? (
-            workspace.resources.map((resource) => (
-              <BranchIssuesPanel
-                key={resource.id}
-                environmentId={props.environmentId}
-                cwd={resource.checkoutRoot}
-                separate
-              />
-            ))
-          ) : props.gitCwd ? (
-            <BranchIssuesPanel environmentId={props.environmentId} cwd={props.gitCwd} separate />
-          ) : null
+          <GroupedBranchIssuesPanel
+            key={`${props.environmentId}:${props.threadId}`}
+            environmentId={props.environmentId}
+            cwds={
+              workspace
+                ? workspace.resources.map((resource) => resource.checkoutRoot)
+                : props.gitCwd
+                  ? [props.gitCwd]
+                  : []
+            }
+            currentCwd={props.gitCwd}
+          />
         ) : null
       }
       contentKey={THREAD_DETAILS_ITEMS.filter((item) => visible[item.id])
