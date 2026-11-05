@@ -63,6 +63,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
+      # No Apple credentials are passed; PR builds still need the ad hoc bundle signature.
+      CSC_FOR_PULL_REQUEST: "true"
       T3CODE_DESKTOP_DISABLE_UPDATE_FEED: "true"
       T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
       T3CODE_TELEMETRY_CHANNEL: dev
