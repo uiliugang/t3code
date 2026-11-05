@@ -7,6 +7,7 @@ import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { RepositoryDetails } from "./RepositoryDetails";
 import { BranchIssuesPanel } from "./BranchIssuesPanel";
 import { GroupedBranchIssuesPanel } from "./GroupedBranchIssuesPanel";
+import { BranchIssueAssociationProvider } from "./branchIssueAssociation";
 import type {
   EditorId,
   EnvironmentId,
@@ -97,6 +98,14 @@ interface ThreadDetailsPanelProps extends Pick<
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  return (
+    <BranchIssueAssociationProvider key={`${props.environmentId}:${props.threadId}`}>
+      <ThreadDetailsPanelContents {...props} />
+    </BranchIssueAssociationProvider>
+  );
+}
+
+function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
   const t = useUiTranslation();
   const showTerminalButton = useClientSettings((settings) => settings.showRepositoryTerminalButton);
   const project = useProject({ environmentId: props.environmentId, projectId: props.projectId });

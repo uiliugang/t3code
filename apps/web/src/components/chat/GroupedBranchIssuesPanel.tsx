@@ -30,6 +30,7 @@ import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { groupBranchIssues, type IssueBranch } from "./branchIssueGroups";
+import { BranchIssueAssociationContext } from "./branchIssueAssociation";
 
 function BranchRow({
   target,
@@ -47,7 +48,14 @@ function BranchRow({
     sourceControlEnvironment.updateBranchIssues.permissionAtom(target.environmentId),
   );
   const update = useAtomCommand(sourceControlEnvironment.updateBranchIssues);
-  const [adding, setAdding] = useState(false);
+  const association = useContext(BranchIssueAssociationContext);
+  const adding =
+    association?.target?.environmentId === target.environmentId &&
+    association.target.cwd === target.cwd &&
+    association.target.branch === target.branch;
+  function setAdding(open: boolean) {
+    association?.setTarget(open ? target : null);
+  }
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,22 +100,24 @@ function BranchRow({
             current ? "size-3.5 shrink-0 text-primary" : "size-3.5 shrink-0 text-muted-foreground"
           }
         />
-        <div
-          className={
-            current
-              ? "min-w-0 flex-1 text-xs text-primary"
-              : "min-w-0 flex-1 text-xs text-muted-foreground"
-          }
-        >
-          <MiddleTruncate value={target.branch} />
-        </div>
         <Tooltip>
           <TooltipTrigger
-            render={<span className="max-w-24 truncate text-2xs text-muted-foreground" />}
+            render={
+              <div
+                className={
+                  current
+                    ? "min-w-0 flex-1 text-xs text-primary"
+                    : "min-w-0 flex-1 text-xs text-muted-foreground"
+                }
+              />
+            }
           >
-            {target.cwd.split(/[/\\]/).filter(Boolean).at(-1)}
+            <MiddleTruncate value={target.branch} showTitle={false} />
           </TooltipTrigger>
-          <TooltipPopup>{target.cwd}</TooltipPopup>
+          <TooltipPopup>
+            <div>{target.branch}</div>
+            <div>{target.cwd}</div>
+          </TooltipPopup>
         </Tooltip>
         {!issue && !target.published ? (
           <span className="shrink-0 text-2xs text-muted-foreground">{t("Not pushed")}</span>
