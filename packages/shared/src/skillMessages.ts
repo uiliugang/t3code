@@ -92,6 +92,9 @@ export const skillMessages: Readonly<Record<string, string>> = {
   "Check updates": "检查更新",
   "Apply update": "应用更新",
   "Apply available updates": "应用已发现的更新",
+  "Update skills": "更新技能",
+  "Uninstall {count} selected skills and their managed links? Original adoption backups will be restored.":
+    "卸载选中的 {count} 个技能及其托管链接？将恢复纳管前的原始备份。",
   "Content changes available": "发现内容变化",
   "Downloading package": "正在下载技能包",
   "Waiting for idle agents": "等待智能体空闲后应用",
