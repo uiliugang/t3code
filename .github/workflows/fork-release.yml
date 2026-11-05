@@ -1,0 +1,218 @@
+name: Fork macOS and Android release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/fork-release.yml
+      - .github/scripts/android-release.init.gradle
+      - apps/mobile/app.config.ts
+      - scripts/build-desktop-artifact.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'uiliugang/t3code' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_code: ${{ steps.version.outputs.version_code }}
+    steps:
+      - name: Checkout public source
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+      - id: version
+        name: Resolve release version
+        env:
+          IS_TAG: ${{ github.ref_type == 'tag' }}
+        run: |
+          if [[ "$IS_TAG" == true ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+              echo 'Release tags must use vX.Y.Z (no prerelease suffix).'; exit 1;
+            }
+          else
+            version="$(jq -r .version apps/desktop/package.json)-pr.fork.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Epoch minutes keep versionCode increasing independently of the app version.
+          echo "version_code=$(( $(date +%s) / 60 ))" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: prepare
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      # No Apple credentials are passed; PR builds still need the ad hoc bundle signature.
+      CSC_FOR_PULL_REQUEST: "true"
+      T3CODE_DESKTOP_DISABLE_UPDATE_FEED: "true"
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+      T3CODE_TELEMETRY_CHANNEL: dev
+    steps:
+      - name: Checkout public source
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Build Apple Silicon DMG
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          test "$(uname -m)" = arm64
+          vp run dist:desktop:artifact --platform mac --target dmg --arch arm64 \
+            --build-version "$RELEASE_VERSION" --output-dir "$GITHUB_WORKSPACE/release"
+      - name: Verify packaged desktop starts
+        run: |
+          mount="$RUNNER_TEMP/t3-dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$(ls release/*.dmg)"
+          trap 'hdiutil detach "$mount" -force >/dev/null || true' EXIT
+          app=$(ls -d "$mount"/*.app)
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+          node scripts/smoke-desktop-app.ts --executable "$app/Contents/MacOS/$executable" \
+            --artifacts-dir "$RUNNER_TEMP/desktop-launch-check"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-macos-arm64
+          path: release/*.dmg
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: fork-desktop-diagnostics
+          path: ${{ runner.temp }}/desktop-launch-check
+          if-no-files-found: ignore
+
+  android:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      APP_VARIANT: production
+      T3CODE_ANDROID_PACKAGE: com.uiliugang.t3code
+      T3CODE_ANDROID_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
+      T3CODE_MOBILE_VERSION: ${{ needs.prepare.outputs.version }}
+      T3CODE_MOBILE_UPDATES_ENABLED: "0"
+      MOBILE_VERSION_POLICY: appVersion
+      EXPO_NO_GIT_STATUS: "1"
+      NODE_OPTIONS: --max-old-space-size=4096
+      T3_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      T3_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      T3_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          T3_ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/t3-release.keystore
+        run: |
+          for name in KEYSTORE_BASE64 T3_ANDROID_KEYSTORE_PASSWORD T3_ANDROID_KEY_ALIAS T3_ANDROID_KEY_PASSWORD; do
+            [[ -n "${!name}" ]] || { echo "Missing Android signing secret: $name"; exit 1; }
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$T3_ANDROID_KEYSTORE_FILE"
+          echo "T3_ANDROID_KEYSTORE_FILE=$T3_ANDROID_KEYSTORE_FILE" >> "$GITHUB_ENV"
+      - name: Checkout public source
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/mobile...
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Generate native Android project
+        working-directory: apps/mobile
+        run: vp exec expo prebuild --clean --platform android --no-install
+      - name: Build signed standalone APK
+        working-directory: apps/mobile/android
+        run: |
+          ./gradlew --no-daemon --max-workers=2 \
+            -I "$GITHUB_WORKSPACE/.github/scripts/android-release.init.gradle" \
+            :app:assembleRelease
+      - name: Verify and collect APK
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          apk=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$tools/apksigner" verify --verbose --print-certs "$apk"
+          keytool -exportcert -keystore "$T3_ANDROID_KEYSTORE_FILE" \
+            -storepass:env T3_ANDROID_KEYSTORE_PASSWORD -alias "$T3_ANDROID_KEY_ALIAS" \
+            -file "$RUNNER_TEMP/release-cert.der"
+          fingerprint=$(sha256sum "$RUNNER_TEMP/release-cert.der" | cut -d ' ' -f1)
+          "$tools/apksigner" verify --print-certs "$apk" | grep -F "certificate SHA-256 digest: $fingerprint"
+          unzip -l "$apk" | grep -F assets/index.android.bundle
+          mkdir -p release
+          cp "$apk" "release/T3-Code-${RELEASE_VERSION}-android.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-android-apk
+          path: release/*.apk
+          if-no-files-found: error
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/t3-release.keystore" "$RUNNER_TEMP/release-cert.der"
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [prepare, macos, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: fork-*
+          merge-multiple: true
+          path: release
+      - name: Publish GitHub Release
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "$(find . -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
+          test "$(find . -maxdepth 1 -name '*.apk' | wc -l)" -eq 1
+          sha256sum *.dmg *.apk > SHA256SUMS
+          gh release create "$RELEASE_TAG" *.dmg *.apk SHA256SUMS --verify-tag \
+            --title "T3 Code $RELEASE_TAG (fork)" \
+            --notes 'Apple Silicon macOS DMG and standalone Android APK. The macOS app is ad hoc signed and not notarized; Gatekeeper may require explicit approval. Automatic desktop updates and upstream Android OTA updates are disabled.'

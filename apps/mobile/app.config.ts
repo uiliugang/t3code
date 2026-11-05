@@ -116,6 +116,17 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
+const androidVersionCode = repoEnv.T3CODE_ANDROID_VERSION_CODE
+  ? Number(repoEnv.T3CODE_ANDROID_VERSION_CODE)
+  : undefined;
+if (
+  androidVersionCode !== undefined &&
+  (!Number.isInteger(androidVersionCode) ||
+    androidVersionCode < 1 ||
+    androidVersionCode > 2100000000)
+) {
+  throw new Error("T3CODE_ANDROID_VERSION_CODE must be an integer between 1 and 2100000000.");
+}
 // Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
 const HOSTED_APP_HOST = "app.t3.codes";
 const iosBundleIdentifier = isIosPersonalTeamBuild
@@ -289,7 +300,8 @@ const config: ExpoConfig = {
   },
   android: {
     icon: variant.assets.appIcon,
-    package: variant.androidPackage,
+    package: repoEnv.T3CODE_ANDROID_PACKAGE ?? variant.androidPackage,
+    ...(androidVersionCode === undefined ? {} : { versionCode: androidVersionCode }),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
