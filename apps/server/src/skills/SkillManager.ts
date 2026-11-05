@@ -736,12 +736,15 @@ const make = Effect.gen(function* () {
     if (description.external)
       return yield* new SkillManagerError({ operation: "adopt", reason: "external" });
     const current = yield* Ref.get(state);
-    if (current.skills.some((skill) => skill.adoptedFrom === description.identity))
+    const existing = current.skills.find((skill) => skill.adoptedFrom === description.identity);
+    if (existing && (input.mode !== "takeover" || existing.bindings.length))
       return yield* new SkillManagerError({ operation: "adopt", reason: "conflict" });
     if (input.mode === "takeover" && (yield* host.busy))
       return yield* new SkillManagerError({ operation: "adopt", reason: "busy" });
     const data = yield* packages.inspect(description.identity);
     if (data.digest !== input.digest)
+      return yield* new SkillManagerError({ operation: "adopt", reason: "candidate-changed" });
+    if (existing && existing.activeDigest !== data.digest)
       return yield* new SkillManagerError({ operation: "adopt", reason: "candidate-changed" });
     const id = (yield* Ref.get(runningJob)) ?? (yield* random.uuidV4().pipe(Effect.orDie));
     const targets = yield* selectedTargets(input.targetIds);
@@ -764,10 +767,11 @@ const make = Effect.gen(function* () {
       if (yield* filePresent(file)) {
         if (input.mode !== "takeover" || (yield* fs.realPath(file)) !== description.identity)
           return yield* new SkillManagerError({ operation: "adopt", reason: "conflict" });
-        backups.push({
-          original: file,
-          backup: path.join(root, "backups", id, String(backups.length)),
-        });
+        if (!existing)
+          backups.push({
+            original: file,
+            backup: path.join(root, "backups", id, String(backups.length)),
+          });
       }
       bindings.push({ ...target, entryName, status: "missing" });
     }
@@ -780,6 +784,18 @@ const make = Effect.gen(function* () {
       input.mode === "takeover" &&
       localSource !== null &&
       (localSource === description.identity || localSource.startsWith(root + path.sep));
+    if (existing) {
+      const jobId = yield* Ref.get(runningJob);
+      yield* saveJobs((jobs) =>
+        jobs.map((job) =>
+          job.id === jobId
+            ? { ...job, skillId: existing.id, beforeDigest: existing.activeDigest }
+            : job,
+        ),
+      );
+      yield* activate({ ...existing, bindings, snapshotOnly }, data.digest);
+      return;
+    }
     yield* packages.inspect(description.identity, versionPath(id, data.digest));
     yield* packages.inspect(description.identity, baselinePath(id, data.digest));
     const skill: ManagedSkill = {
@@ -1201,6 +1217,7 @@ const make = Effect.gen(function* () {
             ? cause
             : new SkillManagerError({ operation: input.type, reason: "io", cause });
           const current = yield* Ref.get(state);
+          const failedId = current.jobs?.find((entry) => entry.id === id)?.skillId ?? skillId;
           const attemptedAt = yield* now;
           yield* save({
             ...current,
@@ -1208,7 +1225,7 @@ const make = Effect.gen(function* () {
             lastFailureReason: error.reason,
             lastFailureDiagnostics: error.diagnostics ?? null,
             skills: current.skills.map((skill) =>
-              skill.id === skillId
+              skill.id === failedId
                 ? {
                     ...skill,
                     status:
@@ -1240,8 +1257,10 @@ const make = Effect.gen(function* () {
           );
         }),
         onSuccess: Effect.fn("SkillManager.recordSuccess")(function* () {
-          const resultingSkill = skillId
-            ? (yield* Ref.get(state)).skills.find((skill) => skill.id === skillId)
+          const completed = yield* Ref.get(state);
+          const resultingId = completed.jobs?.find((entry) => entry.id === id)?.skillId ?? skillId;
+          const resultingSkill = resultingId
+            ? completed.skills.find((skill) => skill.id === resultingId)
             : undefined;
           const after = resultingSkill?.availableDigest ?? resultingSkill?.activeDigest;
           const finishedAt = yield* now;

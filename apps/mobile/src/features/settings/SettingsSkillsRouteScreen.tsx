@@ -899,37 +899,30 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             )}
           </Text>
           <View className="flex-row flex-wrap gap-2">
-            {(["copy", "takeover"] as const).map((mode) => (
-              <ControlPill
-                key={mode}
-                label={t(mode === "copy" ? "Copy to library" : "Take over selected locations")}
-                disabled={
-                  disabled ||
-                  (mode === "takeover" &&
-                    previews.some(({ skill }) => !locations[skill.path]?.length))
-                }
-                onPress={() =>
-                  void mutate({
-                    type: "batch",
-                    operations: previews
-                      .filter((item) => !item.preview.external)
-                      .map(({ skill, preview: item }) => ({
-                        type: "adopt",
-                        path: skill.path,
-                        digest: item.digest,
-                        mode,
-                        targetIds: mode === "takeover" ? (locations[skill.path] ?? []) : [],
-                        ...(item.origin ? { origin: item.origin } : {}),
-                      })),
-                  }).then((ok) => {
-                    if (ok) {
-                      setPreviews([]);
-                      setSelected([]);
-                    }
-                  })
-                }
-              />
-            ))}
+            <ControlPill
+              label={t("Take over selected locations")}
+              disabled={disabled || previews.some(({ skill }) => !locations[skill.path]?.length)}
+              onPress={() =>
+                void mutate({
+                  type: "batch",
+                  operations: previews
+                    .filter((item) => !item.preview.external)
+                    .map(({ skill, preview: item }) => ({
+                      type: "adopt",
+                      path: skill.path,
+                      digest: item.digest,
+                      mode: "takeover",
+                      targetIds: locations[skill.path] ?? [],
+                      ...(item.origin ? { origin: item.origin } : {}),
+                    })),
+                }).then((ok) => {
+                  if (ok) {
+                    setPreviews([]);
+                    setSelected([]);
+                  }
+                })
+              }
+            />
             <ControlPill label={t("Cancel")} onPress={() => setPreviews([])} />
           </View>
         </View>

@@ -6,7 +6,7 @@ Install from a local directory, a Git repository or URL, or an enabled Meituan S
 
 The list hides externally maintained skills by default. Use **Filter skills** to include them or filter by management and update status. External skills are updated through their plugin or provider.
 
-To manage an existing skill, review its source, content and locations first. **Copy to library** preserves the original files. **Take over selected locations** backs them up before replacing the selected locations with managed links. A takeover without an independent update source remains a local snapshot; connect its real upstream to enable updates. Sources are never inferred from a skill's name alone.
+To manage an existing skill, review its source, content and locations first. Adoption backs up the original files and replaces the selected locations with managed links, so agents use the managed skill instead of a separate unmanaged copy. A previously copied library entry is reused when its content still matches the original. A takeover without an independent update source remains a local snapshot; connect its real upstream to enable updates. Sources are never inferred from a skill's name alone.
 
 New managed skills default to **Automatic updates**: the environment server checks daily, prepares changes and applies them when agents are idle. The page does not need to stay open. **Manual updates** checks daily and shows an available-update indicator until you apply the candidate. **No updates** disables scheduled checks and application. Existing policies are retained until you change them. Restoring an earlier version pins it. Change the policy to resume automatic updates. Running provider sessions may need to be reloaded or replaced to use updated files.
 

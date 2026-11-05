@@ -504,7 +504,6 @@ function AdoptDialog({
   onClose: () => void;
 }) {
   const t = useUiTranslation();
-  const [mode, setMode] = useState<"copy" | "takeover">("takeover");
   const [selected, setSelected] = useState(items.map((item) => item.skill.path));
   const [locations, setLocations] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(items.map((item) => [item.skill.path, [...(item.skill.targetIds ?? [])]])),
@@ -523,22 +522,9 @@ function AdoptDialog({
                 "All selected skills will use automatic updates. Unknown sources stay visible until you connect an upstream.",
               )}
             </p>
-            <Select value={mode} onValueChange={(value) => value && setMode(value)}>
-              <SelectTrigger aria-label={t("Adoption mode")}>
-                <SelectValue>
-                  {t(mode === "takeover" ? "Take over selected locations" : "Copy to library")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup alignItemWithTrigger={false}>
-                <SelectItem value="takeover">{t("Take over selected locations")}</SelectItem>
-                <SelectItem value="copy">{t("Copy to library")}</SelectItem>
-              </SelectPopup>
-            </Select>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {t(
-                mode === "takeover"
-                  ? "Original locations are backed up before switching to managed files. You can restore them when stopping management."
-                  : "Original files stay in place. Agents keep using them until you assign the managed copy to another location.",
+                "Original locations are backed up before switching to managed files. You can restore them when stopping management.",
               )}
             </p>
             {items.map(({ skill, preview }) => (
@@ -571,20 +557,14 @@ function AdoptDialog({
                           "Source unknown. A takeover is saved as a local snapshot until a source is connected.",
                         )}
                 </p>
-                {mode === "copy" ? (
-                  <p className="text-xs text-muted-foreground">{t("Saved to library")}</p>
-                ) : (
-                  <Targets
-                    targets={data.targets.filter((target) => skill.targetIds?.includes(target.id))}
-                    selected={locations[skill.path] ?? []}
-                    onChange={(ids) => setLocations({ ...locations, [skill.path]: ids })}
-                  />
-                )}
-                {mode === "takeover" && !skill.targetIds?.length && (
+                <Targets
+                  targets={data.targets.filter((target) => skill.targetIds?.includes(target.id))}
+                  selected={locations[skill.path] ?? []}
+                  onChange={(ids) => setLocations({ ...locations, [skill.path]: ids })}
+                />
+                {!skill.targetIds?.length && (
                   <p className="text-xs text-muted-foreground">
-                    {t(
-                      "Add this directory as a usage location to take it over, or choose Copy to library.",
-                    )}
+                    {t("Add this directory as a usage location before adopting this skill.")}
                   </p>
                 )}
               </div>
@@ -597,9 +577,7 @@ function AdoptDialog({
           </Button>
           <Button
             disabled={
-              saving ||
-              !selected.length ||
-              (mode === "takeover" && selected.some((path) => !locations[path]?.length))
+              saving || !selected.length || selected.some((path) => !locations[path]?.length)
             }
             onClick={async () => {
               setSaving(true);
@@ -609,8 +587,8 @@ function AdoptDialog({
                   type: "adopt",
                   path: skill.path,
                   digest: preview.digest,
-                  mode,
-                  targetIds: mode === "takeover" ? (locations[skill.path] ?? []) : [],
+                  mode: "takeover",
+                  targetIds: locations[skill.path] ?? [],
                   ...(preview.origin ? { origin: preview.origin } : {}),
                 }));
               const ok = await mutate({ type: "batch", operations });

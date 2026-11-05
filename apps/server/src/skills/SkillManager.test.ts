@@ -558,13 +558,44 @@ describe("SkillManager", () => {
         type: "adopt",
         path: `${target}/review`,
         digest: preview.digest,
+        mode: "copy",
+        targetIds: [],
+      });
+      yield* manager.drain;
+      const copied = (yield* manager.snapshot).skills[0]!;
+      expect(copied.bindings).toHaveLength(0);
+      yield* fs.writeFileString(`${target}/review/script.sh`, "local change");
+      const changed = yield* manager.inspect({ type: "adopt", path: `${target}/review` });
+      yield* manager.mutate({
+        type: "adopt",
+        path: `${target}/review`,
+        digest: changed.digest,
+        mode: "takeover",
+        targetIds: ["fixture"],
+      });
+      yield* manager.drain;
+      expect((yield* manager.snapshot).lastFailureReason).toBe("candidate-changed");
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("local change");
+      yield* fs.writeFileString(`${target}/review/script.sh`, "first");
+      yield* manager.mutate({
+        type: "adopt",
+        path: `${target}/review`,
+        digest: preview.digest,
         mode: "takeover",
         targetIds: ["fixture", "alias"],
       });
       yield* manager.drain;
       const adopted = (yield* manager.snapshot).skills[0]!;
-      expect(adopted.policy).toBe("automatic");
+      expect((yield* manager.snapshot).skills).toHaveLength(1);
+      expect(adopted.id).toBe(copied.id);
       expect(adopted.bindings).toHaveLength(1);
+      expect((yield* manager.snapshot).discovered).toHaveLength(0);
+      expect(adopted.policy).toBe("automatic");
+      expect((yield* manager.snapshot).jobs?.at(-1)).toMatchObject({
+        skillId: copied.id,
+        status: "completed",
+        afterDigest: copied.activeDigest,
+      });
       expect(adopted.sourceId).toBe("meituan");
       expect(adopted.backups).toHaveLength(1);
       yield* manager.mutate({
