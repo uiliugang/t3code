@@ -72,7 +72,7 @@ export function RepositoryDetails({
       <div className="flex min-w-0 items-start">
         <button
           type="button"
-          className="flex min-w-0 flex-1 flex-col gap-1 px-4 py-3 text-left hover:bg-accent/40"
+          className="flex min-w-0 flex-1 flex-col gap-1 py-3 pr-2 pl-4 text-left hover:bg-accent/40"
           onClick={onToggle}
           aria-expanded={expanded}
         >
@@ -91,11 +91,13 @@ export function RepositoryDetails({
                 {t("Primary repository")}
               </Badge>
             ) : null}
-            {expanded ? (
-              <ChevronDownIcon className="size-3.5 shrink-0" />
-            ) : (
-              <ChevronRightIcon className="size-3.5 shrink-0" />
-            )}
+            <span className="flex w-8 shrink-0 items-center justify-center">
+              {expanded ? (
+                <ChevronDownIcon className="size-3.5 shrink-0" />
+              ) : (
+                <ChevronRightIcon className="size-3.5 shrink-0" />
+              )}
+            </span>
           </span>
           {!expanded ? (
             <span className="flex w-full min-w-0 items-center gap-2 pl-6 text-xs text-muted-foreground">
@@ -117,7 +119,7 @@ export function RepositoryDetails({
         </button>
       </div>
       {expanded ? (
-        <div data-workspace-repository-content className="flex min-w-0 flex-col pb-2">
+        <div data-workspace-repository-content className="flex min-w-0 flex-col px-2 pb-2">
           {showOpenInPicker || showTerminalButton ? (
             <OpenInPicker
               {...openInOptions}

@@ -257,7 +257,16 @@ const RunContextSelector = memo(function RunContextSelector({
           (showEnvironmentIndicator ? (activeEnvironment?.label ?? "Run on") : workspaceLabel)}
       </ComposerContextLabel>
       {/* Trailing in the panel, so every row label starts on the same edge. */}
-      {isPanel && showEnvironmentIndicator ? workspaceIcon : null}
+      {isPanel && showEnvironmentIndicator ? (
+        <span
+          className={cn(
+            "flex shrink-0 items-center justify-center",
+            isLocked && "-mr-2.5 w-8 translate-x-px",
+          )}
+        >
+          {workspaceIcon}
+        </span>
+      ) : null}
     </>
   );
 

@@ -864,6 +864,8 @@ const zhCN: Readonly<Record<string, string>> = {
     "无法发送 PR 链接，请检查连接 → 通讯中的大象配置。",
   "Linked issues": "关联需求",
   "Unlinked branches": "未关联分支",
+  "Collapse unlinked branches": "收起未关联分支",
+  "Expand unlinked branches": "展开未关联分支",
   "Current branch": "当前分支",
   "Not pushed": "待推送",
   "{count} branches": "{count} 个分支",

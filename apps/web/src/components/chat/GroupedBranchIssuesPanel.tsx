@@ -203,8 +203,8 @@ function IssueCard({
   );
   return (
     <article className="overflow-hidden rounded-lg border border-border/65">
-      <div className="px-3 pt-3 pb-2">
-        <div className="mb-1 flex flex-wrap items-center gap-x-2 text-2xs text-muted-foreground">
+      <div className="-mr-px pl-3 pt-3 pb-2">
+        <div className="mb-1 flex flex-wrap items-center gap-x-2 pr-3 text-2xs text-muted-foreground">
           <span>
             {issue.provider === "meituan" ? "MEP" : issue.repository} · #{issue.id}
           </span>
@@ -248,7 +248,7 @@ function IssueCard({
         </div>
       </div>
       {expanded ? (
-        <div className="px-3">
+        <div className="-mr-px pl-3">
           {branches.map((branch) => (
             <BranchRow
               key={JSON.stringify([branch.cwd, branch.branch])}
@@ -329,7 +329,7 @@ export function GroupedBranchIssuesPanel({
       data-branch-issues-panel
       className="dropdown-glass shrink-0 overflow-hidden rounded-2xl"
     >
-      <div className="flex items-center gap-2 px-4 py-2">
+      <div className="flex items-center gap-2 py-2 pr-2 pl-4">
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring"
@@ -357,7 +357,7 @@ export function GroupedBranchIssuesPanel({
           <TooltipPopup>{t("Refresh issues")}</TooltipPopup>
         </Tooltip>
         <ThreadDetailsControl
-          part="icon"
+          part="secondary"
           aria-label={t(expanded ? "Collapse linked issues" : "Expand linked issues")}
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
@@ -380,16 +380,27 @@ export function GroupedBranchIssuesPanel({
         ))}
         {unlinked.length && showEmpty ? (
           <section aria-label={t("Unlinked branches")}>
-            <ThreadDetailsControl
-              aria-expanded={unlinkedExpanded}
-              onClick={() => setUnlinkedExpanded(!unlinkedExpanded)}
-            >
-              <span className="flex-1 text-left">
+            <div className="-mr-1 flex min-h-8 items-center gap-2 pl-1">
+              <button
+                type="button"
+                className="min-w-0 flex-1 text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring"
+                aria-expanded={unlinkedExpanded}
+                onClick={() => setUnlinkedExpanded(!unlinkedExpanded)}
+              >
                 {t("Unlinked branches")}{" "}
                 <span className="text-muted-foreground">{unlinked.length}</span>
-              </span>
-              <ChevronDownIcon className={unlinkedExpanded ? "size-4 rotate-180" : "size-4"} />
-            </ThreadDetailsControl>
+              </button>
+              <ThreadDetailsControl
+                part="secondary"
+                aria-label={t(
+                  unlinkedExpanded ? "Collapse unlinked branches" : "Expand unlinked branches",
+                )}
+                aria-expanded={unlinkedExpanded}
+                onClick={() => setUnlinkedExpanded(!unlinkedExpanded)}
+              >
+                <ChevronDownIcon className={unlinkedExpanded ? "size-4 rotate-180" : "size-4"} />
+              </ThreadDetailsControl>
+            </div>
             <div hidden={!unlinkedExpanded}>
               {unlinked.map((target) => (
                 <BranchRow
