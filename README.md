@@ -1,4 +1,5 @@
 # T3 Code 增强版
+[![Fork macOS and Android release](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml/badge.svg)](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml)
 
 基于 [pingdotgg/t3code](https://github.com/pingdotgg/t3code) 的个人增强分支，面向中文使用、多仓库协同开发和美团内部研发流程。在上游 Web、Electron 桌面端和 React Native 移动端架构之上，扩展需求管理、代码平台集成、Skills 管理和模型配置。
 
