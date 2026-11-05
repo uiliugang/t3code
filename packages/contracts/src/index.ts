@@ -34,6 +34,7 @@ export * from "./git.ts";
 export * from "./vcs.ts";
 export * from "./sourceControl.ts";
 export * from "./branchIssues.ts";
+export * from "./issues.ts";
 export * from "./projectClone.ts";
 export * from "./projectImport.ts";
 export * from "./pullRequest.ts";

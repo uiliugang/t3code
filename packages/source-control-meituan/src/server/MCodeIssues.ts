@@ -70,6 +70,40 @@ export const make = Effect.gen(function* () {
       ),
     );
   return {
+    branches: Effect.fn("MCodeIssues.branches")(function* (input) {
+      const repository = SourceControlProvider.repositoryPathFromRemoteUrl(
+        input.context.remoteUrl,
+      )?.replace(/^scm\//u, "");
+      const names: string[] = [];
+      let page = 1;
+      while (true) {
+        const result = yield* run(input.cwd, [
+          "branch",
+          "list",
+          "-i",
+          input.issue.id,
+          "--page",
+          String(page),
+          "--page-size",
+          "100",
+          "--json",
+        ]);
+        const branches = yield* json(result.stdout, Branches, input.cwd);
+        names.push(
+          ...branches.items
+            .filter(
+              (branch) =>
+                SourceControlProvider.repositoryPathFromRemoteUrl(branch.repoAddress)?.replace(
+                  /^scm\//u,
+                  "",
+                ) === repository,
+            )
+            .map((branch) => branch.name),
+        );
+        if (branches.items.length === 0 || page * 100 >= branches.total) return names;
+        page++;
+      }
+    }),
     read: Effect.fn("MCodeIssues.read")(function* (input) {
       const result = yield* run(input.cwd, [
         "workitem-detail",

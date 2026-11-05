@@ -5,9 +5,11 @@ import { GlassSurface } from "../../components/ui/GlassSurface";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WORKSPACE_DOCK } from "./workspace-tabs-state";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
+import { useNavigation } from "@react-navigation/native";
 
 export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
   const workspace = useWorkspaceTabs()!;
+  const navigation = useNavigation();
   return (
     <View
       className="w-full flex-row items-center justify-between"
@@ -50,6 +52,14 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
           })}
         </View>
       </GlassSurface>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Requirements board"
+        onPress={() => navigation.navigate("Requirements")}
+        className="min-h-12 min-w-12 items-center justify-center"
+      >
+        <SymbolView name="ticket" size={23} tintColorClassName="accent-icon" />
+      </Pressable>
       <GlassSurface
         style={{
           width: WORKSPACE_DOCK.height,

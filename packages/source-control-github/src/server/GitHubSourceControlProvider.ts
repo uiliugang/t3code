@@ -29,6 +29,7 @@ import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 import { GH_PROCESS_CONCURRENCY } from "./GitHubCredentials.ts";
 import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
 import * as GitHubRest from "./GitHubRest.ts";
+import * as GitHubIssues from "./GitHubIssues.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubChangeRequestTemplate from "./gitHubChangeRequestTemplate.ts";
 import * as GitHubGraphQlClient from "./gitHubGraphQlClient.ts";
@@ -869,6 +870,7 @@ export const make = Effect.gen(function* () {
   });
 
   return SourceControlProvider.SourceControlProvider.of({
+    issueBoard: yield* GitHubIssues.make,
     issues: {
       read: Effect.fn("GitHubSourceControlProvider.readIssue")(function* (input) {
         const result = yield* api
