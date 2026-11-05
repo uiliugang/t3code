@@ -1125,7 +1125,13 @@ export function deriveEffectiveComposerModelState(input: {
         )
       : null) ??
     // Antigravity has no static model or cross-account catalog fallback.
-    (input.selectedProvider === "antigravity" && input.selectedInstanceId ? "" : null) ??
+    ((input.selectedProvider === "antigravity" ||
+      input.providers.some(
+        (provider) => provider.instanceId === input.selectedInstanceId && provider.customModelsOnly,
+      )) &&
+    input.selectedInstanceId
+      ? ""
+      : null) ??
     resolveAppModelSelection(
       input.selectedProvider,
       input.settings,

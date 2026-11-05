@@ -7,10 +7,36 @@ import * as Schema from "effect/Schema";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { readCustomModelEntries } from "@t3tools/shared/model";
+import { claudeByokUrlError, normalizeClaudeByokBaseUrl } from "@t3tools/shared/claudeByok";
 
 import { readClaudeSettingsEnv } from "./ClaudeSkills.ts";
 
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
+
+export const CLAUDE_BYOK_ENVIRONMENT_OVERRIDES = {
+  CLAUDE_CODE_OAUTH_TOKEN: "",
+  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+  CLAUDE_CODE_USE_BEDROCK: "0",
+  CLAUDE_CODE_USE_VERTEX: "0",
+  CLAUDE_CODE_USE_FOUNDRY: "0",
+  DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+};
+
+export class ClaudeEnvironmentError extends Schema.TaggedError<ClaudeEnvironmentError>()(
+  "ClaudeEnvironmentError",
+  { reason: Schema.Literals(["auth", "endpoint", "models", "home"]) },
+) {
+  override get message() {
+    return {
+      auth: "Configure exactly one Claude BYOK credential.",
+      endpoint: "Configure a valid Claude BYOK base URL.",
+      models: "Configure at least one Claude BYOK model.",
+      home: "Configure an isolated Claude BYOK home directory.",
+    }[this.reason];
+  }
+}
 
 export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function* (
   config: Pick<ClaudeSettings, "homePath">,
@@ -31,10 +57,39 @@ export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function
 });
 
 export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function* (
-  config: Pick<ClaudeSettings, "homePath">,
+  config: Pick<ClaudeSettings, "homePath"> &
+    Partial<Pick<ClaudeSettings, "customModelsOnly" | "customModels">>,
   baseEnv?: NodeJS.ProcessEnv,
-): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
-  const resolvedBaseEnv = baseEnv ?? process.env;
+): Effect.fn.Return<NodeJS.ProcessEnv, ClaudeEnvironmentError, Path.Path> {
+  const resolvedBaseEnv = { ...(baseEnv ?? process.env) };
+  if (config.customModelsOnly) {
+    const token = resolvedBaseEnv.ANTHROPIC_AUTH_TOKEN?.trim();
+    const key = resolvedBaseEnv.ANTHROPIC_API_KEY?.trim();
+    if (Boolean(token) === Boolean(key)) {
+      return yield* new ClaudeEnvironmentError({ reason: "auth" });
+    }
+    if (claudeByokUrlError(resolvedBaseEnv.ANTHROPIC_BASE_URL?.trim() ?? ""))
+      return yield* new ClaudeEnvironmentError({ reason: "endpoint" });
+    resolvedBaseEnv.ANTHROPIC_BASE_URL = normalizeClaudeByokBaseUrl(
+      resolvedBaseEnv.ANTHROPIC_BASE_URL!,
+    );
+    if (!config.homePath.trim()) return yield* new ClaudeEnvironmentError({ reason: "home" });
+    Object.assign(resolvedBaseEnv, CLAUDE_BYOK_ENVIRONMENT_OVERRIDES);
+    resolvedBaseEnv.ANTHROPIC_AUTH_TOKEN = token ?? "";
+    resolvedBaseEnv.ANTHROPIC_API_KEY = key ?? "";
+    const model = readCustomModelEntries(config.customModels ?? [])[0]?.slug;
+    if (!model) return yield* new ClaudeEnvironmentError({ reason: "models" });
+    if (model) {
+      for (const variable of [
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "CLAUDE_CODE_SUBAGENT_MODEL",
+      ])
+        resolvedBaseEnv[variable] = model;
+    }
+  }
   const homePath = config.homePath.trim();
   if (homePath.length === 0) return resolvedBaseEnv;
   const resolvedHomePath = yield* resolveClaudeHomePath(config);
@@ -102,11 +157,11 @@ export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(
 
 export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationGroupKey")(
   function* (
-    config: Pick<ClaudeSettings, "homePath">,
+    config: Pick<ClaudeSettings, "homePath"> & Partial<Pick<ClaudeSettings, "customModelsOnly">>,
     environment?: NodeJS.ProcessEnv,
   ): Effect.fn.Return<string, never, Path.Path> {
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    return `claude:home:${resolvedHomePath}`;
+    return `claude:home:${resolvedHomePath}${config.customModelsOnly ? `:byok:${environment?.ANTHROPIC_BASE_URL?.trim() ?? ""}` : ""}`;
   },
 );
 

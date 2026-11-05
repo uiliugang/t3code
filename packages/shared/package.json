@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./claudeByok": {
+      "types": "./src/claudeByok.ts",
+      "import": "./src/claudeByok.ts"
+    },
     "./projectPresentation": {
       "types": "./src/projectPresentation.ts",
       "import": "./src/projectPresentation.ts"

@@ -239,6 +239,54 @@ function makeClaudeTestTurnInput(input: {
 }
 
 describe("ClaudeAdapterV2 runtime query policy", () => {
+  it("keeps BYOK model IDs opaque and credentials out of flag settings", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: { ...CLAUDE_TEST_MODEL_SELECTION, model: "CaseSensitive" },
+      nativeThreadId: "byok-thread",
+      resume: false,
+      cwd: "/workspace",
+      settings: {
+        ...DEFAULT_CLAUDE_SETTINGS,
+        customModelsOnly: true,
+        customModels: ["CaseSensitive"],
+      },
+      environment: { ANTHROPIC_BASE_URL: "https://ba.test", ANTHROPIC_AUTH_TOKEN: "private-token" },
+      sdkSettings: {
+        env: {
+          ANTHROPIC_API_KEY: "old-key",
+          CLAUDE_CODE_OAUTH_TOKEN: "old-token",
+          CLAUDE_CODE_USE_BEDROCK: "1",
+          CLAUDE_CODE_USE_VERTEX: "1",
+          CLAUDE_CODE_USE_FOUNDRY: "1",
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "0",
+          DISABLE_NON_ESSENTIAL_MODEL_CALLS: "0",
+          CLAUDE_CONFIG_DIR: "/other-account",
+          KEEP_CUSTOM_ENV: "kept",
+        },
+      },
+    });
+    assert.equal(options.model, "CaseSensitive");
+    assert.deepEqual(options.settingSources, []);
+    assert.isUndefined(options.thinking);
+    assert.equal(options.env?.ANTHROPIC_AUTH_TOKEN, "private-token");
+    assert.isObject(options.settings);
+    if (typeof options.settings === "object" && options.settings !== null) {
+      assert.equal(options.settings.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL, "CaseSensitive");
+      assert.isUndefined(options.settings.env?.ANTHROPIC_API_KEY);
+      assert.isUndefined(options.settings.env?.ANTHROPIC_AUTH_TOKEN);
+      for (const name of [
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+        "DISABLE_NON_ESSENTIAL_MODEL_CALLS",
+        "CLAUDE_CONFIG_DIR",
+      ])
+        assert.isUndefined(options.settings.env?.[name]);
+      assert.equal(options.settings.env?.KEEP_CUSTOM_ENV, "kept");
+    }
+  });
   it.each([
     "-- --thinking-display omitted",
     "--thinking-display summarized -- --thinking-display omitted",

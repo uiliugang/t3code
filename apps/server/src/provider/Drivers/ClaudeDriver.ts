@@ -1,4 +1,4 @@
-import { ClaudeSettings, ProviderDriverKind } from "@t3tools/contracts";
+import { ClaudeSettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -12,6 +12,7 @@ import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
+import { validateClaudeEndpoint } from "../ClaudeEndpointValidation.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as ServerConfig from "../../config.ts";
@@ -137,12 +138,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ? configDir
         : undefined,
     );
-    const stampIdentity = withInstanceIdentity({
+    const stampBaseIdentity = withInstanceIdentity({
       instanceId,
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
       continuationGroupKey,
+    });
+    const stampIdentity = (snapshot: Parameters<typeof stampBaseIdentity>[0]) => ({
+      ...stampBaseIdentity(snapshot),
+      ...(effectiveConfig.customModelsOnly ? { customModelsOnly: true } : {}),
     });
 
     const scopedLimitNames = yield* makeClaudeScopedLimitNames;
@@ -171,6 +176,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       effectiveConfig,
       processEnv,
       modelCatalog,
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER_KIND,
+            instanceId,
+            detail: "Check the Claude BYOK authentication configuration.",
+            cause,
+          }),
+      ),
     );
 
     // Per-instance capabilities cache: keyed on binary + resolved HOME so
@@ -179,7 +194,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const lastGoodCapabilities = yield* Ref.make<ClaudeCapabilitiesProbe | undefined>(undefined);
     const capabilitiesProbeCache = yield* Cache.makeWith(
       () =>
-        probeClaudeCapabilities(effectiveConfig, processEnv, stateDir).pipe(
+        probeClaudeCapabilities(
+          effectiveConfig,
+          processEnv,
+          stateDir,
+          !effectiveConfig.customModelsOnly,
+        ).pipe(
           Effect.flatMap((capabilities) =>
             ClaudeResetCredits.readClaudeOrganizationId(accountConfigPath).pipe(
               Effect.map((workspaceId) => ({
@@ -372,6 +392,29 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       accentColor,
       enabled,
       snapshot,
+      ...(effectiveConfig.customModelsOnly
+        ? {
+            validateEndpoint: (input) =>
+              validateClaudeEndpoint(
+                effectiveConfig,
+                processEnv,
+                input,
+                probeClaudeCapabilities(effectiveConfig, processEnv, stateDir, false).pipe(
+                  Effect.provideService(FileSystem.FileSystem, fileSystem),
+                  Effect.provideService(Path.Path, path),
+                  Effect.asVoid,
+                  Effect.mapError(
+                    () =>
+                      new ProviderSetupError({
+                        instanceId,
+                        operation: "validate",
+                        detail: "Claude Code could not initialize.",
+                      }),
+                  ),
+                ),
+              ).pipe(Effect.provideService(HttpClient.HttpClient, httpClient)),
+          }
+        : {}),
       invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
       snapshotForCwd: (cwd: string) =>
         snapshot.getSnapshot.pipe(

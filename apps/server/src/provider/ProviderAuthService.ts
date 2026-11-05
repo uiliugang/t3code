@@ -1,5 +1,7 @@
 import {
   ProviderSetupError,
+  type ProviderEndpointValidateInput,
+  type ProviderEndpointValidation,
   type ChatGptReconnectProfile,
   type ChatGptTransferredProfile,
   type ProviderAuthRespondInput,
@@ -14,6 +16,7 @@ import * as Function from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
+import * as Deferred from "effect/Deferred";
 
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -29,6 +32,10 @@ interface ProviderAuthTarget {
 export class ProviderAuthService extends Context.Service<
   ProviderAuthService,
   {
+    readonly validateEndpoint: (
+      input: ProviderEndpointValidateInput,
+      ownerSessionId: string,
+    ) => Effect.Effect<ProviderEndpointValidation, ProviderSetupError>;
     readonly reconnectProfile: (
       input: ProviderAuthTarget & { methodId: string },
     ) => Effect.Effect<ChatGptReconnectProfile | null, ProviderSetupError>;
@@ -69,6 +76,7 @@ export const makeProviderAuthService = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const credentialChanges = yield* Semaphore.make(1);
+  const validations = new Map<string, Deferred.Deferred<void>>();
 
   const getController = Effect.fn("ProviderAuthService.getController")(function* (
     instanceId: ProviderInstanceId,
@@ -195,6 +203,70 @@ export const makeProviderAuthService = Effect.gen(function* () {
   });
 
   return ProviderAuthService.of({
+    validateEndpoint: Effect.fn("ProviderAuthService.validateEndpoint")(
+      function* (input, ownerSessionId) {
+        const key = `${ownerSessionId}:${input.instanceId}`;
+        const running = validations.get(key);
+        if (input.check === "cancel") {
+          if (running) yield* Deferred.succeed(running, undefined);
+          return { authenticated: false, message: "Check cancelled." };
+        }
+        if (running)
+          return yield* new ProviderSetupError({
+            instanceId: input.instanceId,
+            operation: "validate",
+            detail: "A check is already running for this instance.",
+          });
+        const instance = yield* registry.getInstance(input.instanceId);
+        if (!instance?.enabled || !instance.validateEndpoint)
+          return yield* new ProviderSetupError({
+            instanceId: input.instanceId,
+            operation: "validate",
+            detail: "Enable a Claude BYOK instance before testing.",
+          });
+        const cancelled = yield* Deferred.make<void>();
+        const result = yield* Effect.acquireUseRelease(
+          Effect.suspend(() => {
+            if (validations.has(key))
+              return Effect.fail(
+                new ProviderSetupError({
+                  instanceId: input.instanceId,
+                  operation: "validate",
+                  detail: "A check is already running for this instance.",
+                }),
+              );
+            validations.set(key, cancelled);
+            return Effect.void;
+          }),
+          () =>
+            Effect.raceFirst(
+              instance.validateEndpoint!(input),
+              Deferred.await(cancelled).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    new ProviderSetupError({
+                      instanceId: input.instanceId,
+                      operation: "validate",
+                      detail: "Check cancelled.",
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          () =>
+            Effect.sync(() => {
+              validations.delete(key);
+            }),
+        );
+        if ((yield* registry.getInstance(input.instanceId)) !== instance)
+          return yield* new ProviderSetupError({
+            instanceId: input.instanceId,
+            operation: "validate",
+            detail: "Configuration changed. Run the check again.",
+          });
+        return result;
+      },
+    ),
     reconnectProfile: Effect.fnUntraced(function* (input) {
       const auth = yield* getController(input.instanceId, "export");
       if (!auth.reconnectProfile)

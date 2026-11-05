@@ -103,6 +103,28 @@ row in the thread; open it to see every step.
 
 ## Custom API providers
 
+Choose **Claude > Claude · BYOK** when adding a provider in **Settings > Providers**.
+Enter your BA service's Anthropic base URL, select Bearer Token or API Key
+(`x-api-key`), and add its exact, case-sensitive model IDs. Credentials are stored
+on the selected environment; secret references are supported on web and desktop.
+The preset creates an isolated Claude config directory and lists only your models.
+Install Claude Code on the environment or choose its executable under **Runtime**.
+
+Save connection changes before checking them. **Check connection** initializes Claude
+Code and tries the optional model-list endpoint without inference. An unavailable list
+leaves authentication unverified. **Test model & tools** sends two requests, uses API
+credits, and checks streamed output and an echo tool round trip. Neither check proves
+that every Claude Code feature is supported by your service.
+
+BYOK does not load user or project settings files into Claude Code, so their environment
+overrides cannot replace the configured endpoint or credentials. Put required runtime
+options in this instance. Main and auxiliary model requests stay on your configured
+models. Removing a selected model requires choosing another before sending. Use a new
+instance for a different BA service rather than moving an existing conversation.
+
+On mobile, **Settings > Providers** also supports creating, editing, disabling, and
+checking BYOK instances. The mobile tool check uses the first configured model.
+
 Claude Code can use a custom provider that accepts the Anthropic Messages API. An
 OpenAI-compatible `/v1/chat/completions` endpoint alone is not enough: use a gateway
 that translates the Anthropic protocol and supports the selected model's tool calls.

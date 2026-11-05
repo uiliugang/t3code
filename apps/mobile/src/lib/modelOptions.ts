@@ -180,7 +180,7 @@ export function isModelSelectionUnavailable(
     return true;
   }
   return (
-    driver === "antigravity" &&
+    (driver === "antigravity" || provider?.customModelsOnly === true) &&
     (!provider ||
       !provider.installed ||
       provider.auth.status === "unauthenticated" ||
@@ -217,8 +217,12 @@ export function describeUnavailableModelSelection(
         detail: "Turn it back on from web or desktop, or choose another model.",
       }
     : {
-        title: "Antigravity model unavailable",
-        detail: "Set up Antigravity on web or desktop, or choose another model.",
+        title: provider?.customModelsOnly
+          ? "Claude BYOK model unavailable"
+          : "Antigravity model unavailable",
+        detail: provider?.customModelsOnly
+          ? "Select a configured model or update this provider in Settings."
+          : "Set up Antigravity on web or desktop, or choose another model.",
       };
 }
 
@@ -235,7 +239,7 @@ export function resolveSelectableModelSelection(
   );
   const driver =
     provider?.driver ?? config.settings?.providerInstances[selection.instanceId]?.driver;
-  if (driver === "antigravity") {
+  if (driver === "antigravity" || provider?.customModelsOnly) {
     return isProjectDisabledOverride(config, selection.instanceId, projectId) ? null : selection;
   }
   return provider &&

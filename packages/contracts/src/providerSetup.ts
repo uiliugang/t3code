@@ -14,6 +14,19 @@ export const ProviderSetupInput = Schema.Struct({
 });
 export type ProviderSetupInput = typeof ProviderSetupInput.Type;
 
+export const ProviderEndpointValidateInput = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  check: Schema.Literals(["connection", "model", "cancel"]),
+  model: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type ProviderEndpointValidateInput = typeof ProviderEndpointValidateInput.Type;
+
+export const ProviderEndpointValidation = Schema.Struct({
+  message: Schema.String,
+  authenticated: Schema.Boolean,
+});
+export type ProviderEndpointValidation = typeof ProviderEndpointValidation.Type;
+
 const SetupOperationId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 
 export const ProviderAuthMethod = Schema.Struct({

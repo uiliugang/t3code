@@ -1461,6 +1461,9 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
     if (Option.isSome(config)) {
       resolved = yield* makeClaudeEnvironment(config.value, resolved).pipe(
         Effect.provideService(Path.Path, input.path),
+        Effect.mapError(
+          (cause) => new TerminalProviderEnvironmentError({ providerInstanceId, cause }),
+        ),
       );
     }
   }

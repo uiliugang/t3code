@@ -103,6 +103,7 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
 });
 
 const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings => ({
+  customModelsOnly: false,
   enabled: false,
   binaryPath: "claude",
   homePath: "",

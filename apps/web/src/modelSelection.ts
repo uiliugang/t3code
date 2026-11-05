@@ -237,8 +237,19 @@ export function getAppModelOptionsForInstance(
   }
 
   const preferences = readInstanceModelPreferences(settings, entry.instanceId);
+  const visibleOptions = applyInstanceModelPreferences(options, preferences);
+  if (
+    entry.snapshot.customModelsOnly &&
+    selectedModel &&
+    !visibleOptions.some((option) => option.slug === selectedModel)
+  ) {
+    return [
+      ...visibleOptions,
+      { slug: selectedModel, name: selectedModel, isCustom: true, isUnavailable: true },
+    ];
+  }
   return appendUnavailableDynamicModelSelection(
-    applyInstanceModelPreferences(options, preferences),
+    visibleOptions,
     entry.models,
     entry.driverKind,
     selectedModel,
@@ -271,6 +282,7 @@ export function resolveAppModelSelectionForInstance(
     (candidate) => candidate.instanceId === instanceId,
   );
   if (!entry) return null;
+  if (entry.snapshot.customModelsOnly && selectedModel) return selectedModel;
   const options = getAppModelOptionsForInstance(
     settings,
     entry,

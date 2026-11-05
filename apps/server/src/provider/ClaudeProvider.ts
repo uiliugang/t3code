@@ -203,12 +203,13 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly environment: NodeJS.ProcessEnv;
   readonly cwd: string | undefined;
   readonly managedMcpConfig: boolean;
+  readonly customModelsOnly?: boolean;
 }): ClaudeQueryOptions {
   return {
     persistSession: false,
     pathToClaudeCodeExecutable: input.executablePath,
     abortController: input.abortController,
-    settingSources: [...CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES],
+    settingSources: input.customModelsOnly ? [] : [...CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES],
     // Keep settings for slash-command discovery, but disable hooks so health checks do not run SessionStart repeatedly.
     settings: { disableAllHooks: true },
     allowedTools: [],
@@ -372,6 +373,7 @@ const probeClaudeCapabilities = (
           environment: claudeEnvironment,
           cwd,
           managedMcpConfig,
+          customModelsOnly: claudeSettings.customModelsOnly,
         }),
       });
       const init = await q.initializationResult();
@@ -497,9 +499,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const allModels = providerModelsFromSettings(
-    modelCatalog.models.map((entry) => entry.model),
+    claudeSettings.customModelsOnly ? [] : modelCatalog.models.map((entry) => entry.model),
     claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+    claudeSettings.customModelsOnly ? { optionDescriptors: [] } : DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
 
   if (!claudeSettings.enabled) {
@@ -587,8 +589,12 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const updateRequiredModels = resolveClaudeUpdateRequiredModels(modelCatalog, parsedVersion);
-  const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
+  const updateRequiredModels = claudeSettings.customModelsOnly
+    ? []
+    : resolveClaudeUpdateRequiredModels(modelCatalog, parsedVersion);
+  const versionUpgradeMessage = claudeSettings.customModelsOnly
+    ? undefined
+    : formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
 
   const probeResult = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.result)
@@ -598,12 +604,14 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const probeFailure =
     probeResult && Result.isFailure(probeResult) ? probeResult.failure : undefined;
   const models = providerModelsFromSettings(
-    [
-      ...resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
-      ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
-    ],
+    claudeSettings.customModelsOnly
+      ? []
+      : [
+          ...resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+          ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
+        ],
     claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+    claudeSettings.customModelsOnly ? { optionDescriptors: [] } : DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
@@ -725,9 +733,11 @@ export const makePendingClaudeProvider = Effect.fn("ClaudeProvider.makePendingCl
   ): Effect.fn.Return<ServerProviderDraft> {
     const checkedAt = yield* nowIso;
     const models = providerModelsFromSettings(
-      modelCatalog.models.map((entry) => entry.model),
+      claudeSettings.customModelsOnly ? [] : modelCatalog.models.map((entry) => entry.model),
       claudeSettings.customModels,
-      DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+      claudeSettings.customModelsOnly
+        ? { optionDescriptors: [] }
+        : DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     );
 
     if (!claudeSettings.enabled) {

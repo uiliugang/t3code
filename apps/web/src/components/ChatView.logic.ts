@@ -511,19 +511,25 @@ export function resolveComposerProviderSelection(input: {
       (!lockedContinuationGroupKey || entry.continuationGroupKey === lockedContinuationGroupKey) &&
       (!requiresExactInstance || entry.instanceId === input.lockedInstanceId),
   );
-  const selectedProviderEntry =
-    input.candidateInstanceIds
-      .map((candidate) =>
-        compatibleEntries.find(
-          (entry) => entry.instanceId === candidate && entry.enabled && entry.isAvailable,
-        ),
+  const requestedByok = input.entries.find(
+    (entry) => entry.instanceId === requestedInstanceId && entry.snapshot.customModelsOnly,
+  );
+  const selectedProviderEntry = requestedByok
+    ? compatibleEntries.find(
+        (entry) => entry === requestedByok && entry.enabled && entry.isAvailable,
       )
-      .find((entry) => entry !== undefined) ??
-    resolveSelectableProviderInstanceEntry(
-      compatibleEntries.filter((entry) => entry.driverKind === requestedDriverKind),
-      undefined,
-    ) ??
-    resolveSelectableProviderInstanceEntry(compatibleEntries, undefined);
+    : (input.candidateInstanceIds
+        .map((candidate) =>
+          compatibleEntries.find(
+            (entry) => entry.instanceId === candidate && entry.enabled && entry.isAvailable,
+          ),
+        )
+        .find((entry) => entry !== undefined) ??
+      resolveSelectableProviderInstanceEntry(
+        compatibleEntries.filter((entry) => entry.driverKind === requestedDriverKind),
+        undefined,
+      ) ??
+      resolveSelectableProviderInstanceEntry(compatibleEntries, undefined));
   const unavailableProviderInstanceId = selectedProviderEntry
     ? undefined
     : input.lockedProvider

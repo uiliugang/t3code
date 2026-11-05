@@ -80,8 +80,23 @@ export const BUNDLED_CLAUDE_MODEL_CATALOG = resolveClaudeModelCatalog(undefined)
 export function scopeClaudeModelCatalog(
   catalog: ClaudeModelCatalog,
   customModels: ReadonlyArray<CustomModelSetting>,
+  customModelsOnly = false,
 ): ClaudeModelCatalog {
   const customEntries = readCustomModelEntries(customModels);
+  if (customModelsOnly) {
+    return {
+      models: customEntries.map((entry) => ({
+        model: {
+          slug: entry.slug,
+          name: entry.name,
+          isCustom: true,
+          capabilities: entry.capabilities ?? EMPTY_CAPABILITIES,
+        },
+        runtime: {},
+        compatibility: {},
+      })),
+    };
+  }
   if (customEntries.length === 0) return catalog;
   const customAliases = new Set(customEntries.map((entry) => entry.slug.toLowerCase()));
   const overrides = new Map(

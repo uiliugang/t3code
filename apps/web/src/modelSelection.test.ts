@@ -217,6 +217,27 @@ describe("scoped default model selections", () => {
 });
 
 describe("instance-scoped model selection", () => {
+  it("keeps a removed BYOK selection visible until the user selects another model", () => {
+    const snapshot = {
+      ...provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claude_openrouter",
+        models: [],
+      }),
+      customModelsOnly: true,
+    };
+    const entry = deriveProviderInstanceEntries([snapshot])[0]!;
+    const settings = settingsWithProviderInstances();
+    expect(
+      resolveAppModelSelectionForInstance(entry.instanceId, settings, [snapshot], "RemovedModel"),
+    ).toBe("RemovedModel");
+    expect(getAppModelOptionsForInstance(settings, entry, "RemovedModel")).toContainEqual({
+      slug: "RemovedModel",
+      name: "RemovedModel",
+      isCustom: true,
+      isUnavailable: true,
+    });
+  });
   it("keeps custom models on the provider instance that declared them", () => {
     const providers = [
       provider({

@@ -71,6 +71,8 @@ import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayo
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
+import { CLAUDE_BYOK_LABEL, isClaudeByok } from "@t3tools/shared/claudeByok";
+import { ClaudeByokSettings, CLAUDE_BYOK_ENVIRONMENT_NAMES } from "./ClaudeByokSettings";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -885,8 +887,14 @@ export function ProviderInstanceCard({
         : (rest as ProviderInstanceConfig),
     );
   };
-  const environmentFields = driverOption?.environmentFields ?? [];
-  const environmentFieldNames = new Set(environmentFields.map((field) => field.name));
+  const isByok = instance.driver === "claudeAgent" && isClaudeByok(instance.config);
+  const environmentFields = (driverOption?.environmentFields ?? []).filter(
+    (field) => !isByok || !CLAUDE_BYOK_ENVIRONMENT_NAMES.has(field.name),
+  );
+  const environmentFieldNames = new Set([
+    ...environmentFields.map((field) => field.name),
+    ...(isByok ? CLAUDE_BYOK_ENVIRONMENT_NAMES : []),
+  ]);
   const genericEnvironment = providerEnvironmentWithoutNames(
     instance.environment,
     environmentFieldNames,
@@ -1298,9 +1306,27 @@ export function ProviderInstanceCard({
         />
       </SettingsSection>
 
-      {setup || environmentFields.length > 0 ? (
+      {isByok && environmentId ? (
+        <SettingsSection title={CLAUDE_BYOK_LABEL}>
+          <ClaudeByokSettings
+            key={JSON.stringify(instance.environment)}
+            instance={instance}
+            instanceId={instanceId}
+            environmentId={environmentId}
+            readOnly={
+              readOnly ||
+              !!instanceLocks?.wholeEnvironment ||
+              [...CLAUDE_BYOK_ENVIRONMENT_NAMES].some((name) =>
+                instanceLocks?.environmentNames.has(name),
+              )
+            }
+            secretSources={secretSources}
+          />
+        </SettingsSection>
+      ) : null}
+      {(!isByok && setup) || environmentFields.length > 0 ? (
         <SettingsSection title="Setup">
-          {setup}
+          {isByok ? null : setup}
           {environmentFields.length > 0 ? (
             <div
               inert={readOnly}

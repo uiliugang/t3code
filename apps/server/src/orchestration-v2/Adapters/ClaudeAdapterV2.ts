@@ -146,6 +146,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
+import { claudeByokModelError } from "@t3tools/shared/claudeByok";
 import {
   planClaudeSkillDispatch,
   type ClaudeSkillTarget,
@@ -165,6 +166,7 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 import {
+  CLAUDE_BYOK_ENVIRONMENT_OVERRIDES,
   claudeSignedOutMessage,
   makeClaudeEnvironment,
   mergeClaudeProcessEnvironment,
@@ -1549,7 +1551,16 @@ export function makeClaudeQueryOptions(input: {
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
-  const compiledSelection = compileClaudeModelSelection(input.modelSelection);
+  const compiledSelection = compileClaudeModelSelection(
+    input.modelSelection,
+    input.settings
+      ? scopeClaudeModelCatalog(
+          BUNDLED_CLAUDE_MODEL_CATALOG,
+          input.settings.customModels,
+          input.settings.customModelsOnly,
+        )
+      : undefined,
+  );
   const {
     // claudeLaunchArgDirectories reads every --add-dir into additionalDirectories.
     "add-dir": _launchArgAddDir,
@@ -1561,6 +1572,11 @@ export function makeClaudeQueryOptions(input: {
     settings: _launchArgSettings,
     ...extraArgs
   } = input.settings === undefined ? {} : parseCliArgs(input.settings.launchArgs).flags;
+  if (input.settings?.customModelsOnly) {
+    delete extraArgs.model;
+    delete extraArgs["fallback-model"];
+    delete extraArgs["setting-sources"];
+  }
   // Claude Code overwrites its CLI append text with the SDK's initialize
   // appendSystemPrompt, so launch-argument text has to travel in that value.
   // The CLI puts file text before inline text and trims one trailing newline.
@@ -1569,6 +1585,7 @@ export function makeClaudeQueryOptions(input: {
     launchArgAppendSystemPrompt,
   ].filter((text): text is string => typeof text === "string" && text.length > 0);
   const requestThinkingSummaries =
+    !input.settings?.customModelsOnly &&
     compiledSelection.settings.alwaysThinkingEnabled !== false &&
     extraArgs["thinking-display"] !== "omitted";
   if (requestThinkingSummaries && extraArgs["thinking-display"] === undefined) {
@@ -1596,15 +1613,41 @@ export function makeClaudeQueryOptions(input: {
           autoCompactWindow: Number(input.settings.autoCompactWindow),
         } as ClaudeSdkSettings);
   // A settings file path cannot take extra keys, so it goes through unchanged.
-  const effectiveQuerySettings =
+  const toolSearchQuerySettings =
     input.toolSearchOverride === undefined || typeof compactQuerySettings === "string"
       ? compactQuerySettings
       : ({
           ...compactQuerySettings,
           env: { ...compactQuerySettings?.env, ENABLE_TOOL_SEARCH: input.toolSearchOverride },
         } as ClaudeSdkSettings);
+  // BYOK ignores file-based settings env; credentials stay in the child environment, never argv.
+  const effectiveQuerySettings = input.settings?.customModelsOnly
+    ? ({
+        ...(typeof toolSearchQuerySettings === "object" ? toolSearchQuerySettings : {}),
+        env: {
+          ...Object.fromEntries(
+            Object.entries(
+              typeof toolSearchQuerySettings === "object"
+                ? (toolSearchQuerySettings?.env ?? {})
+                : {},
+            ).filter(
+              ([name]) =>
+                !name.startsWith("ANTHROPIC_") &&
+                !Object.hasOwn(CLAUDE_BYOK_ENVIRONMENT_OVERRIDES, name) &&
+                name !== "CLAUDE_CONFIG_DIR",
+            ),
+          ),
+          ANTHROPIC_MODEL: compiledSelection.apiModelId,
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: compiledSelection.apiModelId,
+          ANTHROPIC_DEFAULT_SONNET_MODEL: compiledSelection.apiModelId,
+          ANTHROPIC_DEFAULT_OPUS_MODEL: compiledSelection.apiModelId,
+          CLAUDE_CODE_SUBAGENT_MODEL: compiledSelection.apiModelId,
+        },
+      } as ClaudeSdkSettings)
+    : toolSearchQuerySettings;
   const deviceInstructions = input.mcpServers !== undefined && input.deviceToolsAvailable === true;
   const options: ClaudeAgentSdkQueryOptions = {
+    ...(input.settings?.customModelsOnly ? { settingSources: [] } : {}),
     model: compiledSelection.apiModelId,
     // T3 names threads; a supplied title skips Claude's redundant naming request.
     ...(input.title === undefined ? {} : { title: input.title }),
@@ -4639,6 +4682,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const subagentModelCatalog = scopeClaudeModelCatalog(
     BUNDLED_CLAUDE_MODEL_CATALOG,
     adapterOptions.settings.customModels,
+    adapterOptions.settings.customModelsOnly,
   );
   // Results report the window Claude Code compacts against; outside the catalog it is the only source.
   const reportedContextWindows = new Map<string, number>();
@@ -10399,6 +10443,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           nativeThreadId: string,
         ) {
+          const modelError = claudeByokModelError(
+            adapterOptions.settings,
+            turnInput.modelSelection.model,
+          );
+          if (modelError)
+            return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+              driver: CLAUDE_PROVIDER,
+              detail: modelError,
+            });
           const queryPolicy = yield* queryPolicyForTurn(turnInput);
           const mcpSession = yield* mcpSessions.read(turnInput.threadId);
           const mcpOverrides = claudeMcpQueryOverrides({
@@ -10414,7 +10467,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             mcpOverrides,
             turnInput.runtimePolicy.workspace?.id,
           );
-          const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
+          const compiledSelection = compileClaudeModelSelection(
+            turnInput.modelSelection,
+            subagentModelCatalog,
+          );
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
           // Continuations drain existing output without prompting; retain the live process regardless of selection.
@@ -10434,6 +10490,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             !existing.stopping &&
             existing.selection.queryIdentity !== compiledSelection.queryIdentity &&
             canApplyClaudeSelectionLive(existing.selection, compiledSelection) &&
+            (!adapterOptions.settings.customModelsOnly ||
+              existing.selection.apiModelId === compiledSelection.apiModelId) &&
             (existing.selection.apiModelId === compiledSelection.apiModelId ||
               existing.openedPermissionMode === queryPolicy.permissionMode)
           ) {

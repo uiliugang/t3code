@@ -747,6 +747,10 @@ const InstanceIdleCompaction = Schema.Literals(
 
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
+    customModelsOnly: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
