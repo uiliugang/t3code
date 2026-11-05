@@ -5,6 +5,7 @@ on:
     tags: ["v*.*.*"]
     branches: [lg/github-actions-macos-android-release]
   workflow_dispatch:
+  workflow_call:
   pull_request:
     branches: [main]
     paths:

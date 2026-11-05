@@ -44,6 +44,13 @@ permissions:
   id-token: none
 
 jobs:
+  fork_validation:
+    if: github.repository == 'uiliugang/t3code' && github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/fork-release.yml
+    secrets: inherit
+    permissions:
+      contents: write
+
   # Picks the commit every later job builds. Nightlies and tag pushes build the
   # triggering commit. Manual stable releases build the commit of the latest
   # published nightly, so stable only ever ships a build that nightly users
