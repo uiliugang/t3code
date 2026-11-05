@@ -3,7 +3,7 @@ import type {
   DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
-import { cliReleaseDownloadBaseUrl } from "@t3tools/shared/cliRelease";
+import { cliReleaseAssetUrl, cliReleaseDownloadBaseUrl } from "@t3tools/shared/cliRelease";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as NetService from "@t3tools/shared/Net";
 import { extractJsonObject, fromLenientJson } from "@t3tools/shared/schemaJson";
@@ -489,13 +489,18 @@ if ! t3_runtime_ready; then
   T3_STAGING="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
   trap 'rm -rf "$T3_STAGING" "$T3_LOCK"' EXIT
   t3_fetch() {
+    T3_CACHED="$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION/\${2##*/}"
+    if [ -f "$T3_CACHED" ]; then cp "$T3_CACHED" "$2"; return; fi
     if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
     elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
-    else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; exit 1
+    else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; return 1
     fi
   }
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@
+  if ! t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@ ||
+     ! t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@; then
+    printf 'T3_DOWNLOAD_FAILED:%s\\n' "$T3_ARCHIVE" >&2
+    exit 1
+  fi
   T3_EXPECTED="$(grep " \\*\\{0,1\\}$T3_ARCHIVE$" "$T3_STAGING/SHA256SUMS" | cut -d' ' -f1)"
   if command -v sha256sum >/dev/null 2>&1; then
     T3_ACTUAL="$(sha256sum "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
@@ -503,6 +508,7 @@ if ! t3_runtime_ready; then
     T3_ACTUAL="$(shasum -a 256 "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
   fi
   if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
+    rm -rf "$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION"
     printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
   fi
   tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1
@@ -515,6 +521,7 @@ if ! t3_runtime_ready; then
   printf '%s\\n' "$T3_ARCHIVE_VERSION" > "$T3_STAGING/.install-complete"
   rm -rf "$T3_RUNTIME_DIR"
   mv "$T3_STAGING" "$T3_RUNTIME_DIR"
+  rm -rf "$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION"
 fi
 if [ -n "\${T3_LOCK:-}" ]; then
   rm -rf "$T3_LOCK"
@@ -859,6 +866,59 @@ function buildRemoteLogTailScript(stateKey: string): string {
   });
 }
 
+const relayReleaseAssets = Effect.fn("ssh/tunnel.relayReleaseAssets")(function* (
+  target: DesktopSshEnvironmentTarget,
+  auth: SshAuth.SshAuthOptions | undefined,
+  runner: RemoteT3RunnerOptions | undefined,
+  version: string,
+  archive: string,
+) {
+  yield* Effect.logInfo("ssh.remoteServer.download.relay", sshTargetLogFields(target));
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const client = (yield* HttpClient.HttpClient).pipe(
+    HttpClient.followRedirects(),
+    HttpClient.filterStatusOk,
+  );
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-download-" });
+      for (const fileName of ["SHA256SUMS", archive]) {
+        const localPath = path.join(directory, fileName);
+        const response = yield* client.get(
+          cliReleaseAssetUrl(version, fileName, runner?.releaseBaseUrl ?? undefined),
+        );
+        yield* Stream.run(response.stream, fs.sink(localPath));
+        const destination = `.t3/runtime/downloads/${version}/${fileName}`;
+        const script = `set -eu
+mkdir -p "$HOME/.t3/runtime/downloads/${version}"
+TEMP="$(mktemp "$HOME/.t3/runtime/downloads/${version}/.upload-XXXXXX")"
+trap 'rm -f "$TEMP"' EXIT
+cat > "$TEMP"
+mv "$TEMP" "$HOME/${destination}"
+`;
+        yield* runSshCommand(target, {
+          ...auth,
+          remoteCommandArgs: ["sh", "-c", shellSingleQuote(script)],
+          stdin: fs.stream(localPath),
+          timeoutMs: REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 1000,
+        });
+      }
+    }),
+  ).pipe(
+    Effect.timeout(`${REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 2} seconds`),
+    Effect.mapError(
+      (cause) =>
+        new SshLaunchError({
+          message:
+            "The SSH host could not download the T3 runtime, and downloading or transferring it through this client also failed. Check this client's access to the release server and the SSH connection.",
+          stdout: "",
+          cause,
+        }),
+    ),
+  );
+});
+
 export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemoteServer")(
   function* (
     target: DesktopSshEnvironmentTarget,
@@ -867,7 +927,11 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
   ): Effect.fn.Return<
     { readonly remotePort: number; readonly remoteServerKind: "external" | "managed" | null },
     SshCommandError | SshInvalidTargetError | SshLaunchError,
-    ChildProcessSpawner.ChildProcessSpawner | Digest.Digest | FileSystem.FileSystem | Path.Path
+    | ChildProcessSpawner.ChildProcessSpawner
+    | Digest.Digest
+    | FileSystem.FileSystem
+    | Path.Path
+    | HttpClient.HttpClient
   > {
     const stateKey = yield* remoteStateKey(target);
     yield* Effect.logInfo("ssh.remoteServer.launch.start", {
@@ -875,7 +939,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...sshRunnerLogFields(runner),
       stateKey,
     });
-    const result = yield* runSshCommand(target, {
+    const launchOptions = {
       remoteCommandArgs: ["sh", "-l", "-s", "--", stateKey],
       stdin: buildRemoteLaunchScript(runner),
       timeoutMs: isNodeScriptRunner(runner)
@@ -884,7 +948,29 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
       ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
       ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
-    });
+    };
+    const result = yield* runSshCommand(target, launchOptions).pipe(
+      Effect.catchTags({
+        SshCommandError: Effect.fn("ssh/tunnel.relayFailedDownload")(function* (
+          error: SshCommandError,
+        ) {
+          const version = runner?.archiveVersion?.trim();
+          const archive = /^T3_DOWNLOAD_FAILED:(.+)$/mu.exec(error.stderr)?.[1];
+          if (
+            isNodeScriptRunner(runner) ||
+            !version ||
+            !archive ||
+            !["linux-x64", "linux-arm64", "darwin-arm64", "darwin-x64"].some(
+              (key) => archive === `t3-${version}-${key}.tar.gz`,
+            )
+          ) {
+            return yield* error;
+          }
+          yield* relayReleaseAssets(target, input, runner, version, archive);
+          return yield* runSshCommand(target, launchOptions);
+        }),
+      }),
+    );
     if (!getLastNonEmptyOutputLine(result.stdout)) {
       return yield* new SshLaunchError({
         message: "SSH launch did not return a remote port.",
