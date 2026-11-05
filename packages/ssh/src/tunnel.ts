@@ -440,6 +440,13 @@ fi
 # Unpacked into the pinned-runtime layout so \`t3 service install\` reuses it.
 T3_RELEASE_BASE_URL=@@T3_RELEASE_BASE_URL@@
 T3_RUNTIME_DIR="$HOME/.t3/runtime/versions/$T3_ARCHIVE_VERSION"
+T3_DOWNLOAD_CACHE=""
+if [ -n "\${T3_DOWNLOAD_ID:-}" ]; then
+  case "$T3_DOWNLOAD_ID" in
+    *[!a-zA-Z0-9_-]*) printf 'Invalid t3 download ID.\\n' >&2; exit 1 ;;
+  esac
+  T3_DOWNLOAD_CACHE="$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION/$T3_DOWNLOAD_ID"
+fi
 t3_runtime_ready() {
   [ -x "$T3_RUNTIME_DIR/t3" ] && [ "$(cat "$T3_RUNTIME_DIR/.install-complete" 2>/dev/null)" = "$T3_ARCHIVE_VERSION" ]
 }
@@ -489,8 +496,8 @@ if ! t3_runtime_ready; then
   T3_STAGING="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
   trap 'rm -rf "$T3_STAGING" "$T3_LOCK"' EXIT
   t3_fetch() {
-    T3_CACHED="$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION/\${2##*/}"
-    if [ -f "$T3_CACHED" ]; then cp "$T3_CACHED" "$2"; return; fi
+    T3_CACHED="$T3_DOWNLOAD_CACHE/\${2##*/}"
+    if [ -n "$T3_DOWNLOAD_CACHE" ] && [ -f "$T3_CACHED" ]; then cp "$T3_CACHED" "$2"; return; fi
     if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
     elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
     else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; return 1
@@ -508,7 +515,7 @@ if ! t3_runtime_ready; then
     T3_ACTUAL="$(shasum -a 256 "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
   fi
   if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
-    rm -rf "$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION"
+    [ -z "$T3_DOWNLOAD_CACHE" ] || rm -rf "$T3_DOWNLOAD_CACHE"
     printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
   fi
   tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1
@@ -521,7 +528,7 @@ if ! t3_runtime_ready; then
   printf '%s\\n' "$T3_ARCHIVE_VERSION" > "$T3_STAGING/.install-complete"
   rm -rf "$T3_RUNTIME_DIR"
   mv "$T3_STAGING" "$T3_RUNTIME_DIR"
-  rm -rf "$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION"
+  [ -z "$T3_DOWNLOAD_CACHE" ] || rm -rf "$T3_DOWNLOAD_CACHE"
 fi
 if [ -n "\${T3_LOCK:-}" ]; then
   rm -rf "$T3_LOCK"
@@ -880,41 +887,54 @@ const relayReleaseAssets = Effect.fn("ssh/tunnel.relayReleaseAssets")(function* 
     HttpClient.followRedirects(),
     HttpClient.filterStatusOk,
   );
-  yield* Effect.scoped(
-    Effect.gen(function* () {
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-download-" });
-      for (const fileName of ["SHA256SUMS", archive]) {
-        const localPath = path.join(directory, fileName);
-        const response = yield* client.get(
-          cliReleaseAssetUrl(version, fileName, runner?.releaseBaseUrl ?? undefined),
-        );
-        yield* Stream.run(response.stream, fs.sink(localPath));
-        const destination = `.t3/runtime/downloads/${version}/${fileName}`;
-        const script = `set -eu
-mkdir -p "$HOME/.t3/runtime/downloads/${version}"
-TEMP="$(mktemp "$HOME/.t3/runtime/downloads/${version}/.upload-XXXXXX")"
+  return yield* Effect.gen(function* () {
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-download-" });
+    const downloadId = path.basename(directory);
+    const cacheDirectory = `.t3/runtime/downloads/${version}/${downloadId}`;
+    yield* Effect.addFinalizer(() =>
+      runSshCommand(target, {
+        ...auth,
+        remoteCommandArgs: [
+          "sh",
+          "-c",
+          shellSingleQuote(`rm -rf "$HOME/"${shellSingleQuote(cacheDirectory)}`),
+        ],
+        timeoutMs: 5_000,
+      }).pipe(Effect.ignore),
+    );
+    for (const fileName of ["SHA256SUMS", archive]) {
+      const localPath = path.join(directory, fileName);
+      const response = yield* client.get(
+        cliReleaseAssetUrl(version, fileName, runner?.releaseBaseUrl ?? undefined),
+      );
+      yield* Stream.run(response.stream, fs.sink(localPath));
+      const destination = `${cacheDirectory}/${fileName}`;
+      const script = `set -eu
+mkdir -p "$HOME/"${shellSingleQuote(cacheDirectory)}
+TEMP="$(mktemp "$HOME/"${shellSingleQuote(`${cacheDirectory}/.upload-XXXXXX`)})"
 trap 'rm -f "$TEMP"' EXIT
 cat > "$TEMP"
-mv "$TEMP" "$HOME/${destination}"
+mv "$TEMP" "$HOME/"${shellSingleQuote(destination)}
 `;
-        yield* runSshCommand(target, {
-          ...auth,
-          remoteCommandArgs: ["sh", "-c", shellSingleQuote(script)],
-          stdin: fs.stream(localPath),
-          timeoutMs: REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 1000,
-        });
-      }
-    }),
-  ).pipe(
+      yield* runSshCommand(target, {
+        ...auth,
+        remoteCommandArgs: ["sh", "-c", shellSingleQuote(script)],
+        stdin: fs.stream(localPath),
+        timeoutMs: REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 1000,
+      });
+    }
+    return downloadId;
+  }).pipe(
     Effect.timeout(`${REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 2} seconds`),
-    Effect.mapError(
-      (cause) =>
-        new SshLaunchError({
-          message:
-            "The SSH host could not download the T3 runtime, and downloading or transferring it through this client also failed. Check this client's access to the release server and the SSH connection.",
-          stdout: "",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      cause instanceof SshCommandError || cause instanceof SshInvalidTargetError
+        ? cause
+        : new SshLaunchError({
+            message:
+              "The SSH host could not download the T3 runtime, and downloading or transferring it through this client also failed. Check this client's access to the release server and the SSH connection.",
+            stdout: "",
+            cause,
+          }),
     ),
   );
 });
@@ -966,8 +986,15 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
           ) {
             return yield* error;
           }
-          yield* relayReleaseAssets(target, input, runner, version, archive);
-          return yield* runSshCommand(target, launchOptions);
+          return yield* Effect.scoped(
+            Effect.gen(function* () {
+              const downloadId = yield* relayReleaseAssets(target, input, runner, version, archive);
+              return yield* runSshCommand(target, {
+                ...launchOptions,
+                stdin: `T3_DOWNLOAD_ID=${shellSingleQuote(downloadId)}\nexport T3_DOWNLOAD_ID\n${launchOptions.stdin}`,
+              });
+            }),
+          );
         }),
       }),
     );
