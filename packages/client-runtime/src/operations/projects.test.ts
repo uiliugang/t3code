@@ -1,11 +1,12 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, WorkspaceRootId } from "@t3tools/contracts";
 
 import {
   findExistingAddProject,
   getCloneDirectoryName,
   getDefaultCloneUrl,
+  getProjectFolderImportLocations,
   githubIncompleteOwnerRepositoryMessage,
   normalizePastedCloneUrl,
   selectProjectFolders,
@@ -13,6 +14,42 @@ import {
 import type { EnvironmentProject } from "../state/models.ts";
 
 describe("add project shared logic", () => {
+  it("finds distinct sibling directories across group repositories and environments", () => {
+    const environmentId = EnvironmentId.make("local");
+    const remoteId = EnvironmentId.make("remote");
+    const project = {
+      environmentId,
+      title: "repo",
+      workspaceRoot: "/work/repo",
+    };
+    const roots = [
+      ["frontend", "/work/frontend"],
+      ["backend", "/services/backend"],
+    ].map(([alias, sourcePath]) => ({
+      id: WorkspaceRootId.make(alias!),
+      alias: alias!,
+      sourcePath: sourcePath!,
+      description: "",
+      defaultSelected: true,
+      accessIntent: "write" as const,
+    }));
+    expect(
+      getProjectFolderImportLocations([
+        project,
+        { ...project, workspaceRoot: "/work/another" },
+        { ...project, workspaceConfig: { version: 1, primaryRootId: roots[0]!.id, roots } },
+        { ...project, environmentId: remoteId },
+        { ...project, title: "windows", workspaceRoot: "C:\\repos\\project" },
+        { ...project, workspaceRoot: "/" },
+        { ...project, workspaceRoot: "/scratch/note", isScratch: true },
+      ]),
+    ).toEqual([
+      { environmentId, parentPath: "/work/", title: "repo" },
+      { environmentId, parentPath: "/services/", title: "backend" },
+      { environmentId: remoteId, parentPath: "/work/", title: "repo" },
+      { environmentId, parentPath: "C:\\repos\\", title: "windows" },
+    ]);
+  });
   it("bulk-selects distinct new folders while allowing explicit repository duplicates", () => {
     const candidate = {
       path: "/repo",

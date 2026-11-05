@@ -6,9 +6,13 @@ import {
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { subscribeDocumentReturn } from "../lib/documentActivity";
+import { getClientSettings } from "../hooks/useSettings";
 
 export const vcsEnvironment = createVcsEnvironmentAtoms(connectionAtomRuntime);
-export const vcsActionManager = createVcsActionManager(connectionAtomRuntime);
+export const vcsActionManager = createVcsActionManager(
+  connectionAtomRuntime,
+  () => getClientSettings().uiLanguage,
+);
 
 /**
  * Refreshes a checkout's status when the user comes back to the window, where

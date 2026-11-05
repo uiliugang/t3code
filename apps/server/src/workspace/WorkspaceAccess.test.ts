@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EventId, WorkspaceRevisionId } from "@t3tools/contracts";
@@ -34,6 +35,7 @@ it.effect(
           FileSystem.makeNoop({ realPath: (value) => Effect.succeed(value) }),
         ),
         Layer.mock(WorkspaceRepositoryResolver.WorkspaceRepositoryResolver)({
+          inspect: () => Effect.succeed(workspace.resources[1]!.identity),
           verify: () => Effect.void,
         }),
         Layer.mock(ThreadManagement.ThreadManagementService)({
@@ -56,26 +58,33 @@ it.effect(
           resourceId: resource.id,
         };
         const write = Ref.update(writes, (value) => value + 1);
+        assert.equal(
+          yield* access.run({ cwd: resource.checkoutRoot }, Effect.succeed("prepared"), false),
+          "prepared",
+        );
         yield* access.run({ cwd: resource.checkoutRoot }, write).pipe(Effect.flip);
         yield* access.run({ cwd: `${resource.checkoutRoot}/src` }, write).pipe(Effect.flip);
         yield* access
           .run({ cwd: workspace.resources[0]!.checkoutRoot, repositoryTarget: target }, write)
           .pipe(Effect.flip);
-        yield* access
-          .run(
-            {
-              cwd: resource.checkoutRoot,
-              repositoryTarget: {
-                ...target,
-                workspaceRevisionId: WorkspaceRevisionId.make("stale"),
+        for (const writeAccess of [true, false]) {
+          yield* access
+            .run(
+              {
+                cwd: resource.checkoutRoot,
+                repositoryTarget: {
+                  ...target,
+                  workspaceRevisionId: WorkspaceRevisionId.make("stale"),
+                },
               },
-            },
-            write,
-          )
-          .pipe(Effect.flip);
+              write,
+              writeAccess,
+            )
+            .pipe(Effect.flip);
+        }
         assert.equal(yield* Ref.get(writes), 0);
         yield* access.run({ cwd: resource.checkoutRoot, repositoryTarget: target }, write);
         assert.equal(yield* Ref.get(writes), 1);
       }).pipe(Effect.provide(WorkspaceAccess.layer.pipe(Layer.provide(dependencies))));
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

@@ -9,6 +9,7 @@ export const SkillFailureReason = Schema.Literals([
   "io",
   "invalid-package",
   "source-disabled",
+  "target-disabled",
   "not-found",
   "conflict",
   "installer-failed",
@@ -46,6 +47,8 @@ export const SkillTarget = Schema.Struct({
   label: Schema.String,
   directory: Schema.String,
   providerInstanceId: Schema.optionalKey(ProviderInstanceId),
+  enabled: Schema.optionalKey(Schema.Boolean),
+  hasSkills: Schema.optionalKey(Schema.Boolean),
 });
 export type SkillTarget = typeof SkillTarget.Type;
 const SkillVersion = Schema.Struct({
@@ -170,6 +173,11 @@ export const SkillAction = Schema.Union([
   Schema.Struct({ type: Schema.Literal("source.remove"), sourceId: SkillKey }),
   Schema.Struct({ type: Schema.Literal("target.save"), target: SkillTarget }),
   Schema.Struct({ type: Schema.Literal("target.remove"), targetId: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("target.configure"),
+    targetId: Schema.String,
+    enabled: Schema.Boolean,
+  }),
 ]);
 export type SkillAction = typeof SkillAction.Type;
 export const SkillMutation = Schema.Union([
@@ -201,6 +209,14 @@ export const SkillCatalog = Schema.Struct({
   sources: Schema.Array(SkillSource),
   skills: Schema.Array(ManagedSkill),
   customTargets: Schema.Array(SkillTarget),
+  targetSettings: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        directory: Schema.String,
+        state: Schema.Literals(["disabled", "removed"]),
+      }),
+    ),
+  ),
   jobs: Schema.optionalKey(Schema.Array(SkillJob)),
 });
 export type SkillCatalog = typeof SkillCatalog.Type;
@@ -255,6 +271,7 @@ export function skillFailureMessage(reason: SkillFailureReason): string {
     "invalid-package":
       "Select one valid skill with a SKILL.md name and description. Links must stay inside the skill package.",
     "source-disabled": "Enable this skill source before installing or checking updates.",
+    "target-disabled": "Enable this usage location before linking skills.",
     "not-found": "The skill, source, target or version is no longer available.",
     conflict: "An existing file or directory conflicts with this skill. It has not been replaced.",
     "installer-failed":

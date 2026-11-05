@@ -81,7 +81,7 @@ export function WorktreesDirectoryRow() {
       resetAction={
         mixed || settings.worktreesDirectory !== "" ? (
           <SettingResetButton
-            label="worktree location"
+            label={t("worktree location")}
             onClick={() => updateSettings({ worktreesDirectory: "" })}
           />
         ) : null
@@ -294,6 +294,7 @@ const storageCleanupPermissionsAtom = environmentAtomList(
 );
 
 function CleanupSection() {
+  const t = useUiTranslation();
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   const { connectedEnvironments } = useSettingsScope();
@@ -385,7 +386,7 @@ function CleanupSection() {
     ).finally(() => setPending(false));
   };
   return (
-    <SettingsSection id="storage-cleanup" title="Cleanup" variant="plain">
+    <SettingsSection id="storage-cleanup" title={t("Cleanup")} variant="plain">
       <SettingsGroup>
         <SettingsRow
           {...searchableSetting("storage-delete-now")}
@@ -524,7 +525,7 @@ export function WorktreeCleanupSection() {
     )
   ) {
     return (
-      <SettingsSection id="storage-worktrees" title="Cleanup" variant="plain">
+      <SettingsSection id="storage-worktrees" title={t("Cleanup")} variant="plain">
         <SettingsScopeNotice inline target="all">
           {t("Update the selected machines to configure project worktree cleanup.")}
         </SettingsScopeNotice>
@@ -533,25 +534,27 @@ export function WorktreeCleanupSection() {
   }
   if (!supportsStorageCleanup(connectedEnvironments)) {
     return (
-      <SettingsSection id="storage-worktrees" title="Cleanup" variant="plain">
+      <SettingsSection id="storage-worktrees" title={t("Cleanup")} variant="plain">
         <StorageCleanupScopeNotice />
       </SettingsSection>
     );
   }
 
   return (
-    <SettingsSection id="storage-worktrees" title="Cleanup">
+    <SettingsSection id="storage-worktrees" title={t("Cleanup")}>
       <>
         <SettingsRow
           {...searchableSetting("auto-delete-merged-branches")}
-          description="Automatically remove merged local branches and managed worktrees after they stop being used. Keeps external worktrees, project checkouts, uncommitted changes, locked worktrees, active provider sessions, and remote branches."
+          description={t(
+            "Automatically remove merged local branches and managed worktrees after they stop being used. Keeps external worktrees, project checkouts, uncommitted changes, locked worktrees, active provider sessions, and remote branches.",
+          )}
           serverScoped={!isProjectScope}
           settingKeys={isProjectScope ? [] : ["autoDeleteMergedBranches", "worktreeCleanup"]}
           mixed={mergedCleanupMixed}
           resetAction={
             mergedCleanup.checked || mergedCleanupMixed ? (
               <SettingResetButton
-                label="Automatically delete merged branches and worktrees"
+                label={t("Automatically delete merged branches and worktrees")}
                 onClick={() => updateSettings({ autoDeleteMergedBranches: false })}
               />
             ) : null
@@ -569,7 +572,7 @@ export function WorktreeCleanupSection() {
         />
         {isProjectScope && (
           <SettingsRow
-            title="Automatic worktree cleanup"
+            title={t("Automatic worktree cleanup")}
             description={
               mode === "off"
                 ? "Keep this project's worktrees until you delete them manually."
@@ -616,10 +619,12 @@ export function WorktreeCleanupSection() {
         {(!isProjectScope || (!mixedModes && mode === "custom")) && (
           <>
             <SettingsRow
-              title="Delete worktrees with deleted threads"
+              title={t("Delete worktrees with deleted threads")}
               status={ruleStatus("worktreeOnDelete")}
               managedPaths={lockablePath("worktreeOnDelete")}
-              description="Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept."
+              description={t(
+                "Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept.",
+              )}
               serverScoped={!isProjectScope}
               control={
                 <Switch
@@ -630,14 +635,16 @@ export function WorktreeCleanupSection() {
               }
             />
             <SettingsRow
-              title="Delete inactive worktrees"
+              title={t("Delete inactive worktrees")}
               status={ruleStatus("worktreeAfterDays")}
               managedPaths={lockablePath("worktreeAfterDays")}
-              description="Remove worktrees after their threads have been inactive for this many days. Branches and thread history are kept."
+              description={t(
+                "Remove worktrees after their threads have been inactive for this many days. Branches and thread history are kept.",
+              )}
               serverScoped={!isProjectScope}
               control={
                 <RetentionControl
-                  label="Delete inactive worktrees"
+                  label={t("Delete inactive worktrees")}
                   value={settings.worktreeAfterDays}
                   onChange={(worktreeAfterDays) => updateWorktree({ worktreeAfterDays })}
                 />
@@ -654,7 +661,7 @@ export function WorktreeCleanupSection() {
                     true,
                 ) && (
                   <SettingsRow
-                    title="Delete settled worktrees"
+                    title={t("Delete settled worktrees")}
                     managedPaths={lockablePath("worktreeSettledAfterDays")}
                     status={[
                       ruleStatus("worktreeSettledAfterDays"),
@@ -664,11 +671,13 @@ export function WorktreeCleanupSection() {
                     ]
                       .filter(Boolean)
                       .join(". ")}
-                    description="Remove worktrees this many days after their thread settles. Set 0 days to remove them at the next cleanup. Branches and thread history are kept."
+                    description={t(
+                      "Remove worktrees this many days after their thread settles. Set 0 days to remove them at the next cleanup. Branches and thread history are kept.",
+                    )}
                     serverScoped={!isProjectScope}
                     control={
                       <RetentionControl
-                        label="Delete settled worktrees"
+                        label={t("Delete settled worktrees")}
                         value={settings.worktreeSettledAfterDays}
                         minimum={0}
                         onChange={(worktreeSettledAfterDays) =>
@@ -679,10 +688,10 @@ export function WorktreeCleanupSection() {
                   />
                 )}
               <SettingsRow
-                title="Delete unchanged worktrees"
+                title={t("Delete unchanged worktrees")}
                 status={ruleStatus("worktreeUnchanged")}
                 managedPaths={lockablePath("worktreeUnchanged")}
-                description="Remove worktrees with no commits beyond the default branch."
+                description={t("Remove worktrees with no commits beyond the default branch.")}
                 serverScoped={!isProjectScope}
                 control={
                   <Switch
@@ -748,6 +757,7 @@ export function WorktreeCleanupSection() {
 
 /** Retention for logs and captures, and the manual cleanup run, which covers worktrees too. */
 export function StorageCleanupSections() {
+  const t = useUiTranslation();
   const { scope, connectedEnvironments, targets } = useSettingsScope();
   const scopedSettings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -790,7 +800,7 @@ export function StorageCleanupSections() {
     return (
       <>
         {databaseStorageNotice}
-        <SettingsSection id="storage-artifacts" title="Artifacts and logs" variant="plain">
+        <SettingsSection id="storage-artifacts" title={t("Artifacts and logs")} variant="plain">
           <StorageCleanupScopeNotice />
         </SettingsSection>
       </>
@@ -800,17 +810,19 @@ export function StorageCleanupSections() {
   return (
     <>
       {databaseStorageNotice}
-      <SettingsSection id="storage-artifacts" title="Artifacts and logs">
+      <SettingsSection id="storage-artifacts" title={t("Artifacts and logs")}>
         <AnimatedHeight>
           <SettingsRow
-            title="Delete old browser artifacts"
+            title={t("Delete old browser artifacts")}
             status={artifactsStatus}
             managedPaths={["storageCleanup.browserArtifactsAfterDays"]}
-            description="Delete saved browser captures after this many days. Older capture links will no longer open."
+            description={t(
+              "Delete saved browser captures after this many days. Older capture links will no longer open.",
+            )}
             serverScoped
             control={
               <RetentionControl
-                label="Delete old browser artifacts"
+                label={t("Delete old browser artifacts")}
                 value={settings.browserArtifactsAfterDays}
                 onChange={(browserArtifactsAfterDays) => update({ browserArtifactsAfterDays })}
               />
@@ -819,14 +831,16 @@ export function StorageCleanupSections() {
         </AnimatedHeight>
         <AnimatedHeight>
           <SettingsRow
-            title="Delete old rotated logs"
+            title={t("Delete old rotated logs")}
             status={logsStatus}
             managedPaths={["storageCleanup.logsAfterDays"]}
-            description="Delete inactive rotated log files after this many days. Current logs are kept."
+            description={t(
+              "Delete inactive rotated log files after this many days. Current logs are kept.",
+            )}
             serverScoped
             control={
               <RetentionControl
-                label="Delete old rotated logs"
+                label={t("Delete old rotated logs")}
                 value={settings.logsAfterDays}
                 onChange={(logsAfterDays) => update({ logsAfterDays })}
               />

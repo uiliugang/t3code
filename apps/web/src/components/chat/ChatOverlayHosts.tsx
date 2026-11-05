@@ -4,6 +4,7 @@ import type {
   MessageId,
   ScopedThreadRef,
   ThreadId,
+  ThreadRepositoryTarget,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
@@ -72,6 +73,7 @@ export function PullRequestThreadDialogHost(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly cwd: string | null;
+  readonly repositoryTarget?: ThreadRepositoryTarget;
   readonly onPrepared: (input: {
     branch: string;
     worktreePath: string | null;
@@ -86,6 +88,9 @@ export function PullRequestThreadDialogHost(props: {
       environmentId={props.environmentId}
       threadId={props.threadId}
       cwd={props.cwd}
+      {...(props.repositoryTarget === undefined
+        ? {}
+        : { repositoryTarget: props.repositoryTarget })}
       initialReference={state.initialReference}
       onOpenChange={(open) => {
         if (!open) closeThreadOverlay(pullRequestThreadDialogAtom);

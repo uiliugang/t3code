@@ -16,7 +16,8 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Hex from "effect/encoding/Hex";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -95,10 +96,11 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const digester = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const fingerprint = Effect.fn("ManagedWorktrees.fingerprint")((value: unknown) =>
-    crypto
-      .digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)))
+    digester
+      .digest(Digest.sha256, new TextEncoder().encode(JSON.stringify(value)))
       .pipe(Effect.map(Hex.encode), Effect.orDie),
   );
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -788,7 +790,7 @@ const make = Effect.gen(function* () {
               });
             const revision = member.restoredWorkspace ?? {
               ...member.workspace,
-              id: WorkspaceRevisionId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
+              id: WorkspaceRevisionId.make(yield* random.uuidV4().pipe(Effect.orDie)),
               previousRevisionId: member.workspace.id,
               createdAt: DateTime.formatIso(yield* DateTime.now),
               resources: member.workspace.resources.map((resource) => {

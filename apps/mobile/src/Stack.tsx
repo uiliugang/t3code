@@ -2,6 +2,12 @@ import { isDraftThreadRoute } from "./features/threads/thread-route-state";
 import { ComponentCatalogScreen } from "./features/development/ComponentCatalogScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
 import { PullRequestInlineCommentScreen } from "./features/pull-requests/PullRequestInlineCommentScreen";
+import {
+  RequirementsScreen,
+  IssueDetailScreen,
+  IssueCreateScreen,
+} from "./features/requirements/RequirementsScreen";
+import { RequirementsSettingsScreen } from "./features/requirements/RequirementsSettingsScreen";
 import { PullRequestDiscussionScreen } from "./features/pull-requests/PullRequestDiscussionScreen";
 import { createWorkspaceStackNavigator } from "./features/layout/createWorkspaceStackNavigator";
 import {
@@ -11,10 +17,7 @@ import {
   StackActions,
   useNavigation,
 } from "@react-navigation/native";
-import {
-  createNativeStackScreen,
-  type NativeStackNavigationOptions,
-} from "@react-navigation/native-stack";
+import { createNativeStackScreen } from "@react-navigation/native-stack";
 import type { ReactNode } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions } from "react-native";
 import { useResolveClassNames } from "uniwind";
@@ -50,7 +53,6 @@ import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboarding
 import { AttachmentFileScreen } from "./features/files/AttachmentFileScreen";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
 import { AdaptiveWorkspaceLayout } from "./features/layout/AdaptiveWorkspaceLayout";
-import { selectedPullRequestKey } from "./features/pull-requests/pullRequestSelection";
 import {
   HardwareKeyboardCommandOverlay,
   HardwareKeyboardCommandProvider,
@@ -144,32 +146,11 @@ import {
   SettingsLegalDocumentCloseHeaderButton,
   SettingsLegalDocumentExternalHeaderButton,
 } from "./features/settings/components/SettingsLegalDocumentRouteScreen";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
+import { GLASS_HEADER_OPTIONS, type AppScreenOptions } from "./native/glass-header-options";
 import { deriveLayout } from "./lib/layout";
 import { useNativeLayoutMetrics } from "./native/native-layout-metrics";
-import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { HORIZONTAL_FORM_SHEET_OPTIONS, formSheetDetents } from "./native/sheet-surface";
 import { workspaceDetailRouter } from "./features/workspace/workspace-detail-selection";
-
-const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
-
-type AppScreenOptions = NativeStackNavigationOptions & {
-  readonly unstable_navigationItemStyle?: "editor";
-  readonly unstable_headerMinimizationBehavior?: "onScrollUp" | "never";
-};
-
-const GLASS_HEADER_OPTIONS: AppScreenOptions = {
-  headerBackButtonDisplayMode: "minimal",
-  headerBackTitle: "",
-  headerLargeTitle: false,
-  headerShadowVisible: false,
-  headerShown: true,
-  headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? { backgroundColor: "transparent" } : undefined,
-  headerTitleStyle: { fontSize: 18, fontWeight: "800" },
-  headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
-  scrollEdgeEffects: NATIVE_LIQUID_GLASS_SUPPORTED ? HEADER_SCROLL_EDGE_EFFECTS : undefined,
-  unstable_navigationItemStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? "editor" : undefined,
-};
 
 // Hiding Android's native header after mount can leave detail panes measured short.
 // These screens render their own Material toolbar, so hide it from the first layout.
@@ -232,6 +213,24 @@ const THREAD_SETTINGS_SHEET_OPTIONS = {
 const SETTINGS_PAGE_OPTIONS = SHEET_GLASS_HEADER_OPTIONS;
 
 const SETTINGS_SCREENS = {
+  SettingsRequirements: createNativeStackScreen({
+    screen: RequirementsSettingsScreen,
+    linking: "settings/requirements",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Issue management" },
+  }),
+  Requirements: createNativeStackScreen({
+    screen: RequirementsScreen,
+    linking: "requirements",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Requirements board" },
+  }),
+  IssueDetail: createNativeStackScreen({
+    screen: IssueDetailScreen,
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Issue details" },
+  }),
+  IssueCreate: createNativeStackScreen({
+    screen: IssueCreateScreen,
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "New issue" },
+  }),
   Settings: createNativeStackScreen({
     screen: SettingsRouteScreen,
     linking: "settings",
@@ -495,7 +494,6 @@ export function workspaceLocationFromState(state: NavigationState) {
     pathname: path.startsWith("/") ? path : `/${path}`,
     routeKey: route?.key,
     routeName: route?.name,
-    routeKeys: effectiveState.routes.map((stackRoute) => stackRoute.key),
   };
 }
 
@@ -543,8 +541,6 @@ function RootStackLayout(props: {
                 pathname={workspaceLocation.pathname}
                 workspaceRouteKey={workspaceLocation.routeKey}
                 workspaceRouteName={workspaceLocation.routeName}
-                workspaceRouteKeys={workspaceLocation.routeKeys}
-                selectedPullRequestKey={selectedPullRequestKey(props.state)}
               >
                 {props.children}
                 <HardwareKeyboardCommandOverlay />
@@ -628,6 +624,9 @@ const RootStackConfig = createWorkspaceStackNavigator({
         contentStyle: { backgroundColor: "transparent" },
         headerBackVisible: false,
         ...getCompactBrandHeaderOptions(),
+        // Android draws Home's bars itself. Set here, not by the screen: Home also renders in the
+        // sidebar column, and that copy clears the route's set options when it unmounts.
+        headerShown: Platform.OS !== "android",
       },
     }),
     PullRequest: createNativeStackScreen({
@@ -985,7 +984,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ConnectOnboardingRouteScreen,
       linking: "connect-onboarding",
       options: {
-        // Android root formSheets lack a native stack bar; the route provides AndroidSheetHeader.
+        // Android root formSheets lack a native stack bar; the route provides its own sheet AppBar.
         ...(Platform.OS === "android" ? { headerShown: false } : SHEET_SOLID_HEADER_OPTIONS),
         title: "Set up T3 Connect",
         gestureEnabled: true,
@@ -1079,9 +1078,15 @@ export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navig
   return (
     <Navigator
       screenLayout={(props) => <GuardedScreenLayout {...props} />}
-      screenOptions={({ route }) =>
+      screenOptions={({ route, navigation }) =>
         Platform.OS === "android"
-          ? { animation: androidWorkspaceDestinationAnimation(route.name, usesSplitView) }
+          ? {
+              animation: androidWorkspaceDestinationAnimation(
+                route,
+                navigation.getState().routes,
+                usesSplitView,
+              ),
+            }
           : {}
       }
     />

@@ -76,6 +76,8 @@ describe("command permissions", () => {
     WS_METHODS.skillsMutate,
     WS_METHODS.skillsInspect,
     WS_METHODS.providerEndpointValidate,
+    WS_METHODS.issuesCreate,
+    WS_METHODS.issuesSetState,
   ])("requires clone, project and settings grants on the destination for %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -86,6 +88,8 @@ describe("command permissions", () => {
         const required =
           method === WS_METHODS.providerEndpointValidate
             ? [AuthProvidersManageScope, AuthOrchestrationOperateScope]
+            : method === WS_METHODS.issuesCreate || method === WS_METHODS.issuesSetState
+              ? [AuthSourceControlWriteScope]
             : method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
               ? [AuthProvidersManageScope]
               : method === WS_METHODS.projectsImportFolders
@@ -126,6 +130,39 @@ describe("command permissions", () => {
         }
         registry.set(sessions(other), AsyncResult.success(grant(false)));
         expect(registry.get(command.permissionAtom(other, input))).toBe(false);
+      }),
+    ),
+  );
+  it.effect("requires the destination read grant to refresh providers", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const refresh = createCommandPermissions(runtime, WS_METHODS.serverRefreshProviders);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(refresh.permissionAtom(env))).toBe(false);
+        expect((yield* refresh.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationReadScope],
+            permissions: [AuthOrchestrationReadScope],
+          }),
+        );
+        expect(registry.get(refresh.permissionAtom(env))).toBe(true);
+        yield* refresh.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(refresh.permissionAtom(other))).toBe(false);
+        expect((yield* refresh.authorize(registry, other).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(sessions(env), AsyncResult.success(grant(false)));
+        expect(registry.get(refresh.permissionAtom(env))).toBe(false);
+        expect((yield* refresh.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
       }),
     ),
   );
@@ -585,26 +622,28 @@ it.effect("requires access management to answer a link request", () =>
   ),
 );
 
-it.effect.each([WS_METHODS.vcsInit, WS_METHODS.branchIssuesUpdate])(
-  "honors exact empty permissions and preserves legacy parent grants for %s",
-  (method) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const registry = yield* setup;
-        const git = createCommandPermissions(runtime, method);
-        registry.set(sessions(env), AsyncResult.success({ ...grant(true), permissions: [] }));
-        expect(registry.get(git.permissionAtom(env))).toBe(false);
-        const denied = yield* git.authorize(registry, env).pipe(Effect.flip);
-        expect(denied).toMatchObject({
-          requiredPermission: AuthSourceControlWriteScope,
-          requiredScope: AuthOrchestrationOperateScope,
-        });
-        const { permissions: _exact, ...legacy } = grant(true);
-        registry.set(sessions(env), AsyncResult.success(legacy));
-        expect(registry.get(git.permissionAtom(env))).toBe(true);
-        yield* git.authorize(registry, env);
-      }),
-    ),
+it.effect.each([
+  WS_METHODS.vcsInit,
+  WS_METHODS.branchIssuesUpdate,
+  WS_METHODS.pullRequestsSendReviewLink,
+])("honors exact empty permissions and preserves legacy parent grants for %s", (method) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const git = createCommandPermissions(runtime, method);
+      registry.set(sessions(env), AsyncResult.success({ ...grant(true), permissions: [] }));
+      expect(registry.get(git.permissionAtom(env))).toBe(false);
+      const denied = yield* git.authorize(registry, env).pipe(Effect.flip);
+      expect(denied).toMatchObject({
+        requiredPermission: AuthSourceControlWriteScope,
+        requiredScope: AuthOrchestrationOperateScope,
+      });
+      const { permissions: _exact, ...legacy } = grant(true);
+      registry.set(sessions(env), AsyncResult.success(legacy));
+      expect(registry.get(git.permissionAtom(env))).toBe(true);
+      yield* git.authorize(registry, env);
+    }),
+  ),
 );
 
 it.effect("rejects protected unary and streamed RPCs outside a guarded command", () =>

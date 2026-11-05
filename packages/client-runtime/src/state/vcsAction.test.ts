@@ -86,7 +86,7 @@ function session(client: WsRpcProtocolClient): RpcSession {
   return {
     client,
     initialConfig: Effect.never,
-    subscribeServerConfig: (input) => client.subscribeServerConfig(input),
+    subscribeServerConfig: (input = {}) => client.subscribeServerConfig(input),
     ready: Effect.void,
     probe: Effect.void,
     inboundFrames: Effect.succeed(0),
@@ -515,7 +515,7 @@ describe("vcsActionState", () => {
             ),
           ),
         );
-        const manager = createVcsActionManager(runtime);
+        const manager = createVcsActionManager(runtime, () => "zh-CN");
         const registry = yield* Effect.acquireRelease(Effect.sync(AtomRegistry.make), (registry) =>
           Effect.sync(() => registry.dispose()),
         );
@@ -538,7 +538,14 @@ describe("vcsActionState", () => {
         expect(registry.get(state).revision).toBe(1);
         expect(removed).toEqual([`${environmentId}:*`]);
         expect(rpcInputs).toEqual([
-          { actionId: successfulTransportActionId, cwd, action, threadId, projectId },
+          {
+            actionId: successfulTransportActionId,
+            cwd,
+            action,
+            threadId,
+            projectId,
+            language: "zh-CN",
+          },
         ]);
 
         const failedResult = yield* Effect.promise(() =>

@@ -639,7 +639,7 @@ export function ManagedWorktreesSettings() {
   const t = useUiTranslation();
   const { connectedEnvironments, scope } = useSettingsScope();
   return (
-    <SettingsSection id="local-worktrees" title="Local worktrees">
+    <SettingsSection id="local-worktrees" title={t("Local worktrees")}>
       <p className="px-4 py-3 text-xs text-muted-foreground">
         {t(
           "Manage working directories linked to threads. Branches and thread history are kept when you clean a directory here.",

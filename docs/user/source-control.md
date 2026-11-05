@@ -39,6 +39,19 @@ In **Settings → Appearance → Thread details**, choose whether linked issues 
 whether they use a separate card, and whether descriptions start expanded. Mobile has
 the same preferences under **Settings → Appearance → Linked issues**.
 
+## Manage requirements
+
+Open **Requirements board** to browse MEP ONES work items or GitHub Issues, filter by project
+and assignee, and open details. Configure project spaces or repositories in
+**Settings → Code → Issue management** on the environment that owns the project. GitHub also
+uses the project's repository when no mapping is configured. Accounts are shared with source control;
+MEP requires an authenticated `ones2` installation on the server.
+
+Create issues from the board and change their status in details. MEP creation fields depend on
+the selected subtype. GitHub supports closing as completed or not planned and reopening. Branch
+links follow the rules above. If a creation result is uncertain, check the original platform
+before submitting again to avoid a duplicate.
+
 ## Review turn changes
 
 A turn's changed files and diff show only the turn's own work. When a turn pulls, merges, or
@@ -81,6 +94,12 @@ For GitHub Enterprise, sign in with `gh auth login --hostname YOUR_HOST`. T3 Cod
 custom server name as GitHub once it has a credential for that host.
 
 ### Meituan Code
+
+To send a PR link to reviewers, configure your application's Client ID and Client Secret under
+**Settings → Connections → Communication** on the environment that owns the PR. The application
+needs permission to look up employees and send DaXiang robot messages. Select current reviewers
+in the PR summary, then choose **Send PR link**. Messages come from the application robot.
+If delivery is reported as unknown, check DaXiang before sending again to avoid duplicates.
 
 Install code-cli 0.1.27 or newer on your T3 Code server. MOA seamless login is used automatically
 when available, without configuring a MIS ID in T3 Code. If you are still unauthenticated, open

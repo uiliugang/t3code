@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -41,7 +42,7 @@ const layerTest = WorkspaceRepositoryResolver.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "workspace-checkout-" })),
   Layer.provide(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const root = (id: string, sourcePath: string): ProjectWorkspaceRoot => ({

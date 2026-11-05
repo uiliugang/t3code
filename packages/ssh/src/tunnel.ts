@@ -3,13 +3,13 @@ import type {
   DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
-import { cliReleaseDownloadBaseUrl } from "@t3tools/shared/cliRelease";
+import { cliReleaseAssetUrl, cliReleaseDownloadBaseUrl } from "@t3tools/shared/cliRelease";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as NetService from "@t3tools/shared/Net";
 import { extractJsonObject, fromLenientJson } from "@t3tools/shared/schemaJson";
 import { satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -86,7 +86,7 @@ interface SshTunnelEntry {
 
 type SshEnvironmentEffectContext =
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | Digest.Digest
   | FileSystem.FileSystem
   | Path.Path
   | HttpClient.HttpClient
@@ -440,6 +440,13 @@ fi
 # Unpacked into the pinned-runtime layout so \`t3 service install\` reuses it.
 T3_RELEASE_BASE_URL=@@T3_RELEASE_BASE_URL@@
 T3_RUNTIME_DIR="$HOME/.t3/runtime/versions/$T3_ARCHIVE_VERSION"
+T3_DOWNLOAD_CACHE=""
+if [ -n "\${T3_DOWNLOAD_ID:-}" ]; then
+  case "$T3_DOWNLOAD_ID" in
+    *[!a-zA-Z0-9_-]*) printf 'Invalid t3 download ID.\\n' >&2; exit 1 ;;
+  esac
+  T3_DOWNLOAD_CACHE="$HOME/.t3/runtime/downloads/$T3_ARCHIVE_VERSION/$T3_DOWNLOAD_ID"
+fi
 t3_runtime_ready() {
   [ -x "$T3_RUNTIME_DIR/t3" ] && [ "$(cat "$T3_RUNTIME_DIR/.install-complete" 2>/dev/null)" = "$T3_ARCHIVE_VERSION" ]
 }
@@ -489,13 +496,18 @@ if ! t3_runtime_ready; then
   T3_STAGING="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
   trap 'rm -rf "$T3_STAGING" "$T3_LOCK"' EXIT
   t3_fetch() {
+    T3_CACHED="$T3_DOWNLOAD_CACHE/\${2##*/}"
+    if [ -n "$T3_DOWNLOAD_CACHE" ] && [ -f "$T3_CACHED" ]; then cp "$T3_CACHED" "$2"; return; fi
     if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
     elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
-    else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; exit 1
+    else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; return 1
     fi
   }
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@
+  if ! t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@ ||
+     ! t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@; then
+    printf 'T3_DOWNLOAD_FAILED:%s\\n' "$T3_ARCHIVE" >&2
+    exit 1
+  fi
   T3_EXPECTED="$(grep " \\*\\{0,1\\}$T3_ARCHIVE$" "$T3_STAGING/SHA256SUMS" | cut -d' ' -f1)"
   if command -v sha256sum >/dev/null 2>&1; then
     T3_ACTUAL="$(sha256sum "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
@@ -503,6 +515,7 @@ if ! t3_runtime_ready; then
     T3_ACTUAL="$(shasum -a 256 "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
   fi
   if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
+    [ -z "$T3_DOWNLOAD_CACHE" ] || rm -rf "$T3_DOWNLOAD_CACHE"
     printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
   fi
   tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1
@@ -515,6 +528,7 @@ if ! t3_runtime_ready; then
   printf '%s\\n' "$T3_ARCHIVE_VERSION" > "$T3_STAGING/.install-complete"
   rm -rf "$T3_RUNTIME_DIR"
   mv "$T3_STAGING" "$T3_RUNTIME_DIR"
+  [ -z "$T3_DOWNLOAD_CACHE" ] || rm -rf "$T3_DOWNLOAD_CACHE"
 fi
 if [ -n "\${T3_LOCK:-}" ]; then
   rm -rf "$T3_LOCK"
@@ -859,6 +873,72 @@ function buildRemoteLogTailScript(stateKey: string): string {
   });
 }
 
+const relayReleaseAssets = Effect.fn("ssh/tunnel.relayReleaseAssets")(function* (
+  target: DesktopSshEnvironmentTarget,
+  auth: SshAuth.SshAuthOptions | undefined,
+  runner: RemoteT3RunnerOptions | undefined,
+  version: string,
+  archive: string,
+) {
+  yield* Effect.logInfo("ssh.remoteServer.download.relay", sshTargetLogFields(target));
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const client = (yield* HttpClient.HttpClient).pipe(
+    HttpClient.followRedirects(),
+    HttpClient.filterStatusOk,
+  );
+  return yield* Effect.gen(function* () {
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-download-" });
+    const downloadId = path.basename(directory);
+    const cacheDirectory = `.t3/runtime/downloads/${version}/${downloadId}`;
+    yield* Effect.addFinalizer(() =>
+      runSshCommand(target, {
+        ...auth,
+        remoteCommandArgs: [
+          "sh",
+          "-c",
+          shellSingleQuote(`rm -rf "$HOME/"${shellSingleQuote(cacheDirectory)}`),
+        ],
+        timeoutMs: 5_000,
+      }).pipe(Effect.ignore),
+    );
+    for (const fileName of ["SHA256SUMS", archive]) {
+      const localPath = path.join(directory, fileName);
+      const response = yield* client.get(
+        cliReleaseAssetUrl(version, fileName, runner?.releaseBaseUrl ?? undefined),
+      );
+      yield* Stream.run(response.stream, fs.sink(localPath));
+      const destination = `${cacheDirectory}/${fileName}`;
+      const script = `set -eu
+mkdir -p "$HOME/"${shellSingleQuote(cacheDirectory)}
+TEMP="$(mktemp "$HOME/"${shellSingleQuote(`${cacheDirectory}/.upload-XXXXXX`)})"
+trap 'rm -f "$TEMP"' EXIT
+cat > "$TEMP"
+mv "$TEMP" "$HOME/"${shellSingleQuote(destination)}
+`;
+      yield* runSshCommand(target, {
+        ...auth,
+        remoteCommandArgs: ["sh", "-c", shellSingleQuote(script)],
+        stdin: fs.stream(localPath),
+        timeoutMs: REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 1000,
+      });
+    }
+    return downloadId;
+  }).pipe(
+    Effect.timeout(`${REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 2} seconds`),
+    Effect.mapError((cause) =>
+      cause instanceof SshCommandError || cause instanceof SshInvalidTargetError
+        ? cause
+        : new SshLaunchError({
+            message:
+              "The SSH host could not download the T3 runtime, and downloading or transferring it through this client also failed. Check this client's access to the release server and the SSH connection.",
+            stdout: "",
+            cause,
+          }),
+    ),
+  );
+});
+
 export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemoteServer")(
   function* (
     target: DesktopSshEnvironmentTarget,
@@ -867,7 +947,11 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
   ): Effect.fn.Return<
     { readonly remotePort: number; readonly remoteServerKind: "external" | "managed" | null },
     SshCommandError | SshInvalidTargetError | SshLaunchError,
-    ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
+    | ChildProcessSpawner.ChildProcessSpawner
+    | Digest.Digest
+    | FileSystem.FileSystem
+    | Path.Path
+    | HttpClient.HttpClient
   > {
     const stateKey = yield* remoteStateKey(target);
     yield* Effect.logInfo("ssh.remoteServer.launch.start", {
@@ -875,7 +959,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...sshRunnerLogFields(runner),
       stateKey,
     });
-    const result = yield* runSshCommand(target, {
+    const launchOptions = {
       remoteCommandArgs: ["sh", "-l", "-s", "--", stateKey],
       stdin: buildRemoteLaunchScript(runner),
       timeoutMs: isNodeScriptRunner(runner)
@@ -884,7 +968,36 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
       ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
       ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
-    });
+    };
+    const result = yield* runSshCommand(target, launchOptions).pipe(
+      Effect.catchTags({
+        SshCommandError: Effect.fn("ssh/tunnel.relayFailedDownload")(function* (
+          error: SshCommandError,
+        ) {
+          const version = runner?.archiveVersion?.trim();
+          const archive = /^T3_DOWNLOAD_FAILED:(.+)$/mu.exec(error.stderr)?.[1];
+          if (
+            isNodeScriptRunner(runner) ||
+            !version ||
+            !archive ||
+            !["linux-x64", "linux-arm64", "darwin-arm64", "darwin-x64"].some(
+              (key) => archive === `t3-${version}-${key}.tar.gz`,
+            )
+          ) {
+            return yield* error;
+          }
+          return yield* Effect.scoped(
+            Effect.gen(function* () {
+              const downloadId = yield* relayReleaseAssets(target, input, runner, version, archive);
+              return yield* runSshCommand(target, {
+                ...launchOptions,
+                stdin: `T3_DOWNLOAD_ID=${shellSingleQuote(downloadId)}\nexport T3_DOWNLOAD_ID\n${launchOptions.stdin}`,
+              });
+            }),
+          );
+        }),
+      }),
+    );
     if (!getLastNonEmptyOutputLine(result.stdout)) {
       return yield* new SshLaunchError({
         message: "SSH launch did not return a remote port.",
@@ -929,7 +1042,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
     readonly credential: string;
   },
   SshCommandError | SshInvalidTargetError | SshPairingError,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
+  ChildProcessSpawner.ChildProcessSpawner | Digest.Digest | FileSystem.FileSystem | Path.Path
 > {
   const stateKey = yield* remoteStateKey(target);
   yield* Effect.logDebug("ssh.remoteServer.pairingToken.start", {
@@ -981,7 +1094,7 @@ const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(function* (
 ): Effect.fn.Return<
   void,
   SshCommandError | SshInvalidTargetError,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
+  ChildProcessSpawner.ChildProcessSpawner | Digest.Digest | FileSystem.FileSystem | Path.Path
 > {
   const stateKey = yield* remoteStateKey(target);
   yield* Effect.logInfo("ssh.remoteServer.stop.start", {
@@ -1007,7 +1120,7 @@ const readRemoteServerLogTail = Effect.fn("ssh/tunnel.readRemoteServerLogTail")(
 ): Effect.fn.Return<
   string,
   SshCommandError | SshInvalidTargetError,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
+  ChildProcessSpawner.ChildProcessSpawner | Digest.Digest | FileSystem.FileSystem | Path.Path
 > {
   const result = yield* runSshCommand(target, {
     remoteCommandArgs: ["sh", "-s"],
@@ -1110,7 +1223,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
   SshTunnelEntry,
   SshCommandError | SshInvalidTargetError | SshReadinessError,
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | Digest.Digest
   | FileSystem.FileSystem
   | Path.Path
   | HttpClient.HttpClient
@@ -1555,7 +1668,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     );
     tunnels.set(input.key, tunnelEntry);
     const spawnerService = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const cryptoService = yield* Crypto.Crypto;
+    const digestService = yield* Digest.Digest;
     const fileSystemService = yield* FileSystem.FileSystem;
     const pathService = yield* Path.Path;
     yield* Scope.addFinalizer(
@@ -1595,7 +1708,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
               },
         ).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawnerService),
-          Effect.provideService(Crypto.Crypto, cryptoService),
+          Effect.provideService(Digest.Digest, digestService),
           Effect.provideService(FileSystem.FileSystem, fileSystemService),
           Effect.provideService(Path.Path, pathService),
         );
@@ -1778,7 +1891,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 });
 
 /**
- * @effect-expect-leaking ChildProcessSpawner | Crypto | FileSystem | HttpClient | NetService | Path | SshPasswordPrompt
+ * @effect-expect-leaking ChildProcessSpawner | Digest | FileSystem | HttpClient | NetService | Path | SshPasswordPrompt
  */
 export class SshEnvironmentManager extends Context.Service<
   SshEnvironmentManager,

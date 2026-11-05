@@ -25,3 +25,15 @@ it("only registers GitHub and Meituan Code", () => {
     )?.definition.kind,
   ).toBe("meituan");
 });
+
+it.each([
+  "C:/repos/project",
+  "C:\\repos\\project",
+  "/srv/git/repo.git",
+  "./team:group/repo",
+  "file:///srv/git/repo.git",
+  "hg::team/repo",
+  "codecommit::us-east-1://repo",
+])("finds no host in %s, which git does not read as SSH", (remoteUrl) => {
+  expect(sourceControlDefinitions.recognizeRemote(remoteUrl)).toBeNull();
+});

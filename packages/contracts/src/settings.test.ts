@@ -123,6 +123,7 @@ describe("built-in preferences", () => {
       defaultThreadEnvMode: "worktree",
       providerInstances: {},
       sourceControlHosts: {},
+      daxiang: { clientId: "", clientSecret: "" },
       worktreesDirectory: "",
     });
     const serverOverrides = {
@@ -267,6 +268,15 @@ describe("ServerSettings usage price overrides", () => {
     expect(settings.usageModelFilter).toBeUndefined();
     expect(settings.usageModelAliases).toEqual({ "drift-9": "orbit-1" });
   });
+});
+
+it("drops a hand-edited non-string hidden tag and keeps the rest of the settings", () => {
+  const settings = decodeServerSettings({
+    hiddenThreadTags: ["private", 123],
+    hideTaggedThreads: true,
+  });
+  expect(settings.hiddenThreadTags).toEqual(["private"]);
+  expect(settings.hideTaggedThreads).toBe(true);
 });
 
 describe("ServerSettings secret providers", () => {

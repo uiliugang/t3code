@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ProjectRepositoriesEditor } from "./components/ProjectRepositoriesEditor";
 import { ProjectConfigurationSettings } from "./ConfigurationSettings";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -46,7 +47,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
@@ -56,6 +57,8 @@ import { DEFAULT_SETTINGS_PAGE } from "../workspace/workspace-tab-navigation";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 
 export function SettingsProjectOverviewRouteScreen() {
+  const t = useUiTranslation();
+  const environmentMenu = useSettingsEnvironmentMenu();
   const insets = useSafeAreaInsets();
   const [isRemoving, setIsRemoving] = useState(false);
   const removalPending = useRef(false);
@@ -95,7 +98,7 @@ export function SettingsProjectOverviewRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Projects" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title={t("Projects")} menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -104,7 +107,7 @@ export function SettingsProjectOverviewRouteScreen() {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
           <Button
-            label="Import folders"
+            label={t("Import folders")}
             icon="folder.badge.plus"
             onPress={() =>
               navigation.dispatch(
@@ -119,7 +122,7 @@ export function SettingsProjectOverviewRouteScreen() {
           />
           {members.length === 1 ? (
             <Button
-              label="Import sibling folders"
+              label={t("Import sibling folders")}
               icon="folder.badge.plus"
               onPress={() =>
                 navigation.dispatch(
@@ -135,12 +138,15 @@ export function SettingsProjectOverviewRouteScreen() {
           ) : null}
           {selectedProjectKey === null ? (
             <Text className="px-2 text-base text-foreground-muted">
-              Choose a project with the filter above to manage its name, checkouts and removal.
+              {t(
+                "Choose a project with the filter above to manage its name, checkouts and removal.",
+              )}
             </Text>
           ) : !group || members.length === 0 ? (
             <Text className="px-2 text-base text-foreground-muted">
-              This project has no checkout on the selected connected environments. Change the filter
-              above.
+              {t(
+                "This project has no checkout on the selected connected environments. Change the filter above.",
+              )}
             </Text>
           ) : (
             <ProjectOverviewContent
@@ -178,6 +184,7 @@ function ProjectOverviewContent(props: {
   readonly projectKey: string | null;
   readonly onProjectRemoved: (projectKey: string | null) => void;
 }) {
+  const t = useUiTranslation();
   const { isRemoving, setIsRemoving, startRemoval, finishRemoval } = props;
   const representative = props.members[0]!;
   const displayName = deriveProjectGroupLabel({ representative, members: props.members });
@@ -364,12 +371,12 @@ function ProjectOverviewContent(props: {
         </View>
       </View>
 
-      <SettingsSection title="Project">
+      <SettingsSection title={t("Project")}>
         <View className="gap-3 p-4">
-          <Text className="text-sm font-t3-medium text-foreground-muted">Name</Text>
+          <Text className="text-sm font-t3-medium text-foreground-muted">{t("Name")}</Text>
           <View className="flex-row items-center gap-3">
             <AppTextInput
-              accessibilityLabel="Project name"
+              accessibilityLabel={t("Project name")}
               className="min-h-11 min-w-0 flex-1 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
               value={draftName ?? displayName}
               onChangeText={setDraftName}
@@ -379,7 +386,7 @@ function ProjectOverviewContent(props: {
             />
             {canSave ? (
               <Button
-                label="Save"
+                label={t("Save")}
                 accessibilityHint="Save project name"
                 tone="secondary"
                 onPress={saveName}
@@ -408,10 +415,10 @@ function ProjectOverviewContent(props: {
         ) : null;
       })}
       {canOrganize ? (
-        <SettingsSection title="Organize">
+        <SettingsSection title={t("Organize")}>
           <SettingsSwitchRow
             icon="pin"
-            label="Pin"
+            label={t("Pin")}
             subtitle={
               offline
                 ? "Connect every machine with this project to change this."
@@ -434,7 +441,7 @@ function ProjectOverviewContent(props: {
           />
         </SettingsSection>
       ) : null}
-      <SettingsSection title="Checkouts">
+      <SettingsSection title={t("Checkouts")}>
         {props.members.map((member, index) => {
           const environment = props.environments.find(
             (entry) => entry.environmentId === member.environmentId,
@@ -472,7 +479,7 @@ function ProjectOverviewContent(props: {
           );
         })}
       </SettingsSection>
-      <SettingsSection title="Danger">
+      <SettingsSection title={t("Danger")}>
         <SettingsActionRow
           icon="trash"
           label={
@@ -504,6 +511,7 @@ function RemoveCheckoutAction(props: {
   readonly disabled: boolean;
   readonly onPress: () => void;
 }) {
+  const t = useUiTranslation();
   const canRemove = useEnvironmentScope(props.member.environmentId, AuthOrchestrationOperateScope);
   return (
     <Pressable
@@ -513,7 +521,7 @@ function RemoveCheckoutAction(props: {
       onPress={props.onPress}
       className="self-start rounded-full border border-border bg-card px-3 py-1.5 disabled:opacity-40"
     >
-      <Text className="font-t3-medium text-xs text-danger-foreground">Remove checkout</Text>
+      <Text className="font-t3-medium text-xs text-danger-foreground">{t("Remove checkout")}</Text>
     </Pressable>
   );
 }

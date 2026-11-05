@@ -1,0 +1,489 @@
+import { useAtomValue } from "@effect/atom-react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { EnvironmentId, ProjectId, type Issue, type IssueListResult } from "@t3tools/contracts";
+import {
+  ClipboardListIcon,
+  LayoutGridIcon,
+  ListIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  SettingsIcon,
+  CircleIcon,
+  CircleCheckIcon,
+  CircleDotIcon,
+} from "lucide-react";
+import { useState } from "react";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import { useProjects } from "../../state/entities";
+import { sourceControlEnvironment } from "../../state/sourceControl";
+import { useEnvironmentQuery } from "../../state/query";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
+import { IssueSelect } from "./IssueSelect";
+import { IssueDetailPanel } from "./IssueDetailPanel";
+import { IssueCreateDialog } from "./IssueCreateDialog";
+import type { RequirementsSearch } from "../../routes/_chat.requirements";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { serverEnvironment } from "../../state/server";
+import { Atom } from "effect/reactivity";
+
+const noSettings = Atom.make(null);
+
+const COLUMNS = [
+  { key: "todo", label: "To do", Icon: CircleIcon },
+  { key: "doing", label: "In progress", Icon: CircleDotIcon },
+  { key: "done", label: "Done", Icon: CircleCheckIcon },
+  { key: "other", label: "Other states", Icon: CircleIcon },
+] as const;
+
+export function RequirementsPage() {
+  const t = useUiTranslation();
+  const search = useSearch({ from: "/_chat/requirements" });
+  const navigate = useNavigate({ from: "/requirements" });
+  const { environments } = useEnvironments();
+  const primary = usePrimaryEnvironmentId();
+  const allProjects = useProjects();
+  const environmentId = search.environmentId ?? primary;
+  const provider = search.provider ?? "meituan";
+  const assignee = search.assignee ?? "me";
+  const narrow = useMediaQuery("(max-width: 767px)");
+  const view = search.view ?? (narrow ? "list" : "board");
+  const [page, setPage] = useState(1);
+  const [creating, setCreating] = useState(false);
+  const projects = allProjects.filter(
+    (project) => project.environmentId === environmentId && !project.isScratch,
+  );
+  const settings = useAtomValue(
+    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noSettings,
+  );
+  const createProjects = projects.filter(
+    (project) =>
+      provider === "github" ||
+      settings?.issueProjectSources[project.id]?.some((source) => source.provider === provider),
+  );
+  const allowed = useAtomValue(sourceControlEnvironment.createIssue.permissionAtom(environmentId));
+  const query = useEnvironmentQuery(
+    environmentId
+      ? sourceControlEnvironment.issues({
+          environmentId,
+          input: {
+            provider,
+            assignee,
+            query: search.q ?? "",
+            page,
+            ...(search.projectId ? { projectId: search.projectId } : {}),
+          },
+        })
+      : null,
+  );
+  const peopleProjectId = search.projectId ?? query.data?.groups[0]?.projectIds[0];
+  const people = useEnvironmentQuery(
+    environmentId && peopleProjectId
+      ? sourceControlEnvironment.issuePeople({
+          environmentId,
+          input: { projectId: peopleProjectId, provider, query: "" },
+        })
+      : null,
+  );
+  const [pages, setPages] = useState<{
+    key: string;
+    data: Array<typeof IssueListResult.Type>;
+    last: typeof query.data;
+  }>({ key: "", data: [], last: null });
+  const key = [environmentId, provider, assignee, search.projectId, search.q].join("\n");
+  if (pages.key !== key) {
+    setPages({ key, data: [], last: null });
+    if (page !== 1) setPage(1);
+  } else if (query.data && pages.last !== query.data)
+    setPages({ key, data: [...pages.data.slice(0, page - 1), query.data], last: query.data });
+  const shownPages = pages.key === key ? pages.data : [];
+  const rows = new Map<string, { issue: Issue; projectId: ProjectId }>();
+  for (const data of shownPages)
+    for (const group of data.groups)
+      for (const issue of group.issues) {
+        const projectId = group.projectIds[0];
+        if (projectId)
+          rows.set(`${group.source.host}/${group.source.scope}/${issue.id}`, { issue, projectId });
+      }
+  const entries = [...rows.values()];
+  const assigneeOptions = [
+    ...new Map(
+      [...(people.data ?? []), ...entries.flatMap(({ issue }) => issue.assignees)].map((person) => [
+        person.value,
+        person,
+      ]),
+    ).values(),
+  ];
+  const updateSearch = (patch: {
+    [Key in keyof RequirementsSearch]?: RequirementsSearch[Key] | undefined;
+  }) => {
+    setPage(1);
+    void navigate({
+      search: (previous) => {
+        const merged = { ...previous, ...patch };
+        return Object.fromEntries(
+          Object.entries(merged).filter(([, value]) => value !== undefined),
+        ) as RequirementsSearch;
+      },
+    });
+  };
+  const selectedProject = projects.find((project) => project.id === search.issueProjectId);
+  const open = (issue: Issue, projectId: ProjectId) =>
+    void navigate({
+      search: (previous) => ({ ...previous, issueId: issue.id, issueProjectId: projectId }),
+    });
+  const close = () =>
+    void navigate({
+      search: (previous) => {
+        const { issueId: _id, issueProjectId: _project, ...rest } = previous;
+        return rest;
+      },
+    });
+  const visibleColumns = COLUMNS.filter(
+    (column) => column.key !== "doing" || provider === "meituan",
+  ).filter(
+    (column) =>
+      column.key !== "other" || entries.some(({ issue }) => issue.stateCategory === "other"),
+  );
+  return (
+    <SidebarInset>
+      <div className="relative flex h-full min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <SidebarTrigger />
+              <ClipboardListIcon className="size-5 shrink-0 text-muted-foreground" />
+              <h1 className="truncate text-base font-semibold">{t("Requirements board")}</h1>
+              <span className="text-xs text-muted-foreground">{entries.length}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t("Refresh issues")}
+                      onClick={() => {
+                        setPage(1);
+                        setPages({ key, data: [], last: null });
+                        query.refresh();
+                      }}
+                    />
+                  }
+                >
+                  <RefreshCwIcon />
+                </TooltipTrigger>
+                <TooltipPopup>{t("Refresh issues")}</TooltipPopup>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t("Issue management")}
+                      onClick={() => void navigate({ to: "/settings/requirements" })}
+                    />
+                  }
+                >
+                  <SettingsIcon />
+                </TooltipTrigger>
+                <TooltipPopup>{t("Issue management")}</TooltipPopup>
+              </Tooltip>
+              <Button
+                size="sm"
+                onClick={() => setCreating(true)}
+                disabled={!allowed || !environmentId || createProjects.length === 0}
+              >
+                <PlusIcon />
+                {t("New issue")}
+              </Button>
+            </div>
+          </header>
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+            {environments.length > 1 ? (
+              <div className="w-40">
+                <IssueSelect
+                  label={t("Environment")}
+                  value={environmentId ?? ""}
+                  options={environments.map((environment) => ({
+                    value: environment.environmentId,
+                    label: environment.label,
+                  }))}
+                  onChange={(value) =>
+                    updateSearch({
+                      environmentId: EnvironmentId.make(value),
+                      projectId: undefined,
+                      issueId: undefined,
+                      issueProjectId: undefined,
+                    })
+                  }
+                />
+              </div>
+            ) : null}
+            <div className="w-36">
+              <IssueSelect
+                label={t("Issue source")}
+                value={provider}
+                options={[
+                  { value: "meituan", label: "MEP ONES" },
+                  { value: "github", label: "GitHub Issues" },
+                ]}
+                onChange={(value) =>
+                  updateSearch({
+                    provider: value === "github" ? "github" : "meituan",
+                    projectId: undefined,
+                    issueId: undefined,
+                    issueProjectId: undefined,
+                  })
+                }
+              />
+            </div>
+            <div className="w-44">
+              <IssueSelect
+                label={t("Project")}
+                value={search.projectId ?? "all"}
+                options={[
+                  { value: "all", label: t("All projects") },
+                  ...projects.map((project) => ({ value: project.id, label: project.title })),
+                ]}
+                onChange={(value) =>
+                  updateSearch({ projectId: value === "all" ? undefined : ProjectId.make(value) })
+                }
+              />
+            </div>
+            <div className="w-40">
+              <IssueSelect
+                label={t("Assignee")}
+                value={assignee}
+                options={[
+                  { value: "me", label: t("Assigned to me") },
+                  { value: "all", label: t("All assignees") },
+                  { value: "unassigned", label: t("Unassigned") },
+                  ...assigneeOptions.filter(
+                    (person) => !["me", "all", "unassigned"].includes(person.value),
+                  ),
+                ]}
+                onChange={(value) => updateSearch({ assignee: value })}
+              />
+            </div>
+            <form
+              className="min-w-40 flex-1"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                updateSearch({ q: String(data.get("query") ?? "") });
+              }}
+            >
+              <Input
+                name="query"
+                key={search.q ?? ""}
+                defaultValue={search.q ?? ""}
+                placeholder={t("Search title or number")}
+                aria-label={t("Search title or number")}
+                size="sm"
+              />
+            </form>
+          </div>
+          <div className="flex items-center justify-between gap-3 px-5 py-3">
+            <span className="text-xs text-muted-foreground">
+              {t("{count} loaded", { count: entries.length })}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => updateSearch({ assignee: "all", projectId: undefined, q: "" })}
+              >
+                {t("Reset filters")}
+              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant={view === "board" ? "secondary" : "ghost"}
+                      onClick={() => updateSearch({ view: "board" })}
+                      aria-label={t("Board view")}
+                      aria-pressed={view === "board"}
+                    />
+                  }
+                >
+                  <LayoutGridIcon />
+                </TooltipTrigger>
+                <TooltipPopup>{t("Board view")}</TooltipPopup>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant={view === "list" ? "secondary" : "ghost"}
+                      onClick={() => updateSearch({ view: "list" })}
+                      aria-label={t("List view")}
+                      aria-pressed={view === "list"}
+                    />
+                  }
+                >
+                  <ListIcon />
+                </TooltipTrigger>
+                <TooltipPopup>{t("List view")}</TooltipPopup>
+              </Tooltip>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto px-5 pb-6">
+            {query.error ? (
+              <p role="alert" className="mb-3 text-sm text-destructive">
+                {query.error}
+              </p>
+            ) : null}
+            {query.data?.failures.map((failure) => (
+              <p role="alert" key={failure.projectId} className="mb-3 text-sm text-destructive">
+                {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
+                {t(failure.reason)}
+              </p>
+            ))}
+            {query.isPending && !entries.length ? (
+              <p className="py-8 text-sm text-muted-foreground">{t("Loading...")}</p>
+            ) : !entries.length ? (
+              <div className="flex min-h-64 flex-col items-center justify-center gap-4">
+                <ClipboardListIcon className="size-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    query.data?.groups.length
+                      ? "No matching issues."
+                      : "Connect an issue source to start.",
+                  )}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void navigate({ to: "/settings/requirements" })}
+                >
+                  <SettingsIcon />
+                  {t("Issue management")}
+                </Button>
+              </div>
+            ) : view === "list" ? (
+              <div className="divide-y divide-border">
+                {entries.map(({ issue, projectId }) => (
+                  <button
+                    type="button"
+                    key={`${projectId}/${issue.id}`}
+                    onClick={() => open(issue, projectId)}
+                    className="grid w-full grid-cols-[4rem_minmax(0,1fr)_7rem] items-center gap-3 py-4 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <span className="text-xs text-muted-foreground">#{issue.id}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{issue.title}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {projects.find((project) => project.id === projectId)?.title} ·{" "}
+                        {issue.assignees.map((person) => person.label).join(", ") ||
+                          t("Unassigned")}
+                      </span>
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">{issue.state}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex min-h-64 items-start gap-4">
+                {visibleColumns.map(({ key: category, label, Icon }) => (
+                  <section key={category} className="min-w-60 flex-1">
+                    <div className="mb-3 flex h-9 items-center gap-2 border-b border-border text-sm">
+                      <Icon
+                        className={`size-4 ${category === "done" ? "text-success" : category === "doing" ? "text-warning" : "text-muted-foreground"}`}
+                      />
+                      <h2 className="font-medium">
+                        {t(
+                          provider === "github" ? (category === "todo" ? "Open" : "Closed") : label,
+                        )}
+                      </h2>
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {entries.filter(({ issue }) => issue.stateCategory === category).length}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {entries
+                        .filter(({ issue }) => issue.stateCategory === category)
+                        .map(({ issue, projectId }) => (
+                          <button
+                            type="button"
+                            key={`${projectId}/${issue.id}`}
+                            onClick={() => open(issue, projectId)}
+                            className="flex w-full flex-col gap-3 rounded-md border border-border bg-card p-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                          >
+                            <span className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
+                              <span>#{issue.id}</span>
+                              <span>{issue.priority}</span>
+                            </span>
+                            <span className="text-sm font-medium wrap-anywhere">{issue.title}</span>
+                            <span className="truncate text-xs text-muted-foreground">
+                              {projects.find((project) => project.id === projectId)?.title}
+                            </span>
+                            <span className="flex w-full flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                              <span>{issue.state}</span>
+                              <span>
+                                {issue.assignees.map((person) => person.label).join(", ") ||
+                                  t("Unassigned")}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+            {query.data?.groups.some((group) => group.hasMore) ? (
+              <div className="flex justify-center py-5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPage(page + 1)}
+                  disabled={query.isPending}
+                >
+                  {t("Load more")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        {environmentId && search.issueId && selectedProject ? (
+          <IssueDetailPanel
+            key={`${environmentId}/${provider}/${selectedProject.id}/${search.issueId}`}
+            environmentId={environmentId}
+            target={{ projectId: selectedProject.id, provider }}
+            id={search.issueId}
+            cwd={selectedProject.workspaceRoot}
+            close={close}
+            changed={() => {
+              setPage(1);
+              setPages({ key, data: [], last: null });
+              query.refresh();
+            }}
+          />
+        ) : null}
+        {creating && environmentId ? (
+          <IssueCreateDialog
+            environmentId={environmentId}
+            provider={provider}
+            projects={createProjects}
+            {...(search.projectId ? { initialProjectId: search.projectId } : {})}
+            close={() => setCreating(false)}
+            created={(issue, projectId) => {
+              setCreating(false);
+              setPage(1);
+              query.refresh();
+              open(issue, projectId);
+            }}
+          />
+        ) : null}
+      </div>
+    </SidebarInset>
+  );
+}

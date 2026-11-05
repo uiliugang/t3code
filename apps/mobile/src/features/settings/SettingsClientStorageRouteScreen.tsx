@@ -24,11 +24,12 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { ApplicationConfigurationSettings } from "./ConfigurationSettings";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 
 export function SettingsClientStorageRouteScreen() {
+  const environmentMenu = useSettingsEnvironmentMenu();
   const { selectedTargets } = useSettingsEnvironmentFilter();
   const insets = useSafeAreaInsets();
   const summaryResult = useAtomValue(clientCacheSummaryAtom);
@@ -77,7 +78,7 @@ export function SettingsClientStorageRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Client Storage" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Client Storage" menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           contentInset={{ bottom: Math.max(insets.bottom, 18) }}

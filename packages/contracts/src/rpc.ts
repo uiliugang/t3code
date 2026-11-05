@@ -63,14 +63,35 @@ import {
 } from "./threadPrediction.ts";
 import * as Schema from "effect/Schema";
 import {
+  DaxiangSendError,
+  DaxiangSendResult,
+  PullRequestSendReviewLinkInput,
+} from "./communication.ts";
+import {
   BranchIssuesInput,
   BranchIssuesResult,
   BranchIssueDetailInput,
   BranchIssueDetail,
   BranchIssuesUpdateInput,
   BranchIssueError,
+  IssueBranchesInput,
+  IssueBranchesResult,
 } from "./branchIssues.ts";
 import * as Rpc from "effect/rpc/Rpc";
+import {
+  IssueListInput,
+  IssueListResult,
+  IssueReadInput,
+  IssueDetail,
+  IssuePeopleInput,
+  IssueOption,
+  IssueMetadataInput,
+  IssueMetadata,
+  IssueCreateInput,
+  Issue,
+  IssueSetStateInput,
+  IssueError,
+} from "./issues.ts";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -259,6 +280,7 @@ import {
 import {
   ORCHESTRATION_V2_WS_METHODS,
   OrchestrationGetWorkflowScriptError,
+  OrchestrationV2GetNativeChildWorkError,
   OrchestrationV2StopWorkflowError,
   OrchestrationV2ForceStopThreadError,
   OrchestrationV2DispatchCommandError,
@@ -653,11 +675,19 @@ export const WS_METHODS = {
   pullRequestsSubscribeRefreshes: "pullRequests.subscribeRefreshes",
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
+  pullRequestsSendReviewLink: "pullRequests.sendReviewLink",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   branchIssuesList: "sourceControl.branchIssuesList",
+  issuesList: "issues.list",
+  issueBranches: "issues.branches",
+  issuesRead: "issues.read",
+  issuesPeople: "issues.people",
+  issuesMetadata: "issues.metadata",
+  issuesCreate: "issues.create",
+  issuesSetState: "issues.setState",
   branchIssuesRead: "sourceControl.branchIssuesRead",
   branchIssuesUpdate: "sourceControl.branchIssuesUpdate",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -667,6 +697,7 @@ export const WS_METHODS = {
   sourceControlSignInCancel: "sourceControl.signInCancel",
   sourceControlAppAccess: "sourceControl.appAccess",
   sourceControlStarred: "sourceControl.starred",
+  sourceControlStar: "sourceControl.star",
   projectCloneStart: "projectClone.start",
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
@@ -1294,6 +1325,12 @@ const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsReques
   error: PullRequestRpcError,
 });
 
+const WsPullRequestsSendReviewLinkRpc = Rpc.make(WS_METHODS.pullRequestsSendReviewLink, {
+  payload: PullRequestSendReviewLinkInput,
+  success: DaxiangSendResult,
+  error: Schema.Union([DaxiangSendError, EnvironmentAuthorizationError]),
+});
+
 const WsPullRequestsLabelCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsLabelCandidates, {
   payload: PullRequestRef,
   success: PullRequestLabelCandidateList,
@@ -1316,6 +1353,41 @@ const WsBranchIssuesListRpc = Rpc.make(WS_METHODS.branchIssuesList, {
   payload: BranchIssuesInput,
   success: BranchIssuesResult,
   error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
+  payload: IssueListInput,
+  success: IssueListResult,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssueBranchesRpc = Rpc.make(WS_METHODS.issueBranches, {
+  payload: IssueBranchesInput,
+  success: IssueBranchesResult,
+  error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesReadRpc = Rpc.make(WS_METHODS.issuesRead, {
+  payload: IssueReadInput,
+  success: IssueDetail,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesPeopleRpc = Rpc.make(WS_METHODS.issuesPeople, {
+  payload: IssuePeopleInput,
+  success: Schema.Array(IssueOption),
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesMetadataRpc = Rpc.make(WS_METHODS.issuesMetadata, {
+  payload: IssueMetadataInput,
+  success: IssueMetadata,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesCreateRpc = Rpc.make(WS_METHODS.issuesCreate, {
+  payload: IssueCreateInput,
+  success: Issue,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesSetStateRpc = Rpc.make(WS_METHODS.issuesSetState, {
+  payload: IssueSetStateInput,
+  success: Schema.Void,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
 });
 const WsBranchIssuesReadRpc = Rpc.make(WS_METHODS.branchIssuesRead, {
   payload: BranchIssueDetailInput,
@@ -1363,6 +1435,13 @@ const WsSourceControlAppAccessRpc = Rpc.make(WS_METHODS.sourceControlAppAccess, 
 
 // False when the server's forge account has not starred the repository or the forge cannot say.
 const WsSourceControlStarredRpc = Rpc.make(WS_METHODS.sourceControlStarred, {
+  payload: SourceControlStarredInput,
+  success: Schema.Boolean,
+  error: EnvironmentAuthorizationError,
+});
+
+// Stars the repository as the server's forge account. False when the forge refused or cannot star.
+const WsSourceControlStarRpc = Rpc.make(WS_METHODS.sourceControlStar, {
   payload: SourceControlStarredInput,
   success: Schema.Boolean,
   error: EnvironmentAuthorizationError,
@@ -1998,6 +2077,15 @@ const WsOrchestrationV2GetWorkflowScriptRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationV2GetNativeChildWorkRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.getNativeChildWork,
+  {
+    payload: OrchestrationV2RpcSchemas.getNativeChildWork.input,
+    success: OrchestrationV2RpcSchemas.getNativeChildWork.output,
+    error: Schema.Union([OrchestrationV2GetNativeChildWorkError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2GetTurnItemRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.getTurnItem, {
   payload: OrchestrationV2RpcSchemas.getTurnItem.input,
   success: OrchestrationV2RpcSchemas.getTurnItem.output,
@@ -2257,10 +2345,18 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsSubscribeRefreshesRpc,
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
+  WsPullRequestsSendReviewLinkRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,
   WsBranchIssuesListRpc,
+  WsIssuesListRpc,
+  WsIssueBranchesRpc,
+  WsIssuesReadRpc,
+  WsIssuesPeopleRpc,
+  WsIssuesMetadataRpc,
+  WsIssuesCreateRpc,
+  WsIssuesSetStateRpc,
   WsBranchIssuesReadRpc,
   WsBranchIssuesUpdateRpc,
   WsSourceControlCloneRepositoryRpc,
@@ -2270,6 +2366,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlSignInCancelRpc,
   WsSourceControlAppAccessRpc,
   WsSourceControlStarredRpc,
+  WsSourceControlStarRpc,
   WsProjectCloneStartRpc,
   WsProjectsExportConfigurationRpc,
   WsProjectsImportConfigurationRpc,
@@ -2363,6 +2460,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
+  WsOrchestrationV2GetNativeChildWorkRpc,
   WsOrchestrationV2StopWorkflowRpc,
   WsOrchestrationV2ForceStopThreadRpc,
   WsOrchestrationV2GetTurnItemRpc,

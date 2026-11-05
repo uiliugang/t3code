@@ -1,12 +1,13 @@
 import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import type * as PlatformError from "effect/PlatformError";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -37,7 +38,7 @@ export interface SshCommandResult {
 export interface RunSshCommandOptions extends SshAuthOptions {
   readonly preHostArgs?: ReadonlyArray<string>;
   readonly remoteCommandArgs?: ReadonlyArray<string>;
-  readonly stdin?: string;
+  readonly stdin?: string | Stream.Stream<Uint8Array, PlatformError.PlatformError>;
   readonly timeoutMs?: number;
   /** Keep the end of long failed-command stdout, where the final cause usually is. */
   readonly keepErrorOutputTail?: boolean;
@@ -76,11 +77,12 @@ export function targetConnectionKey(target: DesktopSshEnvironmentTarget): string
 
 export const remoteStateKey = Effect.fn("ssh/command.remoteStateKey")(function* (
   target: DesktopSshEnvironmentTarget,
-): Effect.fn.Return<string, never, Crypto.Crypto> {
-  const crypto = yield* Crypto.Crypto;
-  const digest = yield* crypto
-    .digest("SHA-256", encoder.encode(targetConnectionKey(target)))
-    .pipe(Effect.orDie);
+): Effect.fn.Return<string, never, Digest.Digest> {
+  const digestService = yield* Digest.Digest;
+  const digest = yield* digestService.digest(
+    Digest.sha256,
+    encoder.encode(targetConnectionKey(target)),
+  );
   return Hex.encode(digest).slice(0, 16);
 });
 
@@ -169,8 +171,12 @@ export function sshTargetLogFields(target: DesktopSshEnvironmentTarget) {
   };
 }
 
-function stdinStream(input: string | undefined) {
-  return input === undefined ? Stream.empty : Stream.make(encoder.encode(input));
+function stdinStream(input: RunSshCommandOptions["stdin"]) {
+  return input === undefined
+    ? Stream.empty
+    : typeof input === "string"
+      ? Stream.make(encoder.encode(input))
+      : input;
 }
 
 const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(function* (

@@ -29,7 +29,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -111,7 +111,7 @@ export const layer = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     const serverConfig = yield* ServerConfig.ServerConfig;
     const settingsService = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
     const home = yield* HostProcess.HomeDirectory;
@@ -148,12 +148,6 @@ export const layer = Layer.effect(
                   });
               } else {
                 yield* tracker.stageStatus(input.threadId, "fetch", "running");
-                if (input.strategy.type === "existing_worktree")
-                  return yield* new WorkspacePreparationError({
-                    threadId: input.threadId,
-                    detail:
-                      "Select the workspace roots or create a complete worktree group. A single existing worktree cannot represent this workspace.",
-                  });
                 if (
                   input.config.roots.some(
                     (root) => root.defaultSelected && root.accessIntent === "read_only",
@@ -164,7 +158,7 @@ export const layer = Layer.effect(
                     detail:
                       "Read-only repository roots are not supported by the current providers.",
                   });
-                const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+                const token = yield* random.uuidV4().pipe(Effect.orDie);
                 const settings = Option.isSome(settingsService)
                   ? yield* settingsService.value.getSettings
                   : null;
@@ -267,7 +261,60 @@ export const layer = Layer.effect(
                   baseRefs.set(root.id, recordedBaseRef);
                   launchRoots.push({ ...root, defaultBaseRef: baseRef });
                 }
-                const resolved = yield* resolver.resolve({ ...config, roots: launchRoots });
+                let resolved = yield* resolver.resolve({ ...config, roots: launchRoots });
+                let existingIsolated = false;
+                if (input.strategy.type === "existing_worktree") {
+                  if (resolved.resources.length !== 1)
+                    return yield* new WorkspacePreparationError({
+                      threadId: input.threadId,
+                      detail:
+                        "Select the workspace roots or create a complete worktree group. A single existing worktree cannot represent this workspace.",
+                    });
+                  const checkout = yield* resolver.inspect(input.strategy.worktreePath);
+                  const source = resolved.resources[0]!.identity;
+                  if (
+                    checkout.commonDir !== source.commonDir ||
+                    checkout.commonDirIdentity !== source.commonDirIdentity
+                  )
+                    return yield* new WorkspacePreparationError({
+                      threadId: input.threadId,
+                      detail: "The selected checkout belongs to another repository.",
+                    });
+                  if (
+                    input.strategy.branch !== undefined &&
+                    (yield* git.resolveBranchName(checkout.checkoutRoot, "HEAD")) !==
+                      input.strategy.branch
+                  )
+                    return yield* new WorkspacePreparationError({
+                      threadId: input.threadId,
+                      detail: "The selected checkout branch changed. Prepare the checkout again.",
+                    });
+                  const selected = yield* resolver.resolve({
+                    primaryRootId: config.primaryRootId,
+                    roots: config.roots.map((root) => {
+                      const binding = resolved.bindings.find((item) => item.rootId === root.id);
+                      return binding
+                        ? {
+                            ...root,
+                            sourcePath: path.join(checkout.checkoutRoot, binding.relativeSubpath),
+                            defaultBaseRef: "HEAD",
+                          }
+                        : root;
+                    }),
+                  });
+                  existingIsolated = checkout.checkoutRoot !== source.checkoutRoot;
+                  const sourceBindings = resolved.bindings;
+                  resolved = {
+                    ...selected,
+                    bindings: selected.bindings.map((binding) => ({
+                      ...binding,
+                      sourcePathAtBind: sourceBindings.find(
+                        (item) => item.rootId === binding.rootId,
+                      )!.sourcePathAtBind,
+                    })),
+                  };
+                  for (const binding of resolved.bindings) baseRefs.set(binding.rootId, "HEAD");
+                }
                 const isolated = input.strategy.type === "worktree";
                 const generatedBranchName =
                   isolated &&
@@ -295,7 +342,10 @@ export const layer = Layer.effect(
                     submodules,
                     submodulesReady: !isolated,
                     ...(isolated ? {} : { resource: source }),
-                    setup: "pending" as const,
+                    setup:
+                      input.strategy.type === "existing_worktree"
+                        ? ("done" as const)
+                        : ("pending" as const),
                     ready: false,
                   });
                 }
@@ -304,7 +354,7 @@ export const layer = Layer.effect(
                   threadId: input.threadId,
                   projectId: input.projectId,
                   config,
-                  mode: isolated ? "isolated" : "existing",
+                  mode: isolated || existingIsolated ? "isolated" : "existing",
                   ...(generatedBranchName === undefined ? {} : { generatedBranchName }),
                   bindings: resolved.bindings.map((binding) => ({
                     ...binding,

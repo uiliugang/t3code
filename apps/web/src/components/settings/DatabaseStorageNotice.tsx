@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -16,6 +17,7 @@ export function DatabaseStorageNotice({
 }: {
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>;
 }) {
+  const t = useUiTranslation();
   const recommendations = useAtomValue(
     serverEnvironment.databaseCompactionRecommendations(
       JSON.stringify(environments.map((environment) => environment.environmentId)),
@@ -34,8 +36,10 @@ export function DatabaseStorageNotice({
   return (
     <SettingsSection id="storage-database" title="Database">
       <SettingsRow
-        title="Reclaim freed database space"
-        description="Old history is cleaned up automatically, but these databases still hold the freed space. Run the command on each machine to return it to disk; it pauses and restarts the background service. Quit the desktop app first if it hosts the environment."
+        title={t("Reclaim freed database space")}
+        description={t(
+          "Old history is cleaned up automatically, but these databases still hold the freed space. Run the command on each machine to return it to disk; it pauses and restarts the background service. Quit the desktop app first if it hosts the environment.",
+        )}
       />
       {visible.map(({ environmentId, status }) => (
         <SettingsRow
@@ -59,7 +63,7 @@ export function DatabaseStorageNotice({
                 size="xs"
                 onClick={() => setDismissed((current) => [...current, environmentId])}
               >
-                Dismiss
+                {t("Dismiss")}
               </Button>
             </div>
           }

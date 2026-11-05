@@ -6,17 +6,16 @@ import {
   type ServerSettings,
 } from "@t3tools/contracts";
 import type * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import { knownSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
 import * as Effect from "effect/Effect";
 
 import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
-
-import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 
 export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   string,
   ReadonlyArray<string>
 > = new Map(
-  sourceControlDefinitions.definitions.flatMap((definition) => {
+  knownSourceControlDefinitions.definitions.flatMap((definition) => {
     const fields = definition.settings ? secretSettingsFields(definition.settings) : [];
     return fields.length > 0 ? [[definition.kind, fields] as const] : [];
   }),
@@ -53,13 +52,22 @@ export function writeSecretFieldValues(
 ): unknown {
   if (typeof original === "string") return values[0]?.[1] ?? "";
   if (isSecretReference(original)) return original;
-  return Object.fromEntries(values.map(([serverHost, value]) => [serverHost ?? "", value]));
+  const sources =
+    original !== null && typeof original === "object" && !Array.isArray(original)
+      ? Object.entries(original).flatMap(([serverHost, entry]) =>
+          isSecretReference(entry) ? [[serverHost.trim().toLowerCase(), entry] as const] : [],
+        )
+      : [];
+  return Object.fromEntries([
+    ...sources,
+    ...values.map(([serverHost, value]) => [serverHost ?? "", value] as const),
+  ]);
 }
 
 type SourceControlHostsSettings = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 
 const hostSettingsSchemas = new Map(
-  sourceControlDefinitions.definitions.flatMap((definition) =>
+  knownSourceControlDefinitions.definitions.flatMap((definition) =>
     definition.settings ? [[definition.kind as string, definition.settings] as const] : [],
   ),
 );
@@ -88,13 +96,32 @@ export const resolveSourceControlHostSecrets = Effect.fn("SourceControlHost.reso
   },
 );
 
+const collectUsageLimitSecretReferences = (
+  sources: ServerSettings["usageLimitSources"],
+): ReadonlyArray<SecretReference> =>
+  Object.values(sources).flatMap(({ managementKey }) =>
+    isSecretReference(managementKey) ? [managementKey] : [],
+  );
+
+const collectEasSecretReferences = (
+  hosts: ServerSettings["easDeviceHosts"],
+): ReadonlyArray<SecretReference> =>
+  hosts.flatMap(({ accessToken }) => (isSecretReference(accessToken) ? [accessToken] : []));
+
 /** Settings that cannot be read clear every cached secret, so a refresh never keeps a stale one. */
 export const invalidateSettingsSecrets = Effect.fn("SettingsSecrets.invalidate")(function* <E>(
   resolver: SecretResolver.SecretResolver["Service"],
-  settings: Effect.Effect<Pick<ServerSettings, "sourceControlHosts">, E>,
+  settings: Effect.Effect<
+    Pick<ServerSettings, "sourceControlHosts" | "usageLimitSources" | "easDeviceHosts">,
+    E
+  >,
 ) {
   const references = yield* settings.pipe(
-    Effect.map((current) => collectSourceControlHostSecretReferences(current.sourceControlHosts)),
+    Effect.map((current) => [
+      ...collectSourceControlHostSecretReferences(current.sourceControlHosts),
+      ...collectUsageLimitSecretReferences(current.usageLimitSources),
+      ...collectEasSecretReferences(current.easDeviceHosts),
+    ]),
     Effect.orElseSucceed(() => undefined),
   );
   yield* resolver.invalidate(references);

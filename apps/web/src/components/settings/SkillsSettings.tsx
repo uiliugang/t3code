@@ -19,17 +19,25 @@ import {
   skillJobNames,
   skillFilters,
   skillRows,
+  skillGroups,
+  skillSelection,
+  skillTargetGroups,
   skillStatus,
   skillFailure,
   skillNextCheck,
   skillSourceName,
+  skillSourceFailure,
   type SkillFilter,
 } from "@t3tools/shared/skillsUi";
 import {
   ArrowDownToLineIcon,
+  BanIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  CircleAlertIcon,
   FolderIcon,
+  ListFilterIcon,
+  MoreHorizontalIcon,
   GlobeIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -51,6 +59,7 @@ import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Checkbox } from "../ui/checkbox";
 import { Badge } from "../ui/badge";
+import { Alert, AlertDescription } from "../ui/alert";
 import { Switch } from "../ui/switch";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
@@ -62,6 +71,8 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle } from "../ui/popover";
+import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
 
 type Mutate = (input: SkillMutation) => Promise<boolean>;
 type Inspect = (input: SkillInspect) => Promise<SkillInspection | null>;
@@ -169,33 +180,49 @@ function Targets({
 }) {
   const t = useUiTranslation();
   const [paths, setPaths] = useState(false);
+  const groups = skillTargetGroups(targets).filter((group) => group.enabled);
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{t("{count} locations selected", { count: selected.length })}</span>
+        <span>
+          {t("{count} locations selected", {
+            count: groups.filter((group) =>
+              group.targets.some((target) => selected.includes(target.id)),
+            ).length,
+          })}
+        </span>
         <Button variant="ghost" size="sm" onClick={() => setPaths(!paths)}>
           {t(paths ? "Hide paths" : "Show paths")}
         </Button>
       </div>
       <div className="divide-y divide-border">
-        {targets.map((target) => (
-          <label key={target.id} className="flex cursor-pointer items-start gap-3 py-2.5 text-sm">
+        {groups.map((group) => (
+          <label
+            key={group.directory}
+            className="flex cursor-pointer items-start gap-3 py-2.5 text-sm"
+          >
             <Checkbox
-              aria-label={target.id === "directory:shared" ? t("Shared skills") : target.label}
-              checked={selected.includes(target.id)}
+              aria-label={group.targets.map((target) => target.label).join(", ")}
+              checked={group.targets.some((target) => selected.includes(target.id))}
               onCheckedChange={(checked) =>
                 onChange(
-                  checked ? [...selected, target.id] : selected.filter((id) => id !== target.id),
+                  checked
+                    ? [...new Set([...selected, ...group.targets.map((target) => target.id)])]
+                    : selected.filter((id) => !group.targets.some((target) => target.id === id)),
                 )
               }
             />
             <span className="min-w-0">
               <span className="block">
-                {target.id === "directory:shared" ? t("Shared skills") : target.label}
+                {group.targets
+                  .map((target) =>
+                    target.id === "directory:shared" ? t("Shared skills") : target.label,
+                  )
+                  .join(" · ")}
               </span>
               {paths && (
                 <span className="mt-1 block font-mono text-xs text-muted-foreground wrap-anywhere">
-                  {target.directory}
+                  {group.directory}
                 </span>
               )}
             </span>
@@ -333,17 +360,22 @@ function InstallDialog({
 }
 function BindingDialog({
   skill,
+  otherSkills = [],
   data,
   mutate,
   onClose,
 }: {
   skill: ManagedSkill;
+  otherSkills?: ReadonlyArray<ManagedSkill>;
   data: SkillSnapshot;
   mutate: Mutate;
   onClose: () => void;
 }) {
   const t = useUiTranslation();
-  const [selected, setSelected] = useState(skill.bindings.map((target) => target.id));
+  const skills = [skill, ...otherSkills];
+  const [selected, setSelected] = useState([
+    ...new Set(skills.flatMap((entry) => entry.bindings.map((target) => target.id))),
+  ]);
   const [saving, setSaving] = useState(false);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -352,6 +384,11 @@ function BindingDialog({
           <DialogTitle>{t("Usage locations")}</DialogTitle>
         </DialogHeader>
         <DialogPanel>
+          {otherSkills.length > 0 && (
+            <p className="mb-3 text-xs text-muted-foreground">
+              {t("Changes apply to {count} skills", { count: skills.length })}
+            </p>
+          )}
           <Targets targets={data.targets} selected={selected} onChange={setSelected} />
         </DialogPanel>
         <DialogFooter>
@@ -363,10 +400,13 @@ function BindingDialog({
             onClick={async () => {
               setSaving(true);
               const ok = await mutate({
-                type: "configure",
-                id: skill.id,
-                policy: skill.policy,
-                targetIds: selected,
+                type: "batch",
+                operations: skills.map((entry) => ({
+                  type: "configure",
+                  id: entry.id,
+                  policy: entry.policy,
+                  targetIds: selected,
+                })),
               });
               setSaving(false);
               if (ok) onClose();
@@ -677,6 +717,139 @@ function DifferenceDialog({
     </Dialog>
   );
 }
+function SkillChoices({
+  skill,
+  mutate,
+  disabled,
+}: {
+  skill: ManagedSkill;
+  mutate: Mutate;
+  disabled: boolean;
+}) {
+  const t = useUiTranslation();
+  const [selected, setSelected] = useState<string[]>([]);
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-2 text-sm font-medium">{t("Choose skills to install")}</legend>
+      {skill.choices?.map((choice) => (
+        <label key={choice} className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={selected.includes(choice)}
+            disabled={disabled}
+            onCheckedChange={(checked) =>
+              setSelected(
+                checked ? [...selected, choice] : selected.filter((value) => value !== choice),
+              )
+            }
+          />
+          {choice}
+        </label>
+      ))}
+      <Button
+        size="sm"
+        disabled={disabled || !selected.length || selected.length > 200}
+        onClick={() => void mutate(skillSelection(skill, selected))}
+      >
+        {t("Install selected ({count})", { count: selected.length })}
+      </Button>
+    </fieldset>
+  );
+}
+
+function SkillPackageGroup({
+  group,
+  search,
+  children,
+  data,
+  mutate,
+  canManage,
+}: {
+  group: ReturnType<typeof skillGroups>[number];
+  search: string;
+  children: ReactNode;
+  data: SkillSnapshot;
+  mutate: Mutate;
+  canManage: boolean;
+}) {
+  const t = useUiTranslation();
+  const [bindings, setBindings] = useState(false);
+  const managed = group.rows.flatMap((row) => (row.kind === "managed" ? [row.skill] : []));
+  if (group.rows.length === 1) return children;
+  return (
+    <>
+      <details className="border-b border-border" open={search ? true : undefined}>
+        <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 py-4">
+          <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold">
+            <ChevronDownIcon className="size-4 shrink-0" />
+            <span className="wrap-anywhere">{group.name}</span>
+            <Badge variant="secondary">
+              {t("{count} subskills", { count: group.rows.length })}
+            </Badge>
+            {group.rows.every((row) => row.kind === "discovered" && row.skill.external) && (
+              <Badge variant="secondary">{t("Maintained externally")}</Badge>
+            )}
+            {managed.some((skill) => skill.failureReason || skill.status === "failed") && (
+              <Badge variant="warning">{t("Needs attention")}</Badge>
+            )}
+            {managed.some((skill) => skill.availableDigest) && (
+              <Badge variant="info">{t("Update available")}</Badge>
+            )}
+            {managed.some((skill) => skill.status === "pending") && (
+              <Badge variant="secondary">{t("Waiting for idle agents")}</Badge>
+            )}
+          </span>
+          {managed.length > 0 && (
+            <span onClick={(event) => event.stopPropagation()}>
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t("Package actions · {name}", { name: group.name })}
+                    />
+                  }
+                >
+                  <MoreHorizontalIcon />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  <MenuItem
+                    disabled={!canManage || managed.length > 200}
+                    onClick={() =>
+                      void mutate({
+                        type: "batch",
+                        operations: managed.map((skill) => ({ type: "check", id: skill.id })),
+                      })
+                    }
+                  >
+                    {t("Check updates for all subskills")}
+                  </MenuItem>
+                  <MenuItem
+                    disabled={!canManage || managed.length > 200}
+                    onClick={() => setBindings(true)}
+                  >
+                    {t("Configure locations for all subskills")}
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
+            </span>
+          )}
+        </summary>
+        <div className="pl-4 [&>article:last-child]:border-b-0">{children}</div>
+      </details>
+      {bindings && managed[0] && (
+        <BindingDialog
+          skill={managed[0]}
+          otherSkills={managed.slice(1)}
+          data={data}
+          mutate={mutate}
+          onClose={() => setBindings(false)}
+        />
+      )}
+    </>
+  );
+}
+
 function SkillRow({
   skill,
   data,
@@ -696,6 +869,7 @@ function SkillRow({
 }) {
   const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [detailTab, setDetailTab] = useState<"overview" | "locations" | "history">("overview");
   const [dialog, setDialog] = useState<"bindings" | "origin" | null>(null);
   const [diff, setDiff] = useState<SkillInspection | null>(null);
   const [inspecting, setInspecting] = useState(false);
@@ -731,6 +905,86 @@ function SkillRow({
               <Badge variant={failure ? "warning" : skill.availableDigest ? "info" : "secondary"}>
                 {t(skillStatus(skill))}
               </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-expanded={expanded}
+                aria-controls={detailsId}
+                onClick={() => setExpanded(!expanded)}
+              >
+                {t(expanded ? "Hide details" : failure ? "Review issue" : "Details")}
+                {expanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+              </Button>
+              <Menu>
+                <MenuTrigger
+                  render={<Button size="icon-sm" variant="ghost" aria-label={t("More actions")} />}
+                >
+                  <MoreHorizontalIcon />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  <MenuItem disabled={disabled} onClick={() => setDialog("origin")}>
+                    {t("Connect update source")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setExpanded(true);
+                      setDetailTab("history");
+                    }}
+                  >
+                    {t("Version history")}
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem
+                    disabled={disabled}
+                    onClick={async () => {
+                      if (
+                        await requestConfirmDialog(
+                          t("Stop managing {name} and keep its files at the linked locations?", {
+                            name,
+                          }),
+                        )
+                      )
+                        await mutate({ type: "unmanage", id: skill.id, restore: false });
+                    }}
+                  >
+                    {t("Stop managing, keep files")}
+                  </MenuItem>
+                  {Boolean(skill.backups?.length) && (
+                    <MenuItem
+                      disabled={disabled}
+                      onClick={async () => {
+                        if (
+                          await requestConfirmDialog(
+                            t("Restore the original locations of {name} and stop managing it?", {
+                              name,
+                            }),
+                          )
+                        )
+                          await mutate({ type: "unmanage", id: skill.id, restore: true });
+                      }}
+                    >
+                      {t("Restore original locations")}
+                    </MenuItem>
+                  )}
+                  <MenuItem
+                    variant="destructive"
+                    disabled={disabled}
+                    onClick={async () => {
+                      if (
+                        await requestConfirmDialog(
+                          t(
+                            "Uninstall {name} and its managed links? Original adoption backups will be restored.",
+                            { name },
+                          ),
+                        )
+                      )
+                        await mutate({ type: "remove", id: skill.id });
+                    }}
+                  >
+                    {t("Uninstall")}
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
             </div>
           </div>
           {skill.description && (
@@ -756,21 +1010,6 @@ function SkillRow({
               </span>
             )}
           </div>
-          {skill.bindings.length > 0 && (
-            <div
-              className="mt-2 space-y-1 text-xs text-muted-foreground"
-              aria-label={t("Usage locations")}
-            >
-              {skill.bindings.map((target) => (
-                <p key={target.id} className="wrap-anywhere">
-                  {target.id === "directory:shared" ? t("Shared skills") : target.label} ·{" "}
-                  <span className="font-mono">
-                    {target.directory}/{target.entryName ?? skill.name}
-                  </span>
-                </p>
-              ))}
-            </div>
-          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {(skill.availableDigest || skill.failureReason === "local-changes") && (
               <Button
@@ -792,46 +1031,159 @@ function SkillRow({
                 {t("Cancel pending update")}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-expanded={expanded}
-              aria-controls={detailsId}
-              onClick={() => setExpanded(!expanded)}
-            >
-              {t(expanded ? "Hide details" : failure ? "Review issue" : "Details")}
-              {expanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
-            </Button>
           </div>
           {failure && (
-            <p role="alert" className="mt-2 min-w-0 text-xs leading-relaxed text-destructive">
-              {t(failure)}
+            <div role="alert" className="mt-2 min-w-0 text-xs leading-relaxed text-destructive">
+              <p>{t(failure)}</p>
               {skill.failureDiagnostics && (
-                <span className="mt-1 block max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
-                  {skill.failureDiagnostics}
-                </span>
+                <details>
+                  <summary className="cursor-pointer font-medium">{t("Error details")}</summary>
+                  <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-muted-foreground">
+                    {skill.failureDiagnostics}
+                  </pre>
+                </details>
               )}
-            </p>
+            </div>
           )}
         </div>
       </div>
       {expanded && (
         <div id={detailsId} className="mt-4 space-y-5 border-t border-border pt-4 text-sm">
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {t(
-              "Files are managed on this environment. Start a new session or reload the provider to use changed files.",
+          <div
+            className="flex flex-wrap gap-4 border-b border-border"
+            role="tablist"
+            aria-label={t("Details")}
+          >
+            {(["overview", "locations", "history"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                id={`${detailsId}-${item}`}
+                aria-selected={detailTab === item}
+                tabIndex={detailTab === item ? 0 : -1}
+                aria-controls={`${detailsId}-panel`}
+                onClick={() => setDetailTab(item)}
+                onKeyDown={(event) => {
+                  const offset =
+                    event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                  if (!offset) return;
+                  event.preventDefault();
+                  const tabs = ["overview", "locations", "history"] as const;
+                  const next = tabs[(tabs.indexOf(item) + offset + tabs.length) % tabs.length]!;
+                  setDetailTab(next);
+                  document.getElementById(`${detailsId}-${next}`)?.focus();
+                }}
+                className={`cursor-pointer border-b-2 pb-2 text-xs ${detailTab === item ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
+              >
+                {t(
+                  item === "overview"
+                    ? "Overview"
+                    : item === "locations"
+                      ? "Usage locations"
+                      : "Version history",
+                )}
+              </button>
+            ))}
+          </div>
+          <div
+            id={`${detailsId}-panel`}
+            role="tabpanel"
+            aria-labelledby={`${detailsId}-${detailTab}`}
+          >
+            {detailTab === "overview" && (
+              <div className="space-y-3">
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t(
+                    "Files are managed on this environment. Start a new session or reload the provider to use changed files.",
+                  )}
+                </p>
+                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
+                  <dt>{t("Update source")}</dt>
+                  <dd className="wrap-anywhere">{skill.locator}</dd>
+                  <dt>{t("Last check")}</dt>
+                  <dd>
+                    <SkillTime value={skill.checkedAt} />
+                  </dd>
+                  <dt>{t("Next check")}</dt>
+                  <dd>{nextCheck ? <SkillTime value={nextCheck} /> : t("Not scheduled")}</dd>
+                </dl>
+                {skill.policyOrigin === "legacy" && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("Existing policy kept. Choose a policy to confirm your preference.")}
+                  </p>
+                )}
+                {skill.choices?.length ? (
+                  <SkillChoices skill={skill} mutate={mutate} disabled={disabled} />
+                ) : null}
+              </div>
             )}
-          </p>
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
-            <dt>{t("Update source")}</dt>
-            <dd className="wrap-anywhere">{skill.locator}</dd>
-            <dt>{t("Last check")}</dt>
-            <dd>
-              <SkillTime value={skill.checkedAt} />
-            </dd>
-            <dt>{t("Next check")}</dt>
-            <dd>{nextCheck ? <SkillTime value={nextCheck} /> : t("Not scheduled")}</dd>
-          </dl>
+            {detailTab === "locations" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-medium">{t("Usage locations")}</h4>
+                </div>
+                {!skill.bindings.length && (
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Saved to the library only. Assign a location when you want an agent to use it.",
+                    )}
+                  </p>
+                )}
+                {skill.bindings.map((target) => (
+                  <div key={target.id} className="text-xs">
+                    <div className="flex justify-between gap-2">
+                      <span>{target.label}</span>
+                      <span>
+                        {t(
+                          target.status === "linked"
+                            ? "Linked"
+                            : target.status === "conflict"
+                              ? "Conflict"
+                              : "Missing",
+                        )}
+                      </span>
+                    </div>
+                    <p className="mt-1 font-mono text-muted-foreground wrap-anywhere">
+                      {target.directory}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {detailTab === "history" && (
+              <div className="space-y-2">
+                <h4 className="font-medium">{t("Version history")}</h4>
+                {skill.versions.toReversed().map((version) => (
+                  <div
+                    key={version.digest}
+                    className="flex flex-wrap items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="font-mono">
+                      {version.label ?? version.digest.slice(0, 12)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      <SkillTime value={version.createdAt} />
+                    </span>
+                    {version.digest === skill.activeDigest ? (
+                      <Badge variant="secondary">{t("Current")}</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={disabled}
+                        onClick={() =>
+                          void mutate({ type: "rollback", id: skill.id, digest: version.digest })
+                        }
+                      >
+                        {t("Restore and pin")}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="min-w-44">
               <PolicySelect
@@ -852,148 +1204,9 @@ function SkillRow({
               size="sm"
               variant="outline"
               disabled={disabled}
-              onClick={() => setDialog("origin")}
+              onClick={() => setDialog("bindings")}
             >
-              {t("Connect update source")}
-            </Button>
-          </div>
-          {skill.policyOrigin === "legacy" && (
-            <p className="text-xs text-muted-foreground">
-              {t("Existing policy kept. Choose a policy to confirm your preference.")}
-            </p>
-          )}
-          {skill.choices?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {skill.choices.map((choice) => (
-                <Button
-                  key={choice}
-                  size="sm"
-                  variant="outline"
-                  disabled={disabled}
-                  onClick={() => void mutate({ type: "select", id: skill.id, skill: choice })}
-                >
-                  {choice}
-                </Button>
-              ))}
-            </div>
-          ) : null}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <h4 className="font-medium">{t("Usage locations")}</h4>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={disabled}
-                onClick={() => setDialog("bindings")}
-              >
-                {t("Configure locations")}
-              </Button>
-            </div>
-            {!skill.bindings.length && (
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Saved to the library only. Assign a location when you want an agent to use it.",
-                )}
-              </p>
-            )}
-            {skill.bindings.map((target) => (
-              <div key={target.id} className="text-xs">
-                <div className="flex justify-between gap-2">
-                  <span>{target.label}</span>
-                  <span>
-                    {t(
-                      target.status === "linked"
-                        ? "Linked"
-                        : target.status === "conflict"
-                          ? "Conflict"
-                          : "Missing",
-                    )}
-                  </span>
-                </div>
-                <p className="mt-1 font-mono text-muted-foreground wrap-anywhere">
-                  {target.directory}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-2">
-            <h4 className="font-medium">{t("Version history")}</h4>
-            {skill.versions.toReversed().map((version) => (
-              <div
-                key={version.digest}
-                className="flex flex-wrap items-center justify-between gap-2 text-xs"
-              >
-                <span className="font-mono">{version.label ?? version.digest.slice(0, 12)}</span>
-                <span className="text-muted-foreground">
-                  <SkillTime value={version.createdAt} />
-                </span>
-                {version.digest === skill.activeDigest ? (
-                  <Badge variant="secondary">{t("Current")}</Badge>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={disabled}
-                    onClick={() =>
-                      void mutate({ type: "rollback", id: skill.id, digest: version.digest })
-                    }
-                  >
-                    {t("Restore and pin")}
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={disabled}
-              onClick={async () => {
-                if (
-                  await requestConfirmDialog(
-                    t("Stop managing {name} and keep its files at the linked locations?", { name }),
-                  )
-                )
-                  await mutate({ type: "unmanage", id: skill.id, restore: false });
-              }}
-            >
-              {t("Stop managing, keep files")}
-            </Button>
-            {Boolean(skill.backups?.length) && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={disabled}
-                onClick={async () => {
-                  if (
-                    await requestConfirmDialog(
-                      t("Restore the original locations of {name} and stop managing it?", { name }),
-                    )
-                  )
-                    await mutate({ type: "unmanage", id: skill.id, restore: true });
-                }}
-              >
-                {t("Restore original locations")}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost-destructive"
-              disabled={disabled}
-              onClick={async () => {
-                if (
-                  await requestConfirmDialog(
-                    t(
-                      "Uninstall {name} and its managed links? Original adoption backups will be restored.",
-                      { name },
-                    ),
-                  )
-                )
-                  await mutate({ type: "remove", id: skill.id });
-              }}
-            >
-              {t("Uninstall")}
+              {t("Configure locations")}
             </Button>
           </div>
         </div>
@@ -1026,6 +1239,11 @@ function SourceEditor({
 }) {
   const t = useUiTranslation();
   const [draft, setDraft] = useState(source);
+  const failure = source.health?.reason ? skillFailureMessage(source.health.reason) : null;
+  const diagnostics =
+    failure && source.health?.detail && source.health.detail !== failure
+      ? source.health.detail
+      : null;
   return (
     <form
       className="space-y-4 border-b border-border px-3 py-5 sm:px-4"
@@ -1034,8 +1252,8 @@ function SourceEditor({
         void mutate({ type: "source.save", source: draft });
       }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 basis-full items-center gap-3 sm:basis-auto sm:flex-1">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
             {source.kind === "local" ? (
               <FolderIcon className="size-4" aria-hidden="true" />
@@ -1054,7 +1272,16 @@ function SourceEditor({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={disabled}
+            onClick={() => void mutate({ type: "source.check", sourceId: source.id })}
+          >
+            {t("Check availability")}
+          </Button>
           <span className="text-xs text-muted-foreground">
             {draft.enabled ? t("Enabled") : t("Disabled")}
           </span>
@@ -1069,32 +1296,28 @@ function SourceEditor({
           />
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span className="min-w-0">
-          {source.health
-            ? t(
-                source.health.reason
-                  ? skillFailureMessage(source.health.reason)
-                  : source.health.detail,
-              )
-            : t("Not checked")}
-          {source.health?.reason &&
-            source.health.detail !== skillFailureMessage(source.health.reason) && (
-              <span className="mt-1 block max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
-                {source.health.detail}
-              </span>
+      {failure ? (
+        <Alert variant="error" controlAlignment="first-line">
+          <CircleAlertIcon aria-hidden="true" />
+          <AlertDescription>
+            <p>{t(failure)}</p>
+            {diagnostics && (
+              <details className="min-w-0">
+                <summary className="cursor-pointer text-xs font-medium">
+                  {t("Error details")}
+                </summary>
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground">
+                  {diagnostics}
+                </pre>
+              </details>
             )}
-        </span>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          disabled={disabled}
-          onClick={() => void mutate({ type: "source.check", sourceId: source.id })}
-        >
-          {t("Check availability")}
-        </Button>
-      </div>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {source.health ? t(source.health.detail) : t("Not checked")}
+        </p>
+      )}
       <details>
         <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
           {t("Configuration")}
@@ -1322,7 +1545,7 @@ function OperationHistory({
     cancelled: "Cancelled",
   };
   return (
-    <div className="border-t border-border py-4">
+    <div className="py-4">
       {pending.length > 0 && (
         <p role="status" className="mb-3 text-sm">
           {t("{running} running · {queued} queued", {
@@ -1422,6 +1645,7 @@ function EnvironmentSkills({
   const [tab, setTab] = useState<"skills" | "sources" | "targets">("skills");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
+  const [showExternal, setShowExternal] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [install, setInstall] = useState(false);
   const [previews, setPreviews] = useState<AdoptionPreview[] | null>(null);
@@ -1460,12 +1684,15 @@ function EnvironmentSkills({
         )}
       </p>
     );
-  const { rows, counts } = skillRows(data, search, filter);
+  const { rows, counts, hiddenExternal } = skillRows(data, search, filter, showExternal);
+  const failedSource = skillSourceFailure(data);
+  const selectableRows = rows.filter((row) => row.kind === "managed" || !row.skill.external);
   const selectedManaged = data.skills.filter((skill) => selected.includes(skill.id));
   const selectedDiscovered = data.discovered.filter(
     (skill) => selected.includes(skill.identity ?? skill.path) && !skill.external,
   );
-  const allVisible = rows.length > 0 && rows.every((row) => selected.includes(row.key));
+  const visibleSelected = selectableRows.filter((row) => selected.includes(row.key)).length;
+  const allVisible = selectableRows.length > 0 && visibleSelected === selectableRows.length;
   const select = (key: string, checked: boolean) =>
     setSelected(checked ? [...new Set([...selected, key])] : selected.filter((id) => id !== key));
   const batch = async (operations: SkillAction[]) => {
@@ -1474,11 +1701,20 @@ function EnvironmentSkills({
   return (
     <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-muted-foreground">
-          {t("{managed} managed · {discovered} discovered", {
-            managed: data.skills.length,
-            discovered: data.discovered.length,
-          })}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          <span>
+            {tab === "skills"
+              ? t("Showing {count} skills", { count: rows.length })
+              : t("{managed} managed · {discovered} discovered", {
+                  managed: data.skills.length,
+                  discovered: data.discovered.length,
+                })}
+          </span>
+          {tab === "skills" && hiddenExternal > 0 && (
+            <span className="text-xs">
+              · {t("{count} external skills hidden", { count: hiddenExternal })}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -1496,7 +1732,6 @@ function EnvironmentSkills({
           </Button>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">{t("Checks for updates once a day")}</p>
       {!connected && (
         <p role="status" className="text-sm text-muted-foreground">
           {t("Environment disconnected. Showing cached skills from {time}.", {
@@ -1509,59 +1744,100 @@ function EnvironmentSkills({
           {t("Read-only access. Full access is required to manage skills.")}
         </p>
       )}
-      <div
-        role="tablist"
-        aria-label={t("Skill management")}
-        className="flex gap-5 border-b border-border"
-      >
-        {(["skills", "sources", "targets"] as const).map((item, index, tabs) => (
-          <button
-            key={item}
-            type="button"
-            role="tab"
-            id={`${tabsId}-${item}`}
-            aria-controls={`${tabsId}-${item}-panel`}
-            aria-selected={tab === item}
-            tabIndex={tab === item ? 0 : -1}
-            onClick={() => setTab(item)}
-            onKeyDown={(event) => {
-              const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-              if (!offset) return;
-              event.preventDefault();
-              const next = (index + offset + tabs.length) % tabs.length;
-              setTab(tabs[next]!);
-              (
-                event.currentTarget.parentElement?.children[next] as HTMLElement | undefined
-              )?.focus();
-            }}
-            className={
-              tab === item
-                ? "cursor-pointer border-b-2 border-primary py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
-                : "cursor-pointer border-b-2 border-transparent py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            }
-          >
-            {t(
-              item === "skills"
-                ? "Skills list"
-                : item === "sources"
-                  ? "Installation sources"
-                  : "Usage locations",
-            )}
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-3 border-b border-border">
+        <div
+          role="tablist"
+          aria-label={t("Skill management")}
+          className="flex shrink-0 gap-3 sm:gap-5"
+        >
+          {(["skills", "sources", "targets"] as const).map((item, index, tabs) => (
+            <button
+              key={item}
+              type="button"
+              role="tab"
+              id={`${tabsId}-${item}`}
+              aria-controls={`${tabsId}-${item}-panel`}
+              aria-selected={tab === item}
+              tabIndex={tab === item ? 0 : -1}
+              onClick={() => setTab(item)}
+              onKeyDown={(event) => {
+                const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                if (!offset) return;
+                event.preventDefault();
+                const next = (index + offset + tabs.length) % tabs.length;
+                setTab(tabs[next]!);
+                (
+                  event.currentTarget.parentElement?.children[next] as HTMLElement | undefined
+                )?.focus();
+              }}
+              className={
+                tab === item
+                  ? "cursor-pointer border-b-2 border-primary py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
+                  : "cursor-pointer border-b-2 border-transparent py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              }
+            >
+              {t(
+                item === "skills"
+                  ? "Skills list"
+                  : item === "sources"
+                    ? "Installation sources"
+                    : "Usage locations",
+              )}
+            </button>
+          ))}
+        </div>
+        {tab === "skills" && (
+          <div className="w-28 min-w-0 sm:w-56">
+            <InputGroup>
+              <InputGroupAddon>
+                <SearchIcon aria-hidden="true" />
+              </InputGroupAddon>
+              <InputGroupInput
+                size="sm"
+                aria-label={t("Search skills")}
+                placeholder={t("Search skills")}
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setSelected([]);
+                }}
+              />
+            </InputGroup>
+          </div>
+        )}
       </div>
-      {data.lastFailure && (
-        <p role="alert" className="text-sm text-destructive">
-          {t(
-            data.lastFailureReason ? skillFailureMessage(data.lastFailureReason) : data.lastFailure,
-          )}
-          {data.lastFailureDiagnostics && (
-            <span className="mt-1 block max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">
-              {data.lastFailureDiagnostics}
-            </span>
-          )}
-        </p>
-      )}
+      {data.lastFailure &&
+        data.lastFailureReason !== "select-skill" &&
+        (tab !== "sources" || !failedSource) && (
+          <Alert variant="error" controlAlignment="first-line">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription>
+              <p>
+                {t(
+                  data.lastFailureReason
+                    ? skillFailureMessage(data.lastFailureReason)
+                    : data.lastFailure,
+                )}
+              </p>
+              {failedSource ? (
+                <Button size="sm" variant="ghost" onClick={() => setTab("sources")}>
+                  {t("Installation sources")}
+                </Button>
+              ) : (
+                data.lastFailureDiagnostics && (
+                  <details className="min-w-0">
+                    <summary className="cursor-pointer text-xs font-medium">
+                      {t("Error details")}
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground">
+                      {data.lastFailureDiagnostics}
+                    </pre>
+                  </details>
+                )
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
       {previewError && (
         <p role="alert" className="text-sm text-destructive">
           {t("Some previews failed. Only successfully reviewed skills can be adopted.")}
@@ -1569,127 +1845,148 @@ function EnvironmentSkills({
       )}
       {tab === "skills" && (
         <div role="tabpanel" id={`${tabsId}-skills-panel`} aria-labelledby={`${tabsId}-skills`}>
-          {counts.all > 0 && (
-            <div className="space-y-3 border-b border-border pb-3">
-              <InputGroup>
-                <InputGroupAddon>
-                  <SearchIcon aria-hidden="true" />
-                </InputGroupAddon>
-                <InputGroupInput
-                  aria-label={t("Search skills")}
-                  placeholder={t("Search by name, source or location")}
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-              </InputGroup>
-              <div className="flex flex-wrap items-center gap-2">
-                {Object.entries(skillFilters).map(([key, label]) => (
-                  <Button
-                    key={key}
-                    size="sm"
-                    variant={filter === key ? "secondary" : "ghost"}
-                    aria-pressed={filter === key}
-                    onClick={() => setFilter(key as SkillFilter)}
-                  >
-                    {t(label)} {counts[key as SkillFilter]}
-                  </Button>
-                ))}
-                <label className="ml-auto flex items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={allVisible}
-                    aria-label={t("Select filtered skills")}
-                    onCheckedChange={(checked) =>
-                      setSelected(
-                        checked
-                          ? [...new Set([...selected, ...rows.map((row) => row.key)])]
-                          : selected.filter((key) => !rows.some((row) => row.key === key)),
-                      )
-                    }
-                  />
-                  {t("Select all")}
-                </label>
-              </div>
-            </div>
-          )}
-          {(selectedManaged.length > 0 || selectedDiscovered.length > 0) && (
-            <div
-              className="my-3 flex flex-wrap items-center gap-2 rounded-md bg-muted p-3"
-              aria-label={t("Batch actions")}
-            >
-              <span className="text-xs">
-                {t("{count} selected", {
-                  count: selectedManaged.length + selectedDiscovered.length,
-                })}
-              </span>
-              {selectedDiscovered.length > 0 && (
-                <Button
-                  size="sm"
-                  disabled={!canManage || previewing}
-                  onClick={() => void adopt(selectedDiscovered)}
-                >
-                  {t("Adopt selected ({count})", { count: selectedDiscovered.length })}
-                </Button>
-              )}
-              {selectedManaged.length > 0 && (
-                <>
+          <div className="flex flex-wrap items-center gap-3 border-b border-border pb-3">
+            <label className="flex shrink-0 items-center gap-2 text-xs">
+              <Checkbox
+                checked={allVisible}
+                indeterminate={visibleSelected > 0 && !allVisible}
+                disabled={!selectableRows.length}
+                aria-label={t("Select filtered skills")}
+                onCheckedChange={(checked) =>
+                  setSelected(
+                    checked
+                      ? [...new Set([...selected, ...selectableRows.map((row) => row.key)])]
+                      : selected.filter((key) => !selectableRows.some((row) => row.key === key)),
+                  )
+                }
+              />
+              {t("Select all")}
+            </label>
+            {(selectedManaged.length > 0 || selectedDiscovered.length > 0) && (
+              <div
+                className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 sm:order-none sm:w-auto sm:flex-1"
+                aria-label={t("Batch actions")}
+              >
+                <span className="text-xs">
+                  {t("{count} selected", {
+                    count: selectedManaged.length + selectedDiscovered.length,
+                  })}
+                </span>
+                {selectedDiscovered.length > 0 && (
                   <Button
                     size="sm"
-                    variant="outline"
-                    disabled={!canManage}
-                    onClick={() =>
-                      void batch(selectedManaged.map((skill) => ({ type: "check", id: skill.id })))
-                    }
+                    disabled={!canManage || previewing}
+                    onClick={() => void adopt(selectedDiscovered)}
                   >
-                    {t("Check updates")}
+                    {t("Adopt selected ({count})", { count: selectedDiscovered.length })}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!canManage}
-                    onClick={() =>
-                      void batch(
-                        selectedManaged
-                          .filter((skill) => skill.availableDigest && skill.policy !== "pinned")
-                          .map((skill) => ({
-                            type: "update",
-                            id: skill.id,
-                            digest: skill.availableDigest!,
-                          })),
-                      )
-                    }
-                  >
-                    {t("Apply available updates")}
-                  </Button>
-                  <div className="min-w-40">
-                    <PolicySelect
-                      value={batchPolicy}
-                      onChange={setBatchPolicy}
+                )}
+                {selectedManaged.length > 0 && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       disabled={!canManage}
+                      onClick={() =>
+                        void batch(
+                          selectedManaged.map((skill) => ({ type: "check", id: skill.id })),
+                        )
+                      }
+                    >
+                      {t("Check updates")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canManage}
+                      onClick={() =>
+                        void batch(
+                          selectedManaged
+                            .filter((skill) => skill.availableDigest && skill.policy !== "pinned")
+                            .map((skill) => ({
+                              type: "update",
+                              id: skill.id,
+                              digest: skill.availableDigest!,
+                            })),
+                        )
+                      }
+                    >
+                      {t("Apply available updates")}
+                    </Button>
+                    <div className="min-w-40">
+                      <PolicySelect
+                        value={batchPolicy}
+                        onChange={setBatchPolicy}
+                        disabled={!canManage}
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canManage}
+                      onClick={() =>
+                        void batch(
+                          selectedManaged.map((skill) => ({
+                            type: "policy",
+                            id: skill.id,
+                            policy: batchPolicy,
+                          })),
+                        )
+                      }
+                    >
+                      {t("Set policy")}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      variant={filter !== "all" || showExternal ? "secondary" : "ghost"}
+                      size="icon-sm"
+                      aria-label={t("Filter skills")}
                     />
+                  }
+                >
+                  <ListFilterIcon />
+                </PopoverTrigger>
+                <PopoverPopup align="end" width="sm">
+                  <div className="space-y-3">
+                    <PopoverTitle>{t("Filter skills")}</PopoverTitle>
+                    <div className="flex flex-col items-start gap-1">
+                      {Object.entries(skillFilters).map(([key, label]) => (
+                        <Button
+                          key={key}
+                          size="sm"
+                          variant={filter === key ? "secondary" : "ghost"}
+                          aria-pressed={filter === key}
+                          onClick={() => {
+                            setFilter(key as SkillFilter);
+                            setSelected([]);
+                          }}
+                        >
+                          {t(label)} {counts[key as SkillFilter]}
+                        </Button>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-2 border-t border-border pt-3 text-xs">
+                      <Checkbox
+                        checked={showExternal}
+                        onCheckedChange={(checked) => {
+                          setShowExternal(checked === true);
+                          setSelected([]);
+                        }}
+                      />
+                      {t("Show externally maintained skills")}
+                    </label>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!canManage}
-                    onClick={() =>
-                      void batch(
-                        selectedManaged.map((skill) => ({
-                          type: "policy",
-                          id: skill.id,
-                          policy: batchPolicy,
-                        })),
-                      )
-                    }
-                  >
-                    {t("Set policy")}
-                  </Button>
-                </>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
-                {t("Clear selection")}
-              </Button>
+                </PopoverPopup>
+              </Popover>
             </div>
-          )}
+          </div>
           {!rows.length && (
             <div className="py-10 text-center">
               <p className="text-sm font-medium">
@@ -1718,83 +2015,83 @@ function EnvironmentSkills({
               )}
             </div>
           )}
-          {rows.map((row) =>
-            row.kind === "managed" ? (
-              <SkillRow
-                key={row.key}
-                skill={row.skill}
-                data={data}
-                mutate={mutate}
-                inspect={inspect}
-                canManage={canManage}
-                selected={selected.includes(row.key)}
-                onSelect={(checked) => select(row.key, checked)}
-              />
-            ) : (
-              <article key={row.key} className="border-b border-border py-4">
-                <div className="flex items-start gap-3">
-                  <div className="pt-1">
-                    <Checkbox
-                      checked={selected.includes(row.key)}
-                      disabled={row.skill.external}
-                      aria-label={t("Select {name}", { name: row.name })}
-                      onCheckedChange={(checked) => select(row.key, checked === true)}
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold wrap-anywhere">{row.name}</h3>
-                      <Badge variant="secondary">
-                        {t(row.skill.external ? "Maintained externally" : "Unmanaged")}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 line-clamp-1 text-sm text-muted-foreground wrap-anywhere">
-                      {row.skill.description}
-                    </p>
-                    <p className="mt-2 text-xs text-muted-foreground wrap-anywhere">
-                      {(row.skill.providers ?? [row.skill.provider])
-                        .map((name) =>
-                          name === "Shared skills" &&
-                          row.skill.targetIds?.includes("directory:shared")
-                            ? t("Shared skills")
-                            : name,
-                        )
-                        .join(", ")}{" "}
-                      ·{" "}
-                      {row.skill.origin?.locator ??
-                        t(row.skill.external ? "Plugin or provider" : "Source unknown")}
-                    </p>
-                    <div
-                      className="mt-2 space-y-1 text-xs text-muted-foreground"
-                      aria-label={t("Usage locations")}
-                    >
-                      {(row.skill.paths ?? [row.skill.path]).map((path) => (
-                        <p key={path} className="mt-1 font-mono wrap-anywhere">
-                          {path}
+          {skillGroups(rows).map((group) => (
+            <SkillPackageGroup
+              key={group.key}
+              group={group}
+              search={search}
+              data={data}
+              mutate={mutate}
+              canManage={canManage}
+            >
+              {group.rows.map((row) =>
+                row.kind === "managed" ? (
+                  <SkillRow
+                    key={row.key}
+                    skill={row.skill}
+                    data={data}
+                    mutate={mutate}
+                    inspect={inspect}
+                    canManage={canManage}
+                    selected={selected.includes(row.key)}
+                    onSelect={(checked) => select(row.key, checked)}
+                  />
+                ) : (
+                  <article key={row.key} className="border-b border-border py-4">
+                    <div className="flex items-start gap-3">
+                      <div className="pt-1">
+                        <Checkbox
+                          checked={selected.includes(row.key)}
+                          disabled={row.skill.external}
+                          aria-label={t("Select {name}", { name: row.name })}
+                          onCheckedChange={(checked) => select(row.key, checked === true)}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="text-sm font-semibold wrap-anywhere">{row.name}</h3>
+                          <Badge variant="secondary">
+                            {t(row.skill.external ? "Maintained externally" : "Unmanaged")}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 line-clamp-1 text-sm text-muted-foreground wrap-anywhere">
+                          {row.skill.description}
                         </p>
-                      ))}
-                    </div>
-                    <div className="mt-2">
-                      {row.skill.external ? (
-                        <p className="text-xs text-muted-foreground">
-                          {t("Update this skill through its plugin or provider.")}
+                        <p className="mt-2 text-xs text-muted-foreground wrap-anywhere">
+                          {(row.skill.providers ?? [row.skill.provider])
+                            .map((name) =>
+                              name === "Shared skills" &&
+                              row.skill.targetIds?.includes("directory:shared")
+                                ? t("Shared skills")
+                                : name,
+                            )
+                            .join(", ")}{" "}
+                          ·{" "}
+                          {row.skill.origin?.locator ??
+                            t(row.skill.external ? "Plugin or provider" : "Source unknown")}
                         </p>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canManage || previewing}
-                          onClick={() => void adopt([row.skill])}
+                        <div
+                          className="mt-2 space-y-1 text-xs text-muted-foreground"
+                          aria-label={t("Usage locations")}
                         >
-                          {t(previewing ? "Preparing preview..." : "Adopt skill")}
-                        </Button>
-                      )}
+                          {(row.skill.paths ?? [row.skill.path]).map((path) => (
+                            <p key={path} className="mt-1 font-mono wrap-anywhere">
+                              {path}
+                            </p>
+                          ))}
+                        </div>
+                        {row.skill.external && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {t("Update this skill through its plugin or provider.")}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </article>
-            ),
-          )}
+                  </article>
+                ),
+              )}
+            </SkillPackageGroup>
+          ))}
         </div>
       )}
       {tab === "sources" && (
@@ -1832,37 +2129,79 @@ function EnvironmentSkills({
               "Locations are scanned for existing skills and can receive managed files. Custom paths belong to this environment.",
             )}
           </p>
-          {data.targets.map((target) => {
-            const bindings = data.skills.flatMap((skill) =>
-              skill.bindings.filter((binding) => binding.id === target.id),
-            );
+          {skillTargetGroups(data.targets).map((group) => {
+            const name = group.targets
+              .map((target) =>
+                target.id === "directory:shared" ? t("Shared skills") : target.label,
+              )
+              .join(" · ");
+            const targetIds = new Set(group.targets.map((target) => target.id));
+            const bindings = data.skills
+              .map((skill) =>
+                skill.bindings.filter(
+                  (binding) => targetIds.has(binding.id) || binding.directory === group.directory,
+                ),
+              )
+              .filter((entries) => entries.length);
             return (
-              <div key={target.id} className="space-y-2 border-b border-border py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-medium">
-                    {target.id === "directory:shared" ? t("Shared skills") : target.label}
-                  </h3>
-                  {data.customTargets.some((entry) => entry.id === target.id) && (
-                    <Action
-                      label={t("Remove location {name}", { name: target.label })}
-                      disabled={!canManage}
-                      onClick={() => void mutate({ type: "target.remove", targetId: target.id })}
-                    >
-                      <Trash2Icon />
-                    </Action>
-                  )}
+              <div key={group.directory} className="space-y-2 border-b border-border py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-medium">{name}</h3>
+                    {group.targets.length > 1 && (
+                      <Badge variant="secondary">{t("Shared directory")}</Badge>
+                    )}
+                    {!group.enabled && (
+                      <Badge variant="secondary">
+                        <BanIcon />
+                        {t("Disabled")}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {!group.shared && !group.hasSkills && (
+                      <Action
+                        label={t("Remove location {name}", { name })}
+                        disabled={!canManage}
+                        onClick={() =>
+                          void mutate({ type: "target.remove", targetId: group.targets[0]!.id })
+                        }
+                      >
+                        <Trash2Icon />
+                      </Action>
+                    )}
+                    {(group.hasSkills || !group.enabled) && (
+                      <Switch
+                        aria-label={t("Enable location {name}", { name })}
+                        checked={group.enabled}
+                        disabled={!canManage}
+                        onCheckedChange={(enabled) =>
+                          void mutate({
+                            type: "target.configure",
+                            targetId: group.targets[0]!.id,
+                            enabled,
+                          })
+                        }
+                      />
+                    )}
+                  </div>
                 </div>
                 <p className="font-mono text-xs text-muted-foreground wrap-anywhere">
-                  {target.directory}
+                  {group.directory}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {t("{linked} linked · {conflicts} conflicts", {
-                    linked: bindings.filter((binding) => binding.status === "linked").length,
-                    conflicts: bindings.filter((binding) => binding.status === "conflict").length,
+                    linked: bindings.filter(
+                      (entries) =>
+                        entries.some((binding) => binding.status === "linked") &&
+                        !entries.some((binding) => binding.status === "conflict"),
+                    ).length,
+                    conflicts: bindings.filter((entries) =>
+                      entries.some((binding) => binding.status === "conflict"),
+                    ).length,
                   })}
                 </p>
-                {data.targets.filter((entry) => entry.directory === target.directory).length >
-                  1 && (
+                {group.targets.length > 1 && (
                   <p className="text-xs text-muted-foreground">
                     {t("This directory is shared by multiple instances.")}
                   </p>

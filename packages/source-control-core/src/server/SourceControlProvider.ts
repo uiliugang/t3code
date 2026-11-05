@@ -13,6 +13,14 @@ import type {
   BranchIssue,
   BranchIssueRef,
   BranchIssueDetail,
+  Issue,
+  IssueSource,
+  IssueDetail,
+  IssueOption,
+  IssueError,
+  IssueMetadataInput,
+  IssueMetadata,
+  IssueCreateInput,
 } from "@t3tools/contracts";
 
 export interface SourceControlLinkSubject {
@@ -32,6 +40,8 @@ export interface SourceControlProviderContext {
   readonly remoteUrl: string;
   readonly requestedHost?: string;
 }
+
+type IssueContext = { readonly cwd: string; readonly source: IssueSource };
 
 export interface SourceControlRefSelector {
   readonly refName: string;
@@ -109,7 +119,7 @@ export function repositoryPathFromRemoteUrl(url: string | null): string | null {
   }
 
   const match =
-    /^(?:[^@/\s]+@[^:/\s]+:|(?:ssh|https?|git):\/\/[^/]+\/)((?:[^/\s]+\/)+[^/\s]+?)(?:\.git)?\/?$/iu.exec(
+    /^(?:[^@/\s]+@[^:/\s]+:|[^@:/\\\s]{2,}:(?!:)|(?:ssh|https?|git):\/\/[^/]+\/)((?:[^/\s]+\/)+[^/\s]+?)(?:\.git)?\/?$/iu.exec(
       trimmed,
     );
   const path = match?.[1]?.trim() ?? "";
@@ -120,7 +130,39 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
+    readonly issueBoard?: {
+      readonly search: (
+        input: IssueContext & {
+          readonly assignee: string;
+          readonly query: string;
+          readonly page: number;
+        },
+      ) => Effect.Effect<
+        { readonly issues: ReadonlyArray<Issue>; readonly hasMore: boolean },
+        IssueError
+      >;
+      readonly read: (
+        input: IssueContext & { readonly id: string },
+      ) => Effect.Effect<IssueDetail, IssueError>;
+      readonly people: (
+        input: IssueContext & { readonly query: string },
+      ) => Effect.Effect<ReadonlyArray<IssueOption>, IssueError>;
+      readonly metadata: (
+        input: typeof IssueMetadataInput.Type & IssueContext,
+      ) => Effect.Effect<typeof IssueMetadata.Type, IssueError>;
+      readonly create: (
+        input: typeof IssueCreateInput.Type & IssueContext,
+      ) => Effect.Effect<Issue, IssueError>;
+      readonly setState: (
+        input: IssueContext & { readonly id: string; readonly state: string },
+      ) => Effect.Effect<void, IssueError>;
+    };
     readonly issues?: {
+      readonly branches?: (input: {
+        readonly cwd: string;
+        readonly issue: BranchIssueRef;
+        readonly context: SourceControlProviderContext;
+      }) => Effect.Effect<ReadonlyArray<string>, SourceControlProviderError>;
       readonly read: (input: {
         readonly cwd: string;
         readonly issue: BranchIssueRef;
