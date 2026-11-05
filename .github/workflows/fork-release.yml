@@ -3,7 +3,6 @@ name: Fork macOS and Android release
 on:
   push:
     tags: ["v*.*.*"]
-    branches: [lg/github-actions-macos-android-release]
   workflow_dispatch:
   workflow_call:
   pull_request:
@@ -19,7 +18,7 @@ permissions:
 
 concurrency:
   group: fork-release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   prepare:
