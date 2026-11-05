@@ -12,7 +12,23 @@ export const IssueSource = Schema.Struct({
 });
 export type IssueSource = typeof IssueSource.Type;
 export const IssueProjectSources = Schema.Record(ProjectId, Schema.Array(IssueSource));
-export const IssueTarget = Schema.Struct({ projectId: ProjectId, provider: IssueProvider });
+export const IssueTarget = Schema.Struct({
+  projectId: ProjectId,
+  provider: IssueProvider,
+  scope: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export const IssueSourcesInput = Schema.Struct({
+  projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(500)),
+  refresh: Schema.optionalKey(Schema.Boolean),
+});
+export const IssueProjectSource = Schema.Struct({
+  projectId: ProjectId,
+  repository: Schema.NullOr(Schema.String),
+  sources: Schema.Array(IssueSource),
+  manual: Schema.Boolean,
+  error: Schema.optionalKey(Schema.String),
+});
+export const IssueSourcesResult = Schema.Array(IssueProjectSource);
 export type IssueTarget = typeof IssueTarget.Type;
 export const IssueOption = Schema.Struct({ value: Text, label: Text });
 export type IssueOption = typeof IssueOption.Type;

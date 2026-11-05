@@ -130,6 +130,10 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
+    readonly discoverIssueSources?: (input: {
+      readonly cwd: string;
+      readonly context: SourceControlProviderContext;
+    }) => Effect.Effect<ReadonlyArray<IssueSource>, SourceControlProviderError>;
     readonly issueBoard?: {
       readonly search: (
         input: IssueContext & {

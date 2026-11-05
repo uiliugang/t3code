@@ -144,6 +144,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.branchIssuesList]: "source-control",
   [WS_METHODS.issueBranches]: "issues",
   [WS_METHODS.issuesList]: "issues",
+  [WS_METHODS.issuesSources]: "issues",
   [WS_METHODS.issuesRead]: "issues",
   [WS_METHODS.issuesPeople]: "issues",
   [WS_METHODS.issuesMetadata]: "issues",

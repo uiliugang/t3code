@@ -80,6 +80,8 @@ import {
 import * as Rpc from "effect/rpc/Rpc";
 import {
   IssueListInput,
+  IssueSourcesInput,
+  IssueSourcesResult,
   IssueListResult,
   IssueReadInput,
   IssueDetail,
@@ -682,6 +684,7 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   branchIssuesList: "sourceControl.branchIssuesList",
   issuesList: "issues.list",
+  issuesSources: "issues.sources",
   issueBranches: "issues.branches",
   issuesRead: "issues.read",
   issuesPeople: "issues.people",
@@ -1357,6 +1360,11 @@ const WsBranchIssuesListRpc = Rpc.make(WS_METHODS.branchIssuesList, {
 const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
   payload: IssueListInput,
   success: IssueListResult,
+  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+});
+const WsIssuesSourcesRpc = Rpc.make(WS_METHODS.issuesSources, {
+  payload: IssueSourcesInput,
+  success: IssueSourcesResult,
   error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
 });
 const WsIssueBranchesRpc = Rpc.make(WS_METHODS.issueBranches, {
@@ -2351,6 +2359,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlLookupRepositoryRpc,
   WsBranchIssuesListRpc,
   WsIssuesListRpc,
+  WsIssuesSourcesRpc,
   WsIssueBranchesRpc,
   WsIssuesReadRpc,
   WsIssuesPeopleRpc,

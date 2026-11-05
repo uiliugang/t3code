@@ -36,6 +36,46 @@ const layerFor = (
   ).pipe(Layer.provideMerge(TestHost.layer({ process: { run }, git })));
 
 describe("Meituan source control", () => {
+  it.effect("discovers distinct MEP spaces from recent PR descriptions and source branches", () =>
+    Effect.gen(function* () {
+      const provider = yield* Provider.make.pipe(
+        Effect.provide(
+          layerFor((input) => {
+            const result =
+              input.args[0] === "pr"
+                ? [
+                    {
+                      ...pullRequest,
+                      description:
+                        "https://mep.sankuai.com/app/ones/space/1031008/workItem/requirement/detail/123",
+                    },
+                  ]
+                : {
+                    issues: [
+                      {
+                        id: "123",
+                        name: "First",
+                        state: "Open",
+                        link: "https://mep.sankuai.com/app/ones/space/1031008/workItem/requirement/detail/123",
+                      },
+                      {
+                        id: "456",
+                        name: "Second",
+                        state: "Open",
+                        link: "https://mep.sankuai.com/app/ones/space/1031009/workItem/requirement/detail/456",
+                      },
+                    ],
+                  };
+            return Effect.succeed(TestHost.processOutput(JSON.stringify(result)));
+          }),
+        ),
+      );
+      expect(yield* provider.discoverIssueSources!({ cwd: "/repo", context })).toEqual([
+        { provider: "meituan", host: "mep.sankuai.com", scope: "1031008" },
+        { provider: "meituan", host: "mep.sankuai.com", scope: "1031009" },
+      ]);
+    }),
+  );
   it.effect("checks out the source branch with its upstream so edits can update the same PR", () =>
     Effect.gen(function* () {
       const fetches: Array<{ remoteName: string; remoteBranch: string; localBranch: string }> = [];

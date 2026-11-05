@@ -8,6 +8,7 @@ import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useProjects } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
+import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { SourceControlSignInSection } from "../settings/components/SourceControlSignInSection";
@@ -61,6 +62,7 @@ function ProjectSources({ environmentId }: { environmentId: EnvironmentId }) {
   const saved = settings?.issueProjectSources ?? {};
   const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const command = useAtomCommand(serverEnvironment.updateSettings);
+  const refresh = useAtomCommand(sourceControlEnvironment.refreshIssueSources);
   const [projectId, setProjectId] = useState<ProjectId | null>(null);
   const [provider, setProvider] = useState<IssueProvider>("meituan");
   const [scope, setScope] = useState("");
@@ -76,18 +78,26 @@ function ProjectSources({ environmentId }: { environmentId: EnvironmentId }) {
           issueProjectSources: {
             [selected]: [
               ...(saved[selected] ?? []).filter((entry) => entry.provider !== provider),
-              {
-                provider,
-                scope: scope.trim(),
-                host: provider === "meituan" ? "mep.sankuai.com" : "github.com",
-              },
+              ...(provider === "meituan"
+                ? scope.split(/[,，]/u).map((value) => value.trim())
+                : [scope.trim()]
+              )
+                .filter((value, index, values) => value && values.indexOf(value) === index)
+                .map((value) => ({
+                  provider,
+                  scope: value,
+                  host: provider === "meituan" ? "mep.sankuai.com" : "github.com",
+                })),
             ],
           },
         },
       },
     });
     setBusy(false);
-    if (result._tag === "Success") setScope("");
+    if (result._tag === "Success") {
+      setScope("");
+      await refresh({ environmentId, input: { projectIds: [selected] } });
+    }
   };
   const remove = async (id: ProjectId, kind: IssueProvider) => {
     setBusy(true);
@@ -101,16 +111,19 @@ function ProjectSources({ environmentId }: { environmentId: EnvironmentId }) {
         },
       },
     });
+    await refresh({ environmentId, input: { projectIds: [id] } });
     setBusy(false);
   };
   const valid =
-    provider === "meituan" ? /^[1-9]\d*$/u.test(scope) : /^[\w.-]+\/[\w.-]+$/u.test(scope);
+    provider === "meituan"
+      ? scope.split(/[,，]/u).every((value) => /^[1-9]\d*$/u.test(value.trim()))
+      : /^[\w.-]+\/[\w.-]+$/u.test(scope);
   return (
     <View className="gap-4">
       {projects.flatMap((project) =>
         (saved[project.id] ?? []).map((source) => (
           <View
-            key={`${project.id}/${source.provider}`}
+            key={`${project.id}/${source.provider}/${source.scope}`}
             className="gap-2 border-b border-border-subtle py-3"
           >
             <Text>
@@ -148,7 +161,7 @@ function ProjectSources({ environmentId }: { environmentId: EnvironmentId }) {
       />
       <AppTextInput
         accessibilityLabel={t(provider === "meituan" ? "MEP space ID" : "GitHub repository")}
-        placeholder={provider === "meituan" ? "1031008" : "owner/repository"}
+        placeholder={provider === "meituan" ? "1031008, 1031009" : "owner/repository"}
         value={scope}
         onChangeText={setScope}
         editable={allowed && !busy}

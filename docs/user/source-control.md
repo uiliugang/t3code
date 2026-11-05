@@ -42,9 +42,12 @@ the same preferences under **Settings → Appearance → Linked issues**.
 ## Manage requirements
 
 Open **Requirements board** to browse MEP ONES work items or GitHub Issues, filter by project
-and assignee, and open details. Configure project spaces or repositories in
-**Settings → Code → Issue management** on the environment that owns the project. GitHub also
-uses the project's repository when no mapping is configured. Accounts are shared with source control;
+and assignee, and open details. **Settings → Code → Issue management** automatically uses the
+project's GitHub repository and discovers MEP spaces from the ten most recent Meituan Code pull
+requests and their linked branches. Filter projects and environments, then select projects to
+detect again, set a manual override, or restore automatic associations. Enter multiple MEP space
+IDs separated by commas; choose the destination space when creating a work item. Manual overrides
+take precedence over discovery. Accounts are shared with source control;
 MEP requires an authenticated `ones2` installation on the server.
 
 Create issues from the board and change their status in details. MEP creation fields depend on

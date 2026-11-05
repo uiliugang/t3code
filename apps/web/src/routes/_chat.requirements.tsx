@@ -12,6 +12,7 @@ const Search = Schema.Struct({
   view: Schema.optionalKey(Schema.Literals(["board", "list"])),
   issueId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
   issueProjectId: Schema.optionalKey(ProjectId),
+  issueScope: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
 });
 export type RequirementsSearch = typeof Search.Type;
 const decodeSearch = Schema.decodeSync(Search);
