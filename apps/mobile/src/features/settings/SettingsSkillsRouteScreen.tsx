@@ -22,6 +22,7 @@ import {
   skillGroups,
   skillSelection,
   skillTargetGroups,
+  skillDefaultTargetIds,
   skillStatus,
   skillFailure,
   skillNextCheck,
@@ -155,6 +156,9 @@ function TargetSelection({
   const t = useUiTranslation();
   return (
     <View className="gap-3">
+      <Text className="text-xs text-foreground-muted">
+        {t("Existing files at selected locations are backed up and replaced with managed links.")}
+      </Text>
       {skillTargetGroups(data.targets)
         .filter((group) => group.enabled)
         .map((group) => (
@@ -209,7 +213,7 @@ function Install({
     existing && !existing.snapshotOnly ? existing.locator : "",
   );
   const [name, setName] = useState(existing?.requestedSkill ?? "");
-  const [targets, setTargets] = useState<string[]>([]);
+  const [targets, setTargets] = useState(() => skillDefaultTargetIds(data.targets));
   const [policy, setPolicy] = useState<SkillUpdatePolicy>("automatic");
   const [advanced, setAdvanced] = useState(false);
   return (
@@ -519,8 +523,25 @@ function Skill({
             .map((target) => (
               <Text key={target.id} className="text-danger-foreground">
                 {target.label}: {t(target.status === "conflict" ? "Conflict" : "Missing")}
+                {"\n"}
+                {target.directory}/{target.entryName ?? skill.name}
               </Text>
             ))}
+          {Boolean(skill.backups?.length) && (
+            <View className="gap-2">
+              <Text className="font-semibold text-foreground">{t("Original backups")}</Text>
+              {skill.backups?.map((entry) => (
+                <View key={entry.backup} className="gap-1">
+                  <Text selectable className="text-xs text-foreground-muted">
+                    {entry.original}
+                  </Text>
+                  <Text selectable className="text-xs text-foreground-muted">
+                    {t("Backup: {path}", { path: entry.backup })}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
           <Text className="font-semibold text-foreground">{t("Version history")}</Text>
           {[...skill.versions].reverse().map((version) => (
             <View key={version.digest} className="flex-row items-center justify-between gap-3">
@@ -730,6 +751,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
     return result._tag === "Success" ? result.value : null;
   };
   const preview = async (skills: DiscoveredSkill[]) => {
+    if (!data) return;
     setPreviewing(true);
     const results = [];
     for (const skill of skills) {
@@ -737,7 +759,12 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       if (result) results.push({ skill, preview: result });
     }
     setLocations(
-      Object.fromEntries(results.map(({ skill }) => [skill.path, [...(skill.targetIds ?? [])]])),
+      Object.fromEntries(
+        results.map(({ skill }) => [
+          skill.path,
+          skillDefaultTargetIds(data.targets, skill.targetIds),
+        ]),
+      ),
     );
     setPreviewError(results.length !== skills.length);
     setPreviews(results);
@@ -865,7 +892,10 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
               <TargetSelection
                 data={{
                   ...data,
-                  targets: data.targets.filter((target) => skill.targetIds?.includes(target.id)),
+                  targets: data.targets.filter(
+                    (target) =>
+                      target.id === "directory:shared" || skill.targetIds?.includes(target.id),
+                  ),
                 }}
                 selected={locations[skill.path] ?? []}
                 disabled={disabled}
@@ -879,37 +909,35 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             )}
           </Text>
           <View className="flex-row flex-wrap gap-2">
-            {(["copy", "takeover"] as const).map((mode) => (
-              <ControlPill
-                key={mode}
-                label={t(mode === "copy" ? "Copy to library" : "Take over selected locations")}
-                disabled={
-                  disabled ||
-                  (mode === "takeover" &&
-                    previews.some(({ skill }) => !locations[skill.path]?.length))
-                }
-                onPress={() =>
-                  void mutate({
-                    type: "batch",
-                    operations: previews
-                      .filter((item) => !item.preview.external)
-                      .map(({ skill, preview: item }) => ({
-                        type: "adopt",
-                        path: skill.path,
-                        digest: item.digest,
-                        mode,
-                        targetIds: mode === "takeover" ? (locations[skill.path] ?? []) : [],
-                        ...(item.origin ? { origin: item.origin } : {}),
-                      })),
-                  }).then((ok) => {
-                    if (ok) {
-                      setPreviews([]);
-                      setSelected([]);
-                    }
-                  })
-                }
-              />
-            ))}
+            <ControlPill
+              label={t("Take over selected locations")}
+              disabled={
+                disabled ||
+                previews.some(
+                  ({ skill }) => !skill.targetIds?.length || !locations[skill.path]?.length,
+                )
+              }
+              onPress={() =>
+                void mutate({
+                  type: "batch",
+                  operations: previews
+                    .filter((item) => !item.preview.external)
+                    .map(({ skill, preview: item }) => ({
+                      type: "adopt",
+                      path: skill.path,
+                      digest: item.digest,
+                      mode: "takeover",
+                      targetIds: locations[skill.path] ?? [],
+                      ...(item.origin ? { origin: item.origin } : {}),
+                    })),
+                }).then((ok) => {
+                  if (ok) {
+                    setPreviews([]);
+                    setSelected([]);
+                  }
+                })
+              }
+            />
             <ControlPill label={t("Cancel")} onPress={() => setPreviews([])} />
           </View>
         </View>

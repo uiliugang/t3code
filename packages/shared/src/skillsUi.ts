@@ -19,6 +19,7 @@ export const skillPolicies: Record<SkillUpdatePolicy, string> = {
 };
 export const skillFilters = {
   all: "All skills",
+  managed: "Managed",
   unmanaged: "Unmanaged",
   updates: "Updates",
   attention: "Needs attention",
@@ -84,6 +85,7 @@ export function skillRows(
   const rows = [...managed, ...discovered];
   const counts = {
     all: rows.length,
+    managed: managed.length,
     unmanaged: discovered.filter((row) => !row.skill.external).length,
     updates: managed.filter((row) => row.skill.availableDigest !== null).length,
     attention: managed.filter((row) => skillAttention(row.skill)).length,
@@ -118,13 +120,27 @@ export function skillRows(
             (filter === "unmanaged"
               ? row.kind === "discovered" && !row.skill.external
               : row.kind === "managed" &&
-                (filter === "updates"
-                  ? row.skill.availableDigest !== null
-                  : skillAttention(row.skill))))
+                (filter === "managed" ||
+                  (filter === "updates"
+                    ? row.skill.availableDigest !== null
+                    : skillAttention(row.skill)))))
         );
       })
       .sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key)),
   };
+}
+
+export function skillDefaultTargetIds(
+  targets: ReadonlyArray<SkillTarget>,
+  originalIds: ReadonlyArray<string> = [],
+) {
+  return targets
+    .filter(
+      (target) =>
+        target.enabled !== false &&
+        (target.id === "directory:shared" || originalIds.includes(target.id)),
+    )
+    .map((target) => target.id);
 }
 
 export function skillTargetGroups(targets: ReadonlyArray<SkillTarget>) {

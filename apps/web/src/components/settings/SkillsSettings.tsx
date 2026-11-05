@@ -22,6 +22,7 @@ import {
   skillGroups,
   skillSelection,
   skillTargetGroups,
+  skillDefaultTargetIds,
   skillStatus,
   skillFailure,
   skillNextCheck,
@@ -229,6 +230,9 @@ function Targets({
           </label>
         ))}
       </div>
+      <p className="text-xs text-muted-foreground">
+        {t("Existing files at selected locations are backed up and replaced with managed links.")}
+      </p>
     </div>
   );
 }
@@ -245,7 +249,7 @@ function InstallDialog({
   const [sourceId, setSourceId] = useState(data.sources.find((source) => source.enabled)?.id ?? "");
   const [locator, setLocator] = useState("");
   const [skill, setSkill] = useState("");
-  const [targetIds, setTargetIds] = useState<string[]>([]);
+  const [targetIds, setTargetIds] = useState(() => skillDefaultTargetIds(data.targets));
   const [policy, setPolicy] = useState<SkillUpdatePolicy>("automatic");
   const [saving, setSaving] = useState(false);
   const source = data.sources.find((entry) => entry.id === sourceId);
@@ -501,10 +505,14 @@ function AdoptDialog({
   onClose: () => void;
 }) {
   const t = useUiTranslation();
-  const [mode, setMode] = useState<"copy" | "takeover">("takeover");
   const [selected, setSelected] = useState(items.map((item) => item.skill.path));
   const [locations, setLocations] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(items.map((item) => [item.skill.path, [...(item.skill.targetIds ?? [])]])),
+    Object.fromEntries(
+      items.map((item) => [
+        item.skill.path,
+        skillDefaultTargetIds(data.targets, item.skill.targetIds),
+      ]),
+    ),
   );
   const [saving, setSaving] = useState(false);
   return (
@@ -520,22 +528,9 @@ function AdoptDialog({
                 "All selected skills will use automatic updates. Unknown sources stay visible until you connect an upstream.",
               )}
             </p>
-            <Select value={mode} onValueChange={(value) => value && setMode(value)}>
-              <SelectTrigger aria-label={t("Adoption mode")}>
-                <SelectValue>
-                  {t(mode === "takeover" ? "Take over selected locations" : "Copy to library")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup alignItemWithTrigger={false}>
-                <SelectItem value="takeover">{t("Take over selected locations")}</SelectItem>
-                <SelectItem value="copy">{t("Copy to library")}</SelectItem>
-              </SelectPopup>
-            </Select>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {t(
-                mode === "takeover"
-                  ? "Original locations are backed up before switching to managed files. You can restore them when stopping management."
-                  : "Original files stay in place. Agents keep using them until you assign the managed copy to another location.",
+                "Original locations are backed up before switching to managed files. You can restore them when stopping management.",
               )}
             </p>
             {items.map(({ skill, preview }) => (
@@ -568,20 +563,17 @@ function AdoptDialog({
                           "Source unknown. A takeover is saved as a local snapshot until a source is connected.",
                         )}
                 </p>
-                {mode === "copy" ? (
-                  <p className="text-xs text-muted-foreground">{t("Saved to library")}</p>
-                ) : (
-                  <Targets
-                    targets={data.targets.filter((target) => skill.targetIds?.includes(target.id))}
-                    selected={locations[skill.path] ?? []}
-                    onChange={(ids) => setLocations({ ...locations, [skill.path]: ids })}
-                  />
-                )}
-                {mode === "takeover" && !skill.targetIds?.length && (
+                <Targets
+                  targets={data.targets.filter(
+                    (target) =>
+                      target.id === "directory:shared" || skill.targetIds?.includes(target.id),
+                  )}
+                  selected={locations[skill.path] ?? []}
+                  onChange={(ids) => setLocations({ ...locations, [skill.path]: ids })}
+                />
+                {!skill.targetIds?.length && (
                   <p className="text-xs text-muted-foreground">
-                    {t(
-                      "Add this directory as a usage location to take it over, or choose Copy to library.",
-                    )}
+                    {t("Add this directory as a usage location before adopting this skill.")}
                   </p>
                 )}
               </div>
@@ -596,7 +588,8 @@ function AdoptDialog({
             disabled={
               saving ||
               !selected.length ||
-              (mode === "takeover" && selected.some((path) => !locations[path]?.length))
+              selected.some((path) => !locations[path]?.length) ||
+              items.some(({ skill }) => selected.includes(skill.path) && !skill.targetIds?.length)
             }
             onClick={async () => {
               setSaving(true);
@@ -606,8 +599,8 @@ function AdoptDialog({
                   type: "adopt",
                   path: skill.path,
                   digest: preview.digest,
-                  mode,
-                  targetIds: mode === "takeover" ? (locations[skill.path] ?? []) : [],
+                  mode: "takeover",
+                  targetIds: locations[skill.path] ?? [],
                   ...(preview.origin ? { origin: preview.origin } : {}),
                 }));
               const ok = await mutate({ type: "batch", operations });
@@ -1035,6 +1028,13 @@ function SkillRow({
           {failure && (
             <div role="alert" className="mt-2 min-w-0 text-xs leading-relaxed text-destructive">
               <p>{t(failure)}</p>
+              {skill.bindings
+                .filter((target) => target.status !== "linked")
+                .map((target) => (
+                  <p key={target.id} className="font-mono wrap-anywhere">
+                    {target.label}: {target.directory}/{target.entryName ?? skill.name}
+                  </p>
+                ))}
               {skill.failureDiagnostics && (
                 <details>
                   <summary className="cursor-pointer font-medium">{t("Error details")}</summary>
@@ -1149,6 +1149,19 @@ function SkillRow({
                     </p>
                   </div>
                 ))}
+                {Boolean(skill.backups?.length) && (
+                  <div className="space-y-2 pt-2">
+                    <h4 className="font-medium">{t("Original backups")}</h4>
+                    {skill.backups?.map((entry) => (
+                      <div key={entry.backup} className="text-xs">
+                        <p className="font-mono wrap-anywhere">{entry.original}</p>
+                        <p className="mt-1 font-mono text-muted-foreground wrap-anywhere">
+                          {t("Backup: {path}", { path: entry.backup })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {detailTab === "history" && (

@@ -239,8 +239,14 @@ const make = Effect.gen(function* () {
     target: SkillTarget,
   ) {
     const file = linkPath(skill, target);
-    if ((yield* readLink(file)) === activePath(skill.id)) yield* fs.remove(file);
-    else if (yield* filePresent(file))
+    const existingLink = yield* readLink(file);
+    if (existingLink === activePath(skill.id)) yield* fs.remove(file);
+    else if (
+      (yield* filePresent(file)) &&
+      !(yield* Ref.get(state)).skills.some(
+        (other) => other.id !== skill.id && existingLink === activePath(other.id),
+      )
+    )
       return yield* new SkillManagerError({ operation: "detach", reason: "conflict" });
   });
   const syncBindings = Effect.fn("SkillManager.syncBindings")(function* (skill: ManagedSkill) {
@@ -249,9 +255,42 @@ const make = Effect.gen(function* () {
       const file = linkPath(skill, target);
       const result = yield* Effect.gen(function* () {
         yield* fs.makeDirectory(target.directory, { recursive: true });
-        if ((yield* readLink(file)) === activePath(skill.id)) return "linked" as const;
-        if (yield* filePresent(file)) return "conflict" as const;
-        yield* directoryLink(activePath(skill.id), file);
+        const existingLink = yield* readLink(file);
+        if (existingLink === activePath(skill.id)) return "linked" as const;
+        if (
+          (yield* Ref.get(state)).skills.some(
+            (other) => other.id !== skill.id && existingLink === activePath(other.id),
+          )
+        )
+          return "conflict" as const;
+        if (yield* filePresent(file)) {
+          let backup: string | undefined;
+          for (const entry of skill.backups ?? [])
+            if (entry.original === file && !(yield* filePresent(entry.backup))) {
+              backup = entry.backup;
+              break;
+            }
+          if (!backup) {
+            backup = path.join(
+              root,
+              "backups",
+              skill.id,
+              yield* random.uuidV4().pipe(Effect.orDie),
+            );
+            skill = { ...skill, backups: [...(skill.backups ?? []), { original: file, backup }] };
+            // Journal the destination before moving files so restart recovery retains the original.
+            yield* replace(skill);
+          }
+          yield* fs.makeDirectory(path.dirname(backup), { recursive: true });
+          yield* fs.rename(file, backup);
+          yield* directoryLink(activePath(skill.id), file).pipe(
+            Effect.tapError(() =>
+              Effect.gen(function* () {
+                if (!(yield* filePresent(file))) yield* fs.rename(backup, file);
+              }),
+            ),
+          );
+        } else yield* directoryLink(activePath(skill.id), file);
         return "linked" as const;
       }).pipe(Effect.result);
       bindings.push({ ...target, status: result._tag === "Success" ? result.success : "missing" });
@@ -458,12 +497,6 @@ const make = Effect.gen(function* () {
     const candidate = yield* packages.inspect(yield* packagePath(skill.id, digest));
     if (candidate.digest !== digest)
       return yield* new SkillManagerError({ operation: "activate", reason: "candidate-changed" });
-    if (skill.activeDigest)
-      for (const target of skill.bindings) {
-        const file = linkPath(skill, target);
-        if ((yield* filePresent(file)) && (yield* readLink(file)) !== activePath(skill.id))
-          return yield* new SkillManagerError({ operation: "activate", reason: "conflict" });
-      }
     if (yield* host.busy) {
       yield* replace({
         ...skill,
@@ -624,7 +657,12 @@ const make = Effect.gen(function* () {
       };
       yield* replace(next);
       yield* assertUnmodified(next);
-      if (apply && (fetched.digest !== skill.activeDigest || skill.status === "pending"))
+      if (
+        apply &&
+        (fetched.digest !== skill.activeDigest ||
+          skill.status === "pending" ||
+          skill.bindings.some((binding) => binding.status !== "linked"))
+      )
         yield* activate(next, fetched.digest);
     }).pipe(
       Effect.ensuring(fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore)),
@@ -646,7 +684,11 @@ const make = Effect.gen(function* () {
     yield* host.refresh(skill.bindings);
   });
   const restoreBackups = Effect.fn("SkillManager.restoreBackups")(function* (skill: ManagedSkill) {
+    const restored = new Set<string>();
     for (const entry of skill.backups ?? []) {
+      // Restore the earliest original; later replacements remain available in the backup archive.
+      if (restored.has(entry.original)) continue;
+      restored.add(entry.original);
       if (!(yield* filePresent(entry.backup))) continue;
       if ((yield* readLink(entry.original)) === activePath(skill.id))
         yield* fs.remove(entry.original);
@@ -707,18 +749,21 @@ const make = Effect.gen(function* () {
     if (description.external)
       return yield* new SkillManagerError({ operation: "adopt", reason: "external" });
     const current = yield* Ref.get(state);
-    if (current.skills.some((skill) => skill.adoptedFrom === description.identity))
+    const existing = current.skills.find((skill) => skill.adoptedFrom === description.identity);
+    if (existing && (input.mode !== "takeover" || existing.bindings.length))
       return yield* new SkillManagerError({ operation: "adopt", reason: "conflict" });
     if (input.mode === "takeover" && (yield* host.busy))
       return yield* new SkillManagerError({ operation: "adopt", reason: "busy" });
     const data = yield* packages.inspect(description.identity);
     if (data.digest !== input.digest)
       return yield* new SkillManagerError({ operation: "adopt", reason: "candidate-changed" });
+    if (existing && existing.activeDigest !== data.digest)
+      return yield* new SkillManagerError({ operation: "adopt", reason: "candidate-changed" });
     const id = (yield* Ref.get(runningJob)) ?? (yield* random.uuidV4().pipe(Effect.orDie));
     const targets = yield* selectedTargets(input.targetIds);
     const requestedOrigin = input.origin ?? description.origin;
     const source = current.sources.find(
-      (entry) => entry.id === (requestedOrigin?.sourceId ?? "local"),
+      (entry) => entry.id === (existing?.sourceId ?? requestedOrigin?.sourceId ?? "local"),
     );
     if (!source) return yield* new SkillManagerError({ operation: "adopt", reason: "not-found" });
     const backups: Array<{ original: string; backup: string }> = [];
@@ -735,14 +780,15 @@ const make = Effect.gen(function* () {
       if (yield* filePresent(file)) {
         if (input.mode !== "takeover" || (yield* fs.realPath(file)) !== description.identity)
           return yield* new SkillManagerError({ operation: "adopt", reason: "conflict" });
-        backups.push({
-          original: file,
-          backup: path.join(root, "backups", id, String(backups.length)),
-        });
+        if (!existing)
+          backups.push({
+            original: file,
+            backup: path.join(root, "backups", id, String(backups.length)),
+          });
       }
       bindings.push({ ...target, entryName, status: "missing" });
     }
-    const locator = requestedOrigin?.locator ?? description.identity;
+    const locator = existing?.locator ?? requestedOrigin?.locator ?? description.identity;
     const localSource =
       source.kind === "local"
         ? yield* fs.realPath(locator).pipe(Effect.orElseSucceed(() => locator))
@@ -751,6 +797,18 @@ const make = Effect.gen(function* () {
       input.mode === "takeover" &&
       localSource !== null &&
       (localSource === description.identity || localSource.startsWith(root + path.sep));
+    if (existing) {
+      const jobId = yield* Ref.get(runningJob);
+      yield* saveJobs((jobs) =>
+        jobs.map((job) =>
+          job.id === jobId
+            ? { ...job, skillId: existing.id, beforeDigest: existing.activeDigest }
+            : job,
+        ),
+      );
+      yield* activate({ ...existing, bindings, snapshotOnly }, data.digest);
+      return;
+    }
     yield* packages.inspect(description.identity, versionPath(id, data.digest));
     yield* packages.inspect(description.identity, baselinePath(id, data.digest));
     const skill: ManagedSkill = {
@@ -1096,8 +1154,11 @@ const make = Effect.gen(function* () {
               ),
             );
             for (const previous of previousBindings)
-              if (!targets.some((target) => target.directory === previous.directory))
-                yield* detach(skill, previous);
+              if (
+                !targets.some((target) => target.directory === previous.directory) &&
+                (yield* readLink(linkPath(skill, previous))) === activePath(skill.id)
+              )
+                yield* fs.remove(linkPath(skill, previous));
             const recovered =
               skill.activeDigest &&
               (skill.failureReason === "target-disabled" || skill.failureReason === "conflict");
@@ -1169,6 +1230,7 @@ const make = Effect.gen(function* () {
             ? cause
             : new SkillManagerError({ operation: input.type, reason: "io", cause });
           const current = yield* Ref.get(state);
+          const failedId = current.jobs?.find((entry) => entry.id === id)?.skillId ?? skillId;
           const attemptedAt = yield* now;
           yield* save({
             ...current,
@@ -1176,7 +1238,7 @@ const make = Effect.gen(function* () {
             lastFailureReason: error.reason,
             lastFailureDiagnostics: error.diagnostics ?? null,
             skills: current.skills.map((skill) =>
-              skill.id === skillId
+              skill.id === failedId
                 ? {
                     ...skill,
                     status:
@@ -1208,8 +1270,10 @@ const make = Effect.gen(function* () {
           );
         }),
         onSuccess: Effect.fn("SkillManager.recordSuccess")(function* () {
-          const resultingSkill = skillId
-            ? (yield* Ref.get(state)).skills.find((skill) => skill.id === skillId)
+          const completed = yield* Ref.get(state);
+          const resultingId = completed.jobs?.find((entry) => entry.id === id)?.skillId ?? skillId;
+          const resultingSkill = resultingId
+            ? completed.skills.find((skill) => skill.id === resultingId)
             : undefined;
           const after = resultingSkill?.availableDigest ?? resultingSkill?.activeDigest;
           const finishedAt = yield* now;
@@ -1379,9 +1443,19 @@ const make = Effect.gen(function* () {
                 ? "failed"
                 : linked.status === "pending"
                   ? "ready"
-                  : linked.status,
-          failure: failed ? skillFailureMessage("conflict") : linked.failure,
-          failureReason: failed ? "conflict" : (linked.failureReason ?? null),
+                  : linked.failureReason === "conflict"
+                    ? "ready"
+                    : linked.status,
+          failure: failed
+            ? skillFailureMessage("conflict")
+            : linked.failureReason === "conflict"
+              ? null
+              : linked.failure,
+          failureReason: failed
+            ? "conflict"
+            : linked.failureReason === "conflict"
+              ? null
+              : (linked.failureReason ?? null),
         });
       }
     }

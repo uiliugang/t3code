@@ -141,6 +141,16 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new SkillManagerError({ operation: "busy", reason: "io", cause })),
   );
   const refresh = Effect.fn("SkillHost.refresh")(function* (bound: ReadonlyArray<SkillTarget>) {
+    if (
+      bound.some(
+        (target) =>
+          target.id === "directory:shared" ||
+          target.directory === path.join(home, ".agents", "skills"),
+      )
+    ) {
+      yield* providers.refresh();
+      return;
+    }
     const ids = [
       ...new Set(
         bound.flatMap((target) => (target.providerInstanceId ? [target.providerInstanceId] : [])),

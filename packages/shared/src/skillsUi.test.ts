@@ -5,6 +5,7 @@ import {
   skillRows,
   skillSelection,
   skillTargetGroups,
+  skillDefaultTargetIds,
   skillFailure,
   skillStatus,
   skillSourceFailure,
@@ -85,7 +86,25 @@ describe("skill management views", () => {
 
   it("hides external skills by default and keeps counts consistent with visible ownership", () => {
     expect(skillRows(snapshot).rows.map((row) => row.name)).toEqual(["local", "review"]);
-    expect(skillRows(snapshot).counts).toEqual({ all: 2, unmanaged: 1, updates: 0, attention: 0 });
+    expect(skillRows(snapshot).counts).toEqual({
+      all: 2,
+      managed: 1,
+      unmanaged: 1,
+      updates: 0,
+      attention: 0,
+    });
+    expect(skillRows(snapshot, "", "managed", true).rows.map((row) => row.key)).toEqual([skill.id]);
+    expect(skillRows(snapshot, "external", "managed", true).rows).toHaveLength(0);
+    expect(skillRows(snapshot, "review", "managed").rows.map((row) => row.key)).toEqual([skill.id]);
+    const failed = {
+      ...skill,
+      id: "failed",
+      status: "failed" as const,
+      failureReason: "conflict" as const,
+    };
+    const managed = skillRows({ ...snapshot, skills: [skill, failed] }, "", "managed");
+    expect(managed.counts.managed).toBe(2);
+    expect(managed.rows.map((row) => row.key)).toEqual([failed.id, skill.id]);
     expect(skillRows(snapshot, "", "all", true).rows).toHaveLength(3);
     expect(skillRows(snapshot, "external").rows).toHaveLength(0);
     expect(skillRows(snapshot, "external", "all", true).rows).toHaveLength(1);
@@ -121,6 +140,18 @@ describe("skill management views", () => {
       ["/skills", ["codex", "chatgpt"]],
       ["/claude", ["claude"]],
     ]);
+    const available = [
+      ...targets,
+      { id: "directory:shared", label: "Shared", directory: "/shared" },
+      { id: "disabled", label: "Disabled", directory: "/disabled", enabled: false },
+    ];
+    expect(skillDefaultTargetIds(available)).toEqual(["directory:shared"]);
+    expect(skillDefaultTargetIds(available, ["claude", "disabled", "missing"])).toEqual([
+      "claude",
+      "directory:shared",
+    ]);
+    expect(skillDefaultTargetIds(targets)).toEqual([]);
+    expect(skillDefaultTargetIds([{ ...available[3]!, enabled: false }])).toEqual([]);
   });
 
   it("selects multiple skills without discarding policy or usage locations", () => {
