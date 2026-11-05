@@ -141,19 +141,20 @@ export function ClaudeByokSettings({
   instance,
   instanceId,
   environmentId,
-  onUpdate,
   readOnly,
   secretSources,
 }: {
   readonly instance: ProviderInstanceConfig;
   readonly instanceId: ProviderInstanceId;
   readonly environmentId: EnvironmentId;
-  readonly onUpdate: (instance: ProviderInstanceConfig) => void;
   readonly readOnly: boolean;
   readonly secretSources: ReadonlyArray<SecretSource>;
 }) {
   const [draft, setDraft] = useState(instance.environment ?? []);
   const [running, setRunning] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const busy = running || saving;
   const [feedback, setFeedback] = useState<{
     fingerprint: string;
     message: string;
@@ -171,6 +172,9 @@ export function ClaudeByokSettings({
   const dirty = JSON.stringify(draft) !== JSON.stringify(instance.environment ?? []);
   const error = claudeByokFormError(draft);
   const runCheck = useAtomCommand(serverEnvironment.validateProviderEndpoint, {
+    reportFailure: false,
+  });
+  const mutate = useAtomCommand(serverEnvironment.mutateProviderInstance, {
     reportFailure: false,
   });
   const canCheckConnection = useAtomValue(
@@ -206,6 +210,36 @@ export function ClaudeByokSettings({
     });
   };
   const unavailable = readOnly || dirty || error !== null || !instance.enabled;
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setFeedback(null);
+    const result = await mutate({
+      environmentId,
+      input: {
+        patch: {},
+        providerInstanceMutation: {
+          operation: "upsert",
+          instanceId,
+          instance: {
+            ...instance,
+            environment: draft.map((entry) =>
+              entry.name === "ANTHROPIC_BASE_URL" && typeof entry.value === "string"
+                ? { ...entry, value: entry.value.trim() }
+                : entry,
+            ),
+          },
+        },
+      },
+    });
+    setSaving(false);
+    if (result._tag === "Success") {
+      setDraft(result.value.providerInstances[instanceId]?.environment ?? []);
+    } else {
+      const failure = squashAtomCommandFailure(result);
+      setSaveError(failure instanceof Error ? failure.message : "Save failed. Try again.");
+    }
+  };
   return (
     <>
       <ClaudeByokFields
@@ -213,22 +247,32 @@ export function ClaudeByokSettings({
         onChange={(next) => {
           setDraft(next);
           setFeedback(null);
+          setSaveError(null);
         }}
         secretSources={secretSources}
-        disabled={readOnly || running}
+        disabled={readOnly || busy}
       />
       <SettingsRow
         title="Connection settings"
-        status={dirty ? (error ?? "Unsaved changes") : undefined}
+        status={
+          saveError ? (
+            <span role="alert" className="text-destructive">
+              {saveError}
+            </span>
+          ) : dirty ? (
+            (error ?? "Unsaved changes")
+          ) : undefined
+        }
         control={
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant="outline"
-              disabled={!dirty || readOnly || running}
+              disabled={!dirty || readOnly || busy}
               onClick={() => {
                 setDraft(instance.environment ?? []);
                 setFeedback(null);
+                setSaveError(null);
               }}
             >
               <Undo2Icon />
@@ -236,20 +280,11 @@ export function ClaudeByokSettings({
             </Button>
             <Button
               size="sm"
-              disabled={!dirty || error !== null || readOnly || running}
-              onClick={() =>
-                onUpdate({
-                  ...instance,
-                  environment: draft.map((entry) =>
-                    entry.name === "ANTHROPIC_BASE_URL" && typeof entry.value === "string"
-                      ? { ...entry, value: entry.value.trim() }
-                      : entry,
-                  ),
-                })
-              }
+              disabled={!dirty || error !== null || readOnly || busy}
+              onClick={() => void save()}
             >
               <SaveIcon />
-              Save
+              {saving ? "Saving..." : "Save"}
             </Button>
           </div>
         }
@@ -260,7 +295,7 @@ export function ClaudeByokSettings({
           <Button
             size="sm"
             variant="outline"
-            disabled={unavailable || running || !canCheckConnection}
+            disabled={unavailable || busy || !canCheckConnection}
             onClick={() => void check("connection")}
           >
             <PlugIcon />
@@ -275,7 +310,7 @@ export function ClaudeByokSettings({
             <div className="min-w-0 flex-1">
               <Select
                 value={models.some((model) => model.slug === testModel) ? testModel : null}
-                disabled={running || readOnly}
+                disabled={busy || readOnly}
                 onValueChange={(value) => {
                   setTestModel(value ?? "");
                   setFeedback(null);
@@ -298,7 +333,7 @@ export function ClaudeByokSettings({
               variant="outline"
               disabled={
                 unavailable ||
-                running ||
+                busy ||
                 !canCheckModel ||
                 !models.some((model) => model.slug === testModel)
               }

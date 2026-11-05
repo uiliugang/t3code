@@ -14,6 +14,16 @@ import { readClaudeSettingsEnv } from "./ClaudeSkills.ts";
 
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
+export const CLAUDE_BYOK_ENVIRONMENT_OVERRIDES = {
+  CLAUDE_CODE_OAUTH_TOKEN: "",
+  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+  CLAUDE_CODE_USE_BEDROCK: "0",
+  CLAUDE_CODE_USE_VERTEX: "0",
+  CLAUDE_CODE_USE_FOUNDRY: "0",
+  DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+};
+
 export class ClaudeEnvironmentError extends Schema.TaggedError<ClaudeEnvironmentError>()(
   "ClaudeEnvironmentError",
   { reason: Schema.Literals(["auth", "endpoint", "models", "home"]) },
@@ -64,7 +74,7 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
       resolvedBaseEnv.ANTHROPIC_BASE_URL!,
     );
     if (!config.homePath.trim()) return yield* new ClaudeEnvironmentError({ reason: "home" });
-    resolvedBaseEnv.CLAUDE_CODE_OAUTH_TOKEN = "";
+    Object.assign(resolvedBaseEnv, CLAUDE_BYOK_ENVIRONMENT_OVERRIDES);
     resolvedBaseEnv.ANTHROPIC_AUTH_TOKEN = token ?? "";
     resolvedBaseEnv.ANTHROPIC_API_KEY = key ?? "";
     const model = readCustomModelEntries(config.customModels ?? [])[0]?.slug;
@@ -79,12 +89,6 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
       ])
         resolvedBaseEnv[variable] = model;
     }
-    resolvedBaseEnv.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1";
-    resolvedBaseEnv.CLAUDE_CODE_USE_BEDROCK = "0";
-    resolvedBaseEnv.CLAUDE_CODE_USE_VERTEX = "0";
-    resolvedBaseEnv.CLAUDE_CODE_USE_FOUNDRY = "0";
-    resolvedBaseEnv.DISABLE_NON_ESSENTIAL_MODEL_CALLS = "1";
-    resolvedBaseEnv.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
   }
   const homePath = config.homePath.trim();
   if (homePath.length === 0) return resolvedBaseEnv;

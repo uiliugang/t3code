@@ -284,8 +284,14 @@ function ClaudeByokEditor({
                     },
                   });
                   setPending(false);
-                  if (result._tag === "Success") onClose?.();
-                  else {
+                  if (result._tag === "Success") {
+                    const saved = result.value.providerInstances[instanceId];
+                    if (saved) {
+                      setDraft(saved.environment ?? []);
+                      setFeedback(null);
+                    }
+                    onClose?.();
+                  } else {
                     const failure = squashAtomCommandFailure(result);
                     setFeedback({
                       fingerprint,

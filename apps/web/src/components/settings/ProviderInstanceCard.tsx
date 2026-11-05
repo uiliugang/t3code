@@ -1313,7 +1313,6 @@ export function ProviderInstanceCard({
             instance={instance}
             instanceId={instanceId}
             environmentId={environmentId}
-            onUpdate={onUpdate}
             readOnly={
               readOnly ||
               !!instanceLocks?.wholeEnvironment ||

@@ -90,15 +90,15 @@ describe("command permissions", () => {
             ? [AuthProvidersManageScope, AuthOrchestrationOperateScope]
             : method === WS_METHODS.issuesCreate || method === WS_METHODS.issuesSetState
               ? [AuthSourceControlWriteScope]
-            : method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
-              ? [AuthProvidersManageScope]
-              : method === WS_METHODS.projectsImportFolders
-                ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
-                : [
-                    AuthSourceControlWriteScope,
-                    AuthOrchestrationOperateScope,
-                    AuthSettingsWriteScope,
-                  ];
+              : method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
+                ? [AuthProvidersManageScope]
+                : method === WS_METHODS.projectsImportFolders
+                  ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
+                  : [
+                      AuthSourceControlWriteScope,
+                      AuthOrchestrationOperateScope,
+                      AuthSettingsWriteScope,
+                    ];
         for (const missing of required) {
           const scopes = required.filter((scope) => scope !== missing);
           registry.set(

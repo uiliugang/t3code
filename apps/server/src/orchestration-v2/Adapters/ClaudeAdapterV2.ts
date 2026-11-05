@@ -166,6 +166,7 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 import {
+  CLAUDE_BYOK_ENVIRONMENT_OVERRIDES,
   claudeSignedOutMessage,
   makeClaudeEnvironment,
   mergeClaudeProcessEnvironment,
@@ -1630,7 +1631,10 @@ export function makeClaudeQueryOptions(input: {
                 ? (toolSearchQuerySettings?.env ?? {})
                 : {},
             ).filter(
-              ([name]) => !name.startsWith("ANTHROPIC_") && name !== "CLAUDE_CODE_OAUTH_TOKEN",
+              ([name]) =>
+                !name.startsWith("ANTHROPIC_") &&
+                !Object.hasOwn(CLAUDE_BYOK_ENVIRONMENT_OVERRIDES, name) &&
+                name !== "CLAUDE_CONFIG_DIR",
             ),
           ),
           ANTHROPIC_MODEL: compiledSelection.apiModelId,
