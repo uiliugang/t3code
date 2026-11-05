@@ -283,6 +283,7 @@ export type GuestMessageAttribution = typeof GuestMessageAttribution.Type;
 /** Structured context riding on a user message. Undecodable records are dropped, not fatal. */
 export const OrchestrationMessageContext = Schema.Struct({
   version: Schema.Literal(1),
+  sourceControlLanguage: Schema.optional(Schema.Literals(["en", "zh-CN"])),
   guest: Schema.optional(GuestMessageAttribution),
   records: Schema.Array(Schema.Unknown)
     .check(

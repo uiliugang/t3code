@@ -125,6 +125,31 @@ describe("attachment-only bootstrap prompts", () => {
 });
 
 describe("provider projection", () => {
+  it.each([
+    ["zh-CN", "Simplified Chinese"],
+    ["en", "English"],
+  ] as const)(
+    "carries the source control language %s even without context chips",
+    (sourceControlLanguage, language) => {
+      const input = { text: "Commit and open a PR.", records: [], sourceControlLanguage };
+      const projected = projectComposerContextForProvider(input);
+      expect(projected).toContain(input.text);
+      expect(projected).toContain(
+        `Write commit subjects and bodies and pull request titles and descriptions in ${language}`,
+      );
+      expect(projected).toContain("repository examples");
+      expect(projected).toContain("explicitly requests another language");
+    },
+  );
+
+  it.each(["/compact", "/goal Fix the bug", " /status"])(
+    "preserves the native command %s",
+    (text) => {
+      const input = { text, records: [], sourceControlLanguage: "zh-CN" as const };
+      expect(projectComposerContextForProvider(input)).toBe(text);
+    },
+  );
+
   const terminal: ComposerContextRecord = {
     version: 1,
     contextId: ctx("ctx_t"),

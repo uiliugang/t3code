@@ -39,6 +39,7 @@ import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSc
 import {
   EnvironmentId,
   ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
+  OrchestrationMessageContext,
   PullRequestState,
   ThreadId,
 } from "@t3tools/contracts";
@@ -280,7 +281,12 @@ export const McpToolUseCase = Schema.Struct({
   /** Empty to resume a top-level thread without side-chat context after its last tool result. */
   prompt: Schema.String,
   /** Records for the context chips `prompt` links, projected as T3 sends them. */
-  promptContext: Schema.optional(Schema.Struct({ records: Schema.Array(ComposerContextRecord) })),
+  promptContext: Schema.optional(
+    Schema.Struct({
+      records: Schema.Array(ComposerContextRecord),
+      sourceControlLanguage: OrchestrationMessageContext.fields.sourceControlLanguage,
+    }),
+  ),
   expect: McpToolUseExpect,
   /** Model calls this case may need. Overrides `--max-steps`. */
   maxSteps: Schema.optional(Schema.Number),

@@ -1,8 +1,8 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ClientSettings, ThreadId } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { Atom } from "effect/reactivity";
+import { Atom, type AtomRegistry } from "effect/reactivity";
 import {
   WS_METHODS,
   type EnvironmentId,
@@ -19,6 +19,7 @@ import {
 } from "./runtime.ts";
 import {
   type InterruptThreadTurnInput,
+  type StartThreadTurnInput,
   archiveThread,
   closeGuestShare,
   resolveGuestMessage,
@@ -71,6 +72,7 @@ export type LoadEarlierThreadHistoryInput = {
 export function createThreadEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | SecureRandom.SecureRandom | R, E>,
   snapshotAtom: (environmentId: EnvironmentId) => Atom.Atom<OrchestrationV2ShellSnapshot | null>,
+  getLanguage?: (registry: AtomRegistry.AtomRegistry) => ClientSettings["uiLanguage"],
 ) {
   const scheduler = createAtomCommandScheduler();
   const concurrency = {
@@ -259,7 +261,25 @@ export function createThreadEnvironmentAtoms<R, E>(
     }),
     startTurn: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:start-turn",
-      execute: startThreadTurn,
+      execute: (input: StartThreadTurnInput, registry) => {
+        const language = getLanguage?.(registry);
+        return startThreadTurn(
+          language === undefined
+            ? input
+            : {
+                ...input,
+                message: {
+                  ...input.message,
+                  context: {
+                    version: 1,
+                    records: [],
+                    ...input.message.context,
+                    sourceControlLanguage: language,
+                  },
+                },
+              },
+        );
+      },
       scheduler,
       concurrency,
     }),

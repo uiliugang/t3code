@@ -10,7 +10,7 @@ import {
   createThreadEnvironmentAtoms,
   createThreadFamilyAtoms,
 } from "@t3tools/client-runtime/state/threads";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
@@ -24,6 +24,7 @@ import {
 import { serverEnvironment } from "./server";
 import { environmentShell } from "./shell";
 import { threadOutboxManager } from "./thread-outbox";
+import { mobilePreferencesAtom } from "./preferences";
 
 export const threadFamilies = createThreadFamilyAtoms(
   connectionAtomRuntime,
@@ -36,6 +37,12 @@ export const olderSettledThreads = createOlderSettledThreadAtoms(
 export const threadEnvironment = createThreadEnvironmentAtoms(
   connectionAtomRuntime,
   threadFamilies.snapshotAtom,
+  (registry) => {
+    const preferences = registry.get(mobilePreferencesAtom);
+    return AsyncResult.isSuccess(preferences)
+      ? (preferences.value.uiLanguage ?? DEFAULT_CLIENT_SETTINGS.uiLanguage)
+      : DEFAULT_CLIENT_SETTINGS.uiLanguage;
+  },
 );
 export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(

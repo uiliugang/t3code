@@ -6,6 +6,7 @@ import {
   type ElementContextDetails,
   type EnvironmentId,
   type KnownComposerContextRecord,
+  type OrchestrationMessageContext,
   type ScopedThreadRef,
   type ThreadContextRecord,
 } from "@t3tools/contracts";
@@ -375,14 +376,20 @@ function formatEnvelopeEntry(
 export function projectComposerContextForProvider(input: {
   text: string;
   records: ReadonlyArray<ComposerContextRecord>;
+  sourceControlLanguage?: OrchestrationMessageContext["sourceControlLanguage"];
 }): string {
+  const language = input.sourceControlLanguage === "zh-CN" ? "Simplified Chinese" : "English";
+  const text =
+    input.sourceControlLanguage === undefined || input.text.trimStart().startsWith("/")
+      ? input.text
+      : `${input.text}\n\n<t3_source_control_language>\nWrite commit subjects and bodies and pull request titles and descriptions in ${language}, regardless of the language of repository examples, unless the user explicitly requests another language. Keep conventional commit type/scope tokens, code identifiers, and repository template headings unchanged; translate default Summary and Testing headings. Keep branch names in ASCII kebab-case. Carry this preference into delegated source-control work.\n</t3_source_control_language>`;
   const occurrences = collectComposerContextReferences(input.text);
-  if (occurrences.length === 0) return input.text;
+  if (occurrences.length === 0) return text;
   const recordsById = new Map<ComposerContextId, ComposerContextRecord | undefined>();
   for (const record of input.records) {
     recordsById.set(record.contextId, recordsById.has(record.contextId) ? undefined : record);
   }
-  const body = replaceComposerContextReferences(input.text, (occurrence) =>
+  const body = replaceComposerContextReferences(text, (occurrence) =>
     formatComposerContextProviderMarker(
       recordsById.get(occurrence.contextId)?.kind ?? occurrence.kind,
       occurrence.label,
