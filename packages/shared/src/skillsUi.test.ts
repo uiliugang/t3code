@@ -5,6 +5,7 @@ import {
   skillRows,
   skillSelection,
   skillTargetGroups,
+  skillDefaultTargetIds,
   skillFailure,
   skillStatus,
   skillSourceFailure,
@@ -139,6 +140,18 @@ describe("skill management views", () => {
       ["/skills", ["codex", "chatgpt"]],
       ["/claude", ["claude"]],
     ]);
+    const available = [
+      ...targets,
+      { id: "directory:shared", label: "Shared", directory: "/shared" },
+      { id: "disabled", label: "Disabled", directory: "/disabled", enabled: false },
+    ];
+    expect(skillDefaultTargetIds(available)).toEqual(["directory:shared"]);
+    expect(skillDefaultTargetIds(available, ["claude", "disabled", "missing"])).toEqual([
+      "claude",
+      "directory:shared",
+    ]);
+    expect(skillDefaultTargetIds(targets)).toEqual([]);
+    expect(skillDefaultTargetIds([{ ...available[3]!, enabled: false }])).toEqual([]);
   });
 
   it("selects multiple skills without discarding policy or usage locations", () => {

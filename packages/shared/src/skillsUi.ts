@@ -130,6 +130,19 @@ export function skillRows(
   };
 }
 
+export function skillDefaultTargetIds(
+  targets: ReadonlyArray<SkillTarget>,
+  originalIds: ReadonlyArray<string> = [],
+) {
+  return targets
+    .filter(
+      (target) =>
+        target.enabled !== false &&
+        (target.id === "directory:shared" || originalIds.includes(target.id)),
+    )
+    .map((target) => target.id);
+}
+
 export function skillTargetGroups(targets: ReadonlyArray<SkillTarget>) {
   const groups = new Map<string, { directory: string; targets: SkillTarget[] }>();
   for (const target of targets) {

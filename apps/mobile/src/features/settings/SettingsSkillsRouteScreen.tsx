@@ -22,6 +22,7 @@ import {
   skillGroups,
   skillSelection,
   skillTargetGroups,
+  skillDefaultTargetIds,
   skillStatus,
   skillFailure,
   skillNextCheck,
@@ -212,7 +213,7 @@ function Install({
     existing && !existing.snapshotOnly ? existing.locator : "",
   );
   const [name, setName] = useState(existing?.requestedSkill ?? "");
-  const [targets, setTargets] = useState<string[]>([]);
+  const [targets, setTargets] = useState(() => skillDefaultTargetIds(data.targets));
   const [policy, setPolicy] = useState<SkillUpdatePolicy>("automatic");
   const [advanced, setAdvanced] = useState(false);
   return (
@@ -750,6 +751,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
     return result._tag === "Success" ? result.value : null;
   };
   const preview = async (skills: DiscoveredSkill[]) => {
+    if (!data) return;
     setPreviewing(true);
     const results = [];
     for (const skill of skills) {
@@ -757,7 +759,12 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       if (result) results.push({ skill, preview: result });
     }
     setLocations(
-      Object.fromEntries(results.map(({ skill }) => [skill.path, [...(skill.targetIds ?? [])]])),
+      Object.fromEntries(
+        results.map(({ skill }) => [
+          skill.path,
+          skillDefaultTargetIds(data.targets, skill.targetIds),
+        ]),
+      ),
     );
     setPreviewError(results.length !== skills.length);
     setPreviews(results);
@@ -885,7 +892,10 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
               <TargetSelection
                 data={{
                   ...data,
-                  targets: data.targets.filter((target) => skill.targetIds?.includes(target.id)),
+                  targets: data.targets.filter(
+                    (target) =>
+                      target.id === "directory:shared" || skill.targetIds?.includes(target.id),
+                  ),
                 }}
                 selected={locations[skill.path] ?? []}
                 disabled={disabled}
@@ -901,7 +911,12 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
           <View className="flex-row flex-wrap gap-2">
             <ControlPill
               label={t("Take over selected locations")}
-              disabled={disabled || previews.some(({ skill }) => !locations[skill.path]?.length)}
+              disabled={
+                disabled ||
+                previews.some(
+                  ({ skill }) => !skill.targetIds?.length || !locations[skill.path]?.length,
+                )
+              }
               onPress={() =>
                 void mutate({
                   type: "batch",

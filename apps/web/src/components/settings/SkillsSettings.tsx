@@ -22,6 +22,7 @@ import {
   skillGroups,
   skillSelection,
   skillTargetGroups,
+  skillDefaultTargetIds,
   skillStatus,
   skillFailure,
   skillNextCheck,
@@ -248,7 +249,7 @@ function InstallDialog({
   const [sourceId, setSourceId] = useState(data.sources.find((source) => source.enabled)?.id ?? "");
   const [locator, setLocator] = useState("");
   const [skill, setSkill] = useState("");
-  const [targetIds, setTargetIds] = useState<string[]>([]);
+  const [targetIds, setTargetIds] = useState(() => skillDefaultTargetIds(data.targets));
   const [policy, setPolicy] = useState<SkillUpdatePolicy>("automatic");
   const [saving, setSaving] = useState(false);
   const source = data.sources.find((entry) => entry.id === sourceId);
@@ -506,7 +507,12 @@ function AdoptDialog({
   const t = useUiTranslation();
   const [selected, setSelected] = useState(items.map((item) => item.skill.path));
   const [locations, setLocations] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(items.map((item) => [item.skill.path, [...(item.skill.targetIds ?? [])]])),
+    Object.fromEntries(
+      items.map((item) => [
+        item.skill.path,
+        skillDefaultTargetIds(data.targets, item.skill.targetIds),
+      ]),
+    ),
   );
   const [saving, setSaving] = useState(false);
   return (
@@ -558,7 +564,10 @@ function AdoptDialog({
                         )}
                 </p>
                 <Targets
-                  targets={data.targets.filter((target) => skill.targetIds?.includes(target.id))}
+                  targets={data.targets.filter(
+                    (target) =>
+                      target.id === "directory:shared" || skill.targetIds?.includes(target.id),
+                  )}
                   selected={locations[skill.path] ?? []}
                   onChange={(ids) => setLocations({ ...locations, [skill.path]: ids })}
                 />
@@ -577,7 +586,10 @@ function AdoptDialog({
           </Button>
           <Button
             disabled={
-              saving || !selected.length || selected.some((path) => !locations[path]?.length)
+              saving ||
+              !selected.length ||
+              selected.some((path) => !locations[path]?.length) ||
+              items.some(({ skill }) => selected.includes(skill.path) && !skill.targetIds?.length)
             }
             onClick={async () => {
               setSaving(true);

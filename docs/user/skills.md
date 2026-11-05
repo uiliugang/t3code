@@ -4,6 +4,8 @@ Open **Settings > Skills** and select the environment whose files you want to ma
 
 Install from a local directory, a Git repository or URL, or an enabled Meituan Skills source. When a package contains several skills, select one or more to install. Skills from the same source are grouped while keeping their own versions, policies and usage locations. Without a usage location, the skill is saved only to the library. Use **Installation sources** to configure and check installers. **Usage locations** adds directories to scan and link, including shared directories and custom agent platforms. Instances sharing a directory are configured together.
 
+Installation selects the shared skills directory by default. Adoption also selects the original usage locations. Disabled locations are not selected automatically. You can change the selection before confirming. Shared skills are discoverable by providers that support that directory; providers such as Claude and Antigravity may require their own usage location as well. Start a new provider session after changing skills.
+
 The list hides externally maintained skills by default. Use **Filter skills** to include them or filter by management and update status. External skills are updated through their plugin or provider.
 
 To manage an existing skill, review its source, content and locations first. Adoption backs up the original files and replaces the selected locations with managed links, so agents use the managed skill instead of a separate unmanaged copy. A previously copied library entry is reused when its content still matches the original. A takeover without an independent update source remains a local snapshot; connect its real upstream to enable updates. Sources are never inferred from a skill's name alone.
