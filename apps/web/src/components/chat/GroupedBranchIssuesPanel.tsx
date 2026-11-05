@@ -26,6 +26,7 @@ import { vcsEnvironment } from "../../state/vcs";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { groupBranchIssues, type IssueBranch } from "./branchIssueGroups";
@@ -86,12 +87,19 @@ function BranchRow({
   return (
     <div className="border-t border-border/50 py-1.5">
       <div className="flex min-h-7 items-center gap-2">
-        <GitBranchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="min-w-0 font-mono text-xs wrap-anywhere">{target.branch}</span>
-          {current ? (
-            <span className="shrink-0 text-2xs text-success">{t("Current branch")}</span>
-          ) : null}
+        <GitBranchIcon
+          className={
+            current ? "size-3.5 shrink-0 text-primary" : "size-3.5 shrink-0 text-muted-foreground"
+          }
+        />
+        <div
+          className={
+            current
+              ? "min-w-0 flex-1 text-xs text-primary"
+              : "min-w-0 flex-1 text-xs text-muted-foreground"
+          }
+        >
+          <MiddleTruncate value={target.branch} />
         </div>
         <Tooltip>
           <TooltipTrigger
@@ -110,21 +118,14 @@ function BranchRow({
               render={
                 <Button
                   variant="ghost"
-                  size={issue ? "icon-xs" : "xs"}
+                  size="icon-xs"
                   disabled={!allowed || busy}
                   aria-label={t(issue ? "Unlink issue" : "Link issues")}
                   onClick={() => (issue ? void mutate() : setAdding(!adding))}
                 />
               }
             >
-              {issue ? (
-                <UnlinkIcon />
-              ) : (
-                <>
-                  <PlusIcon />
-                  {t("Link issues")}
-                </>
-              )}
+              {issue ? <UnlinkIcon /> : <PlusIcon />}
             </TooltipTrigger>
             <TooltipPopup>{t(issue ? "Unlink issue" : "Link issues")}</TooltipPopup>
           </Tooltip>
