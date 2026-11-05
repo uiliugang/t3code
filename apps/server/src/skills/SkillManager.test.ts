@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
 import * as TestClock from "effect/testing/TestClock";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -44,9 +45,15 @@ const harness = Effect.gen(function* () {
       Sqlite.layerMemory,
     ).pipe(Layer.provideMerge(ServerConfig.layerTest(directory, directory))),
   );
-  const restart = Layer.build(
-    SkillManager.layer.pipe(Layer.provide(Layer.succeedContext(dependencies))),
-  ).pipe(Effect.map((context) => Context.get(context, SkillManager.SkillManager)));
+  const restartWithFileSystem = (fileSystem: FileSystem.FileSystem) =>
+    Layer.build(
+      SkillManager.layer.pipe(
+        Layer.provide(
+          Layer.succeedContext(Context.add(dependencies, FileSystem.FileSystem, fileSystem)),
+        ),
+      ),
+    ).pipe(Effect.map((context) => Context.get(context, SkillManager.SkillManager)));
+  const restart = restartWithFileSystem(fs);
   const manager = yield* restart;
   const sql = Context.get(dependencies, SqlClient.SqlClient);
   const install = manager
@@ -58,7 +65,19 @@ const harness = Effect.gen(function* () {
       targetIds: ["fixture"],
     })
     .pipe(Effect.andThen(manager.drain));
-  return { fs, directory, source, target, manager, install, busy, reported, restart, sql };
+  return {
+    fs,
+    directory,
+    source,
+    target,
+    manager,
+    install,
+    busy,
+    reported,
+    restart,
+    restartWithFileSystem,
+    sql,
+  };
 });
 const encodeCatalog = Schema.encodeEffect(Schema.fromJsonString(SkillCatalog));
 
@@ -296,9 +315,9 @@ describe("SkillManager", () => {
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
-  it.effect("preserves conflicting directories and defers activation while agents are busy", () =>
+  it.effect("backs up conflicting directories and defers activation while agents are busy", () =>
     Effect.gen(function* () {
-      const { fs, target, manager, install, busy } = yield* harness;
+      const { fs, source, target, manager, install, busy, restart } = yield* harness;
       yield* fs.makeDirectory(`${target}/review`, { recursive: true });
       yield* fs.writeFileString(`${target}/review/SKILL.md`, "original");
       yield* Ref.set(busy, true);
@@ -313,9 +332,12 @@ describe("SkillManager", () => {
       yield* Ref.set(busy, false);
       yield* manager.mutate({ type: "update", id: pending.id });
       yield* manager.drain;
-      expect(yield* fs.readFileString(`${target}/review/SKILL.md`)).toBe("original");
-      expect((yield* manager.snapshot).skills[0]?.bindings[0]?.status).toBe("conflict");
-      yield* fs.remove(`${target}/review`, { recursive: true });
+      const linked = (yield* manager.snapshot).skills[0]!;
+      expect(linked.bindings[0]?.status).toBe("linked");
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+      expect(yield* fs.readFileString(`${linked.backups![0]!.backup}/SKILL.md`)).toBe("original");
+      yield* fs.remove(`${target}/review`);
+      yield* fs.writeFileString(`${target}/review`, "another original");
       yield* manager.mutate({
         type: "configure",
         id: pending.id,
@@ -323,7 +345,88 @@ describe("SkillManager", () => {
         targetIds: ["fixture"],
       });
       yield* manager.drain;
-      expect((yield* manager.snapshot).skills[0]?.bindings[0]?.status).toBe("linked");
+      const configured = (yield* manager.snapshot).skills[0]!;
+      expect(configured.bindings[0]?.status).toBe("linked");
+      expect(configured.backups).toHaveLength(2);
+      expect(yield* fs.readFileString(configured.backups![1]!.backup)).toBe("another original");
+      yield* fs.remove(`${target}/review`);
+      yield* fs.copy(source, `${target}/review`);
+      yield* fs.writeFileString(`${source}/script.sh`, "second");
+      yield* manager.mutate({ type: "update", id: pending.id });
+      yield* manager.drain;
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("second");
+      const recovered = yield* restart;
+      expect((yield* recovered.snapshot).skills[0]?.backups).toHaveLength(3);
+      yield* recovered.mutate({ type: "unmanage", id: pending.id, restore: true });
+      yield* recovered.drain;
+      expect((yield* recovered.snapshot).skills).toHaveLength(0);
+      expect(yield* fs.readFileString(`${target}/review/SKILL.md`)).toBe("original");
+      expect(yield* fs.readFileString(configured.backups![1]!.backup)).toBe("another original");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect("keeps original files when backing up or linking fails and retries the binding", () =>
+    Effect.gen(function* () {
+      const { fs, source, target, restart, restartWithFileSystem } = yield* harness;
+      for (const method of ["rename", "symlink"] as const) {
+        yield* fs.makeDirectory(`${target}/review`, { recursive: true });
+        yield* fs.writeFileString(`${target}/review/original.txt`, method);
+        const originalPath = yield* fs.realPath(`${target}/review`);
+        const failing = yield* restartWithFileSystem({
+          ...fs,
+          [method]: (from: string, to: string) =>
+            (method === "rename" ? from : to) === originalPath
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method,
+                  }),
+                )
+              : fs[method](from, to),
+        });
+        yield* failing.mutate({
+          type: "install",
+          sourceId: "local",
+          locator: source,
+          skill: "",
+          targetIds: ["fixture"],
+        });
+        yield* failing.drain;
+        expect(yield* fs.readFileString(`${target}/review/original.txt`)).toBe(method);
+        expect((yield* failing.snapshot).skills[0]?.bindings[0]?.status).toBe("missing");
+        const failed = (yield* failing.snapshot).skills[0]!;
+        if (method === "rename") {
+          yield* failing.mutate({
+            type: "configure",
+            id: failed.id,
+            policy: failed.policy,
+            targetIds: [],
+          });
+          yield* failing.drain;
+          expect((yield* failing.snapshot).skills[0]?.bindings).toEqual([]);
+          expect(yield* fs.readFileString(`${target}/review/original.txt`)).toBe(method);
+        }
+        const recovered = yield* restart;
+        if (method === "rename") {
+          yield* recovered.mutate({
+            type: "configure",
+            id: failed.id,
+            policy: failed.policy,
+            targetIds: ["fixture"],
+          });
+          yield* recovered.drain;
+        }
+        const skill = (yield* recovered.snapshot).skills[0]!;
+        expect(skill.status).toBe("ready");
+        expect(skill.failureReason).toBeNull();
+        expect(skill.bindings[0]?.status).toBe("linked");
+        expect(yield* fs.readFileString(`${skill.backups![0]!.backup}/original.txt`)).toBe(method);
+        yield* recovered.mutate({ type: "remove", id: skill.id });
+        yield* recovered.drain;
+        expect(yield* fs.readFileString(`${target}/review/original.txt`)).toBe(method);
+        yield* fs.remove(`${target}/review`, { recursive: true });
+      }
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
@@ -331,7 +434,7 @@ describe("SkillManager", () => {
     "recovers a committed version switch without fetching and guards referenced sources and targets",
     () =>
       Effect.gen(function* () {
-        const { fs, source, target, manager, install, restart, sql } = yield* harness;
+        const { fs, directory, source, target, manager, install, restart, sql } = yield* harness;
         yield* install;
         yield* fs.writeFileString(`${source}/script.sh`, "second");
         const first = (yield* manager.snapshot).skills[0]!;
@@ -341,11 +444,18 @@ describe("SkillManager", () => {
         const checked = catalog.skills[0]!;
         const working = yield* fs.realPath(`${target}/review`);
         yield* fs.copy(source, working.replace(/[^/\\]+$/, "prepared"));
+        const original = `${checked.bindings[0]!.directory}/review`;
+        const backup = `${directory}/interrupted-backup`;
+        yield* fs.remove(original);
+        yield* fs.makeDirectory(original);
+        yield* fs.writeFileString(`${original}/original.txt`, "interrupted original");
+        yield* fs.rename(original, backup);
         const payload = yield* encodeCatalog({
           ...catalog,
           skills: [
             {
               ...checked,
+              backups: [{ original, backup }],
               pendingActivation: { digest: checked.availableDigest!, workKey: "prepared" },
               status: "pending",
             },
@@ -373,6 +483,11 @@ describe("SkillManager", () => {
         });
         yield* recovered.drain;
         expect(yield* fs.exists(`${target}/review`)).toBe(false);
+        yield* recovered.mutate({ type: "remove", id: first.id });
+        yield* recovered.drain;
+        expect(yield* fs.readFileString(`${target}/review/original.txt`)).toBe(
+          "interrupted original",
+        );
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 

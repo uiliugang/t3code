@@ -250,8 +250,34 @@ const make = Effect.gen(function* () {
       const result = yield* Effect.gen(function* () {
         yield* fs.makeDirectory(target.directory, { recursive: true });
         if ((yield* readLink(file)) === activePath(skill.id)) return "linked" as const;
-        if (yield* filePresent(file)) return "conflict" as const;
-        yield* directoryLink(activePath(skill.id), file);
+        if (yield* filePresent(file)) {
+          let backup: string | undefined;
+          for (const entry of skill.backups ?? [])
+            if (entry.original === file && !(yield* filePresent(entry.backup))) {
+              backup = entry.backup;
+              break;
+            }
+          if (!backup) {
+            backup = path.join(
+              root,
+              "backups",
+              skill.id,
+              yield* random.uuidV4().pipe(Effect.orDie),
+            );
+            skill = { ...skill, backups: [...(skill.backups ?? []), { original: file, backup }] };
+            // Journal the destination before moving files so restart recovery retains the original.
+            yield* replace(skill);
+          }
+          yield* fs.makeDirectory(path.dirname(backup), { recursive: true });
+          yield* fs.rename(file, backup);
+          yield* directoryLink(activePath(skill.id), file).pipe(
+            Effect.tapError(() =>
+              Effect.gen(function* () {
+                if (!(yield* filePresent(file))) yield* fs.rename(backup, file);
+              }),
+            ),
+          );
+        } else yield* directoryLink(activePath(skill.id), file);
         return "linked" as const;
       }).pipe(Effect.result);
       bindings.push({ ...target, status: result._tag === "Success" ? result.success : "missing" });
@@ -458,12 +484,6 @@ const make = Effect.gen(function* () {
     const candidate = yield* packages.inspect(yield* packagePath(skill.id, digest));
     if (candidate.digest !== digest)
       return yield* new SkillManagerError({ operation: "activate", reason: "candidate-changed" });
-    if (skill.activeDigest)
-      for (const target of skill.bindings) {
-        const file = linkPath(skill, target);
-        if ((yield* filePresent(file)) && (yield* readLink(file)) !== activePath(skill.id))
-          return yield* new SkillManagerError({ operation: "activate", reason: "conflict" });
-      }
     if (yield* host.busy) {
       yield* replace({
         ...skill,
@@ -624,7 +644,12 @@ const make = Effect.gen(function* () {
       };
       yield* replace(next);
       yield* assertUnmodified(next);
-      if (apply && (fetched.digest !== skill.activeDigest || skill.status === "pending"))
+      if (
+        apply &&
+        (fetched.digest !== skill.activeDigest ||
+          skill.status === "pending" ||
+          skill.bindings.some((binding) => binding.status !== "linked"))
+      )
         yield* activate(next, fetched.digest);
     }).pipe(
       Effect.ensuring(fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore)),
@@ -646,7 +671,11 @@ const make = Effect.gen(function* () {
     yield* host.refresh(skill.bindings);
   });
   const restoreBackups = Effect.fn("SkillManager.restoreBackups")(function* (skill: ManagedSkill) {
+    const restored = new Set<string>();
     for (const entry of skill.backups ?? []) {
+      // Restore the earliest original; later replacements remain available in the backup archive.
+      if (restored.has(entry.original)) continue;
+      restored.add(entry.original);
       if (!(yield* filePresent(entry.backup))) continue;
       if ((yield* readLink(entry.original)) === activePath(skill.id))
         yield* fs.remove(entry.original);
@@ -1096,8 +1125,11 @@ const make = Effect.gen(function* () {
               ),
             );
             for (const previous of previousBindings)
-              if (!targets.some((target) => target.directory === previous.directory))
-                yield* detach(skill, previous);
+              if (
+                !targets.some((target) => target.directory === previous.directory) &&
+                (yield* readLink(linkPath(skill, previous))) === activePath(skill.id)
+              )
+                yield* fs.remove(linkPath(skill, previous));
             const recovered =
               skill.activeDigest &&
               (skill.failureReason === "target-disabled" || skill.failureReason === "conflict");
@@ -1379,9 +1411,19 @@ const make = Effect.gen(function* () {
                 ? "failed"
                 : linked.status === "pending"
                   ? "ready"
-                  : linked.status,
-          failure: failed ? skillFailureMessage("conflict") : linked.failure,
-          failureReason: failed ? "conflict" : (linked.failureReason ?? null),
+                  : linked.failureReason === "conflict"
+                    ? "ready"
+                    : linked.status,
+          failure: failed
+            ? skillFailureMessage("conflict")
+            : linked.failureReason === "conflict"
+              ? null
+              : linked.failure,
+          failureReason: failed
+            ? "conflict"
+            : linked.failureReason === "conflict"
+              ? null
+              : (linked.failureReason ?? null),
         });
       }
     }

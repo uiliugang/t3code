@@ -38,6 +38,10 @@ export const skillMessages: Readonly<Record<string, string>> = {
   "Skills list": "技能",
   "Installation sources": "安装来源",
   "Usage locations": "使用位置",
+  "Existing files at selected locations are backed up and replaced with managed links.":
+    "所选位置的现有文件会先备份，再自动替换为托管链接。",
+  "Original backups": "原文件备份",
+  "Backup: {path}": "备份：{path}",
   "All skills": "全部",
   Unmanaged: "未纳管",
   Updates: "待更新",

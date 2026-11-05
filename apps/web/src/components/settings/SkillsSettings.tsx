@@ -229,6 +229,9 @@ function Targets({
           </label>
         ))}
       </div>
+      <p className="text-xs text-muted-foreground">
+        {t("Existing files at selected locations are backed up and replaced with managed links.")}
+      </p>
     </div>
   );
 }
@@ -1035,6 +1038,13 @@ function SkillRow({
           {failure && (
             <div role="alert" className="mt-2 min-w-0 text-xs leading-relaxed text-destructive">
               <p>{t(failure)}</p>
+              {skill.bindings
+                .filter((target) => target.status !== "linked")
+                .map((target) => (
+                  <p key={target.id} className="font-mono wrap-anywhere">
+                    {target.label}: {target.directory}/{target.entryName ?? skill.name}
+                  </p>
+                ))}
               {skill.failureDiagnostics && (
                 <details>
                   <summary className="cursor-pointer font-medium">{t("Error details")}</summary>
@@ -1149,6 +1159,19 @@ function SkillRow({
                     </p>
                   </div>
                 ))}
+                {Boolean(skill.backups?.length) && (
+                  <div className="space-y-2 pt-2">
+                    <h4 className="font-medium">{t("Original backups")}</h4>
+                    {skill.backups?.map((entry) => (
+                      <div key={entry.backup} className="text-xs">
+                        <p className="font-mono wrap-anywhere">{entry.original}</p>
+                        <p className="mt-1 font-mono text-muted-foreground wrap-anywhere">
+                          {t("Backup: {path}", { path: entry.backup })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {detailTab === "history" && (
