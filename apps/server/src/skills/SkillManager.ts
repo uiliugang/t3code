@@ -239,8 +239,14 @@ const make = Effect.gen(function* () {
     target: SkillTarget,
   ) {
     const file = linkPath(skill, target);
-    if ((yield* readLink(file)) === activePath(skill.id)) yield* fs.remove(file);
-    else if (yield* filePresent(file))
+    const existingLink = yield* readLink(file);
+    if (existingLink === activePath(skill.id)) yield* fs.remove(file);
+    else if (
+      (yield* filePresent(file)) &&
+      !(yield* Ref.get(state)).skills.some(
+        (other) => other.id !== skill.id && existingLink === activePath(other.id),
+      )
+    )
       return yield* new SkillManagerError({ operation: "detach", reason: "conflict" });
   });
   const syncBindings = Effect.fn("SkillManager.syncBindings")(function* (skill: ManagedSkill) {
@@ -249,7 +255,14 @@ const make = Effect.gen(function* () {
       const file = linkPath(skill, target);
       const result = yield* Effect.gen(function* () {
         yield* fs.makeDirectory(target.directory, { recursive: true });
-        if ((yield* readLink(file)) === activePath(skill.id)) return "linked" as const;
+        const existingLink = yield* readLink(file);
+        if (existingLink === activePath(skill.id)) return "linked" as const;
+        if (
+          (yield* Ref.get(state)).skills.some(
+            (other) => other.id !== skill.id && existingLink === activePath(other.id),
+          )
+        )
+          return "conflict" as const;
         if (yield* filePresent(file)) {
           let backup: string | undefined;
           for (const entry of skill.backups ?? [])
@@ -750,7 +763,7 @@ const make = Effect.gen(function* () {
     const targets = yield* selectedTargets(input.targetIds);
     const requestedOrigin = input.origin ?? description.origin;
     const source = current.sources.find(
-      (entry) => entry.id === (requestedOrigin?.sourceId ?? "local"),
+      (entry) => entry.id === (existing?.sourceId ?? requestedOrigin?.sourceId ?? "local"),
     );
     if (!source) return yield* new SkillManagerError({ operation: "adopt", reason: "not-found" });
     const backups: Array<{ original: string; backup: string }> = [];
@@ -775,7 +788,7 @@ const make = Effect.gen(function* () {
       }
       bindings.push({ ...target, entryName, status: "missing" });
     }
-    const locator = requestedOrigin?.locator ?? description.identity;
+    const locator = existing?.locator ?? requestedOrigin?.locator ?? description.identity;
     const localSource =
       source.kind === "local"
         ? yield* fs.realPath(locator).pipe(Effect.orElseSucceed(() => locator))

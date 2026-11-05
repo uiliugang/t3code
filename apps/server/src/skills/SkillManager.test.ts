@@ -564,6 +564,7 @@ describe("SkillManager", () => {
       yield* manager.drain;
       const copied = (yield* manager.snapshot).skills[0]!;
       expect(copied.bindings).toHaveLength(0);
+      yield* fs.remove(`${target}/.mtskills-source.jsonl`);
       yield* fs.writeFileString(`${target}/review/script.sh`, "local change");
       const changed = yield* manager.inspect({ type: "adopt", path: `${target}/review` });
       yield* manager.mutate({
@@ -597,6 +598,8 @@ describe("SkillManager", () => {
         afterDigest: copied.activeDigest,
       });
       expect(adopted.sourceId).toBe("meituan");
+      expect(adopted.locator).toBe("review-package");
+      expect(adopted.snapshotOnly).toBe(false);
       expect(adopted.backups).toHaveLength(1);
       yield* manager.mutate({
         type: "configure",
@@ -662,6 +665,38 @@ describe("SkillManager", () => {
       expect(yield* interrupted.fs.readFileString(`${interrupted.target}/review/script.sh`)).toBe(
         "first",
       );
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect("does not replace a location owned by another managed skill", () =>
+    Effect.gen(function* () {
+      const { fs, directory, source, target, manager, install, restart } = yield* harness;
+      yield* install;
+      const first = (yield* manager.snapshot).skills[0]!;
+      yield* fs.copy(source, `${directory}/other-source`);
+      yield* fs.writeFileString(`${directory}/other-source/script.sh`, "other skill");
+      yield* manager.mutate({
+        type: "install",
+        sourceId: "local",
+        locator: `${directory}/other-source`,
+        skill: "",
+        targetIds: ["fixture"],
+      });
+      yield* manager.drain;
+      const second = (yield* manager.snapshot).skills.find((skill) => skill.id !== first.id)!;
+      expect(second.bindings[0]?.status).toBe("conflict");
+      expect(second.backups ?? []).toEqual([]);
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+      const recovered = yield* restart;
+      expect(
+        (yield* recovered.snapshot).skills.find((skill) => skill.id === second.id)?.bindings[0]
+          ?.status,
+      ).toBe("conflict");
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+      yield* recovered.mutate({ type: "remove", id: second.id });
+      yield* recovered.drain;
+      expect((yield* recovered.snapshot).skills.map((skill) => skill.id)).toEqual([first.id]);
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
