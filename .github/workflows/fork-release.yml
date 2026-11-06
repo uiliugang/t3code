@@ -1,4 +1,4 @@
-name: Fork macOS and Android release
+name: Fork macOS Linux and Android release
 
 on:
   push:
@@ -191,9 +191,70 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/t3-release.keystore" "$RUNNER_TEMP/release-cert.der"
 
+  linux:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      T3CODE_DESKTOP_DISABLE_UPDATE_FEED: "true"
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+      T3CODE_TELEMETRY_CHANNEL: dev
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Checkout public source
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf libatomic1 libarchive-tools libsecret-1-dev pkg-config imagemagick
+      - name: Build Linux desktop
+        run: |
+          vp run dist:desktop:artifact --platform linux --target AppImage --arch "$BUILD_ARCH" \
+            --build-version "$RELEASE_VERSION" --output-dir "$GITHUB_WORKSPACE/release"
+      - name: Build SSH runtime
+        run: |
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+          node apps/server/scripts/cli.ts build-exe --verbose
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-$BUILD_ARCH"
+          cp native/resource-monitor/target/release/t3-resource-monitor \
+            "$RUNNER_TEMP/cli-resource-monitor/linux-$BUILD_ARCH/"
+          node scripts/build-cli-archive.ts --platform linux --arch "$BUILD_ARCH" \
+            --version "$RELEASE_VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
+            --output-dir release
+      - name: Verify SSH runtime
+        run: node scripts/smoke-cli-archive.ts --archive "release/t3-$RELEASE_VERSION-linux-$BUILD_ARCH.tar.gz" --expect-version "$RELEASE_VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-linux-${{ matrix.arch }}
+          path: |
+            release/*.AppImage
+            release/t3-*.tar.gz
+          if-no-files-found: error
+
   publish:
     if: github.ref_type == 'tag'
-    needs: [prepare, macos, android]
+    needs: [prepare, macos, android, linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -212,7 +273,10 @@ jobs:
         run: |
           test "$(find . -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.apk' | wc -l)" -eq 1
-          sha256sum *.dmg *.apk > SHA256SUMS
-          gh release create "$RELEASE_TAG" *.dmg *.apk SHA256SUMS --verify-tag \
+          test "$(find . -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 2
+          test -f "t3-${RELEASE_TAG#v}-linux-x64.tar.gz"
+          test -f "t3-${RELEASE_TAG#v}-linux-arm64.tar.gz"
+          sha256sum *.dmg *.apk *.AppImage t3-*.tar.gz > SHA256SUMS
+          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage t3-*.tar.gz SHA256SUMS --verify-tag \
             --title "T3 Code $RELEASE_TAG (fork)" \
-            --notes 'Apple Silicon macOS DMG and standalone Android APK. The macOS app is ad hoc signed and not notarized; Gatekeeper may require explicit approval. Automatic desktop updates and upstream Android OTA updates are disabled.'
+            --notes 'Apple Silicon macOS DMG, Linux x64/arm64 AppImages and SSH runtimes, and standalone Android APK. The macOS app is ad hoc signed and not notarized; Gatekeeper may require explicit approval. Automatic desktop updates and upstream Android OTA updates are disabled.'
