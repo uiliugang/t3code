@@ -1508,13 +1508,22 @@ const make = Effect.gen(function* () {
     const populated = yield* Ref.get(populatedTargets);
     return {
       ...current,
-      skills: current.skills.map((skill) =>
-        !skill.failureReason &&
-        (skill.policy === "automatic" || skill.policy === "notify") &&
-        current.sources.some((source) => source.id === skill.sourceId && !source.enabled)
-          ? { ...skill, failureReason: "source-disabled" as const }
-          : skill,
-      ),
+      skills: current.skills.map((skill) => {
+        if (skill.failureReason === "needs-source") {
+          skill = {
+            ...skill,
+            failureReason: null,
+            failure: null,
+            status: skill.status === "failed" && skill.activeDigest ? "ready" : skill.status,
+          };
+        }
+        if (!skill.failureReason && (skill.policy === "automatic" || skill.policy === "notify")) {
+          if (skill.snapshotOnly) return { ...skill, failureReason: "needs-source" as const };
+          if (current.sources.some((source) => source.id === skill.sourceId && !source.enabled))
+            return { ...skill, failureReason: "source-disabled" as const };
+        }
+        return skill;
+      }),
       operation: yield* Ref.get(operation),
       targets: (yield* allTargets).map((target) => ({
         ...target,

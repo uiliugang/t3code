@@ -47,6 +47,14 @@ const snapshot: SkillSnapshot = {
 };
 
 describe("skill management views", () => {
+  it("does not flag snapshots without update requirements as needing attention", () => {
+    for (const policy of ["manual", "pinned"] as const) {
+      const current = { ...skill, snapshotOnly: true, policy };
+      expect(skillStatus(current)).toBe("Saved to library");
+      expect(skillRows({ ...snapshot, skills: [current] }).counts.attention).toBe(0);
+    }
+  });
+
   it("keeps matching source failures local without hiding unrelated errors", () => {
     const failed: SkillSnapshot = {
       ...snapshot,
