@@ -819,6 +819,16 @@ describe("SkillManager", () => {
         yield* manager.mutate({ type: "check", id: skill.id });
         yield* manager.drain;
         expect((yield* manager.snapshot).skills[0]?.failureReason).toBe("needs-source");
+        for (const policy of ["manual", "pinned", "notify", "automatic"] as const) {
+          yield* manager.mutate({ type: "policy", id: skill.id, policy });
+          yield* manager.drain;
+          const current = (yield* manager.snapshot).skills[0]!;
+          expect(current.failureReason).toBe(
+            policy === "manual" || policy === "pinned" ? null : "needs-source",
+          );
+          expect(current.status).toBe("ready");
+          expect(current.failure).toBeNull();
+        }
         yield* manager.mutate({
           type: "origin",
           id: skill.id,

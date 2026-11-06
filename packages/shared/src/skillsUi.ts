@@ -43,7 +43,7 @@ function skillAttention(skill: ManagedSkill) {
   return (
     skill.status === "failed" ||
     Boolean(skill.failureReason) ||
-    Boolean(skill.snapshotOnly) ||
+    (Boolean(skill.snapshotOnly) && (skill.policy === "automatic" || skill.policy === "notify")) ||
     skill.bindings.some((target) => target.status === "conflict")
   );
 }
