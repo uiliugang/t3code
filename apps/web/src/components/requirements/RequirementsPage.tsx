@@ -17,6 +17,8 @@ import {
   CircleIcon,
   CircleCheckIcon,
   CircleDotIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -27,7 +29,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
+import { SidebarInset } from "../ui/sidebar";
 import { IssueSelect } from "./IssueSelect";
 import { IssueDetailPanel } from "./IssueDetailPanel";
 import { IssueCreateDialog } from "./IssueCreateDialog";
@@ -59,6 +61,7 @@ export function RequirementsPage() {
   const view = search.view ?? (narrow ? "list" : "board");
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
+  const [doneCollapsed, setDoneCollapsed] = useState(true);
   const projects = allProjects.filter(
     (project) =>
       project.environmentId === environmentId &&
@@ -178,12 +181,11 @@ export function RequirementsPage() {
       column.key !== "other" || entries.some(({ issue }) => issue.stateCategory === "other"),
   );
   return (
-    <SidebarInset>
+    <SidebarInset className="h-dvh overflow-hidden">
       <div className="relative flex h-full min-h-0 flex-1 overflow-hidden">
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
             <div className="flex min-w-0 items-center gap-3">
-              <SidebarTrigger />
               <ClipboardListIcon className="size-5 shrink-0 text-muted-foreground" />
               <h1 className="truncate text-base font-semibold">{t("Requirements board")}</h1>
               <span className="text-xs text-muted-foreground">{entries.length}</span>
@@ -233,7 +235,7 @@ export function RequirementsPage() {
               </Button>
             </div>
           </header>
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-5 py-3">
             {environments.length > 1 ? (
               <div className="w-40">
                 <IssueSelect
@@ -318,7 +320,7 @@ export function RequirementsPage() {
               />
             </form>
           </div>
-          <div className="flex items-center justify-between gap-3 px-5 py-3">
+          <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-3">
             <span className="text-xs text-muted-foreground">
               {t("{count} loaded", { count: entries.length })}
             </span>
@@ -364,7 +366,9 @@ export function RequirementsPage() {
               </Tooltip>
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto px-5 pb-6">
+          <div
+            className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
+          >
             {query.error ? (
               <p role="alert" className="mb-3 text-sm text-destructive">
                 {query.error}
@@ -399,44 +403,83 @@ export function RequirementsPage() {
               </div>
             ) : view === "list" ? (
               <div className="divide-y divide-border">
-                {entries.map(({ issue, projectId, scope }) => (
-                  <button
-                    type="button"
-                    key={`${projectId}/${scope}/${issue.id}`}
-                    onClick={() => open(issue, projectId, scope)}
-                    className="grid w-full grid-cols-[4rem_minmax(0,1fr)_7rem] items-center gap-3 py-4 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                  >
-                    <span className="text-xs text-muted-foreground">#{issue.id}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{issue.title}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {projects.find((project) => project.id === projectId)?.title} ·{" "}
-                        {issue.assignees.map((person) => person.label).join(", ") ||
-                          t("Unassigned")}
+                <button
+                  type="button"
+                  className="flex items-center gap-2 py-3 text-sm"
+                  aria-expanded={!doneCollapsed}
+                  onClick={() => setDoneCollapsed(!doneCollapsed)}
+                >
+                  {doneCollapsed ? (
+                    <ChevronRightIcon className="size-4" />
+                  ) : (
+                    <ChevronDownIcon className="size-4" />
+                  )}
+                  {t("Done")} (
+                  {entries.filter(({ issue }) => issue.stateCategory === "done").length})
+                </button>
+                {entries
+                  .filter(({ issue }) => !doneCollapsed || issue.stateCategory !== "done")
+                  .map(({ issue, projectId, scope }) => (
+                    <button
+                      type="button"
+                      key={`${projectId}/${scope}/${issue.id}`}
+                      onClick={() => open(issue, projectId, scope)}
+                      className="grid w-full grid-cols-[4rem_minmax(0,1fr)_7rem] items-center gap-3 py-4 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <span className="text-xs text-muted-foreground">#{issue.id}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">{issue.title}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {projects.find((project) => project.id === projectId)?.title} ·{" "}
+                          {issue.assignees.map((person) => person.label).join(", ") ||
+                            t("Unassigned")}
+                        </span>
                       </span>
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">{issue.state}</span>
-                  </button>
-                ))}
+                      <span className="truncate text-xs text-muted-foreground">{issue.state}</span>
+                    </button>
+                  ))}
               </div>
             ) : (
-              <div className="flex min-h-64 items-start gap-4">
+              <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto">
                 {visibleColumns.map(({ key: category, label, Icon }) => (
-                  <section key={category} className="min-w-60 flex-1">
-                    <div className="mb-3 flex h-9 items-center gap-2 border-b border-border text-sm">
+                  <section key={category} className="flex min-h-0 min-w-60 flex-1 flex-col">
+                    <div className="mb-3 flex h-9 shrink-0 items-center gap-2 border-b border-border text-sm">
                       <Icon
                         className={`size-4 ${category === "done" ? "text-success" : category === "doing" ? "text-warning" : "text-muted-foreground"}`}
                       />
                       <h2 className="font-medium">
-                        {t(
-                          provider === "github" ? (category === "todo" ? "Open" : "Closed") : label,
+                        {category === "done" ? (
+                          <button
+                            type="button"
+                            className="flex items-center gap-2"
+                            aria-expanded={!doneCollapsed}
+                            onClick={() => setDoneCollapsed(!doneCollapsed)}
+                          >
+                            {t(provider === "github" ? "Closed" : label)}
+                            {doneCollapsed ? (
+                              <ChevronRightIcon className="size-4" />
+                            ) : (
+                              <ChevronDownIcon className="size-4" />
+                            )}
+                          </button>
+                        ) : (
+                          t(
+                            provider === "github"
+                              ? category === "todo"
+                                ? "Open"
+                                : "Closed"
+                              : label,
+                          )
                         )}
                       </h2>
                       <span className="ml-auto text-xs text-muted-foreground">
                         {entries.filter(({ issue }) => issue.stateCategory === category).length}
                       </span>
                     </div>
-                    <div className="space-y-3">
+                    <div
+                      className="min-h-0 space-y-3 overflow-y-auto"
+                      hidden={category === "done" && doneCollapsed}
+                    >
                       {entries
                         .filter(({ issue }) => issue.stateCategory === category)
                         .map(({ issue, projectId, scope }) => (
@@ -469,7 +512,7 @@ export function RequirementsPage() {
               </div>
             )}
             {query.data?.groups.some((group) => group.hasMore) ? (
-              <div className="flex justify-center py-5">
+              <div className="flex shrink-0 justify-center py-5">
                 <Button
                   size="sm"
                   variant="outline"

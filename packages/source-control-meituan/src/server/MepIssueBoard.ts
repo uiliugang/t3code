@@ -251,7 +251,7 @@ export const make = Effect.gen(function* () {
         "--page",
         String(input.page),
         "--page-size",
-        "50",
+        "20",
         "--json",
       ];
       if (input.query) args.push("--name", input.query);
@@ -276,7 +276,7 @@ export const make = Effect.gen(function* () {
       );
       return {
         issues: rows.map((row) => fromRow(row, input.source.scope)),
-        hasMore: rows.length === 50,
+        hasMore: rows.length === 20,
       };
     }),
     read,
