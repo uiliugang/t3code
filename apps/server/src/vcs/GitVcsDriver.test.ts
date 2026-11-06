@@ -716,11 +716,17 @@ it.effect.each(
 
 it.effect.each(
   (["normal", "skip-worktree", "assume-unchanged", "sparse"] as const).flatMap((indexMode) =>
-    [1, 3, 4096].map((chunkSize) => ({ indexMode, chunkSize })),
+    [1, 3, 4096].flatMap((chunkSize) =>
+      (indexMode === "sparse" ? [false, true] : [false]).map((legacyGit) => ({
+        indexMode,
+        chunkSize,
+        legacyGit,
+      })),
+    ),
   ),
 )(
-  "checkpoint index inspection handles entries beyond the output cap (index=$indexMode, chunk=$chunkSize)",
-  ({ indexMode, chunkSize }) =>
+  "checkpoint index inspection handles entries beyond the output cap (index=$indexMode, chunk=$chunkSize, legacy=$legacyGit)",
+  ({ indexMode, chunkSize, legacyGit }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -751,7 +757,7 @@ it.effect.each(
         yield* fs.remove(path.join(cwd, "z-deleted"));
       }
       if (indexMode === "sparse")
-        yield* git(["sparse-checkout", "set", "--cone", "--sparse-index", "included"]);
+        yield* git(["sparse-checkout", "set", "--cone", "--no-sparse-index", "included"]);
       yield* fs.writeFileString(path.join(cwd, "z-skipped"), "modified\n");
       // A flagged edit with the indexed size and mtime is invisible to Git's stat check.
       if (flagged) yield* fs.utimes(path.join(cwd, "z-skipped"), 1_700_000_000, 1_700_000_000);
@@ -763,6 +769,16 @@ it.effect.each(
           run: (input) => {
             if (input.args.includes("read-tree") && !input.args.includes("--reset"))
               freshReadTrees++;
+            if (legacyGit && input.args.includes("check-rules"))
+              return Effect.fail(
+                new VcsProcessExitError({
+                  operation: input.operation,
+                  command: "git",
+                  cwd: input.cwd,
+                  exitCode: 129,
+                  detail: "unknown subcommand: check-rules",
+                }),
+              );
             return liveProcess.run(
               input.args.includes("ls-files")
                 ? {
