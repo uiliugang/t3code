@@ -1287,7 +1287,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "communication",
     title: "Communication",
     to: "/settings/communication",
-    searchTerms: ["daxiang 大象 通讯 client id secret message PR link"],
+    searchTerms: ["wechat 微信 bot 扫码 推送 daxiang 大象 通讯 client id secret message PR link"],
   },
   {
     id: "secret-providers",

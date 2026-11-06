@@ -1,3 +1,5 @@
+import * as WechatBridge from "./communication/WechatBridge.ts";
+import * as WechatClient from "./communication/WechatClient.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -637,6 +639,10 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  WechatBridge.layer.pipe(
+    Layer.provide(RuntimeLayer.layerEventSink),
+    Layer.provide(WechatClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+  ),
   SkillManager.layer.pipe(
     Layer.provide(SkillHost.layer.pipe(Layer.provide(SecretResolver.layer))),
     Layer.provide(SkillPackages.layer),
@@ -1193,6 +1199,13 @@ const layerMakeServer = Layer.unwrap(
       Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)),
     );
     const layerServerApplication = Layer.mergeAll(
+      Layer.effectDiscard(
+        Effect.gen(function* () {
+          const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+          const wechat = yield* WechatBridge.WechatBridge;
+          yield* startup.awaitCommandReady.pipe(Effect.andThen(wechat.start), Effect.forkScoped);
+        }),
+      ),
       layerRoutes,
       layerHttpListening,
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),

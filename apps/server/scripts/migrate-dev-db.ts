@@ -199,6 +199,10 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
   "auth_sessions",
   "auth_pairing_links",
   "peer_environment_links",
+  "wechat_connection",
+  "wechat_inbox",
+  "wechat_deliveries",
+  "wechat_lease",
 ];
 
 const PROVIDER_SESSIONS_TABLE = "orchestration_v2_projection_provider_sessions";

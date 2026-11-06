@@ -1231,6 +1231,20 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    wechat: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:wechat",
+      tag: WS_METHODS.wechatSubscribe,
+      idleTtlMs: 0,
+    }),
+    mutateWechat: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:wechat:mutate",
+      tag: WS_METHODS.wechatMutate,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    sendWechat: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:wechat:send",
+      tag: WS_METHODS.wechatSend,
+    }),
     managedWorktrees: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:managed-worktrees:list",
       tag: WS_METHODS.managedWorktreesList,

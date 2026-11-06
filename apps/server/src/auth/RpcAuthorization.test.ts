@@ -1,5 +1,6 @@
 import {
   AuthEnvironmentMaintainScope,
+  AuthAccessWriteScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
@@ -66,6 +67,11 @@ describe("RPC authorization scopes", () => {
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthTerminalOperateScope);
     }
+  });
+
+  it("protects WeChat pairing material with access management permission", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.wechatSubscribe)).toBe(AuthAccessWriteScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.wechatSend)).toBe(AuthOrchestrationOperateScope);
   });
 
   it("rejects unknown RPC method names", () => {
@@ -398,6 +404,34 @@ it.effect("denies manual cleanup before the handler without settings permission"
     expect(yield* client[WS_METHODS.serverRunStorageCleanup]({}).pipe(Effect.flip)).toMatchObject({
       requiredPermission: AuthSettingsWriteScope,
     });
+    expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("requires both access and execution grants before enabling a WeChat bot", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof WS_METHODS.wechatMutate> =>
+          tag !== WS_METHODS.wechatMutate,
+      ),
+    );
+    let handled = false;
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.wechatMutate, () =>
+            Effect.sync(() => {
+              handled = true;
+            }),
+          ),
+          RpcAuthorization.layer([AuthAccessWriteScope]),
+        ),
+      ),
+    );
+    expect(
+      yield* client[WS_METHODS.wechatMutate]({ type: "connect" }).pipe(Effect.flip),
+    ).toMatchObject({ requiredPermission: AuthOrchestrationOperateScope });
     expect(handled).toBe(false);
   }).pipe(Effect.scoped),
 );
