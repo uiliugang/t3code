@@ -359,7 +359,7 @@ overrides:
   vite-plus: 1.4.0
   yaml: ^2.9.0
 
-packageExtensionsChecksum: sha256-WxPoT+ci6EOLKR0gcNIIWbo2z+wqOLz7TewHqTuzsKI=
+packageExtensionsChecksum: sha256-IVc1sUargQdSWlB2SuYBphliatdmgQyeT4Uw9rG+vLg=
 
 pnpmfileChecksum: sha256-STsbxG7+RxOFI611PrDEj1TonJgqKKllY9hYCFMLYiU=
 
@@ -762,7 +762,7 @@ importers:
         version: 0.37.1(@types/react@19.3.0)(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
       react-native-pdf-jsi:
         specifier: 5.0.0
-        version: 5.0.0(patch_hash=6f52854210f61bef499850ebd498229a111bc34ec5b2a4925e644f2f48f42760)(6265b20743423339d21d710a6b22c202)
+        version: 5.0.0(patch_hash=6f52854210f61bef499850ebd498229a111bc34ec5b2a4925e644f2f48f42760)(2b3a425f09dec956ad9183e8d6f93de7)
       react-native-reanimated:
         specifier: 4.7.1
         version: 4.7.1(patch_hash=95ee26e5fcab5f50bc4b4c47b3f7e6278a0b20850205efb9f6ee7e70a22d2b59)(@types/react@19.3.0)(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
@@ -24256,8 +24256,9 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  react-native-pdf-jsi@5.0.0(patch_hash=6f52854210f61bef499850ebd498229a111bc34ec5b2a4925e644f2f48f42760)(6265b20743423339d21d710a6b22c202):
+  react-native-pdf-jsi@5.0.0(patch_hash=6f52854210f61bef499850ebd498229a111bc34ec5b2a4925e644f2f48f42760)(2b3a425f09dec956ad9183e8d6f93de7):
     dependencies:
+      '@expo/config-plugins': 58.0.9(@tsc-rs/typescript@0.8.0)(supports-color@8.1.1)
       '@react-native-async-storage/async-storage': 3.1.1(@types/react@19.3.0)(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
       crypto-js: 4.2.0
       deprecated-react-native-prop-types: 2.3.0
@@ -24267,6 +24268,12 @@ snapshots:
       react-native-nitro-modules: 0.37.1(@types/react@19.3.0)(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
     optionalDependencies:
       '@types/react': 19.3.0
+    transitivePeerDependencies:
+      - '@types/babel__core'
+      - '@types/browserslist'
+      - '@types/typescript'
+      - supports-color
+      - typescript
 
   react-native-reanimated@4.7.1(patch_hash=95ee26e5fcab5f50bc4b4c47b3f7e6278a0b20850205efb9f6ee7e70a22d2b59)(@types/react@19.3.0)(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0):
     dependencies:

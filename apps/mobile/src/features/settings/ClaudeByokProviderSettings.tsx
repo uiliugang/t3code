@@ -340,7 +340,7 @@ function ClaudeByokEditor({
               />
             ) : null}
           </View>
-          {feedback?.fingerprint === fingerprint ? (
+          {feedback && feedback.fingerprint === fingerprint ? (
             <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
               {feedback.message}
             </Text>

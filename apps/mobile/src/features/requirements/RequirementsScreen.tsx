@@ -206,7 +206,7 @@ export function RequirementsScreen() {
         {!result.isPending && !result.data?.groups.some((group) => group.issues.length) ? (
           <Text className="text-foreground-muted">{t("No matching issues.")}</Text>
         ) : null}
-        <View className="flex-row gap-3">
+        <View className="flex-row flex-wrap gap-3">
           <Button
             label={t("Previous")}
             disabled={page === 1 || result.isPending}

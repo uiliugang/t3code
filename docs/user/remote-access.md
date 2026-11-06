@@ -171,6 +171,8 @@ Mobile keeps its manual environment selection.
 
 Join both devices to the same tailnet. In the desktop app, enable **Tailscale
 HTTPS** in **Settings → Sharing & access**. Turn it off there to remove that route.
+This uses Tailscale Serve: the HTTPS address is private to your tailnet and is
+not accessible from the public internet.
 
 To start a command-line server with Tailscale HTTPS:
 
@@ -194,6 +196,39 @@ tailscale serve --https=443 --set-path=/ off
 
 If that port is already in use, choose another with
 `--tailscale-serve-port`. See `t3 pair --help` for other pairing options.
+
+### Public access with Tailscale Funnel
+
+[Tailscale Funnel](https://tailscale.com/kb/1223/funnel) makes your server reachable
+from the internet without installing Tailscale on the connecting device. It
+requires Tailscale on the host, MagicDNS, HTTPS certificates, and Funnel permission
+in your tailnet policy. Follow Tailscale's setup prompts to enable these.
+
+With T3 Code running on the host:
+
+```bash
+tailscale funnel --bg --https=8443 http://127.0.0.1:3773
+```
+
+Replace `3773` with your server's actual port. Use `8443` to keep Funnel separate
+from the desktop app's default Tailscale HTTPS port, `443`. Configuring Serve on
+the same port as Funnel makes that port private again.
+
+Use the public HTTPS address printed by Funnel, including `:8443`. On the host,
+create a pairing link in **Settings → Sharing & access** and copy its pairing
+code. On mobile, open **Add environment**, enter the Funnel address and that code,
+then connect. For a command-line host, create a link using the public address:
+
+```bash
+t3 auth pairing create --base-url https://machine.tailnet.ts.net:8443
+```
+
+Replace the example hostname with the one Funnel prints. The host must stay
+running. The `--bg` mapping persists across restarts; remove it with:
+
+```bash
+tailscale funnel --https=8443 off
+```
 
 ### Hosted web app
 

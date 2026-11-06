@@ -2,6 +2,7 @@ import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useRoute } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { Platform, View } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import type { AppBarProps } from "../../../components/ui/AppBar.types";
 import { AppBar } from "../../../components/ui/AppBar";
@@ -54,19 +55,26 @@ export function SettingsScreen(
         hideBottomBorder={!props.formSheet || Platform.OS === "android"}
         options={props.options}
       />
-      <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
-        <ScreenScrollViewSurface value={surfaceClassName}>
-          {props.formSheet && Platform.OS !== "android" ? (
-            props.children
-          ) : (
-            <SettingsScreenContent
-              insetHorizontal={Platform.OS === "android" && layout.usesSplitView}
-            >
-              {props.children}
-            </SettingsScreenContent>
-          )}
-        </ScreenScrollViewSurface>
-      </ScreenScrollViewBottomInset>
+      <KeyboardAvoidingView
+        automaticOffset
+        behavior="height"
+        enabled={Platform.OS === "android"}
+        className="flex-1"
+      >
+        <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+          <ScreenScrollViewSurface value={surfaceClassName}>
+            {props.formSheet && Platform.OS !== "android" ? (
+              props.children
+            ) : (
+              <SettingsScreenContent
+                insetHorizontal={Platform.OS === "android" && layout.usesSplitView}
+              >
+                {props.children}
+              </SettingsScreenContent>
+            )}
+          </ScreenScrollViewSurface>
+        </ScreenScrollViewBottomInset>
+      </KeyboardAvoidingView>
     </View>
   );
 }
