@@ -778,6 +778,13 @@ const make = Effect.gen(function* () {
       const entryName = originalPath ? path.basename(path.dirname(originalPath)) : data.name;
       const file = path.join(target.directory, entryName);
       if (yield* filePresent(file)) {
+        const existingLink = yield* readLink(file);
+        if (
+          current.skills.some(
+            (other) => other.id !== existing?.id && existingLink === activePath(other.id),
+          )
+        )
+          return yield* new SkillManagerError({ operation: "adopt", reason: "conflict" });
         if (
           input.mode !== "takeover" ||
           ((yield* fs.realPath(file)) !== description.identity &&

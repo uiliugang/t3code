@@ -641,6 +641,35 @@ describe("SkillManager", () => {
       expect((yield* fs.stat(`${target}/review`)).type).toBe("Directory");
       expect((yield* fs.stat(`${duplicate}/review-skill`)).type).toBe("Directory");
       expect(yield* fs.readFileString(`${duplicate}/review-skill/script.sh`)).toBe("first");
+      yield* manager.mutate({
+        type: "adopt",
+        path: `${target}/review`,
+        digest: preview.digest,
+        mode: "takeover",
+        targetIds: ["fixture", "duplicate"],
+      });
+      yield* manager.drain;
+      const direct = (yield* manager.snapshot).skills[0]!;
+      expect(direct.adoptionState).toBe("complete");
+      expect(direct.backups).toHaveLength(2);
+      expect(direct.bindings.every((binding) => binding.status === "linked")).toBe(true);
+      expect(yield* fs.readLink(`${duplicate}/review-skill`)).toBe(
+        yield* fs.readLink(`${target}/review`),
+      );
+      yield* manager.mutate({
+        type: "adopt",
+        path: `${duplicate}/review-skill`,
+        digest: preview.digest,
+        mode: "takeover",
+        targetIds: ["duplicate"],
+      });
+      yield* manager.drain;
+      expect((yield* manager.snapshot).lastFailureReason).toBe("conflict");
+      expect((yield* manager.snapshot).skills).toHaveLength(1);
+      yield* manager.mutate({ type: "unmanage", id: direct.id, restore: true });
+      yield* manager.drain;
+      expect((yield* fs.stat(`${target}/review`)).type).toBe("Directory");
+      expect((yield* fs.stat(`${duplicate}/review-skill`)).type).toBe("Directory");
       yield* fs.remove(`${target}/review`, { recursive: true });
       yield* install;
       const installed = (yield* manager.snapshot).skills[0]!;
