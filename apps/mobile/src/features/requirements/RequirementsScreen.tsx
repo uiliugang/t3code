@@ -89,7 +89,7 @@ export function RequirementsScreen() {
   ];
   const allowed = useAtomValue(sourceControlEnvironment.createIssue.permissionAtom(environmentId));
   return (
-    <SettingsScreen title="Requirements board">
+    <SettingsScreen title={t("Requirements board")}>
       <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
         {environments.length > 1 ? (
           <IssuePicker
@@ -272,7 +272,7 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
     branches.refresh();
   };
   return (
-    <SettingsScreen title="Issue details">
+    <SettingsScreen title={t("Issue details")}>
       <ScreenScrollView className="flex-1" contentContainerClassName="gap-5 px-5 pb-12">
         {result.error ? <Text className="text-danger">{result.error}</Text> : null}
         {result.data ? (
@@ -431,7 +431,7 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
     }
   };
   return (
-    <SettingsScreen title="New issue">
+    <SettingsScreen title={t("New issue")}>
       <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
         {scopes.length > 1 ? (
           <IssuePicker

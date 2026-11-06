@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
   resolveProviderSkillSourceKind,
   type ProviderSkillSourceKind,
@@ -165,6 +166,8 @@ const CommandRow = memo(function CommandRow(props: {
   readonly isLast: boolean;
   readonly isSlashSkill: boolean;
 }) {
+  const t = useUiTranslation();
+
   const iconName = itemIcon(props.item);
 
   return (
@@ -191,7 +194,7 @@ const CommandRow = memo(function CommandRow(props: {
       <Text className="shrink-0 text-base font-t3-medium text-foreground" numberOfLines={1}>
         {props.isSlashSkill && props.item.type === "skill" ? (
           <>
-            <Text className="text-foreground-muted">skill:</Text>
+            <Text className="text-foreground-muted">{t("skill:")}</Text>
             {props.item.skill.name}
           </>
         ) : (

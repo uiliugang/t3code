@@ -1,4 +1,5 @@
 import { skillMessages } from "./skillMessages.ts";
+import { mobileUiMessages } from "./mobileUiMessages.ts";
 export type UiLocale = "en" | "zh-CN";
 
 export type UiTranslator = (
@@ -12,6 +13,7 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  ...mobileUiMessages,
   "Requirements board": "需求看板",
   "Issue management": "需求管理",
   "Issue details": "需求详情",

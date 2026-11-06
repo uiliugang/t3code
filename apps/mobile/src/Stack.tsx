@@ -10,6 +10,7 @@ import {
 import { RequirementsSettingsScreen } from "./features/requirements/RequirementsSettingsScreen";
 import { PullRequestDiscussionScreen } from "./features/pull-requests/PullRequestDiscussionScreen";
 import { createWorkspaceStackNavigator } from "./features/layout/createWorkspaceStackNavigator";
+import { useUiTranslation } from "./lib/useUiTranslation";
 import {
   createPathConfigForStaticNavigation,
   getPathFromState,
@@ -554,6 +555,7 @@ function RootStackLayout(props: {
 }
 
 function NotFoundScreen() {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const screenBgStyle = StyleSheet.flatten(useResolveClassNames("bg-screen"));
   const primaryBgStyle = StyleSheet.flatten(useResolveClassNames("bg-primary"));
@@ -580,13 +582,13 @@ function NotFoundScreen() {
       style={[{ flex: 1 }, screenBgStyle]}
     >
       <Text className="text-3xl font-t3-bold text-foreground" selectable>
-        Route not found
+        {t("Route not found")}
       </Text>
       <Pressable
         style={returnHomeButtonStyle}
         onPress={() => navigation.dispatch(StackActions.replace("Home"))}
       >
-        <Text className="text-base font-t3-bold text-primary-foreground">Return home</Text>
+        <Text className="text-base font-t3-bold text-primary-foreground">{t("Return home")}</Text>
       </Pressable>
     </ScrollView>
   );
@@ -1044,16 +1046,20 @@ function GuardedScreenLayout(props: {
 }
 
 function ScreenRenderFallback(props: RenderFailureProps & { readonly routeName: string }) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const exit = navigation.canGoBack()
-    ? { label: "Go back", onPress: () => navigation.goBack() }
+    ? { label: t("Go back"), onPress: () => navigation.goBack() }
     : props.routeName === "Home"
       ? // Home itself failed, and the Settings list renders inside it; open a Settings page.
         {
-          label: "Open settings",
+          label: t("Open settings"),
           onPress: () => openSettings(navigation, DEFAULT_SETTINGS_PAGE),
         }
-      : { label: "Return home", onPress: () => navigation.dispatch(StackActions.replace("Home")) };
+      : {
+          label: t("Return home"),
+          onPress: () => navigation.dispatch(StackActions.replace("Home")),
+        };
 
   return <RenderFailureView {...props} exit={exit} />;
 }

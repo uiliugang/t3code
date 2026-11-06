@@ -13,6 +13,12 @@ const server = vi.hoisted(() => ({
   refresh: vi.fn(async () => "file:///first.zip"),
 }));
 
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  const translate = (message: string, values?: Readonly<Record<string, string | number>>) =>
+    translateUi("en", message, values);
+  return { useUiTranslation: () => translate };
+});
 vi.mock("../../state/entities", () => ({
   useEnvironmentServerConfig: () => ({ environment: { capabilities: server.capabilities } }),
 }));
@@ -126,6 +132,7 @@ vi.mock("../../components/ui/Toolbar", () => {
   };
 });
 vi.mock("../../components/ui/AppBar", () => ({ AppBar: () => null }));
+vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AndroidScreenHeader", () => ({ AndroidHeaderIconButton: () => null }));
 vi.mock("../../components/ui/Menu", () => ({ Menu: () => null }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));

@@ -43,6 +43,10 @@ vi.mock("../../components/ui/ControlPill", () => ({
   ),
 }));
 vi.mock("../../components/ui/Menu", () => ({ Menu: Children }));
+vi.mock("../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (message: string, values?: Record<string, string>) =>
+    message.replace(/\{(\w+)\}/gu, (match, key: string) => values?.[key] ?? match),
+}));
 vi.mock("../../state/server", () => ({
   serverEnvironment: {
     mutateProviderInstance: { permissionAtom: () => null },

@@ -363,7 +363,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               <ManagedPolicyNotice targets={targets} />
               {projectSelected ? (
                 <SettingsProjectOverridesSection
-                  projectLabel={selectedProject?.label ?? "Unavailable project"}
+                  projectLabel={selectedProject?.label ?? t("Unavailable project")}
                   hasOverrides={targets.some((target) =>
                     PAGE_PROJECT_KEYS[props.page].some((key) => target.sources[key] === "project"),
                   )}
@@ -388,8 +388,8 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     ).map((choice, index) => (
                       <SettingsChoiceRow
                         key={choice.mode ?? "inherit"}
-                        label={choice.label}
-                        description={choice.description}
+                        label={t(choice.label)}
+                        description={t(choice.description)}
                         selected={
                           !isMixed("defaultThreadEnvMode") &&
                           uniform("defaultThreadEnvMode") === choice.mode
@@ -412,8 +412,8 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     {runtimeModeChoices.map((choice, index) => (
                       <SettingsChoiceRow
                         key={choice.mode}
-                        label={choice.label}
-                        description={choice.disabledReason ?? choice.description}
+                        label={t(choice.label)}
+                        description={t(choice.disabledReason ?? choice.description)}
                         selected={uniform("defaultRuntimeMode") === choice.mode}
                         separated={index > 0}
                         disabled={
@@ -435,8 +435,8 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     {STREAMING_CHOICES.map((choice, index) => (
                       <SettingsChoiceRow
                         key={choice.mode}
-                        label={choice.label}
-                        description={choice.description}
+                        label={t(choice.label)}
+                        description={t(choice.description)}
                         selected={uniform("responseStreamingMode") === choice.mode}
                         separated={index > 0}
                         disabled={disabledFor("responseStreamingMode")}

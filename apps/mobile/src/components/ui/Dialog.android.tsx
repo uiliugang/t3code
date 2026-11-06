@@ -13,6 +13,7 @@ import {
 
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 import { useScaledTextRole } from "../../features/settings/appearance/useScaledTextRole";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 import { useSyncExternalStore } from "react";
 import { themeColorWithContrast } from "../../lib/mobileTheme";
@@ -68,13 +69,10 @@ function getPresented() {
 }
 
 export function alert(...[title, message, buttons, options]: Parameters<typeof Alert.alert>): void {
-  const actions = buttons?.length ? buttons.slice(0, 3) : [{ text: "OK" }];
-  const normalized = actions.map((action, index) =>
-    index === actions.length - 1 ? { ...action, text: action.text || "OK" } : action,
-  );
+  const actions = buttons?.length ? buttons.slice(0, 3) : [{}];
   submitRequest({
     kind: "alert",
-    request: { title, message, buttons: normalized, options },
+    request: { title, message, buttons: actions, options },
   });
 }
 
@@ -115,7 +113,7 @@ export function Host() {
           message: presented.request.message ?? undefined,
           confirmText: "",
         }}
-        alertActions={presented.request.buttons ?? [{ text: "OK" }]}
+        alertActions={presented.request.buttons ?? [{}]}
         dismissable={presented.request.options?.cancelable ?? false}
         onAlertAction={(action) => {
           dismiss(presented.id);
@@ -142,6 +140,7 @@ export function Host() {
 }
 
 function DialogPresentation(props: DialogPresentationProps) {
+  const t = useUiTranslation();
   const { themeVariables: colors } = useAppearancePreferences();
   const titleTypography = useScaledTextRole("title");
   const bodyTypography = useScaledTextRole("footnote");
@@ -153,7 +152,7 @@ function DialogPresentation(props: DialogPresentationProps) {
     props.onConfirm(value);
   };
   const actions = props.alertActions ?? [
-    { text: props.request.cancelText ?? "Cancel", onPress: props.onCancel },
+    { text: props.request.cancelText ?? t("Cancel"), onPress: props.onCancel },
     {
       text: props.request.confirmText,
       style: props.request.destructive ? ("destructive" as const) : ("default" as const),
@@ -184,7 +183,11 @@ function DialogPresentation(props: DialogPresentationProps) {
               : colors["--color-foreground"],
         }}
       >
-        <Text style={bodyTypography}>{action.text ?? ""}</Text>
+        <Text style={bodyTypography}>
+          {props.alertActions && index === actions.length - 1
+            ? action.text || t("OK")
+            : (action.text ?? "")}
+        </Text>
       </Component>
     );
   };

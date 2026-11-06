@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { msUntilRelativeTimeChange, relativeTime } from "./time";
 
 const at = "2026-10-19T12:00:00.000Z";
@@ -6,18 +7,25 @@ const timestamp = Date.parse(at);
 
 describe("relative time", () => {
   it.each([
-    [59_999, "<1m", "1m"],
-    [119_999, "1m", "2m"],
-    [3_599_999, "59m", "1h"],
-    [7_199_999, "1h", "2h"],
-    [86_399_999, "23h", "1d"],
-    [172_799_999, "1d", "2d"],
-  ] as const)("updates at the next boundary after %i ms", (elapsed, before, after) => {
-    const nowMs = timestamp + elapsed;
-    expect(relativeTime(at, nowMs)).toBe(before);
-    expect(msUntilRelativeTimeChange(at, nowMs)).toBe(1);
-    expect(relativeTime(at, nowMs + 1)).toBe(after);
-  });
+    [59_999, "<1m", "1m", "刚刚", "1分钟"],
+    [119_999, "1m", "2m", "1分钟", "2分钟"],
+    [3_599_999, "59m", "1h", "59分钟", "1小时"],
+    [7_199_999, "1h", "2h", "1小时", "2小时"],
+    [86_399_999, "23h", "1d", "23小时", "1天"],
+    [172_799_999, "1d", "2d", "1天", "2天"],
+  ] as const)(
+    "updates at the next boundary after %i ms",
+    (elapsed, before, after, zhBefore, zhAfter) => {
+      const nowMs = timestamp + elapsed;
+      expect(relativeTime(at, nowMs)).toBe(before);
+      expect(msUntilRelativeTimeChange(at, nowMs)).toBe(1);
+      expect(relativeTime(at, nowMs + 1)).toBe(after);
+      const chinese = (message: string, values?: Readonly<Record<string, string | number>>) =>
+        translateUi("zh-CN", message, values);
+      expect(relativeTime(at, nowMs, chinese)).toBe(zhBefore);
+      expect(relativeTime(at, nowMs + 1, chinese)).toBe(zhAfter);
+    },
+  );
 
   it.each([
     [0, 60_000],

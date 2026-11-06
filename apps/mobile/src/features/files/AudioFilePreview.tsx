@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Button } from "../../components/ui/Button";
 import { useAudioPlayerStatus } from "expo-audio";
 import { useEffect, useState } from "react";
@@ -13,6 +14,7 @@ function timestamp(seconds: number) {
 }
 
 export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
+  const t = useUiTranslation();
   const player = usePlaybackAudioPlayer(props.uri);
   const status = useAudioPlayerStatus(player);
   const [playbackRequested, setPlaybackRequested] = useState(false);
@@ -49,13 +51,17 @@ export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
         <Button
           label="−15s"
           tone="text"
-          accessibilityLabel="Back 15 seconds"
+          accessibilityLabel={t("Back 15 seconds")}
           disabled={!status.isLoaded}
           onPress={() => seek(Math.max(0, status.currentTime - 15))}
         />
         <Button
           label={
-            playbackRequested || status.playing ? "Pause" : !status.isLoaded ? "Loading…" : "Play"
+            playbackRequested || status.playing
+              ? t("Pause")
+              : !status.isLoaded
+                ? t("Loading…")
+                : t("Play")
           }
           tone="secondary"
           disabled={!status.isLoaded && !playbackRequested}
@@ -76,7 +82,7 @@ export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
         <Button
           label="+15s"
           tone="text"
-          accessibilityLabel="Forward 15 seconds"
+          accessibilityLabel={t("Forward 15 seconds")}
           disabled={!status.isLoaded}
           onPress={() => seek(Math.min(status.duration, status.currentTime + 15))}
         />
@@ -84,10 +90,10 @@ export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
       {status.error || seekError ? (
         <View className="items-center gap-3">
           <Text className="text-center text-foreground">
-            This audio could not be played. Try again or save it to open in another app.
+            {t("This audio could not be played. Try again or save it to open in another app.")}
           </Text>
           <View className="items-center">
-            <Button label="Try again" tone="secondary" onPress={props.onRetry} />
+            <Button label={t("Try again")} tone="secondary" onPress={props.onRetry} />
           </View>
         </View>
       ) : null}

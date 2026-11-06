@@ -37,6 +37,9 @@ vi.mock("react-native-gesture-handler", () => ({
   },
 }));
 vi.mock("../../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (message: string) => message,
+}));
 
 import { SettingsDragHandle } from "./SettingsDragHandle";
 

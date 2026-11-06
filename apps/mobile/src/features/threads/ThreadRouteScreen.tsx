@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { terminalEnvironment } from "../../state/terminal";
 import * as Dialog from "../../components/ui/Dialog";
 import { useRememberThreadProject } from "./useRememberThreadProject";
@@ -122,6 +123,8 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
 }
 
 function ThreadRouteFallbackLayout(props: { readonly children: ReactNode }) {
+  const t = useUiTranslation();
+
   const goBack = useWorkspaceBackNavigation("threads");
   const { layout } = useAdaptiveWorkspaceLayout();
   const { themeVariables } = useAppearancePreferences();
@@ -131,7 +134,7 @@ function ThreadRouteFallbackLayout(props: { readonly children: ReactNode }) {
   return (
     <>
       <AppBar
-        title="Thread"
+        title={t("Thread")}
         options={{ contentStyle: { backgroundColor: themeVariables["--color-header"] } }}
         onBack={layout.usesSplitView ? undefined : goBack}
         hideBottomBorder
@@ -171,6 +174,8 @@ function ThreadUnavailableScreen(props: {
   readonly actionLabel: string;
   readonly onAction: () => void;
 }) {
+  const t = useUiTranslation();
+
   return (
     <ThreadRouteFallbackLayout>
       <ScrollView
@@ -184,7 +189,7 @@ function ThreadUnavailableScreen(props: {
         className="bg-screen flex-1 android:bg-transparent"
       >
         <EmptyState
-          title="Thread unavailable"
+          title={t("Thread unavailable")}
           detail="This thread is not available in the current mobile snapshot."
           actionLabel={props.actionLabel}
           onAction={props.onAction}
@@ -235,6 +240,8 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
 }
 
 function LiveThreadRouteController(props: ThreadRouteScreenProps) {
+  const t = useUiTranslation();
+
   useAndroidWorkspaceBack("threads");
   const connectionsReady = useConnectionsReady();
   const { connectionState } = useRemoteConnectionStatus();
@@ -270,7 +277,7 @@ function LiveThreadRouteController(props: ThreadRouteScreenProps) {
     <>
       {props.inspectorPresentation ? (
         <ThreadInspectorHeader
-          title={selectedThread?.title ?? "Thread"}
+          title={selectedThread?.title ?? t("Thread")}
           {...props.inspectorPresentation}
         />
       ) : null}
@@ -341,6 +348,8 @@ function ThreadRouteContent(
     readonly selectedThreadDetailState: ReturnType<typeof useSelectedThreadDetailState>;
   },
 ) {
+  const t = useUiTranslation();
+
   const { themeVariables } = useAppearancePreferences();
   const headerColor = themeVariables["--color-header"];
   const { fileInspector, layout, panes, showInspector, toggleAuxiliaryPane } =
@@ -392,7 +401,7 @@ function ThreadRouteContent(
     reportFailure: false,
   });
   const loadEarlierHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
-    label: "load earlier thread history",
+    label: t("load earlier thread history"),
     reportFailure: false,
   });
   const historyControls = (() => {

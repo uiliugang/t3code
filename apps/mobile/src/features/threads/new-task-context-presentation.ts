@@ -1,6 +1,7 @@
 import { sanitizeNewRefName } from "@t3tools/shared/git";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveSendEnvMode } from "@t3tools/shared/projectSettings";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import type { ComposerDraftWorkspaceSelection } from "../../state/use-composer-drafts";
 
 type WorkspaceMode = "local" | "worktree";
@@ -72,18 +73,25 @@ export function resolveNewTaskLocalWorkspaceSelection(input: {
   };
 }
 
-export function resolveNewTaskBranchLabel(input: {
-  readonly branchName: string | null;
-  readonly startFromOrigin: boolean;
-  readonly workspaceMode: WorkspaceMode;
-  readonly pullRequestReference?: string;
-}): string {
+export function resolveNewTaskBranchLabel(
+  input: {
+    readonly branchName: string | null;
+    readonly startFromOrigin: boolean;
+    readonly workspaceMode: WorkspaceMode;
+    readonly pullRequestReference?: string;
+  },
+  t: UiTranslator = (message, values) => translateUi("en", message, values),
+): string {
   if (input.workspaceMode === "worktree" && input.pullRequestReference) {
     const parsed = sourceControlClients.parseChangeRequestUrl(input.pullRequestReference);
-    if (parsed) return `From ${parsed.definition.changeRequest.shortLabel} #${parsed.link.number}`;
+    if (parsed)
+      return t("From {type} #{number}", {
+        type: parsed.definition.changeRequest.shortLabel,
+        number: parsed.link.number,
+      });
   }
   if (!input.branchName) {
-    return "Choose branch";
+    return t("Choose branch");
   }
 
   if (input.workspaceMode === "local") {
@@ -91,7 +99,9 @@ export function resolveNewTaskBranchLabel(input: {
   }
 
   // Only the server can determine a local branch's configured remote.
-  return input.startFromOrigin ? `From ${input.branchName} (remote)` : `From ${input.branchName}`;
+  return input.startFromOrigin
+    ? t("From {branch} (remote)", { branch: input.branchName })
+    : t("From {branch}", { branch: input.branchName });
 }
 
 export function shouldCheckoutNewTaskBranch(input: {

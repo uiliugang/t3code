@@ -3,6 +3,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const harness = vi.hoisted(() => ({
   failImage: () => {},
   loadImage: (_event: { source: { width: number; height: number } }) => {},

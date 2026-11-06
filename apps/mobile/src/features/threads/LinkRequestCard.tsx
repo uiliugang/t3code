@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { pipe } from "effect/Function";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -102,6 +103,8 @@ function PendingLinkRequest(props: {
   readonly environmentId: EnvironmentId;
   readonly item: LinkRequestItem;
 }) {
+  const t = useUiTranslation();
+
   const { item } = props;
   const [open, setOpen] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -173,13 +176,13 @@ function PendingLinkRequest(props: {
               className="px-1 py-1 active:opacity-60 disabled:opacity-50"
               onPress={() => void decline()}
             >
-              <Text className="font-sans text-xs text-foreground-muted">Decline</Text>
+              <Text className="font-sans text-xs text-foreground-muted">{t("Decline")}</Text>
             </Pressable>
           </View>
         </>
       ) : (
         <Text className="font-sans text-xs text-foreground-muted">
-          Only a session that manages access here can answer this.
+          {t("Only a session that manages access here can answer this.")}
         </Text>
       )}
       {open ? (
@@ -229,6 +232,8 @@ function LinkRequestSheet(props: {
   readonly item: LinkRequestItem;
   readonly onClose: () => void;
 }) {
+  const t = useUiTranslation();
+
   const { item } = props;
   const insets = useSafeAreaInsets();
   const pickMachine = picksMachine(item);
@@ -335,8 +340,9 @@ function LinkRequestSheet(props: {
             {pickMachine ? "Link a machine" : `Link ${targetName}`}
           </Text>
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
-            Agents here can then launch, message and wait on threads there. It appears in that
-            machine's Connections, where it can be revoked.
+            {t(
+              "Agents here can then launch, message and wait on threads there. It appears in that machine's Connections, where it can be revoked.",
+            )}
           </Text>
           {!pickMachine && item.url !== undefined ? (
             <Text className="font-sans text-xs text-foreground-muted" numberOfLines={1}>
@@ -345,7 +351,7 @@ function LinkRequestSheet(props: {
           ) : null}
         </View>
         {pickMachine ? (
-          <SettingsSection title="Machine">
+          <SettingsSection title={t("Machine")}>
             {machines.map((machine, index) => (
               <MachineRow
                 key={machine.environmentId}
@@ -360,8 +366,10 @@ function LinkRequestSheet(props: {
               />
             ))}
             <SettingsChoiceRow
-              label="Another address…"
-              description="Link a machine this app does not know, by its https or Tailscale address."
+              label={t("Another address…")}
+              description={t(
+                "Link a machine this app does not know, by its https or Tailscale address.",
+              )}
               selected={selected === ANOTHER_ADDRESS}
               separated={machines.length > 0}
               disabled={busy}
@@ -375,7 +383,7 @@ function LinkRequestSheet(props: {
         {needsAddress && !(item.url !== undefined && item.environmentId === undefined) ? (
           <View className="gap-2">
             <TextInput
-              accessibilityLabel="Address"
+              accessibilityLabel={t("Address")}
               placeholder="https://machine.tailnet.ts.net"
               value={address}
               onChangeText={setAddress}
@@ -387,24 +395,28 @@ function LinkRequestSheet(props: {
             />
             {target.kind === "machine" ? (
               <Text className="font-sans text-xs text-foreground-muted">
-                This app has no address for {target.label} that another machine can reach. Enter its
-                https or Tailscale address.
+                {t(
+                  "This app has no reachable address for {machine}. Enter its HTTPS or Tailscale address.",
+                  { machine: target.label },
+                )}
               </Text>
             ) : null}
           </View>
         ) : null}
         {useExisting ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
-            This environment is already linked to {targetName}. The agent can use that link as it
-            is; change its access in Settings → Connections.
+            {t(
+              "This environment is already linked to {machine}. The agent can use that link; change its access in Settings → Connections.",
+              { machine: targetName },
+            )}
           </Text>
         ) : target.kind === "none" ? null : (
           <>
             {canMint ? null : (
               <View className="gap-2">
                 <TextInput
-                  accessibilityLabel="Pairing code"
-                  placeholder="Paste the code"
+                  accessibilityLabel={t("Pairing code")}
+                  placeholder={t("Paste the code")}
                   value={pairingCode}
                   onChangeText={setPairingCode}
                   editable={!busy}
@@ -415,17 +427,19 @@ function LinkRequestSheet(props: {
                   spellCheck={false}
                 />
                 <Text className="font-sans text-xs text-foreground-muted">
-                  Create a link on {targetName}: Settings → Connections → Create link, then paste
-                  its code here.
+                  {t(
+                    "Create a link on {machine}: Settings → Connections → Create link, then paste its code here.",
+                    { machine: targetName },
+                  )}
                 </Text>
               </View>
             )}
-            <SettingsSection title="What agents here may do there">
+            <SettingsSection title={t("What agents here may do there")}>
               {ACCESS_CHOICES.map((choice, index) => (
                 <SettingsChoiceRow
                   key={choice.access}
-                  label={choice.label}
-                  description={choice.description}
+                  label={t(choice.label)}
+                  description={t(choice.description)}
                   selected={choice.access === access}
                   separated={index > 0}
                   disabled={busy}
@@ -434,8 +448,9 @@ function LinkRequestSheet(props: {
               ))}
             </SettingsSection>
             <Text className="font-sans text-xs text-foreground-muted">
-              An agent here never gets more there than its own mode here either. Threads it starts
-              there cannot change that environment's own threads, projects or settings.
+              {t(
+                "An agent here never gets more there than its own mode here either. Threads it starts there cannot change that environment's own threads, projects or settings.",
+              )}
             </Text>
           </>
         )}
@@ -449,13 +464,19 @@ function LinkRequestSheet(props: {
           </Text>
         ) : null}
         <Button
-          label={busy ? "Linking…" : useExisting ? "Use this link" : "Link"}
+          label={busy ? "Linking…" : useExisting ? "Use this link" : t("Link")}
           disabled={busy || !ready}
           onPress={() => void submit()}
           tone="primary"
           fullWidth
         />
-        <Button label="Cancel" tone="secondary" disabled={busy} onPress={props.onClose} fullWidth />
+        <Button
+          label={t("Cancel")}
+          tone="secondary"
+          disabled={busy}
+          onPress={props.onClose}
+          fullWidth
+        />
       </ScrollView>
     </Modal>
   );

@@ -7,6 +7,7 @@ import {
 } from "../../../../lib/appearancePreferences";
 import { getMobileTerminalTheme } from "../../../terminal/terminalTheme";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
+import { useUiTranslation } from "../../../../lib/useUiTranslation";
 
 const CODE_FONT_FAMILY = Platform.select({
   ios: "ui-monospace",
@@ -19,6 +20,7 @@ export function AppearancePreviewSeparator() {
 }
 
 export function TextAppearancePreview(props: { readonly fontSize: number }) {
+  const t = useUiTranslation();
   const sizes = resolveMarkdownFontSizes(props.fontSize);
 
   return (
@@ -27,13 +29,13 @@ export function TextAppearancePreview(props: { readonly fontSize: number }) {
         className="text-foreground"
         style={{ fontSize: sizes.m, lineHeight: sizes.bodyLineHeight }}
       >
-        The quick brown fox jumps over the lazy dog.
+        {t("The quick brown fox jumps over the lazy dog.")}
       </Text>
       <Text
         className="text-foreground-muted"
         style={{ fontSize: sizes.s, lineHeight: Math.round(sizes.s * 1.4) }}
       >
-        Messages, labels, and headings scale with this size.
+        {t("Messages, labels, and headings scale with this size.")}
       </Text>
     </View>
   );

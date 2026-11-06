@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type AtomCommandResult,
@@ -61,6 +62,8 @@ export function ThreadGuestShareBar(props: {
   readonly threadRef: ScopedThreadRef | null;
   readonly canOperateThread: boolean;
 }) {
+  const t = useUiTranslation();
+
   const { threadRef } = props;
   const share = useThreadGuestShare(threadRef);
   const closeGuestShare = useAtomCommand(threadEnvironment.closeGuestShare, "stop guest sharing");
@@ -86,7 +89,7 @@ export function ThreadGuestShareBar(props: {
     Dialog.confirm({
       title: "Stop sharing?",
       message: "The guest loses access and the link stops working.",
-      confirmText: "Stop sharing",
+      confirmText: t("Stop sharing"),
       destructive: true,
       onConfirm: () => {
         if (disabled) return;
@@ -111,7 +114,7 @@ export function ThreadGuestShareBar(props: {
             ? "Guest link active"
             : `${share.guestName} is a guest`}
       </Text>
-      <Button label="Stop sharing" tone="text" disabled={disabled} onPress={stopSharing} />
+      <Button label={t("Stop sharing")} tone="text" disabled={disabled} onPress={stopSharing} />
     </View>
   );
 }
@@ -128,6 +131,8 @@ export function ThreadGuestPendingMessage(props: {
   /** The feed's own attachment rendering, so the owner sees the files before Send. */
   readonly renderAttachments: (attachments: ReadonlyArray<ChatAttachment>) => ReactNode;
 }) {
+  const t = useUiTranslation();
+
   const { threadRef, guestName, message } = props;
   const canOperate = useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
   const resolveGuestMessage = useAtomCommand(
@@ -170,14 +175,14 @@ export function ThreadGuestPendingMessage(props: {
       {canOperate ? (
         <View className="mt-1.5 flex-row gap-2">
           <Button
-            label="Dismiss"
+            label={t("Dismiss")}
             tone="secondary"
             accessibilityLabel={`Dismiss message from ${guestName}`}
             disabled={busy}
             onPress={() => void resolve("dismiss")}
           />
           <Button
-            label="Send"
+            label={t("Send")}
             tone="primary"
             accessibilityLabel={`Send message from ${guestName}`}
             disabled={busy}

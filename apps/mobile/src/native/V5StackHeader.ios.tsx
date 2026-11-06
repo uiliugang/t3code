@@ -8,6 +8,7 @@ import { StyleSheet } from "react-native";
 import { KeyboardController, useKeyboardState } from "react-native-keyboard-controller";
 import { isDuoDevice } from "../lib/device-type";
 import { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
+import { useUiTranslation } from "../lib/useUiTranslation";
 import { useDeviceType, useNativeLayoutMetrics } from "../native/native-layout-metrics";
 import { HeaderItemsWidthContext } from "./header-items-width";
 import {
@@ -60,15 +61,19 @@ function convertIcon(
   return icon;
 }
 
-function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
+function convertMenu(
+  menu: MenuInput,
+  id: string,
+  t: ReturnType<typeof useUiTranslation>,
+): StackHeaderMenuIOS {
   const children = menu.items.flatMap<StackHeaderMenuElementIOS>((item, index) => {
     if ("hidden" in item && item.hidden) return [];
     const childId = `${id}:${index}`;
     if (item.type === "submenu") {
       return [
         {
-          ...convertMenu({ items: item.items }, childId),
-          title: "label" in item ? item.label : item.title,
+          ...convertMenu({ items: item.items }, childId, t),
+          title: t(("label" in item ? item.label : item.title) ?? ""),
           displayInline:
             "inline" in item
               ? item.inline
@@ -83,7 +88,7 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
         id: childId,
         type: "menuItem" as const,
         itemType: "action" as const,
-        title: "label" in item ? item.label : item.title,
+        title: t(("label" in item ? item.label : item.title) ?? ""),
         icon: convertIcon(item.icon),
         onPress: item.disabled ? undefined : item.onPress,
         keepsMenuPresented: item.keepsMenuPresented,
@@ -96,10 +101,19 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
       },
     ];
   });
-  return { id, type: "menu", title: menu.title, children };
+  return {
+    id,
+    type: "menu",
+    title: menu.title === undefined ? undefined : t(menu.title),
+    children,
+  };
 }
 
-function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderItem[] {
+function convertItems(
+  items: NativeStackHeaderItem[],
+  prefix: string,
+  t: ReturnType<typeof useUiTranslation>,
+): HeaderItem[] {
   return items.map((item, index): HeaderItem => {
     const id =
       item.type === "spacing" ? `${prefix}:${index}` : (item.identifier ?? `${prefix}:${index}`);
@@ -120,10 +134,10 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
           type: "item",
           id,
           identifier: item.identifier,
-          title: item.label || item.accessibilityLabel || undefined,
+          title: t(item.label || item.accessibilityLabel || "") || undefined,
           axisBehavior: item.axisBehavior,
           icon: convertIcon(item.icon),
-          menu: item.disabled ? undefined : convertMenu(item.menu, `${id}:menu`),
+          menu: item.disabled ? undefined : convertMenu(item.menu, `${id}:menu`, t),
           disabled: item.disabled,
           variant: item.variant,
           tintColor: item.tintColor,
@@ -134,7 +148,7 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
           type: "item",
           id,
           identifier: item.identifier,
-          title: item.label || item.accessibilityLabel || undefined,
+          title: t(item.label || item.accessibilityLabel || "") || undefined,
           axisBehavior: item.axisBehavior,
           icon: convertIcon(item.icon),
           onPress: item.disabled ? undefined : item.onPress,
@@ -157,6 +171,7 @@ export function V5StackHeader(props: {
   /** The workspace's compose action, shown as its own group in this column's bar. */
   readonly onCompose?: () => void;
 }) {
+  const t = useUiTranslation();
   const { options } = props;
   const theme = useMobileNavigationTheme();
   const nativeMetrics = useNativeLayoutMetrics();
@@ -164,13 +179,14 @@ export function V5StackHeader(props: {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const searchRef = useRef<SearchBarCommands>(null);
   const itemProps = { tintColor: options.headerTintColor, canGoBack: props.canGoBack };
-  const leading = convertItems(options.unstable_headerLeftItems?.(itemProps) ?? [], "leading");
+  const leading = convertItems(options.unstable_headerLeftItems?.(itemProps) ?? [], "leading", t);
   const trailing = convertItems(
     [
       ...(options.unstable_headerCenterItems?.() ?? []),
       ...(options.unstable_headerRightItems?.(itemProps) ?? []),
     ],
     "trailing",
+    t,
   );
   const toolbar = options.unstable_headerToolbarItems?.() ?? [];
   const mailSearch = toolbar.find(
@@ -183,7 +199,7 @@ export function V5StackHeader(props: {
     if (item.type === "mailSearchToolbar") return [];
     if (item.type === "searchBarPlacement")
       return [{ type: "item", id: `toolbar-search:${index}`, searchBarPlacement: true }];
-    return convertItems([item], `toolbar:${index}`);
+    return convertItems([item], `toolbar:${index}`, t);
   });
   if (mailSearch) {
     if (mailSearch.filterMenu)
@@ -194,7 +210,7 @@ export function V5StackHeader(props: {
           type: "sfSymbol",
           name: mailSearch.filterSystemImageName ?? "line.3.horizontal.decrease",
         },
-        menu: convertMenu(mailSearch.filterMenu, "filter-menu"),
+        menu: convertMenu(mailSearch.filterMenu, "filter-menu", t),
       });
     if (bottomSearch) {
       if (spacesSearch && bottom.length)
@@ -232,7 +248,7 @@ export function V5StackHeader(props: {
     const compose: HeaderItem = {
       type: "item",
       id: "workspace-compose",
-      title: "New task",
+      title: t("New task"),
       icon: { type: "sfSymbol", name: "square.and.pencil" },
       onPress: props.onCompose,
     };
@@ -253,7 +269,7 @@ export function V5StackHeader(props: {
       {
         type: "item",
         id: "dismiss-keyboard",
-        title: "Dismiss keyboard",
+        title: t("Dismiss keyboard"),
         icon: { type: "sfSymbol", name: "keyboard.chevron.compact.down" },
         onPress: () => void KeyboardController.dismiss(),
         // The folded bar is short; keep this out of the overflow menu.
@@ -268,7 +284,8 @@ export function V5StackHeader(props: {
     leading.push({ type: "item", id: "custom-left", render: () => left });
   if (!options.unstable_headerRightItems && isValidElement(right))
     trailing.push({ type: "item", id: "custom-right", render: () => right });
-  const title = typeof options.headerTitle === "string" ? options.headerTitle : options.title;
+  const rawTitle = typeof options.headerTitle === "string" ? options.headerTitle : options.title;
+  const title = rawTitle === undefined ? undefined : t(rawTitle);
   const titleElement =
     typeof options.headerTitle === "function"
       ? options.headerTitle({ children: title ?? "", tintColor: options.headerTintColor })
@@ -345,7 +362,7 @@ export function V5StackHeader(props: {
                 hideWhenScrolling={false}
                 allowToolbarIntegration={searchOptions?.allowToolbarIntegration ?? true}
                 placement={bottomSearch ? "integrated" : (searchOptions?.placement ?? "automatic")}
-                placeholder={mailSearch?.placeholder ?? searchOptions?.placeholder ?? "Search"}
+                placeholder={t(mailSearch?.placeholder ?? searchOptions?.placeholder ?? "Search")}
                 onFocus={(event) => {
                   searchOptions?.onFocus?.(event);
                 }}
@@ -364,7 +381,8 @@ export function V5StackHeader(props: {
           largeTitleEnabled: options.headerLargeTitle,
           backButtonDisplayMode: options.headerBackButtonDisplayMode ?? "minimal",
           backButtonMenuEnabled: options.headerBackButtonMenuEnabled ?? true,
-          backButtonTitle: options.headerBackTitle,
+          backButtonTitle:
+            options.headerBackTitle === undefined ? undefined : t(options.headerBackTitle),
           standardAppearance: appearance,
           scrollEdgeAppearance: appearance,
         }}

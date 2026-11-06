@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as DateTime from "effect/DateTime";
+import type { UiTranslator } from "./uiLocale.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -665,22 +666,27 @@ function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
   return "on";
 }
 
-export function formatDuration(ms: number): string {
+export function formatDuration(ms: number, t?: UiTranslator): string {
   const remaining = Math.max(0, ms);
   const days = Math.floor(remaining / DAY);
   const hours = Math.floor((remaining % DAY) / HOUR);
   const minutes = Math.floor((remaining % HOUR) / MINUTE);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+  if (days > 0) return t?.("{days}d {hours}h", { days, hours }) ?? `${days}d ${hours}h`;
+  if (hours > 0) return t?.("{hours}h {minutes}m", { hours, minutes }) ?? `${hours}h ${minutes}m`;
+  return t?.("{minutes}m", { minutes }) ?? `${minutes}m`;
 }
 
-export function formatResetsIn(window: ServerProviderUsageWindow, now: number): string | null {
+export function formatResetsIn(
+  window: ServerProviderUsageWindow,
+  now: number,
+  t?: UiTranslator,
+): string | null {
   const resetsAt = resetMillis(window);
   if (resetsAt === null) return null;
-  if (resetsAt <= now) return "resets now";
-  if (resetsAt - now < MINUTE) return "Resets momentarily";
-  return `resets in ${formatDuration(resetsAt - now)}`;
+  if (resetsAt <= now) return t?.("resets now") ?? "resets now";
+  if (resetsAt - now < MINUTE) return t?.("Resets momentarily") ?? "Resets momentarily";
+  const duration = formatDuration(resetsAt - now, t);
+  return t?.("resets in {duration}", { duration }) ?? `resets in ${duration}`;
 }
 
 export const USAGE_LIMITS_COMMAND = {

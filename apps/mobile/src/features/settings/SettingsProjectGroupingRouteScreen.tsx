@@ -13,6 +13,7 @@ import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { NewThreadSettingsSection, WorkingSectionSettings } from "./ThreadSettingsSections";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 const GROUPING_OPTIONS: ReadonlyArray<{
   readonly mode: SidebarProjectGroupingMode;
@@ -37,6 +38,7 @@ const GROUPING_OPTIONS: ReadonlyArray<{
 ];
 
 export function SettingsProjectGroupingRouteScreen() {
+  const t = useUiTranslation();
   const insets = useSafeAreaInsets();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -58,8 +60,8 @@ export function SettingsProjectGroupingRouteScreen() {
           {GROUPING_OPTIONS.map((option, index) => (
             <SettingsChoiceRow
               key={option.mode}
-              label={option.label}
-              description={option.description}
+              label={t(option.label)}
+              description={t(option.description)}
               selected={selectedMode === option.mode}
               separated={index > 0}
               disabled={!preferencesReady}

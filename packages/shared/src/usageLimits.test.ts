@@ -7,6 +7,7 @@ import {
   UsageLimitSourceId,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi } from "./uiLocale.ts";
 
 import {
   type LimitAccount,
@@ -19,6 +20,7 @@ import {
   collectLimitPools,
   elapsedShare,
   exhaustedUsageWindow,
+  formatResetsIn,
   paceOf,
   paceRemainingPercent,
   usesChatGptSharing,
@@ -160,6 +162,25 @@ describe("pace", () => {
     expect(paceOf(window, now)).toBe("under");
     expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
+  });
+});
+
+describe("reset time", () => {
+  it.each([
+    [undefined, null, null],
+    ["invalid", null, null],
+    ["2026-09-03T11:59:00.000Z", "resets now", "现在重置"],
+    ["2026-09-03T12:00:00.000Z", "resets now", "现在重置"],
+    ["2026-09-03T12:00:59.000Z", "Resets momentarily", "即将重置"],
+    ["2026-09-03T12:01:00.000Z", "resets in 1m", "1分钟后重置"],
+    ["2026-09-03T14:03:00.000Z", "resets in 2h 3m", "2小时3分钟后重置"],
+    ["2026-09-04T14:00:00.000Z", "resets in 1d 2h", "1天2小时后重置"],
+  ])("formats reset time %s in the requested language", (resetsAt, english, chinese) => {
+    const resetWindow = { ...window, resetsAt };
+    expect(formatResetsIn(resetWindow, now)).toBe(english);
+    expect(
+      formatResetsIn(resetWindow, now, (message, values) => translateUi("zh-CN", message, values)),
+    ).toBe(chinese);
   });
 });
 

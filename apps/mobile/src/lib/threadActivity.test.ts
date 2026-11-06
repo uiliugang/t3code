@@ -19,6 +19,7 @@ import {
 } from "@t3tools/contracts";
 import { deriveThreadCheckpointSummaries } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { summarizeToolGroup } from "@t3tools/client-runtime/work-log/presentation";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { getReviewSectionIdForCheckpoint } from "../features/review/reviewModel";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
@@ -830,6 +831,7 @@ describe("buildThreadFeed", () => {
   });
 
   it("folds progress messages while keeping the final assistant answer visible", () => {
+    const t: UiTranslator = (message, values) => translateUi("zh-CN", message, values);
     const opening = {
       ...assistantMessage("2026-06-20T00:00:01.500Z"),
       id: TurnItemId.make("item-opening"),
@@ -867,6 +869,18 @@ describe("buildThreadFeed", () => {
       createdAt: "2026-06-20T00:00:01.500Z",
       label: "Worked for 2s",
     });
+    const localized = (run: ThreadFeedLatestRun) =>
+      deriveThreadFeedPresentation(feed, run, new Set(), new Set(), null, false, undefined, t);
+    expect(localized(latestRun)[1]).toMatchObject({ label: "工作用时 2s" });
+    expect(localized({ ...latestRun, status: "interrupted" })[1]).toMatchObject({
+      label: "运行 2s 后由你停止",
+    });
+    expect(localized({ ...latestRun, startedAt: "invalid" })[1]).toMatchObject({
+      label: "已完成工作",
+    });
+    expect(
+      localized({ ...latestRun, status: "interrupted", startedAt: "invalid" })[1],
+    ).toMatchObject({ label: "你已停止此回复" });
 
     const expanded = deriveThreadFeedPresentation(feed, latestRun, new Set([runId]));
     expect(expanded.map((entry) => entry.type)).toEqual([
@@ -886,6 +900,18 @@ describe("buildThreadFeed", () => {
     const deferredRows = deriveThreadFeedPresentation(deferredFeed, running, new Set());
     const disclosure = deferredRows.find((entry) => entry.type === "run-fold");
     expect(disclosure).toMatchObject({ deferredWorkItemIds: [anchor.id], expanded: false });
+    expect(
+      deriveThreadFeedPresentation(
+        deferredFeed,
+        running,
+        new Set(),
+        new Set(),
+        null,
+        false,
+        undefined,
+        t,
+      ).find((entry) => entry.type === "run-fold"),
+    ).toMatchObject({ label: "较早的工作" });
     if (disclosure?.type !== "run-fold") throw new Error("Expected deferred work disclosure");
     expect(
       deriveThreadFeedPresentation(deferredFeed, running, new Set([disclosure.runId])).some(
@@ -1825,6 +1851,7 @@ describe("streamed feed updates", () => {
     step: (typeof steps)[number],
     expandedRunIds: ReadonlySet<RunId>,
     cache?: ThreadFeedCache,
+    t?: UiTranslator,
   ) =>
     deriveThreadFeedPresentation(
       buildThreadFeed(step.items.map(row), { cache }),
@@ -1834,6 +1861,7 @@ describe("streamed feed updates", () => {
       step.latestRun.status === "running" ? at(20) : null,
       false,
       cache,
+      t,
     );
 
   it.each([
@@ -1848,6 +1876,16 @@ describe("streamed feed updates", () => {
     for (const [index, rows] of streamed.entries()) {
       expect(values(rows), `step ${index}`).toEqual(values(fresh[index]!));
     }
+    const t: UiTranslator = (message, values) => translateUi("zh-CN", message, values);
+    const lastStep = steps.at(-1)!;
+    const localized = present(lastStep, expandedRunIds, cache, t);
+    expect(values(localized)).toEqual(values(present(lastStep, expandedRunIds, undefined, t)));
+    expect(localized.find((entry) => entry.type === "run-fold")).toMatchObject({
+      label: expect.stringMatching(/^工作用时 /),
+    });
+    expect(values(present(lastStep, expandedRunIds, cache))).toEqual(
+      values(present(lastStep, expandedRunIds)),
+    );
   });
 
   it("hides a delegation once its child reaches back into the earlier run", () => {

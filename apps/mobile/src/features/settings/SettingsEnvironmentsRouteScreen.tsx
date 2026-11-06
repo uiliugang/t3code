@@ -15,6 +15,7 @@ import { LocalEnvironmentList } from "../connection/LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "../connection/PullRequestRoutingSettings";
 import { splitEnvironmentSections } from "../connection/environmentSections";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -28,6 +29,7 @@ import {
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
 export function SettingsEnvironmentsRouteScreen() {
+  const t = useUiTranslation();
   const {
     connectedEnvironments,
     onReconnectEnvironment,
@@ -97,11 +99,11 @@ export function SettingsEnvironmentsRouteScreen() {
       trailing={
         Platform.OS === "android" && relaySession ? (
           <AndroidAnchoredMenu
-            title="Environment options"
+            title={t("Environment options")}
             actions={[
               {
                 id: "refresh",
-                title: "Refresh cloud environments",
+                title: t("Refresh cloud environments"),
                 attributes: { disabled: isRefreshingCloud },
               },
             ]}
@@ -111,7 +113,7 @@ export function SettingsEnvironmentsRouteScreen() {
           >
             {(open) => (
               <AndroidHeaderIconButton
-                accessibilityLabel="Environment options"
+                accessibilityLabel={t("Environment options")}
                 icon="ellipsis"
                 onPress={open}
               />
@@ -121,7 +123,7 @@ export function SettingsEnvironmentsRouteScreen() {
       }
       actions={[
         {
-          accessibilityLabel: "Add environment",
+          accessibilityLabel: t("Add environment"),
           icon: "plus",
           tintColor: headerIconColor,
           onPress: () => navigation.navigate("SettingsEnvironmentNew"),

@@ -25,7 +25,7 @@ export function DaxiangSettingsSection({ environmentId }: { environmentId: Envir
       <View className="gap-3 p-4">
         <Text className="text-sm font-t3-medium">{t("DaXiang")}</Text>
         <ConnectionFormField
-          label="Client ID"
+          label={t("Client ID")}
           value={value.clientId}
           autoCapitalize="none"
           autoCorrect={false}
@@ -33,7 +33,7 @@ export function DaxiangSettingsSection({ environmentId }: { environmentId: Envir
           onChangeText={(clientId) => setDraft({ ...value, clientId })}
         />
         <ConnectionFormField
-          label="Client Secret"
+          label={t("Client Secret")}
           value={value.clientSecret}
           secureTextEntry
           autoCapitalize="none"

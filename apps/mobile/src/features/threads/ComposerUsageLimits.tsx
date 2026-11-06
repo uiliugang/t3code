@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
 import { Pressable, ScrollView, View } from "react-native";
 
@@ -18,10 +19,12 @@ export function ComposerUsageLimits({
   readonly maxHeight: number;
   readonly onClose: () => void;
 }) {
+  const t = useUiTranslation();
+
   const now = Date.parse(report.createdAt);
   const close = (
     <Pressable
-      accessibilityLabel="Dismiss usage limits"
+      accessibilityLabel={t("Dismiss usage limits")}
       accessibilityRole="button"
       hitSlop={12}
       onPress={onClose}
@@ -74,7 +77,7 @@ export function ComposerUsageLimits({
         })}
         {report.accounts.length === 0 ? (
           <View className="flex-row items-center gap-3 px-4 pt-3">
-            <Text className="min-w-0 flex-1 text-base text-foreground">Usage limits</Text>
+            <Text className="min-w-0 flex-1 text-base text-foreground">{t("Usage limits")}</Text>
             {close}
           </View>
         ) : null}

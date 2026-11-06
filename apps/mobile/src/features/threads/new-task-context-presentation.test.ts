@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 import {
   fillNewTaskWorkspaceBranch,
@@ -49,6 +50,24 @@ describe("resolveNewTaskWorkspaceSelection", () => {
 });
 
 describe("resolveNewTaskBranchLabel", () => {
+  it.each(["Choose branch", "feature/{branch}", "分支/中文"])(
+    "keeps the branch name unchanged while translating its source label (%s)",
+    (branchName) => {
+      const t: UiTranslator = (_message, values) => `来源：${values?.branch ?? "选择分支"}`;
+      expect(
+        resolveNewTaskBranchLabel(
+          { branchName, startFromOrigin: false, workspaceMode: "local" },
+          t,
+        ),
+      ).toBe(branchName);
+      expect(
+        resolveNewTaskBranchLabel(
+          { branchName, startFromOrigin: false, workspaceMode: "worktree" },
+          t,
+        ),
+      ).toBe(`来源：${branchName}`);
+    },
+  );
   it.each([
     ["https://github.com/acme/repo/pull/123", "From PR #123"],
     ["https://gitlab.com/acme/repo/-/merge_requests/123", "From MR #123"],

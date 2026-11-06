@@ -107,6 +107,8 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
 }
 
 function GitOverviewSheetContent(props: GitOverviewSheetProps) {
+  const t = useUiTranslation();
+
   const { layout } = useAdaptiveWorkspaceLayout();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -320,7 +322,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         />
       ) : null}
       {workspace && workspace.resources.length > 1 ? (
-        <ListSection title="Repositories">
+        <ListSection title={t("Repositories")}>
           {workspace.resources.map((resource) => (
             <RepositorySummaryRow
               key={resource.id}
@@ -356,11 +358,11 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         {behindCount > 0 ? (
           <ListRow
             icon="arrow.down.circle"
-            label="Pull latest"
+            label={t("Pull latest")}
             description={
               canWriteSourceControl
                 ? `${behindCount} commit${behindCount === 1 ? "" : "s"} behind upstream`
-                : "This connection cannot change source control."
+                : t("This connection cannot change source control.")
             }
             disabled={!canWriteSourceControl || busy || !isRepo}
             onPress={() => void gitActions.onPullSelectedThreadBranch()}
@@ -368,8 +370,8 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         ) : null}
         <ListRow
           icon="text.bubble"
-          label="Review changes"
-          description="Inspect changes, uncommitted edits, and turn diffs"
+          label={t("Review changes")}
+          description={t("Inspect changes, uncommitted edits, and turn diffs")}
           disabled={busy || !isRepo}
           onPress={() => {
             const params = { environmentId, threadId };
@@ -384,7 +386,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         />
         <ListRow
           icon="point.topleft.down.curvedto.point.bottomright.up"
-          label="Branches & worktrees"
+          label={t("Branches & worktrees")}
           description={
             canChangeThreadBranch
               ? "Switch branch, create branch, or move to a worktree"
@@ -431,7 +433,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       ) : null}
 
       {currentWorktreePath ? (
-        <ListSection title="Worktree">
+        <ListSection title={t("Worktree")}>
           <Text selectable textRole="footnote" className="p-4 text-foreground-muted">
             {currentWorktreePath}
           </Text>

@@ -52,6 +52,9 @@ vi.mock("../../components/ui/AppText", () => ({
 vi.mock("../../components/ui/FrostedCutout", () => ({ FrostedCutout: () => null }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../../lib/useUniwindTheme", () => ({ useUniwindTheme: () => ({}) }));
+vi.mock("../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (message: string) => message,
+}));
 vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
   useAppearancePreferences: () => ({ themeAppearance: "dark" }),
 }));

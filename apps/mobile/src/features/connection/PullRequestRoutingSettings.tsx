@@ -15,6 +15,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { environmentCatalog } from "../../connection/catalog";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "../settings/components/SettingsSection";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 const options: ReadonlyArray<{
   value: PullRequestRoutingPermission;
@@ -36,6 +37,7 @@ const options: ReadonlyArray<{
 ];
 
 export function PullRequestRoutingSettings() {
+  const t = useUiTranslation();
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const permissions = useAtomValue(environmentCatalog.pullRequestRoutingPermissionsValueAtom);
   const update = useAtomCommand(environmentCatalog.setPullRequestRoutingPermission);
@@ -45,7 +47,7 @@ export function PullRequestRoutingSettings() {
 
   return (
     <View className="mt-5 gap-3">
-      <SettingsSection title="Pull request routing">
+      <SettingsSection title={t("Pull request routing")}>
         {[...catalog.entries.values()].map((entry) => {
           const environmentId = entry.target.environmentId;
           const selected = pullRequestRoutingPermissionFor(entry, permissions);
@@ -55,7 +57,9 @@ export function PullRequestRoutingSettings() {
             <View key={environmentId}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${entry.target.label} pull request routing`}
+                accessibilityLabel={t("{environment} pull request routing", {
+                  environment: entry.target.label,
+                })}
                 accessibilityState={{ expanded: expanded === environmentId }}
                 className="flex-row items-center gap-3 p-4"
                 onPress={() => setExpanded(expanded === environmentId ? null : environmentId)}
@@ -69,7 +73,7 @@ export function PullRequestRoutingSettings() {
                   </Text>
                 </View>
                 <Text className="text-sm text-foreground-muted">
-                  {options.find((option) => option.value === selected)?.label}
+                  {t(options.find((option) => option.value === selected)?.label ?? "")}
                 </Text>
                 <SymbolView
                   name={expanded === environmentId ? "chevron.up" : "chevron.down"}
@@ -81,8 +85,8 @@ export function PullRequestRoutingSettings() {
                 ? options.map((option) => (
                     <ListChoiceRow
                       key={option.value}
-                      label={option.label}
-                      description={option.description}
+                      label={t(option.label)}
+                      description={t(option.description)}
                       selected={selected === option.value}
                       disabled={disabled}
                       onPress={() => {
@@ -91,8 +95,8 @@ export function PullRequestRoutingSettings() {
                           setSaving(false);
                           if (result._tag === "Failure")
                             Dialog.alert(
-                              "Could not save pull request routing permission",
-                              "Try again before leaving this screen.",
+                              t("Could not save pull request routing permission"),
+                              t("Try again before leaving this screen."),
                             );
                         });
                       }}

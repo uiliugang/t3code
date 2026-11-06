@@ -12,10 +12,12 @@ import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useCompactWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { useNavigation } from "@react-navigation/native";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 const PULL_REQUEST_ICON = require("../../../assets/icons/pull-request.png");
 
 export function WorkspaceTabToolbarButtons() {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
@@ -34,7 +36,7 @@ export function WorkspaceTabToolbarButtons() {
         <Toolbar.Button
           key={tab}
           identifier={`workspace-tab-${tab}`}
-          accessibilityLabel={WORKSPACE_TAB_LABELS[tab]}
+          accessibilityLabel={t(WORKSPACE_TAB_LABELS[tab])}
           icon={
             tab === "pullRequests"
               ? { type: "image", source: PULL_REQUEST_ICON, tinted: true }
@@ -46,13 +48,13 @@ export function WorkspaceTabToolbarButtons() {
       ))}
       <Toolbar.Button
         identifier="workspace-requirements"
-        accessibilityLabel="Requirements board"
+        accessibilityLabel={t("Requirements board")}
         icon="ticket"
         onPress={() => navigation.navigate("Requirements")}
       />
       <Toolbar.Button
         identifier="workspace-tab-settings"
-        accessibilityLabel="Settings"
+        accessibilityLabel={t("Settings")}
         icon="gearshape"
         tintColor={selected === "settings" ? selectedTint : undefined}
         onPress={() => selectTab("settings")}
@@ -68,6 +70,7 @@ export function WorkspaceSectionToolbar({
   readonly onNewTask: () => void;
   readonly showCompose?: boolean;
 }) {
+  const t = useUiTranslation();
   const sidebarTabs = useSidebarWorkspaceTabs();
   const compactTabs = useCompactWorkspaceTabs();
   const deviceType = useDeviceType();
@@ -76,7 +79,7 @@ export function WorkspaceSectionToolbar({
       {showCompose && sidebarTabs !== "picker" && deviceType !== "duo-unfolded" && !compactTabs ? (
         <Toolbar placement="right">
           <Toolbar.Button
-            accessibilityLabel="New chat"
+            accessibilityLabel={t("New chat")}
             icon="square.and.pencil"
             onPress={onNewTask}
           />

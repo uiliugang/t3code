@@ -94,29 +94,29 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
         {roots.map((root) => (
           <View key={root.id} className="gap-3 rounded-xl border border-border p-3">
             <Button
-              label={primary === root.id ? "Primary repository" : "Make primary"}
+              label={t(primary === root.id ? "Primary repository" : "Make primary")}
               disabled={!allowed || saving || primary === root.id}
               onPress={() => setPrimary(root.id)}
             />
-            <AppText>Repository name</AppText>
+            <AppText>{t("Repository name")}</AppText>
             <AppTextInput
-              accessibilityLabel="Repository name"
+              accessibilityLabel={t("Repository name")}
               editable={allowed && !saving}
               value={root.alias}
               onChangeText={(alias) => change(root.id, { alias })}
             />
-            <AppText>Directory on this environment</AppText>
+            <AppText>{t("Directory on this environment")}</AppText>
             <AppTextInput
-              accessibilityLabel="Repository directory"
+              accessibilityLabel={t("Repository directory")}
               autoCapitalize="none"
               autoCorrect={false}
               editable={allowed && !saving}
               value={root.sourcePath}
               onChangeText={(sourcePath) => change(root.id, { sourcePath })}
             />
-            <AppText>Repository context</AppText>
+            <AppText>{t("Repository context")}</AppText>
             <AppTextInput
-              accessibilityLabel="Repository context"
+              accessibilityLabel={t("Repository context")}
               multiline
               numberOfLines={2}
               textAlignVertical="top"
@@ -126,9 +126,9 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
               value={root.description}
               onChangeText={(description) => change(root.id, { description })}
             />
-            <AppText>Default base ref</AppText>
+            <AppText>{t("Default base ref")}</AppText>
             <AppTextInput
-              accessibilityLabel="Default base ref"
+              accessibilityLabel={t("Default base ref")}
               autoCapitalize="none"
               editable={allowed && !saving}
               placeholder="HEAD"
@@ -144,9 +144,9 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
                 );
               }}
             />
-            <AppText>Worktree setup command</AppText>
+            <AppText>{t("Worktree setup command")}</AppText>
             <AppTextInput
-              accessibilityLabel="Worktree setup command"
+              accessibilityLabel={t("Worktree setup command")}
               autoCapitalize="none"
               autoCorrect={false}
               editable={allowed && !saving}
@@ -177,7 +177,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
               }}
             />
             <Button
-              label="Remove repository"
+              label={t("Remove repository")}
               tone="danger"
               disabled={!allowed || saving || roots.length === 1 || primary === root.id}
               onPress={() => setRoots((current) => current.filter((entry) => entry.id !== root.id))}
@@ -185,7 +185,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
           </View>
         ))}
         <Button
-          label="Add repository"
+          label={t("Add repository")}
           disabled={!allowed || saving || roots.length >= 16}
           onPress={() =>
             setRoots((current) => [
@@ -202,7 +202,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
           }
         />
         <Button
-          label="Save repositories"
+          label={t("Save repositories")}
           tone="primary"
           loading={saving}
           disabled={!allowed || !valid}

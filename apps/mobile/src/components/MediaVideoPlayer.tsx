@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../lib/useUiTranslation";
 import { useEvent } from "expo";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useIsFocused } from "@react-navigation/native";
@@ -24,6 +25,8 @@ function LoadedMediaVideo(props: {
   readonly visible: boolean;
   readonly onPlaybackStart?: () => void;
 }) {
+  const t = useUiTranslation();
+
   const [attempt, setAttempt] = useState(0);
   // Expo's Android player also reports completed playback as idle.
   const [loadState, setLoadState] = useState<"pending" | "complete" | "error">("pending");
@@ -111,19 +114,19 @@ function LoadedMediaVideo(props: {
       />
       {loadState === "error" || (loadState === "complete" && status === "error") ? (
         <View className="absolute inset-0 items-center justify-center gap-2 bg-black px-4">
-          <AppText className="text-center text-sm text-white/80">Video unavailable</AppText>
+          <AppText className="text-center text-sm text-white/80">{t("Video unavailable")}</AppText>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Retry video"
+            accessibilityLabel={t("Retry video")}
             onPress={() => setAttempt((value) => value + 1)}
             className="min-h-11 justify-center px-4"
           >
-            <AppText className="text-sm text-white">Retry</AppText>
+            <AppText className="text-sm text-white">{t("Retry")}</AppText>
           </Pressable>
         </View>
       ) : loadState === "pending" || status === "loading" ? (
         <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
-          <AppActivityIndicator color="#ffffff" accessibilityLabel="Loading video" />
+          <AppActivityIndicator color="#ffffff" accessibilityLabel={t("Loading video")} />
         </View>
       ) : null}
     </View>
@@ -149,6 +152,8 @@ interface MediaVideoPlayerProps {
 }
 
 function MediaVideoPlayerContent(props: MediaVideoPlayerProps) {
+  const t = useUiTranslation();
+
   const mediaActions = useMediaActions(props.actionsSource);
   const isFocused = useIsFocused();
   const [playbackUri, setPlaybackUri] = useState<string | null>(props.expanded ? props.uri : null);
@@ -223,9 +228,9 @@ function MediaVideoPlayerContent(props: MediaVideoPlayerProps) {
               />
             ) : null}
             {props.unavailable ? (
-              <AppText className="text-sm text-white/80">Video unavailable</AppText>
+              <AppText className="text-sm text-white/80">{t("Video unavailable")}</AppText>
             ) : props.uri === null ? (
-              <AppActivityIndicator color="#ffffff" accessibilityLabel="Loading video" />
+              <AppActivityIndicator color="#ffffff" accessibilityLabel={t("Loading video")} />
             ) : (
               <View className="size-12 items-center justify-center rounded-full bg-black/60">
                 <SymbolView name="play" size={28} tintColor="#ffffff" type="monochrome" />

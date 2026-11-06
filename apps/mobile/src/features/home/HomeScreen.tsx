@@ -91,6 +91,7 @@ import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-sw
 import { useFabScroll } from "./FabScrollContext";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 interface HomeScreenProps {
   readonly projects: ReadonlyArray<EnvironmentProject>;
@@ -246,6 +247,7 @@ function renderHomeScrollView(props: ScrollViewProps) {
 }
 
 export function HomeScreen(props: HomeScreenProps) {
+  const t = useUiTranslation();
   const { capitalizeProjectNames } = useProjectPresentation();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
@@ -667,7 +669,7 @@ export function HomeScreen(props: HomeScreenProps) {
     props.selectedEnvironmentId === null
       ? null
       : (props.savedConnectionsById[props.selectedEnvironmentId]?.environmentLabel ??
-        "this environment");
+        t("this environment"));
   const emptyState = deriveEmptyState({
     catalogState: props.catalogState,
     projectCount: props.projects.length,
@@ -692,10 +694,10 @@ export function HomeScreen(props: HomeScreenProps) {
           >
             <View className="w-full max-w-[430px]">
               <EmptyState
-                title={emptyState.title}
-                detail={emptyState.detail}
+                title={t(emptyState.title)}
+                detail={t(emptyState.detail)}
                 actionLabel={
-                  !props.catalogState.hasReadyEnvironment ? "Add environment" : undefined
+                  !props.catalogState.hasReadyEnvironment ? t("Add environment") : undefined
                 }
                 onAction={
                   !props.catalogState.hasReadyEnvironment ? props.onAddConnection : undefined
@@ -703,7 +705,7 @@ export function HomeScreen(props: HomeScreenProps) {
                 action={
                   Platform.OS === "android" && !props.catalogState.hasReadyEnvironment ? (
                     <FloatingActionButton
-                      label="Add environment"
+                      label={t("Add environment")}
                       icon="plus"
                       variant="extended"
                       tone="primary"
@@ -750,26 +752,26 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListEmpty =
     hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
       <EmptyState
-        title="No results"
-        detail={`No threads matching "${props.searchQuery}".`}
+        title={t("No results")}
+        detail={t('No threads matching "{query}".', { query: props.searchQuery })}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : v2ScopedProjectGroup !== null ? (
       <EmptyState
-        title={`No threads in ${v2ScopedProjectGroup.title}`}
-        detail="Choose another project or create a new task."
+        title={t("No threads in {name}", { name: v2ScopedProjectGroup.title })}
+        detail={t("Choose another project or create a new task.")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : selectedEnvironmentLabel ? (
       <EmptyState
-        title={`No threads in ${selectedEnvironmentLabel}`}
-        detail="Choose another environment or create a new task."
+        title={t("No threads in {name}", { name: selectedEnvironmentLabel })}
+        detail={t("Choose another environment or create a new task.")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : (
       <EmptyState
-        title="No threads yet"
-        detail="Create a task to start a new coding session."
+        title={t("No threads yet")}
+        detail={t("Create a task to start a new coding session.")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     );

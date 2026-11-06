@@ -19,10 +19,12 @@ import {
   useLinkedPullRequestLines,
 } from "./LinkedPullRequestList";
 import { useLinkedPullRequestActions } from "./useLinkedPullRequestActions";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function ThreadPullRequestsSheet(
   _props: StaticScreenProps<{ readonly environmentId: string; readonly threadId: string }>,
 ) {
+  const t = useUiTranslation();
   const { layout } = useAdaptiveWorkspaceLayout();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -46,7 +48,8 @@ export function ThreadPullRequestsSheet(
   });
   const rowInputs = { lines, actions };
   const { singular } = actions.terminology;
-  const title = `Linked ${actions.terminology.plural}`;
+  const plural = t(actions.terminology.plural);
+  const title = t("Linked {requests}", { requests: plural });
 
   const content = (
     <View className="flex-1 android:bg-sheet-solid ios:bg-screen">
@@ -77,13 +80,13 @@ export function ThreadPullRequestsSheet(
         ListHeaderComponent={
           lines.length > 0 ? (
             <Text className="px-4 pt-2 pb-1 text-xs text-foreground-muted">
-              {openCount} open · {lines.length} linked
+              {t("{open} open · {linked} linked", { open: openCount, linked: lines.length })}
             </Text>
           ) : null
         }
         ListEmptyComponent={
           <Text className="pt-6 text-center text-sm text-foreground-muted">
-            No linked {actions.terminology.plural}.
+            {t("No linked {requests}.", { requests: plural })}
           </Text>
         }
       />

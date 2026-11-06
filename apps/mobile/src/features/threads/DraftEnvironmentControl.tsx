@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Pressable } from "react-native";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -14,6 +15,8 @@ export function DraftEnvironmentControl(props: {
   readonly disabled: boolean;
   readonly onChooseEnvironment: () => void;
 }) {
+  const t = useUiTranslation();
+
   const disconnected = props.connectionState !== "connected";
   return (
     <Pressable
@@ -29,7 +32,7 @@ export function DraftEnvironmentControl(props: {
         tintColorClassName="accent-icon-muted"
       />
       <Text className="shrink text-sm text-foreground-muted" numberOfLines={1}>
-        on {props.label}
+        {t("on")} {props.label}
       </Text>
       <SymbolView name="chevron.right" size={11} tintColorClassName="accent-icon-muted" />
       {disconnected ? <ConnectionStatusDot state="error" pulse={false} size={6} /> : null}

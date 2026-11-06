@@ -12,8 +12,10 @@ import { useRemoteConnections } from "../../state/use-remote-environment-registr
 import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { LinkedEnvironmentsSection } from "./LinkedEnvironmentsSection";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function ConnectionsRouteScreen() {
+  const t = useUiTranslation();
   const {
     connectedEnvironments,
     onReconnectEnvironment,
@@ -33,11 +35,11 @@ export function ConnectionsRouteScreen() {
       {Platform.OS === "android" ? (
         <AppBar
           embedded
-          title="Environments"
+          title={t("Environments")}
           onBack={() => navigation.goBack()}
           actions={[
             {
-              accessibilityLabel: "Add environment",
+              accessibilityLabel: t("Add environment"),
               icon: "plus",
               onPress: () => navigation.navigate("ConnectionsNew"),
             },

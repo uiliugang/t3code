@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useState } from "react";
 import { useThreadRepository } from "../../../state/use-thread-repository";
 import { resolveDefaultBranchActionDialogCopy } from "@t3tools/client-runtime/state/vcs";
@@ -31,6 +32,8 @@ type GitConfirmSheetProps = StaticScreenProps<{
 }>;
 
 export function GitConfirmSheet(props: GitConfirmSheetProps) {
+  const t = useUiTranslation();
+
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -134,7 +137,12 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
         />
       ) : null}
       {Platform.OS === "android" ? (
-        <AppBar sheet title="Confirm action" onBack={() => navigation.goBack()} hideBottomBorder />
+        <AppBar
+          sheet
+          title={t("Confirm action")}
+          onBack={() => navigation.goBack()}
+          hideBottomBorder
+        />
       ) : (
         <View className="min-h-4 pt-2" />
       )}
@@ -154,11 +162,11 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
           <View className="android:gap-2 android:rounded-[20px] android:bg-card android:p-3 ios:items-center ios:gap-1 ios:px-5 ios:pb-3 ios:pt-4">
             {Platform.OS !== "android" ? (
               <Text className="text-xs font-t3-bold tracking-[1px] uppercase text-foreground-muted">
-                Confirm
+                {t("Confirm")}
               </Text>
             ) : null}
             <Text className="android:text-xl android:font-t3-medium ios:text-center ios:text-3xl ios:font-t3-bold">
-              {copy?.title ?? "Run action on default branch?"}
+              {copy?.title ?? t("Run action on default branch?")}
             </Text>
             <Text className="text-foreground-secondary leading-normal android:text-base ios:text-center ios:text-sm ios:font-medium">
               {copy?.description ?? "Choose how to continue."}
@@ -175,13 +183,13 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
           >
             <SheetActionButton
               icon="arrow.right.circle"
-              label={copy?.continueLabel ?? "Continue"}
+              label={copy?.continueLabel ?? t("Continue")}
               disabled={!canWriteSourceControl}
               onPress={() => void continuePendingAction()}
             />
             <SheetActionButton
               icon="arrow.branch"
-              label="Feature branch & continue"
+              label={t("Feature branch & continue")}
               disabled={!canChangeThreadBranch}
               tone="primary"
               onPress={() => void movePendingActionToFeatureBranch()}

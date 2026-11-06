@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
 import { useSidebarWorkspaceTabs } from "../workspace/useSystemWorkspaceTabBar";
@@ -384,6 +385,8 @@ function ThreadDetailBody(
     >;
   },
 ) {
+  const t = useUiTranslation();
+
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
@@ -1433,7 +1436,7 @@ function ThreadDetailBody(
             renderFallback={(fallback) => (
               <RenderFailureView
                 {...fallback}
-                title="The conversation couldn't be displayed"
+                title={t("The conversation couldn't be displayed")}
                 bottomInset={estimatedOverlayHeight}
               />
             )}
@@ -1796,7 +1799,7 @@ function ThreadDetailBody(
                             ? props.activePendingApproval.supportsFeedback
                               ? "Send feedback to decline this request"
                               : "Send a message to decline and redirect the agent"
-                            : "Ask anything"
+                            : t("Ask anything")
                         }
                         contentMaxWidth={contentMaxWidth}
                         draftControls={props.draftMode?.controls}

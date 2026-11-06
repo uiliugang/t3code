@@ -2,13 +2,19 @@ import { selectedNavigationTab, visibleNavigationTabs } from "./navigation-tab-o
 import { requireNativeView } from "expo";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import { useControlTheme } from "../../components/ui/useControlTheme";
-import { useNavigationTabOrder, useHiddenNavigationTabs } from "./navigation-tabs";
+import {
+  WORKSPACE_TAB_LABELS,
+  useNavigationTabOrder,
+  useHiddenNavigationTabs,
+} from "./navigation-tabs";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 const NativeSidebarTabBar = requireNativeView<
   ViewProps & {
     tabs: readonly string[];
+    labels: Readonly<Record<string, string>>;
     selectedTab: string;
     selectedColor: string;
     appearance: string;
@@ -24,6 +30,7 @@ export function WorkspaceSidebarTabs(props: {
   readonly compact?: boolean;
   readonly reserveComposeSpace?: boolean;
 }) {
+  const t = useUiTranslation();
   const workspace = useWorkspaceTabs()!;
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
@@ -36,6 +43,13 @@ export function WorkspaceSidebarTabs(props: {
     <NativeSidebarTabBar
       key={tabBarKey}
       tabs={tabs}
+      labels={{
+        threads: t(WORKSPACE_TAB_LABELS.threads),
+        pullRequests: t(WORKSPACE_TAB_LABELS.pullRequests),
+        usage: t(WORKSPACE_TAB_LABELS.usage),
+        settings: t("Settings"),
+        newThread: t("New chat"),
+      }}
       selectedTab={selectedNavigationTab(
         order,
         workspace.state.selectedTab,

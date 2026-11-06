@@ -14,6 +14,16 @@ vi.mock("react-native-keyboard-controller", () => ({
 vi.mock("../lib/useMobileNavigationTheme", () => ({
   useMobileNavigationTheme: () => ({ colors: { card: "white" } }),
 }));
+vi.mock("../lib/useUiTranslation", () => ({
+  useUiTranslation: () => {
+    const labels = new Map([
+      ["Files", "文件"],
+      ["Terminal", "终端"],
+      ["Open terminal", "打开终端"],
+    ]);
+    return (value: string) => labels.get(value) ?? value;
+  },
+}));
 vi.mock("./native-layout-metrics", () => ({
   useDeviceType: () => "phone",
   useNativeLayoutMetrics: () => null,
@@ -39,7 +49,7 @@ it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
     try {
       for (const disabled of [true, false, undefined, true]) {
         const items: NativeStackHeaderItem[] = [
-          { type: "button", label: "Files", disabled, onPress },
+          { type: "button", label: "Files", identifier: "open-files", disabled, onPress },
           {
             type: "menu",
             label: "Terminal",
@@ -61,6 +71,18 @@ it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
         );
         const nativeItems = (bridge.ios as StackHeaderConfigProps["ios"])?.[placement];
         expect(nativeItems).toHaveLength(2);
+        expect(nativeItems?.[0]).toMatchObject({
+          id: "open-files",
+          identifier: "open-files",
+          title: "文件",
+        });
+        expect(nativeItems?.[1]).toMatchObject({
+          title: "终端",
+        });
+        if (!disabled)
+          expect(nativeItems?.[1]).toMatchObject({
+            menu: { children: [expect.objectContaining({ title: "打开终端" })] },
+          });
         for (const item of nativeItems ?? []) {
           if (item.type !== "item" || "render" in item)
             throw new Error("Expected a native bar item");

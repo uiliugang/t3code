@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, View } from "react-native";
@@ -14,6 +15,7 @@ export function PullRequestStackCard(props: {
   readonly params: PullRequestParams;
   readonly state: PullRequestStackState;
 }) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const selectDetail = useSelectWorkspaceDetail();
   const [expanded, setExpanded] = useState(false);
@@ -27,7 +29,7 @@ export function PullRequestStackCard(props: {
     return (
       <PullRequestCardGroup>
         <PullRequestCardRow
-          title="Stack"
+          title={t("Stack")}
           icon={PullRequestGlyph.stack}
           value={`${summary.position} of ${summary.size}`}
           last
@@ -39,10 +41,14 @@ export function PullRequestStackCard(props: {
   return (
     <PullRequestCardGroup>
       <PullRequestCardRow
-        title="Stack"
+        title={t("Stack")}
         icon={PullRequestGlyph.stack}
         value={`${position} of ${stack.layers.length}`}
-        accessibilityLabel={`Stack, ${position} of ${stack.layers.length}${props.state.isFresh ? "" : ", showing saved stack"}`}
+        accessibilityLabel={t("Stack, {position} of {count}{status}", {
+          position,
+          count: stack.layers.length,
+          status: props.state.isFresh ? "" : t(", showing saved stack"),
+        })}
         expanded={expanded}
         onPress={() => setExpanded(!expanded)}
         last={!expanded}
@@ -62,7 +68,11 @@ export function PullRequestStackCard(props: {
                   icon={status.icon}
                   tint={status.tint}
                   value={selected ? "Current" : status.label}
-                  detail={`#${layer.number} · ${index + 1} of ${stack.layers.length}`}
+                  detail={t("#{number} · {value} of {count}", {
+                    number: String(layer.number),
+                    value: String(index + 1),
+                    count: String(stack.layers.length),
+                  })}
                   onPress={
                     selected
                       ? undefined
@@ -79,7 +89,9 @@ export function PullRequestStackCard(props: {
             );
           })}
           <Text className="px-4 py-3 text-xs text-foreground-muted">
-            Base: {stack.base}. Open a layer to review it or merge the stack through that layer.
+            {t("Base: {branch}. Open a layer to review it or merge the stack through that layer.", {
+              branch: stack.base,
+            })}
           </Text>
         </View>
       ) : null}

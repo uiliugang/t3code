@@ -40,8 +40,10 @@ import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function HomeRouteScreen() {
+  const t = useUiTranslation();
   const { capitalizeProjectNames } = useProjectPresentation();
   const { width: windowWidth } = useWindowDimensions();
   const nativePrimaryColumn = use(NativePrimaryColumnContext);
@@ -182,7 +184,7 @@ export function HomeRouteScreen() {
         {Platform.OS === "ios" ? (
           <Toolbar placement="left">
             <Toolbar.Button
-              accessibilityLabel="New task"
+              accessibilityLabel={t("New task")}
               icon="square.and.pencil"
               onPress={startNewTask}
             />

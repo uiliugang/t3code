@@ -2,6 +2,7 @@
 import { ThreadId } from "@t3tools/contracts";
 import { TurnId } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -289,8 +290,12 @@ describe("threadWokeAt", () => {
 describe("resolveSnoozePresets", () => {
   const formatTime = (date: Date) =>
     `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
-  const menu = (now: Date, presets?: ReadonlyArray<SnoozePresetSetting>) =>
-    resolveSnoozePresets(now, { formatTime, ...(presets ? { presets } : {}) }).map(
+  const menu = (
+    now: Date,
+    presets?: ReadonlyArray<SnoozePresetSetting>,
+    t = translateUi.bind(null, "en"),
+  ) =>
+    resolveSnoozePresets(now, { formatTime, ...(presets ? { presets } : {}), t }).map(
       (preset) => `${preset.label} ${preset.whenLabel}`,
     );
 
@@ -304,6 +309,27 @@ describe("resolveSnoozePresets", () => {
         { kind: "after", minutes: 180 },
       ]),
     ).toEqual(["In 3 hours 23:00", "In 6 hours Thu 2:00", "Tomorrow 21:00", "Next week Mon 18:00"]);
+    expect(
+      menu(
+        localDate(2026, 4, 8, 20),
+        [
+          { kind: "at", day: "monday", time: "18:00" },
+          { kind: "at", day: "tomorrow", time: "21:00" },
+          { kind: "after", minutes: 360 },
+          { kind: "after", minutes: 180 },
+          { kind: "after", minutes: 90 },
+          { kind: "after", minutes: 1440 },
+        ],
+        translateUi.bind(null, "zh-CN"),
+      ),
+    ).toEqual([
+      "90 分钟后 21:30",
+      "3 小时后 23:00",
+      "6 小时后 Thu 2:00",
+      "1 天后 Thu 20:00",
+      "明天 21:00",
+      "下周 Mon 18:00",
+    ]);
   });
 
   it("drops a today preset once its time passes and moves a weekday on that day to next week", () => {
@@ -337,6 +363,16 @@ describe("resolveSnoozePresets", () => {
       "Next week Mon 18:00",
       "Next Friday 17:00",
     ]);
+    expect(menu(localDate(2026, 8, 30, 14), theo, translateUi.bind(null, "zh-CN"))).toEqual([
+      "明天 18:00",
+      "明天 21:00",
+      "周五 17:00",
+    ]);
+    expect(menu(localDate(2026, 9, 4, 10), theo, translateUi.bind(null, "zh-CN"))).toEqual([
+      "明天 21:00",
+      "下周 Mon 18:00",
+      "下周五 17:00",
+    ]);
   });
 
   it("shows one row when two presets wake at the same time", () => {
@@ -346,6 +382,14 @@ describe("resolveSnoozePresets", () => {
       "In 3 hours 10:01",
       "This evening 18:00",
       "Tomorrow 9:00",
+      "In 3 days Wed 7:01",
+    ]);
+    expect(menu(localDate(2026, 8, 30, 7, 1), undefined, translateUi.bind(null, "zh-CN"))).toEqual([
+      "1 小时后 8:01",
+      "3 小时后 10:01",
+      "今晚 18:00",
+      "明天 9:00",
+      "3 天后 Wed 7:01",
     ]);
   });
 

@@ -63,6 +63,7 @@ import {
 } from "@t3tools/shared/toolActivity";
 import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { truncate } from "@t3tools/shared/String";
 import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
@@ -79,6 +80,8 @@ import {
 
 export type PendingApproval = ThreadPendingApproval;
 export type PendingUserInput = ThreadPendingUserInput;
+
+const defaultUiTranslator: UiTranslator = (message, values) => translateUi("en", message, values);
 
 export interface ThreadFeedActivity {
   readonly id: string;
@@ -1065,6 +1068,7 @@ function deriveThreadFeedRunFolds(
   latestRun: ThreadFeedLatestRun | null,
   runlessWorkActive: boolean,
   feedFailedRunIds: ReadonlySet<RunId>,
+  t: UiTranslator,
 ): ReadonlyMap<string, ThreadFeedRunFold> {
   const terminalAssistantMessageIdByRun = new Map<RunId, string>();
   const interruptedRunIds = new Set<RunId>();
@@ -1217,11 +1221,11 @@ function deriveThreadFeedRunFolds(
       hiddenEntryIds,
       label: interrupted
         ? duration
-          ? `You stopped after ${duration}`
-          : "You stopped this response"
+          ? t("You stopped after {duration}", { duration })
+          : t("You stopped this response")
         : duration
-          ? `Worked for ${duration}`
-          : "Worked",
+          ? t("Worked for {duration}", { duration })
+          : t("Worked"),
     });
   }
   const covered = new Set(
@@ -1237,7 +1241,7 @@ function deriveThreadFeedRunFolds(
       runId: RunId.make(`deferred-work:${entry.id}`),
       createdAt: entry.createdAt,
       hiddenEntryIds: new Set([entry.id]),
-      label: "Earlier work",
+      label: t("Earlier work"),
       deferredWorkItemIds,
     });
   }
@@ -1275,6 +1279,7 @@ function settleSupersededReasoning(
 }
 
 interface ThreadFeedPresentationBuild {
+  readonly translator: UiTranslator;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
   readonly latestRun: ThreadFeedLatestRun | null;
   readonly expandedRunIds: ReadonlySet<RunId>;
@@ -1323,9 +1328,11 @@ function presentationRestart(
   expandedWorkGroupIds: ReadonlySet<string>,
   activeWorkStartedAt: string | null,
   runlessWorkActive: boolean,
+  t: UiTranslator,
 ): { readonly entry: number; readonly rowsLength: number; readonly index: number } | null {
   if (
     previous === null ||
+    previous.translator !== t ||
     !latestRunsEqual(previous.latestRun, latestRun) ||
     previous.activeWorkStartedAt !== activeWorkStartedAt ||
     previous.runlessWorkActive !== runlessWorkActive ||
@@ -1355,6 +1362,7 @@ export function deriveThreadFeedPresentation(
   activeWorkStartedAt: string | null = null,
   runlessWorkActive = false,
   cache?: ThreadFeedCache,
+  t: UiTranslator = defaultUiTranslator,
 ): ThreadFeedEntry[] {
   const previous = cache?.presentation ?? null;
   const restart = presentationRestart(
@@ -1365,6 +1373,7 @@ export function deriveThreadFeedPresentation(
     expandedWorkGroupIds,
     activeWorkStartedAt,
     runlessWorkActive,
+    t,
   );
   const start = restart?.entry ?? 0;
   const result: ThreadFeedEntry[] =
@@ -1422,6 +1431,7 @@ export function deriveThreadFeedPresentation(
     latestRun,
     isWorking && runlessWorkActive,
     failedRunIds,
+    t,
   );
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
@@ -1599,6 +1609,7 @@ export function deriveThreadFeedPresentation(
   });
   if (cache) {
     cache.presentation = {
+      translator: t,
       feed,
       latestRun,
       expandedRunIds,

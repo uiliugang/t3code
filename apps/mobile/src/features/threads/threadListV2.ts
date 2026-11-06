@@ -30,6 +30,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-sort";
 import { isListedThreadLineage, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import type { ThreadMoveAvailability } from "./threadOrder";
@@ -81,9 +82,13 @@ export function resolveThreadListV2SnoozePresets(input: {
   readonly secondary: "snooze" | null;
   readonly now: string;
   readonly presets: ReadonlyArray<SnoozePresetSetting> | undefined;
+  readonly t?: UiTranslator;
 }): ReadonlyArray<SnoozePreset> {
   return input.secondary === "snooze"
-    ? resolveSnoozePresets(new Date(input.now), presetOptions(input.presets))
+    ? resolveSnoozePresets(new Date(input.now), {
+        ...presetOptions(input.presets),
+        ...(input.t ? { t: input.t } : {}),
+      })
     : [];
 }
 

@@ -4,6 +4,7 @@ import { useKeyboardState } from "react-native-keyboard-controller";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Toast } from "../../components/ui/Toast";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
   useDeviceType,
   useDuoBottomBarInset,
@@ -19,6 +20,7 @@ import {
 } from "./thread-undo-notice";
 
 export function ThreadUndoNotice(props: { readonly visible: boolean }) {
+  const t = useUiTranslation();
   const floatingTabsEnabled = useAndroidFloatingTabs();
   const notice = useThreadUndoNotice();
   const insets = useSafeAreaInsets();
@@ -78,9 +80,9 @@ export function ThreadUndoNotice(props: { readonly visible: boolean }) {
       pointerEvents="box-none"
     >
       <Toast
-        message={`${notice.action} thread`}
+        message={t(`${notice.action} thread`)}
         action={{
-          label: "Undo",
+          label: t("Undo"),
           onPress: () => {
             void notice.undo();
           },

@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useDeadlinePassed } from "../../lib/clock";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
   type AppUpdateCheckState,
   isAppUpdateCheckAvailable,
@@ -38,6 +39,7 @@ export function SettingsAboutRouteScreen() {
 }
 
 function AppSettingsSection() {
+  const t = useUiTranslation();
   const [checkState, setCheckState] = useState<{
     readonly state: AppUpdateCheckState;
     // "Up to date" is a confirmation that fades back to idle.
@@ -66,7 +68,7 @@ function AppSettingsSection() {
     await settlePromise(() =>
       runAppUpdateCheck({
         applyMode: "immediate",
-        onFailure: (message) => Dialog.alert("Update failed", message),
+        onFailure: (message) => Dialog.alert(t("Update failed"), t(message)),
         onStateChange: (state) =>
           setCheckState({
             state,
@@ -108,11 +110,11 @@ function AppSettingsSection() {
         type="monochrome"
         weight="regular"
       />
-      <Text className="flex-1 text-lg text-foreground">Version</Text>
+      <Text className="flex-1 text-lg text-foreground">{t("Version")}</Text>
       <View className="items-end">
         <Text className="text-lg text-foreground-muted">{versionLabel}</Text>
         {statusLabel ? (
-          <Text className="text-xs text-foreground-muted/70">{statusLabel}</Text>
+          <Text className="text-xs text-foreground-muted/70">{t(statusLabel)}</Text>
         ) : null}
       </View>
     </View>
@@ -130,7 +132,7 @@ function AppSettingsSection() {
       <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
       {updateCheckAvailable ? (
         <Pressable
-          accessibilityLabel={`Version ${versionLabel}`}
+          accessibilityLabel={t("Version {version}", { version: versionLabel })}
           accessibilityRole="text"
           disabled={busy}
           onPress={handleVersionPress}

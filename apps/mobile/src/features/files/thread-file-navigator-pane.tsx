@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
 import { environmentSession } from "../../state/session";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -20,6 +21,7 @@ export function ThreadFileNavigatorPane(props: {
   readonly selectedPath: string | null;
   readonly onSelectFile: (path: string) => void;
 }) {
+  const t = useUiTranslation();
   const [searchQuery, setSearchQuery] = useState("");
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
   const fileAccessSession = useEnvironmentQuery(
@@ -80,14 +82,14 @@ export function ThreadFileNavigatorPane(props: {
   return (
     <View className="flex-1 ios:bg-sheet android:bg-header">
       <AppBar
-        title="Files"
+        title={t("Files")}
         subtitle={props.projectName}
         search={{
           value: searchQuery,
           onChangeText: setSearchQuery,
-          placeholder: "Search files",
+          placeholder: t("Search files"),
         }}
-        refresh={{ accessibilityLabel: "Refresh files", onPress: entriesQuery.refresh }}
+        refresh={{ accessibilityLabel: t("Refresh files"), onPress: entriesQuery.refresh }}
       />
       <ScreenContent insetHorizontal>{fileTree}</ScreenContent>
     </View>

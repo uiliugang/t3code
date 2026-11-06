@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { uuidv4 } from "../../lib/uuid";
 import { useNavigation } from "@react-navigation/native";
@@ -230,6 +231,8 @@ export function CommandPalette(props: {
   readonly onClose: () => void;
   readonly onCommand: (command: HardwareKeyboardCommand) => void;
 }) {
+  const t = useUiTranslation();
+
   const navigation = useNavigation();
   const selectTab = useSelectWorkspaceTab();
   const { themeVariables } = useAppearancePreferences();
@@ -310,49 +313,49 @@ export function CommandPalette(props: {
       {
         key: "addProject",
         kind: "action",
-        title: "Add project",
+        title: t("Add project"),
         searchTerms: ["folder", "clone", "repository", "git"],
         run: () => navigation.navigate("AddProject"),
       },
       {
         key: "settings",
         kind: "action",
-        title: "Open settings",
+        title: t("Open settings"),
         searchTerms: ["preferences", "configuration"],
         run: () => selectTab("settings"),
       },
       {
         key: "appearance",
         kind: "action",
-        title: "Appearance",
+        title: t("Appearance"),
         searchTerms: ["theme", "colors", "dark", "light"],
         run: () => openSettings(navigation, "SettingsAppearance"),
       },
       {
         key: "environments",
         kind: "action",
-        title: "Manage environments",
+        title: t("Manage environments"),
         searchTerms: ["connections", "server", "remote"],
         run: () => openSettings(navigation, "SettingsEnvironments"),
       },
       {
         key: "scheduledTasks",
         kind: "action",
-        title: "Scheduled tasks",
+        title: t("Scheduled tasks"),
         searchTerms: ["schedule", "automations", "recurring"],
         run: () => openSettings(navigation, "SettingsScheduledTasks"),
       },
       {
         key: "usage",
         kind: "action",
-        title: "Usage",
+        title: t("Usage"),
         searchTerms: ["limits", "accounts", "quota"],
         run: () => openSettings(navigation, "SettingsUsage"),
       },
       {
         key: "archive",
         kind: "action",
-        title: "Archived threads",
+        title: t("Archived threads"),
         searchTerms: ["restore", "history"],
         run: () => openSettings(navigation, "SettingsArchive"),
       },
@@ -484,6 +487,7 @@ export function CommandPalette(props: {
     startTriage,
     threads,
     triageEnvironmentId,
+    t,
   ]);
   const rankedMessageKeys = useMemo(() => {
     const subjectByKey = new Map(
@@ -625,7 +629,7 @@ export function CommandPalette(props: {
           >
             <Pressable
               className="absolute inset-0 bg-backdrop"
-              accessibilityLabel="Close command palette"
+              accessibilityLabel={t("Close command palette")}
               onPress={() => close()}
             />
             <GlassSurface
@@ -649,8 +653,8 @@ export function CommandPalette(props: {
                   />
                   <TextInput
                     ref={inputRef}
-                    accessibilityLabel="Search commands, projects, and threads"
-                    placeholder="Search commands, projects, and threads…"
+                    accessibilityLabel={t("Search commands, projects, and threads")}
+                    placeholder={t("Search commands, projects, and threads…")}
                     placeholderTextColorClassName="accent-placeholder"
                     autoCorrect={false}
                     autoCapitalize="none"
@@ -691,14 +695,14 @@ export function CommandPalette(props: {
                 contentContainerClassName="pb-2"
                 ListEmptyComponent={
                   <Text className="p-5 text-center text-foreground-muted">
-                    {search.isPending ? "Searching…" : "No results"}
+                    {search.isPending ? "Searching…" : t("No results")}
                   </Text>
                 }
                 // Message results from slower environments may still arrive below.
                 ListFooterComponent={
                   results.length > 0 && search.isPending && !query.startsWith(">") ? (
                     <Text className="px-5 pt-2 text-xs text-foreground-muted">
-                      Searching messages…
+                      {t("Searching messages…")}
                     </Text>
                   ) : undefined
                 }
@@ -709,7 +713,7 @@ export function CommandPalette(props: {
                         className="px-5 pt-2 text-xs text-foreground-muted"
                         style={{ height: SECTION_LABEL_HEIGHT }}
                       >
-                        In messages
+                        {t("In messages")}
                       </Text>
                     ) : null}
                     <PaletteRow

@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Pressable, ScrollView, View } from "react-native";
 
@@ -15,6 +16,8 @@ export function ThreadSideChatsRow(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }) {
+  const t = useUiTranslation();
+
   const sideChats = useSideChats({ environmentId: props.environmentId, threadId: props.threadId });
   const openLinkedThread = useOpenLinkedThread();
   if (sideChats.length === 0) return null;
@@ -25,7 +28,7 @@ export function ThreadSideChatsRow(props: {
         size={12}
         tintColorClassName="accent-foreground-muted"
       />
-      <Text className="text-xs text-foreground-muted">Side chats</Text>
+      <Text className="text-xs text-foreground-muted">{t("Side chats")}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1">
         <View className="flex-row gap-1 pr-4">
           {sideChats.map((sideChat) => {

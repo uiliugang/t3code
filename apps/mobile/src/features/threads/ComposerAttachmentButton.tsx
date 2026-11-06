@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { MenuAction } from "@react-native-menu/menu";
 import { Pressable } from "react-native";
 
@@ -17,10 +18,12 @@ export function ComposerAttachmentButton(props: {
   readonly onPickMedia: () => Promise<void>;
   readonly onPickFiles: () => Promise<void>;
 }) {
+  const t = useUiTranslation();
+
   const { scale } = useAndroidControlSizing();
   const button = (
     <Pressable
-      accessibilityLabel="Add attachment"
+      accessibilityLabel={t("Add attachment")}
       accessibilityRole="button"
       accessibilityState={{ disabled: props.disabled }}
       className="size-[44px] shrink-0 items-center justify-center rounded-full active:opacity-70 disabled:opacity-50"
@@ -44,7 +47,7 @@ export function ComposerAttachmentButton(props: {
   return (
     <Menu
       accessible
-      accessibilityLabel="Add attachment"
+      accessibilityLabel={t("Add attachment")}
       accessibilityRole="button"
       actions={ATTACHMENT_MENU_ACTIONS}
       onPressAction={({ nativeEvent }) => {

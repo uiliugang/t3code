@@ -21,6 +21,7 @@ import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { SettingsTarget } from "./settings-environment-filter";
 
 export function ClaudeByokProviderSettings({
@@ -28,6 +29,7 @@ export function ClaudeByokProviderSettings({
 }: {
   readonly environment: SettingsTarget;
 }) {
+  const t = useUiTranslation();
   const [adding, setAdding] = useState(false);
   const instances = Object.entries(environment.serverConfig.settings.providerInstances).filter(
     ([, instance]) => instance.driver === "claudeAgent" && isClaudeByok(instance.config),
@@ -53,7 +55,7 @@ export function ClaudeByokProviderSettings({
         />
       ) : (
         <ControlPill
-          label={`Add ${CLAUDE_BYOK_LABEL}`}
+          label={t("Add {name}", { name: CLAUDE_BYOK_LABEL })}
           variant="pill"
           onPress={() => setAdding(true)}
         />
@@ -73,6 +75,7 @@ function ClaudeByokEditor({
   readonly instance?: ProviderInstanceConfig;
   readonly onClose?: () => void;
 }) {
+  const t = useUiTranslation();
   const environmentId = environment.environmentId;
   const [expanded, setExpanded] = useState(!instance);
   const [draft, setDraft] = useState(instance?.environment ?? []);
@@ -144,12 +147,12 @@ function ClaudeByokEditor({
     secret = false,
   ) => (
     <View className="gap-1">
-      <Text className="text-sm text-foreground-muted">{label}</Text>
+      <Text className="text-sm text-foreground-muted">{t(label)}</Text>
       <TextInput
-        accessibilityLabel={label}
+        accessibilityLabel={t(label)}
         className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
         placeholderTextColorClassName="accent-foreground-muted"
-        placeholder={secret && credential?.valueRedacted ? "Stored credential" : label}
+        placeholder={t(secret && credential?.valueRedacted ? "Stored credential" : label)}
         value={value}
         onChangeText={(text) => {
           onChange(text);
@@ -179,7 +182,7 @@ function ClaudeByokEditor({
           ? result.value.message
           : failure instanceof Error
             ? failure.message
-            : "Check failed.",
+            : t("Check failed."),
     });
   };
   return (
@@ -228,9 +231,9 @@ function ClaudeByokEditor({
           )}
           {field("Model IDs", modelIds, setModelIds)}
           <View className="flex-row items-center justify-between">
-            <Text className="text-foreground">Enabled</Text>
+            <Text className="text-foreground">{t("Enabled")}</Text>
             <Switch
-              accessibilityLabel="BYOK enabled"
+              accessibilityLabel={t("BYOK enabled")}
               value={enabled}
               disabled={disabled}
               onValueChange={(value) => {
@@ -241,12 +244,12 @@ function ClaudeByokEditor({
           </View>
           {dirty && !valid ? (
             <Text className="text-sm text-foreground-muted">
-              Enter a base URL, credential, and at least one model ID.
+              {t("Enter a base URL, credential, and at least one model ID.")}
             </Text>
           ) : null}
           <View className="flex-row flex-wrap gap-2">
             <ControlPill
-              label="Save"
+              label={t("Save")}
               variant="primary"
               disabled={disabled || !dirty || !valid}
               onPress={() => {
@@ -295,14 +298,14 @@ function ClaudeByokEditor({
                     const failure = squashAtomCommandFailure(result);
                     setFeedback({
                       fingerprint,
-                      message: failure instanceof Error ? failure.message : "Save failed.",
+                      message: failure instanceof Error ? failure.message : t("Save failed."),
                     });
                   }
                 })();
               }}
             />
             <ControlPill
-              label="Revert"
+              label={t("Revert")}
               variant="pill"
               disabled={disabled || !dirty}
               onPress={() => {
@@ -318,21 +321,21 @@ function ClaudeByokEditor({
               }}
             />
             <ControlPill
-              label="Check connection"
+              label={t("Check connection")}
               variant="pill"
               disabled={disabled || dirty || !enabled || !canCheck}
               onPress={() => void check("connection")}
             />
             <ControlPill
-              label="Test model & tools"
-              accessibilityLabel="Test first model and tools, uses API credits"
+              label={t("Test model & tools")}
+              accessibilityLabel={t("Test first model and tools, uses API credits")}
               variant="pill"
               disabled={disabled || dirty || !enabled || !valid || !canTest}
               onPress={() => void check("model")}
             />
             {checking ? (
               <ControlPill
-                label="Cancel check"
+                label={t("Cancel check")}
                 variant="pill"
                 onPress={() =>
                   void validate({ environmentId, input: { instanceId, check: "cancel" } })
@@ -342,7 +345,7 @@ function ClaudeByokEditor({
           </View>
           {feedback && feedback.fingerprint === fingerprint ? (
             <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
-              {feedback.message}
+              {t(feedback.message)}
             </Text>
           ) : null}
         </>
