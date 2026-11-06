@@ -1,3 +1,4 @@
+import { WechatError, WechatMutation, WechatSendInput, WechatState } from "./wechat.ts";
 import {
   ManagedWorktreeError,
   ManagedWorktreeGroup,
@@ -678,6 +679,9 @@ export const WS_METHODS = {
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
   pullRequestsSendReviewLink: "pullRequests.sendReviewLink",
+  wechatSubscribe: "wechat.subscribe",
+  wechatMutate: "wechat.mutate",
+  wechatSend: "wechat.send",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
 
@@ -1328,6 +1332,22 @@ const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsReques
   error: PullRequestRpcError,
 });
 
+const WsWechatSubscribeRpc = Rpc.make(WS_METHODS.wechatSubscribe, {
+  payload: Schema.Struct({}),
+  success: WechatState,
+  error: Schema.Union([WechatError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+const WsWechatMutateRpc = Rpc.make(WS_METHODS.wechatMutate, {
+  payload: WechatMutation,
+  success: Schema.Void,
+  error: Schema.Union([WechatError, EnvironmentAuthorizationError]),
+});
+const WsWechatSendRpc = Rpc.make(WS_METHODS.wechatSend, {
+  payload: WechatSendInput,
+  success: Schema.Void,
+  error: Schema.Union([WechatError, EnvironmentAuthorizationError]),
+});
 const WsPullRequestsSendReviewLinkRpc = Rpc.make(WS_METHODS.pullRequestsSendReviewLink, {
   payload: PullRequestSendReviewLinkInput,
   success: DaxiangSendResult,
@@ -2354,6 +2374,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
   WsPullRequestsSendReviewLinkRpc,
+  WsWechatSubscribeRpc,
+  WsWechatMutateRpc,
+  WsWechatSendRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,

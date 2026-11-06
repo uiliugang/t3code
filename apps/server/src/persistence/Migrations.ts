@@ -90,6 +90,8 @@ import Migration0084 from "./Migrations/084_RepairBooleanSettledOverride.ts";
 import Migration0085 from "./Migrations/085_DropOrchestrationEventCorrelationIndex.ts";
 import Migration0086 from "./Migrations/086_DelegatedRecoveryIndexes.ts";
 
+import Migration0087 from "./Migrations/087_Wechat.ts";
+
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
@@ -178,6 +180,7 @@ const migrationEntries = [
   [84, "RepairBooleanSettledOverride", Migration0084],
   [85, "DropOrchestrationEventCorrelationIndex", Migration0085],
   [86, "DelegatedRecoveryIndexes", Migration0086],
+  [87, "Wechat", Migration0087],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

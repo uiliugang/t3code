@@ -1,3 +1,4 @@
+import { WechatSettings } from "./WechatSettings";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -97,11 +98,10 @@ export function CommunicationSettings({
   return (
     <SettingsSection id="communication" title={t("Communication")}>
       {environments.map((environment) => (
-        <DaxiangSettings
-          key={environment.environmentId}
-          environmentId={environment.environmentId}
-          label={environment.label}
-        />
+        <div key={environment.environmentId} className="divide-y divide-border">
+          <DaxiangSettings environmentId={environment.environmentId} label={environment.label} />
+          <WechatSettings environmentId={environment.environmentId} label={environment.label} />
+        </div>
       ))}
     </SettingsSection>
   );

@@ -12,6 +12,67 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Send /bind {code} to the bot in WeChat to verify your identity.":
+    "请在微信向机器人发送 /bind {code}，以验证身份。",
+  WeChat: "微信",
+  "Continue a T3 thread from WeChat and receive results while you are away.":
+    "在微信继续 T3 会话，离开电脑后也能接收任务结果。",
+  "Not connected": "未连接",
+  "Waiting for scan": "等待扫码",
+  "Confirm on your phone": "请在手机确认",
+  "Verification code required": "需要验证码",
+  "Pairing expired": "配对已过期",
+  "Reconnect required": "需要重新连接",
+  "Access management permission required.": "需要访问管理权限。",
+  "Could not update WeChat. Check the connection and try again.":
+    "微信操作失败，请检查连接后重试。",
+  "Pair with your WeChat account. Only the paired user can send tasks to the selected thread. Messages and results pass through WeChat.":
+    "使用微信账号配对。只有绑定的用户可以向所选会话发送任务，消息和结果会经过微信平台。",
+  "Connecting...": "正在连接…",
+  "Refresh pairing": "重新配对",
+  "Connect WeChat": "连接微信",
+  "WeChat pairing QR code": "微信配对二维码",
+  "Scan with WeChat and confirm on your phone. After pairing, send the bot a message to activate this connection.":
+    "使用微信扫一扫并在手机确认。配对后，向机器人发送一条消息以激活连接。",
+  "Verification code shown on your phone": "手机上显示的验证码",
+  Verify: "验证",
+  "Cancel pairing": "取消配对",
+  "Paired. Send the bot a message in WeChat to activate replies.":
+    "已配对。请在微信向机器人发送一条消息，激活回复。",
+  "Target thread": "目标会话",
+  "Select a thread": "选择会话",
+  "Incoming messages use this thread and its current permissions. Busy threads queue new tasks.":
+    "微信消息将使用此会话及其当前权限，任务忙碌时排队处理。",
+  "Push task results": "推送任务结果",
+  "Include all threads and scheduled tasks in this project": "推送该项目所有会话和定时任务的结果",
+  "Results remain queued across server restarts. Keep this environment running for continuous delivery.":
+    "待发送结果会在服务重启后恢复。请保持此环境运行，以持续投递消息。",
+  "Pause WeChat": "暂停微信",
+  "Resume WeChat": "恢复微信",
+  "Send test push": "发送测试推送",
+  "Unlink WeChat? This removes local credentials and pending deliveries. Existing T3 tasks keep running.":
+    "确定解绑微信？将删除本地凭据和待发送消息，已有 T3 任务会继续运行。",
+  "Unlink WeChat": "解绑微信",
+  Unlink: "解绑",
+  Sent: "已发送",
+  "Recent deliveries": "最近投递",
+  "Delivery unconfirmed": "投递结果未知",
+  "The previous delivery may have arrived. Retrying can send a duplicate.":
+    "上一条消息可能已送达，重试可能造成重复发送。",
+  "Retry delivery": "重试投递",
+  "On the same phone, open the pairing link or scan from another screen.":
+    "若在同一部手机操作，可打开配对链接，或从另一块屏幕扫码。",
+  "Open pairing link": "打开配对链接",
+  "WeChat could not be reached. Check the connection and try again.":
+    "无法连接微信，请检查网络后重试。",
+  "WeChat rejected the request. Refresh pairing or try again.":
+    "微信拒绝了请求，请重新配对或稍后重试。",
+  "WeChat authorization expired. Unlink and pair again.": "微信授权已失效，请解绑后重新配对。",
+  "Could not save WeChat state. Check this environment's storage.":
+    "无法保存微信状态，请检查此环境的存储。",
+  "This thread is unavailable. Select another thread.": "此会话不可用，请重新选择。",
+  "Pair WeChat and send an activation message first.": "请先配对微信，再向机器人发送激活消息。",
+  "Another WeChat operation is running. Try again shortly.": "有其他微信操作正在进行，请稍后重试。",
   "Requirements board": "需求看板",
   "Issue management": "需求管理",
   "Issue details": "需求详情",

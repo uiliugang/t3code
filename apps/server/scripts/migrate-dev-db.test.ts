@@ -99,6 +99,13 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
         (environment_id, secret_name, label, urls_json, access, linked_at, expires_at)
         VALUES ('environment-box', 'peer-link-box', 'Box', '["https://box.example"]', 'auto',
           '2026-08-01', '2027-08-01')`;
+      yield* sql`INSERT INTO wechat_connection (id, payload) VALUES (1, '{}')`;
+      yield* sql`INSERT INTO wechat_inbox (id, generation, payload, done)
+        VALUES ('incoming', 'live', '{"text":"run task"}', 0)`;
+      yield* sql`INSERT INTO wechat_deliveries
+        (id, generation, text, status, created_at, attempts, next_at)
+        VALUES ('outgoing', 'live', 'private result', 'pending', 0, 0, 0)`;
+      yield* sql`UPDATE wechat_lease SET owner = 'live-server', expires_at = 120000 WHERE id = 1`;
     }),
   );
   return databasePath;
@@ -135,6 +142,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             webhooks: number;
             transfers: number;
             links: number;
+            wechat: number;
           }>`
             SELECT
               (SELECT COUNT(*) FROM auth_sessions) AS auth,
@@ -142,7 +150,11 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
               (SELECT COUNT(*) FROM scheduled_task_webhook_replay_keys) +
                 (SELECT COUNT(*) FROM scheduled_task_webhook_pending) AS webhooks,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers,
-              (SELECT COUNT(*) FROM peer_environment_links) AS links`;
+              (SELECT COUNT(*) FROM peer_environment_links) AS links,
+              (SELECT COUNT(*) FROM wechat_connection) +
+                (SELECT COUNT(*) FROM wechat_inbox) +
+                (SELECT COUNT(*) FROM wechat_deliveries) +
+                (SELECT COUNT(*) FROM wechat_lease) AS wechat`;
           return { threads, events, sessions, leftovers };
         }),
       );
@@ -164,6 +176,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         webhooks: 0,
         transfers: 0,
         links: 0,
+        wechat: 0,
       });
     }),
   );

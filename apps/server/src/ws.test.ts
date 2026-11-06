@@ -1,3 +1,4 @@
+import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
 import * as WorkspaceCheckout from "./workspace/WorkspaceCheckout.ts";
@@ -849,6 +850,12 @@ it.effect.each([
       const directStopped = yield* Deferred.make<void>();
       const responses = yield* Queue.unbounded<ServerConfigStreamEvent>();
       const configRpcServices = Layer.mergeAll(
+        Layer.succeed(WechatBridge.WechatBridge, {
+          subscribe: Stream.empty,
+          mutate: () => Effect.void,
+          send: () => Effect.void,
+          start: Effect.void,
+        }),
         layerUnusedConfigRpcServices,
         Layer.mock(ExternalLauncher.ExternalLauncher)({
           resolveAvailableEditors: () =>
@@ -1099,6 +1106,12 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
     const pulled = yield* Queue.unbounded<void>();
     const responses = yield* Queue.unbounded<unknown>();
     const configRpcServices = Layer.mergeAll(
+      Layer.succeed(WechatBridge.WechatBridge, {
+        subscribe: Stream.empty,
+        mutate: () => Effect.void,
+        send: () => Effect.void,
+        start: Effect.void,
+      }),
       layerUnusedConfigRpcServices,
       Layer.mock(ExternalLauncher.ExternalLauncher)({
         resolveAvailableEditors: () => Effect.succeed([]),

@@ -17,6 +17,9 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  [WS_METHODS.wechatSubscribe]: AuthAccessWriteScope,
+  [WS_METHODS.wechatMutate]: AuthAccessWriteScope,
+  [WS_METHODS.wechatSend]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerEndpointValidate]: AuthProvidersManageScope,
   [WS_METHODS.skillsMutate]: AuthProvidersManageScope,
   [WS_METHODS.skillsInspect]: AuthProvidersManageScope,
@@ -99,6 +102,8 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  if (method === WS_METHODS.wechatMutate)
+    return [AuthAccessWriteScope, AuthOrchestrationOperateScope];
   if (
     method === WS_METHODS.providerEndpointValidate &&
     typeof input === "object" &&

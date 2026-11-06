@@ -1,3 +1,4 @@
+import { WechatSettingsSection } from "./WechatSettingsSection";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtom, useAtomValue } from "@effect/atom-react";
@@ -200,7 +201,10 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
               />
             </SettingsSection>
             {connected && !outdated ? (
-              <DaxiangSettingsSection environmentId={environmentId} />
+              <>
+                <DaxiangSettingsSection environmentId={environmentId} />
+                <WechatSettingsSection environmentId={environmentId} />
+              </>
             ) : null}
             <EnvironmentRoutesSection
               environmentId={environmentId}
