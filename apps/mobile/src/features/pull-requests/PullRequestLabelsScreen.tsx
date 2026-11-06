@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import type { StaticScreenProps } from "@react-navigation/native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -20,6 +21,7 @@ import { usePullRequestConnected } from "./usePullRequestConnected";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
 
 export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequestParams>) {
+  const t = useUiTranslation();
   const target = pullRequestTarget(route.params);
   const pr = useEnvironmentQuery(composerPullRequests.detail(target)).data;
   const canWrite = useAtomValue(
@@ -71,8 +73,8 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
   };
   return (
     <PullRequestSearchSheet
-      title="Labels"
-      placeholder="Search labels"
+      title={t("Labels")}
+      placeholder={t("Search labels")}
       closeAccessibilityLabel="Close labels"
       clearAccessibilityLabel="Clear label search"
       searchTextChangeId="pr-label-search"
@@ -126,28 +128,29 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
                 <EmptyState
                   title={
                     result.error
-                      ? "Couldn't load labels"
+                      ? t("Couldn't load labels")
                       : needle
-                        ? "No matching labels"
-                        : "This repository has no labels"
+                        ? t("No matching labels")
+                        : t("This repository has no labels")
                   }
                   detail={
                     result.error ??
                     (needle
-                      ? "Try another name."
-                      : "Create labels on the provider to use them here.")
+                      ? t("Try another name.")
+                      : t("Create labels on the provider to use them here."))
                   }
                   variant="plain"
                 />
-                {result.error ? <Button label="Retry" onPress={result.refresh} /> : null}
+                {result.error ? <Button label={t("Retry")} onPress={result.refresh} /> : null}
               </View>
             )
           }
           ListFooterComponent={
             result.data?.truncated ? (
               <Text className="py-4 text-xs text-foreground-muted">
-                This repository has more labels than are listed here. Apply the rest on the
-                provider.
+                {t(
+                  "This repository has more labels than are listed here. Apply the rest on the provider.",
+                )}
               </Text>
             ) : undefined
           }

@@ -8,6 +8,7 @@ import { StyleSheet } from "react-native";
 import { KeyboardController, useKeyboardState } from "react-native-keyboard-controller";
 import { isDuoDevice } from "../lib/device-type";
 import { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
+import { useUiTranslation } from "../lib/useUiTranslation";
 import { useDeviceType, useNativeLayoutMetrics } from "../native/native-layout-metrics";
 import { HeaderItemsWidthContext } from "./header-items-width";
 import {
@@ -68,7 +69,7 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
       return [
         {
           ...convertMenu({ items: item.items }, childId),
-          title: "label" in item ? item.label : item.title,
+          title: ("label" in item ? item.label : item.title) ?? "",
           displayInline:
             "inline" in item
               ? item.inline
@@ -83,7 +84,7 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
         id: childId,
         type: "menuItem" as const,
         itemType: "action" as const,
-        title: "label" in item ? item.label : item.title,
+        title: ("label" in item ? item.label : item.title) ?? "",
         icon: convertIcon(item.icon),
         onPress: item.disabled ? undefined : item.onPress,
         keepsMenuPresented: item.keepsMenuPresented,
@@ -96,7 +97,12 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
       },
     ];
   });
-  return { id, type: "menu", title: menu.title, children };
+  return {
+    id,
+    type: "menu",
+    title: menu.title,
+    children,
+  };
 }
 
 function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderItem[] {
@@ -157,6 +163,7 @@ export function V5StackHeader(props: {
   /** The workspace's compose action, shown as its own group in this column's bar. */
   readonly onCompose?: () => void;
 }) {
+  const t = useUiTranslation();
   const { options } = props;
   const theme = useMobileNavigationTheme();
   const nativeMetrics = useNativeLayoutMetrics();
@@ -232,7 +239,7 @@ export function V5StackHeader(props: {
     const compose: HeaderItem = {
       type: "item",
       id: "workspace-compose",
-      title: "New task",
+      title: t("New task"),
       icon: { type: "sfSymbol", name: "square.and.pencil" },
       onPress: props.onCompose,
     };
@@ -253,7 +260,7 @@ export function V5StackHeader(props: {
       {
         type: "item",
         id: "dismiss-keyboard",
-        title: "Dismiss keyboard",
+        title: t("Dismiss keyboard"),
         icon: { type: "sfSymbol", name: "keyboard.chevron.compact.down" },
         onPress: () => void KeyboardController.dismiss(),
         // The folded bar is short; keep this out of the overflow menu.
@@ -345,7 +352,7 @@ export function V5StackHeader(props: {
                 hideWhenScrolling={false}
                 allowToolbarIntegration={searchOptions?.allowToolbarIntegration ?? true}
                 placement={bottomSearch ? "integrated" : (searchOptions?.placement ?? "automatic")}
-                placeholder={mailSearch?.placeholder ?? searchOptions?.placeholder ?? "Search"}
+                placeholder={t(mailSearch?.placeholder ?? searchOptions?.placeholder ?? "Search")}
                 onFocus={(event) => {
                   searchOptions?.onFocus?.(event);
                 }}
@@ -364,7 +371,8 @@ export function V5StackHeader(props: {
           largeTitleEnabled: options.headerLargeTitle,
           backButtonDisplayMode: options.headerBackButtonDisplayMode ?? "minimal",
           backButtonMenuEnabled: options.headerBackButtonMenuEnabled ?? true,
-          backButtonTitle: options.headerBackTitle,
+          backButtonTitle:
+            options.headerBackTitle === undefined ? undefined : t(options.headerBackTitle),
           standardAppearance: appearance,
           scrollEdgeAppearance: appearance,
         }}

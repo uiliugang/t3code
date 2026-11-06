@@ -4,6 +4,7 @@ import {
   sourceControlClients,
 } from "@t3tools/client-runtime/source-control-clients";
 import { Linking, Pressable, View } from "react-native";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { useEnvironmentPresentation } from "../../state/presentation";
@@ -21,6 +22,7 @@ export function SourceControlAppAccessNotice(props: {
   /** `owner/name`. */
   readonly repository: string;
 }) {
+  const t = useUiTranslation();
   const environmentId = EnvironmentId.make(props.environmentId);
   const { presentation } = useEnvironmentPresentation(environmentId);
   const definition = props.provider ? sourceControlClients.find(props.provider) : undefined;
@@ -45,14 +47,18 @@ export function SourceControlAppAccessNotice(props: {
   return (
     <View className="mb-4 gap-1 rounded-2xl bg-grouped-card px-4 py-3">
       <Text className="text-sm text-foreground-muted">
-        {appSignIn.appName} isn't installed on {owner}, so requests here use your own GitHub login
-        and its lower rate limit.
+        {t(
+          "{app} isn't installed on {owner}, so requests here use your own GitHub login and its lower rate limit.",
+          { app: appSignIn.appName, owner },
+        )}
       </Text>
       <Pressable
         accessibilityRole="link"
         onPress={() => void Linking.openURL(appSignIn.installUrl).catch(() => undefined)}
       >
-        <Text className="text-sm font-t3-bold text-foreground">Install on {owner}</Text>
+        <Text className="text-sm font-t3-bold text-foreground">
+          {t("Install on {owner}", { owner })}
+        </Text>
       </Pressable>
     </View>
   );

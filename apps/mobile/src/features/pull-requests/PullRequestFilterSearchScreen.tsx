@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
@@ -51,6 +52,7 @@ const optionsFamily = Atom.family((key: string) => {
 export function PullRequestFilterSearchScreen({
   route,
 }: StaticScreenProps<PullRequestFilterSearchParams>) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const { kind, environmentId, environmentIds, suggestions, labelColors } = route.params;
   const listControls = usePullRequestListControls();
@@ -113,7 +115,7 @@ export function PullRequestFilterSearchScreen({
   const placeholder = kind === "labels" ? "Search labels" : "Search authors";
   return (
     <PullRequestSearchSheet
-      title={kind === "labels" ? "Filter by label" : "Filter by author"}
+      title={kind === "labels" ? t("Filter by label") : t("Filter by author")}
       placeholder={placeholder}
       closeAccessibilityLabel={kind === "labels" ? "Close label filter" : "Close author filter"}
       clearAccessibilityLabel={kind === "labels" ? "Clear label search" : "Clear author search"}
@@ -154,17 +156,17 @@ export function PullRequestFilterSearchScreen({
               <EmptyState
                 title={
                   hosted.failed
-                    ? "Couldn't search the host"
+                    ? t("Couldn't search the host")
                     : kind === "labels"
-                      ? "No matching labels"
-                      : "No matching authors"
+                      ? t("No matching labels")
+                      : t("No matching authors")
                 }
                 detail={
                   hosted.failed
-                    ? "The host didn't answer. Try again in a moment."
+                    ? t("The host didn't answer. Try again in a moment.")
                     : kind === "labels"
-                      ? "Search the labels of the repositories this list covers."
-                      : "Search people by name or handle on the repositories' hosts."
+                      ? t("Search the labels of the repositories this list covers.")
+                      : t("Search people by name or handle on the repositories' hosts.")
                 }
                 variant="plain"
               />

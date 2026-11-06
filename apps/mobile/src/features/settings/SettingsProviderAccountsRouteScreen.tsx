@@ -66,7 +66,10 @@ export function SettingsProviderAccountsRouteScreen() {
                   <View className="gap-1 p-4">
                     <Text className="text-base text-foreground">{t("Limited permissions")}</Text>
                     <Text className="text-sm text-foreground-muted">
-                      {`This session can view ${environment.label}'s providers but can't change their settings.`}
+                      {t(
+                        "This session can view {name}'s providers but can't change their settings.",
+                        { name: environment.label },
+                      )}
                     </Text>
                   </View>
                 ) : (
@@ -98,7 +101,7 @@ export function SettingsProviderAccountsRouteScreen() {
                       canManageProvider,
                     ) ? (
                       <Text className="p-4 text-foreground-muted">
-                        No providers with in-app sign-in.
+                        {t("No providers with in-app sign-in.")}
                       </Text>
                     ) : null}
                   </>
@@ -264,12 +267,14 @@ function ProviderAccount({
   }
   function signOut() {
     Dialog.alert(
-      "Sign out?",
-      `Running threads sharing this sign-in on ${environment.label} will stop. Thread history is kept.`,
+      t("Sign out?"),
+      t("Running threads sharing this sign-in on {name} will stop. Thread history is kept.", {
+        name: environment.label,
+      }),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("Cancel"), style: "cancel" },
         {
-          text: "Sign out",
+          text: t("Sign out"),
           style: "destructive",
           onPress: () => {
             void run(() => logout(target));
@@ -290,7 +295,7 @@ function ProviderAccount({
       ? [
           {
             id: "change",
-            title: "Change account",
+            title: t("Change account"),
             image: "person.crop.circle",
             attributes: { disabled: signInDisabled },
             ...(methodActions.length > 1
@@ -308,7 +313,7 @@ function ProviderAccount({
       ? [
           {
             id: "signOut",
-            title: "Sign out",
+            title: t("Sign out"),
             image: "rectangle.portrait.and.arrow.right",
             attributes: { destructive: true, disabled: disabled || state === null },
           },
@@ -333,7 +338,7 @@ function ProviderAccount({
     <ControlPill
       variant="pill"
       label={t("Cancel")}
-      accessibilityLabel={`Cancel ${name} sign-in`}
+      accessibilityLabel={t("Cancel {name} sign-in", { name })}
       disabled={disabled}
       onPress={() => {
         void run(() => cancel({ environmentId, input: { instanceId, flowId: state.flowId! } }));
@@ -343,18 +348,18 @@ function ProviderAccount({
     <Menu
       accessible
       accessibilityRole="button"
-      accessibilityLabel={`${name} account options`}
+      accessibilityLabel={t("{name} account options", { name })}
       title={name}
       actions={accountActions}
       onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}
     >
-      <ControlPill icon="ellipsis" accessibilityLabel={`${name} account options`} />
+      <ControlPill icon="ellipsis" accessibilityLabel={t("{name} account options", { name })} />
     </Menu>
   ) : canSignIn && !signedIn && methodActions.length > 1 && !signInDisabled ? (
     <Menu
       accessible
       accessibilityRole="button"
-      accessibilityLabel={`Sign in to ${name}`}
+      accessibilityLabel={t("Sign in to {name}", { name })}
       title={t("Sign in with")}
       actions={methodActions}
       onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}
@@ -362,14 +367,14 @@ function ProviderAccount({
       <ControlPill
         variant="primary"
         label={t("Sign in")}
-        accessibilityLabel={`Sign in to ${name}`}
+        accessibilityLabel={t("Sign in to {name}", { name })}
       />
     </Menu>
   ) : canSignIn && !signedIn ? (
     <ControlPill
       variant="primary"
-      label={usesCredentials ? "Connect" : "Sign in"}
-      accessibilityLabel={usesCredentials ? `Connect to ${name}` : `Sign in to ${name}`}
+      label={t(usesCredentials ? "Connect" : "Sign in")}
+      accessibilityLabel={t(usesCredentials ? "Connect to {name}" : "Sign in to {name}", { name })}
       disabled={signInDisabled}
       onPress={() => startSignIn()}
     />
@@ -383,7 +388,12 @@ function ProviderAccount({
             : "min-h-16 flex-row items-center gap-3 px-4 py-3"
         }
       >
-        <ProviderAccountSummary key={email} name={name} status={status} email={email} />
+        <ProviderAccountSummary
+          key={email}
+          name={name}
+          status={status ? t(status) : status}
+          email={email}
+        />
         {trailing}
       </View>
       {interaction?.type === "deviceCode" ||
@@ -407,7 +417,7 @@ function ProviderAccount({
                   {interaction.output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")}
                 </Text>
               </ScrollView>
-              {field("input", "Terminal response", true)}
+              {field("input", t("Terminal response"), true)}
               <SettingsActionRow
                 icon="arrow.up"
                 label={t("Send response")}
@@ -439,7 +449,7 @@ function ProviderAccount({
           ) : null}
           {showCallback ? (
             <>
-              {field("callback", "Final localhost URL", false)}
+              {field("callback", t("Final localhost URL"), false)}
               <SettingsActionRow
                 icon="arrow.right"
                 label={t("Continue")}
@@ -460,7 +470,7 @@ function ProviderAccount({
           ) : null}
           {error || auth.error ? (
             <Text accessibilityRole="alert" className="text-danger-foreground">
-              {error ?? auth.error}
+              {t(error ?? auth.error ?? "")}
             </Text>
           ) : null}
         </View>
@@ -496,6 +506,7 @@ function ProviderAccountSummary({
   readonly status: string | null | undefined;
   readonly email: string | undefined;
 }) {
+  const t = useUiTranslation();
   const [revealed, setRevealed] = useState(false);
   const content = (
     <>
@@ -522,7 +533,7 @@ function ProviderAccountSummary({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={[name, status, revealed ? email : null].filter(Boolean).join(", ")}
-      accessibilityHint={revealed ? "Hides the account email" : "Reveals the account email"}
+      accessibilityHint={t(revealed ? "Hides the account email" : "Reveals the account email")}
       onPress={() => setRevealed((value) => !value)}
       className="min-w-0 shrink grow gap-0.5"
     >

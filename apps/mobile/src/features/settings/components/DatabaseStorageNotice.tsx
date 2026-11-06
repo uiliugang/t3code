@@ -7,6 +7,7 @@ import { serverEnvironment } from "../../../state/server";
 import type { SettingsTarget } from "../settings-environment-filter";
 import { ListActionRow as SettingsActionRow } from "../../../components/ui/ListActionRow";
 import { SettingsSection } from "./SettingsSection";
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 
 /** Suggests `t3 doctor` on every machine whose database still holds at least 1 GiB of freed pages. */
 export function DatabaseStorageNotice({
@@ -14,6 +15,7 @@ export function DatabaseStorageNotice({
 }: {
   readonly targets: readonly SettingsTarget[];
 }) {
+  const t = useUiTranslation();
   const recommendations = useAtomValue(
     serverEnvironment.databaseCompactionRecommendations(
       JSON.stringify(targets.map((target) => target.environmentId)),
@@ -45,7 +47,7 @@ export function DatabaseStorageNotice({
       ))}
       <SettingsActionRow
         icon="xmark"
-        label="Dismiss"
+        label={t("Dismiss")}
         onPress={() =>
           updatePreferences({
             transform: (current) => ({

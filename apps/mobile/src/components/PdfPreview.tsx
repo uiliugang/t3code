@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../lib/useUiTranslation";
 import { useState } from "react";
 import { View } from "react-native";
 import { WebView } from "react-native-webview";
@@ -5,10 +6,14 @@ import { WebView } from "react-native-webview";
 import { FilePreviewLoading, FilePreviewNotice } from "../features/files/FilePreviewFeedback";
 
 export function PdfPreview(props: { readonly uri: string }) {
+  const t = useUiTranslation();
+
   const [error, setError] = useState<string | null>(null);
   return (
     <View className="flex-1 bg-card">
-      {error ? <FilePreviewNotice title="Could not load PDF">{error}</FilePreviewNotice> : null}
+      {error ? (
+        <FilePreviewNotice title={t("Could not load PDF")}>{error}</FilePreviewNotice>
+      ) : null}
       <WebView
         source={{ uri: props.uri }}
         originWhitelist={["*"]}

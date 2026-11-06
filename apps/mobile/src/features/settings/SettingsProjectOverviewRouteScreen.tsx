@@ -227,7 +227,7 @@ function ProjectOverviewContent(props: {
     setIsOrganizing(true);
     for (const member of allMembers) {
       if (!readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope)) {
-        Dialog.alert("Failed to update project", "This connection can no longer change it.");
+        Dialog.alert(t("Failed to update project"), t("This connection can no longer change it."));
         break;
       }
       const result = await organizeProject({
@@ -238,8 +238,8 @@ function ProjectOverviewContent(props: {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
           Dialog.alert(
-            `Failed to update "${member.title}"`,
-            error instanceof Error ? error.message : "An error occurred.",
+            t('Failed to update "{name}"', { name: member.title }),
+            t(error instanceof Error ? error.message : "An error occurred."),
           );
         }
         break;
@@ -259,8 +259,10 @@ function ProjectOverviewContent(props: {
       (entry) => entry.environmentId === denied.environmentId,
     );
     Dialog.alert(
-      "Failed to remove project",
-      `This connection cannot change projects in ${environment?.label ?? "this environment"}.`,
+      t("Failed to remove project"),
+      t("This connection cannot change projects in {environment}.", {
+        environment: environment?.label ?? t("this environment"),
+      }),
     );
     return false;
   };
@@ -268,23 +270,27 @@ function ProjectOverviewContent(props: {
   const removeMembers = (members: readonly EnvironmentProject[]) => {
     if (!checkRemovalAccess(members) || !startRemoval()) return;
     const projectKey = props.projectKey;
-    const plan = planProjectRemoval({
-      members: members.map((member) => ({
-        ...member,
-        environmentLabel: props.environments.find(
-          (entry) => entry.environmentId === member.environmentId,
-        )?.label,
-      })),
-      groupMemberCount: props.members.length,
-      hasOtherMembers: props.hasOtherMembers,
-      displayName,
-      threads,
-      unloadedThreadCount: readUnloadedThreadCount(members, threads),
-    });
+    const plan = planProjectRemoval(
+      {
+        members: members.map((member) => ({
+          ...member,
+          environmentLabel: props.environments.find(
+            (entry) => entry.environmentId === member.environmentId,
+          )?.label,
+        })),
+        groupMemberCount: props.members.length,
+        hasOtherMembers: props.hasOtherMembers,
+        displayName,
+        threads,
+        unloadedThreadCount: readUnloadedThreadCount(members, threads),
+      },
+      t,
+    );
     Dialog.confirm({
-      title: plan.targetKind === "checkout" ? "Remove checkout" : "Remove project",
+      title: t(plan.targetKind === "checkout" ? "Remove checkout" : "Remove project"),
       message: plan.confirmationMessage,
-      confirmText: plan.targetKind === "checkout" ? "Remove checkout" : "Remove project",
+      confirmText: t(plan.targetKind === "checkout" ? "Remove checkout" : "Remove project"),
+      cancelText: t("Cancel"),
       destructive: true,
       onCancel: finishRemoval,
       onConfirm: () => {
@@ -301,8 +307,8 @@ function ProjectOverviewContent(props: {
               if (!isAtomCommandInterrupted(result)) {
                 const error = squashAtomCommandFailure(result);
                 Dialog.alert(
-                  `Failed to remove "${member.title}"`,
-                  error instanceof Error ? error.message : "An error occurred.",
+                  t('Failed to remove "{name}"', { name: member.title }),
+                  t(error instanceof Error ? error.message : "An error occurred."),
                 );
               }
               return;
@@ -366,7 +372,9 @@ function ProjectOverviewContent(props: {
             textClassName="text-xl font-t3-semibold text-foreground"
           />
           <Text className="text-sm text-foreground-muted">
-            {props.members.length === 1 ? "1 checkout" : `${props.members.length} checkouts`}
+            {t(props.members.length === 1 ? "{count} checkout" : "{count} checkouts", {
+              count: props.members.length,
+            })}
           </Text>
         </View>
       </View>
@@ -387,7 +395,7 @@ function ProjectOverviewContent(props: {
             {canSave ? (
               <Button
                 label={t("Save")}
-                accessibilityHint="Save project name"
+                accessibilityHint={t("Save project name")}
                 tone="secondary"
                 onPress={saveName}
               />
@@ -419,23 +427,23 @@ function ProjectOverviewContent(props: {
           <SettingsSwitchRow
             icon="pin"
             label={t("Pin")}
-            subtitle={
+            subtitle={t(
               offline
                 ? "Connect every machine with this project to change this."
-                : "Pinned projects come first in project pickers."
-            }
+                : "Pinned projects come first in project pickers.",
+            )}
             value={props.group.pinned}
             disabled={isOrganizing || offline}
             onValueChange={(pinned) => void organize({ pinned })}
           />
           <SettingsActionRow
             icon="archivebox"
-            label={props.group.archived ? "Unarchive project" : "Archive project"}
-            description={
+            label={t(props.group.archived ? "Unarchive project" : "Archive project")}
+            description={t(
               props.group.archived
                 ? "Hidden from project pickers. Threads and files are kept."
-                : "Hides the project from project pickers. Threads and files are kept."
-            }
+                : "Hides the project from project pickers. Threads and files are kept.",
+            )}
             disabled={isOrganizing || offline}
             onPress={() => void organize({ archived: !props.group.archived })}
           />
@@ -458,7 +466,7 @@ function ProjectOverviewContent(props: {
                     : "text-lg text-foreground"
                 }
               >
-                {environment?.label ?? "Environment"}
+                {environment?.label ?? t("Environment")}
               </Text>
               {environment?.displayUrl ? (
                 <Text className="text-sm leading-normal text-foreground-muted">
@@ -482,19 +490,24 @@ function ProjectOverviewContent(props: {
       <SettingsSection title={t("Danger")}>
         <SettingsActionRow
           icon="trash"
-          label={
+          label={t(
             props.hasOtherMembers
               ? "Remove checkout"
               : props.members.length > 1
                 ? "Remove this project everywhere"
-                : "Remove project"
-          }
+                : "Remove project",
+          )}
           description={
             props.hasOtherMembers
-              ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
+              ? t(
+                  "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched.",
+                )
               : props.members.length > 1
-                ? `Deletes all ${props.members.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                : "Deletes the project entry and its threads. Files on disk are not touched."
+                ? t(
+                    "Deletes all {count} checkout entries and their threads on every machine. Files on disk are not touched.",
+                    { count: props.members.length },
+                  )
+                : t("Deletes the project entry and its threads. Files on disk are not touched.")
           }
           tone="danger"
           disabled={!canRemoveGroup || isRemoving}
@@ -516,7 +529,7 @@ function RemoveCheckoutAction(props: {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Remove checkout ${props.member.workspaceRoot}`}
+      accessibilityLabel={t("Remove checkout {path}", { path: props.member.workspaceRoot })}
       disabled={props.disabled || !canRemove}
       onPress={props.onPress}
       className="self-start rounded-full border border-border bg-card px-3 py-1.5 disabled:opacity-40"

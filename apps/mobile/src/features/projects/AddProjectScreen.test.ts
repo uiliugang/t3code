@@ -13,6 +13,11 @@ import { act, createElement, isValidElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const state = vi.hoisted(() => ({
   scopes: new Set<string>(),
   baseDirectory: "",
@@ -56,6 +61,7 @@ vi.mock("../workspace/useSelectWorkspaceDetail", async () => {
 vi.mock("../../native/StackHeader", () => ({
   nativeHeaderScrollEdgeEffects: () => undefined,
 }));
+vi.mock("../../components/ui/Dialog", () => ({ alert: state.alert }));
 vi.mock("../../components/ui/NavigationRow", () => ({ NavigationRow: "NavigationRow" }));
 vi.mock("../../components/ui/Button", () => ({ Button: "Button" }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: "ScrollView" }));

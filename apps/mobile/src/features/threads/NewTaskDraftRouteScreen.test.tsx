@@ -54,6 +54,9 @@ vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
+vi.mock("../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (message: string) => message,
+}));
 vi.mock("../../native/StackHeader", () => ({ NativeStackScreenOptions: () => null }));
 vi.mock("./ThreadScreenHost", () => ({
   ThreadScreenFallback: ({ children }: { children: ReactNode }) => <>{children}</>,

@@ -1,4 +1,5 @@
 import { skillMessages } from "./skillMessages.ts";
+import { mobileUiMessages } from "./mobileUiMessages.ts";
 export type UiLocale = "en" | "zh-CN";
 
 export type UiTranslator = (
@@ -12,6 +13,7 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  ...mobileUiMessages,
   "Send /bind {code} to the bot in WeChat to verify your identity.":
     "请在微信向机器人发送 /bind {code}，以验证身份。",
   WeChat: "微信",

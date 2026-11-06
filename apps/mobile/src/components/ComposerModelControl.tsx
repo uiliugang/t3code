@@ -8,6 +8,7 @@ import { resolveProviderOptionDescriptors } from "../lib/providerOptions";
 import { AppText as Text } from "./ui/AppText";
 import { ComposerInlineControl } from "./ComposerToolbar";
 import { ProviderIcon, ProviderInstanceIcon } from "./ProviderIcon";
+import { useUiTranslation } from "../lib/useUiTranslation";
 
 export function ComposerModelControl(props: {
   readonly modelOption: ModelOption | null;
@@ -21,6 +22,7 @@ export function ComposerModelControl(props: {
   readonly iconOnly?: boolean;
   readonly onPress: () => void;
 }) {
+  const t = useUiTranslation();
   const descriptors = resolveProviderOptionDescriptors({
     capabilities: props.modelOption?.capabilities,
     selections: props.selection?.options,
@@ -37,14 +39,14 @@ export function ComposerModelControl(props: {
       }).label
     : "";
   const badge = props.modelOption?.providerBadge;
-  const label = props.modelOption?.label ?? props.selection?.model ?? "Choose model";
+  const label = props.modelOption?.label ?? props.selection?.model ?? t("Choose model");
   return (
     <ComposerInlineControl
       accessibilityLabel={[
-        "Model and reasoning settings",
+        t("Model and reasoning settings"),
         label,
         badge?.showBadge ? badge.displayName : null,
-        summary,
+        t(summary),
       ]
         .filter(Boolean)
         .join(", ")}
@@ -82,7 +84,7 @@ export function ComposerModelControl(props: {
             }
             numberOfLines={1}
           >
-            {summary}
+            {t(summary)}
           </Text>
         ) : undefined
       }

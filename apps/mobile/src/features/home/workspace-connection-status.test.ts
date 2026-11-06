@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { workspaceConnectionStatusPresentation } from "./workspace-connection-status";
@@ -54,6 +55,7 @@ describe("workspace connection status", () => {
   );
 
   it("shows connected shell catch-up even while a secondary environment is unreachable", () => {
+    const t: UiTranslator = (message, values) => translateUi("zh-CN", message, values);
     const state = workspaceState({
       hasSyncingConnectedEnvironment: true,
       hasPendingShellSnapshot: true,
@@ -77,5 +79,56 @@ describe("workspace connection status", () => {
       label: "Syncing threads...",
       showsProgress: true,
     });
+    expect(workspaceConnectionStatusPresentation(state, t)).toEqual({
+      label: "正在同步对话…",
+      showsProgress: true,
+    });
+    const reconnecting = workspaceState({
+      ...state,
+      hasReadyEnvironment: false,
+      hasSyncingConnectedEnvironment: false,
+      connectionError: null,
+      connectingEnvironments: state.connectingEnvironments.map((environment) => ({
+        ...environment,
+        environmentLabel: "Gmac {environment}",
+      })),
+    });
+    expect(workspaceConnectionStatusPresentation(reconnecting, t)).toEqual({
+      label: "正在重新连接 Gmac {environment}",
+      showsProgress: true,
+    });
+    expect(
+      workspaceConnectionStatusPresentation(
+        {
+          ...reconnecting,
+          connectingEnvironments: [
+            ...reconnecting.connectingEnvironments,
+            ...reconnecting.connectingEnvironments,
+          ],
+        },
+        t,
+      )?.label,
+    ).toBe("正在重新连接 2 个环境");
+    expect(
+      workspaceConnectionStatusPresentation(
+        {
+          ...reconnecting,
+          connectingEnvironments: [],
+          connectionError: "Syncing threads...",
+        },
+        t,
+      )?.label,
+    ).toBe("Syncing threads...");
+    expect(
+      workspaceConnectionStatusPresentation(
+        {
+          ...reconnecting,
+          connectingEnvironments: [],
+          connectionError: null,
+          hasLoadedShellSnapshot: false,
+        },
+        t,
+      )?.label,
+    ).toBe("正在加载对话…");
   });
 });

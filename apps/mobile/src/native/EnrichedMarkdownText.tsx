@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../lib/useUiTranslation";
 import { decodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import {
   collectComposerContextReferences,
@@ -162,6 +163,8 @@ function enrichedStyle(
 }
 
 export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
+  const t = useUiTranslation();
+
   const { renderImage, resolveImageSource, fileEmbedLabel } = props;
   const { themeAppearance, mathRenderingEnabled } = useAppearancePreferences();
   const { markdown, fileHrefs } = useMemo(() => {
@@ -222,9 +225,9 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
             const menu = fileContextMenu?.(url) ?? {
               title: url,
               actions: [
-                { id: "enriched-open-link", title: "Open link" },
-                { id: "enriched-copy-link", title: "Copy link" },
-                { id: "enriched-share-link", title: "Share link" },
+                { id: "enriched-open-link", title: t("Open link") },
+                { id: "enriched-copy-link", title: t("Copy link") },
+                { id: "enriched-share-link", title: t("Share link") },
               ],
             };
             return [
@@ -294,8 +297,8 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
             const menu = props.fileContextMenu?.(url) ?? {
               title: url,
               actions: [
-                { id: "enriched-open-link", title: "Open link" },
-                { id: "enriched-copy-link", title: "Copy link" },
+                { id: "enriched-open-link", title: t("Open link") },
+                { id: "enriched-copy-link", title: t("Copy link") },
               ],
             };
             setActiveMenu({ url, menu });
@@ -339,6 +342,24 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           }}
           enableTaskListItemToggle={false}
           enableCodeBlockWrapToggle
+          accessibilityLabels={{
+            codeBlock: { wrap: t("Wrap lines"), unwrap: t("Disable line wrap") },
+            list: {
+              bulletPoint: t("Bullet point"),
+              nestedBulletPoint: t("Nested bullet point"),
+              orderedItem: t("List item {n}"),
+              nestedOrderedItem: t("Nested list item {n}"),
+            },
+            blockquote: { quote: t("Blockquote"), nestedQuote: t("Nested blockquote") },
+            table: { row: t("Row {n}: {content}") },
+            math: { equation: t("Math: {latex}") },
+            rotor: { headings: t("Headings"), links: t("Links"), images: t("Images") },
+          }}
+          selectionMenuConfig={{
+            copy: { label: t("Copy") },
+            copyAsMarkdown: { label: t("Copy as Markdown") },
+            copyImageUrl: { label: t("Copy image URL") },
+          }}
           spoilerOverlay="solid"
           onLinkPress={
             props.onLinkPress || props.onImagePress ? ({ url }) => onLinkPress(url) : undefined

@@ -1,6 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { sessionHasLegacyPermissions } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
+import { translateUi } from "@t3tools/shared/uiLocale";
+import { AsyncResult, Atom } from "effect/reactivity";
 import * as SecureStore from "expo-secure-store";
 
 import { whenProtectedDataAvailable } from "../../lib/protectedData";
@@ -8,6 +9,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { projectEnvironmentPresentation } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { environmentSession } from "../../state/session";
+import { mobilePreferencesAtom } from "../../state/preferences";
 
 const storageKey = "t3code.permission-update.v1";
 
@@ -56,6 +58,10 @@ export function installPermissionUpdateNotice(): () => void {
         ({ environmentId }) => !known.has(environmentId) && !shownThisLaunch.has(environmentId),
       );
     if (!environment) return;
+    const preferences = appAtomRegistry.get(mobilePreferencesAtom);
+    const language = AsyncResult.isSuccess(preferences)
+      ? (preferences.value.uiLanguage ?? "en")
+      : "en";
     showing = true;
     shownThisLaunch.add(environment.environmentId);
     const dismiss = () => {
@@ -65,9 +71,14 @@ export function installPermissionUpdateNotice(): () => void {
       presentNext();
     };
     Dialog.alert(
-      `Permissions have changed for ${environment.label}`,
-      "This connection still uses the old permissions, so some actions may no longer be available. Pair again using a new link with the permissions you need.",
-      [{ text: "Got it", onPress: dismiss }],
+      translateUi(language, "Permissions have changed for {environment}", {
+        environment: environment.label,
+      }),
+      translateUi(
+        language,
+        "This connection still uses the old permissions, so some actions may no longer be available. Pair again using a new link with the permissions you need.",
+      ),
+      [{ text: translateUi(language, "Got it"), onPress: dismiss }],
       { cancelable: false },
     );
   };

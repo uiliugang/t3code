@@ -18,7 +18,7 @@ export function ControlPill(props: {
   readonly disabled?: boolean;
   readonly className?: string;
 }) {
-  const variant = props.variant ?? "circle";
+  const variant = props.variant ?? (props.label ? "pill" : "circle");
   const { smallIconSize } = useAndroidControlSizing();
   const activatedOnPressInRef = useRef(false);
 

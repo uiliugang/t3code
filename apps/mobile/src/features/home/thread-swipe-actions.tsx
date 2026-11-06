@@ -41,6 +41,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { SwipeRowActivationContext, type SwipeRowActivation } from "./swipe-row-activation";
 import { registerThreadDismissal } from "./thread-dismissal";
 
@@ -536,6 +537,7 @@ function SwipeActionButton(props: {
   readonly stretchesOnFullSwipe: boolean;
   readonly translation: SharedValue<number>;
 }) {
+  const t = useUiTranslation();
   const {
     actionsWidth,
     entryRange: [entryRangeStart, entryRangeEnd],
@@ -681,7 +683,7 @@ function SwipeActionButton(props: {
         ]}
       >
         <Text className="text-3xs font-t3-medium text-foreground-muted" numberOfLines={1}>
-          {props.label}
+          {t(props.label)}
         </Text>
       </Animated.View>
     </Pressable>

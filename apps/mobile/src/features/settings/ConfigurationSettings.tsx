@@ -39,6 +39,7 @@ import type { SettingsTarget } from "./settings-environment-filter";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { ProjectImportHistory } from "./ProjectImportHistory";
 import { uuidv4 } from "../../lib/uuid";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 function ConfigurationTransfer({
   title,
@@ -57,6 +58,7 @@ function ConfigurationTransfer({
   environmentId: EnvironmentId;
   supportsProjectImport: boolean;
 }) {
+  const t = useUiTranslation();
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<SettingsFile | null>(null);
   const [materialize, setMaterialize] = useState(false);
@@ -73,7 +75,10 @@ function ConfigurationTransfer({
   const reportFailure = (result: Awaited<ReturnType<typeof settlePromise>>) => {
     if (result._tag !== "Failure") return;
     const error = squashAtomCommandFailure(result);
-    Dialog.alert("Settings transfer failed", error instanceof Error ? error.message : "Try again.");
+    Dialog.alert(
+      t("Settings transfer failed"),
+      t(error instanceof Error ? error.message : "Try again."),
+    );
   };
   const exportFile = async () => {
     setBusy(true);
@@ -90,7 +95,13 @@ function ConfigurationTransfer({
         file.scope !== scope &&
         !(supportsProjectImport && scope === "application" && file.scope === "project")
       )
-        throw new Error(`Choose a ${scope} settings export.`);
+        throw new Error(
+          t(
+            scope === "project"
+              ? "Choose a project settings export."
+              : "Choose an application settings export.",
+          ),
+        );
       return file;
     });
     setBusy(false);
@@ -110,12 +121,21 @@ function ConfigurationTransfer({
       return;
     const details =
       file.scope === "project"
-        ? `Source: ${file.name}\n${file.identity.id}\nSettings: ${Object.keys(file.settings).join(", ")}\n${(file.settings.defaultProjectScripts ?? []).map((script) => `${script.name}: ${script.command}`).join("\n")}`
-        : `Environment settings: ${Object.keys(file.server).join(", ")}\nProvider models: ${Object.keys(file.providerModels ?? {}).join(", ")}\nShortcuts: ${file.keybindings.length}\nNative preferences: ${Object.keys(file.mobile ?? {}).join(", ")}`;
+        ? `${t("Source: {name}", { name: file.name })}\n${file.identity.id}\n${t("Settings: {settings}", { settings: Object.keys(file.settings).join(", ") })}\n${(file.settings.defaultProjectScripts ?? []).map((script) => `${script.name}: ${script.command}`).join("\n")}`
+        : t(
+            "Environment settings: {settings}\nProvider models: {models}\nShortcuts: {count}\nNative preferences: {preferences}",
+            {
+              settings: Object.keys(file.server).join(", "),
+              models: Object.keys(file.providerModels ?? {}).join(", "),
+              count: file.keybindings.length,
+              preferences: Object.keys(file.mobile ?? {}).join(", "),
+            },
+          );
     Dialog.confirm({
-      title: `Import into ${title}?`,
-      message: `${details.slice(0, 6000)}\n\n${materialize ? `Create projects/workspace groups in ${destinationDirectory.trim() || "~/projects"} on this environment. Repositories are deduplicated and failed imports can be retried.` : file.scope === "project" ? "This replaces the checkout's project overrides. Missing settings inherit their defaults." : "Matching values will be replaced; other settings stay as they are. Web-only preferences stay on web and desktop."}`,
-      confirmText: "Import settings",
+      title: t("Import into {name}?", { name: title }),
+      message: `${details.slice(0, 6000)}\n\n${materialize ? t("Create projects/workspace groups in {directory} on this environment. Repositories are deduplicated and failed imports can be retried.", { directory: destinationDirectory.trim() || "~/projects" }) : t(file.scope === "project" ? "This replaces the checkout's project overrides. Missing settings inherit their defaults." : "Matching values will be replaced; other settings stay as they are. Web-only preferences stay on web and desktop.")}`,
+      confirmText: t("Import settings"),
+      cancelText: t("Cancel"),
       onConfirm: () => {
         setBusy(true);
         void settlePromise(async () => {
@@ -138,7 +158,7 @@ function ConfigurationTransfer({
           if (saved._tag === "Failure") reportFailure(saved);
           else {
             setPending(null);
-            Dialog.alert(materialize ? "Repository import queued" : "Settings imported");
+            Dialog.alert(t(materialize ? "Repository import queued" : "Settings imported"));
           }
         });
       },
@@ -148,7 +168,7 @@ function ConfigurationTransfer({
     <>
       <ListActionRow
         icon="square.and.arrow.up"
-        label="Export configuration"
+        label={t("Export configuration")}
         description={title}
         disabled={busy}
         onPress={() => void exportFile()}
@@ -156,8 +176,8 @@ function ConfigurationTransfer({
       <View className="border-t border-border">
         <ListActionRow
           icon="arrow.down"
-          label="Import configuration"
-          description="Choose a JSON export to review before saving."
+          label={t("Import configuration")}
+          description={t("Choose a JSON export to review before saving.")}
           disabled={busy || !canImport}
           onPress={() => void importSelection()}
         />
@@ -165,25 +185,27 @@ function ConfigurationTransfer({
       {pending ? (
         <View className="gap-3 border-t border-border p-4">
           <Text className="text-sm text-foreground">
-            {pending.scope === "project" ? pending.name : "Application settings"}
+            {pending.scope === "project" ? pending.name : t("Application settings")}
           </Text>
           {requiresProjectCreation && definitions.length === 0 ? (
             <Text className="text-sm text-danger-foreground">
-              This export has no clone information. Export it again from an updated environment.
+              {t(
+                "This export has no clone information. Export it again from an updated environment.",
+              )}
             </Text>
           ) : null}
           {supportsProjectImport && (definitions.length > 0 || requiresProjectCreation) ? (
             <>
               <SettingsSwitchRow
-                label="Clone repositories and create projects/workspace groups"
+                label={t("Clone repositories and create projects/workspace groups")}
                 value={materialize}
                 disabled={busy || requiresProjectCreation || !canClone}
                 onValueChange={setMaterialize}
               />
               {materialize ? (
                 <AppTextInput
-                  accessibilityLabel="Clone destination directory"
-                  placeholder="Optional directory (default: ~/projects)"
+                  accessibilityLabel={t("Clone destination directory")}
+                  placeholder={t("Optional directory (default: ~/projects)")}
                   value={destinationDirectory}
                   onChangeText={setDestinationDirectory}
                   editable={!busy}
@@ -193,13 +215,18 @@ function ConfigurationTransfer({
             </>
           ) : null}
           <Button
-            label={busy ? "Importing…" : "Import settings"}
+            label={t(busy ? "Importing…" : "Import settings")}
             disabled={
               busy || !canImport || (materialize && (!canClone || definitions.length === 0))
             }
             onPress={confirmPending}
           />
-          <Button label="Cancel" tone="text" disabled={busy} onPress={() => setPending(null)} />
+          <Button
+            label={t("Cancel")}
+            tone="text"
+            disabled={busy}
+            onPress={() => setPending(null)}
+          />
         </View>
       ) : null}
     </>
@@ -213,6 +240,7 @@ export function ProjectConfigurationSettings({
   project: TransferProject;
   settings: ServerSettings;
 }) {
+  const t = useUiTranslation();
   const canWrite = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(project.environmentId),
   );
@@ -241,7 +269,7 @@ export function ProjectConfigurationSettings({
         </Text>
         {identity.kind === "local" ? (
           <Text className="text-xs text-foreground-muted">
-            This identity is local to this environment.
+            {t("This identity is local to this environment.")}
           </Text>
         ) : null}
       </View>
@@ -264,7 +292,7 @@ export function ProjectConfigurationSettings({
           });
           if (exported._tag === "Failure") throw squashAtomCommandFailure(exported);
           const definition = exported.value[0]?.configuration;
-          if (!definition) throw new Error("This project is no longer available.");
+          if (!definition) throw new Error(t("This project is no longer available."));
           return {
             ...file,
             settings: definition.settings,
@@ -273,11 +301,11 @@ export function ProjectConfigurationSettings({
           };
         }}
         importFile={async (file) => {
-          if (file.scope !== "project") throw new Error("Choose a project settings file.");
+          if (file.scope !== "project") throw new Error(t("Choose a project settings file."));
           const current = appAtomRegistry.get(
             serverEnvironment.settingsValueAtom(project.environmentId),
           );
-          if (!current) throw new Error("Reconnect this environment before importing.");
+          if (!current) throw new Error(t("Reconnect this environment before importing."));
           const result = await update({
             environmentId: project.environmentId,
             input: { patch: projectSettingsImportPatch(file, project, current) },
@@ -293,6 +321,7 @@ export function ProjectConfigurationSettings({
 }
 
 export function ApplicationConfigurationSettings({ environment }: { environment: SettingsTarget }) {
+  const t = useUiTranslation();
   const environmentId = environment.environmentId;
   const canWrite = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const canWriteBindings = useAtomValue(
@@ -319,9 +348,9 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
         createFile={async () => {
           const preferences = appAtomRegistry.get(mobilePreferencesAtom);
           if (!AsyncResult.isSuccess(preferences))
-            throw new Error("Wait for app preferences to load before exporting.");
+            throw new Error(t("Wait for app preferences to load before exporting."));
           const config = appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId));
-          if (!config) throw new Error("Reconnect this environment before exporting.");
+          if (!config) throw new Error(t("Reconnect this environment before exporting."));
           const exportedProjects = supportsProjectImport
             ? await exportProjects({ environmentId, input: {} })
             : null;
@@ -343,9 +372,10 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
           };
         }}
         importFile={async (file) => {
-          if (file.scope !== "application") throw new Error("Choose an application settings file.");
+          if (file.scope !== "application")
+            throw new Error(t("Choose an application settings file."));
           const current = appAtomRegistry.get(serverEnvironment.settingsValueAtom(environmentId));
-          if (!current) throw new Error("Reconnect this environment before importing.");
+          if (!current) throw new Error(t("Reconnect this environment before importing."));
           const patch = applicationSettingsImportPatch(file, current);
           const bindings = settingsKeybindingsToImport(
             file.keybindings,
@@ -361,7 +391,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
             const saved = await upsertBinding({ environmentId, input: rule });
             if (saved._tag === "Failure")
               throw new Error(
-                "Import incomplete: environment settings were saved, but a shortcut failed.",
+                t("Import incomplete: environment settings were saved, but a shortcut failed."),
                 { cause: squashAtomCommandFailure(saved) },
               );
           }
@@ -377,7 +407,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
           });
           if (Exit.isFailure(saved))
             throw new Error(
-              "Import incomplete: environment settings were saved, but app preferences failed.",
+              t("Import incomplete: environment settings were saved, but app preferences failed."),
               { cause: Cause.squash(saved.cause) },
             );
         }}

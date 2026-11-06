@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useWorkspaceSidebarHeaderItem } from "../layout/useWorkspaceSidebarHeaderItem";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { threadHeaderAppearance } from "./thread-header-appearance";
@@ -24,6 +25,8 @@ export function useThreadHeaderOptions(props: {
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
 }) {
+  const t = useUiTranslation();
+
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
   const usesDuoHeader = usesNativeWorkspaceColumns && isDuoDevice(deviceType);
@@ -44,7 +47,7 @@ export function useThreadHeaderOptions(props: {
     ...(props.onReturnToThread
       ? [
           withNativeGlassHeaderItem({
-            accessibilityLabel: "Return to chat",
+            accessibilityLabel: t("Return to chat"),
             icon: { name: "chevron.left", type: "sfSymbol" as const },
             identifier: "thread-left-return",
             onPress: props.onReturnToThread,
@@ -56,10 +59,10 @@ export function useThreadHeaderOptions(props: {
     ...(!usesDuoHeader && !props.draft
       ? [
           withNativeGlassHeaderItem({
-            accessibilityLabel: "New task",
+            accessibilityLabel: t("New task"),
             icon: { name: "square.and.pencil", type: "sfSymbol" as const },
             identifier: "thread-left-new-task",
-            label: "New task",
+            label: t("New task"),
             onPress: startNewTask,
             type: "button" as const,
           }),
@@ -69,7 +72,7 @@ export function useThreadHeaderOptions(props: {
   const canGoBack = navigation.canGoBack();
   const compactHomeHeaderItems: NativeHeaderItems = [
     withNativeGlassHeaderItem({
-      accessibilityLabel: "Go to threads list",
+      accessibilityLabel: t("Go to threads list"),
       icon: { name: "list.bullet", type: "sfSymbol" as const },
       identifier: "thread-left-home",
       onPress: () => navigation.dispatch(StackActions.replace("Home")),

@@ -6,8 +6,10 @@ import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WORKSPACE_DOCK } from "./workspace-tabs-state";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { useNavigation } from "@react-navigation/native";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
+  const t = useUiTranslation();
   const workspace = useWorkspaceTabs()!;
   const navigation = useNavigation();
   return (
@@ -29,7 +31,7 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
               <Pressable
                 key={tab}
                 accessibilityRole="tab"
-                accessibilityLabel={tab === "threads" ? "Threads" : "Pull requests"}
+                accessibilityLabel={t(tab === "threads" ? "Threads" : "Pull requests")}
                 accessibilityState={{ selected }}
                 onPress={() => {
                   if (selected) return;
@@ -54,7 +56,7 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
       </GlassSurface>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Requirements board"
+        accessibilityLabel={t("Requirements board")}
         onPress={() => navigation.navigate("Requirements")}
         className="min-h-12 min-w-12 items-center justify-center"
       >
@@ -69,7 +71,7 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="New chat"
+          accessibilityLabel={t("New chat")}
           onPress={props.onNewTask}
           className="flex-1 items-center justify-center"
         >

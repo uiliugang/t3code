@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   capitalizeTerm,
@@ -30,6 +31,7 @@ export type PullRequestEditParams = PullRequestParams &
   );
 
 export function PullRequestEditScreen({ route }: StaticScreenProps<PullRequestEditParams>) {
+  const t = useUiTranslation();
   const params = route.params;
   const navigation = useNavigation();
   const target = pullRequestTarget(params);
@@ -118,13 +120,13 @@ export function PullRequestEditScreen({ route }: StaticScreenProps<PullRequestEd
   return (
     <PullRequestSheetContent
       busy={busy}
-      title={title}
+      title={t(title)}
       subtitle={`#${params.number} · ${params.repository}`}
       footer={
         <Button
           fullWidth
           tone="contrast"
-          label={busy ? "Saving…" : "Save"}
+          label={busy ? t("Saving…") : t("Save")}
           loading={busy}
           disabled={!allowed || unchanged || invalid || original === null}
           onPress={() => void save()}
@@ -137,12 +139,12 @@ export function PullRequestEditScreen({ route }: StaticScreenProps<PullRequestEd
         autoFocus
         accessibilityLabel={
           params.field === "title"
-            ? `${capitalizeTerm(singular)} title`
+            ? t("{value} title", { value: String(capitalizeTerm(singular)) })
             : params.field === "body"
-              ? `${capitalizeTerm(singular)} description`
-              : "Comment"
+              ? t("{value} description", { value: String(capitalizeTerm(singular)) })
+              : t("Comment")
         }
-        placeholder={params.field === "title" ? "Title" : "Write in Markdown…"}
+        placeholder={params.field === "title" ? t("Title") : t("Write in Markdown…")}
         placeholderTextColorClassName="accent-foreground-muted"
         maxLength={params.field === "title" ? 1024 : 65536}
         value={value}
@@ -157,7 +159,7 @@ export function PullRequestEditScreen({ route }: StaticScreenProps<PullRequestEd
         style={params.field === "title" ? undefined : { textAlignVertical: "top" }}
       />
       {readOnlyReason ? (
-        <Text className="text-xs text-foreground-muted">{readOnlyReason}</Text>
+        <Text className="text-xs text-foreground-muted">{t(readOnlyReason)}</Text>
       ) : null}
       {error || detail.error ? (
         <Text selectable className="text-sm text-danger-foreground">

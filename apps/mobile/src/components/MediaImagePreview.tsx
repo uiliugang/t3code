@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../lib/useUiTranslation";
 import { createContext, useContext, useState } from "react";
 import { Pressable, View } from "react-native";
 import ImageViewing from "react-native-image-viewing";
@@ -18,6 +19,8 @@ type MediaImagePreviewProps = {
 const ImagePreviewContext = createContext<MediaImagePreviewProps | null>(null);
 
 function ImagePreviewHeader(header: { readonly imageIndex: number }) {
+  const t = useUiTranslation();
+
   const props = useContext(ImagePreviewContext)!;
   const source = props.source.gallery?.[header.imageIndex] ?? props.source;
   const insets = useSafeAreaInsets();
@@ -31,7 +34,7 @@ function ImagePreviewHeader(header: { readonly imageIndex: number }) {
         <MediaActionsMenu media={mediaActions} inModal />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Close image"
+          accessibilityLabel={t("Close image")}
           onPress={props.onRequestClose}
           className="min-h-11 min-w-11 items-center justify-center"
         >

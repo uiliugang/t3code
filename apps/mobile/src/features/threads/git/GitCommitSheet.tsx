@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useThreadRepository } from "../../../state/use-thread-repository";
 import { ScreenContent } from "../../../components/ui/ScreenContent";
 import { SheetHeader } from "../../../components/ui/SheetHeader";
@@ -25,6 +26,8 @@ type GitCommitSheetProps = StaticScreenProps<{
 }>;
 
 export function GitCommitSheet(_props: GitCommitSheetProps) {
+  const t = useUiTranslation();
+
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -74,10 +77,10 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
   const header = (
     <SheetHeader
       presentation={android ? "inline" : "native"}
-      title="Commit changes"
+      title={t("Commit changes")}
       subtitle={gitStatus.data?.refName ?? "(detached HEAD)"}
       onCancel={() => navigation.goBack()}
-      accessibilityLabel="Cancel commit"
+      accessibilityLabel={t("Cancel commit")}
     />
   );
 
@@ -108,36 +111,40 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
         >
           {isDefaultRef ? (
             <Text className="text-sm text-warning-foreground">
-              You’re on the default branch. You can create a new branch when committing.
+              {t("You’re on the default branch. You can create a new branch when committing.")}
             </Text>
           ) : null}
           <View className="gap-2">
-            <Text className="text-sm font-t3-medium text-foreground">Commit message</Text>
+            <Text className="text-sm font-t3-medium text-foreground">{t("Commit message")}</Text>
             <TextInput
               multiline
-              accessibilityLabel="Commit message"
+              accessibilityLabel={t("Commit message")}
               value={dialogCommitMessage}
               onChangeText={setDialogCommitMessage}
-              placeholder="Describe your changes…"
+              placeholder={t("Describe your changes…")}
               textAlignVertical="top"
               className="min-h-24 rounded-xl bg-subtle px-4 py-3 text-base"
             />
             <Text className="text-xs text-foreground-muted">
-              Leave empty to generate a message automatically.
+              {t("Leave empty to generate a message automatically.")}
             </Text>
           </View>
           <View>
             <View className="flex-row items-center justify-between gap-2 pb-2">
               <View className="flex-1 gap-1">
-                <Text className="text-base font-t3-bold text-foreground">Changed files</Text>
+                <Text className="text-base font-t3-bold text-foreground">{t("Changed files")}</Text>
                 <Text className="text-xs text-foreground-muted">
-                  {selectedFiles.length} of {allFiles.length} selected · +
-                  {formatDiffCount(selectedInsertions)} −{formatDiffCount(selectedDeletions)}
+                  {t("{selected} of {total} selected · +{insertions} −{deletions}", {
+                    selected: selectedFiles.length,
+                    total: allFiles.length,
+                    insertions: formatDiffCount(selectedInsertions),
+                    deletions: formatDiffCount(selectedDeletions),
+                  })}
                 </Text>
               </View>
               {allFiles.length > 0 ? (
                 <Button
-                  label={allSelected ? "Deselect all" : "Select all"}
+                  label={allSelected ? t("Deselect all") : t("Select all")}
                   tone="text"
                   onPress={() =>
                     setExcludedFiles(
@@ -149,7 +156,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
             </View>
             {allFiles.length === 0 ? (
               <Text className="py-4 text-sm text-foreground-muted">
-                No changed files to commit.
+                {t("No changed files to commit.")}
               </Text>
             ) : (
               allFiles.map((file) => {
@@ -220,7 +227,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
           </View>
           <View className="gap-2">
             <Button
-              label="Commit changes"
+              label={t("Commit changes")}
               icon="checkmark"
               tone="primary"
               fullWidth
@@ -228,7 +235,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
               onPress={() => void runCommitAction(false)}
             />
             <Button
-              label="Commit on a new branch"
+              label={t("Commit on a new branch")}
               icon="arrow.branch"
               tone="text"
               fullWidth

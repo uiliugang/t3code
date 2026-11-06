@@ -7,8 +7,10 @@ import * as Dialog from "../../components/ui/Dialog";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function ProjectImportHistory({ environmentId }: { environmentId: EnvironmentId }) {
+  const t = useUiTranslation();
   const imports = useEnvironmentQuery(
     sourceControlEnvironment.projectImports({ environmentId, input: {} }),
   );
@@ -36,19 +38,19 @@ export function ProjectImportHistory({ environmentId }: { environmentId: Environ
           {record.repositories.map((repository) => (
             <View key={repository.key} className="gap-1">
               <Text selectable className="text-xs text-foreground-muted">
-                {repository.remoteUrl ?? "Missing clone URL"} · {repository.phase}
+                {repository.remoteUrl ?? t("Missing clone URL")} · {repository.phase}
               </Text>
               <Text selectable className="text-xs text-foreground-muted">
                 {repository.destinationPath}
               </Text>
               {repository.failure ? (
                 <Text className="text-xs text-danger-foreground">
-                  {projectImportFailureMessage(repository.failure)}
+                  {t(projectImportFailureMessage(repository.failure))}
                 </Text>
               ) : null}
               {repository.failure && repository.stagingPath ? (
                 <Text selectable className="text-xs text-foreground-muted">
-                  Partial checkout: {repository.stagingPath}
+                  {t("Partial checkout: {path}", { path: repository.stagingPath })}
                 </Text>
               ) : null}
             </View>
@@ -57,23 +59,24 @@ export function ProjectImportHistory({ environmentId }: { environmentId: Environ
             .filter((project) => project.failure !== null)
             .map((project) => (
               <Text key={project.projectId} className="text-xs text-danger-foreground">
-                {project.name}: {projectImportFailureMessage(project.failure!)}
+                {project.name}: {t(projectImportFailureMessage(project.failure!))}
               </Text>
             ))}
           <Button
-            label="Retry failed import"
+            label={t("Retry failed import")}
             disabled={!canRetry || record.phase === "running" || record.phase === "done"}
             onPress={() => void retry({ environmentId, input: { id: record.id } })}
           />
           <Button
-            label="Forget import"
+            label={t("Forget import")}
             tone="text"
             disabled={!canForget || record.phase === "running"}
             onPress={() =>
               Dialog.confirm({
-                title: "Forget this import?",
-                message: "Projects and cloned or partial repositories stay on disk.",
-                confirmText: "Forget import",
+                title: t("Forget this import?"),
+                message: t("Projects and cloned or partial repositories stay on disk."),
+                confirmText: t("Forget import"),
+                cancelText: t("Cancel"),
                 onConfirm: () => {
                   void forget({ environmentId, input: { id: record.id } });
                 },

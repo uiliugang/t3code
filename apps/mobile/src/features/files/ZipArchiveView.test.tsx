@@ -8,11 +8,45 @@ import type { ZipTreeRow } from "./zipTree";
 
 const files = vi.hoisted(() => new Map<string, Uint8Array>());
 const navigation = vi.hoisted(() => ({ remove: null as (() => void) | null }));
+const previewFile = vi.hoisted(() => ({
+  dispose: vi.fn(),
+  write: vi.fn(),
+}));
+const locale = vi.hoisted(() => ({
+  language: "en" as "en" | "zh-CN",
+  listeners: new Set<() => void>(),
+}));
 const server = vi.hoisted(() => ({
   capabilities: { repositoryIdentity: false } as ServerConfig["environment"]["capabilities"],
   refresh: vi.fn(async () => "file:///first.zip"),
 }));
 
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  const { useSyncExternalStore } = await import("react");
+  const translators = {
+    en: (message: string, values?: Readonly<Record<string, string | number>>) =>
+      translateUi("en", message, values),
+    "zh-CN": (message: string, values?: Readonly<Record<string, string | number>>) =>
+      translateUi("zh-CN", message, values),
+  };
+  return {
+    useUiTranslation: () => {
+      const language = useSyncExternalStore(
+        (listener) => {
+          locale.listeners.add(listener);
+          return () => locale.listeners.delete(listener);
+        },
+        () => locale.language,
+      );
+      return translators[language];
+    },
+  };
+});
+vi.mock("../../lib/attachmentDownload", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/attachmentDownload")>()),
+  writeGeneratedAttachmentFile: previewFile.write,
+}));
 vi.mock("../../state/entities", () => ({
   useEnvironmentServerConfig: () => ({ environment: { capabilities: server.capabilities } }),
 }));
@@ -126,6 +160,7 @@ vi.mock("../../components/ui/Toolbar", () => {
   };
 });
 vi.mock("../../components/ui/AppBar", () => ({ AppBar: () => null }));
+vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AndroidScreenHeader", () => ({ AndroidHeaderIconButton: () => null }));
 vi.mock("../../components/ui/Menu", () => ({ Menu: () => null }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
@@ -136,7 +171,9 @@ vi.mock("../../lib/copyTextWithHaptic", () => ({}));
 vi.mock("./SourceFileSurface", () => ({
   SourceFileSurface: (props: { readonly contents: string }) => <pre>{props.contents}</pre>,
 }));
-vi.mock("./AudioFilePreview", () => ({ AudioFilePreview: () => null }));
+vi.mock("./AudioFilePreview", () => ({
+  AudioFilePreview: (props: { readonly uri: string }) => <audio src={props.uri} />,
+}));
 vi.mock("./FileMarkdownPreview", () => ({ FileMarkdownPreview: () => null }));
 vi.mock("./WorkspaceFileWebPreview", () => ({ WorkspaceFileWebPreview: () => null }));
 vi.mock("../threads/HtmlRenderWebView", () => ({ HtmlRenderWebView: () => null }));
@@ -157,6 +194,12 @@ function setup() {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers({ toFake: ["setImmediate", "clearImmediate"] });
   files.clear();
+  locale.language = "en";
+  previewFile.dispose.mockReset();
+  previewFile.write.mockReset().mockImplementation(async () => ({
+    uri: `file:///preview-${previewFile.write.mock.calls.length}.wav`,
+    dispose: previewFile.dispose,
+  }));
   navigation.remove = null;
   server.capabilities = { repositoryIdentity: false };
   server.refresh.mockClear();
@@ -294,23 +337,50 @@ it("explains why an encrypted ZIP cannot be browsed", async () => {
   expect(screen.container.querySelector('[aria-label="first.txt"]')).toBeNull();
 });
 
-it("keeps the archive and selected entry when the parent re-renders with a new refresh", async () => {
-  const screen = setup();
-  await screen.render();
-  await screen.settle(() =>
-    expect(screen.container.querySelector('[aria-label="first.txt"]')).not.toBeNull(),
-  );
-  await act(async () =>
-    screen.container.querySelector<HTMLButtonElement>('[aria-label="first.txt"]')!.click(),
-  );
-  await screen.settle(() =>
-    expect(screen.container.querySelector("pre")?.textContent).toBe("First archive contents"),
-  );
-  files.delete("file:///first.zip");
+it.each(["text", "audio"] as const)(
+  "keeps the archive and selected %s entry across refresh and language changes",
+  async (kind) => {
+    const screen = setup();
+    const name = kind === "audio" ? "first.wav" : "first.txt";
+    if (kind === "audio")
+      files.set(
+        "file:///first.zip",
+        Uint8Array.from(
+          atob(
+            "UEsDBAoAAAAAAAAAIVzdt2n1DAAAAAwAAAAJAAAAZmlyc3Qud2F2UklGRgAAAABXQVZFUEsBAhQACgAAAAAAAAAhXN23afUMAAAADAAAAAkAAAAAAAAAAAAAAAAAAAAAAGZpcnN0LndhdlBLBQYAAAAAAQABADcAAAAzAAAAAAA=",
+          ),
+          (character) => character.charCodeAt(0),
+        ),
+      );
+    await screen.render();
+    await screen.settle(() =>
+      expect(screen.container.querySelector(`[aria-label="${name}"]`)).not.toBeNull(),
+    );
+    await act(async () =>
+      screen.container.querySelector<HTMLButtonElement>(`[aria-label="${name}"]`)!.click(),
+    );
+    const assertPreview = () => {
+      if (kind === "text")
+        expect(screen.container.querySelector("pre")?.textContent).toBe("First archive contents");
+      else {
+        expect(screen.container.querySelector("audio")?.getAttribute("src")).toBe(
+          "file:///preview-1.wav",
+        );
+        expect(previewFile.write).toHaveBeenCalledTimes(1);
+        expect(previewFile.dispose).not.toHaveBeenCalled();
+      }
+    };
+    await screen.settle(assertPreview);
+    files.delete("file:///first.zip");
 
-  await screen.render({ ...screen.props, refresh: async () => null });
-  await screen.settle(() =>
-    expect(screen.container.querySelector("pre")?.textContent).toBe("First archive contents"),
-  );
-  expect(navigation.remove).not.toBeNull();
-});
+    await act(async () => {
+      locale.language = "zh-CN";
+      for (const listener of locale.listeners) listener();
+    });
+    await screen.render({ ...screen.props, refresh: async () => null });
+    await screen.settle(assertPreview);
+    expect(navigation.remove).not.toBeNull();
+    act(() => screen.root.unmount());
+    if (kind === "audio") expect(previewFile.dispose).toHaveBeenCalledTimes(1);
+  },
+);

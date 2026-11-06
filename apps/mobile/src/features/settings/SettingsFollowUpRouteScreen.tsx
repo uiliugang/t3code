@@ -67,8 +67,8 @@ export function SettingsFollowUpRouteScreen() {
         {FOLLOW_UP_OPTIONS.map((option, index) => (
           <SettingsChoiceRow
             key={option.behavior}
-            label={option.label}
-            description={option.description}
+            label={t(option.label)}
+            description={t(option.description)}
             selected={selectedBehavior === option.behavior}
             separated={index > 0}
             disabled={!preferencesReady}
@@ -77,14 +77,15 @@ export function SettingsFollowUpRouteScreen() {
         ))}
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
-        Long-press the send button to use the other option for a single message. With a hardware
-        keyboard, hold Command while sending.
+        {t(
+          "Long-press the send button to use the other option for a single message. With a hardware keyboard, hold Command while sending.",
+        )}
       </Text>
     </ScrollView>
   );
 
   return Platform.OS === "android" ? (
-    <SettingsScreen title="Chat">{content}</SettingsScreen>
+    <SettingsScreen title={t("Chat")}>{content}</SettingsScreen>
   ) : (
     <View collapsable={false} className="flex-1 bg-sheet">
       {content}

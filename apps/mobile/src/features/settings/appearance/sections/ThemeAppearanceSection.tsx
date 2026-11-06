@@ -123,10 +123,15 @@ function ThemeCard(props: {
   readonly onSelect: (appearance: MobileThemeAppearance) => void;
   readonly themeId: MobileThemeId;
 }) {
+  const t = useUiTranslation();
   const choice = (appearance: MobileThemeAppearance, selected: boolean) => (
     <Pressable
-      accessibilityHint={`Sets the ${appearance} appearance only`}
-      accessibilityLabel={`${props.label} ${appearance} theme`}
+      accessibilityHint={t(
+        appearance === "light" ? "Sets the light appearance only" : "Sets the dark appearance only",
+      )}
+      accessibilityLabel={t(appearance === "light" ? "{name} light theme" : "{name} dark theme", {
+        name: props.label,
+      })}
       accessibilityRole="button"
       accessibilityState={{ disabled: props.disabled, selected }}
       className={cn(
@@ -154,8 +159,8 @@ function ThemeCard(props: {
   return (
     <View className="min-w-36 flex-1 basis-[47%] gap-3 rounded-[24px] border border-border bg-grouped-card px-2 py-4">
       <Pressable
-        accessibilityHint="Sets both light and dark appearances"
-        accessibilityLabel={`${props.label} theme`}
+        accessibilityHint={t("Sets both light and dark appearances")}
+        accessibilityLabel={t("{name} theme", { name: props.label })}
         accessibilityRole="button"
         accessibilityState={{
           disabled: props.disabled,
@@ -253,9 +258,10 @@ function ModeCard(props: {
   readonly selected: boolean;
   readonly themeIds: MobileThemeIds;
 }) {
+  const t = useUiTranslation();
   return (
     <Pressable
-      accessibilityLabel={`${props.label} appearance`}
+      accessibilityLabel={t("{name} appearance", { name: props.label })}
       accessibilityRole="radio"
       accessibilityState={{ checked: props.selected, disabled: props.disabled }}
       className={cn(

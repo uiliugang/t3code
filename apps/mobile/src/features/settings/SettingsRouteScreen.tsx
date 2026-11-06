@@ -84,7 +84,7 @@ export function SettingsListScreen(props: {
                     value: workspace.state.tabs.settings.query,
                     onChangeText: (query) =>
                       workspace.dispatch({ type: "query", tab: "settings", query }),
-                    placeholder: "Search settings",
+                    placeholder: t("Search settings"),
                   }
                 : undefined
             }
@@ -107,15 +107,16 @@ interface SettingsListSection {
 }
 
 function ConfiguredSettingsRouteScreen() {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const accountLabel = !isLoaded
-    ? "Checking"
+    ? t("Checking")
     : !isSignedIn
-      ? "Sign in"
-      : (user?.primaryEmailAddress?.emailAddress ?? "Signed in");
+      ? t("Sign in")
+      : (user?.primaryEmailAddress?.emailAddress ?? t("Signed in"));
 
   return (
     <SettingsList
@@ -203,7 +204,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
           <EmptyState
             variant="plain"
             title={t("No results")}
-            detail={`No settings match “${query.trim()}”.`}
+            detail={t("No settings match “{query}”.", { query: query.trim() })}
           />
         )}
       </ScrollView>

@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useNavigation } from "@react-navigation/native";
 import {
   applyPendingPullRequestReactions,
@@ -37,6 +38,7 @@ function ReactionPills(props: {
   readonly subjectId?: string;
   readonly onChanged: () => void;
 }) {
+  const t = useUiTranslation();
   const target = pullRequestTarget(props.params);
   const setReaction = useAtomCommand(composerPullRequests.setReaction, { reportFailure: false });
   // Keyed by what the host last reported, so a refresh that lands the change drops the overlay.
@@ -61,7 +63,7 @@ function ReactionPills(props: {
         next.delete(content);
         return { signature: current.signature, values: next };
       });
-      Dialog.alert("Couldn't save the reaction", "Try again in a moment.");
+      Dialog.alert(t("Couldn't save the reaction"), t("Try again in a moment."));
       return;
     }
     props.onChanged();
@@ -89,7 +91,7 @@ function ReactionPills(props: {
       ))}
       {props.canReact ? (
         <Menu
-          accessibilityLabel="Add a reaction"
+          accessibilityLabel={t("Add a reaction")}
           actions={PULL_REQUEST_REACTION_ORDER.map((content) => ({
             id: content,
             title: `${pullRequestReactionEmoji(content)}  ${pullRequestReactionName(content)}`,
@@ -150,6 +152,7 @@ export function PullRequestCommentFooter(props: {
   readonly onChanged: () => void;
   readonly onEdit?: () => void;
 }) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const { comment } = props;
   const reactions = comment.reactions ?? [];
@@ -169,7 +172,7 @@ export function PullRequestCommentFooter(props: {
       {canEdit && editableKind !== null ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Edit comment"
+          accessibilityLabel={t("Edit comment")}
           onPress={() => {
             props.onEdit?.();
             navigation.navigate("PullRequestEdit", {
@@ -187,7 +190,7 @@ export function PullRequestCommentFooter(props: {
           className={cn(PILL, "ml-auto border-transparent")}
         >
           <SymbolView name="pencil" size={13} tintColorClassName="accent-icon-muted" />
-          <Text className="text-xs font-t3-medium text-foreground-muted">Edit</Text>
+          <Text className="text-xs font-t3-medium text-foreground-muted">{t("Edit")}</Text>
         </Pressable>
       ) : null}
     </View>

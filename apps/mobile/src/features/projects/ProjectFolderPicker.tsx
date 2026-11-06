@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import {
   PROJECT_FOLDER_BATCH_LIMIT,
@@ -31,6 +32,8 @@ export function ProjectFolderPicker({
   environmentId: EnvironmentId;
   initialPath: string;
 }) {
+  const t = useUiTranslation();
+
   const [directory, setDirectory] = useState(initialPath);
   const [pathInput, setPathInput] = useState(initialPath);
   const [filter, setFilter] = useState("");
@@ -106,7 +109,7 @@ export function ProjectFolderPicker({
         <ErrorBanner message={(error ?? browse.error ?? inspect.error)!} />
       ) : null}
       <AppTextInput
-        accessibilityLabel="Folder path"
+        accessibilityLabel={t("Folder path")}
         value={pathInput}
         onChangeText={setPathInput}
         editable={!busy}
@@ -119,7 +122,7 @@ export function ProjectFolderPicker({
       />
       <View className="flex-row flex-wrap gap-2">
         <Button
-          label="Parent folder"
+          label={t("Parent folder")}
           icon="arrow.left"
           disabled={!parent || busy}
           onPress={() => {
@@ -127,15 +130,15 @@ export function ProjectFolderPicker({
           }}
         />
         <Button
-          label="Open folder"
+          label={t("Open folder")}
           icon="folder"
           disabled={busy || !pathInput.trim()}
           onPress={() => navigate(pathInput.trim())}
         />
       </View>
       <AppTextInput
-        accessibilityLabel="Filter folders"
-        placeholder="Filter folders"
+        accessibilityLabel={t("Filter folders")}
+        placeholder={t("Filter folders")}
         value={filter}
         editable={!busy}
         onChangeText={(value) => {
@@ -146,16 +149,16 @@ export function ProjectFolderPicker({
       />
       <View className="flex-row flex-wrap gap-2">
         <Button
-          label="Select available"
+          label={t("Select available")}
           disabled={busy || inspect.isPending}
           onPress={() =>
             setSelected((previous) => selectProjectFolders(previous, inspect.data ?? []))
           }
         />
-        <Button label="Clear" disabled={busy} onPress={() => setSelected([])} />
+        <Button label={t("Clear")} disabled={busy} onPress={() => setSelected([])} />
       </View>
       {browse.isPending || inspect.isPending ? (
-        <Text>Checking folders...</Text>
+        <Text>{t("Checking folders...")}</Text>
       ) : (
         (inspect.data ?? []).map((candidate) => {
           const checked = selected.some((entry) => entry.workspaceRoot === candidate.workspaceRoot);
@@ -197,11 +200,11 @@ export function ProjectFolderPicker({
                   <Text className="flex-1 text-base text-foreground">{candidate.title}</Text>
                 </View>
                 <Text className="text-xs text-foreground-muted">
-                  {added ? "Already added" : projectFolderStatus(candidate)}
+                  {added ? t("Already added") : projectFolderStatus(candidate)}
                 </Text>
               </Pressable>
               <Button
-                label="Open"
+                label={t("Open")}
                 accessibilityLabel={`Open folder ${candidate.title}`}
                 icon="chevron.right"
                 tone="text"
@@ -215,7 +218,7 @@ export function ProjectFolderPicker({
       {entries.length > PROJECT_FOLDER_BATCH_LIMIT ? (
         <View className="flex-row flex-wrap items-center gap-2">
           <Button
-            label="Previous page"
+            label={t("Previous page")}
             disabled={page === 0 || busy}
             onPress={() => setPage(page - 1)}
           />
@@ -223,13 +226,15 @@ export function ProjectFolderPicker({
             {page + 1} / {Math.ceil(entries.length / PROJECT_FOLDER_BATCH_LIMIT)}
           </Text>
           <Button
-            label="Next page"
+            label={t("Next page")}
             disabled={(page + 1) * PROJECT_FOLDER_BATCH_LIMIT >= entries.length || busy}
             onPress={() => setPage(page + 1)}
           />
         </View>
       ) : null}
-      <Text>Selected: {selected.length}</Text>
+      <Text>
+        {t("Selected:")} {selected.length}
+      </Text>
       {selected.map((entry) => (
         <Pressable
           key={entry.workspaceRoot}
@@ -247,12 +252,13 @@ export function ProjectFolderPicker({
       ))}
       {results.length > 0 ? (
         <Text>
-          Imported: {results.filter((entry) => entry.status === "created").length}, skipped:{" "}
+          {t("Imported:")} {results.filter((entry) => entry.status === "created").length}
+          {t(", skipped:")}{" "}
           {
             results.filter((entry) => entry.status === "existing" || entry.status === "repository")
               .length
           }
-          , failed: {results.filter((entry) => entry.status === "failed").length}
+          {t(", failed:")} {results.filter((entry) => entry.status === "failed").length}
         </Text>
       ) : null}
       {results

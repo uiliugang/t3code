@@ -81,7 +81,9 @@ export function WorkspaceRecoveryControl({
             void run(report.kind === "restore" ? "accept-current-files" : "retry-setup")
           }
           label={
-            report.kind === "restore" ? "Accept files and reset conversation" : "Allow setup retry"
+            report.kind === "restore"
+              ? t("Accept files and reset conversation")
+              : t("Allow setup retry")
           }
         />
       </>

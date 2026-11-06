@@ -125,7 +125,7 @@ function VoiceInputUnavailable() {
         <SettingsSection title={t("Voice input")}>
           <ListRowLayout icon="mic" label={t("Not available on this device")} />
         </SettingsSection>
-        <Text className="px-2 text-sm text-foreground-muted">{UNAVAILABLE_EXPLANATION}</Text>
+        <Text className="px-2 text-sm text-foreground-muted">{t(UNAVAILABLE_EXPLANATION)}</Text>
       </ScrollView>
     </SettingsScreen>
   );
@@ -193,7 +193,7 @@ function MicrophoneSettings() {
             <SettingsSection title={t("Microphone access")}>
               <SettingsActionRow
                 icon="mic"
-                label={permission === "ask" ? "Allow microphone access" : "Open Settings"}
+                label={t(permission === "ask" ? "Allow microphone access" : "Open Settings")}
                 onPress={
                   permission === "ask" ? requestPermission : () => void Linking.openSettings()
                 }
@@ -267,9 +267,10 @@ function MicrophoneRow(props: {
   readonly onStep: (direction: "up" | "down") => void;
   readonly onForget: (() => void) | undefined;
 }) {
+  const t = useUiTranslation();
   const { lifted, offset, entry, onForget } = props;
   const kind = KINDS[entry.kind];
-  const title = isMicrophoneDevice(entry) ? entry.name : kind.row;
+  const title = isMicrophoneDevice(entry) ? entry.name : t(kind.row);
   const { width: windowWidth } = useWindowDimensions();
   const style = useAnimatedStyle(() => ({
     transform: [
@@ -286,8 +287,8 @@ function MicrophoneRow(props: {
     <View className="flex-row items-center bg-grouped-card">
       <View
         accessible
-        accessibilityLabel={`${title}, ${kind.label}, ${props.position} of ${props.count}`}
-        accessibilityActions={onForget ? [{ name: "forget", label: "Forget" }] : undefined}
+        accessibilityLabel={`${title}, ${t(kind.label)}, ${t("{position} of {count}", { position: props.position, count: props.count })}`}
+        accessibilityActions={onForget ? [{ name: "forget", label: t("Forget") }] : undefined}
         onAccessibilityAction={({ nativeEvent }) => {
           if (nativeEvent.actionName === "forget") onForget?.();
         }}
@@ -296,7 +297,7 @@ function MicrophoneRow(props: {
         <ListRowLayout
           icon={kind.icon}
           label={title}
-          description={isMicrophoneDevice(entry) ? kind.label : kind.rowDescription}
+          description={t(isMicrophoneDevice(entry) ? kind.label : kind.rowDescription)}
         />
       </View>
       {props.reorderable ? (
@@ -328,10 +329,10 @@ function MicrophoneRow(props: {
           fullSwipeWidth={windowWidth - 40}
           onDelete={onForget}
           primaryAction={{
-            accessibilityLabel: `Forget ${title}`,
+            accessibilityLabel: t("Forget {name}", { name: title }),
             destructive: true,
             icon: "trash",
-            label: "Forget",
+            label: t("Forget"),
             onPress: onForget,
           }}
           secondaryAction={null}

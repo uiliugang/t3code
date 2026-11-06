@@ -245,7 +245,7 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
                 ) : null
               ) : (
                 <ScreenHeaderButton
-                  accessibilityLabel={search.closeAccessibilityLabel ?? "Close search"}
+                  accessibilityLabel={search.closeAccessibilityLabel ?? t("Close search")}
                   icon="arrow.left"
                   onPress={closeSearch}
                 />

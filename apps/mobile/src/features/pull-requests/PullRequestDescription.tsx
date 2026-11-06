@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { splitPullRequestBody } from "@t3tools/client-runtime/pull-request-markdown";
 import {
   PullRequestImageAttachment,
@@ -27,6 +28,7 @@ export function PullRequestDescription(props: {
   readonly onExpandedChange: (expanded: boolean) => void;
   readonly footer?: ReactNode;
 }) {
+  const t = useUiTranslation();
   const { expanded, onExpandedChange } = props;
   const [bodyHeight, setBodyHeight] = useState(0);
   const mediaContext = useContext(PullRequestMediaContext);
@@ -53,7 +55,7 @@ export function PullRequestDescription(props: {
   return (
     <View className="gap-5">
       <View className="gap-3">
-        <PullRequestSectionHeading>Description</PullRequestSectionHeading>
+        <PullRequestSectionHeading>{t("Description")}</PullRequestSectionHeading>
         {props.markdown.trim() ? (
           <View className="overflow-hidden">
             <View
@@ -108,7 +110,7 @@ export function PullRequestDescription(props: {
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ expanded }}
-                accessibilityLabel={expanded ? "Collapse description" : "Expand description"}
+                accessibilityLabel={expanded ? t("Collapse description") : t("Expand description")}
                 onPress={() => {
                   if (expanded) props.onCollapse();
                   onExpandedChange(!expanded);
@@ -121,7 +123,7 @@ export function PullRequestDescription(props: {
                 className="min-h-11 flex-row items-center justify-center gap-1 py-2 active:opacity-70"
               >
                 <Text className="text-xs font-t3-medium text-foreground">
-                  {expanded ? "Show less" : "Show more"}
+                  {expanded ? t("Show less") : t("Show more")}
                 </Text>
                 <SymbolView
                   name={expanded ? "chevron.up" : "chevron.down"}
@@ -132,13 +134,13 @@ export function PullRequestDescription(props: {
             ) : null}
           </View>
         ) : (
-          <Text className="text-sm text-foreground-muted">No description provided.</Text>
+          <Text className="text-sm text-foreground-muted">{t("No description provided.")}</Text>
         )}
         {props.footer}
       </View>
       {content.attachments.length ? (
         <View className="gap-3">
-          <PullRequestSectionHeading>Attachments</PullRequestSectionHeading>
+          <PullRequestSectionHeading>{t("Attachments")}</PullRequestSectionHeading>
           <ScrollView
             horizontal
             keyboardShouldPersistTaps="always"

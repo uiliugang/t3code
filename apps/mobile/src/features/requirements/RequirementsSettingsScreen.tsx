@@ -26,7 +26,7 @@ export function RequirementsSettingsScreen() {
     serverEnvironment.updateSettings.permissionAtom(environment?.environmentId ?? null),
   );
   return (
-    <SettingsScreen title="Issue management">
+    <SettingsScreen title={t("Issue management")}>
       <ScreenScrollView className="flex-1" contentContainerClassName="gap-5 px-5 pb-12">
         <IssuePicker
           label={t("Environment")}

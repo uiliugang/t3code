@@ -43,6 +43,12 @@ vi.mock("expo", () => ({
   requireOptionalNativeModule: () =>
     mocks.revision === null ? {} : { outputRevision: mocks.revision },
 }));
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  const translate = (message: string, values?: Readonly<Record<string, string | number>>) =>
+    translateUi("en", message, values);
+  return { useUiTranslation: () => translate };
+});
 vi.mock("react-native", () => ({ View: ({ children }: { children: ReactNode }) => children }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: () => null }));
 vi.mock("../../lib/typography", () => ({ MOBILE_TYPOGRAPHY: { label: { fontSize: 10 } } }));

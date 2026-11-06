@@ -36,6 +36,14 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   var tabs = ["threads", "pullRequests", "usage", "settings"] {
     didSet { if tabs != oldValue { updateItems() } }
   }
+  var labels: [String: String] = [:] {
+    didSet {
+      guard labels != oldValue else { return }
+      composeButton.accessibilityLabel = labels["newThread"] ?? "New chat"
+      prepareItems()
+      updateItems()
+    }
+  }
   var selectedTab = "threads" { didSet { updateSelection() } }
   var selectedColor: UIColor = .systemBlue { didSet { tabBar.tintColor = selectedColor } }
   var compact = false {
@@ -104,7 +112,7 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
     for (tab, label) in labels {
       let icon = tab == "pullRequests" ? pullRequestIcon : UIImage(systemName: symbols[tab] ?? "circle")
       let item = UITabBarItem(title: nil, image: tabIcon(icon), tag: 0)
-      item.accessibilityLabel = label
+      item.accessibilityLabel = self.labels[tab] ?? label
       item.accessibilityIdentifier = "workspace-tab-\(tab)"
       if tab == "threads" { item.selectedImage = tabIcon(UIImage(systemName: "text.bubble.fill")) }
       itemsByTab[tab] = item

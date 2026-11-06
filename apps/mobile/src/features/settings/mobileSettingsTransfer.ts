@@ -4,10 +4,10 @@ import {
   serializeSettingsFile,
   type SettingsFile,
 } from "@t3tools/client-runtime/settings-transfer";
-import { Directory, File, Paths } from "expo-file-system";
+import { File } from "expo-file-system";
 
+import { shareGeneratedAttachment } from "../../lib/attachmentDownload";
 import { beginForegroundHandoff } from "../../lib/foreground-handoff";
-import { uuidv4 } from "../../lib/uuid";
 
 export async function pickSettingsFile(): Promise<SettingsFile | null> {
   const { getDocumentAsync } = await import("expo-document-picker");
@@ -33,19 +33,13 @@ export async function pickSettingsFile(): Promise<SettingsFile | null> {
 }
 
 export async function shareSettingsFile(settings: SettingsFile): Promise<void> {
-  const sharing = await import("expo-sharing");
-  if (!(await sharing.isAvailableAsync()))
-    throw new Error("File sharing is unavailable on this device.");
-  const contents = serializeSettingsFile(settings);
-  const directory = new Directory(Paths.cache, `settings-export-${uuidv4()}`);
-  directory.create();
-  const file = new File(directory, `t3-code-${settings.scope}-settings.json`);
-  const finishHandoff = beginForegroundHandoff();
-  try {
-    file.write(contents);
-    await sharing.shareAsync(file.uri, { mimeType: "application/json", UTI: "public.json" });
-  } finally {
-    finishHandoff();
-    directory.delete();
-  }
+  const shared = await shareGeneratedAttachment({
+    bytes: new TextEncoder().encode(serializeSettingsFile(settings)),
+    attachment: {
+      name: `t3-code-${settings.scope}-settings.json`,
+      mimeType: "application/json",
+    },
+    signal: new AbortController().signal,
+  });
+  if (!shared) throw new Error("File sharing is unavailable on this device.");
 }

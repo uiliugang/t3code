@@ -1,4 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import type { ComponentProps } from "react";
 import { View } from "react-native";
@@ -36,33 +37,38 @@ export function statusSummary(
     readonly pr?: { readonly state?: string; readonly number?: number } | null;
     readonly sourceControlProvider?: { readonly kind: string } | null;
   } | null,
+  t: UiTranslator = (message, values) => translateUi("en", message, values),
 ): string {
   if (!gitStatus) {
-    return "Loading branch status\u2026";
+    return t("Loading branch status\u2026");
   }
 
   if (!gitStatus.isRepo) {
-    return "Not a git repository";
+    return t("Not a git repository");
   }
 
   const parts: string[] = [];
   if (gitStatus.hasWorkingTreeChanges) {
     const fileCount = gitStatus.workingTree?.files.length ?? 0;
-    parts.push(`${fileCount} file${fileCount === 1 ? "" : "s"} changed`);
+    parts.push(
+      t(fileCount === 1 ? "{count} file changed" : "{count} files changed", { count: fileCount }),
+    );
   } else {
-    parts.push("Clean");
+    parts.push(t("Working tree clean"));
   }
   if ((gitStatus.aheadCount ?? 0) > 0) {
-    parts.push(`${gitStatus.aheadCount} ahead`);
+    parts.push(t("{count} ahead", { count: gitStatus.aheadCount ?? 0 }));
   }
   if ((gitStatus.behindCount ?? 0) > 0) {
-    parts.push(`${gitStatus.behindCount} behind`);
+    parts.push(t("{count} behind", { count: gitStatus.behindCount ?? 0 }));
   }
   if (gitStatus.pr?.state === "open") {
     const { shortLabel } = sourceControlClients.get(
       gitStatus.sourceControlProvider?.kind,
     ).changeRequest;
-    parts.push(`${shortLabel} #${gitStatus.pr.number} open`);
+    parts.push(
+      t("{term} #{number} open", { term: shortLabel, number: String(gitStatus.pr.number) }),
+    );
   }
 
   return parts.join(" \u00b7 ");

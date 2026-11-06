@@ -114,12 +114,12 @@ export function EnvironmentRoutesSection({
   };
   const confirmRemove = (route: ConnectionRoute) =>
     Dialog.alert(
-      `Remove ${connectionRouteLabel(route)}?`,
+      t("Remove {route}?", { route: t(connectionRouteLabel(route)) }),
       connectionRouteAddress(route) ?? undefined,
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("Cancel"), style: "cancel" },
         {
-          text: "Remove",
+          text: t("Remove"),
           style: "destructive",
           onPress: () =>
             void removeRoute({ environmentId, routeId: connectionRouteId(route.target) }),
@@ -223,7 +223,7 @@ export function EnvironmentRoutesSection({
           />
         );
       })}
-      <SettingsActionRow icon="plus" label="Add route" onPress={onAddRoute} />
+      <SettingsActionRow icon="plus" label={t("Add route")} onPress={onAddRoute} />
     </SettingsSection>
   );
 }
@@ -243,8 +243,9 @@ function RouteRow(props: {
   readonly onStep: (direction: "up" | "down") => void;
   readonly onRemove: (() => void) | undefined;
 }) {
+  const t = useUiTranslation();
   const { route, lifted, offset } = props;
-  const label = connectionRouteLabel(route);
+  const label = t(connectionRouteLabel(route));
   const address = connectionRouteAddress(route);
   const style = useAnimatedStyle(() => ({
     transform: [
@@ -265,7 +266,7 @@ function RouteRow(props: {
       {props.editing && props.onRemove ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Remove ${label} route`}
+          accessibilityLabel={t("Remove {route} route", { route: label })}
           hitSlop={8}
           onPress={props.onRemove}
           className="active:opacity-70"
@@ -285,9 +286,9 @@ function RouteRow(props: {
         accessibilityLabel={[
           label,
           address,
-          isLearned(route) ? "Found automatically" : null,
-          props.inUse ? "In use" : null,
-          `Route ${props.position} of ${props.count}`,
+          isLearned(route) ? t("Found automatically") : null,
+          props.inUse ? t("In use") : null,
+          t("Route {position} of {count}", { position: props.position, count: props.count }),
         ]
           .filter((part) => part !== null)
           .join(", ")}
@@ -310,12 +311,12 @@ function RouteRow(props: {
               {label}
             </Text>
             {props.inUse ? (
-              <StatusPill {...connectionTone("connected")} label="In use" size="compact" />
+              <StatusPill {...connectionTone("connected")} label={t("In use")} size="compact" />
             ) : null}
           </View>
           {address !== null ? (
             <Text numberOfLines={1} className="text-sm text-foreground-muted">
-              {isLearned(route) ? `${address} · found automatically` : address}
+              {isLearned(route) ? `${address} · ${t("found automatically")}` : address}
             </Text>
           ) : null}
         </View>

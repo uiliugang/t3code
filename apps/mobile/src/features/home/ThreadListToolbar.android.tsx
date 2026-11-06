@@ -9,8 +9,10 @@ import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands
 import { WorkspaceBrandTitle } from "../workspace/WorkspaceBrandTitle";
 import { useWorkspaceConnectionState } from "../../state/workspace";
 import type { ThreadListToolbarProps } from "./ThreadListToolbar.types";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function ThreadListToolbar(props: ThreadListToolbarProps) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const workspace = useWorkspaceTabs();
   const isTabActive = workspace?.isTabActive;
@@ -58,15 +60,15 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
       title="T3 Code"
       titleContent={
         <WorkspaceBrandTitle
-          accessibilityLabel="T3 Code, Threads"
+          accessibilityLabel={t("T3 Code, Threads")}
           onOpenEnvironments={props.onOpenEnvironments}
         />
       }
       search={{
         value: props.searchQuery,
         onChangeText: onSearchQueryChange,
-        placeholder: "Search",
-        accessibilityLabel: "Search threads",
+        placeholder: t("Search"),
+        accessibilityLabel: t("Search threads"),
         active: searching,
         onOpen: openSearch,
         onClose: closeSearch,
@@ -75,7 +77,7 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
         connectionState.hasConnections
           ? [
               {
-                title: "Filter threads",
+                title: t("Filter threads"),
                 icon: props.filterCustomized
                   ? "line.3.horizontal.decrease.circle.fill"
                   : "line.3.horizontal.decrease.circle",
