@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 
+import { unquoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import {
   GitCommandError,
   VcsProcessExitError,
@@ -1052,7 +1053,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               const paths = skipped.map((entry) => entry.slice(entry.indexOf("\t") + 1));
               const stdin = paths.join("\0") + "\0";
               // check-rules echoes a subset of its input, so the input size bounds its output.
-              const rules = yield* execute({
+              const selected = yield* execute({
                 operation,
                 cwd: input.cwd,
                 args: [...indexConfig, "sparse-checkout", "check-rules", "-z"],
@@ -1060,8 +1061,54 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                 env: commitEnv,
                 maxOutputBytes: Buffer.byteLength(stdin),
                 outputMode: "error",
-              });
-              const selected = new Set(rules.stdout.split("\0"));
+              }).pipe(
+                Effect.map((rules) => new Set(rules.stdout.split("\0"))),
+                Effect.catch((error) =>
+                  Effect.gen(function* () {
+                    // Apple Git 2.39 lacks check-rules; cone membership follows directory ancestry.
+                    const cone = yield* execute({
+                      operation,
+                      cwd: input.cwd,
+                      args: ["config", "--bool", "core.sparseCheckoutCone"],
+                      allowNonZeroExit: true,
+                    });
+                    if (cone.stdout.trim() !== "true") return yield* error;
+                    const list = yield* execute({
+                      operation,
+                      cwd: input.cwd,
+                      args: ["-c", "core.quotePath=true", "sparse-checkout", "list"],
+                      maxOutputBytes: WORKSPACE_FILES_MAX_OUTPUT_BYTES,
+                      outputMode: "error",
+                    });
+                    const directories = new Set(
+                      list.stdout.split("\n").filter(Boolean).map(unquoteGitPatchPath),
+                    );
+                    const parents = new Set([""]);
+                    for (const directory of directories) {
+                      let parent = directory;
+                      while (parent.includes("/")) {
+                        parent = parent.slice(0, parent.lastIndexOf("/"));
+                        parents.add(parent);
+                      }
+                    }
+                    return new Set(
+                      paths.filter((file) => {
+                        let directory = file.includes("/")
+                          ? file.slice(0, file.lastIndexOf("/"))
+                          : "";
+                        if (parents.has(directory)) return true;
+                        while (directory) {
+                          if (directories.has(directory)) return true;
+                          directory = directory.includes("/")
+                            ? directory.slice(0, directory.lastIndexOf("/"))
+                            : "";
+                        }
+                        return directories.has("");
+                      }),
+                    );
+                  }),
+                ),
+              );
               skipped.forEach((entry, index) => {
                 if (selected.has(paths[index]!)) flagged.push(entry);
               });
