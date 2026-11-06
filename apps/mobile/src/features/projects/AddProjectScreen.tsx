@@ -921,7 +921,7 @@ export function AddProjectRepositoryScreen(props: {
   };
 
   return (
-    <AddProjectShell title={source === "url" ? "Git URL" : addProjectRemoteSourceLabel(source)}>
+    <AddProjectShell title={source === "url" ? "Git URL" : t(addProjectRemoteSourceLabel(source))}>
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>

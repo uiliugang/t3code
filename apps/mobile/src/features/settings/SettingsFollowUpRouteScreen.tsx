@@ -85,7 +85,7 @@ export function SettingsFollowUpRouteScreen() {
   );
 
   return Platform.OS === "android" ? (
-    <SettingsScreen title="Chat">{content}</SettingsScreen>
+    <SettingsScreen title={t("Chat")}>{content}</SettingsScreen>
   ) : (
     <View collapsable={false} className="flex-1 bg-sheet">
       {content}

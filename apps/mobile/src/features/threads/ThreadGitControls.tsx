@@ -373,7 +373,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
             description: model.quickActionHint ?? undefined,
             disabled: model.quickAction.disabled,
             icon: { name: model.quickActionIcon, type: "sfSymbol" },
-            label: model.quickAction.label,
+            label: t(model.quickAction.label),
             onPress: (): void => void model.runQuickAction(),
             type: "action",
           },
@@ -393,7 +393,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
                 {
                   description: "Bring this thread's latest turn into its source",
                   icon: { name: PullRequestGlyph.merged, type: "sfSymbol" as const },
-                  label: "Merge back to source",
+                  label: t("Merge back to source"),
                   onPress: props.onMergeBack,
                   type: "action" as const,
                 },
@@ -406,7 +406,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
                 : "Commit, files, branches",
             disabled: props.hasThread === false,
             icon: { name: "ellipsis", type: "sfSymbol" },
-            label: "More",
+            label: t("More"),
             onPress: model.openGitInspector,
             type: "action",
           },
@@ -516,7 +516,7 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
           separateBackground
         />
       ) : null}
-      {showActionControls ? createNativeHeaderMenu(threadGitMenuDefinition(props, model)) : null}
+      {showActionControls ? createNativeHeaderMenu(threadGitMenuDefinition(props, model, t)) : null}
     </Toolbar>
   );
 }
@@ -528,15 +528,17 @@ export function ThreadGitMenu(props: ThreadGitMenuProps) {
 
 /** Returns menu data because native toolbars serialize direct items rather than rendering component children. */
 export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMenu | null {
-  return threadGitMenuDefinition(props, useThreadGitControlModel(props));
+  const t = useUiTranslation();
+  return threadGitMenuDefinition(props, useThreadGitControlModel(props), t);
 }
 
 function threadGitMenuDefinition(
   props: ThreadGitMenuProps,
   model: ReturnType<typeof useThreadGitControlModel>,
+  t: ReturnType<typeof useUiTranslation>,
 ): AppBarMenu {
   return {
-    title: "Git controls",
+    title: t("Git controls"),
     icon: "point.topleft.down.curvedto.point.bottomright.up",
     separateBackground: false,
     items: [
@@ -550,7 +552,7 @@ function threadGitMenuDefinition(
       },
       {
         id: "git-quick-action",
-        title: model.quickAction.label,
+        title: t(model.quickAction.label),
         icon: model.quickActionIcon,
         disabled: model.quickAction.disabled,
         subtitle: model.quickActionHint ?? undefined,
@@ -560,7 +562,7 @@ function threadGitMenuDefinition(
       },
       {
         id: "git-review",
-        title: "Review changes",
+        title: t("Review changes"),
         icon: "text.bubble",
         disabled: !model.isRepo || props.hasThread === false,
         subtitle:
@@ -571,7 +573,7 @@ function threadGitMenuDefinition(
       },
       {
         id: "git-more",
-        title: "More",
+        title: t("More"),
         icon: "ellipsis",
         disabled: props.hasThread === false,
         subtitle:

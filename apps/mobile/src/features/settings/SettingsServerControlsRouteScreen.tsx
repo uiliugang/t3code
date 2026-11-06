@@ -344,7 +344,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title={PAGE_TITLES[props.page]} menus={[environmentMenu]}>
+      <SettingsScreen title={t(PAGE_TITLES[props.page])} menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}

@@ -61,19 +61,15 @@ function convertIcon(
   return icon;
 }
 
-function convertMenu(
-  menu: MenuInput,
-  id: string,
-  t: ReturnType<typeof useUiTranslation>,
-): StackHeaderMenuIOS {
+function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
   const children = menu.items.flatMap<StackHeaderMenuElementIOS>((item, index) => {
     if ("hidden" in item && item.hidden) return [];
     const childId = `${id}:${index}`;
     if (item.type === "submenu") {
       return [
         {
-          ...convertMenu({ items: item.items }, childId, t),
-          title: t(("label" in item ? item.label : item.title) ?? ""),
+          ...convertMenu({ items: item.items }, childId),
+          title: ("label" in item ? item.label : item.title) ?? "",
           displayInline:
             "inline" in item
               ? item.inline
@@ -88,7 +84,7 @@ function convertMenu(
         id: childId,
         type: "menuItem" as const,
         itemType: "action" as const,
-        title: t(("label" in item ? item.label : item.title) ?? ""),
+        title: ("label" in item ? item.label : item.title) ?? "",
         icon: convertIcon(item.icon),
         onPress: item.disabled ? undefined : item.onPress,
         keepsMenuPresented: item.keepsMenuPresented,
@@ -104,16 +100,12 @@ function convertMenu(
   return {
     id,
     type: "menu",
-    title: menu.title === undefined ? undefined : t(menu.title),
+    title: menu.title,
     children,
   };
 }
 
-function convertItems(
-  items: NativeStackHeaderItem[],
-  prefix: string,
-  t: ReturnType<typeof useUiTranslation>,
-): HeaderItem[] {
+function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderItem[] {
   return items.map((item, index): HeaderItem => {
     const id =
       item.type === "spacing" ? `${prefix}:${index}` : (item.identifier ?? `${prefix}:${index}`);
@@ -134,10 +126,10 @@ function convertItems(
           type: "item",
           id,
           identifier: item.identifier,
-          title: t(item.label || item.accessibilityLabel || "") || undefined,
+          title: item.label || item.accessibilityLabel || undefined,
           axisBehavior: item.axisBehavior,
           icon: convertIcon(item.icon),
-          menu: item.disabled ? undefined : convertMenu(item.menu, `${id}:menu`, t),
+          menu: item.disabled ? undefined : convertMenu(item.menu, `${id}:menu`),
           disabled: item.disabled,
           variant: item.variant,
           tintColor: item.tintColor,
@@ -148,7 +140,7 @@ function convertItems(
           type: "item",
           id,
           identifier: item.identifier,
-          title: t(item.label || item.accessibilityLabel || "") || undefined,
+          title: item.label || item.accessibilityLabel || undefined,
           axisBehavior: item.axisBehavior,
           icon: convertIcon(item.icon),
           onPress: item.disabled ? undefined : item.onPress,
@@ -179,14 +171,13 @@ export function V5StackHeader(props: {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const searchRef = useRef<SearchBarCommands>(null);
   const itemProps = { tintColor: options.headerTintColor, canGoBack: props.canGoBack };
-  const leading = convertItems(options.unstable_headerLeftItems?.(itemProps) ?? [], "leading", t);
+  const leading = convertItems(options.unstable_headerLeftItems?.(itemProps) ?? [], "leading");
   const trailing = convertItems(
     [
       ...(options.unstable_headerCenterItems?.() ?? []),
       ...(options.unstable_headerRightItems?.(itemProps) ?? []),
     ],
     "trailing",
-    t,
   );
   const toolbar = options.unstable_headerToolbarItems?.() ?? [];
   const mailSearch = toolbar.find(
@@ -199,7 +190,7 @@ export function V5StackHeader(props: {
     if (item.type === "mailSearchToolbar") return [];
     if (item.type === "searchBarPlacement")
       return [{ type: "item", id: `toolbar-search:${index}`, searchBarPlacement: true }];
-    return convertItems([item], `toolbar:${index}`, t);
+    return convertItems([item], `toolbar:${index}`);
   });
   if (mailSearch) {
     if (mailSearch.filterMenu)
@@ -210,7 +201,7 @@ export function V5StackHeader(props: {
           type: "sfSymbol",
           name: mailSearch.filterSystemImageName ?? "line.3.horizontal.decrease",
         },
-        menu: convertMenu(mailSearch.filterMenu, "filter-menu", t),
+        menu: convertMenu(mailSearch.filterMenu, "filter-menu"),
       });
     if (bottomSearch) {
       if (spacesSearch && bottom.length)
@@ -284,8 +275,7 @@ export function V5StackHeader(props: {
     leading.push({ type: "item", id: "custom-left", render: () => left });
   if (!options.unstable_headerRightItems && isValidElement(right))
     trailing.push({ type: "item", id: "custom-right", render: () => right });
-  const rawTitle = typeof options.headerTitle === "string" ? options.headerTitle : options.title;
-  const title = rawTitle === undefined ? undefined : t(rawTitle);
+  const title = typeof options.headerTitle === "string" ? options.headerTitle : options.title;
   const titleElement =
     typeof options.headerTitle === "function"
       ? options.headerTitle({ children: title ?? "", tintColor: options.headerTintColor })

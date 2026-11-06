@@ -32,10 +32,11 @@ import {
 } from "./settings-scoped-server";
 
 export function SettingsLabsRouteScreen() {
+  const t = useUiTranslation();
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title="Labs">
+    <SettingsScreen title={t("Labs")}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}

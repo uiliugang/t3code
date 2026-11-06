@@ -16,7 +16,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 function MissingTaskDraft() {
   const t = useUiTranslation();
   return (
-    <SettingsScreen title="Scheduled task">
+    <SettingsScreen title={t("Scheduled task")}>
       <Text className="p-5 text-base text-foreground-muted">
         {t("Open a scheduled task form first.")}
       </Text>

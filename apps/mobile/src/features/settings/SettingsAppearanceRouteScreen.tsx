@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AndroidNavigationAppearanceSection } from "./appearance/sections/AndroidNavigationAppearanceSection";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,10 +14,11 @@ import { ProjectPresentationSection } from "./appearance/sections/ProjectPresent
 import { BranchIssuesSection } from "./appearance/sections/BranchIssuesSection";
 
 export function SettingsAppearanceRouteScreen() {
+  const t = useUiTranslation();
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title="Appearance">
+    <SettingsScreen title={t("Appearance")}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}

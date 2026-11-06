@@ -84,7 +84,7 @@ export function SettingsClientStorageRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Client Storage" menus={[environmentMenu]}>
+      <SettingsScreen title={t("Client Storage")} menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           contentInset={{ bottom: Math.max(insets.bottom, 18) }}

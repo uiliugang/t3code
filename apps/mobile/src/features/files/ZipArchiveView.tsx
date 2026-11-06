@@ -635,7 +635,7 @@ type EntryContent =
   | { readonly status: "loading" }
   | { readonly status: "text"; readonly text: string; readonly truncated: boolean }
   | { readonly status: "file"; readonly uri: string }
-  | { readonly status: "failed"; readonly title: string; readonly message: string };
+  | { readonly status: "failed"; readonly message: string };
 
 function ZipEntryView(props: {
   readonly archiveName: string;
@@ -654,17 +654,7 @@ function ZipEntryView(props: {
   const kind = previewKind === "html" ? "text" : previewKind;
   const viewerKind = isText || kind === "audio" ? null : (nativeViewerKind(kind) ?? "document");
   const tooBig = entry.sizeBytes > ARCHIVE_ENTRY_MAX_BYTES;
-  const [content, setContent] = useState<EntryContent>(
-    tooBig
-      ? {
-          status: "failed",
-          title: t("Too big to preview"),
-          message: t("Previews stop at {value}. Save the file to open it in another app.", {
-            value: String(formatAttachmentSize(ARCHIVE_ENTRY_MAX_BYTES)),
-          }),
-        }
-      : { status: "loading" },
-  );
+  const [content, setContent] = useState<EntryContent>({ status: "loading" });
   const [rendered, setRendered] = useState(true);
   const [revision, setRevision] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(true);
@@ -699,7 +689,6 @@ function ZipEntryView(props: {
         if (!controller.signal.aborted)
           setContent({
             status: "failed",
-            title: t("Couldn't read this file"),
             message: errorMessage(cause, "Could not read this file."),
           });
       });
@@ -708,7 +697,7 @@ function ZipEntryView(props: {
       release?.();
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reread the entry.
-  }, [entry, isText, mimeType, tooBig, revision, t]);
+  }, [entry, isText, mimeType, tooBig, revision]);
 
   const run = (kind: "save" | "attach", task: (signal: AbortSignal) => Promise<unknown>) => {
     if (busy) return;
@@ -765,6 +754,16 @@ function ZipEntryView(props: {
   const folders = entry.path.split("/").slice(0, -1);
   const subtitle = `${[props.archiveName, ...folders].join(" / ")} · ${formatAttachmentSize(entry.sizeBytes)}`;
   const isAndroid = Platform.OS === "android";
+  const failure = tooBig
+    ? {
+        title: t("Too big to preview"),
+        message: t("Previews stop at {value}. Save the file to open it in another app.", {
+          value: String(formatAttachmentSize(ARCHIVE_ENTRY_MAX_BYTES)),
+        }),
+      }
+    : content.status === "failed"
+      ? { title: t("Couldn't read this file"), message: content.message }
+      : null;
   return (
     <View className="flex-1 bg-sheet">
       <NativeStackScreenOptions
@@ -831,12 +830,12 @@ function ZipEntryView(props: {
           </Toolbar.Menu>
         </Toolbar>
       )}
-      {content.status === "failed" ? (
+      {failure ? (
         <ScrollView contentContainerClassName="flex-grow items-center justify-center px-6">
           <EmptyState
             variant="plain"
-            title={content.title}
-            detail={content.message}
+            title={failure.title}
+            detail={failure.message}
             action={
               <Button
                 tone="primary"

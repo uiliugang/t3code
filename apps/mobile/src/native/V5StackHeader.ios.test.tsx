@@ -4,7 +4,10 @@ import { createRoot } from "react-dom/client";
 import type { StackHeaderConfigProps } from "react-native-screens";
 import { expect, it, vi } from "vite-plus/test";
 
-const bridge = vi.hoisted(() => ({ ios: undefined as StackHeaderConfigProps["ios"] }));
+const bridge = vi.hoisted(() => ({
+  ios: undefined as StackHeaderConfigProps["ios"],
+  title: undefined as StackHeaderConfigProps["title"],
+}));
 
 vi.mock("react-native", () => ({ StyleSheet: { flatten: (style: unknown) => style } }));
 vi.mock("react-native-keyboard-controller", () => ({
@@ -30,8 +33,9 @@ vi.mock("./native-layout-metrics", () => ({
 }));
 vi.mock("react-native-screens", () => ({
   Stack: {
-    HeaderConfig: ({ ios }: StackHeaderConfigProps) => {
+    HeaderConfig: ({ ios, title }: StackHeaderConfigProps) => {
       bridge.ios = ios;
+      bridge.title = title;
       return null;
     },
   },
@@ -49,12 +53,12 @@ it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
     try {
       for (const disabled of [true, false, undefined, true]) {
         const items: NativeStackHeaderItem[] = [
-          { type: "button", label: "Files", identifier: "open-files", disabled, onPress },
+          { type: "button", label: "文件", identifier: "open-files", disabled, onPress },
           {
             type: "menu",
-            label: "Terminal",
+            label: "终端",
             disabled,
-            menu: { items: [{ type: "action", label: "Open terminal", onPress }] },
+            menu: { items: [{ type: "action", label: "打开终端", onPress }] },
           },
         ];
         act(() =>
@@ -96,3 +100,53 @@ it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
     }
   },
 );
+
+it.each(["title", "headerTitle"] as const)("preserves user content in %s and menus", (titleKey) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  const onPress = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        <V5StackHeader
+          canGoBack={false}
+          options={{
+            [titleKey]: "Files",
+            unstable_headerRightItems: () => [
+              {
+                type: "menu",
+                label: "Terminal",
+                menu: {
+                  title: "Files",
+                  items: [
+                    {
+                      type: "submenu",
+                      label: "Files",
+                      items: [{ type: "action", label: "Open terminal", onPress }],
+                    },
+                  ],
+                },
+              },
+            ],
+          }}
+        />,
+      ),
+    );
+    expect(bridge.title).toBe("Files");
+    expect(bridge.ios?.trailingItems?.[0]).toMatchObject({
+      title: "Terminal",
+      menu: {
+        title: "Files",
+        children: [
+          {
+            title: "Files",
+            children: [expect.objectContaining({ title: "Open terminal", onPress })],
+          },
+        ],
+      },
+    });
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
