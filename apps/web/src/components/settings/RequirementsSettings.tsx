@@ -382,6 +382,7 @@ export function RequirementsSettings() {
   const projects = useProjects().filter(
     (project) =>
       !project.isScratch &&
+      project.title !== "No project" &&
       connectedEnvironments.some((entry) => entry.environmentId === project.environmentId) &&
       (scope.kind === "project" || scope.kind === "checkout"
         ? scope.members.some(
