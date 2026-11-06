@@ -60,7 +60,10 @@ export function RequirementsPage() {
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const projects = allProjects.filter(
-    (project) => project.environmentId === environmentId && !project.isScratch,
+    (project) =>
+      project.environmentId === environmentId &&
+      !project.isScratch &&
+      project.title !== "No project",
   );
   const settings = useAtomValue(
     environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noSettings,
