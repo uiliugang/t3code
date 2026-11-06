@@ -14,12 +14,26 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { IssueSelect } from "../requirements/IssueSelect";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer } from "./settingsLayout";
 
 type Project = ReturnType<typeof useProjects>[number];
 const projectKey = (project: Project) => `${project.environmentId}/${project.id}`;
+
+function SourceValue({ value }: { value: string | null | undefined }) {
+  return value ? (
+    <Tooltip>
+      <TooltipTrigger render={<span className="block min-w-0 truncate" tabIndex={0} />}>
+        {value}
+      </TooltipTrigger>
+      <TooltipPopup>{value}</TooltipPopup>
+    </Tooltip>
+  ) : (
+    <span className="text-muted-foreground">-</span>
+  );
+}
 
 function ProjectSourceRow({
   project,
@@ -53,55 +67,55 @@ function ProjectSourceRow({
   const mep = sources.filter((entry) => entry.provider === "meituan");
   const github = sources.find((entry) => entry.provider === "github");
   return (
-    <section className="space-y-2 border-t border-border py-4">
-      <div className="flex items-center justify-between gap-3">
-        <label className="flex min-w-0 items-center gap-2 text-sm font-medium">
-          <Checkbox
-            checked={checked}
-            disabled={disabled}
-            onCheckedChange={toggle}
-            aria-label={t("Select {project}", { project: project.title })}
-          />
-          <span className="truncate">{project.title}</span>
+    <tr className="border-b border-border text-sm">
+      <td className="py-4 pr-3 align-top">
+        <Checkbox
+          id={`issue-source-${projectKey(project)}`}
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={toggle}
+          aria-label={t("Select {project}", { project: project.title })}
+        />
+      </td>
+      <td className="py-4 pr-4 align-top">
+        <label
+          htmlFor={`issue-source-${projectKey(project)}`}
+          className="flex min-w-0 items-center gap-2 font-medium"
+        >
+          <SourceValue value={project.title} />
           <span className="shrink-0 text-xs text-muted-foreground">
             {t(saved.length ? "Manual override" : "Automatic")}
           </span>
         </label>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {environments.find((entry) => entry.environmentId === project.environmentId)?.label}
-        </span>
-      </div>
-      <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
-        {result?.repository ? (
-          <>
-            <dt className="text-muted-foreground">{t("Repository")}</dt>
-            <dd className="wrap-anywhere">{result.repository}</dd>
-          </>
+      </td>
+      <td className="py-4 pr-4 align-top">
+        <SourceValue value={result?.repository} />
+        {query.isPending && !result ? (
+          <p className="text-xs text-muted-foreground">{t("Loading...")}</p>
         ) : null}
-        {github ? (
-          <>
-            <dt className="text-muted-foreground">GitHub Issues</dt>
-            <dd className="wrap-anywhere">{github.scope}</dd>
-          </>
+        {query.error || result?.error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {t(query.error ?? result!.error!)}
+          </p>
         ) : null}
-        {mep.length ? (
-          <>
-            <dt className="text-muted-foreground">MEP</dt>
-            <dd className="wrap-anywhere">
-              {[...new Set(mep.map((entry) => entry.scope))].join(", ")}
-            </dd>
-          </>
-        ) : null}
-      </dl>
-      {query.isPending && !result ? (
-        <p className="text-xs text-muted-foreground">{t("Loading...")}</p>
-      ) : null}
-      {query.error || result?.error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {t(query.error ?? result!.error!)}
-        </p>
-      ) : null}
-    </section>
+      </td>
+      <td className="py-4 pr-4 align-top">
+        <div className="flex items-center gap-3 overflow-hidden">
+          {github ? <span className="shrink-0">GitHub Issues</span> : null}
+          {mep.length ? (
+            <SourceValue
+              value={`MEP ${[...new Set(mep.map((entry) => entry.scope))].join(", ")}`}
+            />
+          ) : null}
+          {!github && !mep.length ? <SourceValue value={undefined} /> : null}
+        </div>
+      </td>
+      <td className="py-4 text-right align-top text-xs text-muted-foreground">
+        <SourceValue
+          value={environments.find((entry) => entry.environmentId === project.environmentId)?.label}
+        />
+      </td>
+    </tr>
   );
 }
 
@@ -311,22 +325,50 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
           {message}
         </p>
       ) : null}
-      <div>
-        {projects.map((project) => (
-          <ProjectSourceRow
-            key={projectKey(project)}
-            project={project}
-            checked={selected.includes(projectKey(project))}
-            disabled={busy || !permissions.get(project.environmentId)}
-            toggle={() =>
-              setSelected(
-                selected.includes(projectKey(project))
-                  ? selected.filter((value) => value !== projectKey(project))
-                  : [...selected, projectKey(project)],
-              )
-            }
-          />
-        ))}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-160 table-fixed">
+          <colgroup>
+            <col className="w-7" />
+            <col className="w-[28%]" />
+            <col className="w-[30%]" />
+            <col />
+            <col className="w-20" />
+          </colgroup>
+          <thead className="border-b border-border text-left text-xs text-muted-foreground">
+            <tr>
+              <th aria-label={t("Select all results")} />
+              <th scope="col" className="pb-3 pr-4 font-normal">
+                {t("Project")} / {t("Automatic")}
+              </th>
+              <th scope="col" className="pb-3 pr-4 font-normal">
+                {t("Repository")}
+              </th>
+              <th scope="col" className="pb-3 pr-4 font-normal">
+                {t("Issue source")}
+              </th>
+              <th scope="col" className="pb-3 text-right font-normal">
+                {t("Environment")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map((project) => (
+              <ProjectSourceRow
+                key={projectKey(project)}
+                project={project}
+                checked={selected.includes(projectKey(project))}
+                disabled={busy || !permissions.get(project.environmentId)}
+                toggle={() =>
+                  setSelected(
+                    selected.includes(projectKey(project))
+                      ? selected.filter((value) => value !== projectKey(project))
+                      : [...selected, projectKey(project)],
+                  )
+                }
+              />
+            ))}
+          </tbody>
+        </table>
       </div>
       {!projects.length ? (
         <p className="text-sm text-muted-foreground">{t("No matching projects.")}</p>
