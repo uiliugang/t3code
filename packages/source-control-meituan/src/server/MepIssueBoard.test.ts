@@ -135,6 +135,9 @@ describe("MEP issue board", () => {
                   return Effect.succeed(
                     TestHost.processOutput(
                       JSON.stringify([
+                        ...(input.args.includes("full-page")
+                          ? Array.from({ length: 18 }, () => row)
+                          : []),
                         row,
                         {
                           ...row,
@@ -157,14 +160,30 @@ describe("MEP issue board", () => {
           page: 2,
         });
         expect(calls[0]).toContain("space-filter");
+        expect(calls[0]?.slice(calls[0].indexOf("--page"), calls[0].indexOf("--json"))).toEqual([
+          "--page",
+          "2",
+          "--page-size",
+          "20",
+        ]);
         expect(calls[0]).not.toContain("workitem-workbench");
         expect(calls[0]?.at(-1)).toContain('"valueList":["teammate"]');
         expect(result.issues.map((issue) => issue.stateCategory)).toEqual(["doing", "other"]);
+        expect(result.hasMore).toBe(false);
         yield* board.search({ cwd: "/repo", source, assignee: "all", query: "", page: 1 });
         expect(calls[1]).not.toContain("--cond");
         expect(
           yield* board.search({ cwd: "/repo", source, assignee: "unassigned", query: "", page: 1 }),
         ).toEqual({ issues: [], hasMore: false });
+        expect(
+          (yield* board.search({
+            cwd: "/repo",
+            source,
+            assignee: "all",
+            query: "full-page",
+            page: 1,
+          })).hasMore,
+        ).toBe(true);
       }),
   );
   it.effect(

@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./wechat": {
+      "types": "./src/wechat.ts",
+      "import": "./src/wechat.ts"
+    },
     "./claudeByok": {
       "types": "./src/claudeByok.ts",
       "import": "./src/claudeByok.ts"

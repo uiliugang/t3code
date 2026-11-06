@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { cn } from "~/lib/utils";
 import { formatThreadFindCount } from "./threadFind";
-import { THREAD_DETAILS_CARD_GAP } from "./threadDetailsCardLayout";
+import { THREAD_DETAILS_CARD_GAP, THREAD_DETAILS_CARD_WIDTH } from "./threadDetailsCardLayout";
 
 interface ThreadFindBarProps {
   readonly open: boolean;
@@ -62,7 +62,12 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   return (
     <div
       data-thread-find-bar
-      className="absolute top-3 right-3 z-40 w-[min(var(--thread-details-panel-width),calc(100%-1.5rem))] transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none"
+      className="absolute top-3 z-40 transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none"
+      style={{
+        right: THREAD_DETAILS_CARD_GAP,
+        width: THREAD_DETAILS_CARD_WIDTH,
+        maxWidth: `calc(100% - ${2 * THREAD_DETAILS_CARD_GAP}px)`,
+      }}
     >
       <InputGroup
         variant="popover"

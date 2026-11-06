@@ -1,3 +1,4 @@
+import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as PullRequestNotifications from "./communication/PullRequestNotificationService.ts";
 import * as DaxiangMessages from "./communication/DaxiangMessageService.ts";
@@ -1431,6 +1432,7 @@ export const layerWsRpc = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
+      const wechat = yield* WechatBridge.WechatBridge;
       const pullRequestNotifications =
         yield* PullRequestNotifications.PullRequestNotificationService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -2832,6 +2834,9 @@ export const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.reviewerCandidates(input)),
         [WS_METHODS.pullRequestsRequestReviewers]: (input) =>
           withPullRequestViewer(input, pullRequests.requestReviewers(input)),
+        [WS_METHODS.wechatSubscribe]: () => wechat.subscribe,
+        [WS_METHODS.wechatMutate]: (input) => wechat.mutate(input),
+        [WS_METHODS.wechatSend]: (input) => wechat.send(input.text),
         [WS_METHODS.pullRequestsSendReviewLink]: (input) =>
           pullRequestNotifications.sendReviewLink(input),
         [WS_METHODS.pullRequestsLabelCandidates]: (input) =>
