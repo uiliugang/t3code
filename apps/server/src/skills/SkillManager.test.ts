@@ -578,18 +578,41 @@ describe("SkillManager", () => {
       expect((yield* manager.snapshot).lastFailureReason).toBe("candidate-changed");
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("local change");
       yield* fs.writeFileString(`${target}/review/script.sh`, "first");
+      const duplicate = `${target}/../duplicate`;
+      yield* fs.makeDirectory(duplicate);
+      yield* fs.copy(`${target}/review`, `${duplicate}/review-skill`);
+      yield* manager.mutate({
+        type: "target.save",
+        target: { id: "duplicate", label: "Duplicate", directory: duplicate },
+      });
+      yield* manager.drain;
+      yield* fs.writeFileString(`${duplicate}/review-skill/script.sh`, "different");
       yield* manager.mutate({
         type: "adopt",
         path: `${target}/review`,
         digest: preview.digest,
         mode: "takeover",
-        targetIds: ["fixture", "alias"],
+        targetIds: ["fixture", "duplicate"],
+      });
+      yield* manager.drain;
+      expect((yield* manager.snapshot).lastFailureReason).toBe("conflict");
+      expect(yield* fs.readFileString(`${duplicate}/review-skill/script.sh`)).toBe("different");
+      yield* fs.writeFileString(`${duplicate}/review-skill/script.sh`, "first");
+      yield* manager.mutate({
+        type: "adopt",
+        path: `${target}/review`,
+        digest: preview.digest,
+        mode: "takeover",
+        targetIds: ["fixture", "alias", "duplicate"],
       });
       yield* manager.drain;
       const adopted = (yield* manager.snapshot).skills[0]!;
       expect((yield* manager.snapshot).skills).toHaveLength(1);
       expect(adopted.id).toBe(copied.id);
-      expect(adopted.bindings).toHaveLength(1);
+      expect(adopted.bindings).toHaveLength(2);
+      expect(yield* fs.readLink(`${duplicate}/review-skill`)).toBe(
+        yield* fs.readLink(`${target}/review`),
+      );
       expect((yield* manager.snapshot).discovered).toHaveLength(0);
       expect(adopted.policy).toBe("automatic");
       expect((yield* manager.snapshot).jobs?.at(-1)).toMatchObject({
@@ -600,7 +623,7 @@ describe("SkillManager", () => {
       expect(adopted.sourceId).toBe("meituan");
       expect(adopted.locator).toBe("review-package");
       expect(adopted.snapshotOnly).toBe(false);
-      expect(adopted.backups).toHaveLength(1);
+      expect(adopted.backups).toHaveLength(2);
       yield* manager.mutate({
         type: "configure",
         id: adopted.id,
@@ -616,6 +639,8 @@ describe("SkillManager", () => {
       expect((yield* manager.snapshot).skills).toHaveLength(0);
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
       expect((yield* fs.stat(`${target}/review`)).type).toBe("Directory");
+      expect((yield* fs.stat(`${duplicate}/review-skill`)).type).toBe("Directory");
+      expect(yield* fs.readFileString(`${duplicate}/review-skill/script.sh`)).toBe("first");
       yield* fs.remove(`${target}/review`, { recursive: true });
       yield* install;
       const installed = (yield* manager.snapshot).skills[0]!;
