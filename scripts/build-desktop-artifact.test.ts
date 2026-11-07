@@ -71,6 +71,7 @@ import {
   releasePackageFiles,
 } from "./update-release-package-versions.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 const encodeModuleUrl = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
@@ -567,6 +568,51 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         ),
       ),
     ),
+  );
+
+  it.effect("keeps the fork Linux release's update feed pointed at its own repository", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workflow = yield* Schema.decodeEffect(
+        fromYaml(
+          Schema.Struct({
+            jobs: Schema.Struct({
+              linux: Schema.Struct({
+                env: Schema.Record(Schema.String, Schema.String),
+              }),
+            }),
+          }),
+        ),
+      )(
+        yield* fs.readFileString(
+          NodePath.join(import.meta.dirname, "../.github/workflows/fork-release.yml"),
+        ),
+      );
+      const config = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "0.0.4",
+        false,
+        false,
+        undefined,
+        undefined,
+      ).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                ...workflow.jobs.linux.env,
+                GITHUB_REPOSITORY: "uiliugang/t3code",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "uiliugang/t3code",
+              },
+            }),
+          ),
+        ),
+      );
+      assert.deepStrictEqual(config.publish, [
+        { provider: "github", owner: "uiliugang", repo: "t3code", releaseType: "release" },
+      ]);
+    }),
   );
 
   // pnpm writes "set this to true or false" placeholders into allowBuilds when a

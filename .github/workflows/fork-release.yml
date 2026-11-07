@@ -97,10 +97,26 @@ jobs:
           executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
           node scripts/smoke-desktop-app.ts --executable "$app/Contents/MacOS/$executable" \
             --artifacts-dir "$RUNNER_TEMP/desktop-launch-check"
+      - name: Build macOS CLI runtime
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+          node apps/server/scripts/cli.ts build-exe --verbose
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64"
+          cp native/resource-monitor/target/release/t3-resource-monitor \
+            "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64/"
+          node scripts/build-cli-archive.ts --platform mac --arch arm64 \
+            --version "$RELEASE_VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
+            --output-dir release
+          node scripts/smoke-cli-archive.ts --archive "release/t3-$RELEASE_VERSION-darwin-arm64.tar.gz" --expect-version "$RELEASE_VERSION"
       - uses: actions/upload-artifact@v7
         with:
           name: fork-macos-arm64
-          path: release/*.dmg
+          path: |
+            release/*.dmg
+            release/t3-*.tar.gz
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: failure()
@@ -204,7 +220,6 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
-      T3CODE_DESKTOP_DISABLE_UPDATE_FEED: "true"
       T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
       T3CODE_TELEMETRY_CHANNEL: dev
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -249,6 +264,7 @@ jobs:
           name: fork-linux-${{ matrix.arch }}
           path: |
             release/*.AppImage
+            release/latest-linux*.yml
             release/t3-*.tar.gz
           if-no-files-found: error
 
@@ -274,9 +290,12 @@ jobs:
           test "$(find . -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.apk' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 2
+          test -f latest-linux.yml
+          test -f latest-linux-arm64.yml
+          test -f "t3-${RELEASE_TAG#v}-darwin-arm64.tar.gz"
           test -f "t3-${RELEASE_TAG#v}-linux-x64.tar.gz"
           test -f "t3-${RELEASE_TAG#v}-linux-arm64.tar.gz"
-          sha256sum *.dmg *.apk *.AppImage t3-*.tar.gz > SHA256SUMS
-          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage t3-*.tar.gz SHA256SUMS --verify-tag \
+          sha256sum *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz > SHA256SUMS
+          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz SHA256SUMS --verify-tag \
             --title "T3 Code $RELEASE_TAG (fork)" \
-            --notes 'Apple Silicon macOS DMG, Linux x64/arm64 AppImages and SSH runtimes, and standalone Android APK. The macOS app is ad hoc signed and not notarized; Gatekeeper may require explicit approval. Automatic desktop updates and upstream Android OTA updates are disabled.'
+            --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Upstream Android OTA updates are disabled.'

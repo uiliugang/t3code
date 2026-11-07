@@ -76,6 +76,18 @@ it.layer(ScriptTestLayer)("update-release-package-versions", (it) => {
         Array.from(versions.entries()),
         releasePackageFiles.map((relativePath) => [relativePath, "1.2.3"]),
       );
+      const serverManifest = `${baseDir}/apps/server/package.json`;
+      assert.equal(
+        (yield* decodePackageJson(yield* fs.readFileString(serverManifest)))
+          .providerCompatibilityVersion,
+        "0.0.1",
+      );
+      yield* updateReleasePackageVersions("1.2.4", { rootDir: baseDir });
+      assert.equal(
+        (yield* decodePackageJson(yield* fs.readFileString(serverManifest)))
+          .providerCompatibilityVersion,
+        "0.0.1",
+      );
     }),
   );
 

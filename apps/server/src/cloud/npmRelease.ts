@@ -3,7 +3,11 @@ import {
   ServerNpmReleaseInput,
   type ServerNpmRelease,
 } from "@t3tools/contracts";
-import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
+import {
+  cliReleaseIndexPageUrl,
+  newestCliReleaseVersion,
+  npmReleaseDatabaseMigration,
+} from "@t3tools/shared/cliRelease";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -13,7 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { FetchHttpClient, HttpClient } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 
 import * as ProcessRunner from "../processRunner.ts";
 
@@ -27,6 +31,17 @@ const decodeError = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ error: Schema.Struct({ code: Schema.String }) })),
 );
 const decodeInput = Schema.decodeUnknownEffect(ServerNpmReleaseInput);
+const decodeReleases = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Array(
+      Schema.Struct({
+        tag_name: Schema.String,
+        draft: Schema.optionalKey(Schema.Boolean),
+        prerelease: Schema.optionalKey(Schema.Boolean),
+      }),
+    ),
+  ),
+);
 
 export class NpmRelease extends Context.Service<
   NpmRelease,
@@ -58,6 +73,33 @@ function toRelease(spec: string, json: string) {
 export const make = Effect.fn("NpmRelease.make")(function* () {
   const runner = yield* ProcessRunner.ProcessRunner;
   const http = yield* HttpClient.HttpClient;
+  const githubCache = yield* Cache.make({
+    capacity: 32,
+    timeToLive: Duration.minutes(1),
+    lookup: Effect.fn("NpmRelease.lookupGitHub")(function* (spec: string) {
+      for (let page = 1; page <= 10; page++) {
+        const releases = yield* http.get(cliReleaseIndexPageUrl(page)).pipe(
+          Effect.flatMap(HttpClientResponse.filterStatusOk),
+          Effect.flatMap((response) => response.text),
+          Effect.flatMap(decodeReleases),
+          Effect.timeout(Duration.seconds(15)),
+          Effect.mapError(
+            () =>
+              new ServerNpmReleaseError({ reason: "Could not read this fork's GitHub releases." }),
+          ),
+        );
+        const version =
+          spec === "latest" || spec === "nightly"
+            ? newestCliReleaseVersion(releases, spec === "latest" ? "stable" : "nightly")
+            : releases
+                .find((release) => !release.draft && release.tag_name === `v${spec}`)
+                ?.tag_name.slice(1);
+        if (version !== undefined) return { version };
+        if (releases.length === 0) break;
+      }
+      return null;
+    }),
+  });
   const lookupPublic = Effect.fn("NpmRelease.lookupPublic")(function* (spec: string) {
     const unreachable = new ServerNpmReleaseError({
       reason: "npm is not installed and the public npm registry could not be reached.",
@@ -117,11 +159,12 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
   });
   return NpmRelease.of({
     get: Effect.fn("NpmRelease.get")(function* (input) {
-      const { spec } = yield* decodeInput(input).pipe(
+      const { spec, source } = yield* decodeInput(input).pipe(
         Effect.mapError(
           () => new ServerNpmReleaseError({ reason: "Invalid release version or track." }),
         ),
       );
+      if (source === "github") return yield* Cache.get(githubCache, spec);
       return yield* Cache.get(cache, spec);
     }),
   });

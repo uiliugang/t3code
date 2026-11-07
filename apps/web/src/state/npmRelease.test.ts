@@ -8,9 +8,10 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { vi } from "vite-plus/test";
 
-import { npmReleaseAtom, npmReleaseFailureMessage } from "./npmRelease";
+import { githubReleaseAtom, npmReleaseFailureMessage } from "./npmRelease";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { serverEnvironment } from "./server";
+import { refreshGitHubRelease } from "./npmRelease";
 
 vi.mock("./server", () => ({
   serverEnvironment: { npmRelease: vi.fn(), configValueAtom: vi.fn() },
@@ -36,7 +37,8 @@ const configFor = (environmentId: EnvironmentId | null, supported = true) =>
       serverVersion: version,
       capabilities: {
         repositoryIdentity: true,
-        ...(supported ? { npmReleaseLookup: true } : {}),
+        npmReleaseLookup: true,
+        ...(supported ? { githubReleaseLookup: true } : {}),
       },
     },
     auth: {
@@ -78,7 +80,7 @@ it.effect(
         ),
       );
       const registry = AtomRegistry.make();
-      const release = npmReleaseAtom("nightly");
+      const release = githubReleaseAtom("nightly");
       NodeAssert.ok(
         Atom.isWritable<EnvironmentId | null, EnvironmentId | null>(primaryEnvironmentIdAtom),
         "Expected the mocked primary environment atom to be writable.",
@@ -116,14 +118,41 @@ it.effect("resolves track metadata through a supporting server when there is no 
     );
     query.mockReturnValue(Atom.make(AsyncResult.success({ version })));
     const registry = AtomRegistry.make();
-    const release = npmReleaseAtom("nightly");
+    const release = githubReleaseAtom("nightly");
     const unmount = registry.mount(release);
     try {
       expect(yield* AtomRegistry.getResult(registry, release, { suspendOnWaiting: true })).toEqual({
         version,
         databaseMigration: undefined,
       });
-      expect(query).toHaveBeenCalledWith({ environmentId: second, input: { spec: "nightly" } });
+      expect(query).toHaveBeenCalledWith({
+        environmentId: second,
+        input: { spec: "nightly", source: "github" },
+      });
+    } finally {
+      unmount();
+      registry.dispose();
+    }
+  }),
+);
+
+it.effect("a manual check refetches the underlying cached release query", () =>
+  Effect.gen(function* () {
+    const query = setup();
+    let requests = 0;
+    const underlying = Atom.make(Effect.sync(() => ({ version: `0.0.${++requests}` })));
+    query.mockReturnValue(underlying);
+    const registry = AtomRegistry.make();
+    const release = githubReleaseAtom("latest");
+    const unmount = registry.mount(release);
+    try {
+      expect(
+        (yield* AtomRegistry.getResult(registry, release, { suspendOnWaiting: true }))?.version,
+      ).toBe("0.0.1");
+      refreshGitHubRelease(registry, "latest");
+      expect(
+        (yield* AtomRegistry.getResult(registry, release, { suspendOnWaiting: true }))?.version,
+      ).toBe("0.0.2");
     } finally {
       unmount();
       registry.dispose();
@@ -143,12 +172,12 @@ it.effect("does not call an unsupported RPC or fetch public npm for an older pri
       "Expected the mocked primary environment atom to be writable.",
     );
     registry.set(primaryEnvironmentIdAtom, first);
-    const release = npmReleaseAtom("latest");
+    const release = githubReleaseAtom("latest");
     const unmount = registry.mount(release);
     try {
       const error = yield* AtomRegistry.getResult(registry, release).pipe(Effect.flip);
       expect(npmReleaseFailureMessage(Cause.fail(error))).toContain(
-        "Update it before switching tracks",
+        "Update it before checking releases",
       );
       expect(query).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();

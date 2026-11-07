@@ -17,17 +17,23 @@ download its Actions artifacts. Push a plain `vX.Y.Z` tag to publish one GitHub 
 after all builds pass. The manual Actions entry becomes available once the workflow is
 merged into the default branch; packaging changes in same-repository PRs also build
 automatically. Tags with prerelease suffixes are rejected. The workflow builds
-an Apple Silicon arm64 DMG, Linux x64/arm64 AppImages and self-contained SSH runtime
+an Apple Silicon arm64 DMG, Linux x64/arm64 AppImages and self-contained CLI runtime
 archives, and a standalone, signed universal Android APK, with `SHA256SUMS` covering
-every asset. This fork's clients download SSH runtimes from `uiliugang/t3code`,
+every asset. CLI archives cover macOS arm64 and Linux x64/arm64. This fork's clients,
+CLI installers, and npm launcher download runtimes from `uiliugang/t3code`,
 independently of desktop update settings. Use a tagged release for SSH connections:
 manual branch builds have temporary versions with no matching published runtime.
 Android uses `com.uiliugang.t3code` and epoch minutes as its versionCode;
 allow at least a minute between builds intended to upgrade each other.
 
 The macOS app is ad hoc signed without Apple notarization, so Gatekeeper can require
-approval in System Settings. It has no automatic update feed. Android disables the
-upstream Expo OTA feed and bundles its JavaScript; it needs no Metro server, Expo account,
+approval in System Settings. It has no automatic update feed: Settings → About →
+Check for Updates reads this fork's GitHub Releases and offers its installer. Linux
+AppImages update in the app using the `latest-linux*.yml` files published beside them. Existing builds
+with updates disabled need one manual install of a release containing this change.
+Release stamping preserves the source version for provider compatibility checks;
+the fork's independent version numbers must not select upstream protocol policies.
+Android disables the upstream Expo OTA feed and bundles its JavaScript; it needs no Metro server, Expo account,
 or Google Play credentials. Connect directly to your T3 server; these builds do not
 provision a private T3 Connect relay or configure fork-specific cloud authentication.
 

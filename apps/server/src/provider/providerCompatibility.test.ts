@@ -24,6 +24,15 @@ import {
 } from "./providerCompatibility.ts";
 import { resolveAntigravityReleaseAsset } from "./antigravityRelease.ts";
 import bundledManifest from "./model-manifest.json" with { type: "json" };
+import { vi } from "vite-plus/test";
+
+vi.mock(import("../../package.json"), async (original) => ({
+  default: {
+    ...(await original()).default,
+    version: "0.0.3",
+    providerCompatibilityVersion: "0.1.7",
+  },
+}));
 
 const decodeCompatibilityPolicies = Schema.decodeUnknownSync(
   Schema.Array(ProviderCompatibilityPolicy),
@@ -57,6 +66,24 @@ const provider: ServerProvider = {
 };
 
 describe("provider compatibility", () => {
+  it("uses the source protocol version when a fork has its own release numbering", () => {
+    assert.equal(
+      resolveProviderCompatibility(
+        ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+        driver,
+        "0.166.0",
+      )?.status,
+      "supported",
+    );
+    assert.equal(
+      resolveProviderCompatibility(
+        ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+        driver,
+        "0.128.0",
+      )?.status,
+      "broken",
+    );
+  });
   it("keeps releases before V2 on the OpenCode 1 policy they shipped with", () => {
     // Older builds fetch main's manifest; their V1 orchestrator cannot drive OpenCode 2.
     const opencode = ProviderDriverKind.make("opencode");

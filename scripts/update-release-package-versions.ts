@@ -97,7 +97,16 @@ export const updateReleasePackageVersions = Effect.fn("updateReleasePackageVersi
       continue;
     }
 
-    const packageJsonString = yield* encodePackageJson({ ...packageJson, version }).pipe(
+    const packageJsonString = yield* encodePackageJson({
+      ...packageJson,
+      version,
+      ...(relativePath === "apps/server/package.json"
+        ? {
+            providerCompatibilityVersion:
+              packageJson.providerCompatibilityVersion ?? packageJson.version,
+          }
+        : {}),
+    }).pipe(
       Effect.mapError(
         (cause) =>
           new ReleasePackageManifestError({

@@ -1,8 +1,10 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useAtomValue } from "@effect/atom-react";
 import { AuthProvidersManageScope, ProviderDriverKind } from "@t3tools/contracts";
 import { readPreparedConnection, useEnvironmentScope } from "../../state/session";
 import {
   isAtomCommandInterrupted,
+  settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
@@ -16,6 +18,7 @@ import type {
 import { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
 import { providerAuthReturnUrl } from "@t3tools/shared/providerAuthReturnUrl";
 import { isLoopbackHost } from "@t3tools/shared/preview";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import {
   Children,
@@ -1074,9 +1077,55 @@ export function CodexManagedRuntimeFields({
       input: { instanceId },
     }),
   );
+  const canUpdate = useAtomValue(
+    serverEnvironment.startProviderInstall.permissionAtom(environmentId),
+  );
+  const startInstall = useAtomCommand(serverEnvironment.startProviderInstall);
+  const [updating, setUpdating] = useState(false);
+  const dispatching = useRef(false);
+  const update = async () => {
+    if (dispatching.current) return;
+    dispatching.current = true;
+    setUpdating(true);
+    await settlePromise(() => startInstall({ environmentId, input: { instanceId } }));
+    dispatching.current = false;
+    setUpdating(false);
+  };
   const executablePath = installation.data?.executablePath ?? "";
+  const installActive = ["downloading", "extracting", "verifying"].includes(
+    installation.data?.phase ?? "",
+  );
+  const updateAvailable =
+    installation.data?.installedVersion != null &&
+    installation.data.version != null &&
+    compareSemverVersions(installation.data.installedVersion, installation.data.version) < 0;
   return (
     <>
+      {installation.data?.source === "managed" ? (
+        <SettingsRow
+          title={t("Codex runtime")}
+          description={
+            installation.data.message ??
+            t("Updates managed Codex to the version supported by this T3 Code build.")
+          }
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canUpdate || updating || installActive || !updateAvailable}
+              onClick={() => void update()}
+            >
+              {t(
+                updating || installActive
+                  ? "Updating…"
+                  : updateAvailable
+                    ? "Update Codex"
+                    : "Up to date",
+              )}
+            </Button>
+          }
+        />
+      ) : null}
       <SettingsRow
         title={t("Binary path")}
         description={t("Selected by T3 Code.")}

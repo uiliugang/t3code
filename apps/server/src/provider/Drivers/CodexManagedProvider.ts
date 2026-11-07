@@ -239,6 +239,11 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
     Effect.forkScoped,
   );
+  yield* runtime.installation.changes.pipe(
+    Stream.filter((state) => state.phase === "succeeded"),
+    Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
+    Effect.forkScoped,
+  );
   const resolveRuntime = runtime.auth.controller.withAccess!(runtime.resolve);
   // Launch settings bind the refresh command to the signed-in profile. The registry
   // already wraps openSession in withAccess, so resolve without re-entering it.

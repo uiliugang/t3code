@@ -43,6 +43,8 @@ describe("cliRelease", () => {
       { tag_name: "v1.2.4-preview.20260912.9", draft: true },
       { tag_name: "v1.2.4-preview.20260912.8" },
       { tag_name: "v1.2.4-nightly.20260912.7" },
+      { tag_name: "v1.2.5", prerelease: true },
+      { tag_name: "v1.2.4-pr.fork.12" },
       { tag_name: "desktop-preview" },
       { tag_name: "v1.2.3" },
       { tag_name: "v1.2.3-nightly.20260911.2" },

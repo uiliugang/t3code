@@ -8,6 +8,10 @@ Connect during onboarding or in **Settings → Providers**. For a remote machine
 select that environment first. T3 Code handles Codex installation; sign in on
 OpenAI and allow sharing of your ChatGPT plan.
 
+For a runtime managed by T3 Code, **Settings → Providers → Codex runtime → Update Codex**
+installs the version supported by your T3 Code release. Update T3 Code first when a newer
+managed runtime is needed. A Codex bundled with ChatGPT is updated through ChatGPT.
+
 Manage shared usage and credits in ChatGPT through **Manage usage** in T3 Code.
 If a request uses a feature that ChatGPT sharing does not support, use another
 provider for that request.

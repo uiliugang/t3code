@@ -887,6 +887,7 @@ export class ServerProviderUpdateError extends Schema.TaggedError<ServerProvider
 }
 
 export const ServerNpmReleaseInput = Schema.Struct({
+  source: Schema.optionalKey(Schema.Literal("github")),
   spec: Schema.String.check(
     Schema.isMaxLength(64),
     Schema.isPattern(/^(?:latest|nightly|\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/),
