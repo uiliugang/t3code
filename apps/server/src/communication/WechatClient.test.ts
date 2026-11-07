@@ -89,23 +89,44 @@ describe("WechatClient", () => {
         );
       }),
   );
-  it.effect("does not retry HTTP send failures or mistake them for a successful delivery", () => {
+  it.effect.each([
+    {
+      name: "message ID without return codes",
+      status: 200,
+      payload: { message_id: "123" },
+      reason: null,
+    },
+    { name: "omitted default return codes", status: 200, payload: {}, reason: null },
+    { name: "explicit success", status: 200, payload: { ret: 0 }, reason: null },
+    { name: "errcode success", status: 200, payload: { errcode: 0 }, reason: null },
+    { name: "malformed ret", status: 200, payload: { ret: "-1" }, reason: "protocol" },
+    { name: "malformed errcode", status: 200, payload: { errcode: "-14" }, reason: "protocol" },
+    { name: "ret failure", status: 200, payload: { ret: -1, errcode: 0 }, reason: "protocol" },
+    { name: "errcode failure", status: 200, payload: { ret: 0, errcode: -1 }, reason: "protocol" },
+    {
+      name: "expired credentials",
+      status: 200,
+      payload: { ret: 0, errcode: -14 },
+      reason: "credentials",
+    },
+    { name: "HTTP failure", status: 503, payload: {}, reason: "network" },
+  ])("handles $name when sending without retrying", ({ status, payload, reason }) => {
     let attempts = 0;
     const http = HttpClient.make((request) =>
       Effect.sync(() => {
         attempts++;
-        return HttpClientResponse.fromWeb(request, new Response("unavailable", { status: 503 }));
+        return HttpClientResponse.fromWeb(request, Response.json(payload, { status }));
       }),
     );
     return Effect.gen(function* () {
       const client = yield* WechatClient.WechatClient;
-      const error = yield* client
+      const result = yield* client
         .send(
           { baseUrl: "https://ilinkai.weixin.qq.com", token: "secret" },
           { userId: "user", clientId: "stable", text: "result" },
         )
-        .pipe(Effect.flip);
-      assert.equal(error.reason, "network");
+        .pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error.reason }));
+      assert.equal(result, reason);
       assert.equal(attempts, 1);
     }).pipe(
       Effect.provide(WechatClient.layer.pipe(Layer.provide(NodeCrypto.layer))),

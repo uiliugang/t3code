@@ -123,8 +123,8 @@ const make = Effect.gen(function* () {
     if (payload.ret === -14 || payload.errcode === -14)
       return yield* new WechatError({ reason: "credentials" });
     if (
-      (typeof payload.ret === "number" && payload.ret !== 0) ||
-      (typeof payload.errcode === "number" && payload.errcode !== 0)
+      (payload.ret !== undefined && payload.ret !== 0) ||
+      (payload.errcode !== undefined && payload.errcode !== 0)
     )
       return yield* new WechatError({ reason: "protocol" });
     return payload;
@@ -169,7 +169,7 @@ const make = Effect.gen(function* () {
       };
     }),
     send: Effect.fn("WechatClient.send")(function* (account, input) {
-      const result = yield* request(
+      yield* request(
         account.baseUrl,
         "/sendmessage",
         {
@@ -188,8 +188,6 @@ const make = Effect.gen(function* () {
         },
         account.token,
       );
-      if (result.ret !== 0 && result.errcode !== 0)
-        return yield* new WechatError({ reason: "network" });
     }),
   });
 });
