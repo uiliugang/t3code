@@ -1,4 +1,5 @@
 # T3 Code 增强版
+
 [![Fork macOS and Android release](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml/badge.svg)](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml)
 
 基于 [pingdotgg/t3code](https://github.com/pingdotgg/t3code) 的个人增强分支，面向中文使用、多仓库协同开发和美团内部研发流程。在上游 Web、Electron 桌面端和 React Native 移动端架构之上，扩展需求管理、代码平台集成、Skills 管理和模型配置。
@@ -45,6 +46,19 @@
 - 本分支构建关闭桌面自动更新和上游 Android OTA 更新，请从本仓库获取后续版本。
 
 上游的 `npx t3@latest`、官网安装脚本、应用商店和包管理器安装入口分发的是上游版本，不保证包含这里列出的增强。
+
+#### macOS 提示无法验证应用
+
+没有 Apple 开发者账号时，本分支无法通过 Developer ID 签名和 Apple 公证消除首次打开的拦截。确认安装包来自可信来源后，将应用拖入「应用程序」文件夹，尝试打开一次，再前往「系统设置 → 隐私与安全性」选择「仍要打开」，按提示确认。
+
+也可以在终端中移除该应用的下载隔离标记，然后重新打开：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/T3 Code (Beta).app"
+open "/Applications/T3 Code (Beta).app"
+```
+
+如果应用安装在其他位置，请将两处路径替换为实际路径。此操作只移除指定应用的隔离标记，不代表应用通过了 Apple 验证，也不会关闭系统的 Gatekeeper。重新下载或更新后可能需要再次处理。
 
 ### 从源码运行本分支
 
