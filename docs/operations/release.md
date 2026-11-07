@@ -28,8 +28,12 @@ allow at least a minute between builds intended to upgrade each other.
 The macOS app is ad hoc signed without Apple notarization, so Gatekeeper can require
 approval in System Settings. It has no automatic update feed. Android disables the
 upstream Expo OTA feed and bundles its JavaScript; it needs no Metro server, Expo account,
-or Google Play credentials. Connect directly to your T3 server; these builds do not
-provision a private T3 Connect relay or configure fork-specific cloud authentication.
+or Google Play credentials. Each build copies the public T3 Connect configuration from
+`.env.example` to `.env` before building, so desktop clients, SSH runtimes, and Android
+share the production relay and Clerk application. The `.env` file stays untracked.
+These builds do not provision a private relay or configure fork-specific cloud
+authentication. Android native sign-in with the fork's package name also needs its
+callback allowed in that Clerk application; see [T3 Connect setup](./connect-setup.md#android-native-sign-in-redirects).
 
 Beta is the product label, not a release channel or version suffix. Release channels
 remain stable and nightly. To ship 0.1.0 Beta, use `channel=stable` and

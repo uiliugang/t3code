@@ -10,6 +10,7 @@ on:
     paths:
       - .github/workflows/fork-release.yml
       - .github/scripts/android-release.init.gradle
+      - .env.example
       - apps/mobile/app.config.ts
       - scripts/build-desktop-artifact.ts
 
@@ -78,6 +79,8 @@ jobs:
           git fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
+      - name: Configure public T3 Connect
+        run: cp .env.example .env
       - uses: ./.github/actions/setup-ci-deps
         with:
           install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
@@ -147,6 +150,8 @@ jobs:
           git fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
+      - name: Configure public T3 Connect
+        run: cp .env.example .env
       - uses: ./.github/actions/setup-ci-deps
         with:
           install-args: --filter=@t3tools/mobile...
@@ -220,6 +225,8 @@ jobs:
           git fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
+      - name: Configure public T3 Connect
+        run: cp .env.example .env
       - uses: ./.github/actions/setup-ci-deps
         with:
           install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
