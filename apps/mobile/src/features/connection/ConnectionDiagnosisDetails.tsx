@@ -28,6 +28,7 @@ export function useConnectionDiagnosis(
   environmentId: EnvironmentId,
   presentation: EnvironmentPresentation | null,
 ) {
+  const t = useUiTranslation();
   const state = AsyncResult.getOrElse(
     useAtomValue(environmentCatalog.stateAtom(environmentId)),
     () => AVAILABLE_CONNECTION_STATE,
@@ -37,13 +38,16 @@ export function useConnectionDiagnosis(
   if (phase === "connected" || phase === "unsupported") return { diagnosis: null, state };
   const relayOnly =
     connectionRoutes(presentation.entry).length === 1 && hasRelayRoute(presentation.entry);
-  const diagnosis = presentConnectionDiagnosis({
-    hostLabel: presentation.entry.target.label,
-    state,
-    via: relayOnly ? "relay" : "direct",
-    clientVersion: Constants.expoConfig?.version,
-    serverVersion: presentation.serverConfig?.environment.serverVersion,
-  });
+  const diagnosis = presentConnectionDiagnosis(
+    {
+      hostLabel: presentation.entry.target.label,
+      state,
+      via: relayOnly ? "relay" : "direct",
+      clientVersion: Constants.expoConfig?.version,
+      serverVersion: presentation.serverConfig?.environment.serverVersion,
+    },
+    t,
+  );
   return { diagnosis, state };
 }
 
@@ -84,7 +88,7 @@ export function ConnectionDiagnosisDetails(props: {
         label={t("Copy diagnostics")}
         icon="doc.on.doc"
         onPress={() => {
-          copyTextWithHaptic(connectionDiagnosisText(props.hostLabel, diagnosis), {
+          copyTextWithHaptic(connectionDiagnosisText(props.hostLabel, diagnosis, t), {
             target: "connection-diagnostics",
           });
         }}

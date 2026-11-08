@@ -13,8 +13,11 @@ import {
   type OrchestrationV2NotificationSource,
   type OrchestrationV2PendingBackgroundTask,
   type OrchestrationV2ProviderGoal,
+  type OrchestrationV2ProviderSession,
+  type ServerProvider,
   type ServerProviderModel,
   type OrchestrationV2ExecutionNode,
+  type OrchestrationV2LimitRecovery,
   type OrchestrationV2ThreadProjection,
   orchestrationV2RunWorkStartedAt,
   type RunId,
@@ -24,8 +27,15 @@ import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
 } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import { getProviderOptionCurrentLabel, getProviderOptionStatedValue } from "@t3tools/shared/model";
+import {
+  getModelSelectionStringOptionValue,
+  getProviderOptionCurrentLabel,
+  getProviderOptionStatedValue,
+  resolveSelectableModel,
+  withLegacyUltracodeEffort,
+} from "@t3tools/shared/model";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as DateTime from "effect/DateTime";
 
 import {
@@ -34,12 +44,52 @@ import {
   type ThreadRuntimeSummary,
   type ThreadStructure,
   type ThreadStructureRuntime,
+  type ThreadStructureTurnItem,
 } from "./models.ts";
 import { commandDisplayText } from "../work-log/commandLabel.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
 
 const ACTIVITY_RUN_STATUSES = new Set(["preparing", "starting", "running", "waiting"]);
 const INTERRUPTIBLE_RUN_STATUSES = new Set(["preparing", "starting", "running"]);
+
+const EMPTY_EXTENSION_STATUSES: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]> =
+  [];
+
+/** Only the selected provider's current session can supply transient extension status. */
+export function deriveProviderExtensionStatuses(
+  projection:
+    | (Pick<ThreadStructure, "thread"> & {
+        readonly providerThreads: ReadonlyArray<
+          Pick<
+            ThreadStructure["providerThreads"][number],
+            "id" | "providerSessionId" | "providerInstanceId"
+          >
+        >;
+        readonly providerSessions: ReadonlyArray<
+          Pick<
+            OrchestrationV2ProviderSession,
+            "id" | "providerInstanceId" | "status" | "extensionStatuses"
+          >
+        >;
+      })
+    | null,
+) {
+  if (projection === null) return EMPTY_EXTENSION_STATUSES;
+  const instanceId = projection.thread.modelSelection.instanceId;
+  const activeThread = projection.providerThreads.find(
+    (thread) => thread.id === projection.thread.activeProviderThreadId,
+  );
+  if (activeThread !== undefined && activeThread.providerInstanceId !== instanceId)
+    return EMPTY_EXTENSION_STATUSES;
+  const session = projection.providerSessions.findLast(
+    (session) =>
+      session.providerInstanceId === instanceId &&
+      (activeThread === undefined || session.id === activeThread.providerSessionId),
+  );
+  return session === undefined || session.status === "stopped"
+    ? EMPTY_EXTENSION_STATUSES
+    : (session.extensionStatuses ?? EMPTY_EXTENSION_STATUSES);
+}
 
 function latestMatchingRun(
   projection: ThreadStructure,
@@ -164,21 +214,45 @@ export function formatModelSelectionEffort(
 ): string | null {
   const caps = models.find((model) => model.slug === selection.model)?.capabilities;
   if (!caps) return null;
+  const options = withLegacyUltracodeEffort(caps.optionDescriptors, selection.options);
+  const current = options ? { ...selection, options } : selection;
   for (const id of REASONING_EFFORT_OPTION_IDS) {
     const descriptor = caps.optionDescriptors?.find((candidate) => candidate.id === id);
     if (descriptor?.type !== "select") continue;
-    const value = getProviderOptionStatedValue(id, selection, reportedSelection);
+    const value = getProviderOptionStatedValue(id, current, reportedSelection);
     if (value === undefined && id !== "variant") continue;
     if (typeof value === "boolean") continue;
     // Bypass picker normalization so an obsolete choice cannot become a catalog default.
     const label = getProviderOptionCurrentLabel(
       { ...descriptor, currentValue: value },
-      selection,
+      current,
       reportedSelection,
     );
     if (label) return label;
   }
   return null;
+}
+
+/** A reported model the picker catalog does not know, such as `claude-opus-5[1m]`, keeps its raw effort. */
+export function formatSubagentEffort(input: {
+  readonly modelSlug: string | null;
+  readonly modelSelection: ModelSelection | undefined;
+  readonly provider: Pick<ServerProvider, "driver" | "models"> | undefined;
+}): string | null {
+  const { modelSlug, modelSelection: selection, provider } = input;
+  if (!provider || !selection || !modelSlug) return null;
+  const selectionSlug =
+    resolveSelectableModel(provider.driver, selection.model, provider.models) ??
+    selection.model.trim();
+  if (selectionSlug !== modelSlug) return null;
+  if (provider.models.some((model) => model.slug === modelSlug)) {
+    return formatModelSelectionEffort({ ...selection, model: modelSlug }, provider.models);
+  }
+  return (
+    REASONING_EFFORT_OPTION_IDS.map((id) => getModelSelectionStringOptionValue(selection, id)).find(
+      Boolean,
+    ) ?? null
+  );
 }
 
 const SUBAGENT_STATUS_LABELS: Record<OrchestrationV2ExecutionNode["status"], string> = {
@@ -289,6 +363,100 @@ export function deriveThreadStructureRuntime(
   };
 }
 
+export interface UsageLimitNoticeRows {
+  readonly itemIds: ReadonlySet<ThreadStructureTurnItem["id"]>;
+  /** Hidden only when its text reads as the provider's limit message; see PROVIDER_LIMIT_NOTICE. */
+  readonly providerNoticeItemId: ThreadStructureTurnItem["id"] | null;
+}
+
+// Claude Code's own limit messages, such as "You've hit your 5-hour limit · resets 7:10am".
+const PROVIDER_LIMIT_NOTICE =
+  /^(?:You[’']ve hit your (?:(?:5-hour|session|weekly|usage) )?limit|You[’']re out of extra usage|Claude AI usage limit reached)(?: · resets (?:[1-9]|1[0-2])(?::[0-5]\d)?(?:am|pm)(?: \([A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)*\))?)?\.?$/i;
+
+/**
+ * The timeline rows that repeat a usage-limit pause while its recovery notice shows: the run's
+ * limit failure, Claude's pause notices, and the provider's own limit message. They return to
+ * history once another run executes.
+ */
+export function deriveUsageLimitNoticeRows(
+  projection: ThreadStructure,
+): UsageLimitNoticeRows | null {
+  const runtime = deriveThreadStructureRuntime(projection);
+  const run = presentedLatestRun(projection);
+  if (runtime?.status !== "failed" || runtime.lastErrorClass !== "usage_limit" || run === null) {
+    return null;
+  }
+  const failure = latestRootProviderFailure(run, projection.turnItems);
+  const itemIds = new Set<ThreadStructureTurnItem["id"]>();
+  let failedProviderTurnId: ThreadStructureTurnItem["providerTurnId"] = null;
+  for (const item of projection.turnItems) {
+    if (item.runId !== run.id) continue;
+    if (
+      item.type === "error" &&
+      item.status === "failed" &&
+      item.nodeId === run.rootNodeId &&
+      item.failure.class === "usage_limit"
+    ) {
+      itemIds.add(item.id);
+      if (item.failure === failure) failedProviderTurnId = item.providerTurnId;
+    }
+  }
+  let providerNotice: ThreadStructureTurnItem | null = null;
+  if (failedProviderTurnId !== null) {
+    for (const item of projection.turnItems) {
+      if (item.runId !== run.id || item.providerTurnId !== failedProviderTurnId) continue;
+      if (
+        item.type === "system_notice" &&
+        item.nodeId === run.rootNodeId &&
+        item.parentItemId === null &&
+        item.nativeItemRef?.driver === "claudeAgent" &&
+        item.nativeItemRef.nativeId?.startsWith(`usage-limit:${failedProviderTurnId}:`) === true
+      ) {
+        itemIds.add(item.id);
+      }
+      if (
+        item.type === "assistant_message" &&
+        item.parentItemId === null &&
+        (providerNotice === null || item.ordinal > providerNotice.ordinal)
+      ) {
+        providerNotice = item;
+      }
+    }
+  }
+  return { itemIds, providerNoticeItemId: providerNotice?.id ?? null };
+}
+
+export function withoutUsageLimitNoticeRows<
+  Row extends OrchestrationV2ThreadProjection["visibleTurnItems"][number],
+>(rows: ReadonlyArray<Row>, notice: UsageLimitNoticeRows | null): ReadonlyArray<Row> {
+  if (notice === null) return rows;
+  const hidden = ({ item }: Row) =>
+    notice.itemIds.has(item.id) ||
+    (item.id === notice.providerNoticeItemId &&
+      item.type === "assistant_message" &&
+      PROVIDER_LIMIT_NOTICE.test(item.text.trim()));
+  return rows.some(hidden) ? rows.filter((row) => !hidden(row)) : rows;
+}
+
+/** Whether a usage-limit recovery holds the thread's snooze, so its notice offers Wake now. */
+export function limitRecoveryOwnsSnooze(input: {
+  readonly runId: RunId | null | undefined;
+  readonly resetAt: string | null | undefined;
+  readonly recovery: OrchestrationV2LimitRecovery | null | undefined;
+  readonly snoozedUntil: string | null | undefined;
+}): boolean {
+  const { runId, resetAt, recovery, snoozedUntil } = input;
+  return (
+    recovery?.snooze === true &&
+    runId != null &&
+    recovery.runId === runId &&
+    resetAt != null &&
+    recovery.resetAt === resetAt &&
+    snoozedUntil != null &&
+    Date.parse(snoozedUntil) === Date.parse(resetAt)
+  );
+}
+
 export function threadRuntimeHasInterruptibleRun(
   runtime: ThreadStructureRuntime | null | undefined,
 ): boolean {
@@ -373,9 +541,12 @@ export interface PendingBackgroundWorkPresentation {
   readonly waiting: boolean;
 }
 
-function joinWithAnd(parts: ReadonlyArray<string>): string {
+function joinWithAnd(parts: ReadonlyArray<string>, t: UiTranslator): string {
   if (parts.length <= 1) return parts.join("");
-  return `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+  return t("{items} and {last}", {
+    items: parts.slice(0, -1).join(", "),
+    last: parts.at(-1) ?? "",
+  });
 }
 
 // The Claude adapter forces a stuck query closed after 10 seconds.
@@ -400,6 +571,7 @@ export function isBackgroundWorkStopPending(
 
 export function presentPendingBackgroundWork(
   tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): PendingBackgroundWorkPresentation | null {
   if (tasks.length === 0) return null;
   const waiting = backgroundWorkHoldsCompletion(tasks);
@@ -419,7 +591,7 @@ export function presentPendingBackgroundWork(
         kind: task.kind,
         label:
           label === undefined || label.length === 0
-            ? BACKGROUND_WORK_KINDS[task.kind].singular
+            ? t(BACKGROUND_WORK_KINDS[task.kind].singular)
             : label,
         childThreadId: task.kind === "subagent" ? task.childThreadId : undefined,
       };
@@ -432,21 +604,27 @@ export function presentPendingBackgroundWork(
   const [only] = items;
   if (items.length === 1 && only !== undefined) {
     const noun = BACKGROUND_WORK_KINDS[only.kind].singular;
-    const named = only.label !== noun;
+    const named = only.label !== noun && only.label !== t(noun);
     const title = named
-      ? `${waiting ? "Waiting" : "Running"} · ${only.label}`
+      ? t(waiting ? "Waiting · {label}" : "Running · {label}", { label: only.label })
       : waiting
-        ? `Waiting on a ${noun}`
-        : `Running a ${noun}`;
+        ? t("Waiting on a {kind}", { kind: t(noun) })
+        : t("Running a {kind}", { kind: t(noun) });
     return { title, items, waiting };
   }
   const counts = new Map<BackgroundWorkKind, number>();
   for (const item of items) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
   const groups = Array.from(counts, ([kind, count]) => {
     const { singular, plural } = BACKGROUND_WORK_KINDS[kind];
-    return `${count} ${count === 1 ? singular : plural}`;
+    return t(`{count} ${count === 1 ? singular : plural}`, { count });
   });
-  return { title: `${waiting ? "Waiting on" : "Running"} ${joinWithAnd(groups)}`, items, waiting };
+  return {
+    title: t(waiting ? "Waiting on {tasks}" : "Running {tasks}", {
+      tasks: joinWithAnd(groups, t),
+    }),
+    items,
+    waiting,
+  };
 }
 
 export interface ProviderGoalPresentation {

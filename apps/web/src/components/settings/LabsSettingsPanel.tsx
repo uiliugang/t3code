@@ -2,10 +2,13 @@ import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
 import { managedCapabilityDenial } from "@t3tools/contracts";
+import { ToolCallVisibility } from "@t3tools/contracts/settings";
+import * as Schema from "effect/Schema";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -22,6 +25,7 @@ export function LabsSettingsPanel() {
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
         <BoringSidebarMultilineRow />
+        <ToolCallVisibilityRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />
@@ -79,6 +83,53 @@ function BoringSidebarMultilineRow() {
   );
 }
 
+const TOOL_CALL_VISIBILITY_LABELS: Record<ToolCallVisibility, string> = {
+  showAll: "Show all",
+  hideSuccessful: "Hide successful",
+  hideAll: "Hide all",
+  zen: "Zen",
+};
+
+const isToolCallVisibility = Schema.is(ToolCallVisibility);
+
+function ToolCallVisibilityRow() {
+  const t = useUiTranslation();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("tool-call-visibility")}
+      description="Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
+      control={
+        <div className="w-full sm:w-40">
+          <Select
+            value={settings.toolCallVisibility}
+            onValueChange={(value) => {
+              if (isToolCallVisibility(value)) updateSettings({ toolCallVisibility: value });
+            }}
+          >
+            <SelectTrigger
+              size="sm"
+              className="w-full min-w-0"
+              aria-label={t("Tool calls in chat")}
+            >
+              <SelectValue>
+                {t(TOOL_CALL_VISIBILITY_LABELS[settings.toolCallVisibility])}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem value="showAll">{t("Show all")}</SelectItem>
+              <SelectItem value="hideSuccessful">{t("Hide successful")}</SelectItem>
+              <SelectItem value="hideAll">{t("Hide all")}</SelectItem>
+              <SelectItem value="zen">{t("Zen")}</SelectItem>
+            </SelectPopup>
+          </Select>
+        </div>
+      }
+    />
+  );
+}
+
 /** Signed out of T3 Connect, the row offers to sign in instead of its switch. */
 function GuestLinksRowWithSignIn() {
   const t = useUiTranslation();
@@ -123,12 +174,13 @@ function GuestLinksRow() {
       managed={settings.guestSharingEnabled ? undefined : connectDenial}
       description={
         <>
-          Share a thread with a guest who watches it live in their browser and sends messages you
-          approve. Needs T3 Connect: sign in and link this machine in{" "}
+          {t(
+            "Share a thread with a guest who watches it live in a browser and sends messages you approve. Needs T3 Connect: sign in and link this machine in",
+          )}{" "}
           <Link to="/settings/access" className="underline underline-offset-2">
             {t("Sharing & access")}
           </Link>
-          . While it is off, every guest link stops working.
+          {t(". Turning it off stops every guest link.")}
         </>
       }
       control={
@@ -154,12 +206,13 @@ function LinkedEnvironmentsRow() {
       settingKeys={["linkedEnvironmentsEnabled"]}
       description={
         <>
-          Let agents here work on your other machines, and theirs here. Turn it on for each machine,
-          then link them in{" "}
+          {t(
+            "Let agents here work on your other machines, and theirs here. Turn it on for each machine, then link them in",
+          )}{" "}
           <Link to="/settings/connections" className="underline underline-offset-2">
             {t("Connections")}
           </Link>
-          . While it is off, nothing new starts over a link; tasks already running finish.
+          {t(". While off, nothing new starts over a link; running tasks finish.")}
         </>
       }
       control={
@@ -187,7 +240,7 @@ function SimlockHostsRow() {
       settingKeys={["simlockDeviceHostsEnabled"]}
       description={
         <>
-          Let the Device panel lease simulators and emulators from your own{" "}
+          {t("Let the Device panel lease simulators and emulators from your own")}{" "}
           <a
             href="https://incubator.callstack.com/simlock/"
             target="_blank"
@@ -196,11 +249,11 @@ function SimlockHostsRow() {
           >
             Simlock
           </a>{" "}
-          pool, added in{" "}
+          {t("pool, added in")}{" "}
           <Link to="/settings/devices" className="underline underline-offset-2">
             {t("Devices")}
           </Link>
-          . An alpha that may change or break. T3 Code never installs Simlock.
+          {t(". An alpha that may change or break. T3 Code never installs Simlock.")}
         </>
       }
       control={
@@ -210,7 +263,7 @@ function SimlockHostsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ simlockDeviceHostsEnabled: Boolean(checked) })
           }
-          aria-label="Simlock device hosts"
+          aria-label={t("Simlock device hosts")}
         />
       }
     />

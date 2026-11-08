@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 import * as SkillPackages from "./SkillPackages.ts";
 
 const isSkillManagerError = Schema.is(SkillManagerError);
-const decodeRecord = Schema.decodeUnknownSync(
+const decodeRecord = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
       skillName: Schema.String,
@@ -32,7 +32,7 @@ export const makeSkillDiscovery = Effect.gen(function* () {
       return yield* fs.readFileString(recordFile);
     }).pipe(Effect.orElseSucceed(() => ""));
     for (const line of records.trim().split("\n").toReversed()) {
-      const record = yield* Effect.try(() => decodeRecord(line)).pipe(Effect.option);
+      const record = decodeRecord(line);
       if (record._tag !== "Some" || record.value.skillName !== path.basename(directory)) continue;
       const value = record.value;
       if (value.targetDir && path.resolve(value.targetDir) !== path.dirname(directory)) continue;

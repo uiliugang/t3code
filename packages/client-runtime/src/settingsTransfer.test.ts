@@ -12,6 +12,7 @@ import {
   ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
+import * as Struct from "effect/Struct";
 
 import {
   applicationSettingsImportPatch,
@@ -28,6 +29,7 @@ import {
   type TransferProject,
 } from "./settingsTransfer.ts";
 import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 const project = (remote = "git@github.com:Team/Repo.git", directory = ""): TransferProject => ({
   id: ProjectId.make("project-1"),
@@ -317,6 +319,7 @@ describe("settings transfer", () => {
       clientSettings: {
         ...DEFAULT_CLIENT_SETTINGS,
         uiLanguage: "zh-CN",
+        voiceMicrophone: "private-device-microphone-id",
         diffColorScheme: "custom",
         diffCustomColors: {
           addition: "#15803d",
@@ -326,7 +329,12 @@ describe("settings transfer", () => {
         },
         sidebarProjectGroupingOverrides: { privatePath: "separate" },
       },
-      server: { ...source, worktreesDirectory: "/private/path" },
+      server: {
+        ...source,
+        worktreesDirectory: "/private/path",
+        cloudSpeechCredentials: { ...source.cloudSpeechCredentials, openai: "must-not-export" },
+        daxiang: { clientId: "fixture", clientSecret: "must-not-export" },
+      },
       keybindings: [
         { key: "mod+j", command: "terminal.toggle" },
         { key: "mod+r", command: "script.dev.run" },
@@ -338,6 +346,16 @@ describe("settings transfer", () => {
     expect(contents).not.toContain("must-not-export");
     expect(contents).not.toContain("/private/path");
     expect(contents).not.toContain("privatePath");
+    expect(contents).not.toContain("private-device-microphone-id");
+    expect(file.clientSettings).not.toHaveProperty("voiceMicrophone");
+    const legacyMicrophone = parseSettingsFile(
+      JSON.stringify({
+        ...JSON.parse(contents),
+        clientSettings: { ...file.clientSettings, voiceMicrophone: "old-device-id" },
+      }),
+    );
+    expect(legacyMicrophone.scope).toBe("application");
+    expect(legacyMicrophone).not.toHaveProperty("clientSettings.voiceMicrophone");
     expect(file.clientSettings.uiLanguage).toBe("zh-CN");
     expect(file.clientSettings.diffColorScheme).toBe("custom");
     expect(file.clientSettings.diffCustomColors?.conflict).toBe("#a16207");
@@ -365,6 +383,10 @@ describe("settings transfer", () => {
       "usageLimitSources",
       "secretProviders",
       "cursorKeychainUsageEnabled",
+      "cloudSpeechCredentials",
+      "speechAcceleration",
+      "issueProjectSources",
+      "daxiang",
     ];
     expect(Object.keys(file.server).sort()).toEqual(
       Object.keys(ServerSettingsPatch.fields)
@@ -381,18 +403,31 @@ describe("settings transfer", () => {
       remoteBranchDisplayDays: 45,
       hideMergedRemoteBranches: false,
       autoDeleteMergedBranches: true,
+      speechModelId: "fixture-model",
+      speechModelUnloadTimeout: "min_5" as const,
+      speechProjectCustomWords: [{ term: "T3", aliases: ["tee three"] }],
+      speechPostProcessingModelSelection: {
+        instanceId: ProviderInstanceId.make("speech-cleanup"),
+        model: "cleanup-model",
+      },
+      hiddenThreadTags: ["hidden"],
+      hideTaggedThreads: true,
+      ghqCloneLayout: true,
       storageCleanup: { ...source.storageCleanup, browserArtifactsAfterDays: 21 },
       worktreeCleanup: { mode: "off" as const },
       backgroundActivity: { ...source.backgroundActivity, profile: "battery-saver" as const },
       automaticGitFetchInterval: Duration.minutes(10),
       providerHealthRefreshInterval: Duration.minutes(3),
     };
-    const updatedSource = {
+    const updatedSource: ServerSettings = {
       ...source,
       providerInstances: {
         ...source.providerInstances,
         [ProviderInstanceId.make("fallback-codex")]: {
           driver: ProviderDriverKind.make("codex"),
+        },
+        [ProviderInstanceId.make("speech-cleanup")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
         },
       },
     };
@@ -408,6 +443,16 @@ describe("settings transfer", () => {
       updatedPreferences,
     );
     expect(updated.providers[ProviderInstanceId.make("fallback-codex")]).toBe("codex");
+    expect(updated.providers[ProviderInstanceId.make("speech-cleanup")]).toBe("claudeAgent");
+    const withoutSpeech = Object.fromEntries(
+      Object.entries(updatedSource.providerInstances).filter(([id]) => id !== "speech-cleanup"),
+    );
+    expect(() =>
+      applicationSettingsImportPatch(restored, {
+        ...updatedSource,
+        providerInstances: withoutSpeech,
+      }),
+    ).toThrow("speech-cleanup");
     expect(JSON.parse(serializeSettingsFile(updated)).server.automaticGitFetchInterval).toBe(
       600_000,
     );
@@ -510,8 +555,10 @@ describe("settings transfer", () => {
 
   it("restores the project's override set, including null values and inherited settings", () => {
     const sourceProject = project();
+    const issueSources = [{ provider: "meituan" as const, host: "mep.example.com", scope: "42" }];
     const source = {
       ...settings(),
+      issueProjectSources: { [sourceProject.id]: issueSources },
       projectSettingsFolded: true,
       projectSettingsOverrides: {
         [sourceProject.id]: {
@@ -522,26 +569,54 @@ describe("settings transfer", () => {
       },
     };
     const file = createProjectSettingsFile(sourceProject, source);
+    expect(file).toHaveProperty("issueSources", issueSources);
     expect(parseSettingsFile(serializeSettingsFile(file))).toEqual(file);
     const destination = { ...sourceProject, id: ProjectId.make("target-project") };
-    expect(
-      projectSettingsImportPatch(file, destination, {
-        ...settings(),
-        projectSettingsOverrides: { [destination.id]: { defaultAutoPull: true } },
-      }),
-    ).toEqual({
-      projectSettingsOverrides: {
-        [destination.id]: {
-          defaultModelSelection: null,
-          branchNamePrefix: "feature",
-          defaultProjectScripts: [],
-        },
+    const unrelatedId = ProjectId.make("unrelated-project");
+    const target = {
+      ...settings(),
+      issueProjectSources: {
+        [destination.id]: [{ provider: "github" as const, host: "github.com", scope: "old/repo" }],
+        [unrelatedId]: issueSources,
+      },
+      projectSettingsOverrides: { [destination.id]: { defaultAutoPull: true } },
+    };
+    const patch = projectSettingsImportPatch(file, destination, target);
+    expect(patch.projectSettingsOverrides).toEqual({
+      [destination.id]: {
+        defaultModelSelection: null,
+        branchNamePrefix: "feature",
+        defaultProjectScripts: [],
       },
     });
-    expect(file.settings).not.toHaveProperty("defaultRuntimeMode");
-    expect(projectSettingsImportPatch({ ...file, settings: {} }, destination, source)).toEqual({
-      projectSettingsOverrides: { [destination.id]: null },
+    expect(applyServerSettingsPatch(target, patch).issueProjectSources).toEqual({
+      ...target.issueProjectSources,
+      [destination.id]: issueSources,
     });
+    const updatedSources = [{ provider: "github" as const, host: "github.com", scope: "new/repo" }];
+    const latestTarget = {
+      ...target,
+      issueProjectSources: { ...target.issueProjectSources, [unrelatedId]: updatedSources },
+    };
+    expect(applyServerSettingsPatch(latestTarget, patch).issueProjectSources).toEqual({
+      ...latestTarget.issueProjectSources,
+      [destination.id]: issueSources,
+    });
+    expect(file.settings).not.toHaveProperty("defaultRuntimeMode");
+    expect(
+      projectSettingsImportPatch(
+        { ...Struct.omit(file, ["issueSources"]), settings: {} },
+        destination,
+        source,
+      ),
+    ).toEqual({ projectSettingsOverrides: { [destination.id]: null } });
+    expect(
+      applyServerSettingsPatch(
+        target,
+        projectSettingsImportPatch({ ...file, issueSources: [] }, destination, target),
+      ).issueProjectSources,
+    ).toEqual({ ...target.issueProjectSources, [destination.id]: [] });
+    expect(createProjectSettingsFile(sourceProject, settings())).not.toHaveProperty("issueSources");
     expect(() =>
       parseSettingsFile(JSON.stringify({ ...file, settings: { defaultRuntimeMode: "invalid" } })),
     ).toThrow();

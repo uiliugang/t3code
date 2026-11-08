@@ -4,6 +4,7 @@ import { ProjectId, TrimmedNonEmptyString, WorkspaceRootId } from "./baseSchemas
 import { ProjectWorkspaceRoot } from "./project.ts";
 import { ProjectSettingsOverrides } from "./settings.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { IssueSource } from "./issues.ts";
 
 const RelativeRepositoryDirectory = Schema.String.check(
   Schema.makeFilter(
@@ -44,6 +45,7 @@ export const ProjectImportDefinition = Schema.Struct({
   name: TrimmedNonEmptyString,
   settings: Schema.toType(ProjectSettingsOverrides),
   providers: Schema.Record(ProviderInstanceId, ProviderDriverKind),
+  issueSources: Schema.optionalKey(Schema.Array(IssueSource)),
   workspace: ProjectTransferWorkspace,
 }).check(
   Schema.makeFilter(

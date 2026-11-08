@@ -81,16 +81,18 @@ function settingsWithProviderInstances(): UnifiedSettings {
 }
 
 describe("scoped default model selections", () => {
+  const automaticSettings = { ...DEFAULT_SERVER_SETTINGS, defaultModelSelection: null };
+
   // regression: #27997 equal automatic defaults can resolve to different providers
   it("compares automatic defaults using each environment's models", () => {
     const codex = {
       projectId: null,
-      settings: DEFAULT_UNIFIED_SETTINGS,
+      settings: automaticSettings,
       providers: [provider({ instanceId: "codex", models: ["gpt-6-astra"] })],
     };
     const claude = {
       projectId: null,
-      settings: DEFAULT_UNIFIED_SETTINGS,
+      settings: automaticSettings,
       providers: [
         provider({
           instanceId: "claudeAgent",
@@ -119,7 +121,7 @@ describe("scoped default model selections", () => {
     const project = {
       projectId,
       settings: {
-        ...DEFAULT_SERVER_SETTINGS,
+        ...automaticSettings,
         projectSettingsOverrides: {
           [projectId]: {
             providerInstances: { [ProviderInstanceId.make("codex")]: { enabled: false } },
@@ -145,7 +147,7 @@ describe("scoped default model selections", () => {
     const configured = {
       projectId: null,
       settings: {
-        ...DEFAULT_SERVER_SETTINGS,
+        ...automaticSettings,
         providerModelPreferences: {
           [ProviderInstanceId.make("codex")]: {
             hiddenModels: ["gpt-6-astra"],
@@ -155,7 +157,7 @@ describe("scoped default model selections", () => {
       },
       providers: [provider({ instanceId: "codex", models: ["gpt-6-astra", "gpt-6-sol"] })],
     };
-    const inherited = { ...configured, settings: DEFAULT_SERVER_SETTINGS };
+    const inherited = { ...configured, settings: automaticSettings };
     expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [configured, inherited])).toBe(
       true,
     );
@@ -170,7 +172,7 @@ describe("scoped default model selections", () => {
     expect(defaultModelSelectionsAreMixed(clientSettings, [inherited, configured])).toBe(false);
     expect(
       defaultModelSelectionsAreMixed(clientSettings, [
-        { ...inherited, settings: { ...DEFAULT_SERVER_SETTINGS, providerModelPreferences: {} } },
+        { ...inherited, settings: { ...automaticSettings, providerModelPreferences: {} } },
         inherited,
       ]),
     ).toBe(true);
@@ -182,7 +184,7 @@ describe("scoped default model selections", () => {
       projectId: null,
       providers,
       settings: {
-        ...DEFAULT_UNIFIED_SETTINGS,
+        ...automaticSettings,
         defaultModelSelection: createModelSelection(
           ProviderInstanceId.make("codex"),
           "gpt-6-astra",
@@ -195,7 +197,7 @@ describe("scoped default model selections", () => {
     expect(
       defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [
         selected,
-        { projectId: null, providers, settings: DEFAULT_UNIFIED_SETTINGS },
+        { projectId: null, providers, settings: automaticSettings },
       ]),
     ).toBe(true);
     expect(
@@ -830,7 +832,10 @@ describe("instance-scoped model selection", () => {
     );
   });
   it("falls back to the text generation default, not the chat default, for a removed model", () => {
-    const codex = provider({ instanceId: "codex", models: ["gpt-6-astra", "gpt-6-luna"] });
+    const codex = provider({
+      instanceId: "codex",
+      models: ["gpt-6-astra", DEFAULT_TEXT_GENERATION_MODEL],
+    });
     const providers = [
       { ...codex, models: codex.models.map((m, i) => (i === 0 ? { ...m, isDefault: true } : m)) },
     ];

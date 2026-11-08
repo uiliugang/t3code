@@ -103,7 +103,21 @@ export interface PredictedMessageGenerationInput {
   modelSelection: ModelSelection;
 }
 
+export interface TranscriptionPostProcessingInput {
+  cwd: string;
+  prompt: string;
+  modelSelection: ModelSelection;
+}
+
+export interface TranscriptionPostProcessingResult {
+  transcription: string;
+}
+
 export interface ProviderTextGeneration {
+  readonly generateTranscriptionPostProcessing: (
+    input: TranscriptionPostProcessingInput,
+  ) => Effect.Effect<TranscriptionPostProcessingResult, TextGenerationError>;
+
   readonly generatePredictedMessage: (
     input: PredictedMessageGenerationInput,
   ) => Effect.Effect<{ readonly text: string | null }, TextGenerationError>;

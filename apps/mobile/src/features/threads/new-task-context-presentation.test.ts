@@ -3,11 +3,50 @@ import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 import {
   fillNewTaskWorkspaceBranch,
+  filterNewTaskBranches,
   resolveNewTaskBranchLabel,
   resolveNewTaskBranchWorktreePath,
   resolveNewTaskLocalWorkspaceSelection,
   resolveNewTaskWorkspaceSelection,
 } from "./new-task-context-presentation";
+
+describe("filterNewTaskBranches", () => {
+  const branches = [
+    { name: "main", isRemote: false },
+    { name: "master", isRemote: false },
+    { name: "lg/sync-upstream-fix-ui-bugs", isRemote: false },
+    { name: "feature/main", isRemote: false },
+    { name: "origin/main", isRemote: true, remoteName: "origin" },
+    { name: "upstream/master", isRemote: true, remoteName: "upstream" },
+    { name: "team/origin/main", isRemote: true, remoteName: "team/origin" },
+    { name: "origin/feature/main", isRemote: true, remoteName: "origin" },
+  ];
+
+  it.each([
+    {
+      mainBranchOnly: true,
+      query: "",
+      expected: ["main", "master", "origin/main", "upstream/master", "team/origin/main"],
+    },
+    {
+      mainBranchOnly: true,
+      query: "main",
+      expected: ["main", "origin/main", "team/origin/main"],
+    },
+    { mainBranchOnly: true, query: "lg/", expected: [] },
+    {
+      mainBranchOnly: false,
+      query: "lg/",
+      expected: ["lg/sync-upstream-fix-ui-bugs"],
+    },
+  ])("filters paged refs for mainBranchOnly=$mainBranchOnly and query=$query", (input) => {
+    expect(
+      filterNewTaskBranches(branches, input.query, input.mainBranchOnly).map(
+        (branch) => branch.name,
+      ),
+    ).toEqual(input.expected);
+  });
+});
 
 describe("resolveNewTaskWorkspaceSelection", () => {
   const fallback = { mode: "worktree", branch: null, worktreePath: null } as const;

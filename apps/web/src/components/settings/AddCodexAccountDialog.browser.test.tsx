@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -10,6 +11,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { AppAtomRegistryProvider, appAtomRegistry as registry } from "../../rpc/atomRegistry";
 
 const setup = vi.hoisted(() => ({
@@ -90,6 +92,7 @@ function Owner({ onClose }: { readonly onClose: () => void }) {
 
 describe("AddCodexAccountDialog", () => {
   it("plays its close animation before the owner unmounts it once the account connects", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     const atom = Atom.make<ReadonlyArray<ServerProvider> | null>([]).pipe(Atom.keepAlive);
     providersAtom.current = atom;
     const onClose = vi.fn();

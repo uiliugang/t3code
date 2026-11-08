@@ -49,6 +49,7 @@ describe("sidebar header new thread", () => {
     stack.defer(() => __setClientSettingsForTests(previousSettings));
     __setClientSettingsForTests({
       ...DEFAULT_CLIENT_SETTINGS,
+      uiLanguage: "en",
       boringSidebarEnabled: scenario.mode === "boring",
       legacySidebarEnabled: scenario.mode === "legacy",
     });

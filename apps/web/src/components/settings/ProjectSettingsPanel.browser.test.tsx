@@ -106,8 +106,10 @@ vi.mock(import("~/state/use-atom-command"), async (original) => ({
 }));
 vi.mock(import("~/hooks/useSettings"), async (original) => ({
   ...(await original()),
-  useClientSettings: ((selector?: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
-    selector ? selector(DEFAULT_CLIENT_SETTINGS) : DEFAULT_CLIENT_SETTINGS) as never,
+  useClientSettings: ((selector?: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) => {
+    const settings = { ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" as const };
+    return selector ? selector(settings) : settings;
+  }) as never,
 }));
 vi.mock(import("~/localApi"), async (original) => ({
   ...(await original()),
@@ -130,6 +132,12 @@ vi.mock(import("./ProjectDefaultsSettings"), async (original) => ({
 vi.mock(import("./ProjectActionsSettings"), async (original) => ({
   ...(await original()),
   ProjectActionsSettings: (() => null) as never,
+}));
+vi.mock(import("./ProjectRepositoriesSettings"), () => ({
+  ProjectRepositoriesSettings: () => <></>,
+}));
+vi.mock(import("./ConfigurationSettings"), () => ({
+  ProjectConfigurationSettings: () => <></>,
 }));
 
 vi.mock(import("../files/projectFilesQueryState"), async (original) => ({

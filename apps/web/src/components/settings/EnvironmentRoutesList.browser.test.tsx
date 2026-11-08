@@ -4,7 +4,7 @@ import {
   type ConnectionCatalogEntry,
   type ConnectionRoute,
 } from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
@@ -20,6 +20,7 @@ vi.mock(import("~/state/use-atom-command"), async (importOriginal) => ({
 }));
 
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 
@@ -69,6 +70,7 @@ function routesList(routes: ReadonlyArray<ConnectionRoute>) {
 }
 
 it("shows a route added after a reorder was saved, once another route is removed", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   await using screen = await render(routesList([LAN, TAILNET]));
   await userEvent.click(screen.getByRole("button", { name: "Reorder LAN, position 1" }));
   await userEvent.keyboard(" ");

@@ -2,6 +2,11 @@ import { EnvironmentId, type VcsRef } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+vi.mock(import("../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const mocks = vi.hoisted(() => ({ resolvedQueries: new Set<string>() }));
 
 const REFS: VcsRef[] = ["develop", "main", "origin/main", "origin/feature/main-nav"].map(

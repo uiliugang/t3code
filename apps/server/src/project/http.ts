@@ -18,13 +18,14 @@ import * as ProjectCloneTracker from "./ProjectCloneTracker.ts";
 import * as ProjectService from "./ProjectService.ts";
 import { mutateProjectWithClone } from "./ProjectMutation.ts";
 
-const failProjectMutation = Effect.fn("environment.projects.failMutation")(function* (
+export const failProjectMutation = Effect.fn("environment.projects.failMutation")(function* (
   cause: ProjectService.ProjectServiceError | ServerRuntimeStartup.ServerRuntimeStartupError,
 ) {
   if (
     cause._tag === "ProjectNotFoundError" ||
     cause._tag === "ProjectConflictError" ||
     cause._tag === "ProjectNotEmptyError" ||
+    cause._tag === "ProjectInvalidError" ||
     cause._tag === "ProjectWorkspaceRootChangeBlockedError"
   ) {
     return yield* failEnvironmentInvalidRequest("invalid_command");

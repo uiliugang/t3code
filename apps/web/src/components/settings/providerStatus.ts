@@ -131,6 +131,7 @@ export function getProviderVersionAdvisoryPresentation(
   advisory: ServerProviderVersionAdvisory | undefined,
   compatibility?: ServerProviderCompatibilityAdvisory | undefined,
   showCompatibility = true,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): {
   readonly title: string;
   readonly detail: string;
@@ -153,10 +154,12 @@ export function getProviderVersionAdvisoryPresentation(
     // Latest package versions cannot be updated into recommendations requiring another package.
     const isAlreadyLatest = advisory?.status === "current";
     return {
-      title: COMPATIBILITY_TITLES[compatibility.status],
+      title: t(COMPATIBILITY_TITLES[compatibility.status]),
       detail:
-        compatibility.message ??
-        (recommendation ? `Use ${recommendation} for full support.` : "Update for full support."),
+        (compatibility.message != null ? t(compatibility.message) : null) ??
+        (recommendation
+          ? t("Use {version} for full support.", { version: recommendation })
+          : t("Update for full support.")),
       updateCommand:
         targetVersion || latestIsIncompatible || isAlreadyLatest
           ? null
@@ -174,17 +177,17 @@ export function getProviderVersionAdvisoryPresentation(
     return null;
   }
 
-  const label = "Update available";
+  const label = t("Update available");
   const version = advisory.latestVersion;
   const versionLabel = getProviderVersionLabel(version);
 
   return {
     title: label,
     detail:
-      advisory.message ??
+      (advisory.message != null ? t(advisory.message) : null) ??
       (versionLabel
-        ? `${label}: install ${versionLabel}.`
-        : `${label}: install the latest provider version.`),
+        ? t("Update available: install {version}.", { version: versionLabel })
+        : t("Update available: install the latest provider version.")),
     updateCommand: advisory.updateCommand,
     emphasis: "normal" as const,
     targetVersion: null,

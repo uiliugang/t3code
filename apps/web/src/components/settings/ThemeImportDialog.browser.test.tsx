@@ -15,6 +15,11 @@ import {
 import type { OpenVsxThemeExtension } from "../../openVsxThemes";
 import { ThemeImportDialog } from "./ThemeImportDialog";
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const searchOpenVsxThemes = vi.hoisted(() => vi.fn());
 
 vi.mock("../../openVsxThemes", () => ({

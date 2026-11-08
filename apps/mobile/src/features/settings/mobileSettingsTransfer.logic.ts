@@ -2,13 +2,25 @@ import {
   ModelFavorites,
   SidebarProjectGroupingMode,
   PullRequestMergeMethod,
+  ToolCallVisibility,
+  type ClientSettings,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 
 import { MOBILE_THEME_IDS } from "../../lib/mobileTheme";
 import { MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE } from "../terminal/terminalPreferences";
+import type { Preferences } from "../../persistence/mobile-preferences";
+import {
+  mobileProjectGroupingModePatch,
+  resolveMobileProjectGroupingSettings,
+} from "../../state/project-grouping.logic";
 
 const MobileTransferPreferences = Schema.Struct({
+  branchIssuesVisible: Schema.optionalKey(Schema.Boolean),
+  branchIssuesExpanded: Schema.optionalKey(Schema.Boolean),
+  branchIssuesShowEmpty: Schema.optionalKey(Schema.Boolean),
+  branchIssuesSeparate: Schema.optionalKey(Schema.Boolean),
   showRepositoryIcons: Schema.optionalKey(Schema.Boolean),
   showGroupIcons: Schema.optionalKey(Schema.Boolean),
   capitalizeProjectNames: Schema.optionalKey(Schema.Boolean),
@@ -48,6 +60,7 @@ const MobileTransferPreferences = Schema.Struct({
   projectGroupingEnabled: Schema.optionalKey(Schema.Boolean),
   projectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
+  toolCallVisibility: Schema.optionalKey(ToolCallVisibility),
   workingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   useLastProjectForNewThreads: Schema.optionalKey(Schema.Boolean),
   modelFavorites: Schema.optionalKey(ModelFavorites),
@@ -57,3 +70,58 @@ const MobileTransferPreferences = Schema.Struct({
 });
 export const decodeMobileTransferPreferences = Schema.decodeUnknownSync(MobileTransferPreferences);
 export const exportMobileTransferPreferences = Schema.decodeSync(MobileTransferPreferences);
+
+const COMMON_CLIENT_PREFERENCES = [
+  "uiLanguage",
+  "showRepositoryIcons",
+  "showGroupIcons",
+  "capitalizeProjectNames",
+  "mathRenderingEnabled",
+  "planModeEnabled",
+  "followUpBehavior",
+  "showPredictedMessages",
+  "toolCallVisibility",
+  "branchIssuesExpanded",
+  "branchIssuesShowEmpty",
+] as const;
+
+export function mobileClientSettingsForExport(preferences: Preferences): Partial<ClientSettings> {
+  return {
+    ...Struct.pick(preferences, COMMON_CLIENT_PREFERENCES),
+    favorites: preferences.modelFavorites ?? [],
+    ...(preferences.branchIssuesSeparate === undefined
+      ? {}
+      : { branchIssuesPlacement: preferences.branchIssuesSeparate ? "separate" : "inline" }),
+    ...(preferences.workingShelfEnabled === undefined
+      ? {}
+      : { sidebarWorkingShelfEnabled: preferences.workingShelfEnabled }),
+    ...(preferences.projectGroupingMode === undefined &&
+    preferences.projectGroupingEnabled === undefined
+      ? {}
+      : {
+          sidebarProjectGroupingMode:
+            resolveMobileProjectGroupingSettings(preferences).sidebarProjectGroupingMode,
+        }),
+  };
+}
+
+export function mobilePreferencesFromClientSettings(
+  settings: Partial<ClientSettings>,
+): Partial<Preferences> {
+  return {
+    ...Struct.pick(settings, COMMON_CLIENT_PREFERENCES),
+    ...(settings.favorites === undefined ? {} : { modelFavorites: settings.favorites }),
+    ...(settings.branchIssuesPlacement === undefined
+      ? {}
+      : { branchIssuesSeparate: settings.branchIssuesPlacement === "separate" }),
+    ...(settings.threadDetailsItems === undefined
+      ? {}
+      : { branchIssuesVisible: settings.threadDetailsItems.issues ?? true }),
+    ...(settings.sidebarWorkingShelfEnabled === undefined
+      ? {}
+      : { workingShelfEnabled: settings.sidebarWorkingShelfEnabled }),
+    ...(settings.sidebarProjectGroupingMode === undefined
+      ? {}
+      : mobileProjectGroupingModePatch(settings.sidebarProjectGroupingMode)),
+  };
+}

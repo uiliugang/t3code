@@ -41,6 +41,7 @@ import { usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { isValidSearchUrlTemplate } from "@t3tools/shared/preview";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
 import { MoreVertical, Plus as PlusIcon } from "lucide-react";
+import * as Schema from "effect/Schema";
 import { useRef, useState } from "react";
 
 import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
@@ -175,12 +176,16 @@ const zoomLabel = (zoomFactor: number) => `${Math.round(zoomFactor * 100)}%`;
 
 /** IPC carries reason tokens inside messages; treat unknown tokens as read failures without exposing raw
  * text. */
-class ProfileLimitReachedError extends Error {
-  constructor() {
-    super("Browser profile limit reached.");
-    this.name = "ProfileLimitReachedError";
+class ProfileLimitReachedError extends Schema.TaggedError<ProfileLimitReachedError>()(
+  "ProfileLimitReachedError",
+  {},
+) {
+  override get message(): string {
+    return "Browser profile limit reached.";
   }
 }
+
+const isProfileLimitReachedError = Schema.is(ProfileLimitReachedError);
 
 export const importFailureReason = (cause: unknown): BrowserImportFailureReason => {
   const message = String((cause as { message?: unknown } | undefined)?.message ?? "");
@@ -258,8 +263,9 @@ async function importBrowserCookiesIntoTarget(
           await clearBrowserProfileData(bridge, [environmentId], input.target.profileId).catch(
             () => undefined,
           );
-          const reason =
-            cause instanceof ProfileLimitReachedError ? "profileLimitReached" : "profileNotSaved";
+          const reason = isProfileLimitReachedError(cause)
+            ? "profileLimitReached"
+            : "profileNotSaved";
           throw new Error(`Importing cookies from ${source.id} failed: ${reason}.`, { cause });
         }
       } else {
@@ -639,12 +645,16 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
             className="w-full sm:w-40"
             aria-label={t("Browser recording frame rate")}
           >
-            <SelectValue>{frameRate} fps</SelectValue>
+            <SelectValue>
+              {frameRate}
+              fps
+            </SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {BROWSER_RECORDING_FRAME_RATES.map((rate) => (
               <SelectItem hideIndicator key={rate} value={String(rate)}>
-                {rate} fps
+                {rate}
+                fps
               </SelectItem>
             ))}
           </SelectPopup>
@@ -768,7 +778,7 @@ function BrowserSearchEngineSetting() {
           status={
             isValidSearchUrlTemplate(customUrl)
               ? undefined
-              : "Enter an http or https URL containing %s. Searches use DuckDuckGo until then."
+              : t("Enter an http or https URL containing %s. Searches use DuckDuckGo until then.")
           }
           control={
             <DraftInput
@@ -1066,8 +1076,10 @@ function AgentBrowserAccessSetting() {
       {...searchableSetting("agent-browser-access")}
       description={
         isProjectScope
-          ? "Allow agents in this project to use the shared browser. Applies when the agent session next starts."
-          : "Allow agents to use the shared browser. Projects can override it."
+          ? t(
+              "Allow agents in this project to use the shared browser. Applies when the agent session next starts.",
+            )
+          : t("Allow agents to use the shared browser. Projects can override it.")
       }
       resetAction={
         settings.enableAgentBrowserAccess !== DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess ? (

@@ -4,6 +4,7 @@ import {
   ScheduledTaskWebhookFilter,
   type ScheduledTaskWebhookFilterOp,
 } from "@t3tools/contracts";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -76,9 +77,10 @@ const decodeFilter = Schema.decodeUnknownOption(ScheduledTaskWebhookFilter);
  */
 export function parseWebhookFilterDrafts(
   drafts: ReadonlyArray<WebhookFilterDraft>,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): { readonly filters: ReadonlyArray<ScheduledTaskWebhookFilter> } | { readonly error: string } {
   if (drafts.length > MAX_WEBHOOK_FILTERS) {
-    return { error: `Use at most ${MAX_WEBHOOK_FILTERS} filters.` };
+    return { error: t("Use at most {count} filters.", { count: MAX_WEBHOOK_FILTERS }) };
   }
   const filters: ScheduledTaskWebhookFilter[] = [];
   for (const [index, draft] of drafts.entries()) {
@@ -99,13 +101,14 @@ export function parseWebhookFilterDrafts(
     );
     if (Option.isNone(filter)) {
       return {
-        error: `Filter ${index + 1} needs a path under body, headers or query${
+        error: t(
           draft.op === "exists"
-            ? "."
+            ? "Filter {index} needs a path under body, headers or query."
             : draft.op === "in"
-              ? ", and at least one value."
-              : ", and a value."
-        }`,
+              ? "Filter {index} needs a path under body, headers or query, and at least one value."
+              : "Filter {index} needs a path under body, headers or query, and a value.",
+          { index: index + 1 },
+        ),
       };
     }
     filters.push(filter.value);

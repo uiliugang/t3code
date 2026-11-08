@@ -17,7 +17,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useMemo, useRef, type ComponentProps } from "react";
-import { Platform, RefreshControl, useWindowDimensions, View } from "react-native";
+import { RefreshControl, useWindowDimensions, View } from "react-native";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
@@ -61,14 +61,14 @@ function ArchivedThreadsHeader(props: {
       search={{
         value: props.searchQuery,
         onChangeText: props.onSearchQueryChange,
-        placeholder: "Search archived threads",
-        compactPlaceholder: "Search",
+        placeholder: t("Search archived threads"),
+        compactPlaceholder: t("Search"),
         mode: "inline",
         compactToolbar: width < 700,
       }}
       menus={[
         {
-          title: "Archived thread options",
+          title: t("Archived thread options"),
           icon: hasCustomFilter
             ? "line.3.horizontal.decrease.circle.fill"
             : "line.3.horizontal.decrease.circle",
@@ -93,7 +93,7 @@ function ArchivedThreadsHeader(props: {
             },
             {
               id: "sort",
-              title: "Sort by archived date",
+              title: t("Sort by archived date"),
               items: [
                 {
                   id: "sort:newest",
@@ -109,15 +109,11 @@ function ArchivedThreadsHeader(props: {
                 },
               ],
             },
-            ...(Platform.OS === "android"
-              ? [
-                  {
-                    id: "refresh",
-                    title: "Refresh archived threads",
-                    onPress: props.onRefresh,
-                  },
-                ]
-              : []),
+            {
+              id: "refresh",
+              title: t("Refresh archived threads"),
+              onPress: props.onRefresh,
+            },
           ],
         },
       ]}
@@ -266,7 +262,7 @@ function ArchivedThreadRow(props: {
       onSwipeableClose={props.onSwipeableClose}
       onSwipeableWillOpen={props.onSwipeableWillOpen}
       primaryAction={{
-        accessibilityLabel: `Unarchive ${props.thread.title}`,
+        accessibilityLabel: t("Unarchive {title}", { title: props.thread.title }),
         icon: "arrow.uturn.backward",
         label: t("Unarchive"),
         onPress: props.onUnarchive,
@@ -287,7 +283,7 @@ function ArchiveError(props: { readonly message: string; readonly onRetry: () =>
       <Text className="text-base font-t3-bold text-danger-foreground">
         {t("Could not load every archive")}
       </Text>
-      <Text className="mt-1 text-sm text-foreground-muted">{props.message}</Text>
+      <Text className="mt-1 text-sm text-foreground-muted">{t(props.message)}</Text>
       <View className="mt-3">
         <Button label={t("Try again")} tone="secondary" onPress={props.onRetry} />
       </View>
@@ -404,10 +400,10 @@ export function ArchivedThreadsScreen(props: {
       <EmptyState
         detail={
           isFiltered
-            ? "Try another search or environment."
-            : "Threads you archive will appear here."
+            ? t("Try another search or environment.")
+            : t("Threads you archive will appear here.")
         }
-        title={isFiltered ? "No matching threads" : t("No archived threads")}
+        title={isFiltered ? t("No matching threads") : t("No archived threads")}
       />
     );
   }, [isFiltered, isInitialLoad, t]);
@@ -429,7 +425,7 @@ export function ArchivedThreadsScreen(props: {
       <SettingsScreenContent>
         <GestureDetector gesture={archiveScrollGesture}>
           <LegendList
-            renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
+            renderScrollComponent={NativeScrollView}
             className="flex-1"
             contentContainerStyle={{
               paddingBottom: 32,

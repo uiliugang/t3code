@@ -83,3 +83,5 @@ export * from "./clientRpcPermissions.ts";
 export * from "./skills.ts";
 
 export * from "./wechat.ts";
+
+export * from "./speech.ts";

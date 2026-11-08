@@ -462,7 +462,7 @@ export function SourceControlSettingsPanel({
             {credentials.appSignIn && item.appSignIn === true ? (
               <div className="flex items-center gap-3 text-2xs text-muted-foreground">
                 <span aria-hidden className="h-px flex-1 bg-border" />
-                Or use your own credentials
+                {t("Or use your own credentials")}
                 <span aria-hidden className="h-px flex-1 bg-border" />
               </div>
             ) : null}

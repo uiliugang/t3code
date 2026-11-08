@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { CheckIcon, FlaskConicalIcon, PlugIcon, SaveIcon, Undo2Icon, XIcon } from "lucide-react";
@@ -53,6 +54,7 @@ export function ClaudeByokFields({
   readonly secretSources: ReadonlyArray<SecretSource>;
   readonly disabled?: boolean;
 }) {
+  const t = useUiTranslation();
   const mode = readClaudeByokAuthMode(environment);
   const credentialName = claudeByokAuthVariable(mode);
   const credential = environment.find((entry) => entry.name === credentialName);
@@ -62,21 +64,21 @@ export function ClaudeByokFields({
   return (
     <>
       <SettingsRow
-        title="Protocol"
-        control={<span className="text-sm text-muted-foreground">Anthropic Messages</span>}
+        title={t("Protocol")}
+        control={<span className="text-sm text-muted-foreground">{t("Anthropic Messages")}</span>}
       />
       <SettingsRow
-        title="BA base URL"
+        title={t("BA base URL")}
         status={
           error ? (
             <span role="alert" className="text-destructive">
-              {error}
+              {t(error)}
             </span>
           ) : undefined
         }
         control={
           <Input
-            aria-label="BA base URL"
+            aria-label={t("BA base URL")}
             size="sm"
             value={url}
             disabled={disabled}
@@ -91,7 +93,7 @@ export function ClaudeByokFields({
         }
       />
       <SettingsRow
-        title="Authentication"
+        title={t("Authentication")}
         control={
           <Select
             value={mode}
@@ -101,24 +103,24 @@ export function ClaudeByokFields({
                 onChange(withClaudeByokVariable(environment, claudeByokAuthVariable(value), ""));
             }}
           >
-            <SelectTrigger size="sm" aria-label="BA authentication">
+            <SelectTrigger size="sm" aria-label={t("BA authentication")}>
               <SelectValue>
-                {mode === "bearer" ? "Bearer Token" : "API Key (x-api-key)"}
+                {mode === "bearer" ? t("Bearer Token") : t("API Key (x-api-key)")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
-              <SelectItem value="bearer">Bearer Token</SelectItem>
-              <SelectItem value="apiKey">API Key (x-api-key)</SelectItem>
+              <SelectItem value="bearer">{t("Bearer Token")}</SelectItem>
+              <SelectItem value="apiKey">{t("API Key (x-api-key)")}</SelectItem>
             </SelectPopup>
           </Select>
         }
       />
       <SettingsRow
-        title={mode === "bearer" ? "Bearer Token" : "API Key"}
+        title={mode === "bearer" ? t("Bearer Token") : t("API Key")}
         control={
           <SecretSourceInput
             key={credentialName}
-            aria-label="BA credential"
+            aria-label={t("BA credential")}
             size="sm"
             sources={secretSources}
             disabled={disabled}
@@ -150,6 +152,7 @@ export function ClaudeByokSettings({
   readonly readOnly: boolean;
   readonly secretSources: ReadonlyArray<SecretSource>;
 }) {
+  const t = useUiTranslation();
   const [draft, setDraft] = useState(instance.environment ?? []);
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -253,14 +256,14 @@ export function ClaudeByokSettings({
         disabled={readOnly || busy}
       />
       <SettingsRow
-        title="Connection settings"
+        title={t("Connection settings")}
         status={
           saveError ? (
             <span role="alert" className="text-destructive">
-              {saveError}
+              {t(saveError)}
             </span>
           ) : dirty ? (
-            (error ?? "Unsaved changes")
+            t(error ?? "Unsaved changes")
           ) : undefined
         }
         control={
@@ -276,7 +279,7 @@ export function ClaudeByokSettings({
               }}
             >
               <Undo2Icon />
-              Revert
+              {t("Revert")}
             </Button>
             <Button
               size="sm"
@@ -284,13 +287,13 @@ export function ClaudeByokSettings({
               onClick={() => void save()}
             >
               <SaveIcon />
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("Saving...") : t("Save")}
             </Button>
           </div>
         }
       />
       <SettingsRow
-        title="Connection check"
+        title={t("Connection check")}
         control={
           <Button
             size="sm"
@@ -299,12 +302,12 @@ export function ClaudeByokSettings({
             onClick={() => void check("connection")}
           >
             <PlugIcon />
-            Check connection
+            {t("Check connection")}
           </Button>
         }
       />
       <SettingsRow
-        title="Model & tools"
+        title={t("Model & tools")}
         control={
           <div className="flex w-full min-w-0 flex-wrap gap-2">
             <div className="min-w-0 flex-1">
@@ -316,8 +319,8 @@ export function ClaudeByokSettings({
                   setFeedback(null);
                 }}
               >
-                <SelectTrigger size="sm" aria-label="BYOK test model">
-                  <SelectValue placeholder="Select model" />
+                <SelectTrigger size="sm" aria-label={t("BYOK test model")}>
+                  <SelectValue placeholder={t("Select model")} />
                 </SelectTrigger>
                 <SelectPopup>
                   {models.map((model) => (
@@ -337,18 +340,18 @@ export function ClaudeByokSettings({
                 !canCheckModel ||
                 !models.some((model) => model.slug === testModel)
               }
-              title="Sends two model requests and uses API credits"
+              title={t("Sends two model requests and uses API credits")}
               onClick={() => void check("model")}
             >
               <FlaskConicalIcon />
-              Test model & tools
+              {t("Test model & tools")}
             </Button>
           </div>
         }
       />
       {running ? (
         <SettingsRow
-          title="Checking..."
+          title={t("Checking...")}
           control={
             <Button
               size="sm"
@@ -358,7 +361,7 @@ export function ClaudeByokSettings({
               }
             >
               <XIcon />
-              Cancel
+              {t("Cancel")}
             </Button>
           }
         />
@@ -369,15 +372,15 @@ export function ClaudeByokSettings({
             feedback.success ? (
               <span className="flex items-center gap-2">
                 <CheckIcon className="size-4" />
-                Check complete
+                {t("Check complete")}
               </span>
             ) : (
-              "Check failed"
+              t("Check failed")
             )
           }
           status={
             <span role="status" className={feedback.success ? undefined : "text-destructive"}>
-              {feedback.message}
+              {t(feedback.message)}
             </span>
           }
         />

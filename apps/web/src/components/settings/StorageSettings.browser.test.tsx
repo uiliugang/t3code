@@ -1,8 +1,10 @@
 import { act, fakeTimers, render } from "../../../test/render";
 import { RegistryProvider } from "@effect/atom-react";
 import { DEFAULT_SERVER_SETTINGS, ProjectId, type StorageCleanupReport } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const state = vi.hoisted(() => ({
   settings: {} as typeof DEFAULT_SERVER_SETTINGS,
@@ -93,8 +95,10 @@ vi.mock(import("../ui/toast"), async (original) => {
 import { StorageCleanupSections } from "./StorageSettings";
 
 function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   state.settings = {
     ...DEFAULT_SERVER_SETTINGS,
+    autoDeleteMergedBranches: false,
     storageCleanup: {
       worktreeKeepWhen: "uncommitted-changes",
       worktreeAfterDays: null,

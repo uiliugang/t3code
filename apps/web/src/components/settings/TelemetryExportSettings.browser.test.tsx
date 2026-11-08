@@ -3,6 +3,11 @@ import { DEFAULT_SERVER_SETTINGS, type ServerObservability } from "@t3tools/cont
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const { state, updateSettings, checkOtlpEndpoint, checkOtlpEndpointCommand } = vi.hoisted(() => ({
   state: {
     observability: {} as typeof DEFAULT_SERVER_SETTINGS.observability,

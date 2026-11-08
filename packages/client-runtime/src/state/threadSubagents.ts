@@ -1,6 +1,7 @@
 import * as DateTime from "effect/DateTime";
 import type { OrchestrationV2Subagent, OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import { copySorted } from "@t3tools/shared/Array";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
 import { isActiveSubagentStatus, isTerminalSubagentStatus } from "./subagentRuntime.ts";
 import { resolveActiveThreadRun } from "./threadWorkflows.ts";
@@ -92,6 +93,7 @@ export function deriveThreadTurnSubagents(
 
 export function resolveSubagentPillSegment(
   turn: ThreadTurnSubagents | null,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): SubagentPillSegment | null {
   if (turn === null) return null;
   // Finished agents stay reachable until a later turn replaces them; workflows always stay reachable.
@@ -107,11 +109,16 @@ export function resolveSubagentPillSegment(
   if (turn.liveCount > 0) {
     return {
       label: `${turn.liveCount}/${total}`,
-      accessibilityLabel: `${turn.liveCount} of ${total} agents working`,
+      accessibilityLabel: t("{count} of {total} agents working", {
+        count: turn.liveCount,
+        total,
+      }),
     };
   }
   return {
-    label: `${turn.settledCount} done`,
-    accessibilityLabel: `${turn.settledCount} ${turn.settledCount === 1 ? "agent" : "agents"} done`,
+    label: t("{count} done", { count: turn.settledCount }),
+    accessibilityLabel: t(turn.settledCount === 1 ? "{count} agent done" : "{count} agents done", {
+      count: turn.settledCount,
+    }),
   };
 }

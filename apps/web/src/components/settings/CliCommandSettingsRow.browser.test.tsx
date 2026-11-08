@@ -1,13 +1,16 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { DesktopCliCommandState } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { act, render, stubGlobal } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { desktopCliCommandStateAtom } from "../../state/desktopCliCommand";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 
 it("blocks installation behind another t3 without blocking removal of our installation", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   const state: DesktopCliCommandState = {
     supported: true,
     installedPath: null,

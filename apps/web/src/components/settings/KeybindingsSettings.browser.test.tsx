@@ -1,8 +1,10 @@
 import { RegistryProvider } from "@effect/atom-react";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent, type Locator } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
@@ -77,6 +79,7 @@ describe("Esc in a shortcut recorder", () => {
       },
     },
   ])("leaves the $name field without closing Settings", async ({ field, open, expectReset }) => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     const onOpenChange = vi.fn();
     await using _screen = await render(
       <Dialog open onOpenChange={onOpenChange}>
@@ -106,6 +109,7 @@ describe("Esc in a shortcut recorder", () => {
 });
 
 it("re-enables Save when a When editor closes on an expression it could not parse", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   await using screen = await render(
     <RegistryProvider>
       <KeybindingsSettingsPanel />

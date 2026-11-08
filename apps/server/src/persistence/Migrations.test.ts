@@ -69,7 +69,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80])("upgrades a database at exactly %s", (id) =>
+  it.effect.each([54, 78, 79, 80, 87])("upgrades a database at exactly %s", (id) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: id });
@@ -79,6 +79,11 @@ describe("runMigrations", () => {
       );
       assert.deepStrictEqual(yield* history, migrationManifest);
       assert.isAbove(yield* v2TableCount, 0);
+      const taskColumns = yield* sql<{ readonly name: string }>`PRAGMA table_info(scheduled_tasks)`;
+      assert.include(
+        taskColumns.map(({ name }) => name),
+        "thread_mode",
+      );
       yield* sql`INSERT INTO managed_worktree_snapshots (group_id, payload_json) VALUES ('group', '{}')`;
       yield* sql`INSERT INTO skill_catalog (id, payload) VALUES (1, '{}')`;
       const indexes = yield* sql<{ name: string }>`

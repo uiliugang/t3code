@@ -1,11 +1,9 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@t3tools/contracts";
 import { type RouteProp, useIsFocused, useRoute } from "@react-navigation/native";
-import { cursorKeychainAccessEnvironments } from "@t3tools/client-runtime/state/usage";
 import {
   updatingProvidersLabel,
   usageEnvironmentProgress,
@@ -31,7 +29,7 @@ import {
   usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
 import { useRef, useState, type ReactNode } from "react";
-import { Platform, RefreshControl, View } from "react-native";
+import { RefreshControl, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -39,19 +37,14 @@ import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { useReduceMotionEnabled } from "../../lib/appState";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
-import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
-import { serverEnvironment } from "../../state/server";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { UsageDailyChart } from "./UsageDailyChart";
 import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
 import { UsageLimitsSection } from "./UsageLimitsPooled";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
 
@@ -75,7 +68,6 @@ const WIDE_CHART_HEIGHT = 260;
 const WIDE_WIDTH = 600;
 const MAX_CONTENT_WIDTH = 1080;
 const providerLabel = (provider: UsageProviderKind) => PROVIDER_LABEL[provider];
-const CURSOR_KEYCHAIN_COPY = "Requires access to your Cursor login in macOS Keychain.";
 
 export function UsageRouteScreen(props: { readonly workspace?: boolean }) {
   const route = useRoute<RouteProp<{ Usage: { tab?: string } | undefined }, "Usage">>();
@@ -124,11 +116,6 @@ function UsageScreen(props: {
   );
   const isFocused = useIsFocused();
   const limits = useRefreshLimits(selectedEnvironmentIds, isFocused && view === "limits");
-  const cursorAccessEnvironments = cursorKeychainAccessEnvironments(selectedEnvironments);
-  const refreshAfterCursorEnable = () => {
-    void refresh();
-    void limits.refreshAfterEnable();
-  };
   const sourceMessages = usageSourceMessages(
     selectedEnvironments.flatMap((environment) => environment.summary?.sources ?? []),
   );
@@ -193,39 +180,9 @@ function UsageScreen(props: {
     isPast24Hours,
     timeZone: window.timeZone,
   };
-  const providers = (
-    <ProviderSection
-      merged={merged}
-      metric={metric}
-      cursorAccessEnvironments={cursorAccessEnvironments}
-      showCursorEnvironment={selectedEnvironments.length > 1}
-      onCursorEnabled={refreshAfterCursorEnable}
-      compact={wide}
-    />
-  );
+  const providers = <ProviderSection merged={merged} metric={metric} compact={wide} />;
 
   const showEnvironmentFilter = environments.length > 0 || selectedEnvironmentIds !== null;
-  const filterIcon =
-    selectedEnvironmentIds === null
-      ? "line.3.horizontal.decrease"
-      : "line.3.horizontal.decrease.circle.fill";
-  const environmentActions = [
-    {
-      id: "all",
-      title: t("All environments"),
-      subtitle: undefined,
-      state: selectedEnvironmentIds === null ? ("on" as const) : ("off" as const),
-    },
-    ...environments.map((environment) => ({
-      id: environment.environmentId,
-      title: environment.label,
-      subtitle: usageEnvironmentStatus(environment, refreshingUsage),
-      state:
-        selectedEnvironmentIds === null || selectedEnvironmentIds.has(environment.environmentId)
-          ? ("on" as const)
-          : ("off" as const),
-    })),
-  ];
   const selectEnvironment = (value: string) => {
     if (value === "all") {
       setSelectedEnvironmentIds(null);
@@ -238,15 +195,24 @@ function UsageScreen(props: {
     title: t("Filter usage environments"),
     icon:
       selectedEnvironmentIds === null
-        ? ("line.3.horizontal.decrease.circle" as const)
+        ? ("line.3.horizontal.decrease" as const)
         : ("line.3.horizontal.decrease.circle.fill" as const),
-    items: environmentActions.map((action) => ({
-      id: action.id,
-      title: action.title,
-      subtitle: action.subtitle,
-      selected: action.state === "on",
-      onPress: () => selectEnvironment(action.id),
-    })),
+    items: [
+      {
+        id: "all",
+        title: t("All environments"),
+        selected: selectedEnvironmentIds === null,
+        onPress: () => selectEnvironment("all"),
+      },
+      ...environments.map((environment) => ({
+        id: environment.environmentId,
+        title: environment.label,
+        subtitle: usageEnvironmentStatus(environment, refreshingUsage),
+        selected:
+          selectedEnvironmentIds === null || selectedEnvironmentIds.has(environment.environmentId),
+        onPress: () => selectEnvironment(environment.environmentId),
+      })),
+    ],
   };
 
   return (
@@ -255,35 +221,6 @@ function UsageScreen(props: {
       menus={showEnvironmentFilter ? [environmentMenu] : undefined}
       workspaceRoot={props.workspace}
     >
-      {Platform.OS === "ios" ? (
-        <NativeStackScreenOptions
-          optionsVersion={JSON.stringify({ showEnvironmentFilter, filterIcon, environmentActions })}
-          options={{
-            // A native menu item, unlike a custom view, moves into the Duo's vertical bar.
-            unstable_headerRightItems: () =>
-              showEnvironmentFilter
-                ? [
-                    withNativeGlassHeaderItem({
-                      accessibilityLabel: t("Filter usage environments"),
-                      icon: { name: filterIcon, type: "sfSymbol" },
-                      label: "",
-                      type: "menu",
-                      menu: {
-                        title: t("Environments"),
-                        items: environmentActions.map((action) => ({
-                          type: "action" as const,
-                          label: action.title,
-                          description: action.subtitle,
-                          state: action.state === "on" ? ("on" as const) : undefined,
-                          onPress: () => selectEnvironment(action.id),
-                        })),
-                      },
-                    }),
-                  ]
-                : [],
-          }}
-        />
-      ) : null}
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -337,14 +274,6 @@ function UsageScreen(props: {
                 failedLabels={limits.failedLabels}
                 selectedEnvironmentIds={selectedEnvironmentIds}
                 wide={wide}
-                cursorPrompt={
-                  cursorAccessEnvironments.length > 0 ? (
-                    <CursorEnableLimits
-                      environments={cursorAccessEnvironments}
-                      onEnabled={refreshAfterCursorEnable}
-                    />
-                  ) : null
-                }
               />
             ) : (
               <>
@@ -485,111 +414,6 @@ function UsageUpdating({
   );
 }
 
-function CursorEnableAction({
-  environmentId,
-  label,
-  onEnabled,
-  buttonText = "Enable",
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly label: string;
-  readonly onEnabled: () => void;
-  readonly buttonText?: string;
-}) {
-  const t = useUiTranslation();
-  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
-    label: t("enable Cursor account usage"),
-  });
-  const [pending, setPending] = useState(false);
-  const enable = async () => {
-    setPending(true);
-    const result = await updateSettings({
-      environmentId,
-      input: { patch: { cursorKeychainUsageEnabled: true } },
-    }).finally(() => setPending(false));
-    if (result._tag === "Success") onEnabled();
-  };
-  return (
-    <Button
-      label={t(buttonText)}
-      tone="primary"
-      accessibilityLabel={t("Enable Cursor usage from {label}", { label: String(label) })}
-      accessibilityHint={t(CURSOR_KEYCHAIN_COPY)}
-      disabled={pending}
-      onPress={() => void enable()}
-      loading={pending}
-    />
-  );
-}
-
-function CursorEnableRow({
-  environmentId,
-  label,
-  showEnvironment,
-  bordered,
-  onEnabled,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly label: string;
-  readonly showEnvironment: boolean;
-  readonly bordered: boolean;
-  readonly onEnabled: () => void;
-}) {
-  const colors = useProviderColors();
-  return (
-    <View
-      className={cn(
-        "flex-row items-center justify-between gap-3 p-4",
-        bordered && "border-t border-border-subtle",
-      )}
-    >
-      <View className="min-w-0 flex-1 flex-row items-center gap-2">
-        <View className="size-2.5 rounded-full" style={{ backgroundColor: colors.cursor }} />
-        <Text className="shrink text-lg text-foreground">
-          Cursor{showEnvironment ? ` · ${label}` : ""}
-        </Text>
-      </View>
-      <CursorEnableAction environmentId={environmentId} label={label} onEnabled={onEnabled} />
-    </View>
-  );
-}
-
-function CursorEnableLimits({
-  environments,
-  onEnabled,
-}: {
-  readonly environments: readonly EnvironmentUsageStatus[];
-  readonly onEnabled: () => void;
-}) {
-  const t = useUiTranslation();
-  return (
-    <View className="gap-3">
-      <View className="flex-row items-center gap-2 px-1">
-        <ProviderIcon provider="cursor" size={18} />
-        <Text className="text-base font-t3-medium text-foreground">Cursor</Text>
-      </View>
-      <View className="items-start gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
-        <Text className="text-xs text-foreground-muted">{t(CURSOR_KEYCHAIN_COPY)}</Text>
-        <View className="flex-row flex-wrap gap-2">
-          {environments.map((environment) => (
-            <CursorEnableAction
-              key={environment.environmentId}
-              environmentId={environment.environmentId}
-              label={environment.label}
-              buttonText={
-                environments.length > 1
-                  ? t("Enable on {environment}", { environment: environment.label })
-                  : t("Enable")
-              }
-              onEnabled={onEnabled}
-            />
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-}
-
 function ChartCard(props: {
   readonly merged: MergedUsage;
   readonly days: readonly string[];
@@ -696,55 +520,22 @@ function UsageSummary(props: { readonly merged: MergedUsage; readonly metric: Us
 function ProviderSection(props: {
   readonly merged: MergedUsage;
   readonly metric: UsageChartMetric;
-  readonly cursorAccessEnvironments: readonly EnvironmentUsageStatus[];
-  readonly showCursorEnvironment: boolean;
-  readonly onCursorEnabled: () => void;
   /** Drops the share bar so the list fits beside the chart. */
   readonly compact: boolean;
 }) {
   const t = useUiTranslation();
   const { merged, metric } = props;
   const colors = useProviderColors();
-  if (merged.providers.length === 0 && props.cursorAccessEnvironments.length === 0) return null;
+  if (merged.providers.length === 0) return null;
 
   // Hermes lacks toSorted.
   const ordered = [...merged.providers].sort((a, b) =>
     metric === "cost" ? b.costUsd - a.costUsd : b.totalTokens - a.totalTokens,
   );
-  const rows: Array<
-    | { readonly kind: "usage"; readonly provider: (typeof ordered)[number] }
-    | { readonly kind: "enable"; readonly environment: EnvironmentUsageStatus }
-  > = ordered.map((provider) => ({ kind: "usage", provider }));
-  const cursorInsertAt =
-    Math.max(
-      ordered.findIndex((provider) => provider.provider === "codex"),
-      ordered.findIndex((provider) => provider.provider === "claude"),
-    ) + 1;
-  rows.splice(
-    cursorInsertAt,
-    0,
-    ...props.cursorAccessEnvironments.map((environment) => ({
-      kind: "enable" as const,
-      environment,
-    })),
-  );
 
   return (
     <SettingsSection title={t("Providers")}>
-      {rows.map((row, index) => {
-        if (row.kind === "enable") {
-          return (
-            <CursorEnableRow
-              key={`enable:${row.environment.environmentId}`}
-              environmentId={row.environment.environmentId}
-              label={row.environment.label}
-              showEnvironment={props.showCursorEnvironment}
-              bordered={index > 0}
-              onEnabled={props.onCursorEnabled}
-            />
-          );
-        }
-        const provider = row.provider;
+      {ordered.map((provider, index) => {
         const share = metric === "cost" ? provider.costShare : provider.tokenShare;
         return (
           <View
@@ -1020,20 +811,14 @@ function ModelsSection(props: {
               </Text>
               <Text className="text-sm text-foreground-muted">
                 {metric === "tokens"
-                  ? t("{value} of tokens · {value2}", {
-                      value: String(formatPercent(model.tokenShare)),
-                      value2: String(
-                        isModelCostUnknown(model) ? t("no known rates") : formatUsd(model.costUsd),
-                      ),
-                    })
+                  ? `${formatPercent(model.tokenShare)} of tokens · ${
+                      isModelCostUnknown(model) ? t("no known rates") : formatUsd(model.costUsd)
+                    }`
                   : isModelCostUnknown(model)
                     ? t("no known rates · {value} tokens", {
                         value: String(formatTokens(model.totalTokens)),
                       })
-                    : t("{value} of cost · {value2} tokens", {
-                        value: String(formatPercent(model.costShare)),
-                        value2: String(formatTokens(model.totalTokens)),
-                      })}
+                    : `${formatPercent(model.costShare)} of cost · ${formatTokens(model.totalTokens)} tokens`}
               </Text>
             </View>
             <Text className="text-base tabular-nums text-foreground">

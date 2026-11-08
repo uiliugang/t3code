@@ -12,6 +12,12 @@ import { expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../test/render";
 import { useRightPanelStore } from "../rightPanelStore";
+import { threadEnvironment } from "../state/threads";
+
+vi.mock(import("../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 
 const state = vi.hoisted(() => ({
   allowed: true,
@@ -31,18 +37,15 @@ vi.mock(import("../state/use-atom-query-runner"), async (original) => ({
   ...(await original()),
   useAtomQueryRunner: (() => state.search) as never,
 }));
-vi.mock(import("../state/use-atom-command"), async (original) => {
-  const { threadEnvironment } = await import("../state/threads");
-  return {
-    ...(await original()),
-    useAtomCommand: ((command: unknown) =>
-      command === threadEnvironment.linkPullRequest
-        ? state.link
-        : command === threadEnvironment.unlinkPullRequest
-          ? state.unlink
-          : state.openEditor) as never,
-  };
-});
+vi.mock(import("../state/use-atom-command"), async (original) => ({
+  ...(await original()),
+  useAtomCommand: ((command: unknown) =>
+    command === threadEnvironment.linkPullRequest
+      ? state.link
+      : command === threadEnvironment.unlinkPullRequest
+        ? state.unlink
+        : state.openEditor) as never,
+}));
 vi.mock(import("../state/session"), async (original) => {
   const { useSyncExternalStore } = await import("react");
   const readEnvironmentScope = (id: EnvironmentId | null, scope: AuthEnvironmentScope) =>

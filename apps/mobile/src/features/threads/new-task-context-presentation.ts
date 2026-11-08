@@ -1,4 +1,4 @@
-import { sanitizeNewRefName } from "@t3tools/shared/git";
+import { isMainOrMasterBranch, sanitizeNewRefName } from "@t3tools/shared/git";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveSendEnvMode } from "@t3tools/shared/projectSettings";
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
@@ -112,14 +112,21 @@ export function shouldCheckoutNewTaskBranch(input: {
   return input.workspaceMode === "local" && !input.branchIsCurrent && !input.branchWorktreePath;
 }
 
-export function filterNewTaskBranches<T extends { readonly name: string }>(
-  branches: ReadonlyArray<T>,
-  rawQuery: string,
-): ReadonlyArray<T> {
+export function filterNewTaskBranches<
+  T extends {
+    readonly name: string;
+    readonly isRemote?: boolean;
+    readonly remoteName?: string;
+  },
+>(branches: ReadonlyArray<T>, rawQuery: string, mainBranchOnly = false): ReadonlyArray<T> {
   const query = sanitizeNewRefName(rawQuery).toLowerCase();
-  return query.length === 0
-    ? branches
-    : branches.filter((branch) => branch.name.toLowerCase().includes(query));
+  if (!mainBranchOnly && query.length === 0) return branches;
+  return branches.filter(
+    (branch) =>
+      (!mainBranchOnly ||
+        isMainOrMasterBranch(branch.name, branch.isRemote ? branch.remoteName : undefined)) &&
+      (query.length === 0 || branch.name.toLowerCase().includes(query)),
+  );
 }
 
 /**

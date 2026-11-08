@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
   pullRequestLinkProject,
   resolveLinkPullRequestInput,
@@ -34,6 +35,7 @@ export function useLinkedPullRequestActions(input: {
   readonly project: EnvironmentProject | null;
   readonly runtime: EnvironmentRuntimeState | null;
 }) {
+  const t = useUiTranslation();
   const { thread, project, runtime } = input;
   const terminology = sourceControlClients.get(project?.repositoryIdentity?.provider).changeRequest;
   const capabilities = runtime?.serverConfig?.environment.capabilities;
@@ -61,7 +63,7 @@ export function useLinkedPullRequestActions(input: {
     const result = await pending;
     if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
     const cause = squashAtomCommandFailure(result);
-    Dialog.alert(failureTitle, cause instanceof Error ? cause.message : "Try again.");
+    Dialog.alert(t(failureTitle), cause instanceof Error ? cause.message : t("Try again."));
   };
 
   const setLinked = (
@@ -79,8 +81,8 @@ export function useLinkedPullRequestActions(input: {
     const environmentId = thread.environmentId;
     void run(
       linked
-        ? `Couldn't link this ${terminology.singular}`
-        : `Couldn't unlink this ${terminology.singular}`,
+        ? t("Could not link this {kind}", { kind: t(terminology.singular) })
+        : t("Could not unlink this {kind}", { kind: t(terminology.singular) }),
       mutation.type === "thread.pull-request.link"
         ? link({ environmentId, input: mutation.input })
         : unlink({ environmentId, input: mutation.input }),
@@ -90,11 +92,13 @@ export function useLinkedPullRequestActions(input: {
   const promptLink = () => {
     const { singular } = terminology;
     Dialog.prompt({
-      title: `Link ${singular}`,
-      message: `Paste a ${singular} URL, or enter 123 / #123 for this thread's repository.`,
-      placeholder: `${capitalizeTerm(singular)} URL or #42`,
+      title: t("Link {kind}", { kind: t(singular) }),
+      message: t("Paste a {kind} URL, or enter 123 / #123 for this thread's repository.", {
+        kind: t(singular),
+      }),
+      placeholder: t("{kind} URL or #42", { kind: t(capitalizeTerm(singular)) }),
       initialValue: "",
-      confirmText: "Link",
+      confirmText: t("Link"),
       onConfirm: (reference) => {
         const resolved = resolveLinkPullRequestInput({
           reference,
@@ -102,11 +106,14 @@ export function useLinkedPullRequestActions(input: {
           hasProject: () => true,
         });
         if (resolved === null) {
-          Dialog.alert(`Couldn't link this ${singular}`, `Use a ${singular} URL, 123, or #123.`);
+          Dialog.alert(
+            t("Could not link this {kind}", { kind: t(singular) }),
+            t("Use a {kind} URL, 123, or #123.", { kind: t(singular) }),
+          );
           return;
         }
         if ("error" in resolved) {
-          Dialog.alert(`Couldn't link this ${singular}`, resolved.error);
+          Dialog.alert(t("Could not link this {kind}", { kind: t(singular) }), resolved.error);
           return;
         }
         setLinked(resolved.link, true);
@@ -118,13 +125,13 @@ export function useLinkedPullRequestActions(input: {
     const open = link.snapshot === null || link.snapshot.state === "open";
     const watching = link.watch !== undefined;
     return [
-      { id: "copy", title: "Copy link", image: "link" },
-      { id: "browser", title: "Open in browser", image: "safari" },
+      { id: "copy", title: t("Copy link"), image: "link" },
+      { id: "browser", title: t("Open in browser"), image: "safari" },
       ...((watching ? canWatch : canStartWatch) && open
         ? [
             {
               id: "watch",
-              title: watching ? "Stop watching" : "Watch for changes",
+              title: watching ? t("Stop watching") : t("Watch for changes"),
               image: watching ? "eye.slash" : "eye",
             },
           ]
@@ -133,7 +140,7 @@ export function useLinkedPullRequestActions(input: {
         ? [
             {
               id: "unlink",
-              title: link.source === "stack" ? "Dismiss from thread" : "Unlink from thread",
+              title: link.source === "stack" ? t("Dismiss from thread") : t("Unlink from thread"),
               image: "xmark",
               attributes: { destructive: true },
             },
@@ -151,12 +158,15 @@ export function useLinkedPullRequestActions(input: {
             sourceControlClients.findByChangeRequestUrl(link.url) ??
             sourceControlClients.get(undefined)
           ).changeRequest;
-          Dialog.alert(`Unable to open ${shortLabel}`, `The ${singular} could not be opened.`);
+          Dialog.alert(
+            t("Unable to open {kind}", { kind: t(shortLabel) }),
+            t("The {kind} could not be opened.", { kind: t(singular) }),
+          );
         }
       });
     else if (action === "watch" && thread !== null)
       void run(
-        "Couldn't change watching",
+        t("Could not change watching"),
         watch({
           environmentId: thread.environmentId,
           input: {

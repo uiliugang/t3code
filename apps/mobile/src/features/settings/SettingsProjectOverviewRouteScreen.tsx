@@ -46,14 +46,11 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 import { leaveSettingsPage } from "./settings-navigation";
-import { workspaceHasColumns } from "../workspace/workspace-selection-store";
-import { DEFAULT_SETTINGS_PAGE } from "../workspace/workspace-tab-navigation";
+import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
+import { DEFAULT_SETTINGS_PAGE } from "../layout/workspace/workspace-tab-navigation";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 
 export function SettingsProjectOverviewRouteScreen() {
@@ -75,6 +72,7 @@ export function SettingsProjectOverviewRouteScreen() {
   const {
     availableTargets,
     selectedTargets,
+    selectedConfiguredTargets,
     projectGroups,
     selectedProjectKey,
     selectProject,
@@ -89,15 +87,19 @@ export function SettingsProjectOverviewRouteScreen() {
     selectProject(null);
   };
   const group = projectGroups.find((entry) => entry.key === selectedProjectKey);
-  const selectedEnvironmentIds = new Set(selectedTargets.map((entry) => entry.environmentId));
+  const selectedEnvironmentIds = new Set(
+    selectedConfiguredTargets.map((entry) => entry.environmentId),
+  );
   const members =
     group?.members
       .map((entry) => entry.project)
       .filter((project) => selectedEnvironmentIds.has(project.environmentId)) ?? [];
+  const connectedMembers = members.filter((project) =>
+    selectedTargets.some((target) => target.environmentId === project.environmentId),
+  );
 
   return (
     <>
-      <SettingsEnvironmentFilterHeader />
       <SettingsScreen title={t("Projects")} menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
@@ -120,17 +122,18 @@ export function SettingsProjectOverviewRouteScreen() {
               )
             }
           />
-          {members.length === 1 ? (
+          {connectedMembers.length === 1 ? (
             <Button
               label={t("Import sibling folders")}
               icon="folder.badge.plus"
               onPress={() =>
                 navigation.dispatch(
                   StackActions.push("AddProjectFolders", {
-                    environmentId: members[0]!.environmentId,
+                    environmentId: connectedMembers[0]!.environmentId,
                     parentPath:
-                      getBrowseParentPath(ensureBrowseDirectoryPath(members[0]!.workspaceRoot)) ??
-                      "~/",
+                      getBrowseParentPath(
+                        ensureBrowseDirectoryPath(connectedMembers[0]!.workspaceRoot),
+                      ) ?? "~/",
                   }),
                 )
               }
@@ -154,7 +157,7 @@ export function SettingsProjectOverviewRouteScreen() {
               members={members}
               group={group}
               connectedTargets={availableTargets}
-              environments={selectedTargets}
+              environments={selectedConfiguredTargets}
               hasOtherMembers={members.length < (group?.members.length ?? 0)}
               isRemoving={isRemoving}
               setIsRemoving={setIsRemoving}
@@ -411,14 +414,15 @@ function ProjectOverviewContent(props: {
         />
       ))}
       {props.members.map((project) => {
-        const settings = props.environments.find(
+        const environment = props.environments.find(
           (entry) => entry.environmentId === project.environmentId,
-        )?.serverConfig.settings;
-        return settings ? (
+        );
+        return environment ? (
           <ProjectConfigurationSettings
             key={`${project.environmentId}:${project.id}`}
             project={project}
-            settings={settings}
+            settings={environment.serverConfig.settings}
+            connected={environment.connection.phase === "connected"}
           />
         ) : null;
       })}

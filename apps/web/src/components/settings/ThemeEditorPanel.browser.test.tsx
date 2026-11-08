@@ -1,7 +1,9 @@
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { ThemeEditorPanel } from "./ThemeEditorPanel";
 
 function dragHeader(panel: HTMLElement, toX: number, toY: number) {
@@ -46,6 +48,7 @@ function pointerAt(target: HTMLElement, type: string, xFraction: number) {
 }
 
 async function renderPanel() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   await page.viewport(1280, 900);
   const stack = new AsyncDisposableStack();
   // Synthetic pointer ids are not active pointers, so the browser would reject capture.
@@ -90,6 +93,7 @@ describe("ThemeEditorPanel", () => {
   });
 
   it("returns to where the user left it when the window shrinks and grows back", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     await page.viewport(1280, 900);
     // Synthetic pointer ids are not active pointers, so the browser would reject capture.
     using _capture = vi

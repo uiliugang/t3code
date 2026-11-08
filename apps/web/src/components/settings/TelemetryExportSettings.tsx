@@ -1,3 +1,4 @@
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import type { OtlpEndpointCheckResult, OtlpSignal, ServerObservability } from "@t3tools/contracts";
@@ -57,16 +58,22 @@ type EndpointCheck = { readonly url: string; readonly result: OtlpEndpointCheckR
 
 const isHttpUrl = (url: string) => /^https?:\/\/./i.test(url);
 
-function endpointStatus(url: string, check: EndpointCheck | undefined) {
+function endpointStatus(url: string, check: EndpointCheck | undefined, t: UiTranslator) {
   if (url === "") return { label: "Off", dot: "bg-muted-foreground/40" };
   if (check?.url !== url) return { label: "Not checked", dot: "bg-muted-foreground/40" };
   const { result } = check;
   if (result === null) return { label: "Checking…", dot: "bg-warning" };
   switch (result._tag) {
     case "Accepted":
-      return { label: `Connected · ${Math.round(result.latencyMs)} ms`, dot: "bg-success" };
+      return {
+        label: t("Connected · {latency} ms", { latency: Math.round(result.latencyMs) }),
+        dot: "bg-success",
+      };
     case "Rejected":
-      return { label: `Rejected · HTTP ${result.status}`, dot: "bg-destructive" };
+      return {
+        label: t("Rejected · HTTP {status}", { status: result.status }),
+        dot: "bg-destructive",
+      };
     case "Unreachable":
       return { label: result.timedOut ? "Timed out" : "Unreachable", dot: "bg-destructive" };
   }
@@ -79,7 +86,7 @@ export function TelemetryExportSettings() {
     return (
       <SettingsSection title={t("OpenTelemetry export")} id="telemetry-export">
         <SettingsScopeNotice target="environment">
-          Choose one environment to configure its telemetry exports.
+          {t("Choose one environment to configure its telemetry exports.")}
         </SettingsScopeNotice>
       </SettingsSection>
     );
@@ -172,23 +179,25 @@ function TelemetryExportForm() {
         }}
       >
         <p className="text-xs text-muted-foreground">
-          Send traces, metrics, and logs to an OTLP HTTP receiver. Restart the server to apply.
-          Environment variables override these settings.
+          {t(
+            "Send traces, metrics, and logs to an OTLP HTTP receiver. Restart the server to apply. Environment variables override these settings.",
+          )}
         </p>
         {!canEdit && (
           <p className="text-xs text-muted-foreground">
-            This connection lacks permission to change settings on{" "}
-            {environment?.label ?? "the selected environment"}.
+            {t("This connection lacks permission to change settings on {environment}.", {
+              environment: environment?.label ?? t("the selected environment"),
+            })}
           </p>
         )}
         {SIGNALS.map((descriptor) => {
           const { key, label, signal } = descriptor;
           const override = runningOverride(running, descriptor);
           const url = override?.url ?? values[key].trim();
-          const check = canCheck ? endpointStatus(url, checks[key]) : null;
+          const check = canCheck ? endpointStatus(url, checks[key], t) : null;
           const status = override
             ? {
-                label: check ? `${override.label} · ${check.label}` : override.label,
+                label: check ? `${t(override.label)} · ${t(check.label)}` : t(override.label),
                 dot: check?.dot ?? "bg-muted-foreground/40",
               }
             : check;
@@ -197,9 +206,9 @@ function TelemetryExportForm() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5">
                   {status && <ConnectionStatusDot dotClassName={status.dot} />}
-                  <Label htmlFor={key}>{label} endpoint</Label>
+                  <Label htmlFor={key}>{t("{signal} endpoint", { signal: t(label) })}</Label>
                 </div>
-                {status && <span className="text-xs text-muted-foreground">{status.label}</span>}
+                {status && <span className="text-xs text-muted-foreground">{t(status.label)}</span>}
               </div>
               <div className="flex gap-2">
                 <Input
@@ -236,11 +245,11 @@ function TelemetryExportForm() {
               </div>
               {(saved[key] !== (running?.[key] ?? "") || override?.variable) && (
                 <p className="break-all text-xs text-muted-foreground">
-                  Running: {running?.[key] || "Disabled"}
+                  {t("Running:")} {running?.[key] || t("Disabled")}
                   {override?.variable && (
                     <>
                       {" "}
-                      from <code className="font-mono">{override.variable}</code>
+                      {t("from")} <code className="font-mono">{override.variable}</code>
                     </>
                   )}
                 </p>
@@ -250,7 +259,7 @@ function TelemetryExportForm() {
         })}
         <div className="flex items-center justify-between gap-3">
           <p role="status" className="text-xs text-muted-foreground">
-            {message}
+            {message ? t(message) : null}
           </p>
           <div className="flex shrink-0 gap-2">
             <Button
@@ -269,10 +278,10 @@ function TelemetryExportForm() {
                 }
               }}
             >
-              Discard
+              {t("Discard")}
             </Button>
             <Button type="submit" size="xs" disabled={!changed || saving || !canEdit}>
-              {saving ? "Saving…" : "Save"}
+              {saving ? t("Saving…") : t("Save")}
             </Button>
           </div>
         </div>

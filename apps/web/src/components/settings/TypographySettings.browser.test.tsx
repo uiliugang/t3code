@@ -1,4 +1,4 @@
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_CLIENT_SETTINGS, DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -6,6 +6,7 @@ import "~/index.css";
 import { render } from "../../../test/render";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { getLocalStorageItem, removeLocalStorageItem } from "../../hooks/useLocalStorage";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { TypographySection } from "./TypographySettings";
 
 const state = vi.hoisted(() => ({ searchTargetId: null as string | null }));
@@ -27,6 +28,7 @@ vi.mock(import("./settingsLayout"), async (original) => ({
 }));
 
 function setup(searchTargetId: string | null) {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   state.searchTargetId = searchTargetId;
   removeLocalStorageItem(TYPOGRAPHY_ADVANCED_STORAGE_KEY);
   return { [Symbol.dispose]: () => removeLocalStorageItem(TYPOGRAPHY_ADVANCED_STORAGE_KEY) };

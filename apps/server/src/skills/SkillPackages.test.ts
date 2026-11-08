@@ -14,6 +14,7 @@ it.live(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const platform = yield* HostProcess.Platform;
+      const environment = yield* HostProcess.Environment;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-mtskills-protocol-" });
       const script = `${directory}/installer.mjs`;
       // mtskills 9.6 accepts --sync-agents, but does not define the negated option.
@@ -63,8 +64,8 @@ writeFileSync(join(target, "resource.txt"), "bundled");
           SkillPackages.layer.pipe(Layer.provide(ServerConfig.layerTest(directory, directory))),
         ),
         Effect.provideService(HostProcess.Environment, {
-          ...process.env,
-          PATH: `${staleBin}${platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+          ...environment,
+          PATH: `${staleBin}${platform === "win32" ? ";" : ":"}${environment.PATH ?? ""}`,
         }),
         Effect.provideService(HostProcess.ExecutablePath, runtime),
       );

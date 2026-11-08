@@ -12,6 +12,7 @@ import {
   makeThreadErrorSetter,
 } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useDeadlinePassed, useNowAfter } from "../../hooks/useDeadline";
 import type { usePendingThreadRequests } from "./usePendingThreadRequests";
 import {
@@ -98,6 +99,8 @@ interface ThreadLifecycleInput {
   readonly threadDetailRef: ScopedThreadRef | null;
   readonly activeThreadKey: string | null;
   readonly activeThreadShell: EnvironmentThreadShell | null;
+  /** The usage-limit recovery banner shows this snooze and its Wake now. */
+  readonly limitRecoveryHoldsSnooze: boolean;
   readonly activeLatestRun: EnvironmentThreadShell["latestRun"];
   readonly activeProjectCwd: string | null;
   readonly serverConfig: EnvironmentServerConfig | null;
@@ -137,6 +140,7 @@ interface ThreadLifecycleInput {
  * banners, opening related threads, and standalone slash commands.
  */
 export function useThreadLifecycle(input: ThreadLifecycleInput) {
+  const t = useUiTranslation();
   const {
     environmentId,
     routeThreadKey,
@@ -150,6 +154,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     activeThreadKey,
     activeThreadShell,
     activeLatestRun,
+    limitRecoveryHoldsSnooze,
     activeProjectCwd,
     serverConfig,
     runtimeMode,
@@ -495,13 +500,16 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   };
   const onOpenRelatedThreadStable = useStableCallback(onOpenRelatedThread);
   const childThreadInputs = useChildThreadInputs(activeThreadRef);
-  const childInputNow = childInputNowItem({
-    childThreadInputs,
-    parentAwaitingUser: Boolean(
-      activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput,
-    ),
-    onOpenThread: onOpenRelatedThreadStable,
-  });
+  const childInputNow = childInputNowItem(
+    {
+      childThreadInputs,
+      parentAwaitingUser: Boolean(
+        activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput,
+      ),
+      onOpenThread: onOpenRelatedThreadStable,
+    },
+    t,
+  );
 
   const sendStandaloneCommand = async (text: string, failureMessage: string) => {
     if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) return;
@@ -592,15 +600,18 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         })
       : null;
   const backgroundWorkNow = activeThread
-    ? backgroundWorkNowItem({
-        threadId: activeThread.id,
-        tasks: activeBackgroundTasks,
-        turnItems,
-        stopDisabled: !canOperateThread || isStoppingBackgroundWork,
-        stopping: isStoppingBackgroundWork,
-        onStop: handleStopBackgroundWorkStable,
-        onOpenThread: onOpenRelatedThreadStable,
-      })
+    ? backgroundWorkNowItem(
+        {
+          threadId: activeThread.id,
+          tasks: activeBackgroundTasks,
+          turnItems,
+          stopDisabled: !canOperateThread || isStoppingBackgroundWork,
+          stopping: isStoppingBackgroundWork,
+          onStop: handleStopBackgroundWorkStable,
+          onOpenThread: onOpenRelatedThreadStable,
+        },
+        t,
+      )
     : null;
   // The relative times read the clock; nowMinute re-renders them on the minute.
   const snoozedUntil = activeThreadShell?.snoozedUntil ?? null;
@@ -610,14 +621,16 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     ? snoozeWakeLabel(snoozedUntil, { now: `${nowMinute}:00.000Z` })
     : null;
   const threadStatusLine = activeThreadSnoozed ? (
-    <ThreadStatusLine
-      icon={<AlarmClockIcon />}
-      label={snoozeWake && snoozeWake !== "now" ? `Snoozed, ${snoozeWake} left` : "Snoozed"}
-      clockMinute={nowMinute}
-      actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
-      actionDisabled={!canOperateThread || isUnsnoozing}
-      onAction={() => void handleUnsnoozeActiveThreadStable()}
-    />
+    limitRecoveryHoldsSnooze ? null : (
+      <ThreadStatusLine
+        icon={<AlarmClockIcon />}
+        label={snoozeWake && snoozeWake !== "now" ? `Snoozed, ${snoozeWake} left` : "Snoozed"}
+        clockMinute={nowMinute}
+        actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
+        actionDisabled={!canOperateThread || isUnsnoozing}
+        onAction={() => void handleUnsnoozeActiveThreadStable()}
+      />
+    )
   ) : activeThreadSettled ? (
     <ThreadStatusLine
       icon={<CheckCircle2Icon />}

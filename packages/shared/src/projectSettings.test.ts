@@ -101,7 +101,9 @@ describe("resolveProjectSettings", () => {
       projectId,
       project,
     );
-    expect(folded.settings.defaultModelSelection).toBeNull();
+    expect(folded.settings.defaultModelSelection).toEqual(
+      DEFAULT_SERVER_SETTINGS.defaultModelSelection,
+    );
     expect(folded.sources.defaultModelSelection).toBe("environment");
   });
 
@@ -117,7 +119,7 @@ describe("resolveProjectSettings", () => {
       projectSettingsOverrides: { [projectId]: { defaultModelSelection: disabledSelection } },
     });
     const resolved = resolveProjectSettings(settings, projectId);
-    expect(resolved.settings.defaultModelSelection).toBeNull();
+    expect(resolved.settings.defaultModelSelection).toEqual(settings.defaultModelSelection);
     expect(resolved.sources.defaultModelSelection).toBe("environment");
   });
 
@@ -184,12 +186,19 @@ describe("resolveProjectSettings with a t3.json", () => {
     expect(fromEnvironment.settings.defaultThreadEnvMode).toBe("local");
     expect(fromEnvironment.sources.defaultThreadEnvMode).toBe("environment");
 
-    const fromFile = resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, file);
+    const fromFile = resolveProjectSettings(
+      { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: null },
+      projectId,
+      null,
+      file,
+    );
     expect(fromFile.settings.defaultThreadEnvMode).toBe("worktree");
     expect(fromFile.sources.defaultThreadEnvMode).toBe("t3.json");
 
     const builtIn = resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, null);
-    expect(builtIn.settings.defaultThreadEnvMode).toBe("local");
+    expect(builtIn.settings.defaultThreadEnvMode).toBe(
+      DEFAULT_SERVER_SETTINGS.defaultThreadEnvMode,
+    );
     expect(builtIn.sources.defaultThreadEnvMode).toBe("environment");
     const nullOverride = resolveProjectSettings(
       {
@@ -259,9 +268,14 @@ describe("resolveNewThreadEnvMode", () => {
         null,
         null,
       ),
-      resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, {
-        defaultThreadEnvMode: "worktree",
-      }),
+      resolveProjectSettings(
+        { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: null },
+        projectId,
+        null,
+        {
+          defaultThreadEnvMode: "worktree",
+        },
+      ),
     ]) {
       expect(resolveNewThreadEnvMode({ ...newProject, projectSettings })).toBe("worktree");
     }
@@ -445,7 +459,7 @@ describe("resolveWorktreeCleanup", () => {
       worktreeSettledAfterDays: 0,
       worktreeOnDelete: true,
       worktreeOnMerge: true,
-      worktreeUnchanged: false,
+      worktreeUnchanged: initial.storageCleanup.worktreeUnchanged,
       worktreeKeepWhen: "uncommitted-changes",
     });
     expect(
@@ -453,4 +467,22 @@ describe("resolveWorktreeCleanup", () => {
         .worktreeAfterDays,
     ).toBe(8);
   });
+});
+
+it("keeps project speech vocabulary on its originating project and clears it to inherit", () => {
+  const words = [{ term: "Effect", aliases: ["a fact"] }];
+  const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    projectSettingsOverrides: { [projectId]: { speechProjectCustomWords: words } },
+  });
+  expect(resolveProjectSettings(settings, projectId).settings.speechProjectCustomWords).toEqual(
+    words,
+  );
+  expect(
+    resolveProjectSettings(settings, otherProjectId).settings.speechProjectCustomWords,
+  ).toEqual([]);
+  const cleared = clearProjectSettingsOverrides(settings, projectId, ["speechProjectCustomWords"]);
+  const restored = applyServerSettingsPatch(settings, {
+    projectSettingsOverrides: { [projectId]: cleared },
+  });
+  expect(resolveProjectSettings(restored, projectId).settings.speechProjectCustomWords).toEqual([]);
 });

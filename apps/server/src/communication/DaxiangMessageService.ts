@@ -77,17 +77,22 @@ const make = Effect.gen(function* () {
       if (cached?.clientId === clientId && cached.secret === clientSecret && now < cached.expires)
         return cached.token;
       const jti = yield* random.uuidV4();
-      const assertion = yield* Effect.tryPromise(() =>
-        new SignJWT({})
-          .setProtectedHeader({ alg: "HS256" })
-          .setSubject(clientId)
-          .setIssuer(clientId)
-          .setAudience(TOKEN_URL)
-          .setJti(jti)
-          .setIssuedAt(Math.floor(now / 1000))
-          .setExpirationTime(Math.floor(now / 1000) + 3600)
-          .sign(new TextEncoder().encode(clientSecret)),
-      );
+      const assertion = yield* Effect.tryPromise({
+        try: () =>
+          new SignJWT({})
+            .setProtectedHeader({ alg: "HS256" })
+            .setSubject(clientId)
+            .setIssuer(clientId)
+            .setAudience(TOKEN_URL)
+            .setJti(jti)
+            .setIssuedAt(Math.floor(now / 1000))
+            .setExpirationTime(Math.floor(now / 1000) + 3600)
+            .sign(new TextEncoder().encode(clientSecret)),
+        catch: () =>
+          new DaxiangSendError({
+            message: "Could not sign the DaXiang authentication request.",
+          }),
+      });
       const response = yield* request(
         HttpClientRequest.post(TOKEN_URL).pipe(
           HttpClientRequest.bodyUrlParams({

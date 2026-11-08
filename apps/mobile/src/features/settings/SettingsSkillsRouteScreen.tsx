@@ -42,10 +42,7 @@ import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
@@ -1324,7 +1321,6 @@ export function SettingsSkillsRouteScreen() {
   const { selectedTargets } = useSettingsEnvironmentFilter();
   return (
     <>
-      <SettingsEnvironmentFilterHeader />
       <SettingsScreen title={t("Skill management")} menus={[environmentMenu]}>
         <ScreenScrollView
           className="flex-1"

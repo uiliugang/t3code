@@ -165,6 +165,14 @@ environment's time zone, which may differ from your phone's. Choose **Once**
 to run a task a single time at a date and time in your own time zone. If the
 environment is offline then, the task runs when it is back.
 
+Under **Destination**, choose where runs go. **New thread each run** keeps every
+run separate. The two one-thread choices start a thread on the first run and post
+later runs there: one continues the same conversation, the other starts each run
+in a fresh session that doesn't see earlier runs, so the thread stays readable
+without the agent's context growing. To move a one-thread task, pick another
+thread in its project under **Destination**. Moving such a task to another
+project starts a new thread there on its next run.
+
 Deleting a thread also deletes tasks that post into that thread. Tasks that start
 a new thread on each run survive deletion of their previous threads.
 
@@ -248,12 +256,15 @@ one connected environment. Export saves a JSON file containing this client's
 preferences, theme library and selection, shortcuts, model preferences, shared
 actions and portable environment defaults. On mobile, use **Settings → About →
 Client Storage** and choose one environment with the filter. Native preferences
-are restored on mobile; web and desktop preferences are restored on those clients.
+are restored on mobile; shared preferences also transfer between mobile and web or desktop.
+Client-specific preferences are restored only on the matching client.
 
 For a project's explicit overrides and actions, select it in **Settings → Projects**
 and use **Project configuration** for the checkout you want. Project imports replace that
 checkout's explicit overrides; settings absent from the file inherit their defaults. This
-also lets an earlier export restore inheritance. Application imports merge matching settings
+also lets an earlier export restore inheritance. Manually linked issue sources are restored
+against the destination project; older files without them keep its existing links.
+Application imports merge matching settings
 and shortcuts, leaving other values intact. Project action shortcuts
 remain environment-local. Repository-specific actions are matched by repository alias;
 create the matching repositories before importing. Custom provider instances must already
@@ -267,8 +278,9 @@ credentials and machine-specific directories stay on the destination. Older expo
 change the settings they contain; importing one does not reset newer preferences.
 
 Imports show their contents before saving. Export files exclude account credentials,
-connection addresses, machine paths, browser profiles and conversation history. Application
-exports include the selected environment's project and workspace definitions. Action
+connection addresses, machine paths, browser profiles, microphone device identifiers and
+conversation history. Application exports include the selected environment's project and
+workspace definitions. Action
 commands and custom instructions are included as written, so review them before sharing a file.
 An import that fails after saving some settings reports incomplete progress; retry after
 resolving the error. Export the destination first if you want a backup to restore.

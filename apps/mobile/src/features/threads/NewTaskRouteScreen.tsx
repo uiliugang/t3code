@@ -44,7 +44,7 @@ import {
   getProjectScopeSelectionTarget,
   resolveNewTaskScratchOption,
 } from "./new-task-project-selection";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
@@ -131,9 +131,8 @@ function NewTaskHeader(props: {
   return (
     <>
       <AppBar
-        title={props.title}
+        title={t(props.title)}
         subtitle={props.subtitle ?? undefined}
-        options={{ headerBackVisible: true }}
         hideBottomBorder
         onBack={goBack}
         actions={
@@ -176,12 +175,21 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const incomingShare = routeShareId ? getShare(routeShareId) : null;
   const incomingShareSubtitle = incomingShare
     ? incomingShare.attachments.length === 0
-      ? "Choose a project for what you shared"
+      ? t("Choose a project for what you shared")
       : incomingShare.attachments.length === 1
-        ? `Choose a project for the ${incomingShare.attachments[0]?.type === "image" ? "image" : "file"} you shared`
-        : `Choose a project for the ${incomingShare.attachments.length} ${incomingShare.attachments.every((attachment) => attachment.type === "image") ? "images" : "files"} you shared`
+        ? t(
+            incomingShare.attachments[0]?.type === "image"
+              ? "Choose a project for the image you shared"
+              : "Choose a project for the file you shared",
+          )
+        : t(
+            incomingShare.attachments.every((attachment) => attachment.type === "image")
+              ? "Choose a project for the {count} images you shared"
+              : "Choose a project for the {count} files you shared",
+            { count: incomingShare.attachments.length },
+          )
     : null;
-  const screenTitle = incomingShare ? "Start a task" : "Choose project";
+  const screenTitle = t(incomingShare ? "Start a task" : "Choose project");
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const serverConfigs = useServerConfigs();
   const listScopes = pickableProjectGroups(projectScopes).filter(
@@ -225,10 +233,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         await releaseShareReservation(incomingShare.id, incomingShare.destination);
       } catch (error) {
         Dialog.alert(
-          "Could not change project",
+          t("Could not change project"),
           error instanceof Error
             ? error.message
-            : "The shared content reservation could not be updated.",
+            : t("The shared content reservation could not be updated."),
         );
         return;
       }
@@ -265,10 +273,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         Dialog.alert(
-          "Could not start without a project",
+          t("Could not start without a project"),
           error instanceof Error
             ? error.message
-            : "The folder for threads without a project could not be created.",
+            : t("The folder for threads without a project could not be created."),
         );
       }
       return;
@@ -344,7 +352,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 <NavigationRow
                   className="bg-grouped-card"
                   title={t("No project")}
-                  subtitle="Start a task without a project"
+                  subtitle={t("Start a task without a project")}
                   disabled={!canStartScratch}
                   onPress={() => void startScratch()}
                   leading={
@@ -405,10 +413,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 <AppActivityIndicator colorClassName="accent-icon-muted" />
               ) : null}
               <Text className="text-center text-lg font-t3-bold text-foreground">
-                {projectEmptyState.title}
+                {t(projectEmptyState.title)}
               </Text>
               <Text className="text-center text-sm leading-normal text-foreground-muted">
-                {projectEmptyState.detail}
+                {t(projectEmptyState.detail)}
               </Text>
               {Platform.OS === "android" ? (
                 <>
@@ -424,11 +432,13 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     }
                   />
                   {canStartScratch ? (
-                    <Button
-                      label={t("Start without a project")}
-                      tone="secondary"
-                      onPress={() => void startScratch()}
-                    />
+                    <View>
+                      <Button
+                        label={t("Start without a project")}
+                        tone="secondary"
+                        onPress={() => void startScratch()}
+                      />
+                    </View>
                   ) : null}
                 </>
               ) : !catalogState.hasReadyEnvironment ? (
@@ -491,7 +501,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       title={formatProjectDisplayName(scope.title, capitalizeProjectNames)}
                       subtitle={
                         hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
+                          ? t("{count} workspaces", { count: scope.projects.length })
                           : selectionTarget.workspaceRoot
                       }
                       subtitleNumberOfLines={1}
@@ -547,7 +557,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           numberOfLines={1}
                         >
                           {hasMultipleProjects
-                            ? `${scope.projects.length} workspaces`
+                            ? t("{count} workspaces", { count: scope.projects.length })
                             : selectionTarget.workspaceRoot}
                         </Text>
                       </View>

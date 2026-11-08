@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
 import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
@@ -154,6 +155,7 @@ const sameRequests = (
 
 export function childThreadInputsTitle(
   children: ReadonlyArray<Pick<EnvironmentThreadShell, "hasPendingApprovals" | "lineage">>,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): string {
   const approvals = children.filter((child) => child.hasPendingApprovals).length;
   const need = approvals === 0 ? "input" : approvals === children.length ? "approval" : "you";
@@ -161,8 +163,8 @@ export function childThreadInputsTitle(
   const noun =
     sideChats === children.length ? "side chat" : sideChats === 0 ? "subagent" : "thread";
   return children.length === 1
-    ? `${noun === "side chat" ? "Side chat" : "Subagent"} needs ${need}`
-    : `${children.length} ${noun}s need ${need}`;
+    ? t(`${noun === "side chat" ? "Side chat" : "Subagent"} needs ${need}`)
+    : t(`{count} ${noun}s need ${need}`, { count: children.length });
 }
 
 const sameWireThreadShell = Schema.toEquivalence(OrchestrationV2ThreadShell);

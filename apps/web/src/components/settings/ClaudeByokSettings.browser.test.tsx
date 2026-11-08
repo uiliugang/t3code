@@ -1,5 +1,6 @@
 import { RegistryProvider } from "@effect/atom-react";
 import {
+  DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProviderDriverKind,
@@ -10,6 +11,7 @@ import { userEvent } from "vite-plus/test/browser";
 import { expect, it, vi } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const state = vi.hoisted(() => ({ save: vi.fn(), check: vi.fn() }));
 vi.mock(import("../../state/server"), async (original) => {
@@ -34,6 +36,7 @@ vi.mock(import("../../state/use-atom-command"), () => ({
 import { ClaudeByokSettings } from "./ClaudeByokSettings";
 
 it("clears a rotated credential after saving even when the redacted snapshot is unchanged", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   state.save.mockReset();
   state.check.mockReset();
   const instanceId = ProviderInstanceId.make("claude_byok");

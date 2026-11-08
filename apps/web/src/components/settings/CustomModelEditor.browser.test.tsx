@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { ProviderDriverKind } from "@t3tools/contracts";
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
 import { AppRouteModal } from "../AppRouteModal";
 import { CustomModelEditor } from "./CustomModelEditor";
+
+vi.mock(import("~/hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 
 function ModelSettings() {
   const [editing, setEditing] = useState(false);

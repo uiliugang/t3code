@@ -22,17 +22,15 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { formatBytes } from "../../lib/formatBytes";
 import { ApplicationConfigurationSettings } from "./ConfigurationSettings";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 
 export function SettingsClientStorageRouteScreen() {
   const t = useUiTranslation();
   const environmentMenu = useSettingsEnvironmentMenu();
-  const { selectedTargets } = useSettingsEnvironmentFilter();
+  const { selectedConfiguredTargets } = useSettingsEnvironmentFilter();
   const insets = useSafeAreaInsets();
   const summaryResult = useAtomValue(clientCacheSummaryAtom);
   const clearResult = useAtomValue(clearClientCacheAtom);
@@ -83,7 +81,6 @@ export function SettingsClientStorageRouteScreen() {
 
   return (
     <>
-      <SettingsEnvironmentFilterHeader />
       <SettingsScreen title={t("Client Storage")} menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
@@ -92,10 +89,10 @@ export function SettingsClientStorageRouteScreen() {
           className="flex-1"
           contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"
         >
-          {selectedTargets.length === 1 && selectedTargets[0] ? (
+          {selectedConfiguredTargets.length === 1 && selectedConfiguredTargets[0] ? (
             <ApplicationConfigurationSettings
-              key={selectedTargets[0].environmentId}
-              environment={selectedTargets[0]}
+              key={selectedConfiguredTargets[0].environmentId}
+              environment={selectedConfiguredTargets[0]}
             />
           ) : (
             <Text className="px-2 text-sm text-foreground-muted">
@@ -219,10 +216,4 @@ function CacheEnvironmentRow(props: {
       />
     </View>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }

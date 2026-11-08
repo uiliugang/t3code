@@ -159,7 +159,7 @@ export function CustomModelEditor({
         size="compact"
         value={choice.id}
         onChange={(event) => updateChoice(descriptor.key, choice.key, { id: event.target.value })}
-        placeholder="value"
+        placeholder={t("value")}
         font="mono"
         className="w-28"
         spellCheck={false}
@@ -207,7 +207,10 @@ export function CustomModelEditor({
       className="flex flex-col gap-2 rounded-md border border-border/60 bg-background/40 p-2.5"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="w-14 shrink-0 text-2xs text-muted-foreground">Option {index + 1}</span>
+        <span className="w-14 shrink-0 text-2xs text-muted-foreground">
+          {t("Option")}
+          {index + 1}
+        </span>
         {presets.length > 0 ? (
           <Select
             value={idSelectValue(descriptor)}
@@ -215,7 +218,7 @@ export function CustomModelEditor({
           >
             <SelectTrigger size="compact" className="w-40" aria-label={t("Option id")}>
               <SelectValue>
-                {idSelectValue(descriptor) === CUSTOM_ID_VALUE ? "Custom…" : descriptor.id}
+                {idSelectValue(descriptor) === CUSTOM_ID_VALUE ? t("Custom…") : descriptor.id}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="start" alignItemWithTrigger={false}>
@@ -258,7 +261,7 @@ export function CustomModelEditor({
           }
         >
           <SelectTrigger size="compact" className="w-24" aria-label={t("Option type")}>
-            <SelectValue>{descriptor.type === "boolean" ? "Toggle" : "Choices"}</SelectValue>
+            <SelectValue>{descriptor.type === "boolean" ? t("Toggle") : t("Choices")}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             <SelectItem value="select">{t("Choices")}</SelectItem>
@@ -327,8 +330,10 @@ export function CustomModelEditor({
         />
         <p className="text-xs text-muted-foreground">
           {nameOnly
-            ? "Model IDs and options are managed by the Antigravity account."
-            : "Model IDs are case-sensitive. Select the updated model again in existing threads and default model settings."}
+            ? t("Model IDs and options are managed by the Antigravity account.")
+            : t(
+                "Model IDs are case-sensitive. Select the updated model again in existing threads and default model settings.",
+              )}
         </p>
       </div>
       <div className="flex flex-col gap-1">
@@ -409,7 +414,7 @@ export function CustomModelEditor({
         </div>
       ) : null}
 
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="text-xs text-destructive">{t(error)}</p> : null}
 
       <div className="flex gap-2">
         <Button size="sm" variant="outline" onClick={handleSave}>

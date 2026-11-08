@@ -124,6 +124,9 @@ export interface CheckpointServiceV2Shape {
   readonly materializeBaselineCheckpoint: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;
+    /** The run materializing the baseline: its root node, and when it was requested. */
+    readonly nodeId: NodeId;
+    readonly capturedAt: DateTime.Utc;
     /** Records a missing checkpoint without touching git, for side chats sharing a parent's worktree. */
     readonly forceMissing?: boolean;
   }) => Effect.Effect<OrchestrationV2Checkpoint, CheckpointServiceV2Error>;
@@ -341,14 +344,14 @@ export const layer: Layer.Layer<
               id: checkpointId,
               scope: input.scope,
               runId: null,
-              nodeId: input.scope.nodeId,
+              nodeId: input.nodeId,
               parentCheckpointId: null,
               ordinalWithinScope: input.ordinalWithinScope,
               appRunOrdinal: null,
               ref: checkpointRef,
               status: available ? "ready" : "missing",
               files: [],
-              capturedAt: input.scope.createdAt,
+              capturedAt: input.capturedAt,
             });
           }),
         ).pipe(
@@ -642,6 +645,8 @@ export const layer: Layer.Layer<
                   materializeBaselineCheckpointSingle({
                     ...input,
                     scope: resourceScope(input.scope, resource),
+                    nodeId: input.scope.nodeId,
+                    capturedAt: input.scope.createdAt,
                   }),
                 ),
                 Effect.flatMap((checkpoint) =>

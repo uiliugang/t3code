@@ -10,6 +10,11 @@ import { expect, it, vi } from "vite-plus/test";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { act, render } from "../../../test/render";
 
+vi.mock(import("~/hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const { permissions } = vi.hoisted(() => ({
   permissions: { checkout: true, operate: true },
 }));

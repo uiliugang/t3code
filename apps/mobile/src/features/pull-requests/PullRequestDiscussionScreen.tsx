@@ -1,5 +1,4 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { Toolbar } from "../../components/ui/Toolbar";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { useAtomRefresh } from "@effect/atom-react";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -10,7 +9,7 @@ import {
 import { AsyncResult } from "effect/reactivity";
 import type { PullRequestThreadComment } from "@t3tools/contracts";
 import { useRef, useState } from "react";
-import { Platform, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
 import { NativeScrollViewMarker as ScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,7 +17,6 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/
 import { AppBar } from "../../components/ui/AppBar";
 import { Button } from "../../components/ui/Button";
 import { GlassSurface } from "../../components/ui/GlassSurface";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { relativeTime } from "../../lib/time";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -29,6 +27,8 @@ import { PullRequestCommentFooter } from "./PullRequestReactions";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
 import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import { pullRequestReviewKey } from "./pullRequestReviewDrafts";
+import { PullRequestCompletionSuggestions } from "./PullRequestCompletionSuggestions";
+import { usePullRequestCompletions } from "./usePullRequestCompletions";
 
 export function PullRequestDiscussionScreen({
   route,
@@ -59,6 +59,13 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
   const loadMore = useAtomCommand(composerPullRequests.threadComments, { reportFailure: false });
   const thread = activity.data?.reviewThreads.find((thread) => thread.id === params.discussionId);
   const [body, setBody] = useState("");
+  const completions = usePullRequestCompletions({
+    environmentId: params.environmentId,
+    projectId: params.projectId,
+    value: body,
+    onChangeValue: setBody,
+    support: detail.data?.capabilities ?? null,
+  });
   const [extra, setExtra] = useState<readonly PullRequestThreadComment[]>([]);
   const [cursor, setCursor] = useState<string | null | undefined>();
   const [busy, setBusy] = useState(false);
@@ -138,38 +145,23 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
   return (
     <PullRequestMarkdownRepository params={params} changeRequest={detail.data}>
       <KeyboardAvoidingView automaticOffset behavior="height" className="flex-1 bg-screen">
-        <NativeStackScreenOptions
-          options={{ title: t("Discussion"), unstable_headerSubtitle: `#${params.number}` }}
+        <AppBar
+          title={t("Discussion")}
+          subtitle={`#${params.number}`}
+          onBack={() => navigation.goBack()}
+          actions={
+            permissions.canResolve && thread
+              ? [
+                  {
+                    accessibilityLabel: resolveLabel,
+                    icon: thread.isResolved ? "arrow.uturn.backward" : "checkmark",
+                    disabled: busy || activity.isPending,
+                    onPress: () => void toggleResolved(),
+                  },
+                ]
+              : []
+          }
         />
-        {Platform.OS === "android" ? (
-          <AppBar
-            embedded
-            title={t("Discussion")}
-            subtitle={`#${params.number}`}
-            onBack={() => navigation.goBack()}
-            actions={
-              permissions.canResolve && thread
-                ? [
-                    {
-                      accessibilityLabel: resolveLabel,
-                      icon: thread.isResolved ? "arrow.uturn.backward" : "checkmark",
-                      disabled: busy || activity.isPending,
-                      onPress: () => void toggleResolved(),
-                    },
-                  ]
-                : []
-            }
-          />
-        ) : null}
-        {permissions.canResolve && thread ? (
-          <Toolbar placement="right">
-            <Toolbar.Button
-              label={resolveLabel}
-              disabled={busy || activity.isPending}
-              onPress={() => void toggleResolved()}
-            />
-          </Toolbar>
-        ) : null}
         <ScrollViewMarker style={{ flex: 1 }}>
           <ScrollView
             className="flex-1"
@@ -241,7 +233,11 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
           </ScrollView>
         </ScrollViewMarker>
         {canReply ? (
-          <View className="absolute inset-x-4 bottom-0" style={{ paddingBottom: bottomInset }}>
+          <View
+            className="absolute inset-x-4 bottom-0 gap-2"
+            style={{ paddingBottom: bottomInset }}
+          >
+            <PullRequestCompletionSuggestions completions={completions} />
             <GlassSurface
               chrome="none"
               onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
@@ -249,6 +245,9 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
             >
               <TextInput
                 accessibilityLabel={t("Discussion reply")}
+                selection={completions.selection}
+                onSelectionChange={completions.onSelectionChange}
+                onBlur={completions.onBlur}
                 multiline
                 maxLength={65536}
                 placeholder={t("Reply…")}

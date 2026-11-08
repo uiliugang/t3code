@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderGoal,
+  OrchestrationV2ProviderSession,
   ThreadId,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell, ThreadStructure } from "@t3tools/client-runtime/state/shell";
@@ -13,6 +14,7 @@ import {
 import { childThreadInputsTitle } from "@t3tools/client-runtime/state/threads";
 import { commandDisplayText } from "@t3tools/client-runtime/work-log/command-label";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as DateTime from "effect/DateTime";
 import {
   CircleDashedIcon,
@@ -31,13 +33,28 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import type { ThreadNowItem } from "./ThreadNow";
 
+export function extensionStatusBannerItem(
+  statuses: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>,
+): ComposerBannerStackItem | null {
+  if (statuses.length === 0) return null;
+  return {
+    id: "pi-extension-status",
+    variant: "default",
+    icon: <span>▸</span>,
+    title: <output>{`Pi · ${statuses.map((status) => status.text).join(" · ")}`}</output>,
+  };
+}
+
 /** Subagents and side chats waiting on the user, unless the parent is itself waiting on them. */
-export function childInputNowItem(input: {
-  readonly childThreadInputs: ReadonlyArray<EnvironmentThreadShell>;
-  readonly parentAwaitingUser: boolean;
-  // A task delegated to a linked environment lives there, not where the parent runs.
-  readonly onOpenThread: (threadId: ThreadId, environmentId: EnvironmentId) => void;
-}): (ThreadNowItem & { readonly waitingLabel: string }) | null {
+export function childInputNowItem(
+  input: {
+    readonly childThreadInputs: ReadonlyArray<EnvironmentThreadShell>;
+    readonly parentAwaitingUser: boolean;
+    // A task delegated to a linked environment lives there, not where the parent runs.
+    readonly onOpenThread: (threadId: ThreadId, environmentId: EnvironmentId) => void;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): (ThreadNowItem & { readonly waitingLabel: string }) | null {
   const { childThreadInputs, onOpenThread } = input;
   const first = childThreadInputs[0];
   if (!first || input.parentAwaitingUser) return null;
@@ -49,7 +66,7 @@ export function childInputNowItem(input: {
     ) : (
       <MessageCircleIcon className="text-info-foreground" />
     ),
-    title: childThreadInputsTitle(childThreadInputs),
+    title: childThreadInputsTitle(childThreadInputs, t),
     waitingLabel: childThreadInputs.every((child) => child.lineage.sideChat === true)
       ? "Side chat waiting"
       : "Subagent waiting",
@@ -154,17 +171,20 @@ export function runStopNowItem(input: {
 }
 
 /** Background commands and subagents, for the end of the timeline. */
-export function backgroundWorkNowItem(input: {
-  readonly threadId: ThreadId;
-  readonly tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>;
-  readonly turnItems: ThreadStructure["turnItems"];
-  readonly stopDisabled: boolean;
-  readonly stopping: boolean;
-  readonly onStop: () => Promise<void>;
-  readonly onOpenThread: (threadId: ThreadId) => void;
-}): ThreadNowItem | null {
+export function backgroundWorkNowItem(
+  input: {
+    readonly threadId: ThreadId;
+    readonly tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>;
+    readonly turnItems: ThreadStructure["turnItems"];
+    readonly stopDisabled: boolean;
+    readonly stopping: boolean;
+    readonly onStop: () => Promise<void>;
+    readonly onOpenThread: (threadId: ThreadId) => void;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): ThreadNowItem | null {
   const { onOpenThread } = input;
-  const presentation = presentPendingBackgroundWork(input.tasks);
+  const presentation = presentPendingBackgroundWork(input.tasks, t);
   if (presentation === null) return null;
   const rows = presentation.items.map((task) => {
     // Same key derivePendingBackgroundWork gives turn-item tasks; subagent items carry progress.
@@ -203,7 +223,7 @@ export function backgroundWorkNowItem(input: {
     title:
       only && typeof only.label !== "string" && only.task.label !== only.task.kind ? (
         <>
-          {presentation.waiting ? "Waiting" : "Running"} · {only.label}
+          {presentation.waiting ? t("Waiting") : t("Running")} · {only.label}
         </>
       ) : (
         presentation.title
