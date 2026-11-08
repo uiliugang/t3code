@@ -4,6 +4,12 @@
   "private": true,
   "types": "./src/T3Highlights.nitro.ts",
   "peerDependencies": {
+    "@types/react-native-nitro-modules": "*",
     "react-native-nitro-modules": "*"
+  },
+  "peerDependenciesMeta": {
+    "@types/react-native-nitro-modules": {
+      "optional": true
+    }
   }
 }
