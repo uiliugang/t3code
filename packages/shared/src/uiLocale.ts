@@ -308,6 +308,13 @@ const zhCN: Readonly<Record<string, string>> = {
   "Could not verify your permissions. Retrying automatically.": "无法验证权限，正在自动重试。",
   "Checking permissions…": "正在检查权限…",
   "Up to date": "已是最新版本",
+  "Download latest release": "下载最新版本",
+  "View latest release": "查看最新版本",
+  "Check for Updates": "检查更新",
+  "Update Codex": "更新 Codex",
+  "Codex runtime": "Codex 运行时",
+  "Updates managed Codex to the version supported by this T3 Code build.":
+    "将托管 Codex 更新至当前 T3 Code 支持的版本。",
   "Downloading update": "正在下载更新",
   "Downloading update {version}": "正在下载更新 {version}",
   "Update downloaded": "更新已下载",

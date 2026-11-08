@@ -108,6 +108,36 @@ const spawnFailure = () =>
     }),
   );
 
+it.effect("checks fork releases without consulting npm", () =>
+  Effect.gen(function* () {
+    const urls: string[] = [];
+    const service = yield* makeService(
+      () => Effect.die("fork releases must not consult npm"),
+      HttpClient.make((request) => {
+        urls.push(request.url);
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(
+              JSON.stringify([
+                { tag_name: "v0.0.5", draft: true },
+                { tag_name: "v0.0.4", prerelease: true },
+                { tag_name: "v0.0.4-nightly.20261107.1" },
+                { tag_name: "v0.0.3" },
+              ]),
+            ),
+          ),
+        );
+      }),
+    );
+    expect(yield* service.get({ spec: "latest", source: "github" })).toEqual({ version: "0.0.3" });
+    expect(yield* service.get({ spec: "latest", source: "github" })).toEqual({ version: "0.0.3" });
+    expect(urls).toEqual([
+      "https://api.github.com/repos/uiliugang/t3code/releases?per_page=100&page=1",
+    ]);
+  }),
+);
+
 it.effect.each([
   output("not json"),
   output('{"error":{"code":"E401","detail":"sensitive"}}', 1),

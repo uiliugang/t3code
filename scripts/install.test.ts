@@ -61,7 +61,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
 });
 
 // regression: #22490
-describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer channel lookup", () => {
+describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("installer channel lookup", () => {
   it.each([
     ["stable", "1.2.3"],
     ["preview", "1.2.4-preview.20261019.50"],
@@ -71,10 +71,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
     const server = NodeHttp.createServer((request, response) => {
       const url = new URL(request.url ?? "/", "http://fixture");
       const body =
-        url.pathname === "/pingdotgg/t3code/releases/latest" &&
+        url.pathname === "/uiliugang/t3code/releases/latest" &&
         request.headers.accept === "application/json"
           ? { tag_name: "v1.2.3" }
-          : url.pathname === "/repos/pingdotgg/t3code/releases"
+          : url.pathname === "/repos/uiliugang/t3code/releases"
             ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
                 url.searchParams.get("page") ?? ""
               ]

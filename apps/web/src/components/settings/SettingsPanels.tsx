@@ -39,6 +39,8 @@ import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDisabledReason,
+  getDesktopUpdateReleaseHistoryUrl,
+  getDesktopUpdateReleaseUrl,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -112,6 +114,44 @@ import { canUpdateServer } from "../ServerUpdateAction";
 import { useUpdateEverythingRun } from "../sidebar/updateEverythingRun";
 import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverything.logic";
 import { isHostedByThisApp } from "../sidebar/useUpdateEverything";
+import { githubReleaseAtom, refreshGitHubRelease } from "~/state/npmRelease";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { useEnvironmentQuery } from "~/state/query";
+import { compareSemverVersions } from "@t3tools/shared/semver";
+
+function ManualAppUpdate({ macArm64 }: { readonly macArm64: boolean }) {
+  const t = useUiTranslation();
+  const release = useEnvironmentQuery(githubReleaseAtom("latest"));
+  const version = release.data?.version;
+  const newer = version !== undefined && compareSemverVersions(version, APP_VERSION) > 0;
+  const repositoryUrl = getDesktopUpdateReleaseHistoryUrl();
+  const downloadUrl =
+    version && newer && macArm64
+      ? `${repositoryUrl}/download/v${version}/T3-Code-${version}-arm64.dmg`
+      : (getDesktopUpdateReleaseUrl(version ?? null) ?? `${repositoryUrl}/latest`);
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <span className="text-xs text-muted-foreground" role="status">
+        {release.error ?? (version ? `${t("Latest")}: v${version}` : null)}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={release.isPending}
+        onClick={() => refreshGitHubRelease(appAtomRegistry, "latest")}
+      >
+        {t(release.isPending ? "Checking…" : "Check for Updates")}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        render={<a href={downloadUrl} target="_blank" rel="noreferrer" />}
+      >
+        {t(newer ? "Download latest release" : "View latest release")}
+      </Button>
+    </div>
+  );
+}
 
 const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
   turn: "Wait for the full response",
@@ -299,6 +339,8 @@ function AboutVersionSection() {
       ? "Update available."
       : (getDesktopUpdateDisabledReason(updateState, updatesDenial) ??
         "Current version of the application.");
+  const manualDownload =
+    updatesDenial === undefined && (!hasDesktopBridge || updateState?.status === "disabled");
 
   return (
     <>
@@ -308,21 +350,31 @@ function AboutVersionSection() {
         description={description}
         managed={updatesDenial}
         control={
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={buttonDisabled || isUpdateActionPending}
-                  onClick={handleButtonClick}
-                >
-                  {buttonLabel}
-                </Button>
+          manualDownload ? (
+            <ManualAppUpdate
+              macArm64={
+                hasDesktopBridge &&
+                updateState?.hostArch === "arm64" &&
+                isMacPlatform(navigator.platform)
               }
             />
-            {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
-          </Tooltip>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={buttonDisabled || isUpdateActionPending}
+                    onClick={handleButtonClick}
+                  >
+                    {buttonLabel}
+                  </Button>
+                }
+              />
+              {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
+            </Tooltip>
+          )
         }
       />
       {hasDesktopBridge ? (
@@ -2095,17 +2147,7 @@ export function AboutSettingsPanel() {
             }
           />
         ) : null}
-        {isElectron || HOSTED_APP_CHANNEL ? (
-          <AboutVersionSection />
-        ) : (
-          <>
-            <SettingsRow
-              id={searchableSetting("app-version").id}
-              title={<AboutVersionTitle />}
-              description={t("Current version of the application.")}
-            />
-          </>
-        )}
+        <AboutVersionSection />
         <MobileAppSettingsRow />
       </SettingsSection>
 

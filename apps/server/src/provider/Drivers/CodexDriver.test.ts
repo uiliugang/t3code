@@ -7,7 +7,14 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodePath from "node:path";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ProviderSessionId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProviderInstanceId,
+  ProviderSessionId,
+  ThreadId,
+  ProviderDriverKind,
+  type ProviderInstallState,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -16,6 +23,8 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
@@ -57,6 +66,7 @@ const layerDeps = ServerConfig.layerTest(process.cwd(), {
   Layer.provideMerge(
     Layer.mock(CodexInstallation.CodexInstallation)({
       managedDirectory: "unused-managed-installation",
+      changes: Stream.empty,
     }),
   ),
   Layer.provideMerge(Layer.mock(ServerSecretStore.ServerSecretStore)({})),
@@ -111,6 +121,18 @@ it.layer(layerTest)("CodexDriver", (it) => {
       const catalogTokens: Array<string | undefined> = [];
       const probeEntered = yield* Deferred.make<void>();
       const resumeProbe = yield* Deferred.make<void>();
+      const installedVersion = yield* Ref.make("0.156.1");
+      const installState = yield* SubscriptionRef.make<ProviderInstallState>({
+        driver: ProviderDriverKind.make("codex"),
+        phase: "idle",
+        operationId: null,
+        downloadedBytes: 0,
+        totalBytes: null,
+        version: "0.156.2",
+        installedVersion: "0.156.1",
+        canRemove: true,
+        message: null,
+      });
       const secrets = ServerSecretStore.ServerSecretStore.of({
         get: (key) => Effect.sync(() => Option.fromUndefinedOr(credentials.get(key))),
         set: (key, value) =>
@@ -202,7 +224,11 @@ it.layer(layerTest)("CodexDriver", (it) => {
             CodexInstallation.CodexInstallation.of({
               ...installation,
               managedDirectory: "unused-managed-installation",
-              resolve: () => Effect.succeed(executable),
+              resolve: () =>
+                Ref.get(installedVersion).pipe(
+                  Effect.map((version) => ({ ...executable, version })),
+                ),
+              changes: SubscriptionRef.changes(installState),
               acquire,
             }),
           ),
@@ -255,6 +281,19 @@ it.layer(layerTest)("CodexDriver", (it) => {
         expect(restored.runtimePaths?.shadowHomePath).toContain(
           `providers/codex/${instanceId}/shadow`,
         );
+        const updated = yield* instance.snapshot.streamChanges.pipe(
+          Stream.filter((provider) => provider.version === "0.156.2"),
+          Stream.runHead,
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        yield* Ref.set(installedVersion, "0.156.2");
+        yield* SubscriptionRef.update(installState, (current) => ({
+          ...current,
+          phase: "succeeded" as const,
+          installedVersion: "0.156.2",
+        }));
+        expect(Option.isSome(yield* Fiber.join(updated))).toBe(true);
+        expect(catalogTokens).toEqual(["Bearer dummy-owned-access", "Bearer dummy-owned-access"]);
         const scan = yield* instance.snapshotForCwd!(serverConfig.stateDir).pipe(Effect.exit);
         expect(Exit.isFailure(scan)).toBe(true);
         failAcquire = true;

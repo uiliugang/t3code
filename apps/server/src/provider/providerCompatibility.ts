@@ -9,6 +9,13 @@ import { satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 import packageJson from "../../package.json" with { type: "json" };
 
+// Fork release numbers do not describe the upstream provider protocol this build implements.
+const compatibilityVersion =
+  "providerCompatibilityVersion" in packageJson &&
+  typeof packageJson.providerCompatibilityVersion === "string"
+    ? packageJson.providerCompatibilityVersion
+    : packageJson.version;
+
 const StableVersion = TrimmedNonEmptyString.pipe(
   Schema.check(Schema.makeFilter((value) => /^\d+\.\d+\.\d+$/.test(value))),
 );
@@ -58,7 +65,7 @@ export function resolveProviderCompatibility(
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   driver: ProviderDriverKind,
   version: string | null,
-  t3CodeVersion = packageJson.version,
+  t3CodeVersion = compatibilityVersion,
 ): ServerProviderCompatibilityAdvisory | undefined {
   const policy = policies?.find(
     (entry) => entry.driver === driver && satisfiesSemverRange(t3CodeVersion, entry.t3CodeRange),
