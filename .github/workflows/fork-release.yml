@@ -138,6 +138,11 @@ jobs:
       MOBILE_VERSION_POLICY: appVersion
       EXPO_NO_GIT_STATUS: "1"
       NODE_OPTIONS: --max-old-space-size=4096
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.android-ccache
+      CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 2G
       T3_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       T3_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       T3_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -174,15 +179,37 @@ jobs:
         with:
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: false
+      - name: Install native compiler cache
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ccache
+      - name: Restore native compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Generate native Android project
         working-directory: apps/mobile
         run: vp exec expo prebuild --clean --platform android --no-install
-      - name: Build signed standalone APK
+      - name: Build signed standalone ARM64 APK
         working-directory: apps/mobile/android
         run: |
-          ./gradlew --no-daemon --max-workers=2 \
+          ccache --zero-stats
+          trap 'ccache --show-stats' EXIT
+          ./gradlew --no-daemon --max-workers=2 --build-cache --profile \
+            -PreactNativeArchitectures=arm64-v8a \
             -I "$GITHUB_WORKSPACE/.github/scripts/android-release.init.gradle" \
             :app:assembleRelease
+      - name: Upload Android build profile
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-android-build-profile
+          path: apps/mobile/android/build/reports/profile
+          if-no-files-found: ignore
       - name: Verify and collect APK
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -298,4 +325,4 @@ jobs:
           sha256sum *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz > SHA256SUMS
           gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz SHA256SUMS --verify-tag \
             --title "T3 Code $RELEASE_TAG (fork)" \
-            --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Upstream Android OTA updates are disabled.'
+            --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone ARM64 Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Upstream Android OTA updates are disabled.'
