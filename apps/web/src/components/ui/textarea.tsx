@@ -9,7 +9,13 @@ type TextareaProps = React.ComponentProps<"textarea"> & {
   unstyled?: boolean;
 };
 
-function Textarea({ className, size = "default", unstyled = false, ...props }: TextareaProps) {
+function Textarea({
+  className,
+  size = "default",
+  unstyled = false,
+  rows,
+  ...props
+}: TextareaProps) {
   return (
     <span
       className={
@@ -32,7 +38,16 @@ function Textarea({ className, size = "default", unstyled = false, ...props }: T
                 "min-h-16.5 px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)] max-sm:min-h-19.5",
               size === "lg" && "min-h-18.5 py-[calc(--spacing(2)-1px)] max-sm:min-h-21.5",
             )}
+            // field-sizing: content ignores `rows`, so an explicit row count sets the minimum height.
+            style={
+              rows === undefined
+                ? undefined
+                : {
+                    minHeight: `calc(${rows}lh + 2 * (var(--spacing) * ${size === "sm" ? 1 : size === "lg" ? 2 : 1.5} - 1px))`,
+                  }
+            }
             data-slot="textarea"
+            rows={rows}
             {...mergeProps(defaultProps, props)}
           />
         )}

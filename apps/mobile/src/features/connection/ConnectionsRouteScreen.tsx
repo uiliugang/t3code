@@ -1,10 +1,10 @@
-import { Toolbar } from "../../components/ui/Toolbar";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
-import { Platform, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppBar } from "../../components/ui/AppBar";
@@ -12,7 +12,6 @@ import { useRemoteConnections } from "../../state/use-remote-environment-registr
 import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { LinkedEnvironmentsSection } from "./LinkedEnvironmentsSection";
-import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function ConnectionsRouteScreen() {
   const t = useUiTranslation();
@@ -32,28 +31,18 @@ export function ConnectionsRouteScreen() {
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <AppBar
-          embedded
-          title={t("Environments")}
-          onBack={() => navigation.goBack()}
-          actions={[
-            {
-              accessibilityLabel: t("Add environment"),
-              icon: "plus",
-              onPress: () => navigation.navigate("ConnectionsNew"),
-            },
-          ]}
-        />
-      ) : (
-        <Toolbar placement="right">
-          <Toolbar.Button
-            icon="plus"
-            onPress={() => navigation.navigate("ConnectionsNew")}
-            separateBackground
-          />
-        </Toolbar>
-      )}
+      <AppBar
+        title={t("Environments")}
+        onClose={() => navigation.goBack()}
+        closeAccessibilityLabel="Close environments"
+        actions={[
+          {
+            accessibilityLabel: t("Add environment"),
+            icon: "plus",
+            onPress: () => navigation.navigate("ConnectionsNew"),
+          },
+        ]}
+      />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}

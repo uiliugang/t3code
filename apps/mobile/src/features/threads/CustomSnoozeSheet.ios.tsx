@@ -30,16 +30,12 @@ import {
   type CustomSnoozeInput,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { useState, type ReactNode } from "react";
-import { NavigationContainer, NavigationIndependentTree } from "@react-navigation/native";
-import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
+import { StandaloneStack } from "../layout/nested-stacks";
 import { ScrollView, useWindowDimensions, View } from "react-native";
-import { useMobileNavigationTheme } from "../../lib/useMobileNavigationTheme";
 
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 const durationAmounts = Array.from({ length: 99 }, (_, index) => index + 1);
-const SnoozeStack = createNativeStackNavigator<{ CustomSnooze: undefined }>();
 const modes = [
   { value: "date", label: "Date and time" },
   { value: "duration", label: "Duration" },
@@ -55,7 +51,6 @@ export function CustomSnoozeSheet(props: {
   readonly onSnooze: (snoozedUntil: string) => void;
 }) {
   const t = useUiTranslation();
-
   const { width, height } = useWindowDimensions();
   const [mode, setMode] = useState<CustomSnoozeInput["mode"]>("date");
   const [date, setDate] = useState(() => new Date(Date.now() + 3_600_000));
@@ -226,52 +221,24 @@ function SnoozePopoverNavigation(props: {
   readonly children: ReactNode;
 }) {
   const t = useUiTranslation();
-
-  const navigationTheme = useMobileNavigationTheme();
-  const { themeVariables: colors } = useAppearancePreferences();
-
   return (
     <VStack modifiers={[frame({ width: props.width, height: props.height })]}>
       <RNHostView>
         <View style={{ width: props.width, height: props.height }}>
-          <NavigationIndependentTree>
-            <NavigationContainer theme={navigationTheme}>
-              <SnoozeStack.Navigator
-                screenOptions={{
-                  contentStyle: { backgroundColor: "transparent" },
-                  headerShadowVisible: false,
-                  headerStyle: {
-                    backgroundColor: NATIVE_LIQUID_GLASS_SUPPORTED
-                      ? "transparent"
-                      : colors["--color-card"],
-                  },
-                  headerTintColor: colors["--color-foreground"],
-                  headerTitleStyle: { fontSize: 17, fontWeight: "700" },
-                  headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
-                  title: t("Custom snooze"),
-                }}
-              >
-                <SnoozeStack.Screen name="CustomSnooze">
-                  {() => (
-                    <>
-                      <SheetHeader
-                        title={t("Custom snooze")}
-                        onCancel={props.onClose}
-                        accessibilityLabel={t("Cancel custom snooze")}
-                        confirm={{ label: t("Snooze"), onPress: props.onSubmit }}
-                      />
-                      <ScrollView
-                        contentInsetAdjustmentBehavior="automatic"
-                        showsVerticalScrollIndicator={false}
-                      >
-                        {props.children}
-                      </ScrollView>
-                    </>
-                  )}
-                </SnoozeStack.Screen>
-              </SnoozeStack.Navigator>
-            </NavigationContainer>
-          </NavigationIndependentTree>
+          <StandaloneStack>
+            <SheetHeader
+              title={t("Custom snooze")}
+              onCancel={props.onClose}
+              accessibilityLabel={t("Cancel custom snooze")}
+              confirm={{ label: t("Snooze"), onPress: props.onSubmit }}
+            />
+            <ScrollView
+              contentInsetAdjustmentBehavior="automatic"
+              showsVerticalScrollIndicator={false}
+            >
+              {props.children}
+            </ScrollView>
+          </StandaloneStack>
         </View>
       </RNHostView>
     </VStack>

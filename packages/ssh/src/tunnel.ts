@@ -44,6 +44,8 @@ import {
   SshReadinessError,
 } from "./errors.ts";
 
+const isSshConnectionError = Schema.is(Schema.Union([SshCommandError, SshInvalidTargetError]));
+
 const DEFAULT_REMOTE_PORT = 3773;
 const REMOTE_PORT_SCAN_WINDOW = 200;
 const SSH_READY_TIMEOUT_MS = 20_000;
@@ -927,7 +929,7 @@ mv "$TEMP" "$HOME/"${shellSingleQuote(destination)}
   }).pipe(
     Effect.timeout(`${REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 2} seconds`),
     Effect.mapError((cause) =>
-      cause instanceof SshCommandError || cause instanceof SshInvalidTargetError
+      isSshConnectionError(cause)
         ? cause
         : new SshLaunchError({
             message:

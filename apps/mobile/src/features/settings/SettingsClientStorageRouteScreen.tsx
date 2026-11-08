@@ -22,12 +22,10 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { formatBytes } from "../../lib/formatBytes";
 import { ApplicationConfigurationSettings } from "./ConfigurationSettings";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 
 export function SettingsClientStorageRouteScreen() {
   const t = useUiTranslation();
@@ -83,7 +81,6 @@ export function SettingsClientStorageRouteScreen() {
 
   return (
     <>
-      <SettingsEnvironmentFilterHeader />
       <SettingsScreen title={t("Client Storage")} menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
@@ -219,10 +216,4 @@ function CacheEnvironmentRow(props: {
       />
     </View>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
