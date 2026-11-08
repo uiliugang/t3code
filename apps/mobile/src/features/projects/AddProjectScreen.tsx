@@ -636,7 +636,7 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
             {selectedEnvironment.newProjectsRoot !== null ? (
               <ListRow
                 title={t("New project")}
-                subtitle="Start a new Git repository from a name"
+                subtitle={t("Start a new Git repository from a name")}
                 disabled={!isConnected}
                 icon={
                   <SymbolView
@@ -1320,7 +1320,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
           <ListSection>
             <ListRow
               title={t("Add existing project")}
-              subtitle="Open a folder or clone a repository"
+              subtitle={t("Open a folder or clone a repository")}
               icon={
                 <SymbolView
                   name="folder.badge.plus"

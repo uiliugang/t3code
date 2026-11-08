@@ -2,6 +2,7 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useEnvironmentSettings } from "../hooks/useSettings";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -35,6 +36,7 @@ export function WorktreeBaseBranchPicker({
   disabled?: boolean;
   id?: string;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const mainBranchOnly = useEnvironmentSettings(
     environmentId,
@@ -57,13 +59,16 @@ export function WorktreeBaseBranchPicker({
   const selectedRef =
     branches.refs.find((branch) => branch.name === value) ??
     selectedRefQuery.data?.refs.find((branch) => branch.name === value);
-  const label = resolveBranchTriggerLabel({
-    activeWorktreePath: null,
-    effectiveEnvMode: "worktree",
-    resolvedActiveBranch: value || null,
-    resolvedActiveBranchIsRemote: selectedRef ? selectedRef.isRemote === true : null,
-    startFromOrigin,
-  });
+  const label = resolveBranchTriggerLabel(
+    {
+      activeWorktreePath: null,
+      effectiveEnvMode: "worktree",
+      resolvedActiveBranch: value || null,
+      resolvedActiveBranchIsRemote: selectedRef ? selectedRef.isRemote === true : null,
+      startFromOrigin,
+    },
+    t,
+  );
   const allowed = mainBranchOnly
     ? branches.refs.filter((branch) =>
         isMainOrMasterBranch(branch.name, branch.isRemote ? branch.remoteName : undefined),
@@ -75,11 +80,14 @@ export function WorktreeBaseBranchPicker({
   const statusText =
     branches.error ??
     (branches.isPending && branches.data === null
-      ? "Loading refs..."
+      ? t("Loading refs...")
       : branches.isFetchingNextPage
-        ? "Loading more refs..."
+        ? t("Loading more refs...")
         : hasNextPage
-          ? `Showing ${branches.refs.length} of ${branches.data?.totalCount} refs`
+          ? t("Showing {count} of {total} refs", {
+              count: branches.refs.length,
+              total: branches.data?.totalCount ?? 0,
+            })
           : null);
   const handleOpenChange = (next: boolean) => {
     setOpen(next);

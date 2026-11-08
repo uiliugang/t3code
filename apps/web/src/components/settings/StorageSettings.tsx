@@ -4,6 +4,7 @@ import type {
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
 import { resolvePastedPath } from "@t3tools/shared/path";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   mergedWorktreeCleanupState,
   resolveWorktreeCleanup,
@@ -19,7 +20,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { formatRelativeElapsed, relativeTimeElapsedMs } from "../../timestampFormat";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useDebouncedValue } from "../../state/queries";
 import { AnimatedHeight } from "../AnimatedHeight";
@@ -187,12 +188,13 @@ const KEEP_WHEN_LABELS = {
 function lastRunSummary(
   entries: readonly { readonly label: string; readonly counts: string }[],
   machineCount: number,
+  t: UiTranslator,
 ) {
   const first = entries[0];
   if (!first) return "";
   if (machineCount <= 1) return first.counts;
   if (entries.length === machineCount && entries.every((entry) => entry.counts === first.counts)) {
-    return `${first.counts} on every machine`;
+    return t("{counts} on every machine", { counts: first.counts });
   }
   return entries.map((entry) => `${entry.label}: ${entry.counts}`).join(" · ");
 }
@@ -341,15 +343,22 @@ function CleanupSection() {
   const summaries = supported.map((environment) => {
     const query = state.find((entry) => entry.environmentId === environment.environmentId);
     const report = query?.report ?? null;
+    const elapsed = report ? relativeTimeElapsedMs(report.finishedAt, nowMs) : null;
+    const relative = elapsed === null ? null : formatRelativeElapsed(elapsed, t);
+    const time = relative
+      ? relative.suffix
+        ? `${relative.value} ${relative.suffix}`
+        : relative.value
+      : "";
     return {
       environment,
       report,
       label: settingsScopeEnvironmentLabel(environment, connectedEnvironments),
       counts: report
-        ? `${report.counts.removed} removed, ${report.counts.kept} kept${report.counts.failed > 0 ? `, ${report.counts.failed} failed` : ""}`
+        ? `${t("{removed} removed, {kept} kept", { removed: report.counts.removed, kept: report.counts.kept })}${report.counts.failed > 0 ? t(", {count} failed", { count: report.counts.failed }) : ""}`
         : "",
       description: report
-        ? `Last run ${formatRelativeTimeLabel(report.finishedAt, nowMs)}. ${formatBytes(report.bytesFreed)} recovered.${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
+        ? `${t("Last run {time}. {size} recovered.", { time, size: formatBytes(report.bytesFreed) })}${report.counts.failed > 0 ? t(report.counts.failed === 1 ? " {count} item couldn't be removed." : " {count} items couldn't be removed.", { count: report.counts.failed }) : ""}`
         : query?.failed
           ? "Could not load the last run."
           : query?.loading
@@ -417,11 +426,12 @@ function CleanupSection() {
       {summaries.some(({ report }) => report !== null) && (
         <FoldedSettingsSection
           id="storage-cleanup-last-run"
-          title="Last run"
+          title={t("Last run")}
           headerPlacement="inside"
           summary={lastRunSummary(
             summaries.filter(({ report }) => report !== null),
             connectedEnvironments.length,
+            t,
           )}
         >
           {summaries.map(

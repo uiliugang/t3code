@@ -69,7 +69,7 @@ function ProviderCustomColorPanel(props: {
       <div className="grid gap-3 p-3">
         <div onPointerDownCapture={startDrag}>
           <ColorHueSlider
-            label="Accent color hue"
+            label={t("Accent color hue")}
             value={hsv.h}
             onChange={(h) => changeHsv({ ...hsv, h })}
             onInteractionEnd={endDrag}
@@ -88,14 +88,14 @@ function ProviderCustomColorPanel(props: {
           }}
           onBlur={() => setHexDraft(null)}
           font="mono"
-          aria-label="Custom hex accent color"
+          aria-label={t("Custom hex accent color")}
           spellCheck={false}
         />
         {props.showAddButton ? (
           <PopoverClose
             render={
               <Button type="button" size="compact" onClick={() => onCommit(currentColor)}>
-                Add color
+                {t("Add color")}
               </Button>
             }
           />
@@ -113,6 +113,7 @@ function ProviderCustomColorPicker(props: {
   readonly onClear: () => void;
   readonly onClose: () => void;
 }) {
+  const t = useUiTranslation();
   const normalized = normalizeProviderAccentColor(props.value);
 
   return (
@@ -131,7 +132,7 @@ function ProviderCustomColorPicker(props: {
             aria-label={`${normalized ? "Change" : "Add"} accent color for ${props.displayName}`}
           >
             {normalized ? (
-              <span className="sr-only">Change accent color</span>
+              <span className="sr-only">{t("Change accent color")}</span>
             ) : (
               <PlusIcon aria-hidden />
             )}
@@ -157,7 +158,7 @@ function ProviderCustomColorPicker(props: {
                   onClick={props.onClear}
                 >
                   <XIcon className="size-3.5" aria-hidden />
-                  Clear color
+                  {t("Clear color")}
                 </Button>
               }
             />

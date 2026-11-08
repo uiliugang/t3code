@@ -279,7 +279,7 @@ export function OpenSourceLicensesPanel() {
               })
             ) : (
               <p className="px-3 py-8 text-center text-sm/6 text-muted-foreground sm:px-4">
-                No licenses match that search.
+                {t("No licenses match that search.")}
               </p>
             )}
           </div>
@@ -287,7 +287,7 @@ export function OpenSourceLicensesPanel() {
           <LicenseManifestError message={errorMessage} onRetry={retry} />
         ) : (
           <p className="px-3 py-5 text-sm/6 text-muted-foreground sm:px-4">
-            Loading open-source notices…
+            {t("Loading open-source notices…")}
           </p>
         )}
       </SettingsSection>

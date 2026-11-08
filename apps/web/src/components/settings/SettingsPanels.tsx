@@ -2156,7 +2156,10 @@ export function AboutSettingsPanel() {
         {primaryPolicy ? (
           <SettingsRow
             title="Organization"
-            description={`This environment is managed by ${primaryPolicy.organization}. Some settings and features follow its policy.`}
+            description={t(
+              "This environment is managed by {organization}. Some settings and features follow its policy.",
+              { organization: primaryPolicy.organization },
+            )}
             control={
               primaryPolicy.supportUrl ? (
                 <Button
@@ -2166,7 +2169,7 @@ export function AboutSettingsPanel() {
                   size="sm"
                   variant="outline"
                 >
-                  Get help
+                  {t("Get help")}
                 </Button>
               ) : null
             }

@@ -24,7 +24,7 @@ export function ScheduledTaskPromptField(props: {
 }) {
   const t = useUiTranslation();
   const voice = props.voiceInput;
-  const presentation = resolveVoiceComposerPresentation(voice.state, voice.elapsedSeconds);
+  const presentation = resolveVoiceComposerPresentation(voice.state, voice.elapsedSeconds, t);
   const showsDictation = presentation.statusKind === "active";
   const showsIdleTrigger = voice.isAvailable && !showsDictation;
 

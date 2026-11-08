@@ -158,10 +158,10 @@ function BackgroundActivityAdvancedDialog({
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   <SelectItem hideIndicator value="balanced">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
+                    {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced)}
                   </SelectItem>
                   <SelectItem hideIndicator value="performance">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
+                    {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.performance)}
                   </SelectItem>
                   <SelectItem hideIndicator value="battery-saver">
                     {t(BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"])}
@@ -211,7 +211,7 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label="provider health interval"
+                  label={t("provider health interval")}
                   value={providerHealthRefreshIntervalSeconds}
                   min={0}
                   step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
@@ -239,7 +239,7 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label="active host power interval"
+                  label={t("active host power interval")}
                   value={hostPowerMonitorActiveIntervalSeconds}
                   min={5}
                   step={5}
@@ -267,7 +267,7 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label="idle host power interval"
+                  label={t("idle host power interval")}
                   value={hostPowerMonitorIdleIntervalSeconds}
                   min={5}
                   step={30}
@@ -292,7 +292,7 @@ function BackgroundActivityAdvancedDialog({
                   key={key}
                   className="flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 sm:border-r sm:even:border-r-0"
                 >
-                  <span className="text-sm font-medium">{label}</span>
+                  <span className="text-sm font-medium">{t(label)}</span>
                   <Switch
                     checked={resolvedBackgroundActivity[key]}
                     onCheckedChange={(checked) =>
@@ -306,7 +306,7 @@ function BackgroundActivityAdvancedDialog({
                         ),
                       )
                     }
-                    aria-label={label}
+                    aria-label={t(label)}
                   />
                 </label>
               ))}
@@ -402,18 +402,20 @@ export function BackgroundActivitySettingsRow() {
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectItem hideIndicator value="balanced">
-                {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
+                {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced)}
               </SelectItem>
               <SelectItem hideIndicator value="performance">
-                {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
+                {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.performance)}
               </SelectItem>
               <SelectItem hideIndicator value="battery-saver">
                 {t(BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"])}
               </SelectItem>
               <SelectItem hideIndicator value="advanced" disabled={!isEnvironmentScope}>
                 {isEnvironmentScope
-                  ? BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced
-                  : `${BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced} (one environment)`}
+                  ? t(BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced)
+                  : t("{profile} (one environment)", {
+                      profile: t(BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced),
+                    })}
               </SelectItem>
             </SelectPopup>
           </Select>

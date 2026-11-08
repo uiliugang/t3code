@@ -124,6 +124,16 @@ export function useSettingsEnvironmentFilter() {
       ),
     [availableTargets, selectedIds],
   );
+  const selectedConfiguredTargets = useMemo(
+    () =>
+      selectedIds === null
+        ? selectedTargets
+        : environments.filter(
+            (entry): entry is SettingsTarget =>
+              entry.serverConfig !== null && selectedIds.has(entry.environmentId),
+          ),
+    [environments, selectedIds, selectedTargets],
+  );
   const selectableProjectGroups = useMemo(
     () =>
       projectGroups.filter((group) =>
@@ -137,6 +147,7 @@ export function useSettingsEnvironmentFilter() {
     () => ({
       availableTargets,
       selectedTargets,
+      selectedConfiguredTargets,
       selectedIds,
       projectGroups,
       selectableProjectGroups,
@@ -144,6 +155,10 @@ export function useSettingsEnvironmentFilter() {
       selectProject,
       getSelectedProjectKey,
       selectAll: () => setSelectedIds(null),
+      lockSelection: () => {
+        if (selectedIds === null)
+          setSelectedIds(new Set(selectedTargets.map((target) => target.environmentId)));
+      },
       toggleEnvironment: (environmentId: EnvironmentId) =>
         setSelectedIds((current) =>
           toggleSettingsEnvironment(current, availableTargets, environmentId),
@@ -152,6 +167,7 @@ export function useSettingsEnvironmentFilter() {
     [
       availableTargets,
       selectedTargets,
+      selectedConfiguredTargets,
       selectedIds,
       projectGroups,
       selectableProjectGroups,

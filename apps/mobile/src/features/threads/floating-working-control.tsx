@@ -204,7 +204,7 @@ export function FloatingWorkingControl(props: {
               props.status.kind === "compacting" ||
               props.status.kind === "extension"
                 ? props.status.kind
-                : `${props.status.kind}:${props.status.label}`
+                : `${props.status.kind}:${t(props.status.label)}`
             }
             status={props.status}
             onLayout={handleLabelLayout}
@@ -220,7 +220,7 @@ export function FloatingWorkingControl(props: {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={extensionStatus.label}
-          accessibilityHint="Shows the full Pi status"
+          accessibilityHint={t("Shows the full Pi status")}
           onPress={extensionStatus.onPress}
           onLayout={(event) => setExtensionWidth(settleWidth(event.nativeEvent.layout.width))}
           style={{ maxWidth: availableLabelWidth * 0.5 }}
@@ -240,14 +240,14 @@ export function FloatingWorkingControl(props: {
           <View className="h-4 w-px bg-border" />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={action.accessibilityLabel}
+            accessibilityLabel={t(action.accessibilityLabel)}
             accessibilityState={{ disabled: action.disabled }}
             disabled={action.disabled}
             onPress={action.onPress}
             className={`h-11 items-center justify-center px-3 active:opacity-70 ${action.disabled ? "opacity-50" : ""}`}
           >
             <Text className="font-t3-medium text-xs text-foreground" numberOfLines={1}>
-              {action.label}
+              {t(action.label)}
             </Text>
           </Pressable>
         </View>
@@ -269,7 +269,7 @@ export function FloatingWorkingControl(props: {
       {agents !== null ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Open agents, ${agents.accessibilityLabel}`}
+          accessibilityLabel={t("Open agents, {summary}", { summary: agents.accessibilityLabel })}
           accessibilityHint={t("Opens this turn's subagents")}
           onPress={props.onOpenAgents}
           onLayout={(event) => setAgentsWidth(settleWidth(event.nativeEvent.layout.width))}
@@ -285,7 +285,7 @@ export function FloatingWorkingControl(props: {
       {hasQueue ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Open queue, ${props.queuedCount} messages`}
+          accessibilityLabel={t("Open queue, {count} messages", { count: props.queuedCount })}
           accessibilityHint={t("Opens queued messages to send now, edit, or remove")}
           onPress={props.onOpenQueue}
           onLayout={(event) => setQueueWidth(settleWidth(event.nativeEvent.layout.width))}
@@ -417,10 +417,11 @@ function FloatingStatusLabel(props: {
   readonly status: FloatingWorkingStatus;
   readonly onLayout: (event: LayoutChangeEvent) => void;
 }) {
+  const t = useUiTranslation();
   if (props.status.kind === "extension") {
     return (
       <StatusLabelRow
-        accessibilityLabel={props.status.label}
+        accessibilityLabel={t(props.status.label)}
         accessibilityRole="button"
         onPress={props.status.onPress}
         onLayout={props.onLayout}
@@ -428,7 +429,7 @@ function FloatingStatusLabel(props: {
         animated={false}
       >
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
         <SymbolView name="chevron.down" size={10} tintColorClassName="accent-foreground" />
       </StatusLabelRow>
@@ -438,13 +439,13 @@ function FloatingStatusLabel(props: {
     return (
       <StatusLabelRow
         key="syncing"
-        accessibilityLabel={props.status.label}
+        accessibilityLabel={t(props.status.label)}
         className="gap-2"
         onLayout={props.onLayout}
       >
         <AppActivityIndicator size="small" colorClassName="accent-icon-muted" />
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
       </StatusLabelRow>
     );
@@ -464,7 +465,7 @@ function FloatingStatusLabel(props: {
       >
         <SymbolView name="text.bubble" size={13} tintColorClassName="accent-foreground" />
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
       </StatusLabelRow>
     );
@@ -473,7 +474,7 @@ function FloatingStatusLabel(props: {
     return (
       <StatusLabelRow
         key="connection"
-        accessibilityLabel={props.status.label}
+        accessibilityLabel={t(props.status.label)}
         accessibilityRole="button"
         className="gap-2"
         onLayout={props.onLayout}
@@ -488,7 +489,7 @@ function FloatingStatusLabel(props: {
           className="max-w-[260px] shrink font-t3-medium text-xs text-foreground"
           numberOfLines={1}
         >
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
       </StatusLabelRow>
     );
@@ -497,7 +498,7 @@ function FloatingStatusLabel(props: {
     return (
       <StatusLabelRow
         key="lifecycle"
-        accessibilityLabel={props.status.label}
+        accessibilityLabel={t(props.status.label)}
         className="gap-2"
         onLayout={props.onLayout}
       >
@@ -508,7 +509,7 @@ function FloatingStatusLabel(props: {
           type="monochrome"
         />
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
       </StatusLabelRow>
     );
@@ -530,7 +531,7 @@ function FloatingStatusLabel(props: {
           type="monochrome"
         />
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
       </StatusLabelRow>
     );
@@ -539,7 +540,7 @@ function FloatingStatusLabel(props: {
     return (
       <StatusLabelRow
         key="stop"
-        accessibilityLabel={props.status.label}
+        accessibilityLabel={t(props.status.label)}
         className="gap-2"
         onLayout={props.onLayout}
       >
@@ -554,7 +555,7 @@ function FloatingStatusLabel(props: {
           <AppActivityIndicator size="small" colorClassName="accent-icon-muted" />
         )}
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
       </StatusLabelRow>
     );
@@ -574,7 +575,7 @@ function FloatingStatusLabel(props: {
           type="monochrome"
         />
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
-          {props.status.label}
+          {t(props.status.label)}
         </Text>
       </StatusLabelRow>
     );
@@ -583,7 +584,7 @@ function FloatingStatusLabel(props: {
     return (
       <StatusLabelRow
         key="preparing"
-        accessibilityLabel={props.status.label}
+        accessibilityLabel={t(props.status.label)}
         className="gap-1.5"
         onLayout={props.onLayout}
       >
@@ -599,7 +600,7 @@ function FloatingStatusLabel(props: {
           compact
           icon="arrow.triangle.branch"
           iconSubtleColor="transparent"
-          label={props.status.label}
+          label={t(props.status.label)}
           showIcon={false}
         />
       </StatusLabelRow>

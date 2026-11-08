@@ -29,8 +29,12 @@ export function ProjectImportHistory({ environmentId }: { environmentId: Environ
       {imports.data?.map((record) => (
         <SettingsRow
           key={record.id}
-          title={`${record.projects.map((project) => project.name).join(", ")} · ${record.phase}`}
-          description={`${record.destinationDirectory} · ${record.repositories.filter((repository) => repository.phase === "ready").length}/${record.repositories.length} repositories ready`}
+          title={`${record.projects.map((project) => project.name).join(", ")} · ${t(record.phase)}`}
+          description={t("{directory} · {ready}/{total} repositories ready", {
+            directory: record.destinationDirectory,
+            ready: record.repositories.filter((repository) => repository.phase === "ready").length,
+            total: record.repositories.length,
+          })}
           control={
             <div className="flex gap-2">
               <Button
@@ -39,7 +43,7 @@ export function ProjectImportHistory({ environmentId }: { environmentId: Environ
                 disabled={!canRetry || record.phase === "running" || record.phase === "done"}
                 onClick={() => void retry({ environmentId, input: { id: record.id } })}
               >
-                Retry failed import
+                {t("Retry failed import")}
               </Button>
               <Button
                 size="sm"
@@ -48,13 +52,15 @@ export function ProjectImportHistory({ environmentId }: { environmentId: Environ
                 onClick={async () => {
                   if (
                     await requestConfirmDialog(
-                      "Forget this import? Projects and cloned or partial repositories stay on disk.",
+                      t(
+                        "Forget this import? Projects and cloned or partial repositories stay on disk.",
+                      ),
                     )
                   )
                     await forget({ environmentId, input: { id: record.id } });
                 }}
               >
-                Forget import
+                {t("Forget import")}
               </Button>
             </div>
           }
@@ -63,14 +69,14 @@ export function ProjectImportHistory({ environmentId }: { environmentId: Environ
             {record.repositories.map((repository) => (
               <div key={repository.key} className="space-y-1 break-all">
                 <p>
-                  {repository.remoteUrl ?? "Missing clone URL"} · {repository.phase}
+                  {repository.remoteUrl ?? t("Missing clone URL")} · {t(repository.phase)}
                 </p>
                 <p>{repository.destinationPath}</p>
                 {repository.failure ? (
                   <p>{projectImportFailureMessage(repository.failure)}</p>
                 ) : null}
                 {repository.failure && repository.stagingPath ? (
-                  <p>Partial checkout: {repository.stagingPath}</p>
+                  <p>{t("Partial checkout: {path}", { path: repository.stagingPath })}</p>
                 ) : null}
               </div>
             ))}

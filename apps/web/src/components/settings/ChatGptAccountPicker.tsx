@@ -50,14 +50,14 @@ export function ChatGptAccountPicker({
     >
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle>Reconnect ChatGPT</DialogTitle>
+          <DialogTitle>{t("Reconnect ChatGPT")}</DialogTitle>
           <DialogDescription>
-            On OpenAI, sign in with the account you choose here.
+            {t("On OpenAI, sign in with the account you choose here.")}
           </DialogDescription>
         </DialogHeader>
         <div className="px-6 pb-6">
           <RadioGroup
-            aria-label="ChatGPT account to connect"
+            aria-label={t("ChatGPT account to connect")}
             disabled={disabled}
             value={selectedMethodId}
             onValueChange={(value) => setSelection(value)}
@@ -79,7 +79,7 @@ export function ChatGptAccountPicker({
         </div>
         {error ? (
           <p role="alert" className="px-6 pb-3 text-sm text-destructive">
-            {error}
+            {t(error)}
           </p>
         ) : null}
         <DialogFooter>
@@ -89,7 +89,7 @@ export function ChatGptAccountPicker({
               disabled={disabled || !canRemove}
               onClick={() => onRemove(selectedMethodId)}
             >
-              Remove connection
+              {t("Remove connection")}
             </Button>
           ) : null}
           <ChatGptConnectionButton disabled={disabled} onClick={() => onSelect(selectedMethodId)} />

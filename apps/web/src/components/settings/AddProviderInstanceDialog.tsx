@@ -514,7 +514,7 @@ export function AddProviderInstanceDialog({
                 <MultipleAccountsNote environmentId={environmentId} driver={driver} />
                 {driver === "claudeAgent" ? (
                   <RadioGroup
-                    aria-label="Claude connection"
+                    aria-label={t("Claude connection")}
                     value={isByok ? "byok" : "subscription"}
                     onValueChange={(value) => {
                       setConfigDraft(
@@ -530,7 +530,7 @@ export function AddProviderInstanceDialog({
                   >
                     <label className="flex items-center gap-2 py-1 text-sm">
                       <Radio value="subscription" />
-                      Claude account
+                      {t("Claude account")}
                     </label>
                     <label className="flex items-center gap-2 py-1 text-sm">
                       <Radio value="byok" />
@@ -773,7 +773,7 @@ export function AddProviderInstanceDialog({
                     }
                     control={
                       <Input
-                        aria-label="BYOK model IDs"
+                        aria-label={t("BYOK model IDs")}
                         size="sm"
                         placeholder="model-id, another-model-id"
                         value={byokModelIds}

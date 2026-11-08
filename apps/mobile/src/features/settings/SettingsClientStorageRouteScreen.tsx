@@ -30,7 +30,7 @@ import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilt
 export function SettingsClientStorageRouteScreen() {
   const t = useUiTranslation();
   const environmentMenu = useSettingsEnvironmentMenu();
-  const { selectedTargets } = useSettingsEnvironmentFilter();
+  const { selectedConfiguredTargets } = useSettingsEnvironmentFilter();
   const insets = useSafeAreaInsets();
   const summaryResult = useAtomValue(clientCacheSummaryAtom);
   const clearResult = useAtomValue(clearClientCacheAtom);
@@ -89,10 +89,10 @@ export function SettingsClientStorageRouteScreen() {
           className="flex-1"
           contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"
         >
-          {selectedTargets.length === 1 && selectedTargets[0] ? (
+          {selectedConfiguredTargets.length === 1 && selectedConfiguredTargets[0] ? (
             <ApplicationConfigurationSettings
-              key={selectedTargets[0].environmentId}
-              environment={selectedTargets[0]}
+              key={selectedConfiguredTargets[0].environmentId}
+              environment={selectedConfiguredTargets[0]}
             />
           ) : (
             <Text className="px-2 text-sm text-foreground-muted">

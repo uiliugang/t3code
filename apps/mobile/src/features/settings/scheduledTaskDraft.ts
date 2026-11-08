@@ -1,3 +1,4 @@
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { isWebhookDedupeTemplate, scheduledTaskThreadMode } from "@t3tools/contracts";
 import type {
   ModelSelection,
@@ -127,7 +128,10 @@ export function parseIntervalMinutes(value: string): number {
   return Number(value.trim().replace(",", "."));
 }
 
-export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSchedule | null {
+export function scheduleFromDraft(
+  draft: ScheduleDraft,
+  t: UiTranslator = translateUi.bind(null, "en"),
+): ScheduledTaskUpsertSchedule | null {
   if (draft.mode === "webhook") {
     const maxDeliveryAgeMinutes = parseMaxDeliveryAge(draft.maxDeliveryAgeMinutes);
     if (maxDeliveryAgeMinutes === undefined) return null;
@@ -144,7 +148,7 @@ export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSche
         coalesceWindowSeconds > 3600)
     )
       return null;
-    const parsedFilters = parseWebhookFilterDrafts(draft.filters);
+    const parsedFilters = parseWebhookFilterDrafts(draft.filters, t);
     if (!("filters" in parsedFilters)) return null;
     // No secret is sent, so the server keeps the stored one.
     return {

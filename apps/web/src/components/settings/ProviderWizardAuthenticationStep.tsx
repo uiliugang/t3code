@@ -79,7 +79,7 @@ export function ProviderWizardAuthenticationStep({
                       <a href={provider.setup.documentationUrl} target="_blank" rel="noreferrer" />
                     }
                   >
-                    Open docs
+                    {t("Open docs")}
                   </Button>
                 ) : undefined
               }

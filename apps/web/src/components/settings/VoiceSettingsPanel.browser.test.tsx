@@ -1,6 +1,7 @@
 import { PrimaryConnectionTarget, RelayConnectionTarget } from "@t3tools/client-runtime/connection";
 import type * as Effect from "effect/Effect";
 import {
+  DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
   type EnvironmentSpeechModel,
   type EnvironmentSpeechStatus,
@@ -71,7 +72,12 @@ vi.mock("../../connection/runtime", async () => {
   };
 });
 
+function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
+}
+
 it("tests the selected model after download and preserves its transcript across filters", async () => {
+  setup();
   const target = new PrimaryConnectionTarget({
     environmentId: EnvironmentId.make("voice-filter"),
     label: "Test environment",
@@ -227,6 +233,7 @@ it("tests the selected model after download and preserves its transcript across 
 });
 
 it("loads the models of a relay-connected destination", async () => {
+  setup();
   const target = new RelayConnectionTarget({
     environmentId: EnvironmentId.make("voice-relay"),
     label: "MacBook Pro",
@@ -302,6 +309,7 @@ it("loads the models of a relay-connected destination", async () => {
 });
 
 it("recovers from a failed download progress poll without notifying, but reports a failed initial load", async () => {
+  setup();
   const target = new PrimaryConnectionTarget({
     environmentId: EnvironmentId.make("voice-progress"),
     label: "Test environment",
@@ -386,6 +394,7 @@ it.each([
 ])(
   "searching for disabled %s focuses its opt-in without enabling it",
   async (target, prerequisite) => {
+    setup();
     chooseAudioDestination(null);
     chooseTranscriptCleanup(false);
     await using screen = await render(
@@ -405,7 +414,7 @@ it.each([
 );
 
 it("keeps a missing destination selected without claiming it cannot transcribe", async () => {
-  __setClientSettingsForTests(getClientSettings());
+  setup();
   using cleanup = new DisposableStack();
   cleanup.defer(() => chooseAudioDestination(null));
   chooseAudioDestination({ kind: "environment", environmentId: EnvironmentId.make("missing") });
@@ -421,6 +430,7 @@ it("keeps a missing destination selected without claiming it cannot transcribe",
 });
 
 it("shows the model's effective language and restores the saved preference when supported again", async () => {
+  setup();
   const previous = getClientSettings();
   using cleanup = new DisposableStack();
   cleanup.defer(() => __setClientSettingsForTests(previous));
@@ -438,6 +448,7 @@ it("shows the model's effective language and restores the saved preference when 
 });
 
 it("keeps punctuation in a saved dictionary term and its alias", async () => {
+  setup();
   const previous = getClientSettings();
   using cleanup = new DisposableStack();
   cleanup.defer(() => __setClientSettingsForTests(previous));

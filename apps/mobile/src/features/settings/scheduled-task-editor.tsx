@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ export function useScheduledTaskDestinationLabel(
   environmentId: EnvironmentId | null,
   threadId: ThreadId | null,
 ): string {
+  const t = useUiTranslation();
   const ref =
     environmentId === null || threadId === null ? null : scopeThreadRef(environmentId, threadId);
   const shell = useThreadShell(ref);
@@ -35,8 +37,8 @@ export function useScheduledTaskDestinationLabel(
       : null,
   );
   const thread = shell ?? family.data?.threads.find((row) => row.id === threadId);
-  if (ref === null) return NEW_THREAD_DESTINATION_LABEL;
-  return thread?.title.trim() || `Thread ${ref.threadId}`;
+  if (ref === null) return t(NEW_THREAD_DESTINATION_LABEL);
+  return thread?.title.trim() || t("Thread {id}", { id: ref.threadId });
 }
 
 /** The form draft lives in an atom, so it survives while its native picker routes are on top. */

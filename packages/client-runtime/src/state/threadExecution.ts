@@ -35,6 +35,7 @@ import {
   withLegacyUltracodeEffort,
 } from "@t3tools/shared/model";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as DateTime from "effect/DateTime";
 
 import {
@@ -540,9 +541,12 @@ export interface PendingBackgroundWorkPresentation {
   readonly waiting: boolean;
 }
 
-function joinWithAnd(parts: ReadonlyArray<string>): string {
+function joinWithAnd(parts: ReadonlyArray<string>, t: UiTranslator): string {
   if (parts.length <= 1) return parts.join("");
-  return `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+  return t("{items} and {last}", {
+    items: parts.slice(0, -1).join(", "),
+    last: parts.at(-1) ?? "",
+  });
 }
 
 // The Claude adapter forces a stuck query closed after 10 seconds.
@@ -567,6 +571,7 @@ export function isBackgroundWorkStopPending(
 
 export function presentPendingBackgroundWork(
   tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): PendingBackgroundWorkPresentation | null {
   if (tasks.length === 0) return null;
   const waiting = backgroundWorkHoldsCompletion(tasks);
@@ -586,7 +591,7 @@ export function presentPendingBackgroundWork(
         kind: task.kind,
         label:
           label === undefined || label.length === 0
-            ? BACKGROUND_WORK_KINDS[task.kind].singular
+            ? t(BACKGROUND_WORK_KINDS[task.kind].singular)
             : label,
         childThreadId: task.kind === "subagent" ? task.childThreadId : undefined,
       };
@@ -599,21 +604,27 @@ export function presentPendingBackgroundWork(
   const [only] = items;
   if (items.length === 1 && only !== undefined) {
     const noun = BACKGROUND_WORK_KINDS[only.kind].singular;
-    const named = only.label !== noun;
+    const named = only.label !== noun && only.label !== t(noun);
     const title = named
-      ? `${waiting ? "Waiting" : "Running"} · ${only.label}`
+      ? t(waiting ? "Waiting · {label}" : "Running · {label}", { label: only.label })
       : waiting
-        ? `Waiting on a ${noun}`
-        : `Running a ${noun}`;
+        ? t("Waiting on a {kind}", { kind: t(noun) })
+        : t("Running a {kind}", { kind: t(noun) });
     return { title, items, waiting };
   }
   const counts = new Map<BackgroundWorkKind, number>();
   for (const item of items) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
   const groups = Array.from(counts, ([kind, count]) => {
     const { singular, plural } = BACKGROUND_WORK_KINDS[kind];
-    return `${count} ${count === 1 ? singular : plural}`;
+    return t(`{count} ${count === 1 ? singular : plural}`, { count });
   });
-  return { title: `${waiting ? "Waiting on" : "Running"} ${joinWithAnd(groups)}`, items, waiting };
+  return {
+    title: t(waiting ? "Waiting on {tasks}" : "Running {tasks}", {
+      tasks: joinWithAnd(groups, t),
+    }),
+    items,
+    waiting,
+  };
 }
 
 export interface ProviderGoalPresentation {

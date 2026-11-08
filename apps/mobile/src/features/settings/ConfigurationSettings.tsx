@@ -33,9 +33,11 @@ import { SettingsSection } from "./components/SettingsSection";
 import {
   decodeMobileTransferPreferences,
   exportMobileTransferPreferences,
+  mobileClientSettingsForExport,
+  mobilePreferencesFromClientSettings,
 } from "./mobileSettingsTransfer.logic";
 import { pickSettingsFile, shareSettingsFile } from "./mobileSettingsTransfer";
-import type { SettingsTarget } from "./settings-environment-filter";
+import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { ProjectImportHistory } from "./ProjectImportHistory";
 import { uuidv4 } from "../../lib/uuid";
@@ -44,6 +46,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 function ConfigurationTransfer({
   title,
   scope,
+  connected,
   canImport,
   createFile,
   importFile,
@@ -52,6 +55,7 @@ function ConfigurationTransfer({
 }: {
   title: string;
   scope: SettingsFile["scope"];
+  connected: boolean;
   canImport: boolean;
   createFile: () => Promise<SettingsFile>;
   importFile: (file: SettingsFile) => Promise<void>;
@@ -59,6 +63,7 @@ function ConfigurationTransfer({
   supportsProjectImport: boolean;
 }) {
   const t = useUiTranslation();
+  const { lockSelection } = useSettingsEnvironmentFilter();
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<SettingsFile | null>(null);
   const [materialize, setMaterialize] = useState(false);
@@ -81,12 +86,16 @@ function ConfigurationTransfer({
     );
   };
   const exportFile = async () => {
+    if (!connected || busy) return;
+    lockSelection();
     setBusy(true);
     const result = await settlePromise(async () => shareSettingsFile(await createFile()));
     setBusy(false);
     reportFailure(result);
   };
   const importSelection = async () => {
+    if (!connected || busy) return;
+    lockSelection();
     setBusy(true);
     const result = await settlePromise(async () => {
       const file = await pickSettingsFile();
@@ -117,7 +126,13 @@ function ConfigurationTransfer({
   };
   const confirmPending = () => {
     const file = pending;
-    if (!file || busy || !canImport || (materialize && (!canClone || definitions.length === 0)))
+    if (
+      !file ||
+      !connected ||
+      busy ||
+      !canImport ||
+      (materialize && (!canClone || definitions.length === 0))
+    )
       return;
     const details =
       file.scope === "project"
@@ -166,11 +181,16 @@ function ConfigurationTransfer({
   };
   return (
     <>
+      {!connected ? (
+        <Text className="px-4 py-3 text-sm text-foreground-muted">
+          {t("Reconnect this environment to import or export settings.")}
+        </Text>
+      ) : null}
       <ListActionRow
         icon="square.and.arrow.up"
         label={t("Export configuration")}
         description={title}
-        disabled={busy}
+        disabled={busy || !connected}
         onPress={() => void exportFile()}
       />
       <View className="border-t border-border">
@@ -178,7 +198,7 @@ function ConfigurationTransfer({
           icon="arrow.down"
           label={t("Import configuration")}
           description={t("Choose a JSON export to review before saving.")}
-          disabled={busy || !canImport}
+          disabled={busy || !connected || !canImport}
           onPress={() => void importSelection()}
         />
       </View>
@@ -217,7 +237,10 @@ function ConfigurationTransfer({
           <Button
             label={t(busy ? "Importing…" : "Import settings")}
             disabled={
-              busy || !canImport || (materialize && (!canClone || definitions.length === 0))
+              busy ||
+              !connected ||
+              !canImport ||
+              (materialize && (!canClone || definitions.length === 0))
             }
             onPress={confirmPending}
           />
@@ -236,9 +259,11 @@ function ConfigurationTransfer({
 export function ProjectConfigurationSettings({
   project,
   settings,
+  connected,
 }: {
   project: TransferProject;
   settings: ServerSettings;
+  connected: boolean;
 }) {
   const t = useUiTranslation();
   const canWrite = useAtomValue(
@@ -275,6 +300,7 @@ export function ProjectConfigurationSettings({
       </View>
       <ConfigurationTransfer
         scope="project"
+        connected={connected}
         environmentId={project.environmentId}
         supportsProjectImport={supportsProjectImport}
         title={project.title}
@@ -294,10 +320,13 @@ export function ProjectConfigurationSettings({
           const definition = exported.value[0]?.configuration;
           if (!definition) throw new Error(t("This project is no longer available."));
           return {
-            ...file,
+            ...Struct.omit(file, ["issueSources"]),
             settings: definition.settings,
             providers: definition.providers,
             workspace: definition.workspace,
+            ...(definition.issueSources === undefined
+              ? {}
+              : { issueSources: definition.issueSources }),
           };
         }}
         importFile={async (file) => {
@@ -308,7 +337,7 @@ export function ProjectConfigurationSettings({
           if (!current) throw new Error(t("Reconnect this environment before importing."));
           const result = await update({
             environmentId: project.environmentId,
-            input: { patch: projectSettingsImportPatch(file, project, current) },
+            input: { patch: projectSettingsImportPatch(file, project, current, t) },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         }}
@@ -341,6 +370,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
     <SettingsSection title="Import and export">
       <ConfigurationTransfer
         scope="application"
+        connected={environment.connection.phase === "connected"}
         environmentId={environmentId}
         supportsProjectImport={supportsProjectImport}
         title={environment.label}
@@ -358,10 +388,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
             throw squashAtomCommandFailure(exportedProjects);
           return {
             ...createApplicationSettingsFile({
-              clientSettings: {
-                ...preferences.value,
-                favorites: preferences.value.modelFavorites ?? [],
-              },
+              clientSettings: mobileClientSettingsForExport(preferences.value),
               server: config.settings,
               keybindings: settingsKeybindingsForExport(config.keybindings),
             }),
@@ -376,7 +403,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
             throw new Error(t("Choose an application settings file."));
           const current = appAtomRegistry.get(serverEnvironment.settingsValueAtom(environmentId));
           if (!current) throw new Error(t("Reconnect this environment before importing."));
-          const patch = applicationSettingsImportPatch(file, current);
+          const patch = applicationSettingsImportPatch(file, current, t);
           const bindings = settingsKeybindingsToImport(
             file.keybindings,
             appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
@@ -396,13 +423,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
               );
           }
           const saved = await savePreferences({
-            ...Struct.pick(file.clientSettings, [
-              "uiLanguage",
-              "mathRenderingEnabled",
-              "planModeEnabled",
-              "followUpBehavior",
-              "showPredictedMessages",
-            ]),
+            ...mobilePreferencesFromClientSettings(file.clientSettings),
             ...preferences,
           });
           if (Exit.isFailure(saved))

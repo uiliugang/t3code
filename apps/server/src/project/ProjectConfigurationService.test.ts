@@ -24,6 +24,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Stream from "effect/Stream";
+import * as Struct from "effect/Struct";
+import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -534,7 +536,13 @@ describe("ProjectConfigurationService", () => {
       }
       yield* Effect.gen(function* () {
         const service = yield* ProjectConfigurationService.ProjectConfigurationService;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        const issueSources = [
+          { provider: "meituan" as const, host: "mep.example.test", scope: "team-space" },
+        ];
+        yield* settings.updateSettings({ issueProjectSources: { [projectId]: issueSources } });
         const exported = yield* service.exportProjects({ projectIds: [projectId] });
+        expect(exported[0]!.configuration).toMatchObject({ issueSources });
         const roots = exported[0]!.configuration.workspace.roots;
         expect(exported[0]!.configuration.workspace.grouped).toBe(true);
         expect(roots.map((root) => [root.alias, root.remoteUrl, root.directory])).toEqual([
@@ -557,6 +565,7 @@ describe("ProjectConfigurationService", () => {
         const instanceId = ProviderInstanceId.make("private_codex");
         const project: ProjectImportDefinition = {
           ...source,
+          issueSources: [{ provider: "meituan", host: "mep.example.test", scope: "team-space" }],
           providers: {
             [instanceId]: ProviderDriverKind.make("codex"),
             [ProviderInstanceId.make("codex")]: ProviderDriverKind.make("codex"),
@@ -586,6 +595,12 @@ describe("ProjectConfigurationService", () => {
         };
         yield* Effect.gen(function* () {
           const service = yield* ProjectConfigurationService.ProjectConfigurationService;
+          const settings = yield* ServerSettings.ServerSettingsService;
+          const keptId = ProjectId.make("kept-project");
+          const keptSources = [
+            { provider: "github" as const, host: "github.com", scope: "team/kept" },
+          ];
+          yield* settings.updateSettings({ issueProjectSources: { [keptId]: keptSources } });
           yield* service.start({
             id: "settings-import",
             projects: [project],
@@ -593,7 +608,6 @@ describe("ProjectConfigurationService", () => {
           });
           yield* service.drain;
           expect((yield* snapshot())[0]?.projects[0]?.failure).toBe("settings_failed");
-          const settings = yield* ServerSettings.ServerSettingsService;
           const current = yield* settings.getSettings;
           yield* settings.updateSettings({
             providerInstances: {
@@ -612,6 +626,17 @@ describe("ProjectConfigurationService", () => {
               },
             },
           });
+          const updatedKeptSources = [
+            { provider: "github" as const, host: "github.com", scope: "team/updated" },
+          ];
+          const updateSettings = settings.updateSettings;
+          using _concurrentSources = vi
+            .spyOn(settings, "updateSettings")
+            .mockImplementationOnce((patch) =>
+              updateSettings({ issueProjectSources: { [keptId]: updatedKeptSources } }).pipe(
+                Effect.andThen(updateSettings(patch)),
+              ),
+            );
           yield* service.retry("settings-import");
           yield* service.drain;
           expect((yield* snapshot())[0]?.phase).toBe("done");
@@ -622,6 +647,19 @@ describe("ProjectConfigurationService", () => {
             (yield* settings.getSettings).projectSettingsOverrides[imported.id]
               ?.defaultProjectScripts?.[0]?.repositoryRootIds,
           ).toEqual([imported.workspaceConfig!.primaryRootId]);
+          expect((yield* settings.getSettings).issueProjectSources).toEqual({
+            [keptId]: updatedKeptSources,
+            [imported.id]: project.issueSources,
+          });
+          yield* service.start({
+            id: "legacy-settings-import",
+            projects: [Struct.omit(project, ["issueSources"])],
+            destinationDirectory: `${test.baseDir}/clones`,
+          });
+          yield* service.drain;
+          expect((yield* settings.getSettings).issueProjectSources[imported.id]).toEqual(
+            project.issueSources,
+          );
         }).pipe(Effect.provide(test.layer));
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );

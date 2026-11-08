@@ -18,7 +18,7 @@ export function AboutVersionTitle() {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not copy version",
+          title: t("Could not copy version"),
           description: error.message,
         }),
       );
@@ -35,14 +35,14 @@ export function AboutVersionTitle() {
               <InlineButton
                 ref={copyButtonRef}
                 tone="muted"
-                aria-label={`Copy version ${APP_VERSION}`}
+                aria-label={t("Copy version {version}", { version: APP_VERSION })}
                 onClick={() => copyToClipboard(APP_VERSION, undefined)}
               >
                 {APP_VERSION}
               </InlineButton>
             }
           />
-          <TooltipPopup>Copy version</TooltipPopup>
+          <TooltipPopup>{t("Copy version")}</TooltipPopup>
         </Tooltip>
       </code>
     </span>

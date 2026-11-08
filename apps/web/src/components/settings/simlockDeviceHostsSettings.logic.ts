@@ -1,3 +1,4 @@
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   SimlockDeviceHostConfig,
   type EnvironmentId,
@@ -44,9 +45,17 @@ export function simlockDeviceHostProblem(host: SimlockDeviceHostConfigType): str
     : "Keep the limits within the ranges shown.";
 }
 
-export function simlockLeaseLimits(host: SimlockDeviceHostConfigType) {
-  const devices = host.maxLeases === 1 ? "1 device" : `${host.maxLeases} devices`;
-  return `Up to ${devices} at once, each released after ${host.maxLeaseMinutes} min`;
+export function simlockLeaseLimits(
+  host: SimlockDeviceHostConfigType,
+  t: UiTranslator = translateUi.bind(null, "en"),
+) {
+  const devices = t(host.maxLeases === 1 ? "{count} device" : "{count} devices", {
+    count: host.maxLeases,
+  });
+  return t("Up to {devices} at once, each released after {minutes} min", {
+    devices,
+    minutes: host.maxLeaseMinutes,
+  });
 }
 
 export interface SimlockHostEnvironment {

@@ -12,6 +12,7 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { ServerSettings } from "@t3tools/contracts";
 import { BUILT_IN_THEMES, RESERVED_THEME_IDS } from "@t3tools/shared/themePalettes";
+import * as Struct from "effect/Struct";
 
 import {
   ensureClientSettingsHydrated,
@@ -120,7 +121,7 @@ export function ApplicationConfigurationSettings() {
               serverEnvironment.settingsValueAtom(environment.environmentId),
             );
             if (!current) throw new Error(t("Reconnect this environment before importing."));
-            const patch = applicationSettingsImportPatch(file, current);
+            const patch = applicationSettingsImportPatch(file, current, t);
             const bindings = settingsKeybindingsToImport(
               file.keybindings,
               appAtomRegistry.get(serverEnvironment.configValueAtom(environment.environmentId))
@@ -244,10 +245,13 @@ export function ProjectConfigurationSettings({
           const definition = exported.value[0]?.configuration;
           if (!definition) throw new Error(t("This project is no longer available."));
           return {
-            ...file,
+            ...Struct.omit(file, ["issueSources"]),
             settings: definition.settings,
             providers: definition.providers,
             workspace: definition.workspace,
+            ...(definition.issueSources === undefined
+              ? {}
+              : { issueSources: definition.issueSources }),
           };
         }}
         importFile={async (file) => {
@@ -258,7 +262,7 @@ export function ProjectConfigurationSettings({
           if (!current) throw new Error(t("Reconnect this environment before importing."));
           const result = await update({
             environmentId: project.environmentId,
-            input: { patch: projectSettingsImportPatch(file, project, current) },
+            input: { patch: projectSettingsImportPatch(file, project, current, t) },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         }}

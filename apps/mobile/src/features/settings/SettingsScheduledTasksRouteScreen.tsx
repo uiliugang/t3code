@@ -735,33 +735,40 @@ function TaskForm({
       draft.schedule.mode === "webhook" && liveTask?.schedule.type === "webhook"
         ? { ...draft.schedule, signature: liveTask.schedule.signature }
         : draft.schedule,
+      t,
     );
     if (
       draft.schedule.mode === "webhook" &&
       parseMaxDeliveryAge(draft.schedule.maxDeliveryAgeMinutes) === undefined
     ) {
       Dialog.alert(
-        "Invalid age limit",
-        `Enter whole minutes from 1 to ${MAX_WEBHOOK_DELIVERY_AGE_MINUTES}, or leave it blank.`,
+        t("Invalid age limit"),
+        t("Enter whole minutes from 1 to {max}, or leave it blank.", {
+          max: MAX_WEBHOOK_DELIVERY_AGE_MINUTES,
+        }),
       );
       return;
     }
     if (draft.schedule.mode === "once" && !offersOnce) {
       Dialog.alert(
-        "Once is not available here",
-        "This environment runs an older T3 Code. Update it to schedule a one-time task, or pick another schedule.",
+        t("Once is not available here"),
+        t(
+          "This environment runs an older T3 Code. Update it to schedule a one-time task, or pick another schedule.",
+        ),
       );
       return;
     }
-    const parsedFilters = parseWebhookFilterDrafts(draft.schedule.filters);
+    const parsedFilters = parseWebhookFilterDrafts(draft.schedule.filters, t);
     if (draft.schedule.mode === "webhook" && "error" in parsedFilters) {
-      Dialog.alert(t("Invalid filter"), t(parsedFilters.error));
+      Dialog.alert(t(t("Invalid filter")), t(parsedFilters.error));
       return;
     }
     if (draft.schedule.mode === "webhook" && schedule === null) {
       Dialog.alert(
-        "Invalid webhook settings",
-        "Each dedupe key must contain a valid request placeholder. The coalesce window must be whole seconds from 10 to 3600, or blank.",
+        t("Invalid webhook settings"),
+        t(
+          "Each dedupe key must contain a valid request placeholder. The coalesce window must be whole seconds from 10 to 3600, or blank.",
+        ),
       );
       return;
     }
@@ -774,8 +781,8 @@ function TaskForm({
       (draft.workspace === "existing_worktree" && !draft.checkoutPath.trim())
     ) {
       Dialog.alert(
-        "Incomplete task",
-        "Add a name, prompt, project, model, valid schedule, and checkout path if needed.",
+        t("Incomplete task"),
+        t("Add a name, prompt, project, model, valid schedule, and checkout path if needed."),
       );
       return;
     }
@@ -935,24 +942,28 @@ function TaskForm({
           title="Destination"
           footer={
             draft.threadMode === "new_thread"
-              ? "Each run starts a new thread."
-              : `${
-                  draft.threadMode === "continue"
-                    ? "Runs continue one conversation."
-                    : "Runs share one thread, each in a fresh session without earlier runs' context."
-                }${
-                  draft.threadId === null ? " The first run starts the thread." : ""
-                } Deleting it also deletes this task.`
+              ? t("Each run starts a new thread.")
+              : [
+                  t(
+                    draft.threadMode === "continue"
+                      ? "Runs continue one conversation."
+                      : "Runs share one thread, each in a fresh session without earlier runs' context.",
+                  ),
+                  draft.threadId === null ? t("The first run starts the thread.") : null,
+                  t("Deleting it also deletes this task."),
+                ]
+                  .filter(Boolean)
+                  .join(" ")
           }
         >
           {offersThreadModes ? (
             <SelectRow
               label="Runs go to"
-              value={THREAD_MODE_LABELS[draft.threadMode]}
+              value={t(THREAD_MODE_LABELS[draft.threadMode])}
               actions={(Object.keys(THREAD_MODE_LABELS) as ScheduledTaskThreadMode[]).map(
                 (mode) => ({
                   id: mode,
-                  title: THREAD_MODE_LABELS[mode],
+                  title: t(THREAD_MODE_LABELS[mode]),
                   state: draft.threadMode === mode ? "on" : undefined,
                 }),
               )}
@@ -970,7 +981,7 @@ function TaskForm({
               borderTop={offersThreadModes}
               value={
                 draft.threadId === null && draft.threadMode !== "new_thread"
-                  ? "Started by the first run"
+                  ? t("Started by the first run")
                   : destinationLabel
               }
               onPress={() => navigation.navigate("SettingsScheduledTaskThread")}

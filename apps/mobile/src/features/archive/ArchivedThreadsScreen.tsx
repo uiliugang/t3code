@@ -61,14 +61,14 @@ function ArchivedThreadsHeader(props: {
       search={{
         value: props.searchQuery,
         onChangeText: props.onSearchQueryChange,
-        placeholder: "Search archived threads",
-        compactPlaceholder: "Search",
+        placeholder: t("Search archived threads"),
+        compactPlaceholder: t("Search"),
         mode: "inline",
         compactToolbar: width < 700,
       }}
       menus={[
         {
-          title: "Archived thread options",
+          title: t("Archived thread options"),
           icon: hasCustomFilter
             ? "line.3.horizontal.decrease.circle.fill"
             : "line.3.horizontal.decrease.circle",
@@ -93,7 +93,7 @@ function ArchivedThreadsHeader(props: {
             },
             {
               id: "sort",
-              title: "Sort by archived date",
+              title: t("Sort by archived date"),
               items: [
                 {
                   id: "sort:newest",
@@ -111,7 +111,7 @@ function ArchivedThreadsHeader(props: {
             },
             {
               id: "refresh",
-              title: "Refresh archived threads",
+              title: t("Refresh archived threads"),
               onPress: props.onRefresh,
             },
           ],
@@ -262,7 +262,7 @@ function ArchivedThreadRow(props: {
       onSwipeableClose={props.onSwipeableClose}
       onSwipeableWillOpen={props.onSwipeableWillOpen}
       primaryAction={{
-        accessibilityLabel: `Unarchive ${props.thread.title}`,
+        accessibilityLabel: t("Unarchive {title}", { title: props.thread.title }),
         icon: "arrow.uturn.backward",
         label: t("Unarchive"),
         onPress: props.onUnarchive,
@@ -283,7 +283,7 @@ function ArchiveError(props: { readonly message: string; readonly onRetry: () =>
       <Text className="text-base font-t3-bold text-danger-foreground">
         {t("Could not load every archive")}
       </Text>
-      <Text className="mt-1 text-sm text-foreground-muted">{props.message}</Text>
+      <Text className="mt-1 text-sm text-foreground-muted">{t(props.message)}</Text>
       <View className="mt-3">
         <Button label={t("Try again")} tone="secondary" onPress={props.onRetry} />
       </View>
@@ -400,10 +400,10 @@ export function ArchivedThreadsScreen(props: {
       <EmptyState
         detail={
           isFiltered
-            ? "Try another search or environment."
-            : "Threads you archive will appear here."
+            ? t("Try another search or environment.")
+            : t("Threads you archive will appear here.")
         }
-        title={isFiltered ? "No matching threads" : t("No archived threads")}
+        title={isFiltered ? t("No matching threads") : t("No archived threads")}
       />
     );
   }, [isFiltered, isInitialLoad, t]);

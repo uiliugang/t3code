@@ -1,10 +1,15 @@
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
 import { ComboboxTrigger } from "./ui/combobox";
 import "../index.css";
+
+vi.mock(import("../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 
 it("updates current branch badges when the ref names stay the same", async () => {
   const names = ["main", "feature"];

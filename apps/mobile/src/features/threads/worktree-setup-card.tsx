@@ -47,14 +47,14 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
   const handedOff = turnStarted && worktreeSetupAgentStarted(snapshot);
   const running = snapshot.phase === "running";
   const backgroundSetup = handedOff && running;
-  const scriptName = snapshot.setupScript?.name ?? "Setup script";
+  const scriptName = snapshot.setupScript?.name ?? t("Setup script");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const now = useVisibleSecondClock(running || working);
   const failed =
     snapshot.phase === "failed" || snapshot.stages.some((stage) => stage.status === "failed");
   const label =
     handedOff && working
-      ? `Working for ${elapsed(turnStartedAt, null, now) ?? "0s"}`
+      ? t("Working for {duration}", { duration: elapsed(turnStartedAt, null, now) ?? "0s" })
       : running
         ? handedOff
           ? "Setup continues…"
@@ -87,8 +87,10 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
           accessibilityRole="button"
           accessibilityLabel={
             backgroundSetup
-              ? `Background setup is still running: ${scriptName}. Show setup progress.`
-              : "Worktree setup details"
+              ? t("Background setup is still running: {script}. Show setup progress.", {
+                  script: scriptName,
+                })
+              : t("Worktree setup details")
           }
           accessibilityState={{ expanded: detailsOpen }}
           onPress={() => setDetailsOpen(true)}
@@ -119,7 +121,7 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
               />
             ) : null}
             <Text numberOfLines={1} className="shrink text-2xs text-foreground-secondary">
-              {backgroundSetup ? "Background setup" : t("Details")}
+              {backgroundSetup ? t("Background setup") : t("Details")}
             </Text>
             {!backgroundSetup ? (
               <SymbolView name="chevron.right" size={10} tintColorClassName="accent-icon-muted" />
@@ -151,11 +153,15 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
 }
 
 export function WorktreeWorkingHeader({ startedAt }: { startedAt: string }) {
+  const t = useUiTranslation();
   const now = useVisibleSecondClock(true);
   return (
     <View className="py-1">
       <View className="min-h-11 flex-row items-center border-b border-border px-1">
-        <HeaderLabel label={`Working for ${elapsed(startedAt, null, now) ?? "0s"}`} active />
+        <HeaderLabel
+          label={t("Working for {duration}", { duration: elapsed(startedAt, null, now) ?? "0s" })}
+          active
+        />
       </View>
     </View>
   );
@@ -170,11 +176,12 @@ function HeaderLabel({
   active: boolean;
   failed?: boolean;
 }) {
+  const t = useUiTranslation();
   return active ? (
     <ShimmeringWorkContent
       icon="clock"
       iconSubtleColor="transparent"
-      label={label}
+      label={t(label)}
       showIcon={false}
     />
   ) : (
@@ -187,7 +194,7 @@ function HeaderLabel({
       }
       style={{ fontVariant: ["tabular-nums"] }}
     >
-      {label}
+      {t(label)}
     </Text>
   );
 }
@@ -205,7 +212,7 @@ function SetupDetailsSheet({
   const insets = useSafeAreaInsets();
   const canCancel = snapshot.phase === "running" && !turnStarted;
   return (
-    <Sheet title="Worktree setup" onClose={onClose}>
+    <Sheet title={t("Worktree setup")} onClose={onClose}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         bounces={false}
@@ -272,21 +279,22 @@ function StageRow({
   compact?: boolean;
   animate?: boolean;
 }) {
+  const t = useUiTranslation();
   const label =
     stage.id === "setup-script"
-      ? (scriptName ?? worktreeSetupStageLabel(stage.id))
-      : worktreeSetupStageLabel(stage.id);
+      ? (scriptName ?? t(worktreeSetupStageLabel(stage.id)))
+      : t(worktreeSetupStageLabel(stage.id));
   const detail =
     stage.status === "pending"
       ? null
       : stage.status === "skipped"
-        ? (stage.detail ?? "skipped")
+        ? (stage.detail ?? t("skipped"))
         : stage.id === "checkout" && stage.status === "running" && stage.percent !== null
           ? `${stage.percent}%`
           : stage.detail;
   return (
     <View
-      accessibilityLabel={`${label}, ${stage.status}`}
+      accessibilityLabel={`${label}, ${t(stage.status)}`}
       className={compact ? "min-h-8 flex-row items-center" : "min-h-11 flex-row items-center"}
       style={{ columnGap: 8, opacity: stage.status === "pending" ? 0.4 : 1 }}
     >

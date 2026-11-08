@@ -93,6 +93,7 @@ const TOOL_CALL_VISIBILITY_LABELS: Record<ToolCallVisibility, string> = {
 const isToolCallVisibility = Schema.is(ToolCallVisibility);
 
 function ToolCallVisibilityRow() {
+  const t = useUiTranslation();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -107,14 +108,20 @@ function ToolCallVisibilityRow() {
               if (isToolCallVisibility(value)) updateSettings({ toolCallVisibility: value });
             }}
           >
-            <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Tool calls in chat">
-              <SelectValue>{TOOL_CALL_VISIBILITY_LABELS[settings.toolCallVisibility]}</SelectValue>
+            <SelectTrigger
+              size="sm"
+              className="w-full min-w-0"
+              aria-label={t("Tool calls in chat")}
+            >
+              <SelectValue>
+                {t(TOOL_CALL_VISIBILITY_LABELS[settings.toolCallVisibility])}
+              </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem value="showAll">Show all</SelectItem>
-              <SelectItem value="hideSuccessful">Hide successful</SelectItem>
-              <SelectItem value="hideAll">Hide all</SelectItem>
-              <SelectItem value="zen">Zen</SelectItem>
+              <SelectItem value="showAll">{t("Show all")}</SelectItem>
+              <SelectItem value="hideSuccessful">{t("Hide successful")}</SelectItem>
+              <SelectItem value="hideAll">{t("Hide all")}</SelectItem>
+              <SelectItem value="zen">{t("Zen")}</SelectItem>
             </SelectPopup>
           </Select>
         </div>
@@ -167,12 +174,13 @@ function GuestLinksRow() {
       managed={settings.guestSharingEnabled ? undefined : connectDenial}
       description={
         <>
-          Share a thread with a guest who watches it live in a browser and sends messages you
-          approve. Needs T3 Connect: sign in and link this machine in{" "}
+          {t(
+            "Share a thread with a guest who watches it live in a browser and sends messages you approve. Needs T3 Connect: sign in and link this machine in",
+          )}{" "}
           <Link to="/settings/access" className="underline underline-offset-2">
             {t("Sharing & access")}
           </Link>
-          . Turning it off stops every guest link.
+          {t(". Turning it off stops every guest link.")}
         </>
       }
       control={
@@ -198,12 +206,13 @@ function LinkedEnvironmentsRow() {
       settingKeys={["linkedEnvironmentsEnabled"]}
       description={
         <>
-          Let agents here work on your other machines, and theirs here. Turn it on for each machine,
-          then link them in{" "}
+          {t(
+            "Let agents here work on your other machines, and theirs here. Turn it on for each machine, then link them in",
+          )}{" "}
           <Link to="/settings/connections" className="underline underline-offset-2">
             {t("Connections")}
           </Link>
-          . While off, nothing new starts over a link; running tasks finish.
+          {t(". While off, nothing new starts over a link; running tasks finish.")}
         </>
       }
       control={
@@ -231,7 +240,7 @@ function SimlockHostsRow() {
       settingKeys={["simlockDeviceHostsEnabled"]}
       description={
         <>
-          Let the Device panel lease simulators and emulators from your own{" "}
+          {t("Let the Device panel lease simulators and emulators from your own")}{" "}
           <a
             href="https://incubator.callstack.com/simlock/"
             target="_blank"
@@ -240,11 +249,11 @@ function SimlockHostsRow() {
           >
             Simlock
           </a>{" "}
-          pool, added in{" "}
+          {t("pool, added in")}{" "}
           <Link to="/settings/devices" className="underline underline-offset-2">
             {t("Devices")}
           </Link>
-          . An alpha that may change or break. T3 Code never installs Simlock.
+          {t(". An alpha that may change or break. T3 Code never installs Simlock.")}
         </>
       }
       control={
@@ -254,7 +263,7 @@ function SimlockHostsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ simlockDeviceHostsEnabled: Boolean(checked) })
           }
-          aria-label="Simlock device hosts"
+          aria-label={t("Simlock device hosts")}
         />
       }
     />

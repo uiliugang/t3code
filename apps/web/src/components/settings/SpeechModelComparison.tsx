@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { EnvironmentSpeechModel } from "@t3tools/contracts";
 import { CheckIcon } from "lucide-react";
 
@@ -80,6 +81,7 @@ export function ModelBenchmarks({
   /** Plain facts, such as language count and size, shown after the scores. */
   facts: readonly string[];
 }) {
+  const t = useUiTranslation();
   const data = model.benchmark;
   const visible = !data
     ? []
@@ -94,26 +96,26 @@ export function ModelBenchmarks({
         const score = data?.accuracy[code];
         return (
           <span key={code}>
-            {languageLabel(code)}:{" "}
+            {t(languageLabel(code))}:{" "}
             {score ? (
               <>
-                <strong className="font-medium text-foreground">{score.grade}</strong> (
-                {score.errorPercent}% error)
+                <strong className="font-medium text-foreground">{score.grade}</strong>{" "}
+                {t("({percent}% error)", { percent: score.errorPercent })}
               </>
             ) : (
-              "not benchmarked"
+              t("not benchmarked")
             )}
           </span>
         );
       })}
       {data ? (
         <span>
-          Speed:{" "}
+          {t("Speed:")}{" "}
           {data.secondsPer30s === null ? (
-            "not benchmarked"
+            t("not benchmarked")
           ) : (
             <>
-              <strong className="font-medium text-foreground">{data.secondsPer30s} s</strong> / 30 s
+              <strong className="font-medium text-foreground">{data.secondsPer30s}s</strong>/ 30 s
             </>
           )}
         </span>

@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { MICROPHONE_PERMISSION_ERROR } from "@t3tools/client-runtime/voice-input";
 import { useNavigate } from "@tanstack/react-router";
 import { RotateCcwIcon, SettingsIcon, XIcon } from "lucide-react";
@@ -38,6 +39,7 @@ export function VoiceInputErrorPill(props: {
   onRetry(): void;
   onDismiss(): void;
 }) {
+  const t = useUiTranslation();
   const navigate = useNavigate();
   const openSettings = props.errorAction === "settings";
   const actionLabel = openSettings
@@ -55,7 +57,7 @@ export function VoiceInputErrorPill(props: {
               type="button"
               size="icon-sm-pill"
               variant="ghost"
-              aria-label="Dismiss voice input error"
+              aria-label={t("Dismiss voice input error")}
               onPointerDown={(event) => event.preventDefault()}
               onClick={props.onDismiss}
             >
@@ -64,7 +66,7 @@ export function VoiceInputErrorPill(props: {
           }
         />
         <TooltipPopup side="top">
-          Dismiss voice input error
+          {t("Dismiss voice input error")}
           {props.cancelShortcutLabel ? ` (${props.cancelShortcutLabel})` : ""}
         </TooltipPopup>
       </Tooltip>
@@ -74,14 +76,14 @@ export function VoiceInputErrorPill(props: {
             <span
               tabIndex={0}
               role="status"
-              aria-label={props.error ?? "Voice input failed"}
+              aria-label={t(props.error ?? "Voice input failed")}
               className="min-w-0 flex-1 truncate text-sm text-destructive"
             />
           }
         >
-          {voiceErrorLabel(props.error)}
+          {t(voiceErrorLabel(props.error))}
         </TooltipTrigger>
-        <TooltipPopup side="top">{props.error ?? "Voice input failed"}</TooltipPopup>
+        <TooltipPopup side="top">{t(props.error ?? "Voice input failed")}</TooltipPopup>
       </Tooltip>
       {props.errorAction ? (
         <Tooltip>
@@ -91,7 +93,7 @@ export function VoiceInputErrorPill(props: {
                 type="button"
                 size="icon-sm-pill"
                 variant="ghost"
-                aria-label={actionLabel}
+                aria-label={t(actionLabel)}
                 disabled={props.disabled}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => {
@@ -107,7 +109,7 @@ export function VoiceInputErrorPill(props: {
               </Button>
             }
           />
-          <TooltipPopup side="top">{actionLabel}</TooltipPopup>
+          <TooltipPopup side="top">{t(actionLabel)}</TooltipPopup>
         </Tooltip>
       ) : null}
     </VoiceInputPill>

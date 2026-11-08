@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useRef } from "react";
 import type { SearchBarCommands } from "react-native-screens";
 
@@ -19,6 +20,7 @@ function SidebarColumnHeader(
     readonly sidebar: NonNullable<WorkspaceListHeaderProps["sidebar"]>;
   },
 ) {
+  const t = useUiTranslation();
   const { search, sidebar } = props;
   const searchBarRef = useRef<SearchBarCommands>(null);
   useHardwareKeyboardCommand("focusSearch", () => {
@@ -34,9 +36,9 @@ function SidebarColumnHeader(
   });
   const items = createWorkspaceListHeaderItems({
     filter: {
-      accessibilityLabel: "Filter threads",
+      accessibilityLabel: t("Filter threads"),
       icon: workspaceListFilterIcon(props.filter.customized),
-      title: "Thread list options",
+      title: t("Thread list options"),
       items: props.filter.items,
     },
     onOpenSettings: props.onOpenSettings,

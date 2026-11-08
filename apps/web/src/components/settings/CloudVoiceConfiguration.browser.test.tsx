@@ -1,9 +1,10 @@
 import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import "~/index.css";
 import { chooseAudioDestination } from "../../speech/voiceConsent";
 import { useEnvironmentScope, usePreparedConnection } from "../../state/session";
@@ -41,6 +42,7 @@ vi.mock("../../state/environments", async (importOriginal) => ({
 }));
 
 it("enables the chosen provider only after a successful setup and keeps its grant when editing the key", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   const id = EnvironmentId.make("voice-host");
   const target = new PrimaryConnectionTarget({
     environmentId: id,
@@ -132,6 +134,7 @@ it("enables the chosen provider only after a successful setup and keeps its gran
 });
 
 it("OpenRouter needs an exact model, and changing it writes no credential", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   const id = EnvironmentId.make("voice-host");
   const target = new PrimaryConnectionTarget({
     environmentId: id,

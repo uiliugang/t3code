@@ -1,7 +1,9 @@
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
 import { userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { ProviderEnvironmentSection } from "./ProviderInstanceCard";
 
 const savedSecret = {
@@ -13,6 +15,7 @@ const savedSecret = {
 
 describe("ProviderEnvironmentSection saved secrets", () => {
   it("requires a replacement before renaming or unlocking a stored secret", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     const onChange = vi.fn();
     await using screen = await render(
       <ProviderEnvironmentSection environment={[savedSecret]} onChange={onChange} />,

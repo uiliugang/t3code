@@ -245,6 +245,9 @@ const make = Effect.gen(function* () {
               configuration: {
                 name: project.title,
                 settings: overrides,
+                ...(Object.hasOwn(server.issueProjectSources, project.id)
+                  ? { issueSources: server.issueProjectSources[project.id] }
+                  : {}),
                 providers: Object.fromEntries(
                   [...providerIds(overrides)].map((id) => [
                     id,
@@ -511,6 +514,13 @@ const make = Effect.gen(function* () {
         const scripts = definition.settings.defaultProjectScripts?.map(remapScript);
         yield* settings
           .updateSettings({
+            ...(definition.issueSources !== undefined
+              ? {
+                  issueProjectSources: {
+                    [project.id]: definition.issueSources,
+                  },
+                }
+              : {}),
             projectSettingsOverrides: {
               [project.id]:
                 Object.keys(definition.settings).length === 0

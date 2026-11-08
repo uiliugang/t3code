@@ -114,13 +114,15 @@ const UNAVAILABLE_EXPLANATION =
     ? "Dictation on this device needs Android 12 or later and Google speech services that support your language. Your keyboard’s voice typing is separate."
     : "Dictation on this device needs iOS 26 or later, a supported device, and a supported language. Your keyboard’s dictation is separate.";
 
-function saveDestination(id: EnvironmentId | null) {
+function saveDestination(id: EnvironmentId | null, t: ReturnType<typeof useUiTranslation>) {
   try {
     chooseVoiceDestination(id);
   } catch {
     Dialog.alert(
-      "Could not save transcription choice",
-      "Dictation on an environment is off for this session. Save again before closing the app, or your previous choice may return when it restarts.",
+      t("Could not save transcription choice"),
+      t(
+        "Dictation on an environment is off for this session. Save again before closing the app, or your previous choice may return when it restarts.",
+      ),
     );
   }
 }
@@ -132,6 +134,7 @@ function EnvironmentChoice({
   environment: EnvironmentPresentation;
   selected: boolean;
 }) {
+  const t = useUiTranslation();
   const usable = useAtomValue(voiceConnectionAtom(environment.environmentId)) !== null;
   const status = AsyncResult.getOrElse(
     useAtomValue(voiceSpeechStatusAtom(environment.environmentId)),
@@ -145,22 +148,25 @@ function EnvironmentChoice({
       description={
         !usable
           ? environment.connection.phase !== "connected"
-            ? "Not connected"
-            : "Transcription unavailable"
+            ? t("Not connected")
+            : t("Transcription unavailable")
           : status?.supported === false
-            ? status.reason
+            ? t(status.reason)
             : status?.state === "missing-model"
-              ? "No transcription model installed"
-              : (environment.displayUrl ?? "Send finished recordings to this environment.")
+              ? t("No transcription model installed")
+              : (environment.displayUrl ?? t("Send finished recordings to this environment."))
       }
       separated
       onPress={() => {
         if (!selected)
           Dialog.confirm({
-            title: `Send microphone audio to ${environment.label}?`,
-            message: `Finished recordings will be sent to ${environment.displayUrl ?? environment.label} for transcription. You can switch back to This device at any time.`,
-            confirmText: "Use environment",
-            onConfirm: () => saveDestination(environment.environmentId),
+            title: t("Send microphone audio to {environment}?", { environment: environment.label }),
+            message: t(
+              "Finished recordings will be sent to {environment} for transcription. You can switch back to This device at any time.",
+              { environment: environment.displayUrl ?? environment.label },
+            ),
+            confirmText: t("Use environment"),
+            onConfirm: () => saveDestination(environment.environmentId, t),
           });
       }}
     />
@@ -234,10 +240,10 @@ export function SettingsVoiceRouteScreen() {
       >
         <SettingsSection title="Transcribe on">
           <ListChoiceRow
-            label="This device"
-            description="Audio stays on this device and is transcribed here."
+            label={t("This device")}
+            description={t("Audio stays on this device and is transcribed here.")}
             selected={!grant}
-            onPress={() => saveDestination(null)}
+            onPress={() => saveDestination(null, t)}
           />
           {hasEnvironmentVoiceCapture &&
             environments.map((environment) => (
@@ -252,8 +258,8 @@ export function SettingsVoiceRouteScreen() {
             ))}
           {isReady && grant && !grantEnvironment ? (
             <ListChoiceRow
-              label="Previously selected environment"
-              description="No longer paired"
+              label={t("Previously selected environment")}
+              description={t("No longer paired")}
               separated
               selected
               disabled
@@ -303,8 +309,8 @@ export function SettingsVoiceRouteScreen() {
             </SettingsSection>
             <Text className="px-2 text-sm text-foreground-muted">
               {permission === "ask"
-                ? "Allow microphone access to record and to see your microphones."
-                : "Turn on microphone access for T3 Code in Settings to use voice input."}
+                ? t("Allow microphone access to record and to see your microphones.")
+                : t("Turn on microphone access for T3 Code in Settings to use voice input.")}
             </Text>
           </>
         ) : null}
@@ -347,7 +353,9 @@ export function SettingsVoiceRouteScreen() {
             "Voice input prefers the first connected microphone in this list. Wired and Bluetooth devices are added by name after you use voice input with them connected; until then, the Other row ranks them. Swipe a device left to forget it.",
           )}
           {Platform.OS === "android"
-            ? " Android may still use a different microphone if the preferred one can’t be routed."
+            ? t(
+                " Android may still use a different microphone if the preferred one can’t be routed.",
+              )
             : null}
         </Text>
       </ScrollView>

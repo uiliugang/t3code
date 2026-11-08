@@ -104,7 +104,7 @@ export function ProjectActionsSettings() {
       setRequest({
         scriptId: null,
         initial: payload,
-        error: error instanceof Error ? error.message : "Failed to import action.",
+        error: error instanceof Error ? t(error.message) : t("Failed to import action."),
       });
     }
   };
@@ -135,14 +135,14 @@ export function ProjectActionsSettings() {
                     />
                   }
                 >
-                  Import scripts
+                  {t("Import scripts")}
                   <ChevronDownIcon className="size-3.5" />
                 </MenuTrigger>
                 <MenuPopup align="end">
                   <MenuGroup>
-                    <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
+                    <MenuGroupLabel>{t("Import from t3.json")}</MenuGroupLabel>
                     <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                      Add actions declared by this checkout without editing them first.
+                      {t("Add actions declared by this checkout without editing them first.")}
                     </p>
                   </MenuGroup>
                   <MenuSeparator />
@@ -170,7 +170,7 @@ export function ProjectActionsSettings() {
               onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
             >
               <PlusIcon className="size-3.5" />
-              Add action
+              {t("Add action")}
             </Button>
           </div>
         }

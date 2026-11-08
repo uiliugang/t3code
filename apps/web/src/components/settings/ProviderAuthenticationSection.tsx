@@ -97,8 +97,8 @@ export function ProviderAuthenticationSection({
         : needsExternalSetup
           ? "No in-app sign-in advertised. Follow the provider's docs to finish setup."
           : usesCredentials
-            ? `Connect on ${environmentLabel} to load models.`
-            : `Sign in on ${environmentLabel}.`;
+            ? t("Connect on {environment} to load models.", { environment: environmentLabel })
+            : t("Sign in on {environment}.", { environment: environmentLabel });
   const statusMessage = auth?.phase === "failed" ? auth.message : null;
   const disabled = readOnly || pending || query.error !== null || isDiscovering;
   const draftId = `${auth?.flowId ?? ""}:${interaction?.id ?? ""}`;
@@ -157,7 +157,7 @@ export function ProviderAuthenticationSection({
       setError(null);
     } catch {
       pending?.close();
-      setError("Could not open the sign-in page. Copy the link and open it in your browser.");
+      setError(t("Could not open the sign-in page. Copy the link and open it in your browser."));
     }
   }
 
@@ -262,7 +262,7 @@ export function ProviderAuthenticationSection({
                   <a href={provider.setup.documentationUrl} target="_blank" rel="noreferrer" />
                 }
               >
-                Open docs
+                {t("Open docs")}
               </Button>
             ) : active && auth?.flowId ? (
               <Button
@@ -339,9 +339,10 @@ export function ProviderAuthenticationSection({
         <>
           {interaction?.type === "deviceCode" ? (
             <p className="py-2 text-sm text-muted-foreground">
-              {t("Enter code")}{" "}
-              <code className="select-all font-mono text-foreground">{interaction.userCode}</code>{" "}
-              in your browser.
+              {t("Enter the following code in your browser:")}{" "}
+              <code className="select-all font-mono text-foreground">
+                {interaction.userCode}
+              </code>{" "}
             </p>
           ) : null}
           {interaction?.type === "terminal" ? (

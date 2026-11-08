@@ -1044,12 +1044,12 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "Use environment defaults for this project": "对此项目使用环境默认值",
   Wired: "有线",
   "Other wired": "其他有线设备",
-  "Headsets and USB microphones not listed": "未列出的耳机和 USB 麦克风",
+  "Headsets and USB microphones not listed here": "未列出的耳机和 USB 麦克风",
   Bluetooth: "蓝牙",
   "Other Bluetooth": "其他蓝牙设备",
-  "Earbuds, headsets, and cars, including Android Auto, not listed":
+  "Earbuds, headsets, and cars, including Android Auto, not listed here":
     "未列出的耳机和汽车设备，包括 Android Auto",
-  "AirPods, headsets, and cars not listed": "未列出的 AirPods、耳机和汽车设备",
+  "AirPods, headsets, and cars not listed here": "未列出的 AirPods、耳机和汽车设备",
   "Built-in": "内置",
   "Built-in microphone": "内置麦克风",
   "The microphone on this device": "此设备上的麦克风",

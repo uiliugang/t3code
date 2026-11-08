@@ -2,6 +2,7 @@ import {
   ClientSettingsPatch,
   CustomModelSetting,
   KeybindingsConfig,
+  IssueSource,
   MAX_KEYBINDINGS_COUNT,
   ProjectSettingsOverrides,
   ProjectTransferWorkspace,
@@ -23,12 +24,14 @@ import {
 import { canonicalRepositoryCloneKey } from "@t3tools/shared/git";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { compileResolvedKeybindingRule } from "@t3tools/shared/keybindings";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { getProviderClient } from "./providerClients.ts";
 
 export const MAX_SETTINGS_FILE_BYTES = 1024 * 1024;
 
+// Older backups include voiceMicrophone; its device-local ID is discarded on read and write.
 const ApplicationClientSettings = Schema.Struct(
   Struct.omit(ClientSettingsPatch.fields, [
     "onboardingCompletedAt",
@@ -155,6 +158,7 @@ const ProjectSettingsFile = Schema.Struct({
   identity: ProjectTransferIdentity,
   settings: Schema.toType(ProjectSettingsOverrides),
   repositories: Schema.Record(WorkspaceRootId, TrimmedNonEmptyString),
+  issueSources: Schema.optionalKey(Schema.Array(IssueSource)),
   workspace: Schema.optionalKey(ProjectTransferWorkspace),
 });
 
@@ -239,7 +243,7 @@ function providerDrivers(
   );
 }
 
-function checkProviders(file: SettingsFile, target: ServerSettings) {
+function checkProviders(file: SettingsFile, target: ServerSettings, t: UiTranslator) {
   const settings = file.scope === "project" ? file.settings : file.server;
   const modelProviders =
     file.scope === "application"
@@ -254,7 +258,12 @@ function checkProviders(file: SettingsFile, target: ServerSettings) {
       (defaultDriver?.hasDefaultInstance !== false ? defaultDriver?.driverKind : undefined);
     if (driver === undefined || destinationDriver !== driver) {
       throw new Error(
-        `Configure provider "${id}" with the same driver on the destination before importing.`,
+        t(
+          'Configure provider "{provider}" with the same driver on the destination before importing.',
+          {
+            provider: id,
+          },
+        ),
       );
     }
   }
@@ -292,7 +301,9 @@ export function createApplicationSettingsFile(input: {
     format: "t3-code-settings",
     version: 1,
     scope: "application",
-    clientSettings: decodeApplicationClientSettings(input.clientSettings),
+    clientSettings: decodeApplicationClientSettings(
+      Struct.omit(input.clientSettings, ["voiceMicrophone"]),
+    ),
     server,
     keybindings: input.keybindings.filter((rule) => !rule.command.startsWith("script.")),
     providers: providerDrivers(
@@ -321,11 +332,18 @@ export function createProjectSettingsFile(
     repositories: Object.fromEntries(
       (project.workspaceConfig?.roots ?? []).map((root) => [root.id, root.alias]),
     ),
+    ...(Object.hasOwn(server.issueProjectSources, project.id)
+      ? { issueSources: server.issueProjectSources[project.id]! }
+      : {}),
   };
 }
 
 export function serializeSettingsFile(file: SettingsFile): string {
-  const contents = `${JSON.stringify(encodeSettingsFile(file), null, 2)}\n`;
+  const portableFile =
+    file.scope === "application"
+      ? { ...file, clientSettings: Struct.omit(file.clientSettings, ["voiceMicrophone"]) }
+      : file;
+  const contents = `${JSON.stringify(encodeSettingsFile(portableFile), null, 2)}\n`;
   assertSettingsFileSize(new TextEncoder().encode(contents).byteLength);
   return contents;
 }
@@ -348,7 +366,9 @@ export function parseSettingsFile(contents: string): SettingsFile {
     ) {
       throw new Error("Invalid shortcut or condition.");
     }
-    return file;
+    return file.scope === "application"
+      ? { ...file, clientSettings: Struct.omit(file.clientSettings, ["voiceMicrophone"]) }
+      : file;
   } catch (cause) {
     throw new Error("Invalid settings file. Check its format, version and setting values.", {
       cause,
@@ -359,8 +379,9 @@ export function parseSettingsFile(contents: string): SettingsFile {
 export function applicationSettingsImportPatch(
   file: ApplicationSettingsFile,
   target: ServerSettings,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): ServerSettingsPatch {
-  checkProviders(file, target);
+  checkProviders(file, target, t);
   const providerInstances = Object.fromEntries(
     Object.entries(file.providerModels ?? {}).map(([providerId, customModels]) => {
       const id = ProviderInstanceId.make(providerId);
@@ -372,7 +393,12 @@ export function applicationSettingsImportPatch(
         (typeof config !== "object" || Array.isArray(config))
       ) {
         throw new Error(
-          `Repair provider "${id}" settings on the destination before importing model edits.`,
+          t(
+            'Repair provider "{provider}" settings on the destination before importing model edits.',
+            {
+              provider: id,
+            },
+          ),
         );
       }
       return [
@@ -397,8 +423,9 @@ export function projectSettingsImportPatch(
   file: ProjectSettingsFile,
   project: TransferProject,
   target: ServerSettings,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): ServerSettingsPatch {
-  checkProviders(file, target);
+  checkProviders(file, target, t);
   const scripts = file.settings.defaultProjectScripts?.map((script) => ({
     ...script,
     ...(script.repositoryRootIds
@@ -409,7 +436,10 @@ export function projectSettingsImportPatch(
               alias && project.workspaceConfig?.roots.find((root) => root.alias === alias);
             if (!destination)
               throw new Error(
-                `Action "${script.name}" requires repository "${alias ?? id}" on the destination.`,
+                t('Action "{action}" requires repository "{repository}" on the destination.', {
+                  action: script.name,
+                  repository: alias ?? id,
+                }),
               );
             return destination.id;
           }),
@@ -417,6 +447,13 @@ export function projectSettingsImportPatch(
       : {}),
   }));
   return {
+    ...(file.issueSources === undefined
+      ? {}
+      : {
+          issueProjectSources: {
+            [project.id]: file.issueSources,
+          },
+        }),
     projectSettingsOverrides: {
       [project.id]:
         Object.keys(file.settings).length === 0
@@ -444,6 +481,7 @@ export function projectConfigurationsForImport(
       settings: file.settings,
       providers: file.providers,
       workspace: file.workspace,
+      ...(file.issueSources === undefined ? {} : { issueSources: file.issueSources }),
     },
   ];
 }
