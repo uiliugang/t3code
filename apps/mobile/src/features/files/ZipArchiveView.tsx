@@ -426,7 +426,7 @@ function ZipArchiveList(props: {
                 accessibilityLabel={t("Filter files in ZIP")}
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder={`Filter ${fileCount} ${fileCount === 1 ? "file" : "files"}`}
+                placeholder={t("Filter {count} files", { count: fileCount })}
                 placeholderTextColorClassName="accent-placeholder"
                 cursorColorClassName="accent-focus"
                 className="min-w-0 flex-1 font-sans text-[15px] text-foreground"
@@ -462,7 +462,7 @@ function ZipArchiveList(props: {
           query ? (
             <EmptyState
               variant="plain"
-              title={`No files match “${query.trim()}”`}
+              title={t("No files match “{value}”", { value: query.trim() })}
               detail={t("The filter checks file names and folder paths.")}
               action={<Button label={t("Clear filter")} onPress={() => setQuery("")} />}
             />
@@ -772,7 +772,13 @@ function ZipEntryView(props: {
           <EmptyState
             variant="plain"
             title={t(content.title)}
-            detail={t(content.message)}
+            detail={
+              tooBig
+                ? t("Previews stop at {value}. Save the file to open it in another app.", {
+                    value: formatAttachmentSize(ARCHIVE_ENTRY_MAX_BYTES),
+                  })
+                : t(content.message)
+            }
             action={
               <Button
                 tone="primary"
