@@ -12260,6 +12260,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
     if (projection.thread.deletedAt !== null) return undefined;
+    if (command.expectedRunIds !== undefined) {
+      const expected = new Set(command.expectedRunIds);
+      const nodeIds = new Set(
+        projection.runs.flatMap((run) => (run.rootNodeId === null ? [] : [run.rootNodeId])),
+      );
+      if (
+        projection.runs.some((run) => !expected.has(run.id)) ||
+        projection.subagents.some((task) =>
+          task.runId === null ? !nodeIds.has(task.parentNodeId) : !expected.has(task.runId),
+        )
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "The thread has work outside this stop request's execution scope.",
+        });
+      }
+    }
     // Queued after the interrupt, since a thread's effects run in order.
     const stopDelegatedTasks =
       command.stopDelegatedTasks === false ||

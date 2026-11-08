@@ -641,6 +641,9 @@ export const ServerConfig = Schema.Struct({
   /** Send window fields only when advertised. */
   threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
   threadFind: Schema.optionalKey(Schema.Boolean),
+  workItems: Schema.optionalKey(Schema.Boolean),
+  workItemDiscovery: Schema.optionalKey(Schema.Boolean),
+  workItemAnalysis: Schema.optionalKey(Schema.Boolean),
   threadPredictions: Schema.optionalKey(Schema.Boolean),
   threadFindProgressive: Schema.optionalKey(Schema.Boolean),
   /** Settings patches may carry `secretProviders`; older servers drop the key without an error. */

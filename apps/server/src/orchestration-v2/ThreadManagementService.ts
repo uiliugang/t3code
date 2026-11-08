@@ -487,6 +487,7 @@ export interface ThreadManagementServiceShape {
     readonly threadId: ThreadId;
     readonly commandId: CommandId;
     readonly reason?: string | undefined;
+    readonly expectedRunIdsByThread?: ReadonlyMap<ThreadId, ReadonlyArray<RunId>>;
   }) => Effect.Effect<
     void,
     Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
@@ -1533,6 +1534,9 @@ const make = Effect.gen(function* () {
         type: "thread.stop",
         commandId: CommandId.make(`${input.commandId}:stop:${threadId}`),
         threadId,
+        ...(input.expectedRunIdsByThread === undefined
+          ? {}
+          : { expectedRunIds: input.expectedRunIdsByThread.get(threadId) ?? [] }),
         stopDelegatedTasks: false,
         ...(input.reason === undefined ? {} : { reason: input.reason }),
       }).pipe(

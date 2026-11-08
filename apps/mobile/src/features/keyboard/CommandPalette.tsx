@@ -94,6 +94,7 @@ const ACTION_ICONS: Record<string, AppSymbolName> = {
   settings: "gearshape",
   appearance: "paintbrush",
   environments: "desktopcomputer",
+  workItems: "checkmark.circle",
   usage: "chart.bar.xaxis",
   archive: "archivebox",
   files: "doc.text",
@@ -337,6 +338,13 @@ export function CommandPalette(props: {
         title: t("Manage environments"),
         searchTerms: ["connections", "server", "remote"],
         run: () => openSettings(navigation, "SettingsEnvironments"),
+      },
+      {
+        key: "workItems",
+        kind: "action",
+        title: t("Task board"),
+        searchTerms: ["kanban", "tasks", "agents", "任务", "看板"],
+        run: () => navigation.navigate("WorkItems"),
       },
       {
         key: "scheduledTasks",

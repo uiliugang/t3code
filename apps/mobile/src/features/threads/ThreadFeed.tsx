@@ -1,3 +1,4 @@
+import { WorkItemMessageAction } from "../work-items/WorkItemMessageAction";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
@@ -2239,6 +2240,15 @@ function renderFeedEntry(
                   <SymbolView name="pencil" size={14} tintColor={iconSubtleColor} />
                 </Pressable>
               ) : null}
+              {!entry.pendingMessage || entry.acknowledged ? (
+                <WorkItemMessageAction
+                  environmentId={props.environmentId}
+                  threadId={props.threadId}
+                  messageId={message.id}
+                  threadTitle={props.threadTitle}
+                  text={presentation.text}
+                />
+              ) : null}
               {presentation.text.trim().length > 0 ? (
                 <UserMessageCopyButton
                   text={presentation.text}
@@ -2303,6 +2313,13 @@ function renderFeedEntry(
         ) : null}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
+            <WorkItemMessageAction
+              environmentId={props.environmentId}
+              threadId={props.threadId}
+              messageId={message.id}
+              threadTitle={props.threadTitle}
+              text={renderedText}
+            />
             <CopyTextButton
               accessibilityLabel={t("Copy message")}
               text={renderedText}

@@ -29,6 +29,12 @@ import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
 
+const ThreadWorkItemsPanel = lazy(() =>
+  import("../work-items/WorkItemsPage").then((module) => ({
+    default: module.ThreadWorkItemsPanel,
+  })),
+);
+
 const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
 );
@@ -89,6 +95,12 @@ export function RightPanelSurfaceContent(props: {
   const t = useUiTranslation();
   if (surface === null) return null;
   switch (surface.kind) {
+    case "tasks":
+      return (
+        <Suspense fallback={null}>
+          <ThreadWorkItemsPanel threadRef={threadRef} />
+        </Suspense>
+      );
     case "preview":
       return (
         <Suspense fallback={null}>

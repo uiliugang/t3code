@@ -435,6 +435,10 @@
       "types": "./src/threadPullRequests.ts",
       "default": "./src/threadPullRequests.ts"
     },
+    "./work-item": {
+      "types": "./src/workItem.ts",
+      "default": "./src/workItem.ts"
+    },
     "./thread-reference": {
       "types": "./src/threadReference.ts",
       "default": "./src/threadReference.ts"

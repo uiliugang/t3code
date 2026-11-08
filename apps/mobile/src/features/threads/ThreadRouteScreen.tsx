@@ -1011,6 +1011,17 @@ function ThreadRouteContent(
           header={
             props.inspectorPresentation ? null : (
               <ThreadHeader
+                onOpenTaskBoard={
+                  selectedThread
+                    ? () =>
+                        navigation.navigate("WorkItems", {
+                          environmentId: selectedThread.environmentId,
+                          projectId: selectedThread.projectId,
+                          sourceThreadId: selectedThread.id,
+                          sourceTitle: selectedThread.title,
+                        })
+                    : undefined
+                }
                 title={selectedThread.title}
                 subtitle={headerSubtitle}
                 gitControls={threadGitControlProps}

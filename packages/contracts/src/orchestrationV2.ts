@@ -2942,6 +2942,7 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.stop"),
     commandId: CommandId,
     threadId: ThreadId,
+    expectedRunIds: Schema.optional(Schema.Array(RunId)),
     reason: Schema.optional(Schema.String),
     /**
      * False when the caller stops the thread's delegated tasks itself, as the server's tree walks

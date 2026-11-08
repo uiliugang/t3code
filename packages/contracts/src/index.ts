@@ -85,3 +85,5 @@ export * from "./skills.ts";
 export * from "./wechat.ts";
 
 export * from "./speech.ts";
+
+export * from "./workItem.ts";

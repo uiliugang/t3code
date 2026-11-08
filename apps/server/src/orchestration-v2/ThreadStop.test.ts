@@ -1742,3 +1742,29 @@ it.effect.each(["Stop", "Force stop"] as const)(
       );
     }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("a scoped stop refuses an unrelated run queued after its execution snapshot", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const threadId = ThreadId.make("thread:scoped-stop-race");
+    yield* createWatchingThread(threadId, 1);
+    yield* send(threadId, "owned request", "start_immediately");
+    const original = (yield* orchestrator.getThreadProjection(threadId)).runs[0];
+    assert.ok(original);
+    yield* send(threadId, "new unrelated request", "queue_after_active");
+    const before = yield* orchestrator.getThreadProjection(threadId);
+    const attempted = yield* Effect.exit(
+      orchestrator.dispatch({
+        type: "thread.stop",
+        commandId: CommandId.make("stop-scoped-race"),
+        threadId,
+        expectedRunIds: [original.id],
+      }),
+    );
+    assert.isTrue(Exit.isFailure(attempted));
+    const after = yield* orchestrator.getThreadProjection(threadId);
+    assert.deepEqual(after.runs, before.runs);
+    assert.deepEqual(after.subagents, before.subagents);
+    assert.deepEqual(after.thread.pullRequests, before.thread.pullRequests);
+  }).pipe(Effect.provide(layerTest)),
+);
