@@ -3,6 +3,11 @@ import { AuthSourceControlWriteScope, EnvironmentId, ProjectId } from "@t3tools/
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const permissions = vi.hoisted(() => ({
   allowed: new Set<string>(),
   listeners: new Set<() => void>(),

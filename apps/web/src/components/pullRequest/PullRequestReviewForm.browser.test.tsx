@@ -5,6 +5,11 @@ import { act, render } from "../../../test/render";
 import { PullRequestReviewForm } from "./PullRequestReviewForm";
 import { pullRequestReviewKey, usePullRequestReviewStore } from "./pullRequestReviewStore";
 
+vi.mock(import("~/hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const mocks = vi.hoisted(() => ({
   submit: vi.fn().mockResolvedValue({ _tag: "Success" }),
   queue: vi.fn<(submit: (text: string) => void) => void>(),

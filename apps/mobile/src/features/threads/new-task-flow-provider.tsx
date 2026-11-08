@@ -148,6 +148,7 @@ type NewTaskFlowContextValue = {
     selection: ComposerDraftWorkspaceSelection | undefined,
   ) => ComposerDraftWorkspaceSelection;
   readonly startFromOrigin: boolean;
+  readonly newWorktreesMainBranchOnly: boolean;
   readonly pullRequestReference: string | undefined;
   readonly draftKey: string | null;
   readonly prompt: string;
@@ -879,6 +880,7 @@ export function NewTaskFlowProvider(
     selectedWorktreePath,
     resolveWorkspaceSelection,
     startFromOrigin,
+    newWorktreesMainBranchOnly: projectSettings.settings.newWorktreesMainBranchOnly,
     draftKey: selectedProjectDraftKey,
     pullRequestReference: selectedProjectDraft.workspaceSelection?.pullRequestReference,
     prompt,

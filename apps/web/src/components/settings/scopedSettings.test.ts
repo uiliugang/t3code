@@ -129,7 +129,10 @@ describe("scoped settings targets", () => {
         projectSettingsOverrides: { [projectId]: { defaultAutoPull: true } },
       },
     });
-    const targets = resolveScopedSettingsTargets(project, [laptop, overridden]);
+    const targets = resolveScopedSettingsTargets(project, [
+      environment("Laptop", { settings: { defaultAutoPull: false } }),
+      overridden,
+    ]);
     expect(targets.map((target) => [target.projectId, target.settings.defaultAutoPull])).toEqual([
       [projectId, true],
       [laptopProjectId, false],
@@ -271,8 +274,10 @@ describe("scoped settings writes", () => {
     it("reports a dropped toggle", async () => {
       expect(
         await outcome(
-          planScopedSettingsPatch(all, environments, { reviewGuidesEnabled: true }),
-          upgradedLaptop({ reviewGuidesEnabled: true }),
+          planScopedSettingsPatch(all, environments, {
+            reviewGuidesEnabled: !DEFAULT_SERVER_SETTINGS.reviewGuidesEnabled,
+          }),
+          upgradedLaptop({ reviewGuidesEnabled: !DEFAULT_SERVER_SETTINGS.reviewGuidesEnabled }),
         ),
       ).toEqual({ saved: [laptop.label], failed: unsupported });
     });
@@ -301,7 +306,9 @@ describe("scoped settings writes", () => {
     it("accepts a write that matches what the environment already had", async () => {
       expect(
         await outcome(
-          planScopedSettingsPatch(all, environments, { reviewGuidesEnabled: false }),
+          planScopedSettingsPatch(all, environments, {
+            reviewGuidesEnabled: DEFAULT_SERVER_SETTINGS.reviewGuidesEnabled,
+          }),
           upgradedLaptop({}),
         ),
       ).toEqual({ saved: [laptop.label, server.label], failed: [] });
@@ -364,7 +371,12 @@ describe("scoped settings writes", () => {
   it("keeps each project's other cleanup rules when changing one rule across machines", () => {
     const machine = environment("Laptop", {
       settings: {
-        storageCleanup: { ...DEFAULT_SERVER_SETTINGS.storageCleanup, worktreeAfterDays: 30 },
+        storageCleanup: {
+          ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+          worktreeAfterDays: 30,
+          worktreeOnMerge: false,
+          worktreeUnchanged: false,
+        },
       },
     });
     const customized = environment("Server", {

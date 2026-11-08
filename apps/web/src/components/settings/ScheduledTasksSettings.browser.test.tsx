@@ -1,4 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
+import { BearerConnectionTarget } from "@t3tools/client-runtime/connection";
+import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import {
   DEFAULT_UNIFIED_SETTINGS,
@@ -15,6 +17,11 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import { act, render } from "../../../test/render";
 import { ScheduledTasksSettings } from "./ScheduledTasksSettings";
+
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 
 const environmentId = EnvironmentId.make("laptop");
 const projectId = ProjectId.make("project");
@@ -62,13 +69,18 @@ function setup() {
 }
 
 function secondaryEnvironment() {
-  return { ...environment(), environmentId: secondaryId, label: "Secondary" };
+  return environment(secondaryId, "Secondary");
 }
 
-function environment() {
+function environment(id = environmentId, label = "Laptop") {
   return {
-    environmentId,
-    label: "Laptop",
+    environmentId: id,
+    label,
+    entry: {
+      target: new BearerConnectionTarget({ environmentId: id, label, connectionId: id }),
+      profile: Option.none(),
+      enabled: true,
+    },
     connection: { phase: state.connected ? "connected" : "disconnected" },
     serverConfig: state.connected
       ? { environment: { platform: "linux", capabilities: { oneTimeSchedules: true } } }
@@ -99,11 +111,16 @@ vi.mock(import("./SettingsScopeContext"), async (original) => {
 });
 vi.mock(import("../../state/server"), async (original) => {
   const actual = await original();
+  const { AsyncResult, Atom } = await import("effect/reactivity");
+  const providers = Atom.make([]);
 
   return {
     ...actual,
     serverEnvironment: {
       ...actual.serverEnvironment,
+      scheduledTasksLive: (() =>
+        Atom.make(AsyncResult.success({ tasks: state.tasksLoaded ? [task] : [] }))) as never,
+      providersValueAtom: (() => providers) as never,
       upsertScheduledTask: {
         ...actual.serverEnvironment.upsertScheduledTask,
         permissionAtom: (id: string | null) => permissions.get(id ?? "")!,
@@ -136,9 +153,17 @@ vi.mock(import("../../state/environments"), async (original) => ({
   useEnvironment: ((id: EnvironmentId) =>
     id === secondaryId ? secondaryEnvironment() : environment()) as never,
 }));
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  usePreparedConnection: () => Option.none(),
+}));
 vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   useProjects: (() => [{ id: projectId, environmentId, title: "Project" }]) as never,
+  useThreadShell: () => null,
+  useQuietThreadShell: () => null,
+  useVisibleThreadShells: () => [],
+  useServerConfigs: () => new Map(),
 }));
 vi.mock(import("../../hooks/useSettings"), async (original) => ({
   ...(await original()),

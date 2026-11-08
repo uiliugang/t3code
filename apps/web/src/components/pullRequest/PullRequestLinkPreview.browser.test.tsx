@@ -2,6 +2,11 @@ import { EnvironmentId, ProjectId, type PullRequestSummary } from "@t3tools/cont
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+vi.mock(import("~/hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const known = vi.hoisted(
   () =>
     ({

@@ -556,7 +556,7 @@ function makeBranchPullRequest(state: "open" | "closed" | "merged") {
 
 interface HarnessOptions {
   readonly snapshot: SettlementSnapshot;
-  readonly settings?: ContractServerSettings;
+  readonly settings?: Partial<ContractServerSettings>;
   readonly branchPullRequest?: GitManager.GitManager["Service"]["branchPullRequest"];
   readonly pullRequestSummary?: PullRequestService.PullRequestService["Service"]["summary"];
   readonly existingWorktreePaths?: ReadonlyArray<string>;
@@ -575,7 +575,11 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const snapshotReadCount = yield* Ref.make(0);
   const snapshotReads = yield* Queue.unbounded<number>();
   const candidateReads = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
-  const settings = yield* Ref.make(options.settings ?? DEFAULT_SERVER_SETTINGS);
+  const settings = yield* Ref.make({
+    ...DEFAULT_SERVER_SETTINGS,
+    sidebarAutoSettleOnMerge: true,
+    ...options.settings,
+  });
   const settingsReadCount = yield* Ref.make(0);
   const settingsChanges = yield* PubSub.unbounded<ContractServerSettings>();
   const mergedPullRequests = yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
@@ -780,7 +784,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
         );
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot(threads),
-          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 3 },
+          settings: { sidebarAutoSettleAfterDays: 3 },
         });
         yield* Effect.gen(function* () {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
@@ -828,7 +832,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
         });
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([thread]),
-          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null },
+          settings: { sidebarAutoSettleAfterDays: null },
         });
 
         yield* Effect.gen(function* () {
@@ -852,7 +856,6 @@ describe("ThreadSettlementServiceV2 worker", () => {
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([thread]),
           settings: {
-            ...DEFAULT_SERVER_SETTINGS,
             sidebarAutoSettleAfterDays: 3,
             sidebarAutoSettleKeepPullRequests: false,
           },
@@ -879,7 +882,6 @@ describe("ThreadSettlementServiceV2 worker", () => {
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([thread, other]),
           settings: {
-            ...DEFAULT_SERVER_SETTINGS,
             sidebarAutoSettleAfterDays: null,
             sidebarAutoSettleOnMerge: false,
             projectSettingsOverrides: { [PROJECT_ID]: { sidebarAutoSettleAfterDays: 2 } },
@@ -904,7 +906,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
         let disable: Effect.Effect<unknown> = Effect.void;
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot(threads),
-          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 3 },
+          settings: { sidebarAutoSettleAfterDays: 3 },
           onDispatch: () => disable,
         });
         disable = fixture.updateSettings({ sidebarAutoSettleAfterDays: null });

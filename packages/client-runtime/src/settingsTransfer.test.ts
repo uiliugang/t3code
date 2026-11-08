@@ -326,7 +326,12 @@ describe("settings transfer", () => {
         },
         sidebarProjectGroupingOverrides: { privatePath: "separate" },
       },
-      server: { ...source, worktreesDirectory: "/private/path" },
+      server: {
+        ...source,
+        worktreesDirectory: "/private/path",
+        cloudSpeechCredentials: { ...source.cloudSpeechCredentials, openai: "must-not-export" },
+        daxiang: { clientId: "fixture", clientSecret: "must-not-export" },
+      },
       keybindings: [
         { key: "mod+j", command: "terminal.toggle" },
         { key: "mod+r", command: "script.dev.run" },
@@ -365,6 +370,10 @@ describe("settings transfer", () => {
       "usageLimitSources",
       "secretProviders",
       "cursorKeychainUsageEnabled",
+      "cloudSpeechCredentials",
+      "speechAcceleration",
+      "issueProjectSources",
+      "daxiang",
     ];
     expect(Object.keys(file.server).sort()).toEqual(
       Object.keys(ServerSettingsPatch.fields)
@@ -381,18 +390,31 @@ describe("settings transfer", () => {
       remoteBranchDisplayDays: 45,
       hideMergedRemoteBranches: false,
       autoDeleteMergedBranches: true,
+      speechModelId: "fixture-model",
+      speechModelUnloadTimeout: "min_5" as const,
+      speechProjectCustomWords: [{ term: "T3", aliases: ["tee three"] }],
+      speechPostProcessingModelSelection: {
+        instanceId: ProviderInstanceId.make("speech-cleanup"),
+        model: "cleanup-model",
+      },
+      hiddenThreadTags: ["hidden"],
+      hideTaggedThreads: true,
+      ghqCloneLayout: true,
       storageCleanup: { ...source.storageCleanup, browserArtifactsAfterDays: 21 },
       worktreeCleanup: { mode: "off" as const },
       backgroundActivity: { ...source.backgroundActivity, profile: "battery-saver" as const },
       automaticGitFetchInterval: Duration.minutes(10),
       providerHealthRefreshInterval: Duration.minutes(3),
     };
-    const updatedSource = {
+    const updatedSource: ServerSettings = {
       ...source,
       providerInstances: {
         ...source.providerInstances,
         [ProviderInstanceId.make("fallback-codex")]: {
           driver: ProviderDriverKind.make("codex"),
+        },
+        [ProviderInstanceId.make("speech-cleanup")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
         },
       },
     };
@@ -408,6 +430,16 @@ describe("settings transfer", () => {
       updatedPreferences,
     );
     expect(updated.providers[ProviderInstanceId.make("fallback-codex")]).toBe("codex");
+    expect(updated.providers[ProviderInstanceId.make("speech-cleanup")]).toBe("claudeAgent");
+    const withoutSpeech = Object.fromEntries(
+      Object.entries(updatedSource.providerInstances).filter(([id]) => id !== "speech-cleanup"),
+    );
+    expect(() =>
+      applicationSettingsImportPatch(restored, {
+        ...updatedSource,
+        providerInstances: withoutSpeech,
+      }),
+    ).toThrow("speech-cleanup");
     expect(JSON.parse(serializeSettingsFile(updated)).server.automaticGitFetchInterval).toBe(
       600_000,
     );

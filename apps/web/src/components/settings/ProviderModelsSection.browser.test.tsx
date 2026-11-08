@@ -10,6 +10,11 @@ import "~/index.css";
 import { render } from "../../../test/render";
 import { ProviderModelsSection } from "./ProviderModelsSection";
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 function setup() {
   const model: ServerProviderModel = {
     slug: "gpt-6-astra",

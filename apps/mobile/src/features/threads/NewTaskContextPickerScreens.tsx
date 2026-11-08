@@ -306,7 +306,11 @@ export function NewTaskBranchPickerRouteScreen() {
     <BranchPickerScreen
       title={flow.workspaceMode === "worktree" ? t("Base branch") : t("Branch")}
       project={flow.selectedProject}
-      branches={filterNewTaskBranches(branchState.refs, branchQuery)}
+      branches={filterNewTaskBranches(
+        branchState.refs,
+        branchQuery,
+        flow.workspaceMode === "worktree" && flow.newWorktreesMainBranchOnly,
+      )}
       selectedBranchName={
         flow.selectedBranchName ??
         flow.availableBranches.find((branch) => branch.current)?.name ??
@@ -439,6 +443,16 @@ export function BranchPickerScreen(props: {
           {!props.loading && props.error ? (
             <View className="self-center">
               <Button label={t("Try again")} tone="secondary" onPress={props.onRefresh} />
+            </View>
+          ) : null}
+          {!props.loading && !props.error && props.hasMore ? (
+            <View className="self-center">
+              <Button
+                label={t("Load more")}
+                tone="secondary"
+                loading={props.refreshing}
+                onPress={props.onLoadMore}
+              />
             </View>
           ) : null}
         </View>

@@ -103,6 +103,8 @@ vi.mock(import("../BranchToolbar"), () => ({ BranchToolbar: (() => <></>) as nev
 vi.mock(import("../GitActionsControl"), () => ({ default: () => null }));
 vi.mock(import("../ProjectScriptsControl"), () => ({ default: () => <></> }));
 vi.mock(import("./RepositoryDetails"), () => ({ RepositoryDetails: () => <></> }));
+vi.mock(import("./BranchIssuesPanel"), () => ({ BranchIssuesPanel: () => null }));
+vi.mock(import("./GroupedBranchIssuesPanel"), () => ({ GroupedBranchIssuesPanel: () => null }));
 vi.mock(import("./WorkspaceRecoveryControl"), () => ({ WorkspaceRecoveryControl: () => <></> }));
 vi.mock(import("./ThreadAutomationsPanel"), () => ({ ThreadAutomationsPanel: () => null }));
 vi.mock(import("./ThreadRelationshipsControl"), () => ({ ThreadRelationshipsPanel: () => null }));
@@ -135,7 +137,11 @@ async function setup() {
   state.markHintSeen.mockReset();
   state.listeners.clear();
   state.worktreePath = null;
-  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
+    showRepositoryTerminalButton: false,
+  });
   useRightPanelStore.setState({ byThreadKey: {} });
   useTerminalUiStateStore.setState({ terminalUiStateByThreadKey: {} });
   window.localStorage.clear();

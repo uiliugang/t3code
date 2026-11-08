@@ -8,10 +8,12 @@ import {
   type AcpRegistryConfigurableProvider,
 } from "@t3tools/contracts";
 import type { ComponentProps } from "react";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const commands = vi.hoisted(() => ({
   list: vi.fn(),
@@ -117,6 +119,7 @@ async function renderSection(options: { canList?: boolean; projects?: Projects }
 }
 
 function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   grants.scopes = new Set(["orchestration:read", "orchestration:operate", "providers:manage"]);
   commands.list.mockReset().mockResolvedValue({
     _tag: "Success",

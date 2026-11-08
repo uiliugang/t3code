@@ -1,7 +1,9 @@
 import { createContext, useContext, useState } from "react";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import type { ProjectTypeFilter } from "./settingsScopeAxis";
 import type { SettingsScopeSearch } from "./settingsScope";
 
@@ -40,6 +42,7 @@ function ScopeHarness() {
 }
 
 it("keeps the project scope label in sync with the type filter", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   await using screen = await render(<ScopeHarness />, { router: "/settings/projects" });
 
   for (const label of ["Groups", "Projects", "All"]) {
