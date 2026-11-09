@@ -39,8 +39,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: fork-release-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  group: fork-release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'warmup' || inputs.verify_cache && 'verify-cache' || inputs.android_only && 'android-only' || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'pull_request' || inputs.verify_cache == true || inputs.android_only == true }}
 
 jobs:
   prepare:
@@ -224,22 +224,22 @@ jobs:
           sudo apt-get install -y --no-install-recommends ccache
       - name: Restore native compiler cache
         id: native_cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**', '.github/scripts/android-release.init.gradle') }}-${{ github.sha }}-${{ github.run_id }}-${{ matrix.cache_pass }}
+          key: android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**', '.github/scripts/android-release.init.gradle') }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cache_pass }}
           restore-keys: |
             android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**', '.github/scripts/android-release.init.gradle') }}-
             android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Report native cache restoration
         env:
-          CACHE_HIT: ${{ steps.native_cache.outputs.cache-hit }}
+          CACHE_KEY: ${{ steps.native_cache.outputs.cache-matched-key }}
           CACHE_PASS: ${{ matrix.cache_pass }}
         run: |
           {
             echo "### Android cache pass $CACHE_PASS"
             echo "- Ref: $GITHUB_REF"
-            echo "- Exact native cache key hit: ${CACHE_HIT:-false} (prefix restores are reported in the cache step log)"
+            echo "- Restored native cache: ${CACHE_KEY:-none}"
           } >> "$GITHUB_STEP_SUMMARY"
           ccache --show-stats
       - name: Enable T3 Connect public configuration
@@ -290,6 +290,12 @@ jobs:
           name: fork-android-apk${{ inputs.verify_cache && format('-pass-{0}', matrix.cache_pass) || '' }}
           path: release/*.apk
           if-no-files-found: error
+      - name: Save native compiler cache
+        if: (github.ref == 'refs/heads/main' || inputs.verify_cache == true) && steps.native_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.native_cache.outputs.cache-primary-key }}
       - name: Remove signing material
         if: always()
         run: rm -f "$RUNNER_TEMP/t3-release.keystore" "$RUNNER_TEMP/release-cert.der"
