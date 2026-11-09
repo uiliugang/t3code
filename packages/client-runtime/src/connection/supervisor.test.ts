@@ -32,6 +32,7 @@ import {
   ConnectionTransientError,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
+  SshConnectionTarget,
   type ConnectionAttemptError,
   type ConnectionTarget,
   type NetworkStatus,
@@ -554,6 +555,58 @@ describe("EnvironmentSupervisor", () => {
       expect(yield* Ref.get(harness.prepareCount)).toBe(1);
       expect(yield* Ref.get(harness.sessionCount)).toBe(0);
     }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect.each(["connect", "preparation-timeout", "synchronization-timeout"] as const)(
+    "waits for SSH runtime preparation before starting the handshake budget: %s",
+    (outcome) =>
+      Effect.gen(function* () {
+        const preparing = yield* Deferred.make<void>();
+        const installed = yield* Deferred.make<void>();
+        const target = new SshConnectionTarget({
+          environmentId: TARGET.environmentId,
+          label: TARGET.label,
+          connectionId: "ssh:test",
+        });
+        const harness = yield* makeHarness({
+          ready: () => (outcome === "synchronization-timeout" ? Effect.never : Effect.void),
+          prepare: () =>
+            Deferred.succeed(preparing, undefined).pipe(
+              Effect.andThen(Deferred.await(installed)),
+              Effect.as(preparedFor(target)),
+            ),
+        });
+        const supervisor = yield* EnvironmentSupervisor.make(
+          { ...TARGET_ENTRY, target },
+          { initiallyDesired: true },
+        ).pipe(Effect.provide(harness.dependencies));
+
+        yield* Deferred.await(preparing);
+        yield* TestClock.adjust("7 minutes");
+        expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+          phase: "connecting",
+          stage: "preparing",
+          attempt: 1,
+          lastFailure: null,
+        });
+        if (outcome === "preparation-timeout") {
+          yield* TestClock.adjust("33 minutes");
+        } else {
+          yield* Deferred.succeed(installed, undefined);
+          if (outcome === "synchronization-timeout") {
+            yield* awaitState(supervisor.state, (state) => state.stage === "synchronizing");
+            yield* TestClock.adjust("90 seconds");
+          }
+        }
+        if (outcome !== "connect") {
+          const failed = yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+          expect(failed.lastFailure?.reason).toBe("timeout");
+          expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+          return;
+        }
+        yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+        expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+      }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("treats an involuntary session close as transient and reconnects", () =>
