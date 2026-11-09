@@ -46,14 +46,20 @@ and assignee, and open details. **Settings → Code → Issue management** autom
 project's GitHub repository and discovers MEP spaces from the ten most recent Meituan Code pull
 requests and their linked branches. Filter projects and environments, then select projects to
 detect again, set a manual override, or restore automatic associations. Enter multiple MEP space
-IDs separated by commas; choose the destination space when creating a work item. Manual overrides
-take precedence over discovery. Accounts are shared with source control;
+IDs separated by commas; choose the destination space when creating a work item. Discovery results,
+including an empty result, are saved on the owning environment and reused after restarting.
+Select projects and choose **Detect again** to update them; reopening settings or refreshing the
+board's issues does not repeat discovery. Manual overrides take precedence over discovery;
+**Restore automatic** returns to the cached associations. Accounts are shared with source control;
 MEP requires an authenticated `ones2` installation on the server.
 
 Create issues from the board and change their status in details. MEP creation fields depend on
 the selected subtype. GitHub supports closing as completed or not planned and reopening. Branch
 links follow the rules above. If a creation result is uncertain, check the original platform
 before submitting again to avoid a duplicate.
+
+Use the [task board](task-board.md) to assign agents and review their results. The requirements
+board manages work items on the original platform; it does not start agents or create T3 tasks.
 
 ## Review turn changes
 
