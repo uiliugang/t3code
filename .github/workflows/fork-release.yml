@@ -2,8 +2,30 @@ name: Fork macOS Linux and Android release
 
 on:
   push:
+    branches: [main]
     tags: ["v*.*.*"]
+    paths:
+      - .github/workflows/fork-release.yml
+      - .github/scripts/android-release.init.gradle
+      - .github/actions/setup-ci-deps/**
+      - .env.example
+      - apps/mobile/**
+      - packages/**
+      - patches/**
+      - scripts/lib/public-config.ts
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
   workflow_dispatch:
+    inputs:
+      android_only:
+        description: Build Android only, without publishing a release
+        type: boolean
+        default: false
+      verify_cache:
+        description: Build Android twice on fresh runners with identical inputs
+        type: boolean
+        default: false
   workflow_call:
   pull_request:
     branches: [main]
@@ -17,8 +39,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: fork-release-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  group: fork-release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'warmup' || inputs.verify_cache && 'verify-cache' || inputs.android_only && 'android-only' || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'pull_request' || inputs.verify_cache == true || inputs.android_only == true }}
 
 jobs:
   prepare:
@@ -58,6 +80,7 @@ jobs:
           echo "version_code=$(( $(date +%s) / 60 ))" >> "$GITHUB_OUTPUT"
 
   macos:
+    if: (github.event_name != 'push' || github.ref_type == 'tag') && !inputs.android_only && !inputs.verify_cache
     needs: prepare
     runs-on: macos-15
     timeout-minutes: 60
@@ -136,6 +159,11 @@ jobs:
 
   android:
     needs: prepare
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        cache_pass: ${{ fromJSON(inputs.verify_cache && '[1,2]' || '[1]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -189,17 +217,31 @@ jobs:
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v5
         with:
-          cache-read-only: false
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && !inputs.verify_cache }}
       - name: Install native compiler cache
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends ccache
       - name: Restore native compiler cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: native_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
-          restore-keys: android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-
+          key: android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**', '.github/scripts/android-release.init.gradle') }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cache_pass }}
+          restore-keys: |
+            android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**', '.github/scripts/android-release.init.gradle') }}-
+            android-ccache-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Report native cache restoration
+        env:
+          CACHE_KEY: ${{ steps.native_cache.outputs.cache-matched-key }}
+          CACHE_PASS: ${{ matrix.cache_pass }}
+        run: |
+          {
+            echo "### Android cache pass $CACHE_PASS"
+            echo "- Ref: $GITHUB_REF"
+            echo "- Restored native cache: ${CACHE_KEY:-none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ccache --show-stats
       - name: Enable T3 Connect public configuration
         run: |
           cp .env.example .env
@@ -216,7 +258,7 @@ jobs:
         working-directory: apps/mobile/android
         run: |
           ccache --zero-stats
-          trap 'ccache --show-stats' EXIT
+          trap 'ccache --show-stats | tee -a "$GITHUB_STEP_SUMMARY"' EXIT
           ./gradlew --no-daemon --max-workers=2 --build-cache --profile \
             -PreactNativeArchitectures=arm64-v8a \
             -I "$GITHUB_WORKSPACE/.github/scripts/android-release.init.gradle" \
@@ -225,7 +267,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: fork-android-build-profile
+          name: fork-android-build-profile${{ inputs.verify_cache && format('-pass-{0}', matrix.cache_pass) || '' }}
           path: apps/mobile/android/build/reports/profile
           if-no-files-found: ignore
       - name: Verify and collect APK
@@ -245,14 +287,21 @@ jobs:
           cp "$apk" "release/T3-Code-${RELEASE_VERSION}-android.apk"
       - uses: actions/upload-artifact@v7
         with:
-          name: fork-android-apk
+          name: fork-android-apk${{ inputs.verify_cache && format('-pass-{0}', matrix.cache_pass) || '' }}
           path: release/*.apk
           if-no-files-found: error
+      - name: Save native compiler cache
+        if: (github.ref == 'refs/heads/main' || inputs.verify_cache == true) && steps.native_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.native_cache.outputs.cache-primary-key }}
       - name: Remove signing material
         if: always()
         run: rm -f "$RUNNER_TEMP/t3-release.keystore" "$RUNNER_TEMP/release-cert.der"
 
   linux:
+    if: (github.event_name != 'push' || github.ref_type == 'tag') && !inputs.android_only && !inputs.verify_cache
     needs: prepare
     strategy:
       fail-fast: false
@@ -323,7 +372,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' && !inputs.android_only && !inputs.verify_cache
     needs: [prepare, macos, android, linux]
     runs-on: ubuntu-24.04
     permissions:
