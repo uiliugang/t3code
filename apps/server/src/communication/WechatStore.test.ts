@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as Store from "./WechatStore.ts";
+import { RuntimeRequestId, ThreadId } from "@t3tools/contracts";
 
 it.effect("persists an inbox before the cursor, deduplicates replays and fences consumers", () =>
   Effect.gen(function* () {
@@ -39,6 +40,7 @@ it.effect(
       yield* store.enqueue("g", "run:1", "result", 2);
       let rows = yield* store.deliveries("g");
       assert.equal(rows.length, 1);
+      assert.isNull(rows[0]?.request);
       yield* store.updateDelivery(rows[0]!.id, "sending");
       yield* store.recover;
       rows = yield* store.deliveries("g");
@@ -50,5 +52,24 @@ it.effect(
         (yield* store.deliveries("g")).find((row) => row.id.includes("later"))?.status,
         "failed",
       );
+      const request = {
+        threadId: ThreadId.make("thread"),
+        requestId: RuntimeRequestId.make("request"),
+      };
+      yield* store.enqueue("g", "request", "x".repeat(3501), 4, request);
+      const chunks = (yield* store.deliveries("g")).filter((row) => row.request !== null);
+      assert.equal(chunks.length, 2);
+      for (const chunk of chunks) assert.deepEqual(chunk.request, request);
+      yield* store.updateDelivery(chunks[0]!.id, "sent");
+      yield* store.enqueue("other", "request", "other generation", 5, request);
+      yield* store.enqueue("g", "unrelated", "manual push", 6);
+      yield* store.discardRequest("g", request.requestId);
+      const remaining = yield* store.deliveries("g");
+      assert.deepEqual(
+        remaining.filter((row) => row.request !== null).map((row) => row.status),
+        ["sent"],
+      );
+      assert.isTrue(remaining.some((row) => row.text === "manual push"));
+      assert.equal((yield* store.deliveries("other")).length, 1);
     }).pipe(Effect.provide(Store.layer.pipe(Layer.provideMerge(Sqlite.layerMemory)))),
 );

@@ -27,7 +27,10 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlError from "effect/sql/SqlError";
 
 import { replayAndBufferProjectedLiveEvents } from "./LiveStreamBudget.ts";
-import type { UnsequencedProjectEvent } from "../persistence/OrchestrationEventStore.ts";
+import type {
+  AgentEventTypeFilter,
+  UnsequencedProjectEvent,
+} from "../persistence/OrchestrationEventStore.ts";
 import { projectStoredEventForWire } from "./WireProjection.ts";
 import { makeRunOutcomeRecorder, type RunOutcome } from "./RunMetrics.ts";
 
@@ -212,7 +215,7 @@ export interface EventSinkV2Shape {
   readonly stream: (input?: {
     readonly threadId?: ThreadId;
     readonly afterSequence?: number;
-    readonly eventType?: OrchestrationV2DomainEvent["type"];
+    readonly eventType?: AgentEventTypeFilter;
     /** Bound RPC subscribers; internal workers must not drop their subscription under load. */
     readonly bounded?: boolean;
   }) => Stream.Stream<OrchestrationV2StoredEvent, EventSinkV2Error>;
@@ -250,17 +253,20 @@ const layerBase: Layer.Layer<
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
     const liveEvents = yield* PubSub.unbounded<OrchestrationV2StoredEvent>();
     const liveEventsByType = new Map<
-      OrchestrationV2DomainEvent["type"],
-      PubSub.PubSub<OrchestrationV2StoredEvent>
+      string,
+      {
+        readonly types: ReadonlySet<OrchestrationV2DomainEvent["type"]>;
+        readonly pubsub: PubSub.PubSub<OrchestrationV2StoredEvent>;
+      }
     >();
     const publishLiveEvents =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
       Effect.fnUntraced(function* (events: ReadonlyArray<OrchestrationV2StoredEvent>) {
         yield* PubSub.publishAll(liveEvents, events);
-        for (const [type, pubsub] of liveEventsByType) {
+        for (const { types, pubsub } of liveEventsByType.values()) {
           yield* PubSub.publishAll(
             pubsub,
-            events.filter((stored) => stored.event.type === type),
+            events.filter((stored) => types.has(stored.event.type)),
           );
         }
       });
@@ -830,7 +836,7 @@ const layerBase: Layer.Layer<
       readonly afterSequence: number;
       readonly throughSequence: number;
       readonly threadId?: ThreadId;
-      readonly eventType?: OrchestrationV2DomainEvent["type"];
+      readonly eventType?: AgentEventTypeFilter;
     }): Stream.Stream<OrchestrationV2StoredEvent, unknown> => {
       const pageSize = 256;
       const loop = (afterSequence: number): Stream.Stream<OrchestrationV2StoredEvent, unknown> =>
@@ -863,9 +869,16 @@ const layerBase: Layer.Layer<
 
     const stream = (input?: Parameters<EventSinkV2Shape["stream"]>[0]) => {
       const afterSequence = input?.afterSequence ?? 0;
+      const eventTypes =
+        input?.eventType === undefined
+          ? undefined
+          : new Set(typeof input.eventType === "string" ? [input.eventType] : input.eventType);
+      if (eventTypes?.size === 0) return Stream.empty;
+      const typeKey =
+        eventTypes === undefined ? undefined : Array.from(eventTypes).sort().join(",");
       const matches = (stored: OrchestrationV2StoredEvent) =>
         (input?.threadId === undefined || stored.event.threadId === input.threadId) &&
-        (input?.eventType === undefined || stored.event.type === input.eventType);
+        (eventTypes === undefined || eventTypes.has(stored.event.type));
       const replay = (throughSequence: number) =>
         catchUp({
           afterSequence,
@@ -876,14 +889,14 @@ const layerBase: Layer.Layer<
       return Stream.unwrap(
         Effect.gen(function* () {
           let pubsub = liveEvents;
-          if (input?.eventType !== undefined) {
-            const existing = liveEventsByType.get(input.eventType);
+          if (typeKey !== undefined && eventTypes !== undefined) {
+            const existing = liveEventsByType.get(typeKey);
             if (existing !== undefined) {
-              pubsub = existing;
+              pubsub = existing.pubsub;
             } else {
               const created = yield* PubSub.unbounded<OrchestrationV2StoredEvent>();
-              pubsub = liveEventsByType.get(input.eventType) ?? created;
-              liveEventsByType.set(input.eventType, pubsub);
+              pubsub = liveEventsByType.get(typeKey)?.pubsub ?? created;
+              liveEventsByType.set(typeKey, { types: eventTypes, pubsub });
             }
           }
           if (input?.bounded === true) {

@@ -1,4 +1,10 @@
-import { ProjectId, ThreadId, WechatDelivery, WechatError } from "@t3tools/contracts";
+import {
+  ProjectId,
+  RuntimeRequestId,
+  ThreadId,
+  WechatDelivery,
+  WechatError,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -28,6 +34,7 @@ const Pending = Schema.Struct({
   generation: Schema.String,
   payload: Schema.String,
 });
+const DeliveryRequest = Schema.Struct({ threadId: ThreadId, requestId: RuntimeRequestId });
 const DeliveryRow = Schema.Struct({
   id: Schema.String,
   generation: Schema.String,
@@ -36,8 +43,12 @@ const DeliveryRow = Schema.Struct({
   created_at: Schema.Number,
   attempts: Schema.Number,
   next_at: Schema.Number,
+  request: Schema.NullOr(Schema.fromJsonString(DeliveryRequest)),
 });
 type DeliveryRow = typeof DeliveryRow.Type;
+type DeliveryRequest = typeof DeliveryRequest.Type;
+const encodeDeliveryRequest = Schema.encodeEffect(Schema.fromJsonString(DeliveryRequest));
+const decodeDeliveries = Schema.decodeUnknownEffect(Schema.Array(DeliveryRow));
 const decodeConnection = Schema.decodeEffect(Schema.fromJsonString(Connection));
 const encodeConnection = Schema.encodeEffect(Schema.fromJsonString(Connection));
 const encodeIncoming = Schema.encodeEffect(Schema.fromJsonString(Incoming));
@@ -62,6 +73,7 @@ export class WechatStore extends Context.Service<
       id: string,
       text: string,
       now: number,
+      request?: DeliveryRequest,
     ) => Effect.Effect<void, WechatError>;
     readonly pending: (
       generation: string,
@@ -74,6 +86,10 @@ export class WechatStore extends Context.Service<
       id: string,
       status: (typeof WechatDelivery.Type)["status"],
       nextAt?: number,
+    ) => Effect.Effect<void, WechatError>;
+    readonly discardRequest: (
+      generation: string,
+      requestId: RuntimeRequestId,
     ) => Effect.Effect<void, WechatError>;
     readonly pause: (generation: string) => Effect.Effect<void, WechatError>;
     readonly recover: Effect.Effect<void, WechatError>;
@@ -130,7 +146,8 @@ const make = Effect.gen(function* () {
         Effect.mapError(storageError),
       ),
     ),
-    enqueue: Effect.fn("WechatStore.enqueue")(function* (generation, id, text, now) {
+    enqueue: Effect.fn("WechatStore.enqueue")(function* (generation, id, text, now, request) {
+      const requestJson = request === undefined ? null : yield* encodeDeliveryRequest(request);
       // Stable ids keep replayed terminal events from creating another notification.
       const chunks = Array.from(text).reduce<string[]>((parts, char) => {
         const last = parts.length - 1;
@@ -142,28 +159,35 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           for (const [index, chunk] of chunks.entries())
             yield* sql`
-          INSERT OR IGNORE INTO wechat_deliveries (id, generation, text, status, created_at, attempts, next_at)
-          VALUES (${`${generation}:${id}:${index}`}, ${generation}, ${chunk}, 'pending', ${now}, 0, 0)`;
+          INSERT OR IGNORE INTO wechat_deliveries (id, generation, text, status, created_at, attempts, next_at, request_json)
+          VALUES (${`${generation}:${id}:${index}`}, ${generation}, ${chunk}, 'pending', ${now}, 0, 0, ${requestJson})`;
           yield* sql`DELETE FROM wechat_deliveries WHERE id IN (
           SELECT id FROM wechat_deliveries WHERE status = 'sent' ORDER BY rowid DESC LIMIT -1 OFFSET 50)`;
         }),
       );
     }, Effect.mapError(storageError)),
     pending: Effect.fn("WechatStore.pending")((generation: string, now: number) =>
-      sql<DeliveryRow>`
-      SELECT * FROM wechat_deliveries WHERE generation = ${generation} AND status = 'pending' AND next_at <= ${now} ORDER BY rowid LIMIT 1
-    `.pipe(Effect.mapError(storageError)),
+      sql`
+      SELECT *, request_json AS request FROM wechat_deliveries WHERE generation = ${generation} AND status = 'pending' AND next_at <= ${now} ORDER BY rowid LIMIT 1
+    `.pipe(Effect.flatMap(decodeDeliveries), Effect.mapError(storageError)),
     ),
     deliveries: Effect.fn("WechatStore.deliveries")((generation: string) =>
-      sql<DeliveryRow>`
-      SELECT * FROM wechat_deliveries WHERE generation = ${generation} ORDER BY rowid DESC LIMIT 50
-    `.pipe(Effect.mapError(storageError)),
+      sql`
+      SELECT *, request_json AS request FROM wechat_deliveries WHERE generation = ${generation} ORDER BY rowid DESC LIMIT 50
+    `.pipe(Effect.flatMap(decodeDeliveries), Effect.mapError(storageError)),
     ),
     updateDelivery: Effect.fn("WechatStore.updateDelivery")(
       (id: string, status: (typeof WechatDelivery.Type)["status"], nextAt = 0) =>
         sql`
       UPDATE wechat_deliveries SET status = ${status}, next_at = ${nextAt}, attempts = attempts + ${status === "sending" ? 1 : 0} WHERE id = ${id}
     `.pipe(Effect.asVoid, Effect.mapError(storageError)),
+    ),
+    discardRequest: Effect.fn("WechatStore.discardRequest")((generation, requestId) =>
+      sql`DELETE FROM wechat_deliveries WHERE generation = ${generation} AND status = 'pending'
+        AND json_extract(request_json, '$.requestId') = ${requestId}`.pipe(
+        Effect.asVoid,
+        Effect.mapError(storageError),
+      ),
     ),
     pause: Effect.fn("WechatStore.pause")((generation: string) =>
       sql

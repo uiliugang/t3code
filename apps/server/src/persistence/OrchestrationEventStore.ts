@@ -43,6 +43,10 @@ export type UnsequencedProjectEvent = ApplicationProjectEvent extends infer Even
     : never
   : never;
 
+export type AgentEventTypeFilter =
+  | OrchestrationV2DomainEvent["type"]
+  | ReadonlyArray<OrchestrationV2DomainEvent["type"]>;
+
 export class OrchestrationEventStore extends Context.Service<
   OrchestrationEventStore,
   {
@@ -61,7 +65,7 @@ export class OrchestrationEventStore extends Context.Service<
       readonly throughSequence?: number;
       readonly threadId?: ThreadId;
       readonly commandId?: CommandId;
-      readonly eventType?: OrchestrationV2DomainEvent["type"];
+      readonly eventType?: AgentEventTypeFilter;
       readonly limit?: number;
       readonly skipUnknownEventTypes?: boolean;
     }) => Stream.Stream<OrchestrationV2StoredEvent, OrchestrationEventStoreError>;
@@ -396,7 +400,7 @@ const makeEventStore = Effect.gen(function* () {
     readonly throughSequence?: number;
     readonly threadId?: ThreadId;
     readonly commandId?: CommandId;
-    readonly eventType?: OrchestrationV2DomainEvent["type"];
+    readonly eventType?: AgentEventTypeFilter;
     readonly onlyAgentEvents?: boolean;
     readonly limit: number;
   }) =>
@@ -436,7 +440,13 @@ const makeEventStore = Effect.gen(function* () {
         AND ${sql.and([
           ...(input.threadId === undefined ? [] : [sql`stream_id = ${input.threadId}`]),
           ...(input.commandId === undefined ? [] : [sql`command_id = ${input.commandId}`]),
-          ...(input.eventType === undefined ? [] : [sql`event_type = ${input.eventType}`]),
+          ...(input.eventType === undefined
+            ? []
+            : [
+                typeof input.eventType === "string"
+                  ? sql`event_type = ${input.eventType}`
+                  : sql`event_type IN ${sql.in(input.eventType)}`,
+              ]),
         ])}
       ORDER BY sequence ASC
       LIMIT ${input.limit}
@@ -544,6 +554,7 @@ const makeEventStore = Effect.gen(function* () {
     );
 
   const readAgentEvents: OrchestrationEventStore["Service"]["readAgentEvents"] = (input) => {
+    if (typeof input?.eventType === "object" && input.eventType.length === 0) return Stream.empty;
     const totalLimit =
       input?.limit === undefined ? Number.MAX_SAFE_INTEGER : Math.max(0, Math.floor(input.limit));
     if (totalLimit === 0) {
