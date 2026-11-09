@@ -73,6 +73,7 @@ import {
   OrchestrationV2ThreadLaunchError,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ShellStreamItem,
   type OrchestrationV2ThreadStreamItem,
   type ApplicationStoredEvent,
   type ProjectEntriesFailure,
@@ -1148,6 +1149,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
 export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subscribeShell")(
   function* (input: {
     readonly afterSequence?: number;
+    readonly httpSnapshotFallback?: true;
     readonly requestCompletionMarker?: boolean;
     readonly omitIdleSubagents?: boolean;
     readonly omitOlderSettled?: boolean;
@@ -1358,14 +1360,20 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         });
       }
 
-      const fromSnapshot = Effect.gen(function* () {
-        const loaded = yield* loadSnapshot();
-        return composeShellStreamWithEnrichment({
-          initial: initialSnapshotItems(loaded),
-          tail: completionThenLive(loaded.snapshot.snapshotSequence),
-          enrichment: enrichmentRefreshes,
-        });
+      const snapshotRequired: Stream.Stream<OrchestrationV2ShellStreamItem> = Stream.make({
+        kind: "snapshot-required",
       });
+      const fromSnapshot =
+        input.httpSnapshotFallback === true
+          ? Effect.succeed(snapshotRequired)
+          : Effect.gen(function* () {
+              const loaded = yield* loadSnapshot();
+              return composeShellStreamWithEnrichment({
+                initial: initialSnapshotItems(loaded),
+                tail: completionThenLive(loaded.snapshot.snapshotSequence),
+                enrichment: enrichmentRefreshes,
+              });
+            });
       const highWater = yield* applicationEvents.latestApplicationSequence;
       if (!(yield* canReplayPersistedRange(input.afterSequence, highWater, SHELL_RESUME_MAX_GAP))) {
         return yield* fromSnapshot;
@@ -2011,6 +2019,7 @@ export const layerWsRpc = (
             : { managedPolicy: serverSettings.managedPolicy }),
           shellResumeCompletionMarker: true,
           shellThreadFamilies: true,
+          threadLinkMetadata: true,
           shellOlderSettled: true,
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
@@ -2209,6 +2218,16 @@ export const layerWsRpc = (
           getOrchestrationV2ArchivedShellSnapshot,
         [ORCHESTRATION_V2_WS_METHODS.getThreadFamily]: (input) =>
           readOmittableShellRows({ familyOf: input.threadId }, "Failed to load the thread family"),
+        [ORCHESTRATION_V2_WS_METHODS.getThreadLinkMetadata]: (input) =>
+          threadManagement.getThreadLinkMetadata(input.threadIds).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2GetShellSnapshotError({
+                  message: "Failed to load thread link metadata",
+                  cause,
+                }),
+            ),
+          ),
         [ORCHESTRATION_V2_WS_METHODS.getThreadTitles]: (input) =>
           threadManagement.getThreadTitles(input.threadIds).pipe(
             Effect.mapError(
@@ -2381,6 +2400,8 @@ export const layerWsRpc = (
         [WS_METHODS.workItemsSubscribe]: (input) => workItems.subscribeList(input),
         [WS_METHODS.workItemsMutate]: (input) => workItems.mutate(input),
         [WS_METHODS.workItemsDiscover]: (input) => workItems.discover(input),
+        [ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion]: (input) =>
+          providerSessionManager.subscribePromptSuggestion(input.threadId),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
           scheduledTasks.subscribeList().pipe(Stream.map(withVisibleWebhookUrls)),
         [WS_METHODS.scheduledTasksUpsert]: (input) => scheduledTasks.upsert(input),
@@ -2732,6 +2753,7 @@ export const layerWsRpc = (
         [WS_METHODS.skillsInspect]: (input) => skillManager.inspect(input),
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
+        [WS_METHODS.serverReclaimDatabaseSpace]: () => databaseStorage.requestReclaim,
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
@@ -3198,6 +3220,9 @@ export const layerWsRpc = (
           }),
         [WS_METHODS.assetsPersistChatAttachments]: (input) =>
           persistChatAttachments(input).pipe(Effect.map((attachments) => ({ attachments }))),
+        [WS_METHODS.subscribeVcsBranch]: (input) => vcsStatusBroadcaster.streamBranchStatus(input),
+        [WS_METHODS.vcsRefreshBranch]: (input) =>
+          vcsStatusBroadcaster.refreshBranchStatus(input).pipe(Effect.asVoid),
         [WS_METHODS.subscribeVcsStatus]: (input) => vcsStatusBroadcaster.streamStatus(input),
         [WS_METHODS.subscribeWorktreeSetup]: (input) => worktreeSetupTracker.stream(input.threadId),
         [WS_METHODS.worktreeSetupCancel]: (input) =>

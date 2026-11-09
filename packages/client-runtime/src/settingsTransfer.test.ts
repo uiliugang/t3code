@@ -412,6 +412,8 @@ describe("settings transfer", () => {
       },
       hiddenThreadTags: ["hidden"],
       hideTaggedThreads: true,
+      promptSuggestionsEnabled: true,
+      fastWorktreeCheckout: true,
       ghqCloneLayout: true,
       storageCleanup: { ...source.storageCleanup, browserArtifactsAfterDays: 21 },
       worktreeCleanup: { mode: "off" as const },

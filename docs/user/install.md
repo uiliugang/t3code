@@ -11,18 +11,21 @@ launch T3 Code and configure providers afterwards.
 ## Command line
 
 ```bash
-curl -fsSL https://t3.codes/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://t3.codes/install.ps1 | iex
+irm https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install.ps1 | iex
 ```
 
-This installs the `t3` binary to `~/.local/bin`. If your shell reports `command not found`
-afterwards, that directory is not on your `PATH` yet; the installer prints the
-line to add. Set `T3CODE_CHANNEL=nightly` to install the nightly train, or
+This installs the `t3` binary to `~/.local/bin`. If that folder is not on your
+`PATH` yet, the installer says so and, for zsh, bash on Linux, and fish, prints
+a command to add it. On Windows, `t3` works in the same PowerShell window right
+away; add the folder to your `PATH` for new windows. If a `t3` that the
+installer or the desktop app did not create is already there, it leaves that
+one alone and stops. Set `T3CODE_CHANNEL=nightly` to install the nightly train, or
 `T3CODE_VERSION` to pin an exact version.
 
 | Task                                             | Command                                                                 |
@@ -43,8 +46,15 @@ If `t3` or `t3 start` reports an already running server, connect to that server
 instead. Stop it before starting a replacement, or use a different `--base-dir`
 for an independent server.
 
-To try T3 Code once without installing it, run `npx t3@latest` instead (needs
-Node.js for `npx`).
+These scripts install the uiliugang fork. `npx t3@latest` and the package managers
+listed below distribute the upstream version, which does not include this fork's additions.
+
+To try upstream T3 Code once without installing it, run `npx t3@latest` instead (needs
+Node.js for `npx`). It offers to install the `t3` command first. If you say no,
+it asks again at the next minor release, and `npx t3 install` installs it later.
+`npx t3` always runs the version npm picked, even when a `t3` is installed. On
+the nightly train, run your installed `t3` (for example `t3 connect`), not
+`npx t3`, which runs the latest stable release.
 
 ### Intel Macs
 
@@ -53,7 +63,7 @@ run a server there, build it from source with `vp`, which provides the Node vers
 ([Install vp](https://github.com/pingdotgg/t3code#install-vp)):
 
 ```bash
-git clone https://github.com/pingdotgg/t3code
+git clone https://github.com/uiliugang/t3code
 cd t3code && vp i && vp run build:desktop
 node apps/server/dist/bin.mjs
 ```
@@ -122,12 +132,14 @@ Nix manages both the desktop app and the bundled
 
 ### The `t3` command
 
-The desktop app includes the `t3` command-line tool. To run it from any
-terminal, open **Settings → About** and choose **Install** next to
-**t3 command**. On macOS and Linux it adds a `t3` link to a folder on your
-`PATH`; on Windows it adds the app's command folder to your `PATH`. Open a new
-terminal afterwards. **Remove** takes it off again. If you already have `t3`
-from npm, it stays as it is.
+The desktop app includes the `t3` command-line tool. A new install sets it up
+on first launch; after an update, or any time, choose **Install** next to
+**t3 command** in **Settings → About**. On macOS and Linux it adds a `t3` link
+in `~/.local/bin` (or `~/bin`); on Windows it adds the app's command folder to
+your `PATH`. Open a new terminal afterwards. If the folder is not on your
+`PATH`, **Add to PATH** in the welcome setup or **Settings → About** adds one
+line to your shell's startup file. **Remove** takes it off, and the app does not
+add it again. If you already have another `t3`, it stays as it is.
 
 ### Windows Subsystem for Linux
 

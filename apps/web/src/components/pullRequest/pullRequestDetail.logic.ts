@@ -1298,6 +1298,7 @@ const HOST_LABELS = sourceControlClients.definitions
 
 const TOOL_NOISE = [
   new RegExp(`^(${HOST_LABELS})?\\s*(cli|api)?\\s*(command\\s*)?failed\\.?$`, "iu"),
+  /^[\p{L}\p{N}][\p{L}\p{N} ._-]*\s+(cli|api|command)\s+failed\.?$/iu,
   /^exited? with (code|status) \d+\.?$/iu,
   /^unknown error\.?$/iu,
 ];

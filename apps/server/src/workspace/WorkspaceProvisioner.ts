@@ -138,6 +138,9 @@ export const layer = Layer.effect(
               const rows = yield* sql<{
                 payload_json: string;
               }>`SELECT payload_json FROM workspace_preparations WHERE thread_id = ${input.threadId}`;
+              const settings = Option.isSome(settingsService)
+                ? yield* settingsService.value.getSettings
+                : null;
               let state: typeof Preparation.Type;
               if (rows[0]) {
                 state = yield* Schema.decodeEffect(json)(rows[0].payload_json);
@@ -159,9 +162,6 @@ export const layer = Layer.effect(
                       "Read-only repository roots are not supported by the current providers.",
                   });
                 const token = yield* random.uuidV4().pipe(Effect.orDie);
-                const settings = Option.isSome(settingsService)
-                  ? yield* settingsService.value.getSettings
-                  : null;
                 const workspaceSetup = settings
                   ? setupProjectScript(
                       resolveProjectScripts(settings, {
@@ -398,6 +398,7 @@ export const layer = Layer.effect(
                         },
                         {
                           submodules: "none",
+                          fastCheckout: settings?.fastWorktreeCheckout ?? false,
                           ...(state.generatedBranchName === undefined
                             ? {}
                             : { generatedBranchName: state.generatedBranchName }),

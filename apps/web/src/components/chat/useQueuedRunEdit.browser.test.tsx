@@ -12,6 +12,11 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import { toastManager } from "../ui/toast";
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 import { act, render } from "../../../test/render";
 import { useComposerDraftStore, useComposerThreadDraft } from "../../composerDraftStore";
 import { deriveComposerSendState } from "../ChatView.logic";
@@ -111,8 +116,6 @@ function Harness(props: {
       pendingAction={null}
       isRunning={false}
       canInterrupt={false}
-      showPlanFollowUpPrompt={false}
-      promptHasText={draft.prompt.trim().length > 0}
       isSendBusy={result.isSaving}
       sendDisabledReason={null}
       isEnvironmentUnavailable={false}
@@ -122,7 +125,6 @@ function Harness(props: {
       onSubmitMessage={() => void result.saveEdit(savedContent(draft.prompt), () => {})}
       onPreviousPendingQuestion={() => {}}
       onInterrupt={() => {}}
-      onImplementPlanInNewThread={() => {}}
     />
   ) : null;
 }

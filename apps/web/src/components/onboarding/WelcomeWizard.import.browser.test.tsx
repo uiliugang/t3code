@@ -11,6 +11,11 @@ import {
 import { AsyncResult, Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 import "~/index.css";
 import { act, render } from "../../../test/render";
 
