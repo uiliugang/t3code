@@ -107,8 +107,12 @@ row in the thread; open it to see every step.
 ## Custom API providers
 
 Choose **Claude > Claude · BYOK** when adding a provider in **Settings > Providers**.
-Enter your BA service's Anthropic base URL, select Bearer Token or API Key
-(`x-api-key`), and add its exact, case-sensitive model IDs. Credentials are stored
+Select **Anthropic Messages** or **OpenAI Chat Completions**, enter the service's base
+URL, and add its exact, case-sensitive model IDs. For Chat Completions, include the
+API prefix (for example, `https://api.example.com/v1`); T3 Code runs a local protocol
+converter on the environment automatically. Both credential choices use Bearer
+authentication upstream in this mode. Anthropic mode supports Bearer Token or API Key
+(`x-api-key`). Credentials are stored
 on the selected environment; secret references are supported on web and desktop.
 The preset creates an isolated Claude config directory and lists only your models.
 Install Claude Code on the environment or choose its executable under **Runtime**.
@@ -128,9 +132,22 @@ instance for a different BA service rather than moving an existing conversation.
 On mobile, **Settings > Providers** also supports creating, editing, disabling, and
 checking BYOK instances. The mobile tool check uses the first configured model.
 
-Claude Code can use a custom provider that accepts the Anthropic Messages API. An
-OpenAI-compatible `/v1/chat/completions` endpoint alone is not enough: use a gateway
-that translates the Anthropic protocol and supports the selected model's tool calls.
+Chat Completions mode supports text, images, streamed responses, and function tool
+calls. The upstream model must support function calling. Anthropic-specific server
+tools and document blocks are not supported by the converter.
+
+To run the converter separately from the repository, set `OPENAI_BASE_URL`,
+`OPENAI_API_KEY`, and `T3_PROXY_TOKEN` in your shell, then run:
+
+```sh
+node apps/server/scripts/claude-openai-proxy.ts
+```
+
+It listens on `127.0.0.1:8318` (`PORT` overrides the port). Configure an **Anthropic
+Messages** BYOK instance with that local base URL and `T3_PROXY_TOKEN` as its credential.
+Run the converter on the same environment as Claude Code. Stop it with Ctrl+C.
+
+For an external Anthropic gateway, you can also configure a regular Claude instance:
 
 In **Settings > Providers**, add a Claude instance and give it a separate config directory,
 such as `~/.claude_gateway`. Keep **Binary path** set to `claude`. Set the instance's

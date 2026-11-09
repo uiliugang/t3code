@@ -65,9 +65,16 @@ it("clears a rotated credential after saving even when the redacted snapshot is 
       />
     </RegistryProvider>,
   );
+  await userEvent.click(screen.getByRole("combobox", { name: "Protocol", exact: true }));
+  await userEvent.click(
+    screen.getByRole("option", { name: "OpenAI Chat Completions", exact: true }),
+  );
   const credential = screen.getByLabelText("BA credential", { exact: true });
   await userEvent.fill(credential, "replacement-token");
   await userEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+  expect(
+    state.save.mock.calls[0]?.[0].input.providerInstanceMutation.instance.environment,
+  ).toContainEqual({ name: "T3_CLAUDE_API_FORMAT", value: "openai", sensitive: false });
   await expect.element(credential).toHaveValue("");
   await expect.element(screen.getByRole("button", { name: "Check connection" })).toBeEnabled();
   await expect.element(screen.getByRole("button", { name: "Save", exact: true })).toBeDisabled();

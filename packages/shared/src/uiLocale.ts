@@ -3379,6 +3379,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Ask an environment admin to download": "请环境管理员下载",
   "Customize in Voice settings": "在语音设置中自定义",
   "Start dictating": "开始语音输入",
+  "OpenAI Chat Completions": "OpenAI Chat Completions 协议",
+  "API Key (Bearer)": "API 密钥（Bearer）",
   "Anthropic Messages": "Anthropic Messages 协议",
   "BA authentication": "BA 身份验证",
   "Bearer Token": "Bearer 令牌",

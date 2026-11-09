@@ -8,7 +8,11 @@ import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { readCustomModelEntries } from "@t3tools/shared/model";
-import { claudeByokUrlError, normalizeClaudeByokBaseUrl } from "@t3tools/shared/claudeByok";
+import {
+  CLAUDE_BYOK_PROTOCOL_VARIABLE,
+  claudeByokUrlError,
+  normalizeClaudeByokBaseUrl,
+} from "@t3tools/shared/claudeByok";
 
 import { readClaudeSettingsEnv } from "./ClaudeSkills.ts";
 
@@ -103,6 +107,7 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
 // A Claude Code session that launched T3 exports these. A claude spawned with them acts as part of
 // that session: its session id, messaging socket and token, and effort.
 const CLAUDE_HOST_SESSION_VARIABLES = [
+  CLAUDE_BYOK_PROTOCOL_VARIABLE,
   "CLAUDECODE",
   "CLAUDE_CODE_SESSION_ID",
   "CLAUDE_CODE_HOST_SESSION_ID",
@@ -161,7 +166,7 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
     environment?: NodeJS.ProcessEnv,
   ): Effect.fn.Return<string, never, Path.Path> {
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    return `claude:home:${resolvedHomePath}${config.customModelsOnly ? `:byok:${environment?.ANTHROPIC_BASE_URL?.trim() ?? ""}` : ""}`;
+    return `claude:home:${resolvedHomePath}${config.customModelsOnly ? `:byok:${environment?.ANTHROPIC_BASE_URL?.trim() ?? ""}${environment?.T3_CLAUDE_API_FORMAT === "openai" ? ":openai" : ""}` : ""}`;
   },
 );
 

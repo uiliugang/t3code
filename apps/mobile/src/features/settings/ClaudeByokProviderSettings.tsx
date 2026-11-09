@@ -8,6 +8,8 @@ import {
 } from "@t3tools/contracts";
 import {
   CLAUDE_BYOK_LABEL,
+  CLAUDE_BYOK_PROTOCOL_VARIABLE,
+  readClaudeByokProtocol,
   claudeByokAuthVariable,
   claudeByokUrlError,
   isClaudeByok,
@@ -107,6 +109,7 @@ function ClaudeByokEditor({
       check: "model",
     }),
   );
+  const protocol = readClaudeByokProtocol(draft);
   const mode = readClaudeByokAuthMode(draft);
   const credentialName = claudeByokAuthVariable(mode);
   const credential = draft.find((entry) => entry.name === credentialName);
@@ -197,6 +200,33 @@ function ClaudeByokEditor({
       {expanded ? (
         <>
           {field("Display name", name, setName)}
+          <Menu
+            actions={[
+              {
+                id: "anthropic",
+                title: "Anthropic Messages",
+                state: protocol === "anthropic" ? "on" : "off",
+              },
+              {
+                id: "openai",
+                title: "OpenAI Chat Completions",
+                state: protocol === "openai" ? "on" : "off",
+              },
+            ]}
+            onPressAction={(event) => {
+              const value = event.nativeEvent.event;
+              if (!disabled && (value === "anthropic" || value === "openai")) {
+                setDraft(withClaudeByokVariable(draft, CLAUDE_BYOK_PROTOCOL_VARIABLE, value));
+                setFeedback(null);
+              }
+            }}
+          >
+            <ControlPill
+              label={protocol === "openai" ? "OpenAI Chat Completions" : "Anthropic Messages"}
+              variant="pill"
+              disabled={disabled}
+            />
+          </Menu>
           {field("BA base URL", url, (value) =>
             setDraft(withClaudeByokVariable(draft, "ANTHROPIC_BASE_URL", value)),
           )}
@@ -205,7 +235,7 @@ function ClaudeByokEditor({
               { id: "bearer", title: "Bearer Token", state: mode === "bearer" ? "on" : "off" },
               {
                 id: "apiKey",
-                title: "API Key (x-api-key)",
+                title: protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)",
                 state: mode === "apiKey" ? "on" : "off",
               },
             ]}
@@ -218,7 +248,13 @@ function ClaudeByokEditor({
             }}
           >
             <ControlPill
-              label={mode === "bearer" ? "Bearer Token" : "API Key (x-api-key)"}
+              label={
+                mode === "bearer"
+                  ? "Bearer Token"
+                  : protocol === "openai"
+                    ? "API Key (Bearer)"
+                    : "API Key (x-api-key)"
+              }
               variant="pill"
               disabled={disabled}
             />

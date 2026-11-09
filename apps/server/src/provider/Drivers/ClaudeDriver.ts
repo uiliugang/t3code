@@ -12,6 +12,7 @@ import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
+import { startClaudeChatCompletionsProxy } from "../ClaudeChatCompletionsProxy.ts";
 import { validateClaudeEndpoint } from "../ClaudeEndpointValidation.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -50,6 +51,7 @@ import {
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
 import {
+  makeClaudeEnvironment,
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   mergeClaudeProcessEnvironment,
@@ -112,7 +114,54 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const modelCatalog = catalogService
       .current(DRIVER_KIND)
       .pipe(Effect.map(resolveClaudeModelCatalog));
-    const processEnv = yield* mergeClaudeProcessEnvironment(config, environment, process.env);
+    const sourceEnvironment = yield* mergeClaudeProcessEnvironment(
+      config,
+      environment,
+      process.env,
+    );
+    if (config.customModelsOnly)
+      yield* makeClaudeEnvironment(config, sourceEnvironment).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: cause.message,
+              cause,
+            }),
+        ),
+      );
+    const proxy =
+      config.customModelsOnly && sourceEnvironment.T3_CLAUDE_API_FORMAT === "openai"
+        ? yield* Effect.acquireRelease(
+            Effect.tryPromise({
+              try: () =>
+                startClaudeChatCompletionsProxy({
+                  baseUrl: sourceEnvironment.ANTHROPIC_BASE_URL ?? "",
+                  apiKey:
+                    sourceEnvironment.ANTHROPIC_AUTH_TOKEN?.trim() ||
+                    sourceEnvironment.ANTHROPIC_API_KEY?.trim() ||
+                    "",
+                }),
+              catch: (cause) =>
+                new ProviderDriverError({
+                  driver: DRIVER_KIND,
+                  instanceId,
+                  detail: "Could not start the local Chat Completions proxy.",
+                  cause,
+                }),
+            }),
+            (running) => Effect.promise(() => running.close()),
+          )
+        : undefined;
+    const processEnv = proxy
+      ? {
+          ...sourceEnvironment,
+          ANTHROPIC_BASE_URL: proxy.baseUrl,
+          ANTHROPIC_AUTH_TOKEN: proxy.token,
+          ANTHROPIC_API_KEY: "",
+        }
+      : sourceEnvironment;
     const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,
@@ -131,7 +180,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       Effect.provideService(Path.Path, path),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
-    const continuationGroupKey = yield* makeClaudeContinuationGroupKey(effectiveConfig, processEnv);
+    const continuationGroupKey = yield* makeClaudeContinuationGroupKey(
+      effectiveConfig,
+      sourceEnvironment,
+    );
     const configDir = yield* resolveClaudeHomePath(effectiveConfig, processEnv);
     const accountConfigPath = yield* ClaudeResetCredits.claudeAccountConfigPath(
       effectiveConfig.homePath.trim() || processEnv.CLAUDE_CONFIG_DIR?.trim()
@@ -156,7 +208,19 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         instanceId,
         displayName,
         accentColor,
-        environment,
+        environment: proxy
+          ? [
+              ...(environment ?? []).filter(
+                (entry) =>
+                  !["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"].includes(
+                    entry.name,
+                  ),
+              ),
+              { name: "ANTHROPIC_BASE_URL", value: proxy.baseUrl, sensitive: false },
+              { name: "ANTHROPIC_AUTH_TOKEN", value: proxy.token, sensitive: true },
+              { name: "ANTHROPIC_API_KEY", value: "", sensitive: true },
+            ]
+          : environment,
         enabled,
         config,
       },

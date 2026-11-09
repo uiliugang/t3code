@@ -7,6 +7,12 @@ import type {
 import { readCustomModelEntries } from "./model.ts";
 
 export const CLAUDE_BYOK_LABEL = "Claude \u00b7 BYOK";
+export const CLAUDE_BYOK_PROTOCOL_VARIABLE = "T3_CLAUDE_API_FORMAT";
+export const readClaudeByokProtocol = (environment: ProviderInstanceEnvironment) =>
+  environment.find((entry) => entry.name === CLAUDE_BYOK_PROTOCOL_VARIABLE)?.value === "openai"
+    ? "openai"
+    : "anthropic";
+
 export type ClaudeByokAuthMode = "bearer" | "apiKey";
 export const claudeByokAuthVariable = (mode: ClaudeByokAuthMode) =>
   mode === "apiKey" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN";

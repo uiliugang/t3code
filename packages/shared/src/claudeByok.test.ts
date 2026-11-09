@@ -5,11 +5,16 @@ import {
   claudeByokUrlError,
   normalizeClaudeByokBaseUrl,
   readClaudeByokAuthMode,
+  readClaudeByokProtocol,
   withClaudeByokVariable,
 } from "./claudeByok.ts";
 
 describe("Claude BYOK configuration", () => {
   it("keeps one credential and explicitly masks the inherited alternative", () => {
+    expect(readClaudeByokProtocol([])).toBe("anthropic");
+    expect(
+      readClaudeByokProtocol(withClaudeByokVariable([], "T3_CLAUDE_API_FORMAT", "openai")),
+    ).toBe("openai");
     const bearer = withClaudeByokVariable([], "ANTHROPIC_AUTH_TOKEN", "secret");
     expect(readClaudeByokAuthMode(bearer)).toBe("bearer");
     const apiKey = withClaudeByokVariable(bearer, "ANTHROPIC_API_KEY", "replacement");

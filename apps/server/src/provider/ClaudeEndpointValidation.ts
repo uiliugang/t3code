@@ -22,7 +22,12 @@ const ToolBlock = Schema.Struct({
   name: Schema.String,
   input: Schema.Unknown,
 });
-const Block = Schema.Union([TextBlock, ToolBlock]);
+const ThinkingBlock = Schema.Struct({
+  type: Schema.Literal("thinking"),
+  thinking: Schema.String,
+  signature: Schema.optional(Schema.String),
+});
+const Block = Schema.Union([TextBlock, ToolBlock, ThinkingBlock]);
 const Event = Schema.Union([
   Schema.Struct({ type: Schema.Literal("message_start") }),
   Schema.Struct({ type: Schema.Literal("ping") }),
@@ -36,6 +41,8 @@ const Event = Schema.Union([
     index: Schema.Int,
     delta: Schema.Union([
       Schema.Struct({ type: Schema.Literal("text_delta"), text: Schema.String }),
+      Schema.Struct({ type: Schema.Literal("thinking_delta"), thinking: Schema.String }),
+      Schema.Struct({ type: Schema.Literal("signature_delta"), signature: Schema.String }),
       Schema.Struct({ type: Schema.Literal("input_json_delta"), partial_json: Schema.String }),
     ]),
   }),
@@ -165,6 +172,16 @@ export const validateClaudeEndpoint = Effect.fn("ClaudeEndpointValidation.valida
               entry.block = { ...entry.block, text: entry.block.text + event.delta.text };
             else if (entry.block.type === "tool_use" && event.delta.type === "input_json_delta")
               entry.json += event.delta.partial_json;
+            else if (entry.block.type === "thinking" && event.delta.type === "thinking_delta")
+              entry.block = {
+                ...entry.block,
+                thinking: entry.block.thinking + event.delta.thinking,
+              };
+            else if (entry.block.type === "thinking" && event.delta.type === "signature_delta")
+              entry.block = {
+                ...entry.block,
+                signature: (entry.block.signature ?? "") + event.delta.signature,
+              };
             else return yield* fail("BA sent an incompatible content delta.");
             break;
           }
