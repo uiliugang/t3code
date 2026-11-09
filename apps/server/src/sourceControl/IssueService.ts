@@ -1,5 +1,7 @@
 import {
   IssueError,
+  IssueSource,
+  SourceControlProviderError,
   SourceControlProviderKind,
   type IssueTarget,
   type IssueListInput,
@@ -9,18 +11,25 @@ import {
   type IssuePeopleInput,
   type IssueReadInput,
   type IssueSetStateInput,
-  type IssueSource,
   type IssueSourcesInput,
   type IssueSourcesResult,
 } from "@t3tools/contracts";
-import * as Cache from "effect/Cache";
-import * as Data from "effect/Data";
+import * as Duration from "effect/Duration";
+import * as Digest from "effect/crypto/Digest";
+import * as Hex from "effect/encoding/Hex";
 import * as Equal from "effect/Equal";
 import * as Hash from "effect/Hash";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as KeyValueStore from "effect/persistence/KeyValueStore";
+import * as Persistable from "effect/persistence/Persistable";
+import * as PersistedCache from "effect/persistence/PersistedCache";
+import * as Persistence from "effect/persistence/Persistence";
+import * as ServerConfig from "../config.ts";
 import * as Projects from "../project/ProjectService.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
@@ -28,7 +37,13 @@ import * as Provider from "@t3tools/source-control-core/server/SourceControlProv
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 type Board = NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
-class DiscoveryKey extends Data.Class<{ readonly cwd: string; readonly remoteUrl: string }> {
+class DiscoveryKey extends Persistable.Class<{
+  payload: { readonly cwd: string; readonly remoteUrl: string; readonly key: string };
+}>()("IssueSourceDiscovery", {
+  primaryKey: ({ key }) => key,
+  success: Schema.Array(IssueSource),
+  error: SourceControlProviderError,
+}) {
   [Equal.symbol](other: unknown): boolean {
     return (
       other instanceof DiscoveryKey &&
@@ -56,20 +71,25 @@ export class IssueService extends Context.Service<
   }
 >()("t3/sourceControl/IssueService") {}
 
-const make = Effect.gen(function* () {
+export const make = Effect.gen(function* () {
   const projects = yield* Projects.ProjectService;
   const settings = yield* Settings.ServerSettingsService;
   const providers = yield* Providers.SourceControlProviderRegistry;
-  const discovery = yield* Cache.make({
-    capacity: 256,
-    timeToLive: "10 minutes",
-    lookup: Effect.fn("IssueService.discover")(function* (key: DiscoveryKey) {
+  const digester = yield* Digest.Digest;
+  const discovery = yield* PersistedCache.make(
+    Effect.fn("IssueService.discover")(function* (key: DiscoveryKey) {
       const handle = yield* providers.resolveHandle({ cwd: key.cwd });
       return handle.context && handle.provider.discoverIssueSources
         ? yield* handle.provider.discoverIssueSources({ cwd: key.cwd, context: handle.context })
         : [];
     }),
-  });
+    {
+      storeId: "issue-sources-v1",
+      timeToLive: () => Duration.infinity,
+      inMemoryTTL: () => Duration.infinity,
+      inMemoryCapacity: 256,
+    },
+  ).pipe(Effect.provide(Persistence.layerKvs));
   const projectSources = Effect.fn("IssueService.projectSources")(function* (
     projectId: IssueTarget["projectId"],
     refresh = false,
@@ -106,9 +126,20 @@ const make = Effect.gen(function* () {
           host: new URL(context.provider.baseUrl).hostname,
         });
       if (provider.discoverIssueSources) {
-        const key = new DiscoveryKey({ cwd, remoteUrl: context.remoteUrl });
-        if (refresh) yield* Cache.invalidate(discovery, key);
-        const result = yield* Cache.get(discovery, key).pipe(Effect.result);
+        const digest = yield* digester.digest(
+          Digest.sha256,
+          new TextEncoder().encode(normalizeGitRemoteUrl(context.remoteUrl)),
+        );
+        const key = new DiscoveryKey({
+          cwd,
+          remoteUrl: context.remoteUrl,
+          key: Hex.encode(digest),
+        });
+        const result = yield* (
+          refresh
+            ? discovery.invalidate(key).pipe(Effect.andThen(discovery.get(key)))
+            : discovery.get(key)
+        ).pipe(Effect.result);
         if (result._tag === "Success") automatic.push(...result.success);
         else error = new IssueError({ operation: "discovery", reason: "unavailable" }).message;
       }
@@ -257,4 +288,14 @@ const make = Effect.gen(function* () {
     }),
   });
 });
-export const layer = Layer.effect(IssueService, make);
+export const layer = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const path = yield* Path.Path;
+    return Layer.effect(IssueService, make).pipe(
+      Layer.provide(
+        KeyValueStore.layerFileSystem(path.join(config.providerStatusCacheDir, "issue-sources")),
+      ),
+    );
+  }),
+);

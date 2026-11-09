@@ -1,8 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { IssueError, ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as TestClock from "effect/testing/TestClock";
+import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as Projects from "../project/ProjectService.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
@@ -10,6 +15,77 @@ import * as Provider from "@t3tools/source-control-core/server/SourceControlProv
 import * as Service from "./IssueService.ts";
 
 describe("IssueService", () => {
+  it.effect("persists empty discoveries and explicit refreshes across service restarts", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-issue-sources-" });
+      const projectId = ProjectId.make("project");
+      let discoveries = 0;
+      const provider = yield* Provider.SourceControlProvider.pipe(
+        Effect.provide(
+          Layer.mock(Provider.SourceControlProvider)({
+            kind: SourceControlProviderKind.make("meituan"),
+            repositoryNameFromRemoteUrl: Provider.repositoryPathFromRemoteUrl,
+            discoverIssueSources: () =>
+              Effect.sync(() =>
+                ++discoveries === 1
+                  ? []
+                  : [{ provider: "meituan" as const, host: "mep.sankuai.com", scope: "6259" }],
+              ),
+          }),
+        ),
+      );
+      const create = Service.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            KeyValueStore.layerFileSystem(directory),
+            Settings.ServerSettingsService.layerTest(),
+            Layer.mock(Projects.ProjectService)({
+              getShell: () =>
+                Effect.succeedSome({
+                  id: projectId,
+                  title: "project",
+                  workspaceRoot: "/project",
+                  defaultModelSelection: null,
+                  scripts: [],
+                  createdAt: "2026-01-01T00:00:00Z",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                }),
+            }),
+            Layer.mock(Providers.SourceControlProviderRegistry)({
+              resolveLink: () => undefined,
+              resolveHandle: () =>
+                Effect.succeed({
+                  provider,
+                  context: {
+                    provider: {
+                      kind: provider.kind,
+                      name: "Meituan",
+                      baseUrl: "https://git.sankuai.com",
+                    },
+                    remoteName: "origin",
+                    remoteUrl: "https://git.sankuai.com/team/project.git",
+                  },
+                }),
+            }),
+          ),
+        ),
+      );
+      const input = { projectIds: [projectId] };
+      expect((yield* (yield* create).sources(input))[0]?.sources).toEqual([]);
+      yield* TestClock.adjust("365 days");
+      const restarted = yield* create;
+      expect((yield* restarted.sources(input))[0]?.sources).toEqual([]);
+      expect(discoveries).toBe(1);
+      const refreshed = yield* restarted.sources({ ...input, refresh: true });
+      expect(refreshed[0]?.sources).toEqual([
+        { provider: "meituan", host: "mep.sankuai.com", scope: "6259" },
+      ]);
+      expect(yield* (yield* create).sources(input)).toEqual(refreshed);
+      expect(discoveries).toBe(2);
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect(
     "deduplicates shared sources, isolates failures and resolves targets from fresh settings",
     () =>
@@ -127,6 +203,7 @@ describe("IssueService", () => {
           ).toBe("invalid-target");
           discovered = true;
           const before = discoveries;
+          yield* TestClock.adjust("1 hour");
           yield* service.sources({ projectIds: [projects[0]!.id] });
           expect(discoveries).toBe(before);
           expect(
@@ -142,7 +219,8 @@ describe("IssueService", () => {
           ).toBe("789");
         }).pipe(
           Effect.provide(
-            Service.layer.pipe(
+            Layer.effect(Service.IssueService, Service.make).pipe(
+              Layer.provide(Layer.mergeAll(KeyValueStore.layerMemory, NodeCrypto.layer)),
               Layer.provide(
                 Layer.mock(Projects.ProjectService)({
                   getShell: (id) =>
