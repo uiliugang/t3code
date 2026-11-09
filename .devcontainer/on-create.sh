@@ -3,6 +3,10 @@
 # (dependency install, Chromium) lives in update-content.sh.
 set -euo pipefail
 
+# Docker creates the pnpm mount's parent as root before onCreateCommand runs.
+mkdir -p "$HOME/.cache"
+sudo chown "$(id -un):$(id -gn)" "$HOME/.cache"
+
 # The Vite+ CLI is the repo task runner (vp i, vp run dev, vp test run).
 # Download to a file first: a curl failure inside $( ) would yield an empty
 # script and a false success. VP_NODE_MANAGER=no skips the installer's node
