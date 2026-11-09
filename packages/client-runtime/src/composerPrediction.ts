@@ -1,4 +1,14 @@
-import type { EnvironmentId, ThreadPredictionInput } from "@t3tools/contracts";
+import type { EnvironmentId, ProviderDriverKind, ThreadPredictionInput } from "@t3tools/contracts";
+
+export function resolveComposerPredictionSource(input: {
+  readonly driver: ProviderDriverKind | undefined;
+  readonly nativeEnabled: boolean;
+  readonly textGenerationEnabled: boolean;
+}): "native" | "text-generation" | null {
+  if (input.nativeEnabled && (input.driver === "codex" || input.driver === "claudeAgent"))
+    return "native";
+  return input.textGenerationEnabled ? "text-generation" : null;
+}
 
 export type ComposerPredictionTarget = ThreadPredictionInput & {
   readonly environmentId: EnvironmentId;

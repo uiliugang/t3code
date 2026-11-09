@@ -46,6 +46,7 @@ const state = vi.hoisted(() => ({
   },
 }));
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
+vi.mock("../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("@t3tools/client-runtime/state/runtime", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@t3tools/client-runtime/state/runtime")>()),
   runAtomCommand: (_registry: unknown, command: (input: unknown) => unknown, input: unknown) =>

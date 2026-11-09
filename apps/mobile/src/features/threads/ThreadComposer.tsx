@@ -23,7 +23,6 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
-  type ProviderInteractionMode,
   type ServerConfig as T3ServerConfig,
   type UsageLimitsReport,
 } from "@t3tools/contracts";
@@ -255,7 +254,6 @@ export interface ThreadComposerProps {
   ) => Promise<MessageId | null>;
   readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
   readonly canSwitchProvider: boolean;
-  readonly onUpdateInteractionMode?: (interactionMode: ProviderInteractionMode) => void;
   readonly onHeightChange?: (height: number) => void;
   readonly onEditorFocusChange?: (focused: boolean) => void;
 }
@@ -468,7 +466,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     !props.isDraft &&
       !props.hidden &&
       props.canOperateThread &&
-      props.serverConfig?.threadPredictions === true &&
       props.connectionState === "connected" &&
       !props.activeThreadBusy &&
       draftMessage.length === 0 &&
@@ -477,6 +474,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       props.queueCount === 0 &&
       !props.interactionLocked &&
       !props.sendBlockedReason,
+    props.serverConfig,
   );
   const acceptPrediction = () => {
     const current = getComposerDraftSnapshot(composerDraftKey);
@@ -588,10 +586,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     hasThread: !props.isDraft,
     hasCompactableConversation: props.hasCompactableConversation,
     onChangeDraftMessage: props.onChangeDraftMessage,
-    onUpdateInteractionMode:
-      selectedProviderStatus?.showInteractionModeToggle === false
-        ? undefined
-        : props.onUpdateInteractionMode,
     offersUsageLimits: usageLimitsOffered,
     onUsageLimits:
       usageLimitsOffered && draftAttachments.length === 0 ? openUsageLimits : undefined,

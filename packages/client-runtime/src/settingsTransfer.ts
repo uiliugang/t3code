@@ -83,6 +83,8 @@ const APPLICATION_SERVER_SETTINGS_KEYS = [
   "hideTaggedThreads",
   "guestSharingEnabled",
   "linkedEnvironmentsEnabled",
+  "promptSuggestionsEnabled",
+  "fastWorktreeCheckout",
   "backgroundActivity",
   "automaticGitFetchInterval",
   "providerHealthRefreshInterval",

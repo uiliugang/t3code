@@ -23,6 +23,7 @@ it("transfers presentation preferences without including device state", () => {
   };
   const devicePreferences = {
     ...preferences,
+    planModeEnabled: true,
     collapsedProjectGroups: ["local-group"],
     lastThreadProject: { projectId: "local-project", environmentId: "local-environment" },
     connectOnboardingOptOutAccounts: ["local-account"],

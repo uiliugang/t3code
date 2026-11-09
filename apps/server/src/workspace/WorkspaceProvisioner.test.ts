@@ -211,6 +211,7 @@ it.live(
       const temp = yield* fs.makeTempDirectoryScoped({ prefix: "workspace-group-test-" });
       const fail = yield* Ref.make(true);
       const setupBranches = yield* Ref.make<string[]>([]);
+      const checkoutModes = yield* Ref.make<Array<boolean | undefined>>([]);
       const generatedBranch = "lg/fix-group-branches";
       const roots: Array<ProjectWorkspaceRoot> = [];
       for (const alias of ["frontend", "backend"]) {
@@ -279,8 +280,20 @@ it.live(
       const layer = WorkspaceProvisioner.layer.pipe(
         Layer.provide(setupLayer),
         Layer.provide(
+          Layer.succeed(GitVcsDriver.GitVcsDriver, {
+            ...git,
+            createWorktree: (input, options) =>
+              Ref.update(checkoutModes, (modes) => [...modes, options?.fastCheckout]).pipe(
+                Effect.andThen(git.createWorktree(input, options)),
+              ),
+          }),
+        ),
+        Layer.provide(
           Layer.mock(ServerSettings.ServerSettingsService)({
-            getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+            getSettings: Effect.succeed({
+              ...DEFAULT_SERVER_SETTINGS,
+              fastWorktreeCheckout: true,
+            }),
           }),
         ),
         Layer.provide(
@@ -320,6 +333,7 @@ it.live(
         assert.lengthOf(yield* sql`SELECT * FROM workspace_preparations`, 0);
         const error = yield* provisioner.prepare(input).pipe(Effect.flip);
         assert.include(error.message, "Setup failed");
+        assert.deepEqual(yield* Ref.get(checkoutModes), [true, true]);
         assert.deepEqual(yield* Ref.get(setupBranches), [generatedBranch, `${generatedBranch}-1`]);
         const [row] = yield* sql<{
           payload_json: string;
@@ -347,6 +361,7 @@ it.live(
           },
         });
         assert.equal(workspace.sourceProjectVersion, 1);
+        assert.deepEqual(yield* Ref.get(checkoutModes), [true, true]);
         assert.lengthOf(workspace.resources, 2);
         assert.deepEqual(
           workspace.bindings.map((binding) => binding.launchBranch),

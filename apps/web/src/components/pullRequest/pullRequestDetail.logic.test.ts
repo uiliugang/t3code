@@ -1,5 +1,4 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import {
   GitCommandError,
   ProjectId,
@@ -14,12 +13,7 @@ import {
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { formatInlineContextReference } from "~/lib/composerContextReferences";
-import {
-  buildMessageContext,
-  reviewCommentContextLabel,
-  reviewCommentContextReference,
-} from "~/lib/composerContextRecords";
+import { reviewCommentContextLabel } from "~/lib/composerContextRecords";
 
 import {
   buildAddSelectionToAgentHandoff,
@@ -28,7 +22,6 @@ import {
   buildResolveConflictsPrompt,
   resolveThreadPanelPullRequestAction,
   buildPullRequestCommentContext,
-  buildPullRequestReferenceContext,
   buildFixFindingHandoff,
   canDeletePullRequestBranch,
   buildFixFindingsHandoff,
@@ -919,19 +912,6 @@ describe("asking about a change rather than working on it", () => {
     state: "open" as const,
     isDraft: false,
   };
-
-  it.each(["", "Please consider "])("preserves PR plan feedback with prose %j", (prose) => {
-    const comment = buildPullRequestReferenceContext(base);
-    const draftText = prose + formatInlineContextReference(reviewCommentContextReference(comment));
-    const submission = resolvePlanFollowUpSubmission({ draftText, planMarkdown: "# Plan" });
-    const context = buildMessageContext({
-      terminalContexts: [],
-      previewAnnotations: [],
-      reviewComments: [comment],
-    });
-    expect(submission).toEqual({ text: draftText, interactionMode: "plan" });
-    expect(context?.records[0]).toMatchObject({ pullRequest: base });
-  });
 
   it("puts the reader's request in the composer and the selected lines in chips", () => {
     const comment = {
@@ -1847,11 +1827,16 @@ describe("readableFailure", () => {
       "GitHub CLI failed.",
       "Azure DevOps API failed",
       "Forgejo command failed",
+      "Meituan Code command failed",
+      "Custom Host API failed",
     ]) {
       expect(readableFailure(new Error(message), "Try again.")).toBe("Try again.");
     }
     expect(readableFailure(new Error("Branch is protected."), "Try again.")).toBe(
       "Branch is protected.",
     );
+    expect(
+      readableFailure(new Error("Azure DevOps API failed: Branch is protected."), "Try again."),
+    ).toBe("Azure DevOps API failed: Branch is protected.");
   });
 });

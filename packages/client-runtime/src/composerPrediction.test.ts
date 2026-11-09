@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
-import { composerPredictionKey, createComposerPredictionController } from "./composerPrediction.ts";
+import { EnvironmentId, ProviderDriverKind, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  composerPredictionKey,
+  createComposerPredictionController,
+  resolveComposerPredictionSource,
+} from "./composerPrediction.ts";
 
 const target = {
   environmentId: EnvironmentId.make("one"),
@@ -9,6 +13,27 @@ const target = {
 };
 
 describe("composer predictions", () => {
+  it.each([
+    ["codex", true, true, "native"],
+    ["claudeAgent", true, true, "native"],
+    ["codex", false, true, "text-generation"],
+    ["opencode", true, true, "text-generation"],
+    ["opencode", true, false, null],
+    ["claudeAgent", true, false, "native"],
+    ["codex", false, false, null],
+  ] as const)(
+    "selects one source for %s with native %s and text generation %s",
+    (driver, nativeEnabled, textGenerationEnabled, expected) => {
+      expect(
+        resolveComposerPredictionSource({
+          driver: ProviderDriverKind.make(driver),
+          nativeEnabled,
+          textGenerationEnabled,
+        }),
+      ).toBe(expected);
+    },
+  );
+
   it("hides late results while disabled and reuses them when enabled again", async () => {
     const pending = Promise.withResolvers<string | null>();
     const request = vi.fn(() => pending.promise);

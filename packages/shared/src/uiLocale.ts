@@ -16,6 +16,67 @@ export const UI_LANGUAGES = [
 const zhCN: Readonly<Record<string, string>> = {
   ...mobileUiMessages,
   ...workItemMessages,
+  "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Enter for single-line prompts or {modifier} + Shift + Enter for multiline prompts to do the opposite for one message.":
+    "智能体运行时，可将跟进消息加入队列或用于引导当前任务。单行消息按 {modifier} + Enter，多行消息按 {modifier} + Shift + Enter，可临时使用另一种发送方式。",
+  "Queue follow-ups while the agent runs or steer the current run. Press {modifier}{shift} + Enter to do the opposite for one message.":
+    "智能体运行时，可将跟进消息加入队列或用于引导当前任务。按 {modifier}{shift} + Enter 可临时使用另一种发送方式。",
+  "Suggest next prompt": "建议下一条提示词",
+  "Show a predicted next message after a Claude or Codex turn. Uses native suggestions instead of the text generation model. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart.":
+    "Claude 或 Codex 每轮结束后显示下一条消息建议，使用原生建议替代文本生成模型。每次建议都会额外发起一次计入套餐用量的缓存请求。需要 Codex 0.165 或更新版本；Claude 会话重启后生效。",
+  "Fast worktree checkout": "快速检出工作树",
+  "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.":
+    "在 Mac 上，从 T3 主目录缓存的检出副本克隆新工作树，减少逐文件写入；不可用时使用 Git 常规检出。关闭后会删除缓存。",
+  "Show folder threads on two lines: the title, then the branch, pull request, and agent.":
+    "将文件夹内的会话显示为两行：第一行是标题，第二行是分支、拉取请求和智能体。",
+  "tool calls in chat": "聊天中的工具调用",
+  "Context window indicator": "上下文窗口指示器",
+  "Context window {percentage} used": "上下文窗口已使用 {percentage}",
+  "Context window {tokens} tokens used": "上下文窗口已使用 {tokens} 个令牌",
+  "Context window usage": "上下文窗口用量",
+  "Total processed": "累计处理",
+  Cost: "费用",
+  "Compacts automatically at about {tokens} tokens.": "约达到 {tokens} 个令牌时自动压缩。",
+  "Context for {model} compacts automatically when needed.": "{model} 的上下文会在需要时自动压缩。",
+  "Context compacts automatically when needed.": "上下文会在需要时自动压缩。",
+  "Compact context": "压缩上下文",
+  "This connection cannot change threads.": "此连接无法修改会话。",
+  "Choose a project before compacting": "请先选择项目再压缩上下文",
+  "Compaction is unavailable for this provider": "此提供商不支持压缩上下文",
+  "Compacting is unavailable right now": "暂时无法压缩上下文",
+  "Could not add t3 to PATH": "无法将 t3 添加到 PATH",
+  "Another t3 at {path} runs first in a new terminal. Remove it to use T3 Code's.":
+    "新终端会优先运行 {path} 处的另一个 t3。移除它后即可使用 T3 Code 的版本。",
+  "Run T3 Code's CLI as `t3` from any terminal.": "在任意终端中使用 `t3` 运行 T3 Code 命令行。",
+  "Installed at {path}. Open a new terminal to use it.": "已安装到 {path}。打开新终端即可使用。",
+  "Installed at {path} and added to PATH in {file}. Open a new terminal to use it.":
+    "已安装到 {path}，并在 {file} 中添加到 PATH。打开新终端即可使用。",
+  "Installed at {path}, which is not on your PATH yet.": "已安装到 {path}，但该目录尚未加入 PATH。",
+  " Add its folder to your PATH to run `t3`.": " 请将所在目录加入 PATH 后运行 `t3`。",
+  "Add to PATH": "添加到 PATH",
+  "Added to {file}. Open a new terminal to use t3.": "已添加到 {file}。打开新终端即可使用 t3。",
+  "Use t3 from any terminal. Adds one line to {file}.":
+    "在任意终端中使用 t3。将在 {file} 中添加一行配置。",
+  Then: "然后运行",
+  "Skip the install if you already have t3. If t3 is not found after installing, add the folder the installer names to your PATH.":
+    "已有 t3 时可跳过安装。安装后若找不到 t3，请将安装程序提示的目录加入 PATH。",
+  "These databases still hold space freed by history cleanup.":
+    "这些数据库仍占用清理历史记录后释放的空间。",
+  " Run the command on each machine to reclaim it. It restarts the background service. Quit the desktop app first if it hosts the environment.":
+    " 在每台机器上运行命令即可回收空间，该操作会重启后台服务。若环境由桌面应用托管，请先退出桌面应用。",
+  "{amount} on {environment}": "{environment}：{amount}",
+  "Reclaiming {amount} on {environment}": "正在回收 {environment} 上的 {amount} 空间",
+  "T3 Code there restarts and is back in about {minutes} min.":
+    "该环境中的 T3 Code 正在重启，预计约 {minutes} 分钟后恢复。",
+  "Could not reclaim space on {environment}": "无法回收 {environment} 上的空间",
+  "Restarts T3 Code there. It is offline for about {minutes} min.":
+    "将重启该环境中的 T3 Code，预计离线约 {minutes} 分钟。",
+  "The last attempt failed: {error}": "上次尝试失败：{error}",
+  Reclaim: "回收空间",
+  "Reclaim {amount} on {environment}?": "回收 {environment} 上的 {amount} 空间？",
+  "T3 Code on {environment} stops, rebuilds its database, and starts again. It is offline for about {minutes} min. Running agents stop when it restarts.":
+    "{environment} 上的 T3 Code 将停止服务、重建数据库并重新启动，预计离线约 {minutes} 分钟。重启会停止正在运行的智能体。",
+  "Restart and reclaim": "重启并回收空间",
+  "Open {host}": "打开 {host}",
   "T3 Code home": "T3 Code 主页",
   "Checking provider status": "正在检查提供商状态",
   "Waiting for the server to report installation and authentication details.":

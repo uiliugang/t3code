@@ -12,6 +12,7 @@ import { LanguageSection } from "./appearance/sections/LanguageSection";
 import { ThemeAppearanceSection } from "./appearance/sections/ThemeAppearanceSection";
 import { ProjectPresentationSection } from "./appearance/sections/ProjectPresentationSection";
 import { BranchIssuesSection } from "./appearance/sections/BranchIssuesSection";
+import { ToolCallsAppearanceSection } from "./appearance/sections/ToolCallsAppearanceSection";
 
 export function SettingsAppearanceRouteScreen() {
   const t = useUiTranslation();
@@ -36,6 +37,7 @@ export function SettingsAppearanceRouteScreen() {
         <TextAppearanceSection />
         <TerminalAppearanceSection />
         <CodeAppearanceSection />
+        <ToolCallsAppearanceSection />
       </ScrollView>
     </SettingsScreen>
   );
