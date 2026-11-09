@@ -132,6 +132,11 @@ type EstablishmentEvent =
   | { readonly _tag: "Interrupted"; readonly resetRetry: boolean }
   | { readonly _tag: "TimedOut" };
 
+interface EstablishmentProgress {
+  readonly progress: ConnectionDriver.ConnectionDriverProgress;
+  readonly at: bigint;
+}
+
 function exitUnlessInterrupted<A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<Exit.Exit<A, E>, never, R> {
@@ -472,13 +477,13 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     attempt: number,
     generation: number,
     lastFailure: ConnectionAttemptError | null,
-    synchronizedRoutes: Ref.Ref<number>,
+    progressEvents: Queue.Queue<EstablishmentProgress>,
   ) {
     return yield* driver.connect(yield* attemptEntry, (progress) =>
-      (progress.stage === "synchronizing"
-        ? Ref.update(synchronizedRoutes, (count) => count + 1)
-        : Effect.void
-      ).pipe(Effect.andThen(reportProgress(attempt, generation, lastFailure, progress))),
+      Effect.gen(function* () {
+        yield* Queue.offer(progressEvents, { progress, at: yield* Clock.monotonicTimeNanos });
+        yield* reportProgress(attempt, generation, lastFailure, progress);
+      }),
     );
   });
 
@@ -559,17 +564,17 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     generation: number,
     lastFailure: ConnectionAttemptError | null,
     pendingRetry: Option.Option<PendingRetryTrace>,
-    synchronizedRoutes: Ref.Ref<number>,
+    progressEvents: Queue.Queue<EstablishmentProgress>,
   ) {
     if (usesRelay) {
       return yield* traceRelayEstablishment(
-        establishConnection(attempt, generation, lastFailure, synchronizedRoutes),
+        establishConnection(attempt, generation, lastFailure, progressEvents),
         attempt,
         generation,
         pendingRetry,
       );
     }
-    return yield* establishConnection(attempt, generation, lastFailure, synchronizedRoutes).pipe(
+    return yield* establishConnection(attempt, generation, lastFailure, progressEvents).pipe(
       Effect.map((lease) => ({
         attemptSpan: Option.none<Tracer.Span>(),
         lease,
@@ -885,16 +890,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   ) {
     const switchingTo = yield* Ref.get(preferredRouteId);
     yield* SubscriptionRef.set(prepared, Option.none());
-    const synchronizedRoutes = yield* Ref.make(0);
+    const progressEvents = yield* Queue.unbounded<EstablishmentProgress>();
     const establishment = yield* Effect.raceAllFirst([
       exitUnlessInterrupted(
-        establishTracedConnection(
-          attempt,
-          generation,
-          lastFailure,
-          pendingRetry,
-          synchronizedRoutes,
-        ),
+        establishTracedConnection(attempt, generation, lastFailure, pendingRetry, progressEvents),
       ).pipe(
         Effect.map((exit): EstablishmentEvent => ({
           _tag: "Completed",
@@ -907,35 +906,37 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           resetRetry,
         })),
       ),
-      // Each route may use the full setup time before the next is tried, and
-      // each route that reaches synchronizing adds its own snapshot budget, so
-      // a route that fails late does not eat the next route's time.
+      // Only the active SSH preparation pauses the ordinary setup/snapshot budget.
       Effect.gen(function* () {
         const routes = connectionRoutes(yield* Ref.get(currentEntry));
-        if (routes.some((route) => route.target._tag === "SshConnectionTarget")) {
-          const readyToOpen = yield* SubscriptionRef.changes(state).pipe(
-            Stream.filter((state) => state.stage !== "preparing"),
-            Stream.runHead,
-            Effect.as(true),
+        let deadline =
+          (yield* Clock.monotonicTimeNanos) +
+          Duration.toNanosUnsafe(Duration.times(establishmentTimeout, routes.length));
+        let sshStartedAt: bigint | undefined;
+        while (true) {
+          const activeDeadline =
+            sshStartedAt === undefined
+              ? deadline
+              : sshStartedAt + Duration.toNanosUnsafe(SSH_PREPARATION_TIMEOUT);
+          const remaining = activeDeadline - (yield* Clock.monotonicTimeNanos);
+          const event = yield* Queue.take(progressEvents).pipe(
             Effect.timeoutOrElse({
-              duration: SSH_PREPARATION_TIMEOUT,
-              orElse: () => Effect.succeed(false),
+              duration: Duration.nanos(remaining > 0n ? remaining : 0n),
+              orElse: () => Effect.succeed(null),
             }),
           );
-          if (!readyToOpen) return { _tag: "TimedOut" } as const satisfies EstablishmentEvent;
-        }
-        const routeCount = routes.length;
-        const startedAt = yield* Clock.monotonicTimeNanos;
-        const setup = Duration.toNanosUnsafe(Duration.times(establishmentTimeout, routeCount));
-        while (true) {
-          const synchronized = BigInt(yield* Ref.get(synchronizedRoutes));
-          const deadline =
-            startedAt + setup + synchronized * Duration.toNanosUnsafe(synchronizationTimeout);
-          const remaining = deadline - (yield* Clock.monotonicTimeNanos);
-          if (remaining <= 0n) {
+          if (event === null) {
             return { _tag: "TimedOut" } as const satisfies EstablishmentEvent;
           }
-          yield* Effect.sleep(Duration.nanos(remaining));
+          if (sshStartedAt !== undefined) deadline += event.at - sshStartedAt;
+          sshStartedAt =
+            event.progress.stage === "preparing" &&
+            event.progress.target?._tag === "SshConnectionTarget"
+              ? event.at
+              : undefined;
+          if (event.progress.stage === "synchronizing") {
+            deadline += Duration.toNanosUnsafe(synchronizationTimeout);
+          }
         }
       }),
     ]);
