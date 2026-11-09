@@ -11,6 +11,7 @@ import type { ConnectionCatalogEntry, ConnectionRoute } from "./catalog.ts";
 import type {
   ConnectionAttemptError,
   ConnectionAttemptStage,
+  ConnectionTarget,
   PreparedConnection,
 } from "./model.ts";
 import { ConnectionTransientError } from "./model.ts";
@@ -29,6 +30,7 @@ import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 export type ConnectionDriverProgress =
   | {
       readonly stage: "preparing";
+      readonly target?: ConnectionTarget;
     }
   | {
       readonly stage: Exclude<ConnectionAttemptStage, "preparing">;
@@ -193,6 +195,7 @@ export const make = Effect.gen(function* () {
       entry,
       (route) => checkRoute(entry, route),
       Effect.fnUntraced(function* (route) {
+        yield* reportProgress({ stage: "preparing", target: route.target });
         const prepared = yield* resolver.prepare(routeEntry(entry, route));
         yield* reportProgress({ stage: "opening", prepared });
         const session = yield* sessions.connect(prepared);

@@ -195,6 +195,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     target: ConnectionTarget,
     reportProgress: (progress: ConnectionDriver.ConnectionDriverProgress) => Effect.Effect<void>,
   ) {
+    yield* reportProgress({ stage: "preparing", target });
     const prepared = yield* prepare(target);
     yield* reportProgress({ stage: "opening", prepared });
 
@@ -607,6 +608,93 @@ describe("EnvironmentSupervisor", () => {
         yield* awaitState(supervisor.state, (state) => state.phase === "connected");
         expect(yield* Ref.get(harness.prepareCount)).toBe(1);
       }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect.each([false, true])("budgets the active route with an SSH fallback: %s", (fallback) =>
+    Effect.gen(function* () {
+      const ssh = new SshConnectionTarget({
+        environmentId: TARGET.environmentId,
+        label: TARGET.label,
+        connectionId: "ssh:fallback",
+      });
+      const preparing = yield* Deferred.make<void>();
+      const installed = yield* Deferred.make<void>();
+      const harness = yield* makeHarness({
+        ready: (attempt) =>
+          fallback && attempt === 1
+            ? Effect.fail(new ConnectionTransientError({ reason: "transport", detail: "Closed." }))
+            : Effect.void,
+        prepare: (_attempt, target) => {
+          if (target._tag !== "SshConnectionTarget") {
+            return fallback
+              ? Effect.succeed(preparedFor(target))
+              : Deferred.succeed(preparing, undefined).pipe(Effect.andThen(Effect.never));
+          }
+          return Deferred.succeed(preparing, undefined).pipe(
+            Effect.andThen(Deferred.await(installed)),
+            Effect.as(preparedFor(target)),
+          );
+        },
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(
+        { ...LAN_ENTRY, alternateRoutes: [{ target: ssh, profile: Option.none() }] },
+        { initiallyDesired: true },
+      ).pipe(Effect.provide(harness.dependencies));
+      yield* Deferred.await(preparing);
+      yield* TestClock.adjust(fallback ? "7 minutes" : "30 seconds");
+      if (!fallback) {
+        expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+          phase: "backoff",
+          attempt: 1,
+          lastFailure: { reason: "timeout" },
+        });
+        return;
+      }
+      expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+        phase: "connecting",
+        stage: "preparing",
+        attempt: 1,
+      });
+      yield* Deferred.succeed(installed, undefined);
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("gives a retried SSH preparation its own budget", () =>
+    Effect.gen(function* () {
+      const preparing = yield* Deferred.make<void>();
+      const installed = yield* Deferred.make<void>();
+      const target = new SshConnectionTarget({
+        environmentId: TARGET.environmentId,
+        label: TARGET.label,
+        connectionId: "ssh:retry",
+      });
+      const harness = yield* makeHarness({
+        prepare: (attempt) =>
+          attempt === 1
+            ? Effect.fail(new ConnectionTransientError({ reason: "transport", detail: "Lost." }))
+            : Deferred.succeed(preparing, undefined).pipe(
+                Effect.andThen(Deferred.await(installed)),
+                Effect.as(preparedFor(target)),
+              ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(
+        { ...TARGET_ENTRY, target },
+        { initiallyDesired: true },
+      ).pipe(Effect.provide(harness.dependencies));
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      yield* TestClock.adjust("2 seconds");
+      yield* Deferred.await(preparing);
+      yield* TestClock.adjust("7 minutes");
+      expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+        phase: "connecting",
+        stage: "preparing",
+        attempt: 2,
+      });
+      yield* Deferred.succeed(installed, undefined);
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(2);
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("treats an involuntary session close as transient and reconnects", () =>
