@@ -14,6 +14,7 @@ import {
   useSettingsScope,
 } from "../components/settings/SettingsScopeContext";
 import { useEnvironments } from "../state/environments";
+import { SINGLE_ENVIRONMENT_SETTINGS_PATHS } from "../components/settings/settingsScopeAxis";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
@@ -152,7 +153,7 @@ function SettingsRouteLayout() {
   return (
     <SettingsScopeProvider
       search={rawSearch}
-      singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/secrets"}
+      singleEnvironment={SINGLE_ENVIRONMENT_SETTINGS_PATHS.has(pathname)}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({
