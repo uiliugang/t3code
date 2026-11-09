@@ -19,6 +19,7 @@ import {
 import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   buildWorkItemContinuePrompt,
+  selectWorkItemResultIds,
   mergeWorkItemPages,
   prepareWorkItemCommandRetry,
   workItemExecutionIsActive,
@@ -1066,14 +1067,7 @@ function WorkItemDetails({
                 id: item.id,
                 expectedVersion: item.version,
                 specRevision: item.specRevision,
-                executionIds: selectedExecutions.filter((id) =>
-                  item.executions.some(
-                    (execution) =>
-                      execution.id === id &&
-                      execution.specRevision === item.specRevision &&
-                      !workItemExecutionIsActive(execution),
-                  ),
-                ),
+                executionIds: selectWorkItemResultIds(item, selectedExecutions),
                 summary,
                 artifacts: textLines(artifacts),
               })

@@ -3,6 +3,7 @@ import type {
   WorkItem,
   WorkItemCommandInput,
   WorkItemExecution,
+  WorkItemExecutionId,
 } from "@t3tools/contracts";
 
 export const WORK_ITEM_STATUS_LABELS = {
@@ -17,6 +18,22 @@ export function workItemExecutionIsActive(execution: WorkItemExecution): boolean
     execution.status !== "completed" &&
     execution.status !== "failed" &&
     execution.status !== "cancelled"
+  );
+}
+
+export function selectWorkItemResultIds(
+  item: Pick<WorkItem, "specRevision"> & {
+    readonly executions: ReadonlyArray<Pick<WorkItemExecution, "id" | "status" | "specRevision">>;
+  },
+  selectedIds: ReadonlyArray<WorkItemExecutionId>,
+) {
+  return selectedIds.filter((id) =>
+    item.executions.some(
+      (execution) =>
+        execution.id === id &&
+        execution.specRevision === item.specRevision &&
+        execution.status === "completed",
+    ),
   );
 }
 

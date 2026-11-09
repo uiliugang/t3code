@@ -20,6 +20,7 @@ import {
 } from "@t3tools/contracts";
 import {
   buildWorkItemContinuePrompt,
+  selectWorkItemResultIds,
   workItemExecutionIsActive,
   WORK_ITEM_STATUS_LABELS,
 } from "@t3tools/client-runtime/work-item";
@@ -558,6 +559,7 @@ function TaskDetail(props: {
   const [editing, setEditing] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [summary, setSummary] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
   const [artifacts, setArtifacts] = useState("");
   const [selectedExecutions, setSelectedExecutions] = useState<ReadonlyArray<WorkItemExecutionId>>(
     [],
@@ -589,7 +591,7 @@ function TaskDetail(props: {
       id: item.id,
       expectedVersion: item.version,
       specRevision: item.specRevision,
-      executionIds: [...selectedExecutions],
+      executionIds: selectWorkItemResultIds(item, selectedExecutions),
       summary,
       artifacts: lines(artifacts),
     });
@@ -828,8 +830,8 @@ function TaskDetail(props: {
             <>
               <Field
                 label={t("Review notes")}
-                value={summary}
-                onChange={setSummary}
+                value={reviewNote}
+                onChange={setReviewNote}
                 multiline
                 disabled={props.disabled}
               />
@@ -845,7 +847,7 @@ function TaskDetail(props: {
                       id: item.id,
                       expectedVersion: item.version,
                       decision: "accept",
-                      note: summary,
+                      note: reviewNote,
                     })
                   }
                 />
@@ -859,7 +861,7 @@ function TaskDetail(props: {
                       id: item.id,
                       expectedVersion: item.version,
                       decision: "changes",
-                      note: summary,
+                      note: reviewNote,
                     })
                   }
                 />
