@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import { CLAUDE_BYOK_PROTOCOL_VARIABLE, readClaudeByokProtocol } from "@t3tools/shared/claudeByok";
 
 import {
   makeClaudeCapabilitiesCacheKey,
@@ -56,6 +57,15 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
             CLAUDE_CODE_OAUTH_TOKEN: "old",
           },
         );
+        const byokConfig = { homePath: "~/.claude-byok-test", customModelsOnly: true };
+        const nativeIdentity = yield* makeClaudeContinuationGroupKey(byokConfig, {
+          ANTHROPIC_BASE_URL: "https://ba.test",
+        });
+        const openaiIdentity = yield* makeClaudeContinuationGroupKey(byokConfig, {
+          ANTHROPIC_BASE_URL: "https://ba.test",
+          T3_CLAUDE_API_FORMAT: "openai",
+        });
+        expect(openaiIdentity).toBe(`${nativeIdentity}:openai`);
         expect(byok.CLAUDE_CODE_OAUTH_TOKEN).toBe("");
         expect(byok.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("CaseSensitive");
         const invalid = yield* makeClaudeEnvironment(
@@ -92,6 +102,7 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         const homePath = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-home-" });
         const host = {
           CLAUDE_CODE_ENTRYPOINT: "claude-desktop",
+          [CLAUDE_BYOK_PROTOCOL_VARIABLE]: "openai",
           CLAUDECODE: "1",
           CLAUDE_CODE_SESSION_ID: "host-session",
           CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/host-claude.sock",
@@ -113,6 +124,18 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
           CLAUDE_EFFORT: "low",
           KEEP: "1",
         });
+
+        for (const protocol of ["anthropic", "openai"]) {
+          const configured = [
+            ...instance,
+            { name: CLAUDE_BYOK_PROTOCOL_VARIABLE, value: protocol, sensitive: false },
+          ];
+          expect(
+            (yield* mergeClaudeProcessEnvironment({ homePath }, configured, host))[
+              CLAUDE_BYOK_PROTOCOL_VARIABLE
+            ],
+          ).toBe(readClaudeByokProtocol(configured));
+        }
 
         yield* fileSystem.writeFileString(
           path.join(homePath, "settings.json"),

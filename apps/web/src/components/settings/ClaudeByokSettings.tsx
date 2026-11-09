@@ -9,6 +9,8 @@ import type {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
+  CLAUDE_BYOK_PROTOCOL_VARIABLE,
+  readClaudeByokProtocol,
   claudeByokAuthVariable,
   claudeByokUrlError,
   readClaudeByokAuthMode,
@@ -25,6 +27,7 @@ import { SettingsRow } from "./settingsLayout";
 import { SecretSourceInput, type SecretSource } from "./SecretSourceInput";
 
 export const CLAUDE_BYOK_ENVIRONMENT_NAMES = new Set([
+  CLAUDE_BYOK_PROTOCOL_VARIABLE,
   "ANTHROPIC_BASE_URL",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_API_KEY",
@@ -36,8 +39,7 @@ export function claudeByokFormError(environment: ProviderInstanceEnvironment): s
   if (error) return error;
   const credentials = environment.filter(
     (entry) =>
-      entry.name !== "ANTHROPIC_BASE_URL" &&
-      CLAUDE_BYOK_ENVIRONMENT_NAMES.has(entry.name) &&
+      (entry.name === "ANTHROPIC_AUTH_TOKEN" || entry.name === "ANTHROPIC_API_KEY") &&
       (entry.valueRedacted || typeof entry.value !== "string" || entry.value.trim().length > 0),
   );
   return credentials.length === 1 ? null : "Configure exactly one Bearer Token or API Key.";
@@ -55,6 +57,7 @@ export function ClaudeByokFields({
   readonly disabled?: boolean;
 }) {
   const t = useUiTranslation();
+  const protocol = readClaudeByokProtocol(environment);
   const mode = readClaudeByokAuthMode(environment);
   const credentialName = claudeByokAuthVariable(mode);
   const credential = environment.find((entry) => entry.name === credentialName);
@@ -65,7 +68,26 @@ export function ClaudeByokFields({
     <>
       <SettingsRow
         title={t("Protocol")}
-        control={<span className="text-sm text-muted-foreground">{t("Anthropic Messages")}</span>}
+        control={
+          <Select
+            value={protocol}
+            disabled={disabled}
+            onValueChange={(value) => {
+              if (value === "anthropic" || value === "openai")
+                onChange(withClaudeByokVariable(environment, CLAUDE_BYOK_PROTOCOL_VARIABLE, value));
+            }}
+          >
+            <SelectTrigger size="sm" aria-label={t("Protocol")}>
+              <SelectValue>
+                {t(protocol === "openai" ? "OpenAI Chat Completions" : "Anthropic Messages")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="anthropic">{t("Anthropic Messages")}</SelectItem>
+              <SelectItem value="openai">{t("OpenAI Chat Completions")}</SelectItem>
+            </SelectPopup>
+          </Select>
+        }
       />
       <SettingsRow
         title={t("BA base URL")}
@@ -105,12 +127,16 @@ export function ClaudeByokFields({
           >
             <SelectTrigger size="sm" aria-label={t("BA authentication")}>
               <SelectValue>
-                {mode === "bearer" ? t("Bearer Token") : t("API Key (x-api-key)")}
+                {mode === "bearer"
+                  ? t("Bearer Token")
+                  : t(protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
               <SelectItem value="bearer">{t("Bearer Token")}</SelectItem>
-              <SelectItem value="apiKey">{t("API Key (x-api-key)")}</SelectItem>
+              <SelectItem value="apiKey">
+                {t(protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)")}
+              </SelectItem>
             </SelectPopup>
           </Select>
         }
