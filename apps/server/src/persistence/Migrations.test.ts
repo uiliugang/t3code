@@ -69,15 +69,25 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87])("upgrades a database at exactly %s", (id) =>
+  it.effect.each([54, 78, 79, 80, 87, 90])("upgrades a database at exactly %s", (id) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: id });
+      if (id >= 87) {
+        yield* sql`INSERT INTO wechat_deliveries (id, generation, text, status, created_at, attempts, next_at)
+          VALUES ('legacy', 'g', 'existing delivery', 'pending', 0, 0, 0)`;
+      }
       assert.deepStrictEqual(
         yield* runMigrations(),
         migrationManifest.filter(([migrationId]) => migrationId > id),
       );
       assert.deepStrictEqual(yield* history, migrationManifest);
+      if (id >= 87) {
+        assert.deepStrictEqual(
+          yield* sql`SELECT text, request_json FROM wechat_deliveries WHERE id = 'legacy'`,
+          [{ text: "existing delivery", request_json: null }],
+        );
+      }
       assert.isAbove(yield* v2TableCount, 0);
       const taskColumns = yield* sql<{ readonly name: string }>`PRAGMA table_info(scheduled_tasks)`;
       assert.include(

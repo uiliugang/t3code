@@ -158,12 +158,14 @@ const make = Effect.gen(function* () {
     connection: Store.Connection,
     id: string,
     text: string,
+    request?: Parameters<Store.WechatStore["Service"]["enqueue"]>[4],
   ) {
     yield* store.enqueue(
       connection.generation,
       id,
       text.slice(0, 32000),
       yield* Clock.currentTimeMillis,
+      request,
     );
   });
   const target = Effect.fn("WechatBridge.target")(function* (connection: Store.Connection) {
@@ -269,6 +271,28 @@ const make = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const pending = yield* store.pending(connection.generation, now);
     for (const delivery of pending) {
+      if (delivery.request !== null) {
+        const request = delivery.request;
+        const projection = yield* threads
+          .getThreadRecords(request.threadId, ["runtimeRequests"], {
+            runtimeRequestStatuses: ["pending"],
+          })
+          .pipe(
+            Effect.catchTags({
+              OrchestratorProjectionError: (cause) =>
+                isMissingThread(cause.cause) ? Effect.succeed(null) : Effect.fail(cause),
+            }),
+            Effect.mapError(() => fail("storage")),
+          );
+        if (
+          !projection?.runtimeRequests.some(
+            (current) => current.id === request.requestId && current.status === "pending",
+          )
+        ) {
+          yield* store.discardRequest(connection.generation, request.requestId);
+          continue;
+        }
+      }
       yield* store.updateDelivery(delivery.id, "sending");
       yield* client
         .send(
@@ -476,20 +500,31 @@ const make = Effect.gen(function* () {
           return;
         yield* claim();
         const event = stored.event;
+        if (event.type === "runtime-request.updated" && event.payload.status !== "pending") {
+          yield* store.discardRequest(connection.generation, event.payload.id);
+        }
         if (
-          event.type === "run.updated" &&
-          (Threads.isTerminalRunStatus(event.payload.status) ||
-            event.payload.status === "waiting") &&
+          ((event.type === "run.updated" && Threads.isTerminalRunStatus(event.payload.status)) ||
+            (event.type === "runtime-request.updated" &&
+              event.payload.status === "pending" &&
+              event.payload.kind !== "dynamic_tool_call" &&
+              event.payload.kind !== "auth_refresh")) &&
           connection.projectId &&
           (connection.pushAllThreads || event.threadId === connection.threadId)
         ) {
-          const projection = yield* threads.getThreadRecords(event.threadId, []).pipe(
-            Effect.catchTags({
-              OrchestratorProjectionError: (cause) =>
-                isMissingThread(cause.cause) ? Effect.succeed(null) : Effect.fail(cause),
-            }),
-            Effect.mapError(() => fail("storage")),
-          );
+          const projection = yield* threads
+            .getThreadRecords(
+              event.threadId,
+              event.type === "runtime-request.updated" ? ["runtimeRequests"] : [],
+              { runtimeRequestStatuses: ["pending"] },
+            )
+            .pipe(
+              Effect.catchTags({
+                OrchestratorProjectionError: (cause) =>
+                  isMissingThread(cause.cause) ? Effect.succeed(null) : Effect.fail(cause),
+              }),
+              Effect.mapError(() => fail("storage")),
+            );
           if (
             projection &&
             projection.thread.projectId === connection.projectId &&
@@ -497,33 +532,41 @@ const make = Effect.gen(function* () {
             projection.thread.deletedAt === null &&
             projection.thread.lineage.relationshipToParent !== "subagent" &&
             !projection.thread.lineage.sideChat &&
+            (event.type === "run.updated" ||
+              projection.runtimeRequests.some(
+                (request) => request.id === event.payload.id && request.status === "pending",
+              )) &&
             (connection.pushAllThreads || event.threadId === connection.threadId)
           ) {
+            const runId = event.type === "run.updated" ? event.payload.id : event.runId;
             const records = yield* threads
               .getProjectThreadRecords(
                 { projectId: projection.thread.projectId, threadId: event.threadId },
                 ["messages"],
-                { runIds: [event.payload.id] },
+                { messageRunIds: runId === undefined ? [] : [runId] },
               )
               .pipe(Effect.mapError(() => fail("target")));
             const finalText = records.messages
-              .filter(
-                (message) => message.runId === event.payload.id && message.role === "assistant",
-              )
+              .filter((message) => message.runId === runId && message.role === "assistant")
               .map((message) => message.text)
               .join("\n\n");
             const statusText =
-              event.payload.status === "completed"
-                ? "任务完成"
-                : event.payload.status === "waiting"
-                  ? "任务等待确认，请回到 T3 处理"
+              event.type === "runtime-request.updated"
+                ? "任务等待确认，请回到 T3 处理"
+                : event.payload.status === "completed"
+                  ? "任务完成"
                   : event.payload.status === "failed"
                     ? "任务失败，请在 T3 查看详情"
                     : "任务已停止";
             yield* enqueue(
               connection,
-              `run:${event.payload.id}:${event.payload.status}`,
+              event.type === "run.updated"
+                ? `run:${event.payload.id}:${event.payload.status}`
+                : `request:${event.payload.id}`,
               `${records.thread.title}\n${statusText}${finalText ? `\n\n${finalText}` : ""}`,
+              event.type === "runtime-request.updated"
+                ? { threadId: event.threadId, requestId: event.payload.id }
+                : undefined,
             );
           }
         }
@@ -681,7 +724,7 @@ const make = Effect.gen(function* () {
         const connection = yield* store.connection;
         yield* events
           .stream({
-            eventType: "run.updated",
+            eventType: ["run.updated", "runtime-request.updated"],
             afterSequence: connection?.sequence ?? (yield* latestSequence),
           })
           .pipe(

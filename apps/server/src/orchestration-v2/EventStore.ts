@@ -59,7 +59,7 @@ export interface EventStoreV2Shape {
     readonly afterSequence?: number;
     readonly throughSequence?: number;
     readonly threadId?: ThreadId;
-    readonly eventType?: OrchestrationV2DomainEvent["type"];
+    readonly eventType?: OrchestrationEventStore.AgentEventTypeFilter;
     readonly limit?: number;
   }) => Stream.Stream<OrchestrationV2StoredEvent, EventStoreV2Error>;
   readonly readByCommandId: (input: {

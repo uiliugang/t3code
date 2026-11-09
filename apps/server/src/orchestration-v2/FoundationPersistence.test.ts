@@ -1083,6 +1083,13 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           occurredAt: now,
           payload,
         });
+        const visited: OrchestrationV2DomainEvent = {
+          id: EventId.make("event:filtered-worker:visited-history"),
+          type: "thread.visited",
+          threadId: thread.id,
+          occurredAt: now,
+          payload: { ...thread, lastVisitedAt: now },
+        };
         const history = yield* sink.write({
           events: [
             threadCreatedEvent({ id: "event:filtered-worker:created", thread, now }),
@@ -1093,6 +1100,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
               id: RunId.make("run:filtered-worker-other"),
               threadId: other.id,
             }),
+            visited,
           ],
         });
         const original = yield* sql<{ readonly payload_json: string }>`
@@ -1117,6 +1125,13 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           (yield* pull).map((stored) => stored.sequence),
           [history[2]!.sequence],
         );
+        const multiple = yield* Stream.toPull(
+          sink.stream({ threadId: thread.id, eventType: ["run.updated", "thread.visited"] }),
+        );
+        assert.deepEqual(
+          (yield* multiple).map((stored) => stored.sequence),
+          [history[2]!.sequence, history[4]!.sequence],
+        );
         yield* sink.write({
           events: Array.from({ length: LIVE_STREAM_MAX_ITEMS + 1 }, (_, index) => ({
             id: EventId.make(`event:filtered-worker:output:${index}`),
@@ -1129,11 +1144,18 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
         const live = yield* sink.write({
           events: [
             runEvent("event:filtered-worker:live:1", { ...run, status: "interrupted" }),
+            { ...visited, id: EventId.make("event:filtered-worker:visited-live") },
             runEvent("event:filtered-worker:live:2", { ...run, status: "failed" }),
           ],
         });
         assert.deepEqual(
           (yield* pull).map((stored) => stored.sequence),
+          live
+            .filter((stored) => stored.event.type === "run.updated")
+            .map((stored) => stored.sequence),
+        );
+        assert.deepEqual(
+          (yield* multiple).map((stored) => stored.sequence),
           live.map((stored) => stored.sequence),
         );
       }),
