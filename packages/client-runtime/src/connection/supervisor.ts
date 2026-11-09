@@ -46,6 +46,8 @@ const SESSION_LOSS_RETRY_DELAY_MS = 250;
 // A cold server with a large database can take longer than 15 seconds to
 // answer, and that is not a reason to drop a working connection.
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
+// SSH may install a runtime, relay its archive, then retry the launch (900 + 480 + 900 seconds).
+const SSH_PREPARATION_TIMEOUT = "40 minutes";
 const establishmentTimeout = Duration.fromInputUnsafe(CONNECTION_ESTABLISHMENT_TIMEOUT);
 const synchronizationTimeout = Duration.fromInputUnsafe("75 seconds");
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
@@ -909,7 +911,20 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       // each route that reaches synchronizing adds its own snapshot budget, so
       // a route that fails late does not eat the next route's time.
       Effect.gen(function* () {
-        const routeCount = connectionRoutes(yield* Ref.get(currentEntry)).length;
+        const routes = connectionRoutes(yield* Ref.get(currentEntry));
+        if (routes.some((route) => route.target._tag === "SshConnectionTarget")) {
+          const readyToOpen = yield* SubscriptionRef.changes(state).pipe(
+            Stream.filter((state) => state.stage !== "preparing"),
+            Stream.runHead,
+            Effect.as(true),
+            Effect.timeoutOrElse({
+              duration: SSH_PREPARATION_TIMEOUT,
+              orElse: () => Effect.succeed(false),
+            }),
+          );
+          if (!readyToOpen) return { _tag: "TimedOut" } as const satisfies EstablishmentEvent;
+        }
+        const routeCount = routes.length;
         const startedAt = yield* Clock.monotonicTimeNanos;
         const setup = Duration.toNanosUnsafe(Duration.times(establishmentTimeout, routeCount));
         while (true) {
