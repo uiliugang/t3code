@@ -153,6 +153,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "arrow.down.circle": IconArrowDownCircle,
   "arrow.right.circle": IconArrowRightCircle,
   "arrow.triangle.branch": IconGitBranch,
+  "lock.fill": IconLock,
   "arrow.triangle.merge": IconGitMerge,
   "arrow.triangle.pull": IconGitPullRequest,
   "square.3.layers.3d": IconStack2,

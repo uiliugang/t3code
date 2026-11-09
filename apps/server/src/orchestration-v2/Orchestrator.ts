@@ -4804,6 +4804,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         targetThreadId: command.targetThreadId,
         ...(command.title === undefined ? {} : { title: command.title }),
         ...(command.sideChat ? { sideChat: true } : {}),
+        ...(command.isolateWorkspace ? { isolateWorkspace: true } : {}),
         createdBy: command.createdBy,
         creationSource: command.creationSource,
         createdAt: now,

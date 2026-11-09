@@ -1788,16 +1788,19 @@ export const layer: Layer.Layer<
           // Resource leases protect the complete multi-repository turn; checkout leases protect startup from cleanup.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
           if (thread.workspace !== undefined) {
-            return yield* withWorkspaceLeases(
-              thread.workspace.resources.map((resource) => `resource:${resource.id}`),
-              Effect.gen(function* () {
-                const providerTurn = yield* withWorkspaceLeases(
-                  thread.workspace!.resources.map((resource) => resource.checkoutRoot),
-                  start(input),
+            const turn = Effect.gen(function* () {
+              const providerTurn = yield* withWorkspaceLeases(
+                thread.workspace!.resources.map((resource) => resource.checkoutRoot),
+                start(input),
+              );
+              if (providerTurn !== undefined) yield* providerTurn;
+            });
+            return yield* thread.lineage.sideChat === true
+              ? turn
+              : withWorkspaceLeases(
+                  thread.workspace.resources.map((resource) => `resource:${resource.id}`),
+                  turn,
                 );
-                if (providerTurn !== undefined) yield* providerTurn;
-              }),
-            );
           }
           const providerTurn = yield* thread.worktreePath === null
             ? start(input)

@@ -21,6 +21,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   GitCommandError,
   MessageId,
+  RunId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -61,6 +62,7 @@ import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import { ClaudeProviderCapabilitiesV2 } from "./Adapters/ClaudeAdapterV2.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
+import * as EventSink from "./EventSink.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
@@ -303,6 +305,7 @@ function makeHarness(options: HarnessOptions = {}) {
   );
   return {
     layer: Layer.mergeAll(
+      layerOrchestrator,
       layerLaunch,
       layerRegistry,
       layerThreadManagement,
@@ -350,6 +353,119 @@ function launchInput(input: {
     creationSource: "web" as const,
   };
 }
+
+it.effect.each([false, true])(
+  "continues a side chat without rebinding its shared checkout (checkout fails: %s)",
+  (fails) => {
+    const harness = makeHarness(
+      fails
+        ? {
+            createWorktree: () =>
+              Effect.fail(
+                new GitCommandError({
+                  operation: "GitManager.createWorktree",
+                  command: "git worktree add",
+                  cwd: "/repo",
+                  detail: "Checkout refused.",
+                }),
+              ),
+          }
+        : {},
+    );
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const sink = yield* EventSink.EventSinkV2;
+      const parent = yield* launches.launch(launchInput({ command: "parent", thread: "parent" }));
+      const sideChatId = ThreadId.make("side-chat");
+      yield* threads.dispatch({
+        type: "thread.fork",
+        commandId: CommandId.make("side-chat"),
+        sourceThreadId: parent.threadId,
+        targetThreadId: sideChatId,
+        sideChat: true,
+        sourcePoint: { type: "latest_stable" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const runId = RunId.make("side-chat-run");
+      const now = yield* DateTime.now;
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make("side-chat-run"),
+            threadId: sideChatId,
+            type: "run.created",
+            occurredAt: now,
+            payload: {
+              id: runId,
+              threadId: sideChatId,
+              ordinal: 1,
+              providerInstanceId: modelSelection.instanceId,
+              modelSelection,
+              providerThreadId: null,
+              userMessageId: MessageId.make("question"),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: "completed",
+              queuePosition: null,
+              requestedAt: now,
+              startedAt: now,
+              completedAt: now,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+        ],
+      });
+      const request = {
+        ...launchInput({
+          command: "continue-side-chat",
+          thread: "isolated",
+          workspace: { type: "worktree", baseRef: "main", startFromOrigin: false },
+        }),
+        forkFrom: { threadId: sideChatId, runId },
+      };
+      if (fails) {
+        const refused = yield* launches.launch(request).pipe(Effect.flip);
+        assert.equal(refused._tag, "ThreadLaunchError");
+        const source = yield* threads.getThreadProjection(sideChatId);
+        assert.isTrue(source.thread.lineage.sideChat);
+        assert.isNull(source.thread.worktreePath);
+        return;
+      }
+      const result = yield* launches.launch(request);
+      yield* threads.streamStoredEventsFrom({ threadId: result.threadId }).pipe(
+        Stream.filter(
+          (stored) =>
+            stored.event.type === "thread.metadata-updated" &&
+            stored.event.payload.worktreePath !== undefined,
+        ),
+        Stream.runHead,
+      );
+      const isolated = yield* threads.getThreadProjection(result.threadId);
+      const source = yield* threads.getThreadProjection(sideChatId);
+      assert.isTrue(source.thread.lineage.sideChat);
+      assert.isNull(source.thread.worktreePath);
+      assert.isUndefined(isolated.thread.lineage.sideChat);
+      assert.equal(isolated.thread.worktreePath, "/repo-worktrees/feature");
+      assert.deepEqual(isolated.thread.forkedFrom, { type: "run", threadId: sideChatId, runId });
+      const retry = yield* launches.launch(request);
+      assert.isTrue(retry.resumed);
+      assert.equal(retry.threadId, result.threadId);
+      assert.equal(harness.createWorktree.mock.calls.length, 1);
+      const invalid = yield* launches
+        .launch({
+          ...request,
+          commandId: CommandId.make("invalid"),
+          threadId: ThreadId.make("invalid"),
+          workspaceStrategy: { type: "root" },
+        })
+        .pipe(Effect.flip);
+      assert.equal(invalid._tag, "ThreadLaunchError");
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
 
 it.effect.each(
   (["new", "existing"] as const).flatMap((target) =>

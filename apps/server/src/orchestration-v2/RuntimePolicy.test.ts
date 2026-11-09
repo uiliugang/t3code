@@ -80,6 +80,7 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
       getCapabilities: () =>
         Effect.succeed({
           workspace: { multipleRoots: instanceId === providerInstanceId, readOnlyRoots: false },
+          runtimePolicy: { supportsReadOnly: instanceId === providerInstanceId },
         }),
     },
     snapshot: {
@@ -148,6 +149,33 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
         modelSelection,
       });
       assert.equal(legacy.cwd, "/original-project");
+      const pendingIsolation = {
+        ...thread,
+        lineage: { ...thread.lineage, isolatedWorkspace: true },
+      };
+      const unprepared = yield* policy
+        .resolve({ thread: pendingIsolation, modelSelection })
+        .pipe(Effect.flip);
+      assert.equal(unprepared._tag, "RuntimePolicyResolveError");
+      const prepared = yield* policy.resolve({
+        thread: { ...pendingIsolation, workspace },
+        modelSelection,
+      });
+      assert.deepEqual(prepared.workspace, workspace);
+      const sideChat = { ...thread, lineage: { ...thread.lineage, sideChat: true } };
+      const readOnly = yield* policy.resolve({
+        thread: { ...sideChat, workspace },
+        modelSelection,
+      });
+      assert.deepEqual(readOnly.sandboxPolicy, { type: "readOnly" });
+      assert.equal(readOnly.approvalPolicy, "never");
+      const unsupportedSideChat = yield* policy
+        .resolve({
+          thread: sideChat,
+          modelSelection: { ...modelSelection, instanceId: grokInstanceId },
+        })
+        .pipe(Effect.flip);
+      assert.equal(unsupportedSideChat._tag, "RuntimePolicyResolveError");
     }),
   );
   it.effect("asks for Antigravity command approval when a stored Auto thread falls back", () =>
@@ -221,6 +249,7 @@ it.effect(
             }),
             Layer.mock(WorkspaceRepositoryResolver.WorkspaceRepositoryResolver)({
               inspect: () => Effect.succeed(workspace.resources[1]!.identity),
+              verify: () => Effect.void,
             }),
           ),
         ),
@@ -229,6 +258,15 @@ it.effect(
         policy.resolve({ thread, modelSelection }),
       ).pipe(Effect.provide(sharedLayer), Effect.result);
       assert.isTrue(result._tag === "Failure");
+      const sideChat = { ...thread, lineage: { ...thread.lineage, sideChat: true } };
+      const readOnly = yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
+        policy.resolve({ thread: sideChat, modelSelection }),
+      ).pipe(Effect.provide(sharedLayer));
+      assert.deepEqual(readOnly.sandboxPolicy, { type: "readOnly" });
+      const boundReadOnly = yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
+        policy.resolve({ thread: { ...sideChat, workspace }, modelSelection }),
+      ).pipe(Effect.provide(sharedLayer));
+      assert.equal(boundReadOnly.approvalPolicy, "never");
     }).pipe(Effect.provide(NodeServices.layer)),
 );
 it.layer(

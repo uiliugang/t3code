@@ -445,6 +445,7 @@ export interface ChatComposerProps {
   onComposerOverlayHeightChange: (height: number) => void;
   /** The new-thread strip names the permissions, so the controls row hides its chip. */
   permissionsShownInStrip: boolean;
+  readOnlySideChat?: boolean;
 
   promptRef: React.RefObject<string>;
   composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
@@ -2479,6 +2480,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       compatibleRuntimeMode={compatibleRuntimeMode}
       defaultRuntimeMode={props.defaultRuntimeMode}
       compatibleRuntimeModeOptions={compatibleRuntimeModeOptions}
+      readOnlySideChat={props.readOnlySideChat === true}
       handleRuntimeModeChange={handleRuntimeModeChange}
       composerControlsCollapsed={composerControlsCollapsed}
       effortDisplay={settings.effortDisplay}

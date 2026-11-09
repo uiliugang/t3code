@@ -204,6 +204,7 @@ import { ComposerQueuedEditBanner } from "./ComposerQueuedEdit";
 import { useThreadQueuedCount } from "./ThreadQueueControl";
 import { ThreadGuestShareBar } from "./ThreadGuestShareBar";
 import { ThreadSideChatsRow } from "./ThreadSideChatsRow";
+import { SideChatTaskControl } from "./SideChatTaskControl";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
@@ -1716,6 +1717,13 @@ function ThreadDetailBody(
                         threadId={props.selectedThread.id}
                       />
                     )}
+                    {props.selectedThread.lineage.sideChat === true &&
+                    props.selectedThreadDetailRef ? (
+                      <SideChatTaskControl
+                        threadRef={props.selectedThreadDetailRef}
+                        canOperate={props.canOperateThread}
+                      />
+                    ) : null}
                     {props.feedbackSubmissions.map((submission) => (
                       <ComposerFeedback
                         key={submission.id}

@@ -26,6 +26,7 @@ import { liveThreadShell } from "./McpToolAccess.testkit.ts";
 const supervisedThreadId = ThreadId.make("thread:supervised");
 const planThreadId = ThreadId.make("thread:plan");
 const fullAccessThreadId = ThreadId.make("thread:full-access");
+const sideChatThreadId = ThreadId.make("thread:side-chat");
 const endedThreadId = ThreadId.make("thread:ended");
 const backgroundThreadId = ThreadId.make("thread:background");
 const oldProviderThreadId = ThreadId.make("thread:old-provider-background");
@@ -46,6 +47,13 @@ const shells = new Map([
     liveThreadShell(planThreadId, { runtimeMode: "approval-required", interactionMode: "plan" }),
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
+  [
+    sideChatThreadId,
+    {
+      ...liveThreadShell(sideChatThreadId),
+      lineage: { ...liveThreadShell(sideChatThreadId).lineage, sideChat: true },
+    },
+  ],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
   [backgroundThreadId, backgroundShell(backgroundThreadId, ProviderInstanceId.make("codex"))],
   [oldProviderThreadId, backgroundShell(oldProviderThreadId, ProviderInstanceId.make("claude"))],
@@ -247,6 +255,11 @@ it.effect.each([
   ["reads", ended, {}, "ran"],
   ["reads", supervisedClient, {}, "ran"],
   ["reads", readOnlyClient, {}, "ran"],
+  ["reads", threadCaller(sideChatThreadId), {}, "ran"],
+  ["writes", threadCaller(sideChatThreadId), {}, "capability_denied"],
+  ["starts_threads", threadCaller(sideChatThreadId), {}, "capability_denied"],
+  ["writes_environment", threadCaller(sideChatThreadId), {}, "capability_denied"],
+  ["acts_as_caller", threadCaller(sideChatThreadId), {}, "capability_denied"],
 
   ["writes", readOnlyClient, {}, "capability_denied"],
   ["writes_threads", readOnlyClient, { threadId: supervisedThreadId }, "capability_denied"],

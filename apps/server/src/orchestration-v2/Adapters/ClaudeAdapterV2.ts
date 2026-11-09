@@ -493,6 +493,7 @@ export const ClaudeProviderCapabilitiesV2 = {
   },
   runtimePolicy: {
     enforcement: "native",
+    supportsReadOnly: true,
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 

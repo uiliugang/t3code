@@ -60,6 +60,7 @@ export interface ThreadForkServiceV2Shape {
     readonly targetThreadId: ThreadId;
     readonly title?: string;
     readonly sideChat?: boolean;
+    readonly isolateWorkspace?: boolean;
     readonly createdBy: OrchestrationV2Actor;
     readonly creationSource: OrchestrationV2CreationSource;
     readonly createdAt: DateTime.Utc;
@@ -103,6 +104,9 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
       const { delegatedFrom: _delegatedFrom, ...inherited } = input.sourceProjection.thread;
       const targetThread: OrchestrationV2AppThread = {
         ...inherited,
+        ...(input.isolateWorkspace
+          ? { workspace: undefined, branch: null, worktreePath: null }
+          : {}),
         // PR context follows the conversation; watching remains the source thread's responsibility.
         pullRequests: input.sourceProjection.thread.pullRequests?.map(
           ({ watch: _watch, ...link }) => link,
@@ -119,6 +123,7 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           relationshipToParent: "fork",
           rootThreadId: input.sourceProjection.thread.lineage.rootThreadId,
           ...(input.sideChat ? { sideChat: true } : {}),
+          ...(input.isolateWorkspace ? { isolatedWorkspace: true } : {}),
         },
         forkedFrom:
           sourceRun === null

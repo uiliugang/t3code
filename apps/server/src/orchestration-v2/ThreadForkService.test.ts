@@ -19,6 +19,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
 import * as ThreadForkService from "./ThreadForkService.ts";
+import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
 
 const sourceThreadId = ThreadId.make("thread:fork-snoozed-source");
 const targetThreadId = ThreadId.make("thread:fork-awake-target");
@@ -112,7 +113,7 @@ function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2Thr
 const planFork = (
   sourceRun: OrchestrationV2Run,
   sourceProjection = makeSourceProjection(sourceRun),
-  options: { readonly sideChat?: boolean } = {},
+  options: { readonly sideChat?: boolean; readonly isolateWorkspace?: boolean } = {},
 ) =>
   Effect.gen(function* () {
     const service = yield* ThreadForkService.ThreadForkServiceV2;
@@ -139,6 +140,7 @@ it.effect("resets a fork's pin, snooze, settle and delegation state but keeps it
     const linkOrigin = { sessionId: "mcp-session:fork-source", label: "Linked laptop" };
     const sourceThread: OrchestrationV2AppThread = {
       ...makeSourceThread(),
+      workspace: workspaceFixture(),
       lastSnoozeWakeAt: snoozedAt,
       pinnedAt: snoozedAt,
       pinOrderKey: "a0",
@@ -177,6 +179,19 @@ it.effect("resets a fork's pin, snooze, settle and delegation state but keeps it
     assert.equal(result.targetThread.interactionMode, sourceThread.interactionMode);
     assert.equal(result.targetThread.branch, sourceThread.branch);
     assert.equal(result.targetThread.worktreePath, sourceThread.worktreePath);
+    const isolated = yield* planFork(
+      sourceRun,
+      {
+        ...makeSourceProjection(sourceRun),
+        thread: sourceThread,
+      },
+      { isolateWorkspace: true },
+    );
+    assert.isNull(isolated.targetThread.worktreePath);
+    assert.isNull(isolated.targetThread.branch);
+    assert.isUndefined(isolated.targetThread.workspace);
+    assert.isUndefined(isolated.targetThread.lineage.sideChat);
+    assert.isTrue(isolated.targetThread.lineage.isolatedWorkspace);
     assert.isNull(result.targetThread.activeProviderThreadId);
     assert.deepEqual(result.targetThread.lineage, {
       parentThreadId: sourceThreadId,
