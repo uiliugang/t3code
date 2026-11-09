@@ -278,6 +278,8 @@ describe("command permissions", () => {
 
   it.effect.each([
     WS_METHODS.scheduledTasksDelete,
+    WS_METHODS.workItemsMutate,
+    WS_METHODS.workItemsDiscover,
     WS_METHODS.threadPredictMessage,
     ORCHESTRATION_V2_WS_METHODS.stopWorkflow,
   ])("uses the target grant for both availability and execution of %s", (method) =>

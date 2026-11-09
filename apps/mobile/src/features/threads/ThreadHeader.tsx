@@ -16,6 +16,7 @@ export function ThreadHeader(props: {
   readonly subtitle: string;
   readonly gitControls: ThreadGitControlsProps;
   readonly onReturnToThread?: () => void;
+  readonly onOpenTaskBoard?: () => void;
   readonly draft?: boolean;
   readonly hasThreadCwd: boolean;
   readonly fileInspectorSupported: boolean;
@@ -43,6 +44,13 @@ export function ThreadHeader(props: {
         },
       ]
     : [];
+  if (props.onOpenTaskBoard) {
+    actions.push({
+      accessibilityLabel: t("Task board"),
+      icon: "checkmark.circle",
+      onPress: props.onOpenTaskBoard,
+    });
+  }
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (

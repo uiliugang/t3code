@@ -1,5 +1,6 @@
 import { skillMessages } from "./skillMessages.ts";
 import { mobileUiMessages } from "./mobileUiMessages.ts";
+import { workItemMessages } from "./workItemMessages.ts";
 export type UiLocale = "en" | "zh-CN";
 
 export type UiTranslator = (
@@ -14,6 +15,7 @@ export const UI_LANGUAGES = [
 
 const zhCN: Readonly<Record<string, string>> = {
   ...mobileUiMessages,
+  ...workItemMessages,
   "T3 Code home": "T3 Code 主页",
   "Checking provider status": "正在检查提供商状态",
   "Waiting for the server to report installation and authentication details.":

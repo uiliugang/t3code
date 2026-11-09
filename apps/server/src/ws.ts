@@ -1,3 +1,4 @@
+import * as WorkItems from "./work-items/WorkItemService.ts";
 import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as PullRequestNotifications from "./communication/PullRequestNotificationService.ts";
@@ -1471,6 +1472,7 @@ export const layerWsRpc = (
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
+      const workItems = yield* WorkItems.WorkItemService;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
@@ -2013,6 +2015,9 @@ export const layerWsRpc = (
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
           threadFind: true,
+          workItems: true,
+          workItemDiscovery: true,
+          workItemAnalysis: false,
           threadPredictions: true,
           threadFindProgressive: true,
           secretProviderSettings: true,
@@ -2373,6 +2378,9 @@ export const layerWsRpc = (
               Effect.as(commandOutputHub.subscribe(input)),
             ),
           ),
+        [WS_METHODS.workItemsSubscribe]: (input) => workItems.subscribeList(input),
+        [WS_METHODS.workItemsMutate]: (input) => workItems.mutate(input),
+        [WS_METHODS.workItemsDiscover]: (input) => workItems.discover(input),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
           scheduledTasks.subscribeList().pipe(Stream.map(withVisibleWebhookUrls)),
         [WS_METHODS.scheduledTasksUpsert]: (input) => scheduledTasks.upsert(input),

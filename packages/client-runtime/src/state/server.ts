@@ -1422,6 +1422,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-task:webhook-delivery",
       tag: WS_METHODS.scheduledTasksGetWebhookDelivery,
     }),
+    workItemsLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:work-items:live",
+      tag: WS_METHODS.workItemsSubscribe,
+    }),
     scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
@@ -1642,6 +1646,14 @@ export function createServerEnvironmentAtoms<R, E>(
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
+    }),
+    mutateWorkItem: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:work-items:mutate",
+      tag: WS_METHODS.workItemsMutate,
+    }),
+    discoverWorkItems: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:work-items:discover",
+      tag: WS_METHODS.workItemsDiscover,
     }),
     upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:upsert",

@@ -1652,6 +1652,17 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  if (activeThreadServerConfig?.workItems === true)
+    actionItems.push({
+      kind: "action",
+      value: "action:tasks",
+      searchTerms: ["tasks", "kanban", "agents", "任务", "看板"],
+      title: t("Task board"),
+      icon: <ClipboardListIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/tasks" });
+      },
+    });
   actionItems.push({
     kind: "action",
     value: "action:requirements",

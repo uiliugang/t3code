@@ -11,7 +11,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, ClipboardListIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -44,6 +44,10 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
+import { useRightPanelStore } from "../../rightPanelStore";
+import { Button } from "../ui/button";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { serverEnvironment } from "../../state/server";
 import { NavigationHistoryControls } from "../NavigationHistoryControls";
 
 interface ChatHeaderProps {
@@ -87,6 +91,8 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
+  const t = useUiTranslation();
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(activeThreadEnvironmentId));
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
@@ -442,6 +448,23 @@ export const ChatHeader = memo(function ChatHeader({
           <NavigationHistoryControls />
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {isServerThread && serverConfig?.workItems === true ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={t("Task board")}
+                onClick={() => useRightPanelStore.getState().open(activeThreadRef, "tasks")}
+              />
+            }
+          >
+            <ClipboardListIcon />
+          </TooltipTrigger>
+          <TooltipPopup>{t("Task board")}</TooltipPopup>
+        </Tooltip>
+      ) : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );

@@ -1,3 +1,12 @@
+import {
+  WorkItemListInput,
+  WorkItemListResult,
+  WorkItemCommandInput,
+  WorkItemMutationResult,
+  WorkItemDiscoverInput,
+  WorkItemDiscoverResult,
+  WorkItemError,
+} from "./workItem.ts";
 import { WechatError, WechatMutation, WechatSendInput, WechatState } from "./wechat.ts";
 import {
   ManagedWorktreeError,
@@ -634,6 +643,9 @@ export const WS_METHODS = {
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
+  workItemsSubscribe: "workItems.subscribe",
+  workItemsMutate: "workItems.mutate",
+  workItemsDiscover: "workItems.discover",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
   scheduledTasksSetEnabled: "scheduledTasks.setEnabled",
@@ -2199,6 +2211,23 @@ const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServerLifecyc
   stream: true,
 });
 
+const WsWorkItemsSubscribeRpc = Rpc.make(WS_METHODS.workItemsSubscribe, {
+  payload: WorkItemListInput,
+  success: WorkItemListResult,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+const WsWorkItemsMutateRpc = Rpc.make(WS_METHODS.workItemsMutate, {
+  payload: WorkItemCommandInput,
+  success: WorkItemMutationResult,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsDiscoverRpc = Rpc.make(WS_METHODS.workItemsDiscover, {
+  payload: WorkItemDiscoverInput,
+  success: WorkItemDiscoverResult,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksSubscribeRpc = Rpc.make(WS_METHODS.scheduledTasksSubscribe, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -2349,6 +2378,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,
   WsServerSignalProcessRpc,
+  WsWorkItemsSubscribeRpc,
+  WsWorkItemsMutateRpc,
+  WsWorkItemsDiscoverRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,
   WsScheduledTasksSetEnabledRpc,

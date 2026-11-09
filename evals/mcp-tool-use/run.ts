@@ -64,6 +64,7 @@ import {
   PullRequestsToolkit,
 } from "../../apps/server/src/mcp/toolkits/pullRequests/tools.ts";
 import { ThreadToolkit } from "../../apps/server/src/mcp/toolkits/thread/tools.ts";
+import { WorkItemToolkit } from "../../apps/server/src/mcp/toolkits/workItems/tools.ts";
 import { WorktreeToolkit } from "../../apps/server/src/mcp/toolkits/worktree/tools.ts";
 import {
   CLAUDE_PROVIDER,
@@ -433,6 +434,7 @@ export const normalizeToolInput = (name: string, input: unknown) => {
 const t3SourceTools: ReadonlyArray<Tool.Any> = [
   OrchestratorToolkit,
   ThreadToolkit,
+  WorkItemToolkit,
   AttachmentToolkit,
   ProjectToolkit,
   EnvironmentToolkit,

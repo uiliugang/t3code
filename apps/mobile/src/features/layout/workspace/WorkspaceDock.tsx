@@ -1,6 +1,7 @@
 import { Keyboard, Pressable, View } from "react-native";
 
 import { SymbolView } from "../../../components/ui/AppSymbol";
+import { Menu } from "../../../components/ui/Menu";
 import { GlassSurface } from "../../../components/ui/GlassSurface";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WORKSPACE_DOCK } from "./workspace-tabs-state";
@@ -54,14 +55,28 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
           })}
         </View>
       </GlassSurface>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t("Requirements board")}
-        onPress={() => navigation.navigate("Requirements")}
-        className="min-h-12 min-w-12 items-center justify-center"
+      <Menu
+        title={t("Task board")}
+        shouldOpenOnLongPress
+        actions={[
+          { id: "tasks", title: t("Task board") },
+          { id: "requirements", title: t("Requirements board") },
+        ]}
+        onPressAction={({ nativeEvent }) => {
+          if (nativeEvent.event === "requirements") navigation.navigate("Requirements");
+          if (nativeEvent.event === "tasks") navigation.navigate("WorkItems");
+        }}
       >
-        <SymbolView name="ticket" size={23} tintColorClassName="accent-icon" />
-      </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Task board")}
+          accessibilityHint={t("Long press for more boards")}
+          onPress={() => navigation.navigate("WorkItems")}
+          className="min-h-12 min-w-12 items-center justify-center"
+        >
+          <SymbolView name="checkmark.circle" size={23} tintColorClassName="accent-icon" />
+        </Pressable>
+      </Menu>
       <GlassSurface
         style={{
           width: WORKSPACE_DOCK.height,

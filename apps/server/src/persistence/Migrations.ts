@@ -92,6 +92,8 @@ import Migration0086 from "./Migrations/086_DelegatedRecoveryIndexes.ts";
 
 import Migration0087 from "./Migrations/087_Wechat.ts";
 import Migration0088 from "./Migrations/088_ScheduledTaskThreadMode.ts";
+import Migration0089 from "./Migrations/089_WorkItems.ts";
+import Migration0090 from "./Migrations/090_WorkItemCallerLimits.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -183,6 +185,8 @@ const migrationEntries = [
   [86, "DelegatedRecoveryIndexes", Migration0086],
   [87, "Wechat", Migration0087],
   [88, "ScheduledTaskThreadMode", Migration0088],
+  [89, "WorkItems", Migration0089],
+  [90, "WorkItemCallerLimits", Migration0090],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

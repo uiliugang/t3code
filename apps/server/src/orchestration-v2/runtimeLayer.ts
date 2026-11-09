@@ -1,3 +1,4 @@
+import * as WorkItems from "../work-items/WorkItemService.ts";
 import * as WorkspaceRecovery from "../workspace/WorkspaceRecovery.ts";
 import * as ManagedWorktrees from "../workspace/ManagedWorktrees.ts";
 import * as WorkspaceRestore from "../workspace/WorkspaceRestore.ts";
@@ -348,6 +349,11 @@ const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
     ),
   ),
 );
+const layerWorkItemsProvided = WorkItems.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerThreadLaunchProvided, layerThreadManagementProvided, ProjectStore.layer),
+  ),
+);
 const layerScratchThreadPromotionProvided = ScratchThreadPromotion.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -447,6 +453,7 @@ export const layerProduction = Layer.mergeAll(
   layerManagedProjectFoldersProvided,
   layerThreadLaunchProvided,
   layerScheduledTaskProvided,
+  layerWorkItemsProvided,
   layerScratchThreadPromotionProvided,
   layerSecretRequestsProvided,
   GuestShareService.layer.pipe(

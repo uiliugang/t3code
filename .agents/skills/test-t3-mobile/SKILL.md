@@ -54,6 +54,8 @@ The device must be able to reach both Metro and the isolated backend.
 Append `&disableAutoLaunch=1&disableFab=1` to the development-client URL query
 when developer chrome would obscure screenshots or taps; the SDK 58 dev client
 applies these preferences before the app loads.
+Confirm the app's first screen appears before opening a navigation deep link;
+opening the Metro URL can finish before JavaScript navigation is ready.
 
 ## Pair and verify
 
@@ -76,3 +78,12 @@ Confirm the intended projects appear, exercise the affected flow, and capture
 evidence. Retain the app and environment while iterating. At teardown, remove
 the disposable connection, close the AgentDevice session, call `device_close`,
 and stop only your backend and Metro processes.
+
+On Android, accessibility wrappers can appear as full-screen `ScrollView` nodes
+around the actual content scroller. Read the content scroller's current rectangle
+with `snapshot -i --json`, then use the returned AgentDevice command's
+`gesture pan <x> <y> <dx> <dy> <durationMs>` for controlled movement or `swipe`
+for a fling inside that rectangle. Verify movement with a fresh snapshot. The outer
+wrapper's reported edge does not establish the content's scroll position.
+After `--settle`, use its emitted scoped refs, including the `~` suffix, or take
+a fresh `snapshot -i` before using short refs again.
