@@ -176,6 +176,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const fs = yield* FileSystem.FileSystem;
         const provider = ProviderInstanceId.make("codex_work");
         const patch = {
+          environmentName: "Remote workstation",
           favorites: [{ provider, model: "sol" }],
           providerModelPreferences: {
             [provider]: { hiddenModels: ["astra"], modelOrder: ["sol"] },
@@ -185,11 +186,20 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         yield* service.updateSettings(patch);
         const received = Option.getOrThrow(yield* Stream.runHead(changes));
         assert.deepEqual(received.favorites, patch.favorites);
+        assert.equal(received.environmentName, patch.environmentName);
         assert.deepEqual(received.providerModelPreferences, patch.providerModelPreferences);
         const saved = yield* decodeServerSettingsJson(
           yield* fs.readFileString(config.settingsPath),
         );
         assert.deepEqual(saved.favorites, patch.favorites);
+        assert.equal(saved.environmentName, patch.environmentName);
+        const reset = yield* service.updateSettings({ environmentName: null });
+        assert.equal(reset.environmentName, null);
+        assert.equal(
+          (yield* decodeServerSettingsJson(yield* fs.readFileString(config.settingsPath)))
+            .environmentName,
+          null,
+        );
         assert.deepEqual(saved.providerModelPreferences, patch.providerModelPreferences);
         const hidden = yield* service.updateSettings({
           setModelsHidden: [{ provider, model: "sol", hidden: true }],

@@ -1478,6 +1478,9 @@ export const ServerSettings = Schema.Struct({
   environmentIcon: ForwardCompatibleNullable(EnvironmentMachineKind).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  environmentName: Schema.NullOr(
+    TrimmedString.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   /** Null inherits t3.json, then local; omit it on the wire for older clients requiring a literal. */
   defaultThreadEnvMode: OmittedWhenNull(ThreadEnvMode).pipe(
     Schema.withDecodingDefault(Effect.succeed("worktree" as const)),
@@ -1873,6 +1876,9 @@ export const ServerSettingsPatch = Schema.Struct({
   providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
   backgroundActivityProfile: Schema.optionalKey(BackgroundActivityProfile),
   environmentIcon: Schema.optionalKey(Schema.NullOr(EnvironmentMachineKind)),
+  environmentName: Schema.optionalKey(
+    Schema.NullOr(TrimmedString.check(Schema.isMinLength(1), Schema.isMaxLength(100))),
+  ),
   defaultThreadEnvMode: Schema.optionalKey(Schema.NullOr(ThreadEnvMode)),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   newWorktreesMainBranchOnly: Schema.optionalKey(Schema.Boolean),
