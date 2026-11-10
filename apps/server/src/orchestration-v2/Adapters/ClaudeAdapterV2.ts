@@ -11030,6 +11030,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
+          const binaryPath = yield* resolveClaudeSdkExecutablePath(
+            adapterOptions.settings.binaryPath,
+            adapterOptions.environment,
+          ).pipe(Effect.provideService(HostProcess.Platform, hostPlatform));
           const queryOptions = makeClaudeQueryOptions({
             ...(turnInput.runtimePolicy.workspace === undefined
               ? {}
@@ -11042,7 +11046,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
             cwd: turnInput.runtimePolicy.cwd,
             attachmentsDir,
-            settings: adapterOptions.settings,
+            settings: { ...adapterOptions.settings, binaryPath },
             // Delegated threads have no one typing, so they never ask for suggestions.
             promptSuggestions:
               !isDelegatedAppThread(turnInput.appThread) && (yield* promptSuggestionsEnabled),
@@ -12500,12 +12504,10 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     );
     const path = yield* Path.Path;
     const random = yield* SecureRandom.SecureRandom;
-    const binaryPath = yield* resolveClaudeSdkExecutablePath(
+    const binaryPath =
       config.setupMode === "managed"
         ? (yield* claudeManagedPaths()).binaryPath
-        : expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
-      claudeEnvironment,
-    );
+        : expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory);
     return yield* makeClaudeAdapterV2({
       instanceId,
       settings: { ...config, enabled, binaryPath },

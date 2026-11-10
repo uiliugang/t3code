@@ -6,6 +6,7 @@ import {
   type ProviderInstallCancelInput,
   type ProviderInstallState,
   type ProviderInstanceId,
+  type ProviderInstanceEnvironment,
   ProviderSetupError,
   type ProviderSetupInput,
 } from "@t3tools/contracts";
@@ -27,6 +28,7 @@ import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydra
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 
 const ANTIGRAVITY = ProviderDriverKind.make("antigravity");
 const hasBinaryPath = Schema.is(Schema.Struct({ binaryPath: Schema.String }));
@@ -56,6 +58,7 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
   const antigravityInstallation = yield* AntigravityInstallation.AntigravityInstallation;
   const codexInstallation = yield* CodexInstallation.CodexInstallation;
   const claudeInstallation = yield* ClaudeInstallation.ClaudeInstallation;
+  const secretResolver = yield* SecretResolver.SecretResolver;
   const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const providers = yield* ProviderRegistry.ProviderRegistry;
   const settings = yield* ServerSettings.ServerSettingsService;
@@ -63,6 +66,31 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
   const path = yield* Path.Path;
   const scope = yield* Effect.scope;
   const accountCheckOperations = new Map<ProviderInstanceId, string>();
+  const resolveInstallEnvironment = Effect.fn("ProviderInstallation.resolveInstallEnvironment")(
+    function* (instanceId: ProviderInstanceId, environment: ProviderInstanceEnvironment = []) {
+      const references = environment.flatMap((variable) =>
+        typeof variable.value === "string" ? [] : [variable.value],
+      );
+      const values = references.length > 0 ? yield* secretResolver.read(references) : [];
+      let index = 0;
+      const resolved = yield* Effect.forEach(
+        environment,
+        Effect.fnUntraced(function* (variable) {
+          if (typeof variable.value === "string") return { ...variable, value: variable.value };
+          const value = values[index++];
+          if (value === undefined || value.trim() === "") {
+            return yield* new ProviderSetupError({
+              instanceId,
+              operation: "install",
+              detail: `Could not read ${variable.name} from its secret provider. Unlock it, then retry installation.`,
+            });
+          }
+          return { ...variable, value };
+        }),
+      );
+      return yield* mergeProviderInstanceEnvironment(resolved);
+    },
+  );
 
   const readEntries = Effect.fn("ProviderInstallation.readEntries")(function* (
     instanceId: ProviderInstanceId,
@@ -100,8 +128,8 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     const installation = isClaude
       ? {
           ...claudeInstallation,
-          start: claudeInstallation.start(
-            yield* mergeProviderInstanceEnvironment(entries[instanceId]?.environment),
+          start: resolveInstallEnvironment(instanceId, entries[instanceId]?.environment).pipe(
+            Effect.flatMap(claudeInstallation.start),
           ),
         }
       : isCodex
@@ -153,7 +181,8 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
       error:
         | AntigravityInstallation.AntigravityInstallationError
         | CodexInstallation.CodexInstallationError
-        | ClaudeInstallation.ClaudeInstallationError,
+        | ClaudeInstallation.ClaudeInstallationError
+        | ProviderSetupError,
     ) =>
       new ProviderSetupError({ instanceId, operation: error.operation, detail: error.detail });
 

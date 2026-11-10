@@ -3,6 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
+  SecretProviderId,
   type ProviderInstallState,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -23,6 +24,7 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstallation from "./providerInstallation.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 
 const instanceId = ProviderInstanceId.make("antigravity");
 const driver = ProviderDriverKind.make("antigravity");
@@ -61,6 +63,7 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
   input: {
     instance?: ProviderInstance;
     settings?: Parameters<typeof ServerSettings.layerTest>[0];
+    secretValue?: string | undefined;
   } = {},
 ) {
   const calls: string[] = [];
@@ -69,11 +72,16 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
   const listening = yield* Deferred.make<void>();
   const installationState = yield* SubscriptionRef.make(state);
   let protectedPaths: ReadonlyArray<string> = [];
+  let installationEnvironment: NodeJS.ProcessEnv | undefined;
   const configured = input.instance ?? instance();
   const dependencies = Layer.mergeAll(
+    Layer.mock(SecretResolver.SecretResolver)({
+      read: (references) => Effect.succeed(references.map(() => input.secretValue)),
+    }),
     Layer.mock(ClaudeInstallation.ClaudeInstallation)({
-      start: () =>
+      start: (env) =>
         Effect.sync(() => {
+          installationEnvironment = env;
           calls.push("claude-start");
           return { ...state, driver: ProviderDriverKind.make("claudeAgent") };
         }),
@@ -152,26 +160,60 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     observed,
     installationState,
     protectedPaths: () => protectedPaths,
+    installationEnvironment: () => installationEnvironment,
   };
 });
 
 describe("provider installation routing", () => {
-  it.effect.each(["managed", "existing"] as const)(
-    "routes Claude installation in %s mode",
-    (setupMode) =>
+  it.effect.each([
+    { setupMode: "managed", secretValue: "resolved-npm-token" },
+    { setupMode: "managed", secretValue: undefined },
+    { setupMode: "managed", secretValue: "" },
+    { setupMode: "existing", secretValue: "resolved-npm-token" },
+  ] as const)(
+    "routes Claude installation in $setupMode mode with secret $secretValue",
+    ({ setupMode, secretValue }) =>
       Effect.gen(function* () {
         const id = ProviderInstanceId.make("claude");
         const kind = ProviderDriverKind.make("claudeAgent");
         const harness = yield* makeHarness({
           instance: instance(kind, id),
-          settings: { providerInstances: { [id]: { driver: kind, config: { setupMode } } } },
+          secretValue,
+          settings: {
+            providerInstances: {
+              [id]: {
+                driver: kind,
+                config: { setupMode },
+                environment: [
+                  {
+                    name: "NPM_TOKEN",
+                    value: { provider: SecretProviderId.make("vault"), reference: "npm-token" },
+                    sensitive: true,
+                  },
+                  {
+                    name: "NPM_CONFIG_REGISTRY",
+                    value: "https://registry.example.test",
+                    sensitive: false,
+                  },
+                ],
+              },
+            },
+          },
         });
-        if (setupMode === "managed") {
+        if (setupMode === "managed" && secretValue) {
           assert.strictEqual((yield* harness.router.start({ instanceId: id })).driver, kind);
           assert.deepEqual(harness.calls, ["claude-start"]);
+          assert.strictEqual(harness.installationEnvironment()?.NPM_TOKEN, secretValue);
+          assert.strictEqual(
+            harness.installationEnvironment()?.NPM_CONFIG_REGISTRY,
+            "https://registry.example.test",
+          );
         } else {
           const error = yield* harness.router.start({ instanceId: id }).pipe(Effect.flip);
-          assert.include(error.detail, "Choose managed setup");
+          assert.include(
+            error.detail,
+            setupMode === "existing" ? "Choose managed setup" : "NPM_TOKEN",
+          );
           assert.deepEqual(harness.calls, []);
         }
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

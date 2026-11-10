@@ -18,7 +18,10 @@ export function ClaudeInstallationControls({
   readonly provider: ServerProvider;
 }) {
   const t = useUiTranslation();
-  const instance = environment.serverConfig.settings.providerInstances[provider.instanceId];
+  const instance = {
+    driver: provider.driver,
+    ...environment.serverConfig.settings.providerInstances[provider.instanceId],
+  };
   const config =
     instance?.config !== null && typeof instance?.config === "object" ? instance.config : {};
   const managed = "setupMode" in config && config.setupMode === "managed";
@@ -58,7 +61,7 @@ export function ClaudeInstallationControls({
             { id: "managed", title: t("Managed by T3"), state: managed ? "on" : "off" },
           ]}
           onPressAction={({ nativeEvent }) => {
-            if (!instance || !canMutate || active) return;
+            if (!canMutate || active) return;
             const setupMode = nativeEvent.event;
             if (setupMode !== "existing" && setupMode !== "managed") return;
             void mutate({

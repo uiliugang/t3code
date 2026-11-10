@@ -1413,6 +1413,7 @@ describe("ClaudeAdapterV2 MCP elicitation acceptance", () => {
 const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(function* (
   binaryPath: string,
   environment: ResolvedProviderInstanceEnvironment = [],
+  options: { managed?: boolean; afterCreate?: Effect.Effect<void> } = {},
 ) {
   const executablePaths: Array<string | undefined> = [];
   const taskToolEnvironment: Array<string | undefined> = [];
@@ -1422,7 +1423,11 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
       displayName: undefined,
       environment,
       enabled: true,
-      config: { ...DEFAULT_CLAUDE_SETTINGS, binaryPath },
+      config: {
+        ...DEFAULT_CLAUDE_SETTINGS,
+        binaryPath,
+        ...(options.managed ? { setupMode: "managed" } : {}),
+      },
     },
     {},
   ).pipe(
@@ -1459,6 +1464,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
     }),
   );
   const threadId = ThreadId.make("thread-claude-binary-path");
+  yield* options.afterCreate ?? Effect.void;
   const runtime = yield* adapter.openSession({
     threadId,
     providerSessionId: ProviderSessionId.make("provider-session-claude-binary-path"),
@@ -1484,6 +1490,42 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
 });
 
 describe("ClaudeAdapterV2 executable path", () => {
+  it.effect("resolves a managed Windows executable installed after adapter creation", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let installed = false;
+        const { executablePaths } = yield* captureSdkExecutablePaths("claude", [], {
+          managed: true,
+          afterCreate: Effect.sync(() => {
+            installed = true;
+          }),
+        }).pipe(
+          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provideService(SpawnExecutableResolution, (command) => command),
+          Effect.provideService(
+            ClaudeExecutableFileCheck,
+            (file) =>
+              installed &&
+              file.endsWith("\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"),
+          ),
+        );
+        assert.lengthOf(executablePaths, 1);
+        assert.match(
+          executablePaths[0]!,
+          /\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude\.exe$/,
+        );
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
   it.effect("follows a bare claude on Windows to the npm package executable", () =>
     Effect.scoped(
       Effect.gen(function* () {
