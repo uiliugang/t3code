@@ -50,3 +50,11 @@ it("shows a failed decision and clears the error when the user retries", async (
   await screen.getByRole("button", { name: "Approve", exact: true }).click();
   await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
 });
+
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return {
+    useUiTranslation: () => (message: string, values?: Record<string, string | number>) =>
+      translateUi("en", message, values),
+  };
+});

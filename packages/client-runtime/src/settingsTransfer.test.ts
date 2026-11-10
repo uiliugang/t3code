@@ -334,6 +334,14 @@ describe("settings transfer", () => {
         worktreesDirectory: "/private/path",
         cloudSpeechCredentials: { ...source.cloudSpeechCredentials, openai: "must-not-export" },
         daxiang: { clientId: "fixture", clientSecret: "must-not-export" },
+        textGenerators: {
+          [ProviderInstanceId.make("generator")]: {
+            kind: "openaiCompatible",
+            baseUrl: "https://models.example/v1",
+            apiKey: "must-not-export",
+            enabled: true,
+          },
+        },
       },
       keybindings: [
         { key: "mod+j", command: "terminal.toggle" },
@@ -381,6 +389,7 @@ describe("settings transfer", () => {
       "observability",
       "sourceControlHosts",
       "providerInstances",
+      "textGenerators",
       "usageLimitSources",
       "secretProviders",
       "cursorKeychainUsageEnabled",

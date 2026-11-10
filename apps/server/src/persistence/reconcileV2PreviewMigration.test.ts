@@ -68,6 +68,9 @@ describe("V2 preview upgrade", () => {
         [86, "DelegatedRecoveryIndexes"],
         [87, "Wechat"],
         [88, "ScheduledTaskThreadMode"],
+        [89, "WorkItems"],
+        [90, "WorkItemCallerLimits"],
+        [91, "WechatDeliveryRequests"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -179,6 +182,9 @@ describe("V2 preview upgrade", () => {
         [86, "DelegatedRecoveryIndexes"],
         [87, "Wechat"],
         [88, "ScheduledTaskThreadMode"],
+        [89, "WorkItems"],
+        [90, "WorkItemCallerLimits"],
+        [91, "WechatDeliveryRequests"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

@@ -266,3 +266,11 @@ describe("resource monitor retry", () => {
     await expect.element(screen.getByText(historyError, { exact: true })).toBeVisible();
   });
 });
+
+vi.mock(import("../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return {
+    useUiTranslation: () => (message: string, values?: Record<string, string | number>) =>
+      translateUi("en", message, values),
+  };
+});

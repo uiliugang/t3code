@@ -2,9 +2,10 @@
 import * as NodeCrypto from "node:crypto";
 import * as NodeEvents from "node:events";
 import * as NodeHttp from "node:http";
+import * as NodeModule from "node:module";
 import * as NodeReadline from "node:readline";
 import * as NodeStream from "node:stream";
-import { z } from "zod";
+import type * as Zod from "zod";
 import { claudeByokUrlError } from "@t3tools/shared/claudeByok";
 import {
   ChatChunk,
@@ -15,6 +16,7 @@ import {
   usage,
 } from "./ClaudeChatCompletions.ts";
 
+const { z } = NodeModule.createRequire(import.meta.url)("zod") as typeof Zod;
 const MAX_BYTES = 16 * 1024 * 1024;
 const Models = z.object({ data: z.array(z.object({ id: z.string() }).passthrough()) });
 

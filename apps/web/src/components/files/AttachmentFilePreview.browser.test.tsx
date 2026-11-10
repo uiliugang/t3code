@@ -65,7 +65,7 @@ vi.mock(import("./office/WordDocument"), async () => {
   };
 });
 
-import { getClientSettings } from "~/hooks/useSettings";
+import { __setClientSettingsForTests, getClientSettings } from "~/hooks/useSettings";
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
 import LargeTextViewer from "./LargeTextViewer";
 import VirtualTablePreview from "./VirtualTablePreview";
@@ -2559,6 +2559,10 @@ it("keeps a workspace PDF's page, offset and zoom when a new revision reloads it
 });
 
 it("unwraps one text attachment without turning off the word wrap setting", async () => {
+  using settings = new DisposableStack();
+  const previousSettings = getClientSettings();
+  settings.defer(() => __setClientSettingsForTests(previousSettings));
+  __setClientSettingsForTests({ ...previousSettings, wordWrap: true });
   const file = new Blob(["a long line"], { type: "text/plain" });
   await using screen = await render(
     <AttachmentFilePreview

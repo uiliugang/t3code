@@ -436,7 +436,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       }),
     );
 
-    it.effect("normalizes existing paths without conflating separately registered symlinks", () =>
+    it.effect("normalizes existing paths and rejects duplicate projects through symlinks", () =>
       Effect.gen(function* () {
         const { baseDir, workspaceRoot, project } = yield* makeProjectLookupFixture();
         yield* runCli([
@@ -458,13 +458,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           baseDir,
         ]).pipe(Effect.flip);
         assert.include(unknownAlias.message, "No active project found");
-        yield* runCli(["project", "add", aliasPath, "--base-dir", baseDir]);
-        const added = (yield* readProjects(baseDir)).projects;
-        assert.equal(added.length, 2);
-        const aliasProject = added.find((entry) => entry.workspaceRoot === aliasPath);
-        assert.isDefined(aliasProject);
-        assert.notEqual(aliasProject?.id, project.id);
-        yield* runCli(["project", "remove", `${aliasPath}${NodePath.sep}.`, "--base-dir", baseDir]);
+        const conflict = yield* runCli(["project", "add", aliasPath, "--base-dir", baseDir]).pipe(
+          Effect.flip,
+        );
+        assert.instanceOf(conflict, ProjectService.ProjectConflictError);
         assert.deepEqual(
           (yield* readProjects(baseDir)).projects.map((entry) => entry.id),
           [project.id],

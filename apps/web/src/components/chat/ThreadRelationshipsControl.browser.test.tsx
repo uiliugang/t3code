@@ -41,6 +41,8 @@ vi.mock(import("../../state/entities"), () => ({
 vi.mock(import("../../state/environments"), () => ({
   useEnvironment: (() => null) as never,
   useEnvironmentProviders: (() => new Map()) as never,
+  useEnvironments: (() => ({ environments: [] })) as never,
+  usePrimaryEnvironment: (() => null) as never,
 }));
 vi.mock(import("../../lib/archivedThreadsState"), () => ({
   useArchivedThreadSnapshots: (() => ({
@@ -397,4 +399,12 @@ it("hides a deleted fork and keeps unloaded and archived forks with their curren
   await expect.element(screen.getByText("Unloaded fork", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("Archived fork", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("deleted-fork", { exact: true })).not.toBeInTheDocument();
+});
+
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return {
+    useUiTranslation: () => (message: string, values?: Record<string, string | number>) =>
+      translateUi("en", message, values),
+  };
 });

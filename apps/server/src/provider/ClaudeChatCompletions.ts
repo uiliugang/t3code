@@ -1,4 +1,7 @@
-import { z } from "zod";
+import * as NodeModule from "node:module";
+import type * as Zod from "zod";
+
+const { z } = NodeModule.createRequire(import.meta.url)("zod") as typeof Zod;
 
 const Text = z.object({ type: z.literal("text"), text: z.string() });
 const Image = z.object({
@@ -77,7 +80,7 @@ type ChatConversationMessage = {
 type ChatMessage =
   | ChatConversationMessage
   | { role: "tool"; content: string; tool_call_id: string };
-const contentPart = (part: z.infer<typeof Content>): ChatContent =>
+const contentPart = (part: Zod.infer<typeof Content>): ChatContent =>
   part.type === "text"
     ? { type: "text", text: part.text }
     : {
@@ -251,7 +254,7 @@ export const stopReason = (reason: string | null) =>
       : reason === "stop"
         ? "end_turn"
         : "refusal";
-export const usage = (value: z.infer<typeof Usage>) => ({
+export const usage = (value: Zod.infer<typeof Usage>) => ({
   input_tokens: value?.prompt_tokens ?? 0,
   output_tokens: value?.completion_tokens ?? 0,
 });

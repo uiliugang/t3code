@@ -268,6 +268,7 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(McpSchema.McpServerClient, client),
       );
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
     const reference = htmlRenderFromToolItem({
       toolName: "t3-code.html_render",
       output: result.structuredContent,
@@ -318,6 +319,12 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
                 providerInstanceId: ProviderInstanceId.make("codex"),
                 runtimeMode: id === fullAccessThreadId ? "full-access" : "approval-required",
                 interactionMode: "default",
+                lineage: {
+                  parentThreadId: null,
+                  relationshipToParent: null,
+                  rootThreadId: id,
+                  sideChat: false,
+                },
               } as OrchestrationV2ThreadShell),
           }),
         ),
