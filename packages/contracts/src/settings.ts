@@ -796,6 +796,19 @@ const InstanceIdleCompaction = Schema.Literals(
 
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
+    setupMode: Schema.optionalKey(Schema.Literals(["managed", "existing"])).pipe(
+      Schema.annotateKey({
+        title: "Installation",
+        description: "Use a T3-managed npm installation or an existing local Claude installation.",
+        providerSettingsForm: {
+          control: "select",
+          options: [
+            { value: "existing", label: "Use local installation" },
+            { value: "managed", label: "Managed by T3" },
+          ],
+        },
+      }),
+    ),
     customModelsOnly: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),

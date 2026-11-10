@@ -116,6 +116,7 @@ import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
+import * as ClaudeInstallation from "./provider/ClaudeInstallation.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
@@ -615,24 +616,38 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
   Effect.gen(function* () {
     const antigravity = yield* AntigravityInstallation.AntigravityInstallation;
     const codex = yield* CodexInstallation.CodexInstallation;
+    const claude = yield* ClaudeInstallation.ClaudeInstallation;
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const providers = yield* ProviderRegistry.ProviderRegistry;
-    yield* Stream.merge(
-      antigravity.changes.pipe(
-        Stream.changesWith((a, b) => a.installedVersion === b.installedVersion),
-        Stream.drop(1),
-      ),
-      codex.changes.pipe(
-        Stream.changesWith((a, b) => a.installedVersion === b.installedVersion),
-        Stream.drop(1),
-      ),
+    yield* Stream.mergeAll(
+      [
+        antigravity.changes.pipe(
+          Stream.changesWith((a, b) => a.installedVersion === b.installedVersion),
+          Stream.drop(1),
+        ),
+        codex.changes.pipe(
+          Stream.changesWith((a, b) => a.installedVersion === b.installedVersion),
+          Stream.drop(1),
+        ),
+        claude.changes.pipe(
+          Stream.drop(1),
+          Stream.filter((state) =>
+            ["succeeded", "failed", "cancelled", "idle"].includes(state.phase),
+          ),
+        ),
+      ],
+      { concurrency: "unbounded" },
     ).pipe(
       Stream.runForEach((state) =>
         instances.listInstances.pipe(
           Effect.flatMap((entries) =>
             Effect.forEach(
               entries.filter((instance) => instance.driverKind === state.driver),
-              (instance) => providers.refreshInstance(instance.instanceId),
+              (instance) =>
+                (state.driver === "claudeAgent"
+                  ? (instance.invalidateCaches ?? Effect.void)
+                  : Effect.void
+                ).pipe(Effect.andThen(providers.refreshInstance(instance.instanceId))),
               { discard: true },
             ),
           ),
@@ -738,6 +753,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.mergeAll(
       AntigravityInstallation.AntigravityInstallation.layer,
       CodexInstallation.CodexInstallation.layer,
+      ClaudeInstallation.layer,
     ),
   ),
 );

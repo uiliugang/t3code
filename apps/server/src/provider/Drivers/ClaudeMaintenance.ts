@@ -30,6 +30,7 @@ const update = makePackageManagedProviderMaintenanceResolver({
   mise: { tool: "claude" },
   nativeUpdate: {
     args: ["update"],
+    env: (context) => context.env,
     isCommandPath: (commandPath) => {
       const normalized = normalizeCommandPath(commandPath);
       return (
@@ -41,10 +42,12 @@ const update = makePackageManagedProviderMaintenanceResolver({
   },
 });
 
-const readUpdateChannel = Effect.fn("ClaudeMaintenance.readUpdateChannel")(function* () {
+const readUpdateChannel = Effect.fn("ClaudeMaintenance.readUpdateChannel")(function* (
+  updateEnvironment?: NodeJS.ProcessEnv,
+) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const environment = yield* HostProcess.Environment;
+  const environment = updateEnvironment ?? (yield* HostProcess.Environment);
   const platform = yield* HostProcess.Platform;
   const managedDirectory =
     platform === "darwin"
@@ -54,7 +57,7 @@ const readUpdateChannel = Effect.fn("ClaudeMaintenance.readUpdateChannel")(funct
         : "/etc/claude-code";
   const dropInDirectory = path.join(managedDirectory, "managed-settings.d");
   const dropIns = yield* fs.readDirectory(dropInDirectory).pipe(Effect.orElseSucceed(() => []));
-  // The updater inherits the server's config directory, not the instance's homePath.
+  // Match the environment passed to the updater, including its config directory.
   const configDirectory = yield* resolveClaudeHomePath({ homePath: "" }, environment);
   const settingsPaths = [
     path.join(configDirectory, "settings.json"),
@@ -78,7 +81,7 @@ const resolveClaudeMaintenance = Effect.fn("ClaudeMaintenance.resolve")(function
   capabilities: ProviderMaintenanceCapabilities,
 ) {
   if (capabilities.update?.lockKey !== "claudeAgent-native") return capabilities;
-  const channel = yield* readUpdateChannel();
+  const channel = yield* readUpdateChannel(capabilities.update.env);
   const client = yield* HttpClient.HttpClient;
   const url = `${NATIVE_RELEASES}/${channel}`;
   return {

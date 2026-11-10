@@ -527,6 +527,24 @@ const zhCN: Readonly<Record<string, string>> = {
   Ready: "就绪",
   "Continue with ChatGPT": "使用 ChatGPT 继续",
   "Use existing CLI": "使用已有 CLI",
+  "Use local installation": "使用本地安装",
+  "Managed by T3": "由 T3 管理",
+  Installation: "安装方式",
+  "Use a T3-managed npm installation or an existing local Claude installation.":
+    "使用 T3 管理的 npm 安装，或保留已有本地安装。",
+  "Claude installation": "Claude 安装",
+  "{name} installation": "{name} 安装",
+  "Install Claude": "安装 Claude",
+  "Update Claude": "更新 Claude",
+  "Remove installation": "移除安装",
+  "Could not read installation status. Reconnect and try again.":
+    "无法读取安装状态，请重新连接后重试。",
+  "Installing Claude with npm.": "正在通过 npm 安装 Claude。",
+  "Claude installed.": "Claude 已安装。",
+  "Claude binary path": "Claude 可执行文件路径",
+  "Installation cancelled.": "安装已取消。",
+  "Claude installation failed. Check npm access and retry.":
+    "Claude 安装失败，请检查 npm 连接后重试。",
   "ChatGPT account": "ChatGPT 账户",
   "If sign-in doesn't return to T3 Code, paste the URL from the final localhost page.":
     "如果登录后未返回 T3 Code，请粘贴最后的 localhost 页面 URL。",

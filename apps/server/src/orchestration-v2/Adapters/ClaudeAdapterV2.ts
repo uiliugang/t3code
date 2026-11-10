@@ -161,6 +161,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
+import { claudeManagedPaths } from "../../provider/ClaudeInstallation.ts";
 import { claudeByokModelError } from "@t3tools/shared/claudeByok";
 import {
   planClaudeSkillDispatch,
@@ -12491,11 +12492,18 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
       environment,
       hostEnvironment,
     );
-    const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
+    const claudeEnvironment = yield* makeClaudeEnvironment(
+      config,
+      config.setupMode === "managed"
+        ? { ...baseEnvironment, DISABLE_AUTOUPDATER: "1" }
+        : baseEnvironment,
+    );
     const path = yield* Path.Path;
     const random = yield* SecureRandom.SecureRandom;
     const binaryPath = yield* resolveClaudeSdkExecutablePath(
-      expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
+      config.setupMode === "managed"
+        ? (yield* claudeManagedPaths()).binaryPath
+        : expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
       claudeEnvironment,
     );
     return yield* makeClaudeAdapterV2({

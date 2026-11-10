@@ -93,8 +93,17 @@ const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
     managed,
     managedDirectory,
     settingsPath,
+    configDirectory,
     installationReads: () => installationReads,
-    makeResolution: makeClaudeMaintenanceResolution({ binaryPath, env: { PATH: "" } }).pipe(
+    makeResolution: makeClaudeMaintenanceResolution({
+      binaryPath,
+      env: {
+        PATH: "",
+        CLAUDE_CONFIG_DIR: configDirectory,
+        HTTPS_PROXY: "http://instance-proxy:8080",
+        ...(programFiles ? { PROGRAMFILES: programFiles } : {}),
+      },
+    }).pipe(
       Effect.provideService(
         ChildProcessSpawner.ChildProcessSpawner,
         ChildProcessSpawner.make(() => Effect.die("version checks must not run a subprocess")),
@@ -103,7 +112,7 @@ const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
       Effect.provideService(HostProcess.Platform, platform),
       Effect.provideService(HostProcess.Environment, {
         PATH: "",
-        CLAUDE_CONFIG_DIR: configDirectory,
+        CLAUDE_CONFIG_DIR: path.join(directory, "server-config"),
         ...(programFiles ? { PROGRAMFILES: programFiles } : {}),
       }),
     ),
@@ -212,6 +221,12 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
         Effect.provideService(HttpClient.HttpClient, client),
       );
       const maintenance = yield* resolve();
+      if (!row.npm) {
+        expect(maintenance.update?.env).toMatchObject({
+          CLAUDE_CONFIG_DIR: f.configDirectory,
+          HTTPS_PROXY: "http://instance-proxy:8080",
+        });
+      }
       const versions = yield* ProviderLatestVersions.make();
       const enrich = enrichProviderSnapshotWithVersionAdvisory(snapshot, maintenance).pipe(
         Effect.provideService(HttpClient.HttpClient, client),

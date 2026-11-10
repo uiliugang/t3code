@@ -16,6 +16,7 @@ import * as Stream from "effect/Stream";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as CodexInstallation from "./CodexInstallation.ts";
+import * as ClaudeInstallation from "./ClaudeInstallation.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import { ProviderDriverError } from "@t3tools/provider-core/server/errors";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
@@ -70,6 +71,17 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
   let protectedPaths: ReadonlyArray<string> = [];
   const configured = input.instance ?? instance();
   const dependencies = Layer.mergeAll(
+    Layer.mock(ClaudeInstallation.ClaudeInstallation)({
+      start: () =>
+        Effect.sync(() => {
+          calls.push("claude-start");
+          return { ...state, driver: ProviderDriverKind.make("claudeAgent") };
+        }),
+      cancel: () => Effect.succeed(state),
+      remove: () => Effect.void,
+      state: Effect.succeed(state),
+      changes: Stream.succeed(state),
+    }),
     ServerSettings.layerTest(input.settings),
     Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
       getInstance: (id) => Effect.succeed(id === configured.instanceId ? configured : undefined),
@@ -144,6 +156,26 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
 });
 
 describe("provider installation routing", () => {
+  it.effect.each(["managed", "existing"] as const)(
+    "routes Claude installation in %s mode",
+    (setupMode) =>
+      Effect.gen(function* () {
+        const id = ProviderInstanceId.make("claude");
+        const kind = ProviderDriverKind.make("claudeAgent");
+        const harness = yield* makeHarness({
+          instance: instance(kind, id),
+          settings: { providerInstances: { [id]: { driver: kind, config: { setupMode } } } },
+        });
+        if (setupMode === "managed") {
+          assert.strictEqual((yield* harness.router.start({ instanceId: id })).driver, kind);
+          assert.deepEqual(harness.calls, ["claude-start"]);
+        } else {
+          const error = yield* harness.router.start({ instanceId: id }).pipe(Effect.flip);
+          assert.include(error.detail, "Choose managed setup");
+          assert.deepEqual(harness.calls, []);
+        }
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
   it.effect.each([
     { phase: "succeeded", enabled: true, checkFails: false, expectedChecks: 1 },
     { phase: "succeeded", enabled: true, checkFails: true, expectedChecks: 1 },

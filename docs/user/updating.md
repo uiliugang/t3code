@@ -168,6 +168,14 @@ Machines without npm check the public npm registry directly.
 
 ## Update providers
 
+For Claude, choose **Settings → Providers → Claude → Installation → Managed by T3**
+to install and update Claude through npm in T3 Code's own directory on that
+environment. Node.js and npm must be available there. Installation status is shared
+across connected clients; you can cancel an installation or remove it from provider
+settings. Choose **Use local installation** to return to your existing CLI and its
+original update channel. Your local installation and Claude account settings stay
+in place when you switch modes or remove the managed installation.
+
 **Settings → Providers** shows provider updates for the selected environment.
 **Update all** updates every outdated provider on every connected environment
 at once. Hover it to see which providers it will update. A provider is left out

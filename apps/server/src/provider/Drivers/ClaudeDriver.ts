@@ -17,6 +17,8 @@ import { validateClaudeEndpoint } from "../ClaudeEndpointValidation.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as ServerConfig from "../../config.ts";
+import { claudeManagedPaths } from "../ClaudeInstallation.ts";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import {
@@ -154,14 +156,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
             (running) => Effect.promise(() => running.close()),
           )
         : undefined;
-    const processEnv = proxy
-      ? {
-          ...sourceEnvironment,
-          ANTHROPIC_BASE_URL: proxy.baseUrl,
-          ANTHROPIC_AUTH_TOKEN: proxy.token,
-          ANTHROPIC_API_KEY: "",
-        }
-      : sourceEnvironment;
+    const processEnv: NodeJS.ProcessEnv = {
+      ...(proxy
+        ? {
+            ...sourceEnvironment,
+            ANTHROPIC_BASE_URL: proxy.baseUrl,
+            ANTHROPIC_AUTH_TOKEN: proxy.token,
+            ANTHROPIC_API_KEY: "",
+          }
+        : sourceEnvironment),
+      ...(config.setupMode === "managed" ? { DISABLE_AUTOUPDATER: "1" } : {}),
+    };
     const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,
@@ -169,9 +174,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const effectiveConfig = {
       ...config,
       enabled,
-      binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
+      binaryPath:
+        config.setupMode === "managed"
+          ? (yield* claudeManagedPaths()).binaryPath
+          : expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
     } satisfies ClaudeSettings;
-    const resolveMaintenance = yield* makeClaudeMaintenanceResolution({
+    const resolveLocalMaintenance = yield* makeClaudeMaintenanceResolution({
       binaryPath: effectiveConfig.binaryPath,
       env: processEnv,
     }).pipe(
@@ -184,6 +192,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       effectiveConfig,
       sourceEnvironment,
     );
+    const resolveMaintenance =
+      config.setupMode === "managed"
+        ? () =>
+            Effect.succeed(
+              makeManualOnlyProviderMaintenanceCapabilities({
+                provider: DRIVER_KIND,
+                packageName: "@anthropic-ai/claude-code",
+              }),
+            )
+        : resolveLocalMaintenance;
     const configDir = yield* resolveClaudeHomePath(effectiveConfig, processEnv);
     const accountConfigPath = yield* ClaudeResetCredits.claudeAccountConfigPath(
       effectiveConfig.homePath.trim() || processEnv.CLAUDE_CONFIG_DIR?.trim()
@@ -199,6 +217,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     });
     const stampIdentity = (snapshot: Parameters<typeof stampBaseIdentity>[0]) => ({
       ...stampBaseIdentity(snapshot),
+      ...(config.setupMode === "managed"
+        ? { setup: { canAuthenticate: false, canInstall: true } }
+        : {}),
       ...(effectiveConfig.customModelsOnly ? { customModelsOnly: true } : {}),
     });
 
