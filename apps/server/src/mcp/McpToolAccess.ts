@@ -104,14 +104,27 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
   ),
 );
 
+function refuseSideChatWrites({ caller }: Caller) {
+  return caller?.lineage.sideChat === true
+    ? Effect.fail(
+        new OrchestratorMcpFailure({
+          code: "capability_denied",
+          message: "Side chats are read-only. Start an isolated task to make changes.",
+        }),
+      )
+    : Effect.void;
+}
+
 const writingCaller = refuseReadOnlyClient.pipe(
   Effect.andThen(loadCaller()),
   Effect.tap(assertLiveCaller),
+  Effect.tap(refuseSideChatWrites),
 );
 
 const orchestratingCaller = refuseReadOnlyClient.pipe(
   Effect.andThen(readCaller()),
   Effect.tap(assertLiveCaller),
+  Effect.tap(refuseSideChatWrites),
 );
 
 const requireThreadCaller = McpInvocationContext.McpInvocationContext.pipe(

@@ -75,6 +75,8 @@ export interface RuntimePolicyV2Shape {
   readonly resolve: (input: {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
+    /** Deferred dispatch validates policy before its isolated checkout is provisioned. */
+    readonly preparingWorkspace?: boolean;
   }) => Effect.Effect<ProviderAdapter.ProviderAdapterV2RuntimePolicy, RuntimePolicyV2Error>;
 }
 
@@ -82,13 +84,32 @@ export class RuntimePolicyV2 extends Context.Service<RuntimePolicyV2, RuntimePol
   "t3/orchestration-v2/RuntimePolicy/RuntimePolicyV2",
 ) {}
 
+const requireIsolatedWorkspace = (thread: OrchestrationV2AppThread) =>
+  thread.lineage.isolatedWorkspace === true &&
+  (thread.workspace === undefined
+    ? thread.worktreePath === null
+    : thread.workspace.mode !== "isolated")
+    ? Effect.fail(
+        new RuntimePolicyResolveError({
+          projectId: thread.projectId,
+          providerInstanceId: thread.modelSelection.instanceId,
+          cause:
+            "The isolated worktree is not ready. Wait for setup, or return to the side chat and create a new isolated task.",
+        }),
+      )
+    : Effect.void;
+
 export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2, {
-  resolve: Effect.fn("RuntimePolicyV2.resolve")(function (
+  resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (
     input: Parameters<RuntimePolicyV2Shape["resolve"]>[0],
   ) {
-    return Effect.succeed({
+    if (!input.preparingWorkspace) yield* requireIsolatedWorkspace(input.thread);
+    return {
       runtimeMode: input.thread.runtimeMode,
       interactionMode: input.thread.interactionMode,
+      ...(input.thread.lineage.sideChat === true
+        ? { approvalPolicy: "never", sandboxPolicy: { type: "readOnly" } }
+        : {}),
       cwd:
         input.thread.workspace?.bindings.find(
           (binding) => binding.rootId === input.thread.workspace?.primaryRootId,
@@ -97,7 +118,7 @@ export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2
         input.thread.projectWorkspaceRoot ??
         null,
       ...(input.thread.workspace === undefined ? {} : { workspace: input.thread.workspace }),
-    });
+    };
   }),
 });
 
@@ -173,13 +194,36 @@ export const layerFromProjectStore: Layer.Layer<
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
         yield* refuseAboveCeiling(managedPolicy, input.thread);
         const instance = yield* providerInstances.getInstance(input.modelSelection.instanceId);
+        if (!input.preparingWorkspace) yield* requireIsolatedWorkspace(input.thread);
+        const sideChat = input.thread.lineage.sideChat === true;
+        const capabilities =
+          !sideChat || instance === undefined
+            ? undefined
+            : yield* instance.orchestrationAdapter.getCapabilities().pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new RuntimePolicyResolveError({
+                      projectId: input.thread.projectId,
+                      providerInstanceId: input.modelSelection.instanceId,
+                      cause,
+                    }),
+                ),
+              );
+        if (sideChat && capabilities?.runtimePolicy.supportsReadOnly !== true) {
+          return yield* new RuntimePolicyResolveError({
+            projectId: input.thread.projectId,
+            providerInstanceId: input.modelSelection.instanceId,
+            cause:
+              "This provider cannot enforce read-only side chats. Choose Codex or Claude, or start an isolated task.",
+          });
+        }
         const supportedRuntimeModes =
           instance === undefined
             ? undefined
             : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
         if (input.thread.workspace !== undefined) {
           const workspace = input.thread.workspace;
-          if (Option.isSome(projections)) {
+          if (!sideChat && !input.preparingWorkspace && Option.isSome(projections)) {
             const shell = yield* projections.value.getShellSnapshot().pipe(
               Effect.mapError(
                 (cause) =>
@@ -194,6 +238,7 @@ export const layerFromProjectStore: Layer.Layer<
             for (const thread of [...shell.threads, ...shell.archivedThreads]) {
               if (
                 thread.id === input.thread.id ||
+                thread.lineage.sideChat === true ||
                 thread.deletedAt !== null ||
                 (!["preparing", "starting", "running", "waiting"].includes(thread.status) &&
                   (thread.pendingBackgroundTasks?.length ?? 0) === 0)
@@ -319,6 +364,8 @@ export const layerFromProjectStore: Layer.Layer<
           ));
         if (
           input.thread.workspace === undefined &&
+          !sideChat &&
+          !input.preparingWorkspace &&
           Option.isSome(projections) &&
           Option.isSome(repositoryResolver)
         ) {
@@ -327,6 +374,7 @@ export const layerFromProjectStore: Layer.Layer<
             const configured = [...shell.threads, ...shell.archivedThreads].filter(
               (thread) =>
                 thread.id !== input.thread.id &&
+                thread.lineage.sideChat !== true &&
                 thread.deletedAt === null &&
                 thread.workspace !== undefined,
             );
@@ -365,6 +413,7 @@ export const layerFromProjectStore: Layer.Layer<
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
+          ...(sideChat ? { approvalPolicy: "never", sandboxPolicy: { type: "readOnly" } } : {}),
           cwd,
           ...(input.thread.workspace === undefined ? {} : { workspace: input.thread.workspace }),
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),

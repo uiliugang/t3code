@@ -3666,6 +3666,7 @@ export default function ChatView(props: ChatViewProps) {
                                 activePendingQuestionIndex={activePendingQuestionIndex}
                                 respondingRequestIds={respondingRequestIds}
                                 runtimeMode={runtimeMode}
+                                readOnlySideChat={activeThread?.lineage.sideChat === true}
                                 defaultRuntimeMode={defaultRuntimeMode}
                                 lockedProvider={modelPickerLockedProvider}
                                 providerStatuses={providerStatuses as ServerProvider[]}

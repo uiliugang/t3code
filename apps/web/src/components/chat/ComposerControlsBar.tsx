@@ -54,6 +54,7 @@ export function ComposerControlsBar(props: {
   effortDisplay: EffortDisplay;
   /** The strip under a new thread names the permissions, so the row does not repeat them. */
   permissionsShownInStrip: boolean;
+  readOnlySideChat?: boolean;
   compatibleRuntimeMode: RuntimeMode;
   defaultRuntimeMode: RuntimeMode | undefined;
   compatibleRuntimeModeOptions: ReadonlyArray<RuntimeModeOption>;
@@ -157,24 +158,25 @@ export function ComposerControlsBar(props: {
     onPromptEdit,
   });
   const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize);
-  const restingBlockDefs = showModeBlock
-    ? [
-        {
-          id: "mode",
-          content: (
-            <ComposerFooterModeControls
-              runtimeMode={compatibleRuntimeMode}
-              runtimeModeOptions={compatibleRuntimeModeOptions}
-              size={controlSize}
-              hidden={composerControlsHidden || restingHiddenBlockCount > 0}
-              accessDisplay={accessDisplay}
-              emphasized={!accessMatchesDefault}
-              onRuntimeModeChange={handleRuntimeModeChange}
-            />
-          ),
-        },
-      ]
-    : [];
+  const restingBlockDefs =
+    showModeBlock && !props.readOnlySideChat
+      ? [
+          {
+            id: "mode",
+            content: (
+              <ComposerFooterModeControls
+                runtimeMode={compatibleRuntimeMode}
+                runtimeModeOptions={compatibleRuntimeModeOptions}
+                size={controlSize}
+                hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+                accessDisplay={accessDisplay}
+                emphasized={!accessMatchesDefault}
+                onRuntimeModeChange={handleRuntimeModeChange}
+              />
+            ),
+          },
+        ]
+      : [];
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker
@@ -221,7 +223,7 @@ export function ComposerControlsBar(props: {
           usage={usage}
           traits={traitsInput}
           runtimeMode={compatibleRuntimeMode}
-          runtimeModeOptions={compatibleRuntimeModeOptions}
+          runtimeModeOptions={props.readOnlySideChat ? [] : compatibleRuntimeModeOptions}
           onRuntimeModeChange={handleRuntimeModeChange}
         />
       )}
@@ -297,7 +299,7 @@ export function ComposerControlsBar(props: {
             size={controlSize}
             hidden={composerControlsHidden || hiddenRestingBlockIds.length === 0}
             // Permissions join the overflow only when their normal home is in it.
-            showPermissions={overflowShowsPermissions}
+            showPermissions={overflowShowsPermissions && !props.readOnlySideChat}
             onRuntimeModeChange={handleRuntimeModeChange}
           />
         </div>

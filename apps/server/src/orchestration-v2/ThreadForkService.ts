@@ -9,6 +9,7 @@ import {
   OrchestrationV2ProviderTurnTokenUsage,
   OrchestrationV2Run,
   OrchestrationV2ThreadProjection,
+  ProviderInteractionMode,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -60,6 +61,8 @@ export interface ThreadForkServiceV2Shape {
     readonly targetThreadId: ThreadId;
     readonly title?: string;
     readonly sideChat?: boolean;
+    readonly isolateWorkspace?: boolean;
+    readonly interactionMode?: ProviderInteractionMode;
     readonly createdBy: OrchestrationV2Actor;
     readonly creationSource: OrchestrationV2CreationSource;
     readonly createdAt: DateTime.Utc;
@@ -103,6 +106,10 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
       const { delegatedFrom: _delegatedFrom, ...inherited } = input.sourceProjection.thread;
       const targetThread: OrchestrationV2AppThread = {
         ...inherited,
+        interactionMode: input.interactionMode ?? inherited.interactionMode,
+        ...(input.isolateWorkspace
+          ? { workspace: undefined, branch: null, worktreePath: null }
+          : {}),
         // PR context follows the conversation; watching remains the source thread's responsibility.
         pullRequests: input.sourceProjection.thread.pullRequests?.map(
           ({ watch: _watch, ...link }) => link,
@@ -118,7 +125,12 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           parentThreadId: input.sourceProjection.thread.id,
           relationshipToParent: "fork",
           rootThreadId: input.sourceProjection.thread.lineage.rootThreadId,
-          ...(input.sideChat ? { sideChat: true } : {}),
+          ...(input.sideChat || (sourceLineage.sideChat && !input.isolateWorkspace)
+            ? { sideChat: true }
+            : {}),
+          ...(input.isolateWorkspace || sourceLineage.isolatedWorkspace
+            ? { isolatedWorkspace: true }
+            : {}),
         },
         forkedFrom:
           sourceRun === null

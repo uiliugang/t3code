@@ -235,6 +235,13 @@ export interface ForkSideChatInput extends CommandMetadata {
   readonly title?: string;
 }
 
+export interface ContinueSideChatInput extends ForkThreadFromRunInput {
+  readonly projectId: ProjectId;
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode: RuntimeMode;
+  readonly baseRef: string;
+}
+
 export interface MergeThreadBackInput extends CommandMetadata {
   readonly sourceThreadId: ThreadId;
   readonly targetThreadId: ThreadId;
@@ -1018,6 +1025,23 @@ export const forkSideChat = Effect.fn("EnvironmentCommands.forkSideChat")(functi
     sourcePoint: { type: "latest_stable" },
     sideChat: true,
     ...(input.title === undefined ? {} : { title: input.title }),
+  });
+});
+
+export const continueSideChat = Effect.fn("EnvironmentCommands.continueSideChat")(function* (
+  input: ContinueSideChatInput,
+) {
+  return yield* request(ORCHESTRATION_V2_WS_METHODS.launchThread, {
+    commandId: yield* allocateCommandId(input),
+    creationSource: input.creationSource ?? "web",
+    threadId: input.targetThreadId,
+    projectId: input.projectId,
+    title: input.title ?? "Side chat task",
+    forkFrom: { threadId: input.sourceThreadId, runId: input.runId },
+    modelSelection: input.modelSelection,
+    runtimeMode: input.runtimeMode,
+    interactionMode: "default",
+    workspaceStrategy: { type: "worktree", baseRef: input.baseRef, startFromOrigin: false },
   });
 });
 

@@ -160,6 +160,7 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   rootThreadId: ThreadId,
   sideChat: Schema.optional(Schema.Boolean),
+  isolatedWorkspace: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
 
@@ -370,6 +371,7 @@ export type OrchestrationV2CheckpointCapabilities =
 
 export const OrchestrationV2RuntimePolicyCapabilities = Schema.Struct({
   enforcement: Schema.Literals(["native", "client-boundary"]),
+  supportsReadOnly: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2RuntimePolicyCapabilities =
   typeof OrchestrationV2RuntimePolicyCapabilities.Type;
@@ -3369,6 +3371,8 @@ export const OrchestrationV2Command = Schema.Union([
     sourcePoint: OrchestrationV2ThreadForkSourcePoint,
     title: Schema.optional(TrimmedNonEmptyString),
     sideChat: Schema.optional(Schema.Boolean),
+    isolateWorkspace: Schema.optional(Schema.Boolean),
+    interactionMode: Schema.optional(ProviderInteractionMode),
     createdAt: Schema.optional(Schema.DateTimeUtc),
   }),
   Schema.Struct({
@@ -3721,6 +3725,7 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   creationSource: Schema.optional(OrchestrationV2CreationSource),
   threadId: Schema.optional(ThreadId),
   reuseExistingThread: Schema.optional(Schema.Boolean),
+  forkFrom: Schema.optional(Schema.Struct({ threadId: ThreadId, runId: RunId })),
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   generateTitle: Schema.optional(Schema.Boolean),

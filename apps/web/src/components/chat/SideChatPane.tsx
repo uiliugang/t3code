@@ -11,15 +11,23 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
-import { Trash2Icon, XIcon } from "lucide-react";
+import { GitForkIcon, LockKeyholeIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { ComposerHandleContext } from "../../composerHandleContext";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type { SideChatParentPanel } from "../../lib/sideChatPane";
 import { readLocalApi } from "../../localApi";
 import { hostRightPanel, useRightPanelStore } from "../../rightPanelStore";
-import { useQuietThreadProjection, useQuietThreadShell } from "../../state/entities";
+import {
+  useQuietThreadProjection,
+  useQuietThreadShell,
+  waitForThreadShell,
+} from "../../state/entities";
+import { newThreadId } from "../../lib/utils";
+import { buildThreadRouteParams } from "../../threadRoutes";
 import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentShellHasSnapshot } from "../../state/shell";
 import { threadEnvironment } from "../../state/threads";
@@ -38,6 +46,7 @@ export default function SideChatPane(props: {
   readonly onClose: () => void;
 }) {
   const { parentRef, threadId } = props;
+  const t = useUiTranslation();
   const threadRef = scopeThreadRef(parentRef.environmentId, threadId);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the parent panel as host in the panel store
   useEffect(
@@ -50,6 +59,11 @@ export default function SideChatPane(props: {
   const projection = useQuietThreadProjection(shell === null ? null : threadRef)?.projection;
   const canOperate = useEnvironmentScope(parentRef.environmentId, AuthOrchestrationOperateScope);
   const mergeBack = useAtomCommand(threadEnvironment.mergeBack, { reportFailure: false });
+  const continueSideChat = useAtomCommand(threadEnvironment.continueSideChat, {
+    reportFailure: false,
+  });
+  const navigate = useNavigate();
+  const [continuing, setContinuing] = useState(false);
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const [bringingBack, setBringingBack] = useState(false);
@@ -83,6 +97,42 @@ export default function SideChatPane(props: {
       toastManager.add({
         type: "error",
         title: "Could not bring back the side chat",
+        ...(error instanceof Error ? { description: error.message } : {}),
+      });
+    }
+  };
+
+  const continueTask = async () => {
+    if (!canOperate || !shell || !mergeRun || continuing) return;
+    setContinuing(true);
+    const targetThreadId = newThreadId();
+    const targetRef = scopeThreadRef(parentRef.environmentId, targetThreadId);
+    const result = await continueSideChat({
+      environmentId: parentRef.environmentId,
+      input: {
+        sourceThreadId: threadId,
+        targetThreadId,
+        runId: mergeRun.id,
+        projectId: shell.projectId,
+        modelSelection: shell.modelSelection,
+        runtimeMode: shell.runtimeMode,
+        baseRef: shell.branch ?? "HEAD",
+        title: shell.title,
+      },
+    });
+    setContinuing(false);
+    if (result._tag === "Success") {
+      if (await waitForThreadShell(targetRef)) {
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(targetRef),
+        });
+      }
+    } else if (!isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Could not start an isolated task",
         ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
@@ -128,6 +178,37 @@ export default function SideChatPane(props: {
         <span className="min-w-0 flex-1 truncate text-xs font-medium">
           {shell?.title ?? "Side chat"}
         </span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                <LockKeyholeIcon size={12} />
+                {t("Read only")}
+              </span>
+            }
+          />
+          <TooltipPopup side="bottom">
+            {t("Files may change while the main thread works.")}
+          </TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t("Continue in isolated worktree")}
+                disabled={!canOperate || !shell || !mergeRun || continuing}
+                onClick={() => void continueTask()}
+              >
+                <GitForkIcon />
+              </Button>
+            }
+          />
+          <TooltipPopup side="bottom">
+            {t(mergeRun ? "Continue in isolated worktree" : "Available after a finished reply.")}
+          </TooltipPopup>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger
             render={

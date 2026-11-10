@@ -137,6 +137,25 @@ it.layer(layerTest)("DispatchModeLimit", (it) => {
         .dispatch(fork)
         .pipe(Effect.provideService(DispatchModeLimit, supervised), Effect.flip);
       assert.equal(retried._tag, "OrchestratorDispatchError");
+      yield* orchestrator.dispatch({
+        type: "thread.interaction-mode.set",
+        commandId: CommandId.make("plan-source"),
+        threadId: sourceThreadId,
+        interactionMode: "plan",
+      });
+      const escalated = yield* orchestrator
+        .dispatch({
+          ...fork,
+          commandId: CommandId.make("fork-with-broader-interaction-mode"),
+          sideChat: true,
+          interactionMode: "default",
+        })
+        .pipe(
+          Effect.provideService(DispatchModeLimit, { ...supervised, interactionMode: "plan" }),
+          Effect.flip,
+        );
+      assert.equal(escalated._tag, "OrchestratorThreadAboveModeLimitError");
+      assert.isNull(yield* projections.getThreadShell(targetThreadId));
     }),
   );
 });

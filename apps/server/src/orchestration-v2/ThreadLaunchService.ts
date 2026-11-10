@@ -82,6 +82,7 @@ export interface ThreadLaunchInput {
   readonly commandId: CommandId;
   readonly threadId?: ThreadId;
   readonly reuseExistingThread?: boolean;
+  readonly forkFrom?: { readonly threadId: ThreadId; readonly runId: RunId };
   readonly projectId: ProjectId;
   readonly title: string;
   readonly generateTitle?: boolean;
@@ -1029,7 +1030,7 @@ const make = Effect.gen(function* () {
         );
       yield* Effect.raceFirst(prepare, interruption);
     });
-    yield* preparation.pipe(
+    return yield* preparation.pipe(
       Effect.onError((cause) =>
         failPreparedRun(
           input,
@@ -1046,6 +1047,22 @@ const make = Effect.gen(function* () {
 
   const launch: ThreadLaunchService["Service"]["launch"] = Effect.fn("ThreadLaunchService.launch")(
     function* (request) {
+      if (request.forkFrom !== undefined) {
+        const source = yield* threads
+          .getThreadRecords(request.forkFrom.threadId, [])
+          .pipe(Effect.mapError(mapError(request, "create-thread")));
+        if (
+          source.thread.projectId !== request.projectId ||
+          source.thread.lineage.sideChat !== true ||
+          request.workspaceStrategy.type !== "worktree" ||
+          request.reuseExistingThread === true
+        ) {
+          return yield* mapError(
+            request,
+            "create-thread",
+          )("A side chat must continue in a new isolated worktree in the same project.");
+        }
+      }
       // Scratch has no Git repository. Normalize before folder allocation so
       // durable preparation and retries use the thread's own Scratch folder.
       const input: ThreadLaunchInput =
@@ -1085,7 +1102,8 @@ const make = Effect.gen(function* () {
           input.threadId === undefined &&
           Option.isSome(launchReceipt) &&
           launchReceipt.value.status === "accepted" &&
-          launchReceipt.value.commandType === "thread.create"
+          launchReceipt.value.commandType ===
+            (input.forkFrom === undefined ? "thread.create" : "thread.fork")
             ? launchReceipt.value
             : undefined;
         const candidateThreadId =
@@ -1137,34 +1155,47 @@ const make = Effect.gen(function* () {
         const initialWorktreePath =
           workspaceStrategy.type === "existing_worktree" ? workspaceStrategy.worktreePath : null;
         const claimDispatch =
-          input.reuseExistingThread === true
+          input.forkFrom !== undefined
             ? threads.dispatch({
-                type: "thread.metadata.update",
+                type: "thread.fork",
                 commandId: input.commandId,
-                threadId: candidateThreadId,
-                expectedEmpty: true,
-              })
-            : threads.dispatch({
-                type: "thread.create",
-                commandId: input.commandId,
-                threadId: candidateThreadId,
-                projectId: input.projectId,
-                title: input.title,
-                modelSelection: input.modelSelection,
-                runtimeMode: input.runtimeMode,
+                sourceThreadId: input.forkFrom.threadId,
+                targetThreadId: candidateThreadId,
+                sourcePoint: { type: "run", runId: input.forkFrom.runId },
+                isolateWorkspace: true,
                 interactionMode: input.interactionMode,
-                branch: initialBranch,
-                worktreePath: initialWorktreePath,
-                ...(input.importedNativeThread === undefined
-                  ? {}
-                  : { importedNativeThread: input.importedNativeThread }),
-                ...(input.linkOrigin === undefined ? {} : { linkOrigin: input.linkOrigin }),
-                ...(input.delegatedFrom === undefined
-                  ? {}
-                  : { delegatedFrom: input.delegatedFrom }),
+                title: input.title,
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
-              });
+              })
+            : input.reuseExistingThread === true
+              ? threads.dispatch({
+                  type: "thread.metadata.update",
+                  commandId: input.commandId,
+                  threadId: candidateThreadId,
+                  expectedEmpty: true,
+                })
+              : threads.dispatch({
+                  type: "thread.create",
+                  commandId: input.commandId,
+                  threadId: candidateThreadId,
+                  projectId: input.projectId,
+                  title: input.title,
+                  modelSelection: input.modelSelection,
+                  runtimeMode: input.runtimeMode,
+                  interactionMode: input.interactionMode,
+                  branch: initialBranch,
+                  worktreePath: initialWorktreePath,
+                  ...(input.importedNativeThread === undefined
+                    ? {}
+                    : { importedNativeThread: input.importedNativeThread }),
+                  ...(input.linkOrigin === undefined ? {} : { linkOrigin: input.linkOrigin }),
+                  ...(input.delegatedFrom === undefined
+                    ? {}
+                    : { delegatedFrom: input.delegatedFrom }),
+                  createdBy: input.createdBy,
+                  creationSource: input.creationSource,
+                });
         const claimed = yield* claimDispatch.pipe(
           Effect.mapError(
             mapError(
@@ -1260,10 +1291,11 @@ const make = Effect.gen(function* () {
                 branch: workspaceStrategy.branch,
               }
             : workspaceStrategy;
+        let preparationFiber: Fiber.Fiber<void, never> | null = null;
         if (shouldSchedule) {
           const ownsPreparation = yield* reservePreparation(input.commandId);
           if (ownsPreparation) {
-            yield* Effect.gen(function* () {
+            preparationFiber = yield* Effect.gen(function* () {
               const preparationStillRequired =
                 runId === null
                   ? true
@@ -1274,21 +1306,71 @@ const make = Effect.gen(function* () {
                       Effect.mapError(mapError(input, "update-thread", threadId)),
                     );
               if (preparationStillRequired) {
-                yield* schedulePreparation(
+                return yield* schedulePreparation(
                   { ...input, workspaceStrategy: preparationStrategy },
                   threadId,
                   runId,
                 );
               } else {
                 yield* releasePreparation(input.commandId);
+                return null;
               }
             }).pipe(Effect.onError(() => releasePreparation(input.commandId)));
           }
         }
 
+        if (
+          input.forkFrom !== undefined &&
+          projection.thread.worktreePath === null &&
+          projection.thread.workspace?.mode !== "isolated"
+        ) {
+          if (preparationFiber === null && (yield* setupTracker.get(threadId)) === null) {
+            return yield* mapError(
+              input,
+              "provision-worktree",
+              threadId,
+            )("Isolated worktree setup was interrupted. Create a new task from the side chat.");
+          }
+          yield* Effect.raceFirst(
+            threads.streamStoredEventsFrom({ threadId }).pipe(
+              Stream.filter(
+                (stored) =>
+                  stored.event.type === "thread.metadata-updated" &&
+                  (stored.event.payload.worktreePath != null ||
+                    stored.event.payload.workspace?.mode === "isolated"),
+              ),
+              Stream.runHead,
+              Effect.mapError(mapError(input, "provision-worktree", threadId)),
+            ),
+            preparationFiber !== null
+              ? Fiber.join(preparationFiber)
+              : setupTracker.stream(threadId).pipe(
+                  Stream.filter((snapshot) => snapshot !== null && snapshot.phase !== "running"),
+                  Stream.runHead,
+                ),
+          );
+        }
+        const preparedProjection =
+          input.forkFrom === undefined
+            ? projection
+            : yield* threads
+                .getThreadProjection(threadId)
+                .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+        if (
+          input.forkFrom !== undefined &&
+          preparedProjection.thread.worktreePath === null &&
+          preparedProjection.thread.workspace?.mode !== "isolated"
+        ) {
+          const setup = yield* setupTracker.get(threadId);
+          return yield* mapError(
+            input,
+            "provision-worktree",
+            threadId,
+          )(setup?.error ?? "Isolated worktree setup did not complete.");
+        }
         return {
           threadId,
-          projection,
+          projection: preparedProjection,
           // An attempt that failed after claiming the thread recorded nothing, so
           // only a repeat of the final write counts as resumed.
           resumed:

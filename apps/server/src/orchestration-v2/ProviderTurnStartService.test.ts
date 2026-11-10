@@ -35,7 +35,8 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { withWorkspaceLease, withWorkspaceLeases } from "../workspace/workspaceLease.ts";
+import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { layerRealGit, makeLayerRealGit } from "./ProviderTurnStartService.testkit.ts";
@@ -307,6 +308,7 @@ function makeLocalCommandHarness(input: {
     readonly nativeForkFrom?: "idle" | "busy";
     readonly switchedProvider?: boolean;
     readonly threadRuntimeMode?: OrchestrationV2ThreadProjection["thread"]["runtimeMode"];
+    readonly workspace?: OrchestrationV2ThreadProjection["thread"]["workspace"];
   };
 }) {
   const settledRuns: Array<string> = [];
@@ -572,6 +574,7 @@ function makeLocalCommandHarness(input: {
       thread: {
         ...projection.thread,
         runtimeMode: input.sideChat.threadRuntimeMode ?? "full-access",
+        ...(input.sideChat.workspace === undefined ? {} : { workspace: input.sideChat.workspace }),
         lineage: {
           parentThreadId,
           relationshipToParent: "fork",
@@ -1457,12 +1460,16 @@ effectIt.effect.each([
   "runs a planned native side chat fork when the parent is $nativeForkFrom",
   ({ nativeForkFrom, forks, transferStatus, handoffIds }) =>
     Effect.gen(function* () {
+      const workspace = workspaceFixture();
       const harness = makeLocalCommandHarness({
         text: "What is the main thread doing?",
-        sideChat: { contextRun: "current", nativeForkFrom },
+        sideChat: { contextRun: "current", nativeForkFrom, workspace },
       });
 
-      yield* harness.start;
+      yield* withWorkspaceLeases(
+        workspace.resources.map((resource) => `resource:${resource.id}`),
+        harness.start,
+      );
 
       expect(harness.forkThread).toHaveBeenCalledTimes(forks ? 1 : 0);
       // The parent's rolled-back turn is gone from its native conversation.

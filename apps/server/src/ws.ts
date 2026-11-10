@@ -2300,6 +2300,7 @@ export const layerWsRpc = (
                     ...(input.reuseExistingThread === undefined
                       ? {}
                       : { reuseExistingThread: input.reuseExistingThread }),
+                    ...(input.forkFrom === undefined ? {} : { forkFrom: input.forkFrom }),
                     projectId: input.projectId,
                     title: input.title,
                     ...(input.generateTitle === undefined

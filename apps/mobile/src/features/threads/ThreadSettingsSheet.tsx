@@ -276,6 +276,7 @@ type ThreadSettingsSessionProps = {
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
   readonly runtimeMode: RuntimeMode;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
+  readonly readOnlySideChat?: boolean;
 };
 
 /** The composer draft the sheet edits: the thread's own, or a queued message being edited. */
@@ -286,6 +287,7 @@ export type ExistingThreadSettingsRouteParams = {
 };
 
 type ThreadSettingsSessionValue = {
+  readonly readOnlySideChat: boolean;
   readonly environmentId: EnvironmentId | null;
   readonly providerInstanceId?: ProviderInstanceId;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
@@ -599,6 +601,7 @@ function ThreadSettingsSessionProvider(
   };
 
   const value = {
+    readOnlySideChat: props.readOnlySideChat === true,
     environmentId: props.environmentId,
     providerInstanceId: props.providerInstanceId,
     providerGroups,
@@ -888,15 +891,19 @@ function ThreadSettingsOptionsItem(props: {
           );
         })}
         <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
-          <DisclosureRow
-            isLast
-            label={t("Runtime")}
-            value={
-              session.runtimeModeChoices.find((choice) => choice.mode === session.runtimeMode)
-                ?.label
-            }
-            onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
-          />
+          {session.readOnlySideChat ? (
+            <Text className="px-5 py-3 text-sm text-foreground-muted">{t("Read only")}</Text>
+          ) : (
+            <DisclosureRow
+              isLast
+              label={t("Runtime")}
+              value={
+                session.runtimeModeChoices.find((choice) => choice.mode === session.runtimeMode)
+                  ?.label
+              }
+              onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
+            />
+          )}
         </Animated.View>
       </Animated.View>
 
@@ -1379,6 +1386,7 @@ export function ExistingThreadSettingsRouteScreen({
         updateModelSelection({ ...modelSelection, options });
       }}
       runtimeMode={draftSettings.runtimeMode ?? selectedThread.runtimeMode}
+      readOnlySideChat={selectedThread.lineage.sideChat === true}
       onUpdateRuntimeMode={(runtimeMode) => updateComposerDraftSettings(threadKey, { runtimeMode })}
       onClose={() => navigation.goBack()}
     />

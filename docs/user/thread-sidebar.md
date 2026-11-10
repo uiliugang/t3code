@@ -304,10 +304,16 @@ You can also choose **Side chat** from the **+** menu in the right panel. The si
 chat opens as a tab there, with its own composer. Side chats do not show in the
 sidebar. Find one again under **Side chats** in thread details.
 
-A side chat works in the same folder as the thread and starts with the permissions,
-model, and reasoning level shown in the thread's composer, including for its first
-reply. Change them for an individual side chat in its composer. Later changes to the
-parent do not change existing side chats.
+A side chat reads the same folder as the thread, even while the thread is working.
+Files can change between reads. Side chats are read-only and require a provider
+that enforces read-only access, currently Codex or Claude. They start with the model
+and reasoning level shown in the thread's composer; later changes to the parent do
+not change existing side chats.
+
+To make changes, choose **Continue in isolated worktree** after a finished reply.
+This creates a separate task with the side chat's conversation and its own worktree
+from committed code. Uncommitted edits in the shared folder are not copied. The
+original side chat stays available.
 
 To use what you learned, choose **Bring back**. The thread gets the side chat with
 your next message there. Bring back is available while the thread is idle.
