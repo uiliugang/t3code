@@ -108,6 +108,10 @@ export const skillMessages: Readonly<Record<string, string>> = {
   "Files are managed on this environment. Start a new session or reload the provider to use changed files.":
     "文件已由此环境管理。更新后需新建会话或重新加载智能体运行环境，已有会话不保证即时生效。",
   "Cancel pending update": "取消待应用更新",
+  "Cancel adoption": "取消纳管",
+  "{count} operations waiting for idle agents": "有 {count} 项操作等待智能体空闲",
+  "{running} running · {queued} queued · {waiting} waiting for idle agents":
+    "正在执行 {running} 项 · 排队 {queued} 项 · 等待智能体空闲 {waiting} 项",
   "Review update": "查看更新",
   "Review changes for {name}": "查看 {name} 的变化",
   "Current {current} → candidate {candidate}": "当前 {current} → 候选 {candidate}",
@@ -264,6 +268,8 @@ export const skillMessages: Readonly<Record<string, string>> = {
   "The skill installer failed. Check its executable, authentication and network access on this environment.":
     "技能安装器执行失败，请检查此环境中的安装器、登录状态及网络。",
   "This skill operation is already running.": "环境中的智能体或相关操作仍在运行，请待空闲后重试。",
+  "Agents in this environment are still active. Try again when they are idle.":
+    "此环境中的智能体仍在活动，请待空闲后重试。",
   "Local changes were found. Review them before applying an update.":
     "发现本地修改，请查看差异后选择保留修改或使用候选版本。",
   "Automatic updates are enabled. Connect an update source to continue.":

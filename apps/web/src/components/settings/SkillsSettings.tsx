@@ -1551,7 +1551,9 @@ function OperationHistory({
 }) {
   const t = useUiTranslation();
   const jobs = data.jobs ?? [];
-  const pending = jobs.filter((job) => job.status === "queued" || job.status === "running");
+  const pending = jobs.filter(
+    (job) => job.status === "queued" || job.status === "running" || job.status === "waiting",
+  );
   const states = {
     waiting: "Waiting for idle agents",
     queued: "Queued",
@@ -1564,13 +1566,14 @@ function OperationHistory({
     <div className="py-4">
       {pending.length > 0 && (
         <p role="status" className="mb-3 text-sm">
-          {t("{running} running · {queued} queued", {
+          {t("{running} running · {queued} queued · {waiting} waiting for idle agents", {
             running: pending.filter((job) => job.status === "running").length,
             queued: pending.filter((job) => job.status === "queued").length,
+            waiting: pending.filter((job) => job.status === "waiting").length,
           })}
         </p>
       )}
-      <details>
+      <details open={pending.some((job) => job.input.type === "adopt")}>
         <summary className="cursor-pointer text-sm font-medium">
           {t("Recent operations ({count})", { count: jobs.length })}
         </summary>
@@ -1625,6 +1628,17 @@ function OperationHistory({
                   {t("Retry this operation")}
                 </Button>
               )}
+              {job.input.type === "adopt" &&
+                (job.status === "queued" || job.status === "waiting") && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!canManage}
+                    onClick={() => void mutate({ type: "cancel", id: job.id })}
+                  >
+                    {t("Cancel adoption")}
+                  </Button>
+                )}
               {(job.status === "queued" || job.status === "running" || job.status === "waiting") &&
                 job.skillId &&
                 ["check", "update", "rollback"].includes(job.input.type) && (

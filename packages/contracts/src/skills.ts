@@ -276,7 +276,7 @@ export function skillFailureMessage(reason: SkillFailureReason): string {
     conflict: "An existing file or directory conflicts with this skill. It has not been replaced.",
     "installer-failed":
       "The skill installer failed. Check its executable, authentication and network access on this environment.",
-    busy: "This skill operation is already running.",
+    busy: "Agents in this environment are still active. Try again when they are idle.",
     "local-changes": "Local changes were found. Review them before applying an update.",
     "needs-source": "Automatic updates are enabled. Connect an update source to continue.",
     external: "This skill is maintained by its plugin or provider. Update it there.",

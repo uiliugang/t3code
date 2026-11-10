@@ -722,6 +722,170 @@ describe("SkillManager", () => {
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
+  it.effect(
+    "waits to take over skills, survives restart, and revalidates before replacing files",
+    () =>
+      Effect.gen(function* () {
+        const { fs, source, target, manager, busy, restart, restartWithFileSystem } =
+          yield* harness;
+        yield* fs.makeDirectory(target, { recursive: true });
+        yield* fs.copy(source, `${target}/review`);
+        const preview = yield* manager.inspect({ type: "adopt", path: `${target}/review` });
+        const input = {
+          type: "adopt" as const,
+          path: `${target}/review`,
+          digest: preview.digest,
+          mode: "takeover" as const,
+          targetIds: ["fixture"],
+        };
+        yield* Ref.set(busy, true);
+        yield* manager.mutate(input);
+        yield* manager.drain;
+        const waiting = yield* manager.snapshot;
+        expect(waiting.lastFailureReason).toBeNull();
+        expect(waiting.jobs?.at(-1)).toMatchObject({ status: "waiting", finishedAt: null });
+        expect(waiting.skills).toHaveLength(0);
+        expect((yield* fs.stat(`${target}/review`)).type).toBe("Directory");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+        yield* manager.mutate(input);
+        yield* manager.drain;
+        expect((yield* manager.snapshot).jobs).toHaveLength(1);
+        const recovered = yield* restart;
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("waiting");
+        yield* fs.writeFileString(`${target}/review/script.sh`, "changed while waiting");
+        yield* Ref.set(busy, false);
+        yield* recovered.tick;
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).jobs?.at(-1)).toMatchObject({
+          status: "failed",
+          reason: "candidate-changed",
+        });
+        expect((yield* recovered.snapshot).skills).toHaveLength(0);
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe(
+          "changed while waiting",
+        );
+        yield* fs.writeFileString(`${target}/review/script.sh`, "first");
+        yield* Ref.set(busy, true);
+        yield* recovered.mutate(input);
+        yield* recovered.drain;
+        const cancelledId = (yield* recovered.snapshot).jobs!.at(-1)!.id;
+        yield* recovered.mutate({ type: "cancel", id: cancelledId });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).jobs?.at(-1)).toMatchObject({
+          id: cancelledId,
+          status: "cancelled",
+        });
+        yield* Ref.set(busy, false);
+        yield* recovered.tick;
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills).toHaveLength(0);
+        expect((yield* fs.stat(`${target}/review`)).type).toBe("Directory");
+        yield* Ref.set(busy, true);
+        yield* recovered.mutate(input);
+        yield* recovered.drain;
+        const waitingId = (yield* recovered.snapshot).jobs!.at(-1)!.id;
+        yield* Ref.set(busy, false);
+        yield* recovered.tick;
+        yield* recovered.drain;
+        const completed = yield* recovered.snapshot;
+        expect(completed.jobs?.at(-1)).toMatchObject({ id: waitingId, status: "completed" });
+        expect(completed.skills[0]?.adoptionState).toBe("complete");
+        expect(completed.skills[0]?.backups).toHaveLength(1);
+        expect(yield* fs.readLink(`${target}/review`)).toBeTruthy();
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+        yield* recovered.mutate({ type: "cancel", id: completed.skills[0]!.id });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).jobs?.at(-1)).toMatchObject({
+          input: { type: "cancel", id: completed.skills[0]!.id },
+          status: "completed",
+        });
+        yield* recovered.mutate({ type: "unmanage", id: completed.skills[0]!.id, restore: true });
+        yield* recovered.drain;
+        const interruptBackup = yield* Ref.make(true);
+        const originalPath = yield* fs.realPath(`${target}/review`);
+        const racing = yield* restartWithFileSystem({
+          ...fs,
+          rename: (from, to) =>
+            fs
+              .rename(from, to)
+              .pipe(
+                Effect.tap(() =>
+                  from === originalPath
+                    ? Ref.getAndSet(interruptBackup, false).pipe(
+                        Effect.flatMap((interrupt) =>
+                          interrupt ? Ref.set(busy, true) : Effect.void,
+                        ),
+                      )
+                    : Effect.void,
+                ),
+              ),
+        });
+        yield* racing.mutate(input);
+        yield* racing.drain;
+        expect((yield* racing.snapshot).jobs?.at(-1)?.status).toBe("waiting");
+        expect((yield* racing.snapshot).skills).toHaveLength(0);
+        expect((yield* fs.stat(`${target}/review`)).type).toBe("Directory");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+        yield* Ref.set(busy, false);
+        yield* racing.tick;
+        yield* racing.drain;
+        expect((yield* racing.snapshot).jobs?.at(-1)?.status).toBe("completed");
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect(
+    "activates a waiting library copy without replaying adoption and honors cancellation",
+    () =>
+      Effect.gen(function* () {
+        const { fs, source, manager, busy } = yield* harness;
+        const preview = yield* manager.inspect({ type: "adopt", path: source });
+        yield* Ref.set(busy, true);
+        yield* manager.mutate({
+          type: "adopt",
+          path: source,
+          digest: preview.digest,
+          mode: "copy",
+          targetIds: [],
+        });
+        yield* manager.drain;
+        const copied = (yield* manager.snapshot).skills[0]!;
+        expect(copied.status).toBe("pending");
+        yield* Ref.set(busy, false);
+        yield* manager.tick;
+        yield* manager.drain;
+        const activated = yield* manager.snapshot;
+        expect(activated.skills[0]?.status).toBe("ready");
+        expect(activated.skills[0]?.activeDigest).toBe(preview.digest);
+        expect(activated.jobs?.some((job) => job.status === "failed")).toBe(false);
+        expect(activated.jobs?.find((job) => job.input.type === "adopt")?.status).toBe("completed");
+        yield* fs.copy(source, `${source}-cancelled`);
+        yield* Ref.set(busy, true);
+        yield* manager.mutate({
+          type: "adopt",
+          path: `${source}-cancelled`,
+          digest: preview.digest,
+          mode: "copy",
+          targetIds: [],
+        });
+        yield* manager.drain;
+        const job = (yield* manager.snapshot).jobs!.at(-1)!;
+        yield* manager.mutate({ type: "cancel", id: job.id });
+        yield* manager.drain;
+        yield* Ref.set(busy, false);
+        yield* manager.tick;
+        yield* manager.drain;
+        const cancelled = yield* manager.snapshot;
+        expect(cancelled.jobs?.find((entry) => entry.id === job.id)?.status).toBe("cancelled");
+        expect(cancelled.skills.find((skill) => skill.id === job.skillId)).toMatchObject({
+          status: "ready",
+          activeDigest: null,
+          cancelledDigest: preview.digest,
+        });
+        expect(yield* fs.readFileString(`${source}-cancelled/script.sh`)).toBe("first");
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect("does not replace a location owned by another managed skill", () =>
     Effect.gen(function* () {
       const { fs, directory, source, target, manager, install, restart } = yield* harness;
