@@ -69,7 +69,9 @@ class T3WorkspaceNavigationModule : Module() {
     Name("T3WorkspaceNavigation")
     View(T3WorkspaceNavigationView::class) {
       Prop("tabs") { view: T3WorkspaceNavigationView, value: List<String> -> view.tabs = value }
-      Prop("labels") { view: T3WorkspaceNavigationView, value: Map<String, String> -> view.labels = value }
+      Prop("labels") { view: T3WorkspaceNavigationView, value: Map<String, String> ->
+        view.labels = value
+      }
       Prop("selectedTab") { view: T3WorkspaceNavigationView, value: String ->
         view.selectedTab = value
       }
@@ -311,9 +313,8 @@ class T3WorkspaceNavigationView(
           IconButton(
             onClick = { expanded = !expanded },
             modifier = Modifier.semantics {
-              contentDescription =
-                if (expanded) labels["collapseRail"] ?: "Collapse navigation rail"
-                else labels["expandRail"] ?: "Expand navigation rail"
+              contentDescription = labels[if (expanded) "collapseRail" else "expandRail"]
+                ?: if (expanded) "Collapse navigation rail" else "Expand navigation rail"
             },
           ) {
             Icon(

@@ -103,11 +103,11 @@ vi.mock("./videoThumbnails", () => ({
   cachedVideoThumbnail: () => null,
   loadVideoThumbnail: mocks.thumbnail,
 }));
-vi.mock("../components/FilePreviewGallery", () => ({
+vi.mock("../components/ui/FilePreviewGallery", () => ({
   useFilePreviewGallery: () => (value: unknown) => value,
 }));
-vi.mock("../components/FilePreviewModal", () => ({ FilePreviewModal: () => null }));
-vi.mock("../components/VideoPreviewModal", () => ({ VideoPreviewModal: () => null }));
+vi.mock("../components/ui/FilePreviewModal", () => ({ FilePreviewModal: () => null }));
+vi.mock("../components/ui/VideoPreviewModal", () => ({ VideoPreviewModal: () => null }));
 vi.mock("../features/threads/ThreadMarkdownImage", () => ({ ThreadMarkdownImageView: () => null }));
 
 import {
@@ -362,3 +362,5 @@ it("pauses when native fullscreen exits while the app remains in the background"
   expect(player.playing).toBe(false);
   expect(player.currentTime).toBe(37);
 });
+
+vi.mock("./useUiTranslation", () => ({ useUiTranslation: () => (message: string) => message }));

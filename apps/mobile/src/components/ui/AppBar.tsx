@@ -59,10 +59,6 @@ export function AppBar(props: AppBarProps) {
     setOptions({ headerShown: true });
     return () => setOptions({ headerShown: false });
   }, [ownsInspectorBar, setOptions]);
-  // The Duo's native columns show their own sidebar button while the sidebar is open.
-  const showsSidebarToggle =
-    sidebarToggle !== null &&
-    (!usesNativeWorkspaceColumns || deviceType === "pad" || !sidebarToggle.visible);
   const splitBackPress = props.backInSplitView?.onPress ?? props.onBack;
   const splitBack =
     layout.usesSplitView && props.backInSplitView && splitBackPress
@@ -163,7 +159,7 @@ export function AppBar(props: AppBarProps) {
             onPress={props.onClose}
           />
         </Toolbar>
-      ) : rootBack || splitBack || showsSidebarToggle || compose ? (
+      ) : rootBack || splitBack || sidebarToggle || compose ? (
         <Toolbar placement="left">
           {rootBack ? (
             <ScreenHeaderButton
@@ -174,7 +170,7 @@ export function AppBar(props: AppBarProps) {
             />
           ) : null}
           {splitBack ? <ScreenHeaderButton {...splitBack} /> : null}
-          {showsSidebarToggle ? (
+          {sidebarToggle ? (
             <ScreenHeaderButton
               axisBehavior={usesNativeWorkspaceColumns ? "horizontalOnly" : undefined}
               accessibilityLabel={sidebarToggle.accessibilityLabel}

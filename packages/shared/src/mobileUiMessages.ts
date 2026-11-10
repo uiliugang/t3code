@@ -776,6 +776,24 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
     "请使用兼容版本的应用与服务器进行连接。",
   "What to try": "可尝试的操作",
   "You are offline": "当前处于离线状态",
+  "Failed to connect. Retrying {environment}...": "连接失败，正在重试 {environment}…",
+  "Remove from this device?": "从此设备移除？",
+  "Open T3 Account": "打开 T3 账户",
+  "Forget {environment} and its cached threads on this device.":
+    "从此设备移除 {environment} 及其缓存的会话。",
+  "Forget {environment} and its cached threads on this device. Switch it off instead to keep it saved.":
+    "从此设备移除 {environment} 及其缓存的会话。如需保留，可以改为关闭该环境。",
+  "It stays on your T3 Connect account and keeps its host space. Deregister it under T3 Account → T3 Connect to free it.":
+    "该环境仍保留在你的 T3 Connect 账户中并占用主机空间。可在 T3 账户 → T3 Connect 中注销以释放空间。",
+  "It's no longer on your T3 Connect account.": "该环境已不在你的 T3 Connect 账户中。",
+  "This doesn't change your T3 Connect account. To deregister it there, use T3 Account → T3 Connect.":
+    "此操作不会更改你的 T3 Connect 账户。如需注销环境，请前往 T3 账户 → T3 Connect。",
+  "Choose environment, {environment}, {status}": "选择环境，{environment}，{status}",
+  "Hide connection details for {environment}": "隐藏 {environment} 的连接详情",
+  "Show connection details for {environment}": "显示 {environment} 的连接详情",
+  "Failed to connect to {environment}: {error}": "无法连接到 {environment}：{error}",
+  "Failed to connect to {environment}": "无法连接到 {environment}",
+  "{environment} is not connected": "{environment} 未连接",
   "this environment": "此环境",
   "{environment} is disconnected": "{environment} 已断开连接",
   "{environment} is unavailable": "{environment} 不可用",
@@ -798,6 +816,8 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "Relay is offline.": "中继已离线。",
   "Keep source control requests on this environment.": "在此环境处理源代码管理请求。",
   "Share PR data with other enabled environments.": "与其他已启用的环境共享合并请求数据。",
+  "Choose environments you trust to share PR data and use each other's source control access. Enable both environments. This applies only to this client.":
+    "选择你信任的环境，以共享合并请求数据并使用彼此的源代码管理权限。请启用两个环境。此设置仅适用于当前客户端。",
   "Actions may use broader source control permissions than the original environment.":
     "操作可能使用比原环境更广的源代码管理权限。",
   " · Failed": " · 失败",

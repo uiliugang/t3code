@@ -1,4 +1,4 @@
-import type { ClientSettings, ThreadId } from "@t3tools/contracts";
+import type { ClientSettings, ModelSelection, ThreadId } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -20,6 +20,7 @@ import {
 import {
   type InterruptThreadTurnInput,
   type StartThreadTurnInput,
+  type UpdateThreadMetadataInput,
   archiveThread,
   closeGuestShare,
   resolveGuestMessage,
@@ -248,6 +249,13 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    setModelSelection: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:set-model-selection",
+      execute: (input: UpdateThreadMetadataInput & { readonly modelSelection: ModelSelection }) =>
+        updateThreadMetadata(input),
+      scheduler,
+      concurrency,
+    }),
     setRuntimeMode: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:set-runtime-mode",
       execute: setThreadRuntimeMode,
@@ -408,6 +416,7 @@ export function createThreadEnvironmentAtoms<R, E>(
   return {
     ...commands,
     snapshotAtom: optimistic.snapshotAtom,
+    pendingThreadIdsAtom: optimistic.pendingThreadIdsAtom,
     settle: optimistic.wrap(commands.settle, (thread, _input, now, accepted) =>
       !accepted &&
       (thread.pendingRuntimeRequest !== null ||
@@ -480,6 +489,11 @@ export function createThreadEnvironmentAtoms<R, E>(
     reorderActive: optimistic.wrap(commands.reorderActive, (thread, input) => ({
       ...thread,
       activeOrderKey: input.orderKey,
+    })),
+    // Shown at once, so a composer that releases its accepted pick keeps showing it.
+    setModelSelection: optimistic.wrap(commands.setModelSelection, (thread, input) => ({
+      ...thread,
+      modelSelection: input.modelSelection,
     })),
   };
 }

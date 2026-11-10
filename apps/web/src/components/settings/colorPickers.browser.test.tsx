@@ -258,3 +258,11 @@ describe("provider accent color picker", () => {
     expect(byLabel("Change accent color for Codex").style.backgroundColor).toBe("rgb(37, 99, 235)");
   });
 });
+
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return {
+    useUiTranslation: () => (message: string, values?: Record<string, string | number>) =>
+      translateUi("en", message, values),
+  };
+});

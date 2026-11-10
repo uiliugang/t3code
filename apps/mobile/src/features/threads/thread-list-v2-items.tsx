@@ -31,7 +31,7 @@ import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
-import { Platform, Pressable, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, Text as RNText, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
@@ -43,7 +43,11 @@ import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { projectDisplayKind } from "@t3tools/shared/projectPresentation";
 import { useProjectPresentation } from "../../lib/useProjectPresentation";
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
+import {
+  ProviderIcon,
+  ProviderInstanceIcon,
+  providerInstanceNameLabel,
+} from "../../components/ProviderIcon";
 import { useNowAfter } from "../../lib/clock";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
@@ -87,7 +91,8 @@ import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
 
 interface StatusLabel {
-  readonly label: string;
+  // Null when the icon and timer carry the status on their own.
+  readonly label: string | null;
   readonly icon: AppSymbolName;
   readonly className: string;
   readonly iconTintClassName: string;
@@ -112,13 +117,13 @@ const STATUS_LABEL_BY_STATUS: Partial<Record<ThreadListV2Status, StatusLabel>> =
     iconTintClassName: "accent-adaptive-fuchsia-600-300",
   },
   working: {
-    label: "Working",
+    label: null,
     icon: "circle.dashed",
     className: "text-adaptive-sky-600-400",
     iconTintClassName: "accent-adaptive-sky-600-400",
   },
   waiting: {
-    label: "Waiting",
+    label: null,
     icon: "circle.dashed.inset.filled",
     className: "text-foreground-muted",
     iconTintClassName: "accent-foreground-muted",
@@ -143,11 +148,28 @@ const DONE_STATUS_LABEL: StatusLabel = {
   iconTintClassName: "accent-adaptive-emerald-700-300",
 };
 
-function ThreadListV2Duration(props: { readonly startedAt: string | null }) {
+// DM Sans has no tabular figures, so a ticking timer in it reflows the row every second.
+const TABULAR_DURATION_STYLE = {
+  fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+  fontWeight: "700",
+  fontVariant: ["tabular-nums"],
+} as const;
+
+function ThreadListV2Duration(props: {
+  readonly startedAt: string | null;
+  readonly leadingSpace: boolean;
+}) {
   const startedAtMs = Date.parse(props.startedAt ?? "");
   const nowMs = useVisibleSecondClock(Number.isFinite(startedAtMs));
   if (!Number.isFinite(startedAtMs)) return null;
-  return ` ${formatWorkingDurationLabel(nowMs - startedAtMs)}`;
+  return (
+    <>
+      {props.leadingSpace ? " " : null}
+      <RNText style={TABULAR_DURATION_STYLE}>
+        {formatWorkingDurationLabel(nowMs - startedAtMs)}
+      </RNText>
+    </>
+  );
 }
 
 const CARD_MENU_ACTIONS: MenuAction[] = [
@@ -739,6 +761,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   }, [thread, props.providers]);
 
   const providerInstance = props.providerInstance;
+  const providerNameLabel = providerInstance
+    ? providerInstanceNameLabel({
+        provider: providerInstance.driverKind,
+        iconUrl: providerIconUrl,
+        displayName: providerInstance.displayName,
+        showBadge: providerInstance.showBadge,
+      })
+    : null;
   const pr = useThreadPr(thread);
   const prBadgeLabel = pr ? resolveThreadPrBadgeAction(pr).accessibilityLabel : null;
   const handleOpenPullRequests = useCallback(() => {
@@ -762,6 +792,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const rowAccessibilityLabel = [
     thread.title,
+    ...(providerNameLabel ? [providerNameLabel] : []),
     ...(props.hasQueuedMessages ? [t("Messages queued to send")] : []),
     ...(isRegeneratingTitle ? [t("Regenerating title")] : []),
   ].join(", ");
@@ -893,12 +924,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               subactions: [
                 {
                   id: "auto-settle:enabled",
-                  title: t("Enabled"),
+                  title: t("Follow settings"),
                   state: thread.autoSettleDisabledAt == null ? "on" : "off",
                 },
                 {
                   id: "auto-settle:disabled",
-                  title: t("Disabled"),
+                  title: t("Never"),
                   state: thread.autoSettleDisabledAt == null ? "off" : "on",
                 },
               ],
@@ -1259,15 +1290,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               <Text
                 className={cn(
                   "text-xs font-t3-bold",
-                  (status === "working" || status === "waiting") && "tabular-nums",
                   selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
                 )}
               >
-                {t(statusLabel.label)}
+                {statusLabel.label === null ? null : t(statusLabel.label)}
                 {status === "working" ? (
-                  <ThreadListV2Duration startedAt={resolveThreadWorkingStartedAt(thread)} />
+                  <ThreadListV2Duration
+                    startedAt={resolveThreadWorkingStartedAt(thread)}
+                    leadingSpace={statusLabel.label !== null}
+                  />
                 ) : status === "waiting" ? (
-                  <ThreadListV2Duration startedAt={thread.latestRun?.completedAt ?? null} />
+                  <ThreadListV2Duration
+                    startedAt={thread.latestRun?.completedAt ?? null}
+                    leadingSpace={statusLabel.label !== null}
+                  />
                 ) : null}
               </Text>
             </View>
@@ -1399,6 +1435,21 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               showBadge={providerInstance.showBadge}
               surfaceColor={rowAppearance.providerIconSurfaceColor}
             />
+            {providerNameLabel ? (
+              <Text
+                className={cn(
+                  "ml-1.5 text-xs",
+                  selected
+                    ? selectedThreadRowColors.mutedForegroundClassName
+                    : rowAppearance.tertiaryForegroundClassName,
+                )}
+                ellipsizeMode="middle"
+                numberOfLines={1}
+                style={{ maxWidth: 140 }}
+              >
+                {providerNameLabel}
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -1493,6 +1544,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             >
               {thread.title}
             </Text>
+            {providerNameLabel ? (
+              <Text
+                className={cn(
+                  "text-xs",
+                  selected
+                    ? selectedThreadRowColors.mutedForegroundClassName
+                    : rowAppearance.tertiaryForegroundClassName,
+                )}
+                ellipsizeMode="middle"
+                numberOfLines={1}
+              >
+                {providerNameLabel}
+              </Text>
+            ) : null}
             {props.searchMatch ? (
               <ThreadSearchMatchExcerpt
                 sidebar={sidebarPane}
