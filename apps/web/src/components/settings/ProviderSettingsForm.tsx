@@ -115,6 +115,12 @@ export function deriveProviderSettingsFields(
       const fieldSchema = definition.settingsSchema.fields[key]!;
       const formAnnotation = readProviderSettingsFormAnnotation(fieldSchema);
       if (formAnnotation.hidden) return [];
+      if (
+        definition.driverKind === "claudeAgent" &&
+        key === "binaryPath" &&
+        readProviderConfigString(value, "setupMode") === "managed"
+      )
+        return [];
       if (isLocalAcp && key !== "source" && key !== "commandPath") return [];
 
       const annotatedTitle = readFieldAnnotationString(fieldSchema, "title");

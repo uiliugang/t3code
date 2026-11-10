@@ -100,6 +100,7 @@ import { useSecretSources } from "./SecretSourceInput";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
+import { ClaudeInstallationSection } from "./ClaudeInstallationSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import { providerClients } from "./providerDriverMeta";
@@ -1319,6 +1320,12 @@ function ProviderInstanceRow({
       }
     : undefined;
   const codexSetupMode = driver === "codex" ? readCodexSetupMode(instance.config) : null;
+  const claudeManaged =
+    driver === "claudeAgent" &&
+    instance.config !== null &&
+    typeof instance.config === "object" &&
+    "setupMode" in instance.config &&
+    instance.config.setupMode === "managed";
   const recommendedVersion = liveProvider?.compatibilityAdvisory?.recommendedVersion;
   const canInstallRecommended =
     !readOnly &&
@@ -1355,7 +1362,14 @@ function ProviderInstanceRow({
       }
       canWriteSettings={canWriteSettings}
       setup={
-        mode === "editor" && driver === "antigravity" ? (
+        mode === "editor" && claudeManaged ? (
+          <ClaudeInstallationSection
+            environmentId={environmentId}
+            instanceId={instanceId}
+            provider={liveProvider}
+            readOnly={readOnly}
+          />
+        ) : mode === "editor" && driver === "antigravity" ? (
           <ProviderSetupSection
             environmentId={environmentId}
             environmentLabel={environmentLabel}

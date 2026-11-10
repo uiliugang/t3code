@@ -37,6 +37,7 @@ import { CLAUDE_DRIVER } from "./claude-accounts";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
 import { isClaudeByok } from "@t3tools/shared/claudeByok";
+import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
 
 export function SettingsProviderAccountsRouteScreen() {
   const t = useUiTranslation();
@@ -105,6 +106,15 @@ function EnvironmentProviders({
   return (
     <>
       {canAddClaude ? <ClaudeByokProviderSettings environment={environment} /> : null}
+      {providers
+        .filter((provider) => provider.driver === CLAUDE_DRIVER)
+        .map((provider) => (
+          <ClaudeInstallationControls
+            key={provider.instanceId}
+            environment={environment}
+            provider={provider}
+          />
+        ))}
       {accounts.map((provider, index) => (
         <ProviderAccount
           key={provider.instanceId}

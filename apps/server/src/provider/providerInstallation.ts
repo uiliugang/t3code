@@ -1,10 +1,12 @@
 import {
   AntigravitySettings,
   CodexSettings,
+  ClaudeSettings,
   ProviderDriverKind,
   type ProviderInstallCancelInput,
   type ProviderInstallState,
   type ProviderInstanceId,
+  type ProviderInstanceEnvironment,
   ProviderSetupError,
   type ProviderSetupInput,
 } from "@t3tools/contracts";
@@ -19,16 +21,19 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as CodexInstallation from "./CodexInstallation.ts";
+import * as ClaudeInstallation from "./ClaudeInstallation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 
 const ANTIGRAVITY = ProviderDriverKind.make("antigravity");
 const hasBinaryPath = Schema.is(Schema.Struct({ binaryPath: Schema.String }));
 const decodeCodexSettings = Schema.decodeUnknownEffect(CodexSettings);
+const decodeClaudeSettings = Schema.decodeUnknownEffect(ClaudeSettings);
 const decodeAntigravitySettings = Schema.decodeUnknownEffect(AntigravitySettings);
 
 export class ProviderInstallation extends Context.Service<
@@ -52,6 +57,8 @@ export class ProviderInstallation extends Context.Service<
 const make = Effect.fn("makeProviderInstallation")(function* () {
   const antigravityInstallation = yield* AntigravityInstallation.AntigravityInstallation;
   const codexInstallation = yield* CodexInstallation.CodexInstallation;
+  const claudeInstallation = yield* ClaudeInstallation.ClaudeInstallation;
+  const secretResolver = yield* SecretResolver.SecretResolver;
   const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const providers = yield* ProviderRegistry.ProviderRegistry;
   const settings = yield* ServerSettings.ServerSettingsService;
@@ -59,6 +66,31 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
   const path = yield* Path.Path;
   const scope = yield* Effect.scope;
   const accountCheckOperations = new Map<ProviderInstanceId, string>();
+  const resolveInstallEnvironment = Effect.fn("ProviderInstallation.resolveInstallEnvironment")(
+    function* (instanceId: ProviderInstanceId, environment: ProviderInstanceEnvironment = []) {
+      const references = environment.flatMap((variable) =>
+        typeof variable.value === "string" ? [] : [variable.value],
+      );
+      const values = references.length > 0 ? yield* secretResolver.read(references) : [];
+      let index = 0;
+      const resolved = yield* Effect.forEach(
+        environment,
+        Effect.fnUntraced(function* (variable) {
+          if (typeof variable.value === "string") return { ...variable, value: variable.value };
+          const value = values[index++];
+          if (value === undefined || value.trim() === "") {
+            return yield* new ProviderSetupError({
+              instanceId,
+              operation: "install",
+              detail: `Could not read ${variable.name} from its secret provider. Unlock it, then retry installation.`,
+            });
+          }
+          return { ...variable, value };
+        }),
+      );
+      return yield* mergeProviderInstanceEnvironment(resolved);
+    },
+  );
 
   const readEntries = Effect.fn("ProviderInstallation.readEntries")(function* (
     instanceId: ProviderInstanceId,
@@ -84,36 +116,55 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
   ) {
     const instance = yield* instances.getInstance(instanceId);
     const isCodex = instance?.driverKind === ProviderDriverKind.make("codex");
-    if (instance?.driverKind !== ANTIGRAVITY && !isCodex) {
+    const isClaude = instance?.driverKind === ProviderDriverKind.make("claudeAgent");
+    if (instance?.driverKind !== ANTIGRAVITY && !isCodex && !isClaude) {
       return yield* new ProviderSetupError({
         instanceId,
         operation,
         detail: "Managed installation is not available for this provider instance.",
       });
     }
-    const installation = isCodex ? codexInstallation : antigravityInstallation;
     const entries = yield* readEntries(instanceId, operation);
+    const installation = isClaude
+      ? {
+          ...claudeInstallation,
+          start: resolveInstallEnvironment(instanceId, entries[instanceId]?.environment).pipe(
+            Effect.flatMap(claudeInstallation.start),
+          ),
+        }
+      : isCodex
+        ? codexInstallation
+        : antigravityInstallation;
     const invalidConfig = () =>
       new ProviderSetupError({
         instanceId,
         operation,
         detail: "The provider instance configuration is invalid.",
       });
-    const config = isCodex
-      ? yield* decodeCodexSettings(entries[instanceId]?.config ?? {}).pipe(
+    const config = isClaude
+      ? yield* decodeClaudeSettings(entries[instanceId]?.config ?? {}).pipe(
           Effect.mapError(invalidConfig),
         )
-      : yield* decodeAntigravitySettings(entries[instanceId]?.config ?? {}).pipe(
-          Effect.mapError(invalidConfig),
-        );
-    if (isCodex && (!("setupMode" in config) || config.setupMode !== "managed")) {
+      : isCodex
+        ? yield* decodeCodexSettings(entries[instanceId]?.config ?? {}).pipe(
+            Effect.mapError(invalidConfig),
+          )
+        : yield* decodeAntigravitySettings(entries[instanceId]?.config ?? {}).pipe(
+            Effect.mapError(invalidConfig),
+          );
+    if ((isCodex || isClaude) && (!("setupMode" in config) || config.setupMode !== "managed")) {
       return yield* new ProviderSetupError({
         instanceId,
         operation,
-        detail: "Choose managed setup to install Codex in T3 Code.",
+        detail: `Choose managed setup to install ${isClaude ? "Claude" : "Codex"} in T3 Code.`,
       });
     }
-    if (managedOnly && config.binaryPath && (!isCodex || config.binaryPath !== "codex")) {
+    if (
+      managedOnly &&
+      !isClaude &&
+      config.binaryPath &&
+      (!isCodex || config.binaryPath !== "codex")
+    ) {
       return yield* new ProviderSetupError({
         instanceId,
         operation,
@@ -129,7 +180,9 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     (
       error:
         | AntigravityInstallation.AntigravityInstallationError
-        | CodexInstallation.CodexInstallationError,
+        | CodexInstallation.CodexInstallationError
+        | ClaudeInstallation.ClaudeInstallationError
+        | ProviderSetupError,
     ) =>
       new ProviderSetupError({ instanceId, operation: error.operation, detail: error.detail });
 

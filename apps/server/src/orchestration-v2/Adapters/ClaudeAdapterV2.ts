@@ -161,6 +161,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
+import { claudeManagedPaths } from "../../provider/ClaudeInstallation.ts";
 import { claudeByokModelError } from "@t3tools/shared/claudeByok";
 import {
   planClaudeSkillDispatch,
@@ -11030,6 +11031,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
+          const binaryPath = yield* resolveClaudeSdkExecutablePath(
+            adapterOptions.settings.binaryPath,
+            adapterOptions.environment,
+          ).pipe(Effect.provideService(HostProcess.Platform, hostPlatform));
           const queryOptions = makeClaudeQueryOptions({
             ...(turnInput.runtimePolicy.workspace === undefined
               ? {}
@@ -11042,7 +11047,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
             cwd: turnInput.runtimePolicy.cwd,
             attachmentsDir,
-            settings: adapterOptions.settings,
+            settings: { ...adapterOptions.settings, binaryPath },
             // Delegated threads have no one typing, so they never ask for suggestions.
             promptSuggestions:
               !isDelegatedAppThread(turnInput.appThread) && (yield* promptSuggestionsEnabled),
@@ -12492,13 +12497,18 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
       environment,
       hostEnvironment,
     );
-    const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
+    const claudeEnvironment = yield* makeClaudeEnvironment(
+      config,
+      config.setupMode === "managed"
+        ? { ...baseEnvironment, DISABLE_AUTOUPDATER: "1" }
+        : baseEnvironment,
+    );
     const path = yield* Path.Path;
     const random = yield* SecureRandom.SecureRandom;
-    const binaryPath = yield* resolveClaudeSdkExecutablePath(
-      expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
-      claudeEnvironment,
-    );
+    const binaryPath =
+      config.setupMode === "managed"
+        ? (yield* claudeManagedPaths()).binaryPath
+        : expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory);
     return yield* makeClaudeAdapterV2({
       instanceId,
       settings: { ...config, enabled, binaryPath },
