@@ -446,6 +446,45 @@ const openDesktopViewer = Effect.gen(function* () {
   return { tabId, viewer, context, cdp, resize };
 });
 
+it.effect.each(["Page.startScreencast", "Page.captureScreenshot"])(
+  "attaches a viewer and delivers live frames while %s is pending",
+  (pendingMethod) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, tabId } = yield* ready;
+        const context = contexts[0]!;
+        const started = Promise.withResolvers<ReturnType<typeof makeSession>>();
+        const pending = Promise.withResolvers<Record<string, unknown>>();
+        yield* Effect.addFinalizer(() => Effect.sync(() => pending.resolve({ data: "c3RpbGw=" })));
+        const newSession = context.newCDPSession;
+        context.newCDPSession = async (target) => {
+          const session = await newSession(target);
+          const send = session.send.getMockImplementation()!;
+          session.send.mockImplementation(async (method, input) => {
+            if (method === pendingMethod) {
+              started.resolve(session);
+              return pending.promise;
+            }
+            return send(method, input);
+          });
+          return session;
+        };
+        const attaching = yield* browser
+          .attachViewer(viewerInput(tabId, true))
+          .pipe(Effect.forkScoped);
+        const session = yield* Effect.promise(() => started.promise);
+        expect(attaching.pollUnsafe()?._tag).toBe("Success");
+        const viewer = yield* Fiber.join(attaching);
+        session.emit("Page.screencastFrame", { data: "bGl2ZQ==", sessionId: 1 });
+        expect(yield* Queue.takeAll(viewer.output)).toContainEqual({
+          _tag: "frame",
+          data: Buffer.from("live"),
+          ack: expect.anything(),
+        });
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
 beforeEach(() => {
   contexts.length = 0;
   encoderStreams.length = 0;
@@ -827,7 +866,10 @@ it.live("streams to a read-only viewer without allowing takeover, input, or view
         yield* viewer.input(message);
       expect(page.setViewportSize).not.toHaveBeenCalled();
       expect(session.send.mock.calls.some(([method]) => method.startsWith("Input."))).toBe(false);
-      const outputs = yield* Queue.takeAll(viewer.output);
+      const outputs = yield* Stream.fromQueue(viewer.output).pipe(
+        Stream.takeUntil((output) => output._tag === "frame"),
+        Stream.runCollect,
+      );
       expect(outputs).toContainEqual(
         expect.objectContaining({ _tag: "frame", data: Buffer.from("frame") }),
       );
