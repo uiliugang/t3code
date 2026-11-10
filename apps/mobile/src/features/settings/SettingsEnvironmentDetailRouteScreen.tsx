@@ -5,6 +5,7 @@ import { useAtom, useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   AuthProvidersManageScope,
+  AuthSettingsWriteScope,
   AuthOrchestrationReadScope,
   managedUpdatesDenial,
   type EnvironmentId,
@@ -19,7 +20,8 @@ import { useRef, useState } from "react";
 import { Linking, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/ui/AppText";
+import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -72,6 +74,27 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
       .serverUpdateRequired === true;
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
+  const renameEnvironment = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "rename environment",
+    reportFailure: true,
+  });
+  const canRename =
+    useEnvironmentScope(environmentId, AuthSettingsWriteScope) &&
+    config?.environment.capabilities.environmentName === true;
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const savedName = config?.settings.environmentName ?? "";
+  const nameValue = nameDraft ?? savedName;
+  const saveName = async (environmentName: string | null) => {
+    if (!canRename || renaming) return;
+    setRenaming(true);
+    const result = await renameEnvironment({
+      environmentId,
+      input: { patch: { environmentName } },
+    });
+    setRenaming(false);
+    if (result._tag === "Success") setNameDraft(null);
+  };
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
   const [connectionExpanded, setConnectionExpanded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -200,6 +223,36 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 onUpdate={connections.onUpdateEnvironment}
               />
             </SettingsSection>
+            {connected && canRename ? (
+              <SettingsSection title={t("Environment name")}>
+                <View className="gap-3 p-4">
+                  <AppTextInput
+                    accessibilityLabel={t("Environment name")}
+                    value={nameValue}
+                    placeholder={config?.environment.label}
+                    maxLength={100}
+                    editable={!renaming}
+                    onChangeText={setNameDraft}
+                    className="min-h-10 rounded-lg border border-border px-3 py-2 text-base text-foreground"
+                  />
+                  <View className="flex-row flex-wrap gap-2">
+                    <Button
+                      label={t("Save")}
+                      size="compact"
+                      loading={renaming}
+                      disabled={!nameValue.trim() || nameValue.trim() === savedName}
+                      onPress={() => void saveName(nameValue.trim())}
+                    />
+                    <Button
+                      label={t("Restore default name")}
+                      size="compact"
+                      disabled={renaming || savedName === ""}
+                      onPress={() => void saveName(null)}
+                    />
+                  </View>
+                </View>
+              </SettingsSection>
+            ) : null}
             {connected && !outdated ? (
               <>
                 <DaxiangSettingsSection environmentId={environmentId} />

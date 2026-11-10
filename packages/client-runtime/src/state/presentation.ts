@@ -8,7 +8,14 @@ import {
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
-import { AVAILABLE_CONNECTION_STATE, type SupervisorConnectionState } from "../connection/model.ts";
+import {
+  AVAILABLE_CONNECTION_STATE,
+  PrimaryConnectionTarget,
+  BearerConnectionTarget,
+  RelayConnectionTarget,
+  SshConnectionTarget,
+  type SupervisorConnectionState,
+} from "../connection/model.ts";
 import {
   connectionCatalogDisplayUrl,
   presentConnectionState,
@@ -19,6 +26,7 @@ import {
 } from "../connection/presentation.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import { hasRelayRoute } from "../connection/routes.ts";
+import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 
 function mapsEqual<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boolean {
   if (left.size !== right.size) {
@@ -71,8 +79,10 @@ export function createEnvironmentPresentationAtoms<E>(input: {
   ) => Atom.Atom<AsyncResult.AsyncResult<SupervisorConnectionState, E>>;
   readonly serverConfigValueAtom: (environmentId: EnvironmentId) => Atom.Atom<ServerConfig | null>;
 }) {
-  const presentationAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make((get) => {
+  const presentationAtom = Atom.family((environmentId: EnvironmentId) => {
+    let sourceEntry: ConnectionCatalogEntry | undefined;
+    let displayEntry: ConnectionCatalogEntry | undefined;
+    return Atom.make((get) => {
       const entry = get(input.catalogValueAtom).entries.get(environmentId);
       if (entry === undefined) {
         return null;
@@ -82,6 +92,27 @@ export function createEnvironmentPresentationAtoms<E>(input: {
         () => AVAILABLE_CONNECTION_STATE,
       );
       const previous = Option.getOrNull(get.self<EnvironmentPresentation | null>());
+      const config = get(input.serverConfigValueAtom(environmentId));
+      const label =
+        config?.settings?.environmentName ?? config?.environment.label ?? entry.target.label;
+      if (sourceEntry !== entry || displayEntry?.target.label !== label) {
+        sourceEntry = entry;
+        const target = entry.target;
+        displayEntry =
+          label === target.label
+            ? entry
+            : {
+                ...entry,
+                target:
+                  target._tag === "PrimaryConnectionTarget"
+                    ? new PrimaryConnectionTarget({ ...target, label })
+                    : target._tag === "BearerConnectionTarget"
+                      ? new BearerConnectionTarget({ ...target, label })
+                      : target._tag === "RelayConnectionTarget"
+                        ? new RelayConnectionTarget({ ...target, label })
+                        : new SshConnectionTarget({ ...target, label }),
+              };
+      }
       // The supervisor never publishes this placeholder; an enabled one starts out connecting.
       const connection: EnvironmentConnectionPresentation =
         entry.unsupportedReason !== undefined
@@ -90,15 +121,12 @@ export function createEnvironmentPresentationAtoms<E>(input: {
             ? { phase: "connecting", error: null, traceId: null }
             : presentConnectionState(state);
       const next = {
-        entry,
+        entry: displayEntry!,
         connection:
           previous !== null && sameConnection(previous.connection, connection)
             ? previous.connection
             : connection,
-        serverConfig: withoutProviders(
-          get(input.serverConfigValueAtom(environmentId)),
-          previous?.serverConfig ?? null,
-        ),
+        serverConfig: withoutProviders(config, previous?.serverConfig ?? null),
       } satisfies EnvironmentPresentation;
       return previous !== null &&
         previous.entry === next.entry &&
@@ -106,8 +134,8 @@ export function createEnvironmentPresentationAtoms<E>(input: {
         previous.serverConfig === next.serverConfig
         ? previous
         : next;
-    }).pipe(Atom.withLabel(`environment-presentation:${environmentId}`)),
-  );
+    }).pipe(Atom.withLabel(`environment-presentation:${environmentId}`));
+  });
 
   let previous: ReadonlyMap<EnvironmentId, EnvironmentPresentation> = new Map();
   const presentationsAtom = Atom.make((get) => {
@@ -235,7 +263,7 @@ export function createEnvironmentSummaryAtoms(input: {
   const identitiesAtom = Atom.make((get) => {
     const next = [...get(input.catalogValueAtom).entries].map(([environmentId, entry]) => ({
       environmentId,
-      label: entry.target.label,
+      label: get(input.presentationAtom(environmentId))?.entry.target.label ?? entry.target.label,
     }));
     const previous = Option.getOrNull(
       get.self<ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>>(),

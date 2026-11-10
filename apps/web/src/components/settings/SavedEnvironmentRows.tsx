@@ -29,6 +29,7 @@ import { cn } from "../../lib/utils";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
+import { EnvironmentNameMenu } from "./EnvironmentNameMenu";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import {
   ConnectionDiagnosisPanel,
@@ -415,6 +416,10 @@ export function SavedBackendListRow({
           <EllipsisIcon className="size-3.5" />
         </MenuTrigger>
         <MenuPopup align="end">
+          <EnvironmentNameMenu
+            environmentId={environmentId}
+            serverConfig={environment.serverConfig}
+          />
           <EnvironmentIconMenu
             environmentId={environmentId}
             serverConfig={environment.serverConfig}

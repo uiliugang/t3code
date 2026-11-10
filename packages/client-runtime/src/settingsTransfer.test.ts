@@ -376,6 +376,7 @@ describe("settings transfer", () => {
       "easDeviceHosts",
       "simlockDeviceHosts",
       "environmentIcon",
+      "environmentName",
       "addProjectBaseDirectory",
       "observability",
       "sourceControlHosts",

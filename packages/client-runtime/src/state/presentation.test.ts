@@ -54,6 +54,29 @@ function harness() {
 }
 
 describe("environment summary subscriptions", () => {
+  it("updates every client from server settings and restores the detected name", () => {
+    const clients = [harness(), harness()];
+    try {
+      for (const h of clients) {
+        const initial = config();
+        for (const name of ["Remote workstation", "Office server", null]) {
+          h.registry.set(h.configs(FIRST), {
+            ...initial,
+            environment: { ...initial.environment, label: "Detected host" },
+            settings: { ...initial.settings, environmentName: name },
+          });
+          expect(
+            h.registry.get(h.identitiesAtom).find((entry) => entry.environmentId === FIRST)?.label,
+          ).toBe(name ?? "Detected host");
+          expect(h.registry.get(h.full.presentationAtom(SECOND))?.entry.target.label).toBe(
+            "second",
+          );
+        }
+      }
+    } finally {
+      for (const h of clients) h.registry.dispose();
+    }
+  });
   it("tracks loaded configs across environments, config loss and removal", () => {
     const h = harness();
     const stop = h.registry.subscribe(h.pullRequestsSupportedAtom, () => {});
