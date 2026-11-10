@@ -62,7 +62,11 @@ describe("environment summary subscriptions", () => {
         for (const name of ["Remote workstation", "Office server", null]) {
           h.registry.set(h.configs(FIRST), {
             ...initial,
-            environment: { ...initial.environment, label: "Detected host" },
+            environment: {
+              ...initial.environment,
+              label: "Remote workstation",
+              defaultLabel: "Detected host",
+            },
             settings: { ...initial.settings, environmentName: name },
           });
           expect(

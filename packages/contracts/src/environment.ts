@@ -188,6 +188,8 @@ export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabi
 export const ExecutionEnvironmentDescriptor = Schema.Struct({
   environmentId: EnvironmentId,
   label: TrimmedNonEmptyString,
+  /** Retained so a client can restore the detected name after a settings-only update. */
+  defaultLabel: Schema.optionalKey(TrimmedNonEmptyString),
   platform: ExecutionEnvironmentPlatform,
   serverVersion: TrimmedNonEmptyString,
   orchestrationProtocolVersion: Schema.optionalKey(Schema.Int),

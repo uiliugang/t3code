@@ -48,11 +48,13 @@ export function EnvironmentNameMenu({
             event.preventDefault();
             void save(value.trim());
           }}
-          onKeyDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") event.stopPropagation();
+          }}
         >
           <Input
             aria-label={t("Environment name")}
-            placeholder={serverConfig?.environment.label}
+            placeholder={serverConfig?.environment.defaultLabel ?? serverConfig?.environment.label}
             value={value}
             maxLength={100}
             disabled={pending}

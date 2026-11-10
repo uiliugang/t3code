@@ -229,7 +229,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                   <AppTextInput
                     accessibilityLabel={t("Environment name")}
                     value={nameValue}
-                    placeholder={config?.environment.label}
+                    placeholder={config?.environment.defaultLabel ?? config?.environment.label}
                     maxLength={100}
                     editable={!renaming}
                     onChangeText={setNameDraft}

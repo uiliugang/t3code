@@ -94,7 +94,10 @@ export function createEnvironmentPresentationAtoms<E>(input: {
       const previous = Option.getOrNull(get.self<EnvironmentPresentation | null>());
       const config = get(input.serverConfigValueAtom(environmentId));
       const label =
-        config?.settings?.environmentName ?? config?.environment.label ?? entry.target.label;
+        config?.settings?.environmentName ??
+        config?.environment.defaultLabel ??
+        config?.environment.label ??
+        entry.target.label;
       if (sourceEntry !== entry || displayEntry?.target.label !== label) {
         sourceEntry = entry;
         const target = entry.target;

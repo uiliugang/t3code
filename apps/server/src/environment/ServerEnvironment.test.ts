@@ -19,6 +19,7 @@ import {
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 
 const layerServerEnvironment = (baseDir: string) =>
@@ -74,7 +75,40 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
   } satisfies ServerConfig.ServerConfig["Service"];
 });
 
-it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmentLive", (it) => {
+it.layer(
+  Layer.mergeAll(
+    NodeServices.layer,
+    NodeCrypto.layer,
+    ServerSettings.ServerSettingsService.layerTest(),
+  ),
+)("ServerEnvironmentLive", (it) => {
+  it.effect("reports current names to discovery and preserves the default across renames", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      yield* Effect.gen(function* () {
+        const environment = yield* ServerEnvironment.ServerEnvironment;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        const initial = yield* environment.getDescriptor;
+        expect(initial.label).toBe("Office server");
+        expect(initial.defaultLabel).toBeDefined();
+        yield* settings.updateSettings({ environmentName: "Renamed server" });
+        expect((yield* environment.getDescriptor).label).toBe("Renamed server");
+        yield* settings.updateSettings({ environmentName: null });
+        const reset = yield* environment.getDescriptor;
+        expect(reset.label).toBe(initial.defaultLabel);
+        expect(reset.environmentId).toBe(initial.environmentId);
+      }).pipe(
+        Effect.provide(
+          layerServerEnvironment(baseDir).pipe(
+            Layer.provideMerge(
+              ServerSettings.ServerSettingsService.layerTest({ environmentName: "Office server" }),
+            ),
+          ),
+        ),
+      );
+    }),
+  );
   it.effect("publishes proven install ownership only for manually updated servers", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

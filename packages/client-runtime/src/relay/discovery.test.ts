@@ -246,10 +246,17 @@ describe("RelayEnvironmentDiscovery", () => {
         ).toBe(true);
 
         const requests = yield* Ref.get(harness.statusRequests);
-        yield* Deferred.succeed(
-          requests.get(environments[1]!.environmentId)!,
-          status(environments[1]!, "online"),
-        );
+        yield* Deferred.succeed(requests.get(environments[1]!.environmentId)!, {
+          ...status(environments[1]!, "online"),
+          descriptor: {
+            environmentId: environments[1]!.environmentId,
+            label: "Renamed server",
+            defaultLabel: "Detected host",
+            platform: { os: "linux", arch: "x64" },
+            serverVersion: "0.1.7",
+            capabilities: { repositoryIdentity: true },
+          },
+        });
 
         const partiallyResolved = yield* SubscriptionRef.changes(discovery.state).pipe(
           Stream.filter(
@@ -262,6 +269,9 @@ describe("RelayEnvironmentDiscovery", () => {
         expect(
           partiallyResolved.environments.get(environments[0]!.environmentId)?.availability,
         ).toBe("checking");
+        expect(
+          partiallyResolved.environments.get(environments[1]!.environmentId)?.environment.label,
+        ).toBe("Renamed server");
 
         yield* Deferred.succeed(
           requests.get(environments[0]!.environmentId)!,
