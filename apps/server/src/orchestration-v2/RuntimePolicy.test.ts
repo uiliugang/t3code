@@ -157,6 +157,15 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
         .resolve({ thread: pendingIsolation, modelSelection })
         .pipe(Effect.flip);
       assert.equal(unprepared._tag, "RuntimePolicyResolveError");
+      yield* policy.resolve({
+        thread: pendingIsolation,
+        modelSelection,
+        preparingWorkspace: true,
+      });
+      const stillUnprepared = yield* policy
+        .resolve({ thread: pendingIsolation, modelSelection })
+        .pipe(Effect.flip);
+      assert.equal(stillUnprepared._tag, "RuntimePolicyResolveError");
       const prepared = yield* policy.resolve({
         thread: { ...pendingIsolation, workspace },
         modelSelection,
@@ -258,6 +267,13 @@ it.effect(
         policy.resolve({ thread, modelSelection }),
       ).pipe(Effect.provide(sharedLayer), Effect.result);
       assert.isTrue(result._tag === "Failure");
+      yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
+        policy.resolve({
+          thread: { ...thread, lineage: { ...thread.lineage, isolatedWorkspace: true } },
+          modelSelection,
+          preparingWorkspace: true,
+        }),
+      ).pipe(Effect.provide(sharedLayer));
       const sideChat = { ...thread, lineage: { ...thread.lineage, sideChat: true } };
       const readOnly = yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
         policy.resolve({ thread: sideChat, modelSelection }),

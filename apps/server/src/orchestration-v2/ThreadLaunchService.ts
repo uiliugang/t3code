@@ -1163,6 +1163,7 @@ const make = Effect.gen(function* () {
                 targetThreadId: candidateThreadId,
                 sourcePoint: { type: "run", runId: input.forkFrom.runId },
                 isolateWorkspace: true,
+                interactionMode: input.interactionMode,
                 title: input.title,
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
@@ -1320,7 +1321,6 @@ const make = Effect.gen(function* () {
 
         if (
           input.forkFrom !== undefined &&
-          input.initialMessage === undefined &&
           projection.thread.worktreePath === null &&
           projection.thread.workspace?.mode !== "isolated"
         ) {

@@ -75,6 +75,8 @@ export interface RuntimePolicyV2Shape {
   readonly resolve: (input: {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
+    /** Deferred dispatch validates policy before its isolated checkout is provisioned. */
+    readonly preparingWorkspace?: boolean;
   }) => Effect.Effect<ProviderAdapter.ProviderAdapterV2RuntimePolicy, RuntimePolicyV2Error>;
 }
 
@@ -101,7 +103,7 @@ export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2
   resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (
     input: Parameters<RuntimePolicyV2Shape["resolve"]>[0],
   ) {
-    yield* requireIsolatedWorkspace(input.thread);
+    if (!input.preparingWorkspace) yield* requireIsolatedWorkspace(input.thread);
     return {
       runtimeMode: input.thread.runtimeMode,
       interactionMode: input.thread.interactionMode,
@@ -192,7 +194,7 @@ export const layerFromProjectStore: Layer.Layer<
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
         yield* refuseAboveCeiling(managedPolicy, input.thread);
         const instance = yield* providerInstances.getInstance(input.modelSelection.instanceId);
-        yield* requireIsolatedWorkspace(input.thread);
+        if (!input.preparingWorkspace) yield* requireIsolatedWorkspace(input.thread);
         const sideChat = input.thread.lineage.sideChat === true;
         const capabilities =
           !sideChat || instance === undefined
@@ -221,7 +223,7 @@ export const layerFromProjectStore: Layer.Layer<
             : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
         if (input.thread.workspace !== undefined) {
           const workspace = input.thread.workspace;
-          if (!sideChat && Option.isSome(projections)) {
+          if (!sideChat && !input.preparingWorkspace && Option.isSome(projections)) {
             const shell = yield* projections.value.getShellSnapshot().pipe(
               Effect.mapError(
                 (cause) =>
@@ -363,6 +365,7 @@ export const layerFromProjectStore: Layer.Layer<
         if (
           input.thread.workspace === undefined &&
           !sideChat &&
+          !input.preparingWorkspace &&
           Option.isSome(projections) &&
           Option.isSome(repositoryResolver)
         ) {

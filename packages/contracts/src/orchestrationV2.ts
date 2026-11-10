@@ -3372,6 +3372,7 @@ export const OrchestrationV2Command = Schema.Union([
     title: Schema.optional(TrimmedNonEmptyString),
     sideChat: Schema.optional(Schema.Boolean),
     isolateWorkspace: Schema.optional(Schema.Boolean),
+    interactionMode: Schema.optional(ProviderInteractionMode),
     createdAt: Schema.optional(Schema.DateTimeUtc),
   }),
   Schema.Struct({
