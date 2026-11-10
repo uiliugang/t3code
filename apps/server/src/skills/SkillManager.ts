@@ -1369,13 +1369,14 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const operations = input.type === "batch" ? input.operations : [input];
           const seen = new Set<string>();
-          for (const action of operations) {
+          for (let action of operations) {
             if (seen.has(actionKey(action))) continue;
             seen.add(actionKey(action));
             if (action.type === "cancel") {
+              const adoptionId = action.id;
               const adoption = (yield* Ref.get(state)).jobs?.find(
                 (job) =>
-                  job.id === action.id &&
+                  job.id === adoptionId &&
                   job.input.type === "adopt" &&
                   (job.status === "queued" || job.status === "waiting"),
               );
@@ -1386,8 +1387,13 @@ const make = Effect.gen(function* () {
                     job.id === adoption.id ? { ...job, status: "cancelled", finishedAt } : job,
                   ),
                 );
-                continue;
+                const skill = (yield* Ref.get(state)).skills.find(
+                  (entry) => entry.id === adoption.skillId,
+                );
+                if (!skill) continue;
+                action = { type: "cancel", id: skill.id };
               }
+              const skillId = action.id;
               const finishedAt = yield* now;
               yield* saveJobs((jobs) =>
                 jobs.map((job) =>
@@ -1395,7 +1401,7 @@ const make = Effect.gen(function* () {
                     job.status === "running" ||
                     job.status === "waiting") &&
                   "id" in job.input &&
-                  job.input.id === action.id &&
+                  job.input.id === skillId &&
                   ["update", "check", "rollback"].includes(job.input.type)
                     ? { ...job, status: "cancelled", finishedAt }
                     : job,
@@ -1530,8 +1536,13 @@ const make = Effect.gen(function* () {
     if (!(yield* host.busy)) {
       yield* jobLock.withPermits(1)(
         Effect.gen(function* () {
-          const waiting = ((yield* Ref.get(state)).jobs ?? []).filter(
-            (job) => job.status === "waiting" && job.input.type === "adopt",
+          const catalog = yield* Ref.get(state);
+          const waiting = (catalog.jobs ?? []).filter(
+            (job) =>
+              job.status === "waiting" &&
+              job.input.type === "adopt" &&
+              job.input.mode === "takeover" &&
+              !catalog.skills.some((skill) => skill.id === job.skillId),
           );
           if (waiting.length) {
             const ids = new Set(waiting.map((job) => job.id));

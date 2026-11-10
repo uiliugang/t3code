@@ -834,6 +834,58 @@ describe("SkillManager", () => {
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
+  it.effect(
+    "activates a waiting library copy without replaying adoption and honors cancellation",
+    () =>
+      Effect.gen(function* () {
+        const { fs, source, manager, busy } = yield* harness;
+        const preview = yield* manager.inspect({ type: "adopt", path: source });
+        yield* Ref.set(busy, true);
+        yield* manager.mutate({
+          type: "adopt",
+          path: source,
+          digest: preview.digest,
+          mode: "copy",
+          targetIds: [],
+        });
+        yield* manager.drain;
+        const copied = (yield* manager.snapshot).skills[0]!;
+        expect(copied.status).toBe("pending");
+        yield* Ref.set(busy, false);
+        yield* manager.tick;
+        yield* manager.drain;
+        const activated = yield* manager.snapshot;
+        expect(activated.skills[0]?.status).toBe("ready");
+        expect(activated.skills[0]?.activeDigest).toBe(preview.digest);
+        expect(activated.jobs?.some((job) => job.status === "failed")).toBe(false);
+        expect(activated.jobs?.find((job) => job.input.type === "adopt")?.status).toBe("completed");
+        yield* fs.copy(source, `${source}-cancelled`);
+        yield* Ref.set(busy, true);
+        yield* manager.mutate({
+          type: "adopt",
+          path: `${source}-cancelled`,
+          digest: preview.digest,
+          mode: "copy",
+          targetIds: [],
+        });
+        yield* manager.drain;
+        const job = (yield* manager.snapshot).jobs!.at(-1)!;
+        yield* manager.mutate({ type: "cancel", id: job.id });
+        yield* manager.drain;
+        yield* Ref.set(busy, false);
+        yield* manager.tick;
+        yield* manager.drain;
+        const cancelled = yield* manager.snapshot;
+        expect(cancelled.jobs?.find((entry) => entry.id === job.id)?.status).toBe("cancelled");
+        expect(cancelled.skills.find((skill) => skill.id === job.skillId)).toMatchObject({
+          status: "ready",
+          activeDigest: null,
+          cancelledDigest: preview.digest,
+        });
+        expect(yield* fs.readFileString(`${source}-cancelled/script.sh`)).toBe("first");
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect("does not replace a location owned by another managed skill", () =>
     Effect.gen(function* () {
       const { fs, directory, source, target, manager, install, restart } = yield* harness;
