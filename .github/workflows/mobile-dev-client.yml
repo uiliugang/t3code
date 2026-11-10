@@ -225,6 +225,8 @@ jobs:
       group: mobile-dev-client-ios-${{ github.event_name == 'pull_request' && github.event.pull_request.number || inputs.fingerprint || github.sha }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
+      # Clerk's Swift package requires Swift 6.2 or newer.
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       NODE_OPTIONS: --max-old-space-size=8192
       EXPECTED_FINGERPRINT: ${{ inputs.fingerprint }}
       T3_NATIVE_CLIENT_CACHE: ${{ github.event_name == 'pull_request' && 'off' || '' }}
