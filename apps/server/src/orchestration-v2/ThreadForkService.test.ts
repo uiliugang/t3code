@@ -206,6 +206,24 @@ it.effect("resets a fork's pin, snooze, settle and delegation state but keeps it
   }),
 );
 
+it.effect.each(["isolatedWorkspace"] as const)(
+  "preserves the source's %s constraint across ordinary forks",
+  (constraint) =>
+    Effect.gen(function* () {
+      const sourceRun = makeSourceRun("completed");
+      const sourceProjection = makeSourceProjection(sourceRun);
+      const result = yield* planFork(sourceRun, {
+        ...sourceProjection,
+        thread: {
+          ...sourceProjection.thread,
+          worktreePath: null,
+          lineage: { ...sourceProjection.thread.lineage, [constraint]: true },
+        },
+      });
+      assert.isTrue(result.targetThread.lineage[constraint]);
+    }),
+);
+
 it.effect("starts a fork without the source thread's pending title regeneration", () =>
   Effect.gen(function* () {
     const sourceRun = makeSourceRun("completed");
@@ -308,7 +326,7 @@ it.effect("rejects in-progress and rolled-back fork sources", () =>
   }),
 );
 
-it.effect("marks only requested forks as side chats and inherits parent permissions", () =>
+it.effect("preserves side chat permissions until an isolated fork is requested", () =>
   Effect.gen(function* () {
     const sourceRun = makeSourceRun("completed");
     const sideChat = yield* planFork(sourceRun, makeSourceProjection(sourceRun), {
@@ -343,8 +361,12 @@ it.effect("marks only requested forks as side chats and inherits parent permissi
       },
     };
     const forkOfSideChat = yield* planFork(sourceRun, sideChatProjection);
-    assert.isUndefined(forkOfSideChat.targetThread.lineage.sideChat);
+    assert.isTrue(forkOfSideChat.targetThread.lineage.sideChat);
     assert.equal(forkOfSideChat.targetThread.runtimeMode, "full-access");
+    const isolatedFork = yield* planFork(sourceRun, sideChatProjection, { isolateWorkspace: true });
+    assert.isUndefined(isolatedFork.targetThread.lineage.sideChat);
+    assert.isTrue(isolatedFork.targetThread.lineage.isolatedWorkspace);
+    assert.isNull(isolatedFork.targetThread.worktreePath);
 
     const nested = yield* planFork(sourceRun, sideChatProjection, { sideChat: true }).pipe(
       Effect.flip,

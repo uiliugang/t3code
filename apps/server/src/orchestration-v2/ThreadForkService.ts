@@ -122,8 +122,12 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           parentThreadId: input.sourceProjection.thread.id,
           relationshipToParent: "fork",
           rootThreadId: input.sourceProjection.thread.lineage.rootThreadId,
-          ...(input.sideChat ? { sideChat: true } : {}),
-          ...(input.isolateWorkspace ? { isolatedWorkspace: true } : {}),
+          ...(input.sideChat || (sourceLineage.sideChat && !input.isolateWorkspace)
+            ? { sideChat: true }
+            : {}),
+          ...(input.isolateWorkspace || sourceLineage.isolatedWorkspace
+            ? { isolatedWorkspace: true }
+            : {}),
         },
         forkedFrom:
           sourceRun === null
