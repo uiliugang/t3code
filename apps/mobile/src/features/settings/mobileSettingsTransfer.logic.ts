@@ -54,6 +54,7 @@ const MobileTransferPreferences = Schema.Struct({
   codeWordBreak: Schema.optionalKey(Schema.Boolean),
   mathRenderingEnabled: Schema.optionalKey(Schema.Boolean),
   crashReportsEnabled: Schema.optionalKey(Schema.Boolean),
+  apkAutoUpdateEnabled: Schema.optionalKey(Schema.Boolean),
   composerEnterBehavior: Schema.optionalKey(Schema.Literals(["send", "newline"])),
   followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
   showPredictedMessages: Schema.optionalKey(Schema.Boolean),

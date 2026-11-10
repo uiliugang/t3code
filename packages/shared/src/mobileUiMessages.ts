@@ -1,4 +1,26 @@
 export const mobileUiMessages: Readonly<Record<string, string>> = {
+  "App updates": "应用更新",
+  "Automatically download APK updates": "自动下载 APK 更新",
+  "Install downloaded update": "安装已下载的更新",
+  "Downloading {version}…": "正在下载 {version}…",
+  "Allow this app to install updates in Android settings, then return here.":
+    "请在 Android 系统设置中允许此应用安装更新，然后返回。",
+  "Android asks you to confirm before installing an update.": "安装更新前，Android 会要求你确认。",
+  "Could not save update preferences.": "无法保存更新设置。",
+  "Could not update the app.": "无法更新应用。",
+  "Could not check for APK updates.": "无法检查 APK 更新。",
+  "The APK update manifest is invalid.": "APK 更新清单无效。",
+  "Could not download the APK update.": "无法下载 APK 更新。",
+  "Could not install the APK update. Check its package name, signing key, and checksum.":
+    "无法安装 APK 更新，请检查更新包的包名、签名和校验和。",
+  "The update is for a different app.": "此更新不属于当前应用。",
+  "The APK version does not match the update or is not newer than the installed app.":
+    "APK 版本与更新清单不符，或不高于已安装版本。",
+  "The APK signing certificate does not match the installed app.": "APK 签名与已安装应用不一致。",
+  "The downloaded APK is no longer available.": "下载的 APK 已不可用。",
+  "The APK version is invalid.": "APK 版本无效。",
+  "The APK checksum does not match.": "APK 校验和不匹配。",
+  "The downloaded file is not a valid APK.": "下载的文件不是有效的 APK。",
   "Beta: {feature}": "测试功能：{feature}",
   "Fast worktree checkout": "快速检出工作树",
   "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.":
