@@ -1260,6 +1260,13 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
           />
         </>
       )}
+      {data.jobs?.some((job) => job.status === "waiting") && (
+        <Text accessibilityRole="text" className="text-foreground-muted">
+          {t("{count} operations waiting for idle agents", {
+            count: data.jobs.filter((job) => job.status === "waiting").length,
+          })}
+        </Text>
+      )}
       <ControlPill
         label={t("Recent operations ({count})", { count: data.jobs?.length ?? 0 })}
         onPress={() => setHistory(!history)}
@@ -1282,7 +1289,9 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                           ? "Waiting for idle agents"
                           : "Queued",
               )}{" "}
-              · {data.skills.find((skill) => skill.id === job.skillId)?.name}
+              ·{" "}
+              {data.skills.find((skill) => skill.id === job.skillId)?.name ??
+                (job.input.type === "adopt" ? job.input.path : "")}
             </Text>
             <SkillDate value={job.finishedAt ?? job.createdAt} />
             <Text className="text-xs text-foreground-muted">
@@ -1310,6 +1319,14 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                 onPress={() => void mutate(job.input)}
               />
             )}
+            {job.input.type === "adopt" &&
+              (job.status === "queued" || job.status === "waiting") && (
+                <ControlPill
+                  label={t("Cancel adoption")}
+                  disabled={disabled}
+                  onPress={() => void mutate({ type: "cancel", id: job.id })}
+                />
+              )}
           </View>
         ))}
     </View>

@@ -137,12 +137,17 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const current = yield* Ref.get(state);
         const jobs = update(current.jobs ?? []);
-        const pending = jobs.filter((job) => job.status === "queued" || job.status === "running");
+        const pending = jobs.filter(
+          (job) => job.status === "queued" || job.status === "running" || job.status === "waiting",
+        );
         yield* persist({
           ...current,
           jobs: [
             ...jobs
-              .filter((job) => job.status !== "queued" && job.status !== "running")
+              .filter(
+                (job) =>
+                  job.status !== "queued" && job.status !== "running" && job.status !== "waiting",
+              )
               .slice(-100),
             ...pending,
           ],
@@ -851,6 +856,8 @@ const make = Effect.gen(function* () {
       backups,
       adoptionState: "preparing",
     };
+    if (input.mode === "takeover" && (yield* host.busy))
+      return yield* new SkillManagerError({ operation: "adopt", reason: "busy" });
     yield* replace(skill);
     yield* Effect.gen(function* () {
       for (const entry of backups) {
@@ -858,6 +865,8 @@ const make = Effect.gen(function* () {
         yield* fs.rename(entry.original, entry.backup);
       }
       yield* activate(skill, data.digest);
+      if (input.mode === "takeover" && !(yield* get(id)).activeDigest)
+        return yield* new SkillManagerError({ operation: "adopt", reason: "busy" });
       yield* replace({ ...(yield* get(id)), adoptionState: "complete" });
     }).pipe(Effect.tapError(() => abortAdoption(skill)));
   });
@@ -1208,8 +1217,17 @@ const make = Effect.gen(function* () {
     }
   });
   const process = Effect.fn("SkillManager.process")(function* (id: string) {
-    const job = (yield* Ref.get(state)).jobs?.find((entry) => entry.id === id);
-    if (!job || job.status !== "queued") return;
+    const job = yield* jobLock.withPermits(1)(
+      Effect.gen(function* () {
+        const queued = (yield* Ref.get(state)).jobs?.find((entry) => entry.id === id);
+        if (!queued || queued.status !== "queued") return;
+        yield* saveJobs((jobs) =>
+          jobs.map((entry) => (entry.id === id ? { ...entry, status: "running" } : entry)),
+        );
+        return queued;
+      }),
+    );
+    if (!job) return;
     const input = job.input;
     const skillId =
       "id" in input
@@ -1240,6 +1258,16 @@ const make = Effect.gen(function* () {
           const error = isSkillManagerError(cause)
             ? cause
             : new SkillManagerError({ operation: input.type, reason: "io", cause });
+          if (input.type === "adopt" && input.mode === "takeover" && error.reason === "busy") {
+            yield* saveJobs((jobs) =>
+              jobs.map((entry) =>
+                entry.id === id
+                  ? { ...entry, status: "waiting", finishedAt: null, reason: null }
+                  : entry,
+              ),
+            );
+            return;
+          }
           const current = yield* Ref.get(state);
           const failedId = current.jobs?.find((entry) => entry.id === id)?.skillId ?? skillId;
           const attemptedAt = yield* now;
@@ -1345,6 +1373,21 @@ const make = Effect.gen(function* () {
             if (seen.has(actionKey(action))) continue;
             seen.add(actionKey(action));
             if (action.type === "cancel") {
+              const adoption = (yield* Ref.get(state)).jobs?.find(
+                (job) =>
+                  job.id === action.id &&
+                  job.input.type === "adopt" &&
+                  (job.status === "queued" || job.status === "waiting"),
+              );
+              if (adoption) {
+                const finishedAt = yield* now;
+                yield* saveJobs((jobs) =>
+                  jobs.map((job) =>
+                    job.id === adoption.id ? { ...job, status: "cancelled", finishedAt } : job,
+                  ),
+                );
+                continue;
+              }
               const finishedAt = yield* now;
               yield* saveJobs((jobs) =>
                 jobs.map((job) =>
@@ -1364,7 +1407,9 @@ const make = Effect.gen(function* () {
             if (
               current.jobs?.some(
                 (job) =>
-                  (job.status === "queued" || job.status === "running") &&
+                  (job.status === "queued" ||
+                    job.status === "running" ||
+                    (job.status === "waiting" && job.input.type === "adopt")) &&
                   actionKey(job.input) === key,
               )
             )
@@ -1482,6 +1527,22 @@ const make = Effect.gen(function* () {
   for (const job of (yield* Ref.get(state)).jobs ?? [])
     if (job.status === "queued") yield* worker.enqueue(job.id);
   const tick = Effect.gen(function* () {
+    if (!(yield* host.busy)) {
+      yield* jobLock.withPermits(1)(
+        Effect.gen(function* () {
+          const waiting = ((yield* Ref.get(state)).jobs ?? []).filter(
+            (job) => job.status === "waiting" && job.input.type === "adopt",
+          );
+          if (waiting.length) {
+            const ids = new Set(waiting.map((job) => job.id));
+            yield* saveJobs((jobs) =>
+              jobs.map((job) => (ids.has(job.id) ? { ...job, status: "queued" } : job)),
+            );
+            for (const job of waiting) yield* worker.enqueue(job.id);
+          }
+        }),
+      );
+    }
     const current = yield* Ref.get(state);
     const time = yield* Clock.currentTimeMillis;
     for (const skill of current.skills) {
