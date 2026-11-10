@@ -108,8 +108,9 @@ export function PullRequestRoutingSettings() {
         })}
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
-        Choose environments you trust to share PR data and use each other's source control access.
-        Enable both environments. This applies only to this client.
+        {t(
+          "Choose environments you trust to share PR data and use each other's source control access. Enable both environments. This applies only to this client.",
+        )}
       </Text>
     </View>
   );

@@ -4,7 +4,7 @@
   "rules": { "types": "off", "nsTypes": "off" },
   // Disabled integrations retain their driver entry points so registration can be restored.
   "ignoreIssues": {
-    "packages/source-control-{azure-devops,bitbucket,forgejo,gitcafe,gitlab}/src/server/driver.ts": [
+    "packages/source-control-{azure-devops,bitbucket,cursor-origin,forgejo,gitcafe,gitlab}/src/server/driver.ts": [
       "exports",
     ],
   },
@@ -77,6 +77,7 @@
         // Disabled hosting integrations remain installed so their entries can be re-enabled.
         "@t3tools/source-control-azure-devops",
         "@t3tools/source-control-bitbucket",
+        "@t3tools/source-control-cursor-origin",
         "@t3tools/source-control-forgejo",
         "@t3tools/source-control-gitcafe",
         "@t3tools/source-control-gitlab",

@@ -5,7 +5,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
 import * as Path from "effect/Path";
 import * as Scope from "effect/Scope";
 import { ChildProcessSpawner } from "effect/process";
@@ -51,7 +54,12 @@ const run = <A, E>(
     E,
     FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
   >,
-) => effect.pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+) =>
+  effect.pipe(
+    Effect.provideService(HostProcess.Addresses, Effect.succeed(new Set(["127.0.0.1", "::1"]))),
+    Effect.provide(NodeServices.layer),
+    Effect.scoped,
+  );
 
 const writeCookieDatabase = (file: string, count: number) =>
   Effect.sync(() => {
@@ -199,6 +207,51 @@ describe("chromiumProcessIsAlive", () => {
 });
 
 describe("isSourceInstalled", () => {
+  it.effect.each([undefined, "", "relative-config", "relocated", "chrome-override"])(
+    "discovers Linux Chromium profiles with XDG_CONFIG_HOME=%s",
+    (configHome) =>
+      run(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-sources-xdg-" });
+          const xdgConfigHome =
+            configHome === "relocated" || configHome === "chrome-override"
+              ? path.join(home, "config")
+              : configHome;
+          const chromeConfigHome =
+            configHome === "chrome-override" ? path.join(home, ".config") : undefined;
+          const context = yield* sourcePathContext.pipe(
+            Effect.provideService(HostProcess.Environment, {
+              HOME: home,
+              XDG_CONFIG_HOME: xdgConfigHome,
+              CHROME_CONFIG_HOME: chromeConfigHome,
+            }),
+            Effect.provideService(HostProcess.Platform, "linux"),
+          );
+          const configRoot =
+            chromeConfigHome ??
+            (configHome === "relocated" ? path.join(home, "config") : path.join(home, ".config"));
+          const source = BROWSER_IMPORT_SOURCES.find((source) => source.id === "chrome")!;
+          const root = path.join(configRoot, "google-chrome");
+          const database = path.join(root, "Default", "Network", "Cookies");
+          assert.isFalse(yield* isSourceInstalled(source, context));
+          yield* fileSystem.makeDirectory(path.dirname(database), { recursive: true });
+          yield* writeCookieDatabase(database, 2);
+          yield* fileSystem.writeFileString(
+            path.join(root, "Local State"),
+            '{"profile":{"info_cache":{"Default":{"name":"Fixture"}}}}',
+          );
+
+          assert.isTrue(yield* isSourceInstalled(source, context));
+          assert.deepEqual(yield* listSourceProfiles(source, context), [
+            { directory: "Default", name: "Fixture", cookieCount: 2 },
+          ]);
+          assert.equal(yield* resolveCookieDatabase(source, context, "Default"), database);
+        }),
+      ),
+  );
+
   it.effect("ignores a user-data directory that holds no cookie database", () =>
     run(
       Effect.gen(function* () {
@@ -325,13 +378,18 @@ describe("Zen", () => {
     run(
       Effect.gen(function* () {
         const darwinContext = yield* sourcePathContext.pipe(
-          Effect.provideService(HostProcess.Environment, { HOME: "/Users/zen-user" }),
+          Effect.provideService(HostProcess.Environment, {
+            HOME: "/Users/zen-user",
+            XDG_CONFIG_HOME: "/custom-config",
+          }),
           Effect.provideService(HostProcess.Platform, "darwin"),
         );
         const windowsContext = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, {
             HOME: "C:\\Users\\zen-user",
             APPDATA: "C:\\Users\\zen-user\\AppData\\Roaming",
+            LOCALAPPDATA: "C:\\Users\\zen-user\\AppData\\Local",
+            XDG_CONFIG_HOME: "/custom-config",
           }),
           Effect.provideService(HostProcess.Platform, "win32"),
         );
@@ -359,6 +417,24 @@ describe("Zen", () => {
           linuxContext.path.join("/home/zen-user", ".zen"),
           linuxContext.path.join("/home/zen-user", ".var", "app", "app.zen_browser.zen", "zen"),
         ]);
+        assert.equal(
+          helium.userDataDirectory(darwinContext),
+          darwinContext.path.join(
+            "/Users/zen-user",
+            "Library",
+            "Application Support",
+            "net.imput.helium",
+          ),
+        );
+        assert.equal(
+          helium.userDataDirectory(windowsContext),
+          windowsContext.path.join(
+            "C:\\Users\\zen-user\\AppData\\Local",
+            "imput",
+            "Helium",
+            "User Data",
+          ),
+        );
       }),
     ),
   );
@@ -415,16 +491,19 @@ describe("Zen", () => {
     ),
   );
 
-  it.effect("discovers Zen profiles in both current and legacy Linux roots", () =>
+  it.effect("discovers Zen profiles in relocated and legacy Linux roots", () =>
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-zen-linux-" });
         const context = yield* sourcePathContext.pipe(
-          Effect.provideService(HostProcess.Environment, { HOME: home }),
+          Effect.provideService(HostProcess.Environment, {
+            HOME: home,
+            XDG_CONFIG_HOME: NodePath.join(home, "config"),
+          }),
           Effect.provideService(HostProcess.Platform, "linux"),
         );
-        const currentRoot = context.path.join(home, ".config", "zen");
+        const currentRoot = context.path.join(home, "config", "zen");
         const legacyRoot = context.path.join(home, ".zen");
         const currentProfile = context.path.join(currentRoot, "current.default");
         const legacyProfile = context.path.join(legacyRoot, "legacy.default");
@@ -550,7 +629,7 @@ describe("Zen", () => {
 });
 
 describe("Firefox Snap profiles", () => {
-  it.effect.skipIf(!symlinksSupported)(
+  it.live.skipIf(!symlinksSupported)(
     "finds Snap profiles with or without profiles.ini and checks their locks",
     () =>
       run(
@@ -769,7 +848,35 @@ describe("listSourceProfiles Firefox fallback", () => {
 });
 
 describe("isSourceRunning for Firefox", () => {
-  it.effect.skipIf(!symlinksSupported)("finds the lock inside the profile, not at the root", () =>
+  it.effect("does not wait indefinitely for hostname resolution", () =>
+    run(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-firefox-dns-" });
+        const context = yield* sourcePathContext.pipe(
+          Effect.provideService(HostProcess.Environment, { HOME: home }),
+          Effect.provideService(HostProcess.Platform, "darwin"),
+        );
+        const root = firefox.userDataDirectory(context)!;
+        const profile = `${root}/Profiles/test.default`;
+        yield* fileSystem.makeDirectory(profile, { recursive: true });
+        yield* fileSystem.writeFileString(`${profile}/cookies.sqlite`, "db");
+        const started = yield* Deferred.make<void>();
+        const check = yield* isSourceRunning(firefox, context).pipe(
+          Effect.provideService(
+            HostProcess.Addresses,
+            Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+          ),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("3 seconds");
+        assert.isFalse(yield* Fiber.join(check));
+      }),
+    ),
+  );
+
+  it.live.skipIf(!symlinksSupported)("finds the lock inside the profile, not at the root", () =>
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;

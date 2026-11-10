@@ -20,6 +20,7 @@ import { createRemoteEnvironmentProjectionAtoms } from "./remote-environment-pro
 import { serverEnvironment } from "./server";
 import { relayEnvironmentDiscovery } from "./relay";
 import { connectPairingUrl as connectPairingUrlCommand } from "../connection/onboarding";
+import { useUiTranslation } from "../lib/useUiTranslation";
 
 const RELAY_REMOVAL_ACCOUNT_NOTE: Record<Discovery.RelayEnvironmentRegistration, string> = {
   registered:
@@ -154,6 +155,7 @@ export function useRemoteConnectionStatus() {
 }
 
 export function useRemoteConnections() {
+  const t = useUiTranslation();
   const controller = useConnectionController();
   const navigation = useNavigation();
   const connectionPairingUrl = useAtomValue(connectionPairingUrlAtom);
@@ -183,7 +185,7 @@ export function useRemoteConnections() {
       return;
     }
     const remove = {
-      text: "Remove",
+      text: t("Remove"),
       style: "destructive",
       onPress: () => {
         void controller.removeEnvironment(environmentId);
@@ -195,22 +197,25 @@ export function useRemoteConnections() {
         environmentId,
       );
       const openAccount = {
-        text: "Open T3 Account",
+        text: t("Open T3 Account"),
         onPress: () => navigation.navigate("SettingsAuth"),
       };
       Dialog.alert(
-        "Remove from this device?",
-        `Forget ${environment.environmentLabel} and its cached threads on this device.\n\n${RELAY_REMOVAL_ACCOUNT_NOTE[registration]}`,
+        t("Remove from this device?"),
+        `${t("Forget {environment} and its cached threads on this device.", { environment: environment.environmentLabel })}\n\n${t(RELAY_REMOVAL_ACCOUNT_NOTE[registration])}`,
         registration === "unregistered" || !hasCloudPublicConfig()
-          ? [{ text: "Cancel", style: "cancel" }, remove]
-          : [{ text: "Cancel", style: "cancel" }, openAccount, remove],
+          ? [{ text: t("Cancel"), style: "cancel" }, remove]
+          : [{ text: t("Cancel"), style: "cancel" }, openAccount, remove],
       );
       return;
     }
     Dialog.alert(
-      "Remove from this device?",
-      `Forget ${environment.environmentLabel} and its cached threads on this device. Switch it off instead to keep it saved.`,
-      [{ text: "Cancel", style: "cancel" }, remove],
+      t("Remove from this device?"),
+      t(
+        "Forget {environment} and its cached threads on this device. Switch it off instead to keep it saved.",
+        { environment: environment.environmentLabel },
+      ),
+      [{ text: t("Cancel"), style: "cancel" }, remove],
     );
   };
 

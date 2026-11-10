@@ -2,6 +2,7 @@ import type { BrowserImportSourceId, BrowserImportSourceProfile } from "@t3tools
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
@@ -16,6 +17,8 @@ export interface BrowserImportPathContext {
   readonly path: Path.Path;
   readonly platform: NodeJS.Platform;
   readonly home: string;
+  readonly linuxConfigHome: string;
+  readonly linuxChromeConfigHome: string;
   readonly appData: string | undefined;
   readonly localAppData: string | undefined;
 }
@@ -68,7 +71,10 @@ const chromiumSource = (input: {
         : undefined;
     }
     return input.linuxSegments
-      ? context.path.join(context.home, ".config", ...input.linuxSegments)
+      ? context.path.join(
+          input.id === "chrome" ? context.linuxChromeConfigHome : context.linuxConfigHome,
+          ...input.linuxSegments,
+        )
       : undefined;
   },
 });
@@ -185,7 +191,7 @@ export const BROWSER_IMPORT_SOURCES: ReadonlyArray<BrowserImportSourceDefinition
       if (context.platform === "win32") {
         return context.appData ? context.path.join(context.appData, "zen") : undefined;
       }
-      return context.path.join(context.home, ".config", "zen");
+      return context.path.join(context.linuxConfigHome, "zen");
     },
     alternateLinuxRoots: (context) => [
       context.path.join(context.home, ".zen"),
@@ -292,10 +298,18 @@ export const sourcePathContext = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const environment = yield* HostProcess.Environment;
+  const home = environment.HOME ?? environment.USERPROFILE ?? "";
+  const xdgConfigHome = environment.XDG_CONFIG_HOME;
+  const linuxConfigHome =
+    xdgConfigHome && path.isAbsolute(xdgConfigHome) ? xdgConfigHome : path.join(home, ".config");
+  const chromeConfigHome = environment.CHROME_CONFIG_HOME;
   return {
     path,
     platform,
-    home: environment.HOME ?? environment.USERPROFILE ?? "",
+    home,
+    linuxConfigHome,
+    linuxChromeConfigHome:
+      chromeConfigHome && path.isAbsolute(chromeConfigHome) ? chromeConfigHome : linuxConfigHome,
     appData: environment.APPDATA,
     localAppData: environment.LOCALAPPDATA,
   } satisfies BrowserImportPathContext;
@@ -719,7 +733,12 @@ export const isSourceRunning = Effect.fn("BrowserImportSources.isSourceRunning")
 
   const profiles = yield* listSourceProfiles(definition, context);
   const localAddresses: ReadonlySet<string> =
-    context.platform === "win32" ? new Set() : yield* yield* HostProcess.Addresses;
+    context.platform === "win32"
+      ? new Set()
+      : yield* (yield* HostProcess.Addresses).pipe(
+          Effect.timeoutOption("2 seconds"),
+          Effect.map(Option.getOrElse(() => new Set(["127.0.0.1", "::1"]))),
+        );
   const found = yield* Effect.forEach(profiles, (profile) => {
     const directory = context.path.isAbsolute(profile.directory)
       ? profile.directory

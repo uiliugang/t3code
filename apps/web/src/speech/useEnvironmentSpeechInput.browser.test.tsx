@@ -128,6 +128,7 @@ vi.mock("@t3tools/client-runtime/voice-input", async (importOriginal) => ({
         acceleration: "auto",
         modelUnloadTimeout: "min_15",
         gpuDevices: [],
+        benchmarkTier: "cpu",
       };
     }),
   downloadEnvironmentSpeechModel: (_prepared: PreparedConnection, modelId: string) =>
@@ -200,10 +201,15 @@ vi.mock("./browserVoiceInput", () => ({
   },
 }));
 
+vi.mock(import("../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const THREAD_ENV = "thread-env";
 
 function setup(options: { readonly destination?: string | null } = {}) {
-  mocks.settings = {};
+  mocks.settings = { uiLanguage: "en" };
   setDestination(options.destination ?? null);
   if (!options.destination) localStorage.removeItem("t3code:voice-audio-grant:v1");
   chooseTranscriptCleanup(false);

@@ -1,11 +1,12 @@
 import { render } from "../../../test/render";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_CLIENT_SETTINGS, DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { StrictMode, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "../../index.css";
 import { translateUi } from "@t3tools/shared/uiLocale";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import type { ScopedSettingsPatch } from "./scopedSettings";
 
 type WritingStyle = typeof DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle;
@@ -72,6 +73,7 @@ const content = () => (
 );
 
 async function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "zh-CN" });
   state.styles = [
     {
       ...DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle,
@@ -103,6 +105,7 @@ describe("mixed source control instructions", () => {
     }));
 
     await userEvent.click(page.getByRole("button", { name: "高级" }));
+    await expect.element(resetButton("change request templates")).toBeInViewport({ ratio: 1 });
     await userEvent.click(resetButton("change request templates"));
 
     expect(state.updateSettings).toHaveBeenCalledTimes(1);

@@ -18,6 +18,13 @@ vi.mock("../state/entities", async (original) => ({
   useProjects: () => entities.projects,
   useVisibleThreadShells: () => entities.threads,
 }));
+vi.mock(import("../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return {
+    useUiTranslation: () => (message: string, values?: Record<string, string | number>) =>
+      translateUi("en", message, values),
+  };
+});
 
 function setup(state: { projects?: ReadonlyArray<Project>; threads?: ReadonlyArray<Thread> } = {}) {
   useCommandPaletteStore.setState(useCommandPaletteStore.getInitialState(), true);
@@ -33,6 +40,35 @@ describe("CommandPalette open intents", () => {
     openCommandPalette({ open: "new-thread-in" });
 
     await expect.element(page.getByRole("combobox")).toHaveFocus();
+  });
+
+  it("highlights the first project when New thread in... opens from the root list", async () => {
+    const environmentId = EnvironmentId.make("local");
+    const project = (id: string, title: string): Project => ({
+      id: ProjectId.make(id),
+      environmentId,
+      title,
+      workspaceRoot: `/work/${id}`,
+      repositoryIdentity: null,
+      defaultModelSelection: null,
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+      scripts: [],
+    });
+    setup({
+      projects: [project("acme", "Acme"), project("beta", "Beta"), project("gamma", "Gamma")],
+    });
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({});
+    await expect
+      .element(page.getByPlaceholder("Search commands, projects, and threads..."))
+      .toHaveFocus();
+    await page.getByRole("option", { name: /^New thread in\.\.\./ }).click();
+
+    await expect.element(page.getByPlaceholder("Search...")).toHaveFocus();
+    await expect.element(page.getByRole("option").first()).toHaveAttribute("data-highlighted");
+    await expect.element(page.getByRole("option").nth(1)).not.toHaveAttribute("data-highlighted");
   });
 
   it("opens a search intent with its query in the focused input", async () => {
