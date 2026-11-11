@@ -20,6 +20,40 @@ T3 Connect is optional and disabled in a fresh clone. Public configuration belon
 repository-root `.env` or `.env.local`, not an `apps/mobile/.env` file. See
 [`../../.env.example`](../../.env.example).
 
+## Enable APK updates for a source build
+
+Set `T3CODE_ANDROID_APK_UPDATE_URL` in the repository-root `.env` before building Android.
+Use an HTTPS URL for a version manifest, such as a GitHub Release asset:
+
+```dotenv
+T3CODE_ANDROID_APK_UPDATE_URL=https://github.com/OWNER/REPO/releases/latest/download/android-update.json
+```
+
+Build a bundled release APK with the same package name and signing key for every release.
+Increase `T3CODE_ANDROID_VERSION_CODE` for each release and set `T3CODE_MOBILE_VERSION` to its display version.
+Publish the APK, then publish the manifest at the configured URL:
+
+```json
+{
+  "packageName": "com.t3tools.t3code",
+  "versionCode": 8,
+  "versionName": "0.0.8",
+  "url": "https://github.com/OWNER/REPO/releases/download/android-0.0.8/t3code.apk",
+  "sha256": "REPLACE_WITH_THE_APK_SHA256"
+}
+```
+
+Use the APK's actual package name and version code. Get its checksum with `shasum -a 256 t3code.apk`.
+Keep versioned APK URLs immutable so the manifest always identifies the file it describes.
+
+Configured Android builds download newer APKs automatically and ask Android to install them when the app is in the foreground.
+On the first update, allow installation from T3 Code in Android settings and return to the app.
+Android still requires installation confirmation. Use **Settings → About → App updates** to retry or disable automatic downloads.
+The installer rejects APKs with another package name, a different signing certificate, a mismatched checksum, or an unexpected version code.
+
+These builds use APK updates instead of Expo OTA updates. Store builds omit the APK installation permission unless the update URL is configured.
+The feature does not change iOS updates. After adding this setting for the first time, install the newly built APK manually.
+
 ## Development
 
 For simulator, emulator, or Android phone development, boot or connect a device, then install the

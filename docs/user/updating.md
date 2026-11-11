@@ -214,3 +214,8 @@ download updates in the background and apply them when you next leave the app.
 It saves drafts and queued messages before restarting. If you keep the app open
 for a long time, it may ask to install immediately; choosing **Later** leaves the
 update queued for the next suitable moment.
+
+Self-built Android apps can also download complete APK updates when their builder has configured an update source.
+In **Settings → About → App updates**, you can check manually, retry installation, or turn off automatic downloads.
+The first installation may open Android settings to allow updates from T3 Code; grant permission and return to the app.
+Android asks you to confirm each installation. APK updates must use the same package name and signing key as the installed app.

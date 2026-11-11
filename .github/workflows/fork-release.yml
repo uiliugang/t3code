@@ -172,6 +172,7 @@ jobs:
       T3CODE_ANDROID_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
       T3CODE_MOBILE_VERSION: ${{ needs.prepare.outputs.version }}
       T3CODE_MOBILE_UPDATES_ENABLED: "0"
+      T3CODE_ANDROID_APK_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/android-update.json
       MOBILE_VERSION_POLICY: appVersion
       EXPO_NO_GIT_STATUS: "1"
       NODE_OPTIONS: --max-old-space-size=4096
@@ -389,6 +390,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
         run: |
           test "$(find . -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.apk' | wc -l)" -eq 1
@@ -398,14 +400,27 @@ jobs:
           test -f "t3-${RELEASE_TAG#v}-darwin-arm64.tar.gz"
           test -f "t3-${RELEASE_TAG#v}-linux-x64.tar.gz"
           test -f "t3-${RELEASE_TAG#v}-linux-arm64.tar.gz"
-          sha256sum *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz > SHA256SUMS
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const version = process.env.RELEASE_TAG.replace(/^v/, '');
+          const apk = `T3-Code-${version}-android.apk`;
+          writeFileSync('android-update.json', JSON.stringify({
+            packageName: 'com.uiliugang.t3code',
+            versionCode: Number(process.env.RELEASE_VERSION_CODE),
+            versionName: version,
+            url: `https://github.com/${process.env.GH_REPO}/releases/download/${process.env.RELEASE_TAG}/${apk}`,
+            sha256: createHash('sha256').update(readFileSync(apk)).digest('hex'),
+          }, null, 2) + '\n');
+          NODE
+          sha256sum *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz android-update.json > SHA256SUMS
           previous_tag=$(gh release list --exclude-drafts --exclude-pre-releases --limit 100 \
             --json tagName --jq 'map(select(.tagName != env.RELEASE_TAG))[0].tagName // empty')
           notes_args=(--generate-notes)
           if [[ -n "$previous_tag" ]]; then
             notes_args+=(--notes-start-tag "$previous_tag")
           fi
-          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz SHA256SUMS --verify-tag \
+          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz android-update.json SHA256SUMS --verify-tag \
             --title "T3 Code $RELEASE_TAG (fork)" \
             "${notes_args[@]}" \
-            --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone ARM64 Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Upstream Android OTA updates are disabled.'
+            --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone ARM64 Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Android downloads APK updates from this repository and asks for installation confirmation. Upstream Android OTA updates are disabled.'

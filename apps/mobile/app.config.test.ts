@@ -56,7 +56,30 @@ it("configures a standalone Android release without upstream OTA", async () => {
   expect(config.android?.versionCode).toBe(42);
   expect(config.version).toBe("1.2.3");
   expect(config.updates?.enabled).toBe(false);
+  expect(config.android?.blockedPermissions).toContain(
+    "android.permission.REQUEST_INSTALL_PACKAGES",
+  );
 });
+
+it("enables APK installation only in builds configured with an update source", async () => {
+  vi.stubEnv("T3CODE_ANDROID_APK_UPDATE_URL", "https://example.com/android-update.json");
+  const config = await loadConfig("production");
+  expect(config.extra?.androidApkUpdateUrl).toBe("https://example.com/android-update.json");
+  expect(config.android?.permissions).toContain("android.permission.REQUEST_INSTALL_PACKAGES");
+  expect(config.android?.blockedPermissions).not.toContain(
+    "android.permission.REQUEST_INSTALL_PACKAGES",
+  );
+});
+
+it.each(["http://example.com/update.json", "https://user:password@example.com/update.json"])(
+  "rejects an unsafe APK update source: %s",
+  async (url) => {
+    vi.stubEnv("T3CODE_ANDROID_APK_UPDATE_URL", url);
+    await expect(loadConfig("production")).rejects.toThrow(
+      "must be an HTTPS URL without credentials",
+    );
+  },
+);
 
 it.each(["0", "1.5", "NaN", "2100000001"])("rejects Android versionCode=%s", async (value) => {
   vi.stubEnv("T3CODE_ANDROID_VERSION_CODE", value);

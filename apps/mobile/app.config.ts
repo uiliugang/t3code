@@ -121,6 +121,13 @@ const variant = VARIANT_CONFIG[APP_VARIANT];
 const androidVersionCode = repoEnv.T3CODE_ANDROID_VERSION_CODE
   ? Number(repoEnv.T3CODE_ANDROID_VERSION_CODE)
   : undefined;
+const androidApkUpdateUrl = repoEnv.T3CODE_ANDROID_APK_UPDATE_URL?.trim() || undefined;
+if (androidApkUpdateUrl) {
+  const url = new URL(androidApkUpdateUrl);
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw new Error("T3CODE_ANDROID_APK_UPDATE_URL must be an HTTPS URL without credentials.");
+  }
+}
 if (
   androidVersionCode !== undefined &&
   (!Number.isInteger(androidVersionCode) ||
@@ -323,7 +330,11 @@ const config: ExpoConfig = {
     // JS back dispatch needs RN's Android 16 shim and withAndroidPredictiveBackCompat on Android 13-15.
     predictiveBackGestureEnabled: true,
     // expo-sensors declares this for its pedometer, which the app does not use.
-    blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
+    permissions: androidApkUpdateUrl ? ["android.permission.REQUEST_INSTALL_PACKAGES"] : [],
+    blockedPermissions: [
+      "android.permission.ACTIVITY_RECOGNITION",
+      ...(!androidApkUpdateUrl ? ["android.permission.REQUEST_INSTALL_PACKAGES"] : []),
+    ],
     intentFilters: [
       {
         action: "VIEW",
@@ -476,6 +487,7 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    androidApkUpdateUrl,
     secretsFeatureEnabled: ["1", "true"].includes(
       process.env.T3CODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
     ),
