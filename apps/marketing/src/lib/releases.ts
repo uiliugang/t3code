@@ -1,11 +1,11 @@
-const REPO = "pingdotgg/t3code";
+import { GITHUB_REPOSITORY, GITHUB_REPOSITORY_URL } from "./repository";
 
-export const RELEASES_URL = `https://github.com/${REPO}/releases`;
+export const RELEASES_URL = `${GITHUB_REPOSITORY_URL}/releases`;
 export const NIGHTLY_RELEASES_URL = `${RELEASES_URL}?q=nightly&expanded=true`;
 
-const LATEST_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const LATEST_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
 // GitHub's latest endpoint excludes prereleases; the newest nightly comes from the ordered release list.
-const LIST_API_URL = `https://api.github.com/repos/${REPO}/releases`;
+const LIST_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases`;
 const RELEASE_PAGE_SIZE = 100;
 const MAX_RELEASE_PAGES = 10;
 
@@ -24,7 +24,7 @@ export interface Release {
 }
 
 function cacheKey(channel: ReleaseChannel) {
-  return `t3code-${channel}-release`;
+  return `t3code-${GITHUB_REPOSITORY}-${channel}-release`;
 }
 
 async function fetchStable(): Promise<Release> {
