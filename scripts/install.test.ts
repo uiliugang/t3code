@@ -285,12 +285,17 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       expect(result.code, result.output).toBe(0);
       const launcher = NodePath.join(binDir, "t3.cmd");
       expect(await NodeFSP.readFile(launcher, "utf8")).toContain(NodePath.join(target, "t3.exe"));
-      expect(
-        NodeChildProcess.execFileSync("cmd.exe", ["/d", "/c", `"${launcher}" --version`], {
+      const launched = NodeChildProcess.spawnSync(
+        "cmd.exe",
+        ["/d", "/s", "/c", `""${launcher}" --version"`],
+        {
           cwd: NodeOS.tmpdir(),
           encoding: "utf8",
-        }).trim(),
-      ).toBe(process.version);
+          windowsVerbatimArguments: true,
+        },
+      );
+      expect(launched.status, launched.stderr).toBe(0);
+      expect(launched.stdout.trim()).toBe(process.version);
     } finally {
       await NodeFSP.rm(root, { recursive: true, force: true });
     }
