@@ -17,6 +17,8 @@ import {
   type TerminalOutputState,
 } from "@t3tools/shared/terminalOutput";
 import * as DateTime from "effect/DateTime";
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -172,6 +174,38 @@ const takeFrame = (frames: Queue.Queue<OrchestrationV2CommandOutputFrame | "ende
 const layer = it.layer(layerTest);
 
 layer("CommandOutputHub", (it) => {
+  it.effect("bounds frame throttling when the wall clock moves backwards", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const clock = yield* Clock.Clock;
+        let wallTime = 3_600_000;
+        const waits: number[] = [];
+        yield* Effect.gen(function* () {
+          const hub = yield* CommandOutputHub.CommandOutputHub;
+          const threadId = yield* seedThread;
+          yield* writeCommandItem(threadId, { status: "running" });
+          const frames = yield* subscribeFrames(threadId);
+          yield* takeFrame(frames);
+          wallTime = 0;
+          yield* hub.append({ threadId, itemId: ITEM_ID, chunk: "after rollback" });
+          const frame = yield* takeFrame(frames);
+          assert.equal(frame.text, "after rollback");
+          yield* writeCommandItem(threadId, { status: "completed", output: "done", exitCode: 0 });
+          assert.isFalse((yield* takeFrame(frames)).running);
+          assert.isTrue(waits.every((wait) => wait <= 100));
+        }).pipe(
+          Effect.provideService(Clock.Clock, {
+            ...clock,
+            currentTimeMillis: Effect.sync(() => wallTime),
+            sleep: (duration) =>
+              Effect.sync(() => {
+                waits.push(Duration.toMillis(duration));
+              }),
+          }),
+        );
+      }),
+    ),
+  );
   it.effect(
     "a late subscriber gets the running tail, then live appends, then the final output",
     () =>

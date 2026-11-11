@@ -338,23 +338,41 @@ describe("ProjectConfigurationService", () => {
           expect(contents).not.toContain("secret");
         }).pipe(Effect.scoped, Effect.provide(test.layer));
         expect(test.attempts).toHaveLength(2);
+        yield* Effect.gen(function* () {
+          const service = yield* ProjectConfigurationService.ProjectConfigurationService;
+          yield* service.retry("failed-import");
+          yield* service.drain;
+          const fs = yield* FileSystem.FileSystem;
+          expect(yield* fs.exists(partial!.repositories[1]!.stagingPath!)).toBe(false);
+          expect(
+            (yield* fs.readDirectory(`${test.baseDir}/clones`)).filter((name) =>
+              name.startsWith(".t3-import-"),
+            ),
+          ).toHaveLength(1);
+        }).pipe(Effect.scoped, Effect.provide(Layer.fresh(test.layer)));
+        expect(test.attempts).toHaveLength(3);
         fail = false;
         yield* Effect.gen(function* () {
           const service = yield* ProjectConfigurationService.ProjectConfigurationService;
           expect((yield* snapshot())[0]?.phase).toBe("partial");
-          expect(test.attempts).toHaveLength(2);
+          expect(test.attempts).toHaveLength(3);
           yield* service.retry("failed-import");
           yield* service.drain;
           expect((yield* snapshot())[0]?.phase).toBe("done");
-          expect(test.attempts).toHaveLength(3);
+          expect(test.attempts).toHaveLength(4);
           expect(
             test.attempts.filter((input) => input.remoteUrl?.includes("/public")),
           ).toHaveLength(1);
           yield* service.retry("failed-import");
           yield* service.drain;
-          expect(test.attempts).toHaveLength(3);
+          expect(test.attempts).toHaveLength(4);
           const fs = yield* FileSystem.FileSystem;
-          expect(yield* fs.exists(partial!.repositories[1]!.stagingPath!)).toBe(true);
+          expect(yield* fs.exists(partial!.repositories[1]!.stagingPath!)).toBe(false);
+          expect(
+            (yield* fs.readDirectory(`${test.baseDir}/clones`)).filter((name) =>
+              name.startsWith(".t3-import-"),
+            ),
+          ).toEqual([]);
         }).pipe(Effect.scoped, Effect.provide(Layer.fresh(test.layer)));
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
@@ -393,7 +411,7 @@ describe("ProjectConfigurationService", () => {
   );
 
   it.effect(
-    "keeps conflicting destinations and partial checkouts when retrying or forgetting an import",
+    "keeps conflicting destinations while removing failed staging when forgetting an import",
     () =>
       Effect.gen(function* () {
         const test = yield* harness({ clone: () => Effect.fail(cloneError()) });
@@ -418,7 +436,21 @@ describe("ProjectConfigurationService", () => {
           expect(yield* fs.readFileString(`${repository.destinationPath}/keep.txt`)).toBe(
             "user files",
           );
-          expect(yield* fs.exists(repository.stagingPath!)).toBe(true);
+          expect(yield* fs.exists(repository.stagingPath!)).toBe(false);
+          yield* service.start({
+            id: "symlink-import",
+            projects: [definition("other", "https://github.com/team/other.git")],
+            destinationDirectory: `${test.baseDir}/clones`,
+          });
+          yield* service.drain;
+          const other = (yield* snapshot())[0]!.repositories[0]!;
+          yield* fs.remove(other.stagingPath!, { recursive: true });
+          yield* fs.symlink(repository.destinationPath, other.stagingPath!);
+          yield* service.forget("symlink-import");
+          expect(yield* fs.readFileString(`${repository.destinationPath}/keep.txt`)).toBe(
+            "user files",
+          );
+          expect(yield* fs.exists(other.stagingPath!)).toBe(true);
         }).pipe(Effect.provide(test.layer));
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );

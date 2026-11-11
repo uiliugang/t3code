@@ -5,7 +5,9 @@ export const NIGHTLY_RELEASES_URL = `${RELEASES_URL}?q=nightly&expanded=true`;
 
 const LATEST_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 // GitHub's latest endpoint excludes prereleases; the newest nightly comes from the ordered release list.
-const LIST_API_URL = `https://api.github.com/repos/${REPO}/releases?per_page=10`;
+const LIST_API_URL = `https://api.github.com/repos/${REPO}/releases`;
+const RELEASE_PAGE_SIZE = 100;
+const MAX_RELEASE_PAGES = 10;
 
 export type ReleaseChannel = "stable" | "nightly";
 
@@ -30,12 +32,16 @@ async function fetchStable(): Promise<Release> {
 }
 
 async function fetchNightly(): Promise<Release> {
-  const list: Release[] = await fetch(LIST_API_URL).then((r) => r.json());
-  const nightly = Array.isArray(list)
-    ? list.find((release) => release.tag_name?.includes("-nightly."))
-    : undefined;
-  if (!nightly) throw new Error("No nightly release in the latest page");
-  return nightly;
+  for (let page = 1; page <= MAX_RELEASE_PAGES; page++) {
+    const response = await fetch(`${LIST_API_URL}?per_page=${RELEASE_PAGE_SIZE}&page=${page}`);
+    if (!response.ok) throw new Error(`Release lookup failed (${response.status})`);
+    const list: Release[] = await response.json();
+    if (!Array.isArray(list)) throw new Error("Invalid release list");
+    const nightly = list.find((release) => release.tag_name?.includes("-nightly."));
+    if (nightly) return nightly;
+    if (list.length < RELEASE_PAGE_SIZE) break;
+  }
+  throw new Error("No nightly release in the release list");
 }
 
 export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Promise<Release> {

@@ -253,11 +253,11 @@ export const make = Effect.gen(function* () {
               cause: Cause.squash(lost),
             });
           }
-          const now = yield* Clock.currentTimeMillis;
+          const now = Number((yield* Clock.monotonicTimeNanos) / 1_000_000n);
           if (lastFrameAt !== undefined && now - lastFrameAt < throttle) {
             yield* Effect.sleep(throttle - (now - lastFrameAt));
           }
-          lastFrameAt = yield* Clock.currentTimeMillis;
+          lastFrameAt = Number((yield* Clock.monotonicTimeNanos) / 1_000_000n);
           throttle = COMMAND_OUTPUT_FRAME_INTERVAL_MS;
           const tail = tails.get(key) ?? finished.get(key);
           if (settled !== undefined) {

@@ -11,7 +11,9 @@ const STORE_NAME = "images";
 let database: Promise<IDBDatabase> | undefined;
 
 function openDatabase() {
-  return (database ??= new Promise<IDBDatabase>((resolve, reject) => {
+  if (database) return database;
+  const opening = new Promise<IDBDatabase>((resolve, reject) => {
+    let abandoned = false;
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.addEventListener("upgradeneeded", () => {
       for (const name of request.result.objectStoreNames) {
@@ -21,10 +23,34 @@ function openDatabase() {
         request.result.createObjectStore(STORE_NAME);
       }
     });
-    request.addEventListener("success", () => resolve(request.result));
-    request.addEventListener("error", () => reject(request.error));
-    request.addEventListener("blocked", () => reject(new Error("Project icon cache is blocked.")));
-  }));
+    const failed = (error: unknown) => {
+      abandoned = true;
+      reject(error);
+    };
+    request.addEventListener("success", () => {
+      const connection = request.result;
+      if (abandoned) {
+        connection.close();
+        return;
+      }
+      const invalidate = () => {
+        if (database === opening) database = undefined;
+      };
+      connection.addEventListener("versionchange", () => {
+        invalidate();
+        connection.close();
+      });
+      connection.addEventListener("close", invalidate);
+      resolve(connection);
+    });
+    request.addEventListener("error", () => failed(request.error));
+    request.addEventListener("blocked", () => failed(new Error("Project icon cache is blocked.")));
+  });
+  database = opening;
+  void opening.catch(() => {
+    if (database === opening) database = undefined;
+  });
+  return opening;
 }
 
 function completed(transaction: IDBTransaction) {

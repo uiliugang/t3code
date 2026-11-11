@@ -17,6 +17,7 @@ import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
+const MAX_SSH_COMMAND_OUTPUT_LENGTH = 4 * 1024 * 1024;
 
 /**
  * ssh is a real executable everywhere (`ssh.exe` on Windows), so it is always
@@ -128,21 +129,38 @@ export function getLastNonEmptyOutputLine(stdout: string): string | null {
   );
 }
 
-const collectProcessOutput = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+const collectProcessOutput = <E>(stream: Stream.Stream<Uint8Array, E>, keepTail: boolean) =>
   stream.pipe(
     Stream.decodeText(),
     Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
+      () => ({ text: "", truncated: false }),
+      (acc, chunk) => {
+        const combined = acc.text + chunk;
+        const truncated = acc.truncated || combined.length > MAX_SSH_COMMAND_OUTPUT_LENGTH;
+        return {
+          text: keepTail
+            ? combined.slice(-MAX_SSH_COMMAND_OUTPUT_LENGTH)
+            : combined.slice(0, MAX_SSH_COMMAND_OUTPUT_LENGTH),
+          truncated,
+        };
+      },
     ),
   );
 
-function redactSshErrorOutput(output: string, keepTail = false): string {
-  const redacted = output.replace(
-    /("(?:access_token|bearerToken|credential|pairingToken|token)"\s*:\s*")[^"]+(")/giu,
+function redactSshErrorOutput(
+  output: { text: string; truncated: boolean },
+  keepTail = false,
+): string {
+  // A clipped first line can start inside a credential value, without its redaction key.
+  const text =
+    output.truncated && keepTail
+      ? output.text.slice(output.text.indexOf("\n") + 1 || output.text.length)
+      : output.text;
+  const redacted = text.replace(
+    /("(?:access_token|bearerToken|credential|pairingToken|token)"\s*:\s*")[^"]*("|$)/giu,
     "$1[redacted]$2",
   );
-  if (redacted.length <= MAX_SSH_ERROR_OUTPUT_LENGTH) return redacted;
+  if (redacted.length <= MAX_SSH_ERROR_OUTPUT_LENGTH && !output.truncated) return redacted;
   return keepTail
     ? `[truncated]\n${redacted.slice(-MAX_SSH_ERROR_OUTPUT_LENGTH)}`
     : `${redacted.slice(0, MAX_SSH_ERROR_OUTPUT_LENGTH)}\n[truncated]`;
@@ -256,8 +274,8 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
 
   const [stdout, stderr, exitCode] = yield* Effect.all(
     [
-      collectProcessOutput(child.stdout),
-      collectProcessOutput(child.stderr),
+      collectProcessOutput(child.stdout, input.keepErrorOutputTail ?? false),
+      collectProcessOutput(child.stderr, input.keepErrorOutputTail ?? false),
       child.exitCode.pipe(Effect.map(Number)),
     ],
     { concurrency: "unbounded" },
@@ -277,23 +295,33 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
 
   if (exitCode !== 0) {
     const diagnosticStdout = redactSshErrorOutput(stdout, input.keepErrorOutputTail);
+    const diagnosticStderr = redactSshErrorOutput(stderr, input.keepErrorOutputTail);
     yield* Effect.logWarning("ssh.command.failed", {
       ...sshTargetLogFields(target),
       command: ["ssh", ...args],
       exitCode,
       stdout: diagnosticStdout,
-      stderr,
+      stderr: diagnosticStderr,
     });
     return yield* new SshCommandError({
       command: ["ssh", ...args],
       exitCode,
       stdout: diagnosticStdout,
-      stderr,
+      stderr: diagnosticStderr,
       message: normalizeSshErrorMessage({
         stdout: diagnosticStdout,
-        stderr,
+        stderr: diagnosticStderr,
         fallbackMessage: `SSH command failed for ${hostSpec} (exit ${exitCode}).`,
       }),
+    });
+  }
+
+  if (stdout.truncated || stderr.truncated) {
+    return yield* new SshCommandError({
+      command: ["ssh", ...args],
+      exitCode,
+      stderr: "",
+      message: "SSH command exceeded the output limit.",
     });
   }
 
@@ -301,7 +329,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     ...sshTargetLogFields(target),
     command: ["ssh", ...args],
   });
-  return { stdout, stderr };
+  return { stdout: stdout.text, stderr: stderr.text };
 });
 
 export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (

@@ -13,7 +13,11 @@ import { SshCommandError } from "./errors.ts";
 
 const encoder = new TextEncoder();
 
-const makeFailedProcess = (input: { readonly stdout: string; readonly stderr?: string }) => {
+const makeFailedProcess = (input: {
+  readonly stdout: string;
+  readonly stderr?: string;
+  readonly exitCode?: number;
+}) => {
   const stdoutStream = Stream.make(encoder.encode(input.stdout));
   const stderrStream = input.stderr ? Stream.make(encoder.encode(input.stderr)) : Stream.empty;
   return ChildProcessSpawner.makeHandle({
@@ -21,7 +25,7 @@ const makeFailedProcess = (input: { readonly stdout: string; readonly stderr?: s
     stdout: stdoutStream,
     stderr: stderrStream,
     all: Stream.empty,
-    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(input.exitCode ?? 1)),
     isRunning: Effect.succeed(false),
     kill: () => Effect.void,
     stdin: Sink.drain,
@@ -32,6 +36,32 @@ const makeFailedProcess = (input: { readonly stdout: string; readonly stderr?: s
 };
 
 describe("ssh command", () => {
+  it.effect.each([0, 1])(
+    "bounds oversized output without returning truncated success (exit %s)",
+    (exitCode) =>
+      Effect.gen(function* () {
+        const spawner = ChildProcessSpawner.make(() =>
+          Effect.succeed(
+            makeFailedProcess({
+              stdout: `{"credential":"${"secret".repeat(800_000)}"}\nfinal diagnostic`,
+              stderr: "",
+              exitCode,
+            }),
+          ),
+        );
+        const failure = yield* runSshCommand(
+          { alias: "fixture", hostname: "fixture", username: null, port: null },
+          { keepErrorOutputTail: true },
+        ).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.flip,
+        );
+        assert.instanceOf(failure, SshCommandError);
+        assert.notInclude(failure.stdout ?? "", "secret");
+        if (exitCode === 0) assert.include(failure.message, "output limit");
+        else assert.include(failure.stdout ?? "", "final diagnostic");
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
   it.effect("parses resolved ssh config output into a target", () =>
     Effect.sync(() => {
       assert.deepEqual(
@@ -102,7 +132,7 @@ describe("ssh command", () => {
       name: "opt-in tail",
       keepErrorOutputTail: true,
       exitCode: 1,
-      stderr: "stderr failure ".repeat(400),
+      stderr: `HEAD\n${"stderr failure ".repeat(400)}{"token":"stderr-secret"}\nfinal failure`,
     },
     { name: "successful output", keepErrorOutputTail: true, exitCode: 0, stderr: "" },
   ])("preserves process output: $name", ({ keepErrorOutputTail, exitCode, stderr }) =>
@@ -132,8 +162,11 @@ describe("ssh command", () => {
       const failure = yield* Effect.flip(command);
       assert.instanceOf(failure, SshCommandError);
       assert.equal(failure.exitCode, 1);
-      assert.equal(failure.stderr, stderr);
-      assert.equal(failure.message, stderr.trim() || failure.stdout?.trim());
+      const safeStderr = stderr.replace("stderr-secret", "[redacted]");
+      const diagnosticStderr =
+        safeStderr.length > 4_000 ? `[truncated]\n${safeStderr.slice(-4_000)}` : safeStderr;
+      assert.equal(failure.stderr, diagnosticStderr);
+      assert.equal(failure.message, diagnosticStderr.trim() || failure.stdout?.trim());
       const redacted = `${prefix}{"credential":"[redacted]"}${diagnostic}`;
       assert.equal(
         failure.stdout,
@@ -156,32 +189,37 @@ describe("ssh command", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("redacts credentials from stdout in non-zero command failures", () => {
-    const spawner = ChildProcessSpawner.make(() =>
-      Effect.succeed(makeFailedProcess({ stdout: '{"credential":"pairing-secret"}\n' })),
-    );
-    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const layerProcess = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, layerSpawner);
-
-    return Effect.gen(function* () {
-      const result = yield* Effect.result(
-        runSshCommand(
-          {
-            alias: "devbox",
-            hostname: "devbox.example.com",
-            username: "julius",
-            port: 2222,
-          },
-          { remoteCommandArgs: ["sh", "-s"] },
+  it.effect.each(["stdout", "stderr"] as const)(
+    "redacts credentials from %s in non-zero command failures",
+    (output) => {
+      const spawner = ChildProcessSpawner.make(() =>
+        Effect.succeed(
+          makeFailedProcess({ stdout: "", [output]: '{"credential":"pairing-secret"}\n' }),
         ),
       );
+      const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+      const layerProcess = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, layerSpawner);
 
-      assert.isTrue(Result.isFailure(result));
-      if (Result.isFailure(result)) {
-        assert.instanceOf(result.failure, SshCommandError);
-        assert.equal(result.failure.message, '{"credential":"[redacted]"}');
-        assert.equal(result.failure.stdout, '{"credential":"[redacted]"}\n');
-      }
-    }).pipe(Effect.provide(layerProcess));
-  });
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          runSshCommand(
+            {
+              alias: "devbox",
+              hostname: "devbox.example.com",
+              username: "julius",
+              port: 2222,
+            },
+            { remoteCommandArgs: ["sh", "-s"] },
+          ),
+        );
+
+        assert.isTrue(Result.isFailure(result));
+        if (Result.isFailure(result)) {
+          assert.instanceOf(result.failure, SshCommandError);
+          assert.equal(result.failure.message, '{"credential":"[redacted]"}');
+          assert.equal(result.failure[output], '{"credential":"[redacted]"}\n');
+        }
+      }).pipe(Effect.provide(layerProcess));
+    },
+  );
 });
