@@ -2523,6 +2523,7 @@ const make = Effect.gen(function* () {
     "ServerBrowser.attachViewer",
   )(function* (input) {
     const tab = yield* findTab(input.threadId, input.tabId);
+    let attached = true;
     const output = yield* Queue.make<ServerBrowserViewerOutput>({
       capacity: VIEWER_OUTPUT_LIMIT,
       strategy: "dropping",
@@ -2533,13 +2534,14 @@ const make = Effect.gen(function* () {
         catch: (cause) => new ServerBrowserLaunchError({ cause }),
       }),
       (session) =>
-        Effect.promise(() =>
-          session
+        Effect.promise(() => {
+          attached = false;
+          return session
             .send("Page.stopScreencast")
             .catch(constVoid)
             .then(() => session.detach())
-            .catch(constVoid),
-        ),
+            .catch(constVoid);
+        }),
     );
     const quality = Math.min(100, Math.max(1, Math.round(input.quality)));
     // Chromium may drop the final frame during a burst; send a still when it settles.
@@ -2552,8 +2554,9 @@ const make = Effect.gen(function* () {
     const startScreencast = (scale: number) => {
       screencastScale = scale;
       screencastParams = screencastParams.then(async () => {
-        if (tab.capturing > 0) return;
+        if (!attached || tab.capturing > 0) return;
         await session.send("Page.stopScreencast").catch(constVoid);
+        if (!attached) return;
         await session
           .send("Page.startScreencast", {
             format: "jpeg",
@@ -2623,9 +2626,12 @@ const make = Effect.gen(function* () {
     pushFileChooser(tab);
     const pushStill = async () => {
       const data = await withCaptureLock(tab, () =>
-        ServerBrowserPage.captureViewport(session, { format: "jpeg", quality }),
+        attached
+          ? ServerBrowserPage.captureViewport(session, { format: "jpeg", quality })
+          : Promise.resolve(null),
       ).catch(() => null);
-      if (data) viewer.push({ _tag: "frame", data: Buffer.from(data, "base64"), ack: Effect.void });
+      if (data && attached)
+        viewer.push({ _tag: "frame", data: Buffer.from(data, "base64"), ack: Effect.void });
     };
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
     yield* Effect.addFinalizer(() =>
@@ -2679,10 +2685,11 @@ const make = Effect.gen(function* () {
       });
     });
     void broadcastViewport(tab).catch(constVoid);
-    yield* Effect.promise(() => startScreencast(1));
-    // An idle page does not repaint for a new screencast, so the viewer
-    // starts from a still unless a live frame beat it.
-    if (!screencastStarted) yield* Effect.promise(pushStill);
+    // A hidden desktop page can stall capture; it must not hold the viewer's WebSocket handshake.
+    yield* Effect.promise(async () => {
+      await startScreencast(1);
+      if (!screencastStarted && attached) await pushStill();
+    }).pipe(Effect.forkScoped);
     return {
       output,
       input: (raw: unknown) =>

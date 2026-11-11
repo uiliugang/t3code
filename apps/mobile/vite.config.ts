@@ -47,6 +47,7 @@ const reactTests = [
   "src/features/layout/workspace/useSearchScrollRestoration.test.tsx",
   "src/features/connection/ConnectionsNewRouteScreen.test.tsx",
   "src/features/devices/device-stream.browser.test.ts",
+  "src/features/browser/PreviewStreamWebView.test.tsx",
   "src/features/keyboard/keyboardControllerState.test.tsx",
 ];
 
@@ -81,6 +82,12 @@ export default defineConfig({
       {
         extends: true,
         plugins: [
+          {
+            name: "mobile-generated-stream-mock",
+            resolveId(id) {
+              if (id === "@t3tools/mobile-preview-stream") return id;
+            },
+          },
           {
             name: `mobile-release-react-compiler-${testPlatform}`,
             enforce: "pre",
