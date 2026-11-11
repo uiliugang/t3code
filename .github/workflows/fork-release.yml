@@ -414,6 +414,13 @@ jobs:
           }, null, 2) + '\n');
           NODE
           sha256sum *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz android-update.json > SHA256SUMS
+          previous_tag=$(gh release list --exclude-drafts --exclude-pre-releases --limit 100 \
+            --json tagName --jq 'map(select(.tagName != env.RELEASE_TAG))[0].tagName // empty')
+          notes_args=(--generate-notes)
+          if [[ -n "$previous_tag" ]]; then
+            notes_args+=(--notes-start-tag "$previous_tag")
+          fi
           gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz android-update.json SHA256SUMS --verify-tag \
             --title "T3 Code $RELEASE_TAG (fork)" \
+            "${notes_args[@]}" \
             --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone ARM64 Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Android downloads APK updates from this repository and asks for installation confirmation. Upstream Android OTA updates are disabled.'
