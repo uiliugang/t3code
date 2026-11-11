@@ -4,7 +4,7 @@ import { Pressable, View } from "react-native";
 import type { PullRequestDetail, PullRequestComment } from "@t3tools/contracts";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { SymbolView } from "../../components/ui/AppSymbol";
+import { cn } from "../../lib/cn";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
@@ -32,31 +32,31 @@ export function PullRequestSendReviewLink({
   return (
     <View className="gap-3 px-4 py-2">
       {pr.reviewers.map((actor) => (
-        <Pressable
-          key={actor.login}
-          accessibilityRole="checkbox"
-          accessibilityLabel={actor.login}
-          accessibilityState={{
-            checked: selected.includes(actor.login),
-            disabled: !allowed || busy,
-          }}
-          disabled={!allowed || busy}
-          onPress={() =>
-            setSelection(
-              selected.includes(actor.login)
-                ? selected.filter((mis) => mis !== actor.login)
-                : [...selected, actor.login],
-            )
-          }
-          className="min-h-12 flex-row items-center gap-3"
-        >
-          <SymbolView
-            name={selected.includes(actor.login) ? "checkmark.circle.fill" : "circle"}
-            size={20}
-            tintColorClassName="accent-icon-muted"
-          />
-          <Text className="min-w-0 flex-1 text-sm font-t3-medium">{actor.login}</Text>
-          <Text className="text-xs text-foreground-muted">
+        <View key={actor.login} className="min-h-12 flex-row flex-wrap items-center gap-3">
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityLabel={actor.login}
+            accessibilityState={{
+              checked: selected.includes(actor.login),
+              disabled: !allowed || busy,
+            }}
+            disabled={!allowed || busy}
+            onPress={() =>
+              setSelection(
+                selected.includes(actor.login)
+                  ? selected.filter((mis) => mis !== actor.login)
+                  : [...selected, actor.login],
+              )
+            }
+            className={cn(
+              "min-h-11 max-w-full justify-center rounded-md px-3 active:opacity-70",
+              selected.includes(actor.login) ? "bg-primary/10" : "bg-transparent",
+              (!allowed || busy) && "opacity-50",
+            )}
+          >
+            <Text className="text-sm font-t3-medium">{actor.login}</Text>
+          </Pressable>
+          <Text className="min-w-0 shrink text-xs text-foreground-muted">
             {(() => {
               const state = reviews.find(
                 (review) => review.author?.login === actor.login,
@@ -72,7 +72,7 @@ export function PullRequestSendReviewLink({
               );
             })()}
           </Text>
-        </Pressable>
+        </View>
       ))}
       {selected.length > 0 ? (
         <Button
