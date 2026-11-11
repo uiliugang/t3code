@@ -140,6 +140,8 @@ const SETTINGS_SEARCH_TERMS = {
   SettingsClientStorage: ["configuration", "import", "export", "backup", "restore", "sync", "JSON"],
   SettingsAbout: [
     "version",
+    "apk updates automatic download install",
+    "应用更新 自动下载 安装",
     "diagnostics",
     "client storage",
     "import export configuration backup sync",

@@ -19,6 +19,8 @@ import {
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { ApkUpdateSettings } from "../updates/ApkUpdateSettings";
+import { apkUpdatesAvailable } from "../updates/apk-update-runtime";
 
 export function SettingsAboutRouteScreen() {
   const t = useUiTranslation();
@@ -34,6 +36,7 @@ export function SettingsAboutRouteScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         <AppSettingsSection />
+        {apkUpdatesAvailable ? <ApkUpdateSettings /> : null}
       </ScrollView>
     </SettingsScreen>
   );
@@ -57,7 +60,7 @@ function AppSettingsSection() {
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
   const variantLabel = variant === "production" ? "" : t(capitalize(variant));
   const versionLabel = variantLabel ? `${version} · ${variantLabel}` : version;
-  const updateCheckAvailable = isAppUpdateCheckAvailable();
+  const updateCheckAvailable = !apkUpdatesAvailable && isAppUpdateCheckAvailable();
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
 
