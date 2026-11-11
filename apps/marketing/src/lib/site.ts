@@ -1,4 +1,6 @@
-export const GITHUB_REPOSITORY_URL = "https://github.com/pingdotgg/t3code";
+import { GITHUB_REPOSITORY } from "./repository";
+
+export { GITHUB_REPOSITORY_URL } from "./repository";
 
 export const IOS_APP_STORE_URL =
   "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824";
@@ -10,7 +12,7 @@ export const ANDROID_PLAY_STORE_URL =
 async function fetchGithubStars(): Promise<string> {
   const token = process.env.GITHUB_TOKEN;
   try {
-    const response = await fetch("https://api.github.com/repos/pingdotgg/t3code", {
+    const response = await fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!response.ok) throw new Error(`GitHub API responded ${response.status}`);

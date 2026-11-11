@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
+import { parseGitRemoteHost } from "@t3tools/source-control-core/shared/definition";
 import { definition } from "../shared/definition.ts";
 import * as MCodeCli from "./MCodeCli.ts";
 
@@ -26,6 +27,14 @@ const Branch = Schema.Struct({
     ),
   ),
 });
+
+function repositoryKey(remote: string): string | null {
+  const host = parseGitRemoteHost(remote);
+  const repository = SourceControlProvider.repositoryPathFromRemoteUrl(remote);
+  return host && repository
+    ? definition.canonicalRepositoryKey(`${host.host}/${repository}`)
+    : null;
+}
 
 export const make = Effect.gen(function* () {
   const host = yield* SourceControlHost.SourceControlHost;
@@ -71,9 +80,14 @@ export const make = Effect.gen(function* () {
     );
   return {
     branches: Effect.fn("MCodeIssues.branches")(function* (input) {
-      const repository = SourceControlProvider.repositoryPathFromRemoteUrl(
-        input.context.remoteUrl,
-      )?.replace(/^scm\//u, "");
+      const repository = repositoryKey(input.context.remoteUrl);
+      if (!repository)
+        return yield* new SourceControlProviderError({
+          provider: definition.kind,
+          cwd: input.cwd,
+          operation: "branchIssues",
+          detail: "Select a Meituan Code repository.",
+        });
       const names: string[] = [];
       let page = 1;
       while (true) {
@@ -91,13 +105,7 @@ export const make = Effect.gen(function* () {
         const branches = yield* json(result.stdout, Branches, input.cwd);
         names.push(
           ...branches.items
-            .filter(
-              (branch) =>
-                SourceControlProvider.repositoryPathFromRemoteUrl(branch.repoAddress)?.replace(
-                  /^scm\//u,
-                  "",
-                ) === repository,
-            )
+            .filter((branch) => repositoryKey(branch.repoAddress) === repository)
             .map((branch) => branch.name),
         );
         if (branches.items.length === 0 || page * 100 >= branches.total) return names;
@@ -162,7 +170,8 @@ export const make = Effect.gen(function* () {
       const repo = SourceControlProvider.repositoryPathFromRemoteUrl(
         input.context.remoteUrl,
       )?.replace(/^scm\//u, "");
-      if (!repo)
+      const repository = repositoryKey(input.context.remoteUrl);
+      if (!repo || !repository)
         return yield* new SourceControlProviderError({
           provider: definition.kind,
           cwd: input.cwd,
@@ -201,12 +210,7 @@ export const make = Effect.gen(function* () {
         ]);
         const branches = yield* json(result.stdout, Branches, input.cwd);
         const matches = branches.items.filter(
-          (item) =>
-            item.name === input.branch &&
-            SourceControlProvider.repositoryPathFromRemoteUrl(item.repoAddress)?.replace(
-              /^scm\//u,
-              "",
-            ) === repo,
+          (item) => item.name === input.branch && repositoryKey(item.repoAddress) === repository,
         );
         for (const branch of matches)
           yield* run(input.cwd, [

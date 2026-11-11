@@ -199,7 +199,6 @@ describe("BrowserSession", () => {
 
       for (const permission of [
         "clipboard-sanitized-write",
-        "geolocation",
         "fullscreen",
         "pointerLock",
         "loopback-network",
@@ -215,6 +214,7 @@ describe("BrowserSession", () => {
       // uses `clipboard-sanitized-write` — so the stale name must not be granted,
       // and unrelated permissions stay denied.
       for (const permission of [
+        "geolocation",
         "clipboard-write",
         "notifications",
         "midi",

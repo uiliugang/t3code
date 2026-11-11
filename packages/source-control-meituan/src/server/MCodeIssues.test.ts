@@ -87,8 +87,13 @@ describe("MEP issue adapter", () => {
                         TestHost.processOutput(
                           input.args.includes("list")
                             ? `Progress\n${JSON.stringify({
-                                total: 3,
+                                total: 4,
                                 items: [
+                                  {
+                                    id: 4,
+                                    name: "feature/search",
+                                    repoAddress: "ssh://git@other.example/acme/app.git",
+                                  },
                                   {
                                     id: 1,
                                     name: "feature/search",
@@ -136,6 +141,7 @@ describe("MEP issue adapter", () => {
           "--yes",
           "--json",
         ]);
+        expect(calls.filter((args) => args.includes("disassociate"))).toHaveLength(1);
         expect(calls[2]).toEqual([
           "branch",
           "disassociate",

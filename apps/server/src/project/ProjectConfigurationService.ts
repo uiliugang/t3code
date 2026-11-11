@@ -269,6 +269,21 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  const removeFailedStaging = Effect.fn("ProjectConfigurationService.removeFailedStaging")(
+    function* (record: SavedImport, repository: SavedImport["repositories"][number]) {
+      const staging = repository.stagingPath;
+      if (!staging || repository.cloned || !(yield* fs.exists(staging))) return;
+      const parent = yield* fs.realPath(record.destinationDirectory);
+      if (
+        path.dirname(staging) !== record.destinationDirectory ||
+        !path.basename(staging).startsWith(".t3-import-") ||
+        (yield* fs.realPath(staging)) !== path.join(parent, path.basename(staging))
+      )
+        return;
+      yield* fs.remove(staging, { recursive: true, force: true });
+    },
+  );
+
   const cloneRepository = Effect.fn("ProjectConfigurationService.cloneRepository")(function* (
     id: string,
     key: string,
@@ -313,6 +328,7 @@ const make = Effect.gen(function* () {
             ? repository.stagingPath
             : null;
         if (!stagingPath) {
+          yield* removeFailedStaging(record, repository);
           stagingPath = yield* fs.makeTempDirectory({
             directory: record.destinationDirectory,
             prefix: ".t3-import-",
@@ -688,6 +704,11 @@ const make = Effect.gen(function* () {
     const record = yield* read(id);
     if (record.phase === "running")
       return yield* new ProjectImportError({ operation: "forget", cause: "Import is running" });
+    yield* Effect.forEach(
+      record.repositories,
+      (repository) => removeFailedStaging(record, repository),
+      { discard: true },
+    ).pipe(Effect.mapError((cause) => new ProjectImportError({ operation: "forget", cause })));
     yield* persist((entries) => entries.filter((entry) => entry.id !== id));
   });
   const stream = Stream.callback<ReadonlyArray<ProjectImportSnapshot>>(

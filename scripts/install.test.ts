@@ -267,6 +267,39 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
 });
 
 describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3 command", () => {
+  it("resolves a relative home before writing a launcher used from another directory", async () => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-install-relative-"));
+    try {
+      const home = NodePath.join(root, "custom-home");
+      const binDir = NodePath.join(root, "bin");
+      const target = NodePath.join(home, "runtime", "versions", "1.2.3");
+      await NodeFSP.mkdir(target, { recursive: true });
+      await NodeFSP.copyFile(process.execPath, NodePath.join(target, "t3.exe"));
+      const result = await installOver({
+        script: "install.ps1",
+        home,
+        binDir,
+        cwd: root,
+        env: { T3CODE_HOME: "custom-home" },
+      });
+      expect(result.code, result.output).toBe(0);
+      const launcher = NodePath.join(binDir, "t3.cmd");
+      expect(await NodeFSP.readFile(launcher, "utf8")).toContain(NodePath.join(target, "t3.exe"));
+      const launched = NodeChildProcess.spawnSync(
+        "cmd.exe",
+        ["/d", "/s", "/c", `""${launcher}" --version"`],
+        {
+          cwd: NodeOS.tmpdir(),
+          encoding: "utf8",
+          windowsVerbatimArguments: true,
+        },
+      );
+      expect(launched.status, launched.stderr).toBe(0);
+      expect(launched.stdout.trim()).toBe(process.version);
+    } finally {
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  });
   it("replaces only its own t3.cmd, also in non-ASCII and bracketed paths", async () => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-install-ps1-"));
     try {

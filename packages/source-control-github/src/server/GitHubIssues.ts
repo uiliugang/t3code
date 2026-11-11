@@ -5,6 +5,7 @@ import * as GitHubRest from "./GitHubRest.ts";
 import type * as Provider from "@t3tools/source-control-core/server/SourceControlProvider";
 
 const Person = Schema.Struct({ login: Schema.String });
+const MAX_ASSIGNEE_PAGES = 10;
 const Row = Schema.Struct({
   number: Schema.Number,
   html_url: Schema.String,
@@ -156,14 +157,22 @@ export const make = Effect.gen(function* () {
     }),
     read,
     people: Effect.fn("GitHubIssues.people")(function* ({ source, query }) {
-      const rows = yield* request(
-        source,
-        `repos/${source.scope}/assignees?per_page=100`,
-        Schema.Array(Person),
-      );
-      return rows
-        .filter((row) => row.login.toLowerCase().includes(query.toLowerCase()))
-        .map((row) => ({ value: row.login, label: row.login }));
+      const people = [];
+      const keyword = query.toLowerCase();
+      for (let page = 1; page <= MAX_ASSIGNEE_PAGES; page++) {
+        const rows = yield* request(
+          source,
+          `repos/${source.scope}/assignees?per_page=100&page=${page}`,
+          Schema.Array(Person),
+        );
+        people.push(
+          ...rows
+            .filter((row) => row.login.toLowerCase().includes(keyword))
+            .map((row) => ({ value: row.login, label: row.login })),
+        );
+        if (rows.length < 100) break;
+      }
+      return people;
     }),
     metadata: () => Effect.succeed({ subtypes: [], fields: [] }),
     create: Effect.fn("GitHubIssues.create")(function* (input) {

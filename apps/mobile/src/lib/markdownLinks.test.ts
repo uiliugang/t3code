@@ -61,6 +61,12 @@ describe("resolveMarkdownLinkPresentation", () => {
       label: "AGENTS.md",
       path: "AGENTS.md",
     });
+    for (const href of ["src/constructor", "src/__proto__", "src/file.constructor"]) {
+      expect(resolveMarkdownLinkPresentation(href)).toMatchObject({
+        kind: "file",
+        icon: "default",
+      });
+    }
     expect(resolveMarkdownLinkPresentation("package.json")).toEqual({
       kind: "file",
       href: "package.json",

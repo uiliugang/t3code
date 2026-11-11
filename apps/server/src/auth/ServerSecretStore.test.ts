@@ -4,6 +4,7 @@ import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -155,6 +156,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerSecretStor
       assert.instanceOf(error.cause, PlatformError.PlatformError);
       assert.equal((error.cause as PlatformError.PlatformError).reason._tag, "PermissionDenied");
     }).pipe(Effect.provide(layerPermissionDeniedSecretStore())),
+  );
+
+  it.effect("removes temporary secret bytes when a write is interrupted", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const config = yield* ServerConfig.ServerConfig;
+      const renameStarted = yield* Deferred.make<void>();
+      const secretStore = yield* ServerSecretStore.make.pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fileSystem,
+          rename: () =>
+            Deferred.succeed(renameStarted, undefined).pipe(Effect.andThen(Effect.never)),
+        }),
+      );
+      const write = yield* secretStore
+        .set("session-signing-key", Uint8Array.from([1, 2, 3]))
+        .pipe(Effect.forkScoped);
+      yield* Deferred.await(renameStarted);
+      assert.lengthOf(yield* fileSystem.readDirectory(config.secretsDir), 1);
+
+      yield* Fiber.interrupt(write);
+
+      assert.deepEqual(yield* fileSystem.readDirectory(config.secretsDir), []);
+      assert.isTrue(Option.isNone(yield* secretStore.get("session-signing-key")));
+    }).pipe(Effect.provide(layerServerConfig())),
   );
 
   it.effect("propagates write failures instead of treating them as success", () =>

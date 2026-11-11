@@ -52,7 +52,7 @@ export function reuseUnchanged<T>(previous: unknown, next: T): T {
   const after = next as Record<string, unknown>;
   const keys = Object.keys(after);
   let same = keys.length === Object.keys(before).length;
-  const merged: Record<string, unknown> = {};
+  const merged: Record<string, unknown> = { ...after };
   for (const key of keys) {
     const reused = reuseUnchanged(before[key], after[key]);
     if (reused !== before[key] || !(key in before)) same = false;

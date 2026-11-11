@@ -21,6 +21,7 @@ import * as Equal from "effect/Equal";
 import * as Hash from "effect/Hash";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -85,8 +86,8 @@ export const make = Effect.gen(function* () {
     }),
     {
       storeId: "issue-sources-v1",
-      timeToLive: () => Duration.infinity,
-      inMemoryTTL: () => Duration.infinity,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.seconds(30)),
+      inMemoryTTL: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.seconds(30)),
       inMemoryCapacity: 256,
     },
   ).pipe(Effect.provide(Persistence.layerKvs));

@@ -28,6 +28,13 @@ describe("reuseUnchanged", () => {
     expect(next[0]!.models).toBe(previous[0]!.models);
     const dropped = reuseUnchanged({ a: 1, b: 2 }, { a: 1 });
     expect(dropped).toEqual({ a: 1 });
+    const incoming = { ["__proto__"]: { model: "custom" }, stable: { enabled: true } };
+    const existing = { stable: { enabled: true } };
+    const merged = reuseUnchanged(existing, incoming);
+    expect(Object.hasOwn(merged, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+    expect(merged).toEqual(incoming);
+    expect(merged.stable).toBe(existing.stable);
   });
 });
 

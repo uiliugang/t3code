@@ -21,7 +21,6 @@ export type BrowserSessionPartitionNamespace = "profile";
 // Electron's clipboard API uses clipboard-sanitized-write and checks both permission handlers.
 const ALLOWED_PREVIEW_PERMISSIONS: ReadonlySet<string> = new Set([
   "clipboard-sanitized-write",
-  "geolocation",
   // DesktopWindow confines HTML fullscreen to the guest's webview.
   "fullscreen",
   "pointerLock",

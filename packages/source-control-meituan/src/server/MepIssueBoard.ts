@@ -1,4 +1,4 @@
-import { IssueError, type Issue, type IssueOption } from "@t3tools/contracts";
+import { IssueError, type Issue, type IssueOption, type IssueSource } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Host from "@t3tools/source-control-core/server/SourceControlHost";
@@ -199,15 +199,27 @@ export const make = Effect.gen(function* () {
       .filter((row) => !row.disabled)
       .map((row) => ({ value: String(row.value), label: row.displayValue }));
   });
+  const readRow = Effect.fn("MepIssueBoard.readRow")(function* ({
+    source,
+    cwd,
+    id,
+  }: {
+    readonly source: IssueSource;
+    readonly cwd: string;
+    readonly id: string;
+  }) {
+    const row = yield* json(
+      cwd,
+      ["workitem-detail", "info", "--workitem", id, "--space", source.scope, "--json"],
+      Row,
+    );
+    if (row.projectId?.value && String(row.projectId.value) !== source.scope)
+      return yield* new IssueError({ operation: "read", reason: "invalid-target" });
+    return row;
+  });
   const read: NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>["read"] =
     Effect.fn("MepIssueBoard.read")(function* ({ cwd, source, id }) {
-      const row = yield* json(
-        cwd,
-        ["workitem-detail", "info", "--workitem", id, "--space", source.scope, "--json"],
-        Row,
-      );
-      if (row.projectId?.value && String(row.projectId.value) !== source.scope)
-        return yield* new IssueError({ operation: "read", reason: "invalid-target" });
+      const row = yield* readRow({ cwd, source, id });
       const transitions = yield* options(
         cwd,
         source.scope,
@@ -445,8 +457,8 @@ export const make = Effect.gen(function* () {
         ],
         true,
       );
-      const updated = yield* read(input);
-      if (updated.state !== input.state)
+      const updated = yield* readRow(input);
+      if (String(updated.state.value) !== input.state)
         return yield* new IssueError({ operation: "setState", reason: "outcome-unknown" });
     }),
   } satisfies NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
