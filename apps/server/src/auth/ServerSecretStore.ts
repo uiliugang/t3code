@@ -204,18 +204,13 @@ export const make = Effect.gen(function* () {
           yield* fileSystem.rename(tempPath, secretPath);
           yield* fileSystem.chmod(secretPath, 0o600);
         }).pipe(
-          Effect.catch((cause) =>
-            fileSystem.remove(tempPath).pipe(
-              Effect.ignore,
-              Effect.flatMap(() =>
-                Effect.fail(
-                  new SecretStorePersistError({
-                    resource: `secret ${name}`,
-                    cause,
-                  }),
-                ),
-              ),
-            ),
+          Effect.ensuring(fileSystem.remove(tempPath, { force: true }).pipe(Effect.ignore)),
+          Effect.mapError(
+            (cause) =>
+              new SecretStorePersistError({
+                resource: `secret ${name}`,
+                cause,
+              }),
           ),
         );
       }),

@@ -186,6 +186,33 @@ describe("MEP issue board", () => {
         ).toBe(true);
       }),
   );
+  it.effect("verifies state changes using the state value rather than its display label", () =>
+    Effect.gen(function* () {
+      let state = "TODO";
+      const board = yield* Board.make.pipe(
+        Effect.provide(
+          TestHost.layer({
+            process: {
+              run: (input) => {
+                if (input.args[0] === "workitem-update") state = "DOING";
+                return Effect.succeed(
+                  TestHost.processOutput(
+                    input.args[0] === "workitem-detail"
+                      ? JSON.stringify({ ...row, state: { value: state, displayValue: "开发中" } })
+                      : input.args[0] === "field-opt"
+                        ? '[{"value":"DOING","displayValue":"开发中"}]'
+                        : "Success",
+                  ),
+                );
+              },
+            },
+          }),
+        ),
+      );
+      yield* board.setState({ cwd: "/repo", source, id: "1", state: "DOING" });
+      expect(state).toBe("DOING");
+    }),
+  );
   it.effect(
     "refuses stale transitions before invoking a write and never retries ambiguous creation",
     () =>

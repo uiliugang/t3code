@@ -239,15 +239,14 @@ export function normalizeNativeMarkdownUrl(value: string): string {
 export function resolveMarkdownFileIcon(value: string): MarkdownFileIcon {
   const basename = fileBasename(value).replace(POSITION_SUFFIX_PATTERN, "").toLowerCase();
   if (videoMimeType({ name: basename, mimeType: "" }) !== null) return "video";
-  const exactIcon = FILE_ICON_BY_NAME[basename];
-  if (exactIcon) return exactIcon;
+  if (Object.hasOwn(FILE_ICON_BY_NAME, basename)) return FILE_ICON_BY_NAME[basename]!;
   if (basename.startsWith("tsconfig.") && basename.endsWith(".json")) {
     return "typescript";
   }
   const segments = basename.split(".");
   for (let index = 1; index < segments.length; index += 1) {
-    const icon = FILE_ICON_BY_EXTENSION[segments.slice(index).join(".")];
-    if (icon) return icon;
+    const extension = segments.slice(index).join(".");
+    if (Object.hasOwn(FILE_ICON_BY_EXTENSION, extension)) return FILE_ICON_BY_EXTENSION[extension]!;
   }
   return "default";
 }

@@ -174,9 +174,9 @@ export function createProjectFaviconCache(input: {
     url: string | null,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    await clearing;
     const startGeneration = generation;
     const startRevision = environmentRevisions.get(target.environmentId) ?? 0;
+    await clearing;
     await hydrate();
     if (signal.aborted || url === null) return peek(target);
     const key = keyFor(target);

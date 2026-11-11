@@ -1144,12 +1144,12 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.effect("previews workspace files with literal fragment characters in their paths", () =>
+  it.effect("previews workspace files with leading dots and fragment characters", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-preview-literal-" });
-      const directory = path.join(root, "assets#archive");
+      const directory = path.join(root, "..assets#archive");
       yield* fileSystem.makeDirectory(directory);
 
       for (const name of [

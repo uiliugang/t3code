@@ -59,18 +59,33 @@ describe("persistent project favicon cache", () => {
   it.each([
     {
       scope: "one environment",
+      waitForDownload: false,
       clear: (cache: ReturnType<typeof fixture>["cache"]) =>
         cache.clearEnvironment(target.environmentId),
       remaining: 1,
     },
     {
       scope: "every environment",
+      waitForDownload: false,
+      clear: (cache: ReturnType<typeof fixture>["cache"]) => cache.clearAll(),
+      remaining: 0,
+    },
+    {
+      scope: "one environment",
+      waitForDownload: true,
+      clear: (cache: ReturnType<typeof fixture>["cache"]) =>
+        cache.clearEnvironment(target.environmentId),
+      remaining: 1,
+    },
+    {
+      scope: "every environment",
+      waitForDownload: true,
       clear: (cache: ReturnType<typeof fixture>["cache"]) => cache.clearAll(),
       remaining: 0,
     },
   ])(
-    "does not restore images for $scope removed during a download",
-    async ({ clear, remaining }) => {
+    "does not restore images for $scope removed during a download (started: $waitForDownload)",
+    async ({ clear, remaining, waitForDownload }) => {
       const { cache, load, records } = fixture();
       const other = { ...target, environmentId: EnvironmentId.make("other") };
       await cache.resolve(other, url, signal());
@@ -81,7 +96,7 @@ describe("persistent project favicon cache", () => {
         return next.promise;
       });
       const pending = cache.resolve(target, url, signal());
-      await started.promise;
+      if (waitForDownload) await started.promise;
       await clear(cache);
       next.resolve(image);
       await pending;
