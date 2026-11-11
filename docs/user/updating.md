@@ -100,9 +100,10 @@ Update the side the notice names, then reconnect.
 For an environment connected over SSH in the desktop app, choose **Update** in
 **Settings → Environments** and confirm the restart. T3 Code downloads the requested
 release, stops the remote server, starts the new version, and reconnects. Downloads
-are verified before the running server is stopped. This also works for a server
-started by hand in the remote account's default T3 home; after updating, T3 Code
-manages its lifetime through the SSH connection. It does not replace a globally
+are verified before the running server is stopped. The selected version is kept
+on the host so reconnecting or reopening the desktop app does not downgrade it.
+Servers started by hand must be updated manually with their original options;
+SSH updates leave those servers running. Updating does not replace a globally
 installed `t3` command. SSH updates stay on the server's current release track.
 
 The offered action depends on how the server runs:

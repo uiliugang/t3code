@@ -2,7 +2,6 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
   type DesktopUpdateChannel,
   type EnvironmentId,
-  managedNightlyDeniedMessage,
   managedUpdatesDenial,
   type ServerConfig,
   type ServerSelfUpdateCapability,
@@ -210,15 +209,9 @@ function managedMachineUpdateDenial(
   config: NonNullable<UpdateEverythingMachine["serverConfig"]>,
   targetVersion: string | undefined,
 ): string | undefined {
-  const policy = config.managedPolicy;
-  return (
-    managedUpdatesDenial(policy) ??
-    (policy !== undefined &&
-    policy.limits?.updates?.allowNightly === false &&
-    targetVersion !== undefined &&
-    cliReleaseChannelOf(targetVersion) !== "stable"
-      ? managedNightlyDeniedMessage(policy.organization)
-      : undefined)
+  return managedUpdatesDenial(
+    config.managedPolicy,
+    targetVersion === undefined ? undefined : cliReleaseChannelOf(targetVersion),
   );
 }
 

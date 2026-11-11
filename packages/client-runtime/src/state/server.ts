@@ -790,6 +790,7 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly providerCatalogsOnDemand?: boolean;
     readonly updateSshServer?: (
       target: ServerUpdateTarget,
+      config: ServerConfig | null,
     ) => Effect.Effect<ServerSelfUpdateResult | undefined, ServerSelfUpdateError, R>;
   },
 ) {
@@ -924,7 +925,7 @@ export function createServerEnvironmentAtoms<R, E>(
             const sshResult =
               currentConfig?.environment.capabilities.serverSelfUpdate == null &&
               target.input.channel === undefined
-                ? yield* options.updateSshServer?.(target) ?? Effect.undefined
+                ? yield* options.updateSshServer?.(target, currentConfig) ?? Effect.undefined
                 : undefined;
             const updateResult: ServerSelfUpdateResult =
               sshResult ??

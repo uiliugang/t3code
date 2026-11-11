@@ -188,11 +188,9 @@ export function useUpdateEverything(
               const serverOutcome = await updateServer(server, { quiet: true });
               settleUpdateRunMachine(
                 server.environmentId,
-                serverOutcome.status === "failed"
-                  ? serverOutcome.message
-                  : (providerFailures.get(server.environmentId) ?? null),
+                providerFailures.get(server.environmentId) ?? null,
                 {
-                  serverUpdated: serverOutcome.status !== "failed",
+                  serverOutcome,
                   providerFailure: providerFailures.get(server.environmentId) ?? null,
                 },
               );

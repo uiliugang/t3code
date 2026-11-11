@@ -3,6 +3,7 @@ import type { ServerUpdateTarget } from "@t3tools/client-runtime/state/server";
 import {
   type DesktopBridge,
   type EnvironmentId,
+  type ServerConfig,
   sessionGrantsScope,
   AuthEnvironmentMaintainScope,
   managedUpdatesDenial,
@@ -10,6 +11,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import { cliReleaseChannelOf } from "@t3tools/shared/cliRelease";
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSession } from "./session";
@@ -36,6 +38,7 @@ export function canUpdateServerOverSsh(environmentId: EnvironmentId) {
 
 export const updateServerOverSsh = Effect.fn("web.ssh.updateServer")(function* (
   input: ServerUpdateTarget,
+  config: ServerConfig | null,
 ) {
   const bridge: DesktopBridge | undefined = window.desktopBridge;
   const target = sshUpdateTarget(
@@ -43,25 +46,31 @@ export const updateServerOverSsh = Effect.fn("web.ssh.updateServer")(function* (
   );
   if (bridge === undefined || target === undefined) return undefined;
   const session = appAtomRegistry.get(environmentSession.sessionStateAtom(input.environmentId));
-  const config = appAtomRegistry.get(
-    environmentSession.initialConfigValueAtom(input.environmentId),
+  const denial = managedUpdatesDenial(
+    config?.managedPolicy,
+    cliReleaseChannelOf(input.input.targetVersion),
   );
   if (
     session._tag !== "Success" ||
     !session.value.authenticated ||
-    !sessionGrantsScope(session.value, AuthEnvironmentMaintainScope) ||
-    managedUpdatesDenial(config?.managedPolicy) !== undefined
+    !sessionGrantsScope(session.value, AuthEnvironmentMaintainScope)
   ) {
     return yield* new ServerSelfUpdateError({
       reason: "This session cannot update the SSH environment.",
     });
   }
+  if (denial !== undefined) return yield* new ServerSelfUpdateError({ reason: denial });
   yield* Effect.tryPromise({
     try: async () => {
       const current = await bridge.ensureSshEnvironment(target, { issuePairingToken: false });
       const descriptor = await bridge.fetchSshEnvironmentDescriptor(current.httpBaseUrl);
       if (descriptor.environmentId !== input.environmentId) {
         throw new Error("The SSH host reaches a different environment. Reconnect before updating.");
+      }
+      if (current.remoteServerKind === "external") {
+        throw new Error(
+          "This server was started outside SSH management. Update it manually with its original options; it was left running.",
+        );
       }
       await bridge.ensureSshEnvironment(target, { targetVersion: input.input.targetVersion });
     },

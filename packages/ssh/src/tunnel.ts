@@ -557,20 +557,26 @@ MANAGED_FILE="$STATE_DIR/managed"
 LOG_FILE="$STATE_DIR/server.log"
 RUNNER_FILE="$STATE_DIR/run-t3.sh"
 RUNNER_NEXT="$STATE_DIR/run-t3.next.$$"
+PINNED_RUNNER="$STATE_DIR/pinned-runner.sh"
+PINNED_NEXT="$STATE_DIR/pinned-runner.next.$$"
 mkdir -p "$STATE_DIR"
 cleanup_runner_next() {
-  rm -f "$RUNNER_NEXT"
+  rm -f "$RUNNER_NEXT" "$PINNED_NEXT"
 }
 trap cleanup_runner_next EXIT
 cat >"$RUNNER_NEXT" <<'SH'
 @@T3_RUNNER_SCRIPT@@
 SH
+T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
+if [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] && [ -x "$PINNED_RUNNER" ]; then
+  cp "$PINNED_RUNNER" "$RUNNER_NEXT"
+  T3_ARCHIVE_MODE=1
+fi
 RUNNER_CHANGED=0
 if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
   RUNNER_CHANGED=1
 fi
 chmod 700 "$RUNNER_NEXT"
-T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
 if [ "$T3_ARCHIVE_MODE" = "1" ]; then
   # The archive ships the helpers below inside the executable; the remote
   # needs no Node at all. Resolving the runner once here also downloads the
@@ -685,31 +691,25 @@ elif [ -n "$DEFAULT_REMOTE_PORT" ]; then
     REMOTE_MANAGED="$(cat "$MANAGED_FILE" 2>/dev/null || true)"
   fi
 fi
+if [ "@@T3_REPLACE_EXISTING_SERVER@@" = "1" ]; then
+  if [ "$REMOTE_MANAGED" = "external" ]; then
+    printf 'This server was started outside SSH management. Update it manually with its original options; it was left running.\\n' >&2
+    exit 1
+  fi
+  # Keep the verified selection even if the desktop cannot establish its next tunnel.
+  cp "$RUNNER_FILE" "$PINNED_NEXT"
+  chmod 700 "$PINNED_NEXT"
+  mv "$PINNED_NEXT" "$PINNED_RUNNER"
+fi
 if [ "$REMOTE_MANAGED" = "external" ]; then
-  if [ "@@T3_REPLACE_EXISTING_SERVER@@" = "1" ]; then
-    if [ -z "$ADOPTED_PID" ]; then
-      printf 'Cannot verify the external T3 server PID. Stop it manually and retry.\\n' >&2
-      exit 1
-    fi
-    kill "$ADOPTED_PID"
-    wait_for_pid_exit "$ADOPTED_PID"
-    if server_running "$ADOPTED_PID"; then
-      printf 'The external T3 server did not stop. Retry after stopping it manually.\\n' >&2
-      exit 1
-    fi
+  # A server adopted above has just answered. While it is still alive, probing
+  # it again could catch a momentary stall and launch a second server beside it.
+  if server_running "$ADOPTED_PID"; then
+    :
+  elif [ -z "$REMOTE_PORT" ] || ! wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
     REMOTE_PID=""
     REMOTE_PORT=""
     REMOTE_MANAGED=""
-  else
-    # A server adopted above has just answered. While it is still alive, probing
-    # it again could catch a momentary stall and launch a second server beside it.
-    if server_running "$ADOPTED_PID"; then
-      :
-    elif [ -z "$REMOTE_PORT" ] || ! wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
-      REMOTE_PID=""
-      REMOTE_PORT=""
-      REMOTE_MANAGED=""
-    fi
   fi
 elif [ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && server_running "$REMOTE_PID"; then
   # Reconnect owns the local tunnel, not the lifetime of an already running
@@ -769,10 +769,17 @@ STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
 DEFAULT_SERVER_HOME="$HOME/.t3"
 RUNNER_FILE="$STATE_DIR/run-t3.sh"
 mkdir -p "$STATE_DIR"
-cat >"$RUNNER_FILE" <<'SH'
+RUNNER_NEXT="$STATE_DIR/pairing-runner.next.$$"
+trap 'rm -f "$RUNNER_NEXT"' EXIT
+if [ -x "$STATE_DIR/pinned-runner.sh" ]; then
+  cp "$STATE_DIR/pinned-runner.sh" "$RUNNER_NEXT"
+else
+cat >"$RUNNER_NEXT" <<'SH'
 @@T3_RUNNER_SCRIPT@@
 SH
-chmod 700 "$RUNNER_FILE"
+fi
+chmod 700 "$RUNNER_NEXT"
+mv "$RUNNER_NEXT" "$RUNNER_FILE"
 PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"
 "$RUNNER_FILE" auth pairing create --base-dir "$PAIRING_BASE_DIR" --json
 `;
@@ -1003,15 +1010,17 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
         SshCommandError: Effect.fn("ssh/tunnel.relayFailedDownload")(function* (
           error: SshCommandError,
         ) {
-          const version = runner?.archiveVersion?.trim();
-          const archive = /^T3_DOWNLOAD_FAILED:(.+)$/mu.exec(error.stderr)?.[1];
+          const downloadFailure =
+            /^T3_DOWNLOAD_FAILED:(t3-(.+)-(?:linux-x64|linux-arm64|darwin-arm64|darwin-x64)\.tar\.gz)$/mu.exec(
+              error.stderr,
+            );
+          const archive = downloadFailure?.[1];
+          const version = downloadFailure?.[2];
           if (
-            isNodeScriptRunner(runner) ||
             !version ||
             !archive ||
-            !["linux-x64", "linux-arm64", "darwin-arm64", "darwin-x64"].some(
-              (key) => archive === `t3-${version}-${key}.tar.gz`,
-            )
+            !EXACT_ARCHIVE_VERSION.test(version) ||
+            (runner?.replaceExistingServer && version !== runner.archiveVersion?.trim())
           ) {
             return yield* error;
           }
@@ -1515,7 +1524,6 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 ): Effect.fn.Return<SshEnvironmentManagerShape, never, Scope.Scope> {
   const managerScope = yield* Scope.Scope;
   const tunnels = new Map<string, SshTunnelEntry>();
-  const updatedRunners = new Map<string, RemoteT3RunnerOptions>();
   const targetLocks = yield* KeyedLock.make<string>();
   const authSecrets = new Map<string, string>();
 
@@ -1881,7 +1889,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       Effect.gen(function* () {
         const runner =
           targetVersion === undefined
-            ? (updatedRunners.get(key) ?? defaultRunner)
+            ? defaultRunner
             : {
                 archiveVersion: targetVersion,
                 releaseBaseUrl: defaultRunner?.releaseBaseUrl ?? null,
@@ -1895,12 +1903,6 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
           }
         }
         const entry = yield* ensureTunnelEntry(key, resolvedTarget, runner);
-        if (targetVersion !== undefined) {
-          updatedRunners.set(key, {
-            archiveVersion: targetVersion,
-            releaseBaseUrl: defaultRunner?.releaseBaseUrl ?? null,
-          });
-        }
 
         const pairingResult = requestOptions?.issuePairingToken
           ? yield* runWithSshAuth({
