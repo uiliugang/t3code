@@ -240,6 +240,8 @@ describe("accepted server update recovery", () => {
     { loss: "cancel", resumes: false },
     { loss: "socket", method: "respawn", resumes: true },
     { loss: "socket", method: "desktop-managed", resumes: false },
+    { loss: "socket", method: null, ssh: true, resumes: true },
+    { loss: "server_error", method: null, ssh: true, resumes: false },
   ] as const)("handles $loss with $method and recovery=$resumes", (scenario) =>
     Effect.gen(function* () {
       const { loss, resumes } = scenario;
@@ -329,6 +331,14 @@ describe("accepted server update recovery", () => {
       );
       const atoms = createServerEnvironmentAtoms(runtime, {
         initialConfigValueAtom: () => Atom.make(config),
+        ...("ssh" in scenario
+          ? {
+              updateSshServer: () =>
+                loss === "server_error"
+                  ? Effect.fail(new ServerSelfUpdateError({ reason: "SSH download failed" }))
+                  : Effect.succeed({ targetVersion: "0.0.31", method: "respawn" as const }),
+            }
+          : {}),
       });
       const registry = yield* Effect.acquireRelease(Effect.sync(AtomRegistry.make), (value) =>
         Effect.sync(() => value.dispose()),

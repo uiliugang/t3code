@@ -5,6 +5,7 @@ import { useState } from "react";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { environmentUpdateStatesAtom } from "~/state/server";
+import { canUpdateServerOverSsh } from "~/state/sshServerUpdate";
 import {
   buildVersionMismatchDismissalKey,
   dismissServerUpdateFailure,
@@ -64,7 +65,9 @@ export function useAutoBalanceUpdateBanner(
         desktopAppUpdate,
         targetVersion: state.status === "idle" ? mismatch!.clientVersion : state.targetVersion,
         connected: environment.connection.phase === "connected",
-        remoteUpdate: selfUpdate !== null && (selfUpdate !== "desktop-managed" || desktopAppUpdate),
+        remoteUpdate:
+          (selfUpdate !== null || canUpdateServerOverSsh(environment.environmentId)) &&
+          (selfUpdate !== "desktop-managed" || desktopAppUpdate),
         state,
         dismissKey,
       },

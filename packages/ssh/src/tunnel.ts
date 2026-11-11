@@ -69,6 +69,7 @@ const REMOTE_ARCHIVE_LAUNCH_TIMEOUT_MS = 900_000;
 const REMOTE_REUSE_READY_TIMEOUT_MS = 2_000;
 
 export interface RemoteT3RunnerOptions {
+  readonly replaceExistingServer?: boolean;
   readonly nodeScriptPath?: string | null;
   readonly nodeEngineRange?: string | null;
   readonly archiveVersion?: string | null;
@@ -139,7 +140,7 @@ interface SshAuthAttemptInput<T> extends SshAuthOperationInput<T> {
 export interface SshEnvironmentManagerShape {
   readonly ensureEnvironment: (
     target: DesktopSshEnvironmentTarget,
-    options?: { readonly issuePairingToken?: boolean },
+    options?: { readonly issuePairingToken?: boolean; readonly targetVersion?: string },
   ) => Effect.Effect<
     DesktopSshEnvironmentBootstrap,
     SshEnvironmentEffectError,
@@ -568,18 +569,18 @@ RUNNER_CHANGED=0
 if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
   RUNNER_CHANGED=1
 fi
-mv "$RUNNER_NEXT" "$RUNNER_FILE"
-chmod 700 "$RUNNER_FILE"
+chmod 700 "$RUNNER_NEXT"
 T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
 if [ "$T3_ARCHIVE_MODE" = "1" ]; then
   # The archive ships the helpers below inside the executable; the remote
   # needs no Node at all. Resolving the runner once here also downloads the
   # archive before the port and readiness probes rely on it.
-  "$RUNNER_FILE" --version >/dev/null
+  "$RUNNER_NEXT" --version >/dev/null
 elif ! ensure_remote_node_path; then
   printf 'Remote host is missing node on PATH. Install Node or configure a supported version manager for non-interactive shells.\\n' >&2
   exit 1
 fi
+mv "$RUNNER_NEXT" "$RUNNER_FILE"
 pick_port() {
   if [ "$T3_ARCHIVE_MODE" = "1" ]; then
     "$RUNNER_FILE" __ssh-helper pick-port "$PORT_FILE" "@@T3_DEFAULT_REMOTE_PORT@@" "@@T3_REMOTE_PORT_SCAN_WINDOW@@"
@@ -685,21 +686,41 @@ elif [ -n "$DEFAULT_REMOTE_PORT" ]; then
   fi
 fi
 if [ "$REMOTE_MANAGED" = "external" ]; then
-  # A server adopted above has just answered. While it is still alive, probing
-  # it again could catch a momentary stall and launch a second server beside it.
-  if server_running "$ADOPTED_PID"; then
-    :
-  elif [ -z "$REMOTE_PORT" ] || ! wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
+  if [ "@@T3_REPLACE_EXISTING_SERVER@@" = "1" ]; then
+    if [ -z "$ADOPTED_PID" ]; then
+      printf 'Cannot verify the external T3 server PID. Stop it manually and retry.\\n' >&2
+      exit 1
+    fi
+    kill "$ADOPTED_PID"
+    wait_for_pid_exit "$ADOPTED_PID"
+    if server_running "$ADOPTED_PID"; then
+      printf 'The external T3 server did not stop. Retry after stopping it manually.\\n' >&2
+      exit 1
+    fi
     REMOTE_PID=""
     REMOTE_PORT=""
     REMOTE_MANAGED=""
+  else
+    # A server adopted above has just answered. While it is still alive, probing
+    # it again could catch a momentary stall and launch a second server beside it.
+    if server_running "$ADOPTED_PID"; then
+      :
+    elif [ -z "$REMOTE_PORT" ] || ! wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
+      REMOTE_PID=""
+      REMOTE_PORT=""
+      REMOTE_MANAGED=""
+    fi
   fi
 elif [ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && server_running "$REMOTE_PID"; then
   # Reconnect owns the local tunnel, not the lifetime of an already running
   # server. A changed runner is the update path and still replaces it.
-  if [ "$RUNNER_CHANGED" -eq 1 ]; then
+  if [ "$RUNNER_CHANGED" -eq 1 ] || [ "@@T3_REPLACE_EXISTING_SERVER@@" = "1" ]; then
     kill "$REMOTE_PID" 2>/dev/null || true
     wait_for_pid_exit "$REMOTE_PID"
+    if server_running "$REMOTE_PID"; then
+      printf 'The managed T3 server did not stop. Retry after stopping it manually.\\n' >&2
+      exit 1
+    fi
     REMOTE_PID=""
     REMOTE_PORT=""
     REMOTE_MANAGED=""
@@ -848,6 +869,7 @@ export function buildRemoteNodeEnvScript(input?: RemoteT3RunnerOptions): string 
 
 function buildRemoteLaunchScript(input?: RemoteT3RunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_LAUNCH_SCRIPT, {
+    T3_REPLACE_EXISTING_SERVER: input?.replaceExistingServer ? "1" : "0",
     T3_ARCHIVE_MODE: isNodeScriptRunner(input) ? "0" : "1",
     T3_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
     T3_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteT3RunnerScript(input)),
@@ -1493,6 +1515,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 ): Effect.fn.Return<SshEnvironmentManagerShape, never, Scope.Scope> {
   const managerScope = yield* Scope.Scope;
   const tunnels = new Map<string, SshTunnelEntry>();
+  const updatedRunners = new Map<string, RemoteT3RunnerOptions>();
   const targetLocks = yield* KeyedLock.make<string>();
   const authSecrets = new Map<string, string>();
 
@@ -1818,7 +1841,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 
   const ensureEnvironment = Effect.fn("ssh/tunnel.ensureEnvironment")(function* (
     target: DesktopSshEnvironmentTarget,
-    requestOptions?: { readonly issuePairingToken?: boolean },
+    requestOptions?: { readonly issuePairingToken?: boolean; readonly targetVersion?: string },
   ): Effect.fn.Return<
     DesktopSshEnvironmentBootstrap,
     SshEnvironmentEffectError,
@@ -1839,17 +1862,45 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       ...sshTargetLogFields(resolvedTarget),
       key,
     });
-    const runner =
+    const defaultRunner =
       options.resolveCliRunner === undefined ? undefined : yield* options.resolveCliRunner;
+    const targetVersion = requestOptions?.targetVersion;
+    if (targetVersion !== undefined && !EXACT_ARCHIVE_VERSION.test(targetVersion)) {
+      return yield* new SshLaunchError({
+        message: "An exact release version is required for SSH updates.",
+        stdout: "",
+      });
+    }
     yield* Effect.logDebug("ssh.environment.runner.resolved", {
       ...sshTargetLogFields(resolvedTarget),
-      ...sshRunnerLogFields(runner),
+      ...sshRunnerLogFields(defaultRunner),
       key,
     });
     return yield* withTargetLock(
       key,
       Effect.gen(function* () {
+        const runner =
+          targetVersion === undefined
+            ? (updatedRunners.get(key) ?? defaultRunner)
+            : {
+                archiveVersion: targetVersion,
+                releaseBaseUrl: defaultRunner?.releaseBaseUrl ?? null,
+                replaceExistingServer: true,
+              };
+        if (targetVersion !== undefined) {
+          const previous = tunnels.get(key);
+          if (previous !== undefined) {
+            tunnels.delete(key);
+            yield* closeTunnelEntry(previous);
+          }
+        }
         const entry = yield* ensureTunnelEntry(key, resolvedTarget, runner);
+        if (targetVersion !== undefined) {
+          updatedRunners.set(key, {
+            archiveVersion: targetVersion,
+            releaseBaseUrl: defaultRunner?.releaseBaseUrl ?? null,
+          });
+        }
 
         const pairingResult = requestOptions?.issuePairingToken
           ? yield* runWithSshAuth({

@@ -28,6 +28,7 @@ export interface UpdateEverythingMachine {
   readonly connected: boolean;
   readonly hostedByThisApp: boolean;
   readonly canMaintain: boolean;
+  readonly canUpdateOverSsh?: boolean;
   readonly updateState: ServerUpdateState;
 }
 
@@ -104,7 +105,7 @@ export function collectServerUpdateTargets(
       continue;
     }
     const desktopAppUpdate = supportsDesktopAppUpdate(config);
-    if (selfUpdate === null) {
+    if (selfUpdate === null && !machine.canUpdateOverSsh) {
       skip("needs a manual update");
       continue;
     }
