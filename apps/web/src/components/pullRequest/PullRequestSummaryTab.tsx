@@ -58,7 +58,7 @@ import {
 } from "./pullRequestPresentation";
 import { PullRequestLabelPicker } from "./PullRequestLabelPicker";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
-import { Checkbox } from "../ui/checkbox";
+import { Toggle } from "../ui/toggle";
 import { PullRequestSendReviewLink } from "./PullRequestSendReviewLink";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import {
@@ -801,12 +801,14 @@ export function PullRequestSummaryTab({
                           }
                         >
                           {showReviewerLogins ? (
-                            <label className="inline-flex items-center gap-1.5">
+                            <span className="inline-flex min-w-0 items-center">
                               {detail.reviewers.some((actor) => actor.login === login) ? (
-                                <Checkbox
+                                <Toggle
+                                  size="sm"
+                                  variant="ghost"
                                   aria-label={t("Send PR link to {mis}", { mis: login })}
-                                  checked={selectedReviewers.includes(login)}
-                                  onCheckedChange={(checked) =>
+                                  pressed={selectedReviewers.includes(login)}
+                                  onPressedChange={(checked) =>
                                     setReviewSelection({
                                       url: detail.url,
                                       logins: checked
@@ -814,10 +816,15 @@ export function PullRequestSummaryTab({
                                         : selectedReviewers.filter((value) => value !== login),
                                     })
                                   }
-                                />
-                              ) : null}
-                              <span className="break-all font-medium text-foreground">{login}</span>
-                            </label>
+                                >
+                                  {login}
+                                </Toggle>
+                              ) : (
+                                <span className="break-all font-medium text-foreground">
+                                  {login}
+                                </span>
+                              )}
+                            </span>
                           ) : (
                             <PullRequestActorLabel
                               actor={entry.actor}
