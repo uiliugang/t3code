@@ -17,6 +17,7 @@ import type {
   ServerSettingsError,
   TerminalSummary,
   WorktreeCleanupRules,
+  WorkspaceRootBinding,
   StorageCleanupReport,
   StorageCleanupReportEntry,
   ThreadId,
@@ -1058,8 +1059,33 @@ const make = Effect.gen(function* () {
             const members = workspaceGroup.threads.map((member) => threadsById.get(member.id));
             if (members.some((member) => member === undefined))
               return "workspace membership changed";
+            const bindings = new Map<string, WorkspaceRootBinding>();
+            for (const member of members) {
+              if (!member?.workspace) continue;
+              for (const resource of member.workspace.resources) {
+                const binding = member.workspace.bindings.find(
+                  (binding) => binding.resourceId === resource.id,
+                );
+                if (!binding) continue;
+                const checkout = yield* fs
+                  .realPath(resource.checkoutRoot)
+                  .pipe(Effect.orElseSucceed(() => path.resolve(resource.checkoutRoot)));
+                bindings.set(checkout, binding);
+              }
+            }
             let reason = "";
-            const observed: OrchestrationV2ThreadShell[] = [];
+            const observed = new Map<ThreadId, OrchestrationV2ThreadShell>();
+            const settlementChains = new Map<ThreadId, ReadonlyArray<ThreadId>>();
+            const policies = members.flatMap((member) =>
+              member
+                ? [resolveWorktreeCleanup(serverSettings, member.projectId).worktreeKeepWhen]
+                : [],
+            );
+            const keepWhen = policies.includes("any-local-files")
+              ? "any-local-files"
+              : policies.includes("uncommitted-changes")
+                ? "uncommitted-changes"
+                : "tracked-changes";
             for (const member of members) {
               if (!member) continue;
               const rules = resolveWorktreeCleanup(serverSettings, member.projectId);
@@ -1067,12 +1093,13 @@ const make = Effect.gen(function* () {
               if (!threadIdle(member, now, serverSettings))
                 return "thread is running or has pending work";
               const activity = storageCleanupActivityAt(member);
-              const settlement = worktreeSettlementChain(
+              const settlementChain = worktreeSettlementChain(
                 member,
                 threadsById,
                 now,
                 serverSettings,
-              ).at(-1);
+              );
+              const settlement = settlementChain.at(-1);
               const settledAt =
                 settlement?.settledAt == null ? null : DateTime.toEpochMillis(settlement.settledAt);
               if (
@@ -1090,12 +1117,9 @@ const make = Effect.gen(function* () {
                 now - Math.max(settledAt, activity) >= rules.worktreeSettledAfterDays * DAY_MS;
               for (const resource of workspaceGroup.resources) {
                 if (!resource.present) return "some working directories are missing";
-                const binding = members
-                  .flatMap((entry) => entry?.workspace?.bindings ?? [])
-                  .find((binding) => binding.executionPath === resource.path);
+                const binding = bindings.get(resource.path);
                 if (!binding || resource.branch === null)
                   return "workspace branch or source is unavailable";
-                if (binding.launchBranch !== resource.branch) return "repository or branch changed";
                 const changes = yield* localChangesReason(resource.path, rules);
                 if (changes !== null) return changes;
                 if (!old && !settled) {
@@ -1116,14 +1140,17 @@ const make = Effect.gen(function* () {
               }
               if (old) reason = "inactive retention expired";
               else if (settled) reason = "settled retention expired";
-              observed.push(
-                member,
-                ...(settlement && settlement.id !== member.id ? [settlement] : []),
+              observed.set(member.id, member);
+              for (const ancestor of settlementChain) observed.set(ancestor.id, ancestor);
+              settlementChains.set(
+                member.id,
+                settlementChain.map((ancestor) => ancestor.id),
               );
             }
             const beforeRemove = Effect.gen(function* () {
               const currentSettings = yield* settingsService.getSettings;
-              for (const previous of observed) {
+              const latest = new Map<ThreadId, OrchestrationV2ThreadShell>();
+              for (const previous of observed.values()) {
                 const current = yield* projections.getThreadShell(previous.id);
                 if (
                   !current ||
@@ -1142,6 +1169,24 @@ const make = Effect.gen(function* () {
                   return yield* new ManagedWorktreeError({
                     detail: "Thread activity or cleanup settings changed since inspection.",
                   });
+                latest.set(current.id, current);
+              }
+              for (const [memberId, previousChain] of settlementChains) {
+                const currentChain = worktreeSettlementChain(
+                  latest.get(memberId)!,
+                  latest,
+                  now,
+                  currentSettings,
+                );
+                if (
+                  !Equal.equals(
+                    currentChain.map((ancestor) => ancestor.id),
+                    previousChain,
+                  )
+                )
+                  return yield* new ManagedWorktreeError({
+                    detail: "Parent settlement changed since inspection.",
+                  });
               }
             }).pipe(
               Effect.mapError((cause) =>
@@ -1156,14 +1201,9 @@ const make = Effect.gen(function* () {
             const [removed] = yield* managedWorktrees.remove(
               {
                 targets: [workspaceGroup],
-                deleteIgnoredFiles: members.every(
-                  (member) =>
-                    member &&
-                    resolveWorktreeCleanup(serverSettings, member.projectId).worktreeKeepWhen !==
-                      "any-local-files",
-                ),
+                deleteIgnoredFiles: keepWhen !== "any-local-files",
               },
-              { beforeRemove, releaseIdleSessions: true },
+              { beforeRemove, releaseIdleSessions: true, keepWhen },
             );
             if (removed?.outcome !== "removed")
               return removed?.detail ?? "workspace cleanup was skipped";

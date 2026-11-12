@@ -389,32 +389,40 @@ const cleanupFixture = (
         ManagedWorktrees.ManagedWorktrees,
         ManagedWorktrees.ManagedWorktrees.of({
           list: () =>
-            Effect.sync(() =>
-              threads
-                .filter((thread) => thread.workspace)
-                .map((thread) => ({
-                  id: thread.workspace!.id,
-                  fingerprint: "inspected",
-                  projectId: thread.projectId,
-                  projectTitle: "Project",
-                  title: thread.title,
-                  threads: threads.map(({ id, title }) => ({ id, title })),
-                  resources: thread.workspace!.resources.map((resource) => ({
-                    path: resource.checkoutRoot,
-                    name: resource.name,
-                    branch:
-                      thread.workspace!.bindings.find(
-                        (binding) => binding.resourceId === resource.id,
-                      )?.launchBranch ?? null,
-                    present: true,
-                    ignoredFiles: false,
-                    inspection: "linked" as const,
-                  })),
-                  status: "ready" as const,
-                  recoveryPending: false,
-                  reason: null,
-                })),
-            ),
+            Effect.forEach(
+              threads.filter((thread) => thread.workspace),
+              (thread) =>
+                Effect.gen(function* () {
+                  const resources = yield* Effect.forEach(thread.workspace!.resources, (resource) =>
+                    Effect.gen(function* () {
+                      return {
+                        path: yield* fs.realPath(resource.checkoutRoot),
+                        name: resource.name,
+                        branch: yield* git.resolveBranchName(resource.checkoutRoot, "HEAD"),
+                        present: true,
+                        ignoredFiles: false,
+                        inspection: "linked" as const,
+                      };
+                    }),
+                  );
+                  return {
+                    id: thread.workspace!.id,
+                    fingerprint: "inspected",
+                    projectId: thread.projectId,
+                    projectTitle: "Project",
+                    title: thread.title,
+                    threads: threads
+                      .filter((member) =>
+                        resources.some((resource) => resource.path === member.worktreePath),
+                      )
+                      .map(({ id, title }) => ({ id, title })),
+                    resources,
+                    status: "ready" as const,
+                    recoveryPending: false,
+                    reason: null,
+                  };
+                }),
+            ).pipe(Effect.orDie),
           remove: (_input, options) =>
             Effect.gen(function* () {
               yield* beforeWorkspaceRemoval;
@@ -692,6 +700,11 @@ it.live.each([
   "unmerged-resource",
   "shared-busy",
   "new-activity",
+  "renamed",
+  "subdirectory",
+  "inherited-settlement",
+  "pinned-during-check",
+  "ancestor-active-during-check",
 ] as const)("applies automatic cleanup to complete workspace groups: %s", (scenario) =>
   Effect.gen(function* () {
     const policy = {
@@ -703,9 +716,18 @@ it.live.each([
         "unmerged-resource",
         "shared-busy",
         "new-activity",
+        "renamed",
+        "subdirectory",
       ].includes(scenario),
       worktreeOnMerge: scenario === "merged",
-      worktreeSettledAfterDays: scenario === "settled" ? 0 : null,
+      worktreeSettledAfterDays: [
+        "settled",
+        "inherited-settlement",
+        "pinned-during-check",
+        "ancestor-active-during-check",
+      ].includes(scenario)
+        ? 0
+        : null,
       worktreeAfterDays: scenario === "inactive" ? 8 : null,
     };
     const fixture = yield* cleanupFixture(policy);
@@ -721,8 +743,9 @@ it.live.each([
       })),
       bindings: base.bindings.map((binding, index) => ({
         ...binding,
-        sourcePathAtBind: fixture.repo,
-        executionPath: index === 0 ? fixture.worktree : second,
+        relativeSubpath: scenario === "subdirectory" ? "src" : "",
+        sourcePathAtBind: scenario === "subdirectory" ? `${fixture.repo}/src` : fixture.repo,
+        executionPath: `${index === 0 ? fixture.worktree : second}${scenario === "subdirectory" ? "/src" : ""}`,
         launchBranch: index === 0 ? "feature" : "second",
       })),
     };
@@ -750,6 +773,59 @@ it.live.each([
     }
     if (scenario === "changed-resource") {
       yield* fixture.fs.writeFileString(`${second}/tracked.txt`, "keep this edit");
+    }
+    if (scenario === "renamed") {
+      yield* fixture.command(fixture.worktree, ["branch", "-m", "generated-feature"]);
+      yield* fixture.command(second, ["branch", "-m", "generated-second"]);
+      fixture.setThreads([
+        shell({ branch: "generated-feature", worktreePath: fixture.worktree, workspace }),
+      ]);
+    }
+    if (scenario === "subdirectory") {
+      for (const directory of [fixture.repo, fixture.worktree, second])
+        yield* fixture.fs.makeDirectory(`${directory}/src`);
+    }
+    if (
+      ["inherited-settlement", "pinned-during-check", "ancestor-active-during-check"].includes(
+        scenario,
+      )
+    ) {
+      const rootId = ThreadId.make("root");
+      const parentId = ThreadId.make("parent");
+      const child = shell({
+        branch: "feature",
+        worktreePath: fixture.worktree,
+        workspace,
+        lineage: {
+          rootThreadId: rootId,
+          parentThreadId: parentId,
+          relationshipToParent: "subagent",
+        },
+      });
+      const parent = shell({
+        id: parentId,
+        lineage: { rootThreadId: rootId, parentThreadId: rootId, relationshipToParent: "subagent" },
+      });
+      const root = shell({
+        id: rootId,
+        settledAt: at(-2 * DAY_MS),
+        lineage: { rootThreadId: rootId, parentThreadId: null, relationshipToParent: null },
+      });
+      fixture.setThreads([child, parent, root]);
+      if (scenario !== "inherited-settlement")
+        fixture.beforeWorkspaceRemoval(
+          Effect.sync(() =>
+            fixture.setThreads([
+              scenario === "pinned-during-check"
+                ? { ...child, pinnedAt: at(0), updatedAt: at(0) }
+                : child,
+              scenario === "ancestor-active-during-check"
+                ? { ...parent, status: "running", activeRunId: RunId.make("new-run") }
+                : parent,
+              root,
+            ]),
+          ),
+        );
     }
     if (scenario === "unmerged-resource") {
       yield* fixture.fs.writeFileString(`${second}/tracked.txt`, "unmerged work");
@@ -781,7 +857,15 @@ it.live.each([
       );
     }
     const report = yield* fixture.service.runNow;
-    const expected = ["unchanged", "merged", "settled", "inactive"].includes(scenario);
+    const expected = [
+      "unchanged",
+      "merged",
+      "settled",
+      "inactive",
+      "renamed",
+      "subdirectory",
+      "inherited-settlement",
+    ].includes(scenario);
     expect(fixture.workspaceRemovals()).toBe(expected ? 1 : 0);
     if (expected) expect(report.entries.some((entry) => entry.outcome === "removed")).toBe(true);
   }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),

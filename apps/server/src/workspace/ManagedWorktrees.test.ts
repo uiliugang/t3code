@@ -234,7 +234,11 @@ it.live("releases idle providers only for eligible automatic cleanup and retains
         "failed",
       );
       assert.isTrue(yield* Ref.get(sessionLive));
-      const options = { beforeRemove: Effect.void, releaseIdleSessions: true };
+      const options = {
+        beforeRemove: Effect.void,
+        releaseIdleSessions: true,
+        keepWhen: "uncommitted-changes" as const,
+      };
       assert.equal(
         (yield* service.remove({ targets: [group!], deleteIgnoredFiles: false }, options))[0]!
           .outcome,
@@ -283,6 +287,93 @@ it.live("reports inspection failures instead of masking them with occupied task 
       assert.isFalse(group!.actions!.remove);
     }).pipe(Effect.provide(context.layer));
   }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live.each([
+  { keepWhen: "tracked-changes", files: "untracked", removed: true },
+  { keepWhen: "uncommitted-changes", files: "untracked", removed: false },
+  { keepWhen: "any-local-files", files: "dependencies", removed: true },
+  { keepWhen: "any-local-files", files: "ignored", removed: false },
+  { keepWhen: "uncommitted-changes", files: "ignored", removed: true },
+  { keepWhen: "tracked-changes", files: "tracked", removed: false },
+  { keepWhen: "tracked-changes", files: "tracked-during-clean", removed: false },
+] as const)(
+  "honors automatic local-file retention: $keepWhen / $files",
+  ({ keepWhen, files, removed }) =>
+    Effect.gen(function* () {
+      const context = yield* fixture();
+      const { fs, path, resources, git } = context;
+      const firstCheckout = resources.map((resource) => resource.checkoutRoot).sort()[0]!;
+      const layer =
+        files === "tracked-during-clean"
+          ? context.layer.pipe(
+              Layer.provide(
+                Layer.succeed(
+                  GitVcsDriver.GitVcsDriver,
+                  GitVcsDriver.GitVcsDriver.of({
+                    ...git,
+                    execute: (input) =>
+                      Effect.gen(function* () {
+                        if (
+                          input.operation === "ManagedWorktrees.cleanUntracked" &&
+                          input.cwd === firstCheckout
+                        )
+                          yield* fs
+                            .writeFileString(
+                              path.join(firstCheckout, "file.txt"),
+                              "new tracked edit",
+                            )
+                            .pipe(Effect.orDie);
+                        return yield* git.execute(input);
+                      }),
+                  }),
+                ),
+              ),
+            )
+          : context.layer;
+      const checkout = resources[1]!.checkoutRoot;
+      const target = path.join(
+        checkout,
+        files === "dependencies"
+          ? "node_modules/package/index.js"
+          : files === "ignored"
+            ? ".env"
+            : files === "tracked"
+              ? "file.txt"
+              : "notes.txt",
+      );
+      yield* fs.makeDirectory(path.dirname(target), { recursive: true });
+      yield* fs.writeFileString(target, "preserve according to policy");
+      yield* Effect.gen(function* () {
+        const service = yield* ManagedWorktrees.ManagedWorktrees;
+        const [group] = yield* service.list({});
+        if (files === "untracked") {
+          assert.equal(
+            (yield* service.remove({ targets: [group!], deleteIgnoredFiles: true }))[0]!.outcome,
+            "failed",
+          );
+          assert.isTrue(yield* fs.exists(target));
+        }
+        const [result] = yield* service.remove(
+          { targets: [group!], deleteIgnoredFiles: keepWhen !== "any-local-files" },
+          {
+            beforeRemove: Effect.void,
+            releaseIdleSessions: true,
+            keepWhen,
+          },
+        );
+        assert.equal(result!.outcome, removed ? "removed" : "failed", result!.detail);
+        for (const resource of resources)
+          assert.equal(yield* fs.exists(resource.checkoutRoot), !removed);
+        if (!removed && files !== "tracked-during-clean")
+          assert.equal(yield* fs.readFileString(target), "preserve according to policy");
+        if (files === "tracked-during-clean")
+          assert.equal(
+            yield* fs.readFileString(path.join(firstCheckout, "file.txt")),
+            "new tracked edit",
+          );
+      }).pipe(Effect.provide(layer));
+    }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );
 
 it.live(

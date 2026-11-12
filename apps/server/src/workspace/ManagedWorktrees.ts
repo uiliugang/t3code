@@ -13,6 +13,7 @@ import {
   type ManagedWorktreesRemoveInput,
   type ManagedWorktreesRestoreInput,
   type TerminalSummary,
+  type WorktreeKeepWhen,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -78,6 +79,19 @@ const failure = (cause: unknown) =>
         cause,
       });
 
+const hasProtectedFiles = (
+  entries: ReadonlyArray<string>,
+  keepWhen: WorktreeKeepWhen | undefined,
+  allowIgnoredFiles: boolean,
+) =>
+  entries.some((entry) => {
+    if (entry.startsWith("!! ")) {
+      if (keepWhen === "any-local-files") return !/(^|\/)node_modules\//.test(entry.slice(3));
+      return keepWhen === undefined && !allowIgnoredFiles;
+    }
+    return keepWhen !== "tracked-changes" || !entry.startsWith("?? ");
+  });
+
 export class ManagedWorktrees extends Context.Service<
   ManagedWorktrees,
   {
@@ -89,6 +103,7 @@ export class ManagedWorktrees extends Context.Service<
       options?: {
         readonly beforeRemove: Effect.Effect<void, ManagedWorktreeError>;
         readonly releaseIdleSessions: boolean;
+        readonly keepWhen: WorktreeKeepWhen;
       },
     ) => Effect.Effect<ReadonlyArray<ManagedWorktreeResult>, ManagedWorktreeError>;
     readonly restore: (
@@ -323,6 +338,7 @@ const make = Effect.gen(function* () {
   const inspect = Effect.fn("ManagedWorktrees.inspect")(function* (
     group: Group,
     context: Effect.Success<ReturnType<typeof inspectionContext>>,
+    keepWhen?: WorktreeKeepWhen,
   ) {
     const { projectRows, projectPaths, scopes, managedRoots } = context;
     const owner = group.threads.find((thread) => thread.deletedAt === null) ?? group.threads[0]!;
@@ -420,7 +436,7 @@ const make = Effect.gen(function* () {
             reason ??= "The status output was truncated; this worktree was retained.";
           const entries = status.stdout.split("\0").filter(Boolean);
           resource.ignoredFiles = entries.some((entry) => entry.startsWith("!! "));
-          if (entries.some((entry) => !entry.startsWith("!! ")))
+          if (hasProtectedFiles(entries, keepWhen, true))
             reason ??= "This worktree has local changes or untracked files.";
           const ref = yield* git.execute({
             operation: "ManagedWorktrees.branch",
@@ -581,6 +597,7 @@ const make = Effect.gen(function* () {
     options?: {
       readonly beforeRemove: Effect.Effect<void, ManagedWorktreeError>;
       readonly releaseIdleSessions: boolean;
+      readonly keepWhen: WorktreeKeepWhen;
     },
   ) {
     const results: ManagedWorktreeResult[] = [];
@@ -612,7 +629,11 @@ const make = Effect.gen(function* () {
                   return yield* new ManagedWorktreeError({
                     detail: "The worktree group changed. Refresh the list.",
                   });
-                const checked = yield* inspect(current, yield* inspectionContext());
+                const checked = yield* inspect(
+                  current,
+                  yield* inspectionContext(),
+                  options?.keepWhen,
+                );
                 if (checked.report.fingerprint !== target.fingerprint)
                   return yield* new ManagedWorktreeError({
                     detail: "The worktree changed since inspection. Refresh and confirm again.",
@@ -622,6 +643,7 @@ const make = Effect.gen(function* () {
                     detail: checked.report.reason ?? "This group cannot be cleaned.",
                   });
                 if (
+                  options === undefined &&
                   !input.deleteIgnoredFiles &&
                   checked.report.resources.some((resource) => resource.ignoredFiles)
                 )
@@ -672,10 +694,11 @@ const make = Effect.gen(function* () {
                   });
                   if (
                     status.stdoutTruncated ||
-                    status.stdout
-                      .split("\0")
-                      .filter(Boolean)
-                      .some((entry) => !input.deleteIgnoredFiles || !entry.startsWith("!! "))
+                    hasProtectedFiles(
+                      status.stdout.split("\0").filter(Boolean),
+                      options?.keepWhen,
+                      input.deleteIgnoredFiles,
+                    )
                   )
                     return yield* new ManagedWorktreeError({
                       detail:
@@ -696,6 +719,12 @@ const make = Effect.gen(function* () {
                   )
                     return yield* new ManagedWorktreeError({
                       detail: "The branch or commit changed during cleanup.",
+                    });
+                  if (options?.keepWhen === "tracked-changes")
+                    yield* git.execute({
+                      operation: "ManagedWorktrees.cleanUntracked",
+                      cwd: resource.identity.checkoutRoot,
+                      args: ["clean", "-ffdx"],
                     });
                   yield* removeLinkedWorktree({
                     operation: "ManagedWorktrees.remove",
