@@ -55,6 +55,7 @@ const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const observer = yield* RunFinalizationObserver;
   const checkoutReconciler = yield* RunCheckoutReconciler;
+  const workspaceRefreshes = yield* FiberMap.make<string>();
 
   const finalize: RunFinalizationService["Service"]["finalize"] = Effect.fn(
     "RunFinalizationService.finalize",
@@ -85,7 +86,6 @@ const make = Effect.gen(function* () {
     yield* Effect.forEach(
       [...new Set([...cwds, ...checkoutCwds])],
       (cwd) =>
-        // Retrying a display refresh after the checkpoint is durable blocks the next turn.
         observer.refresh({ cwd, threadId: input.threadId, runId: input.runId }).pipe(
           Effect.catchTags({
             RunFinalizationRefreshError: (cause) =>
@@ -94,6 +94,8 @@ const make = Effect.gen(function* () {
                 cause,
               }),
           }),
+          // Display refreshes must not hold the thread's ordered effect queue.
+          FiberMap.run(workspaceRefreshes, cwd),
         ),
       { discard: true },
     );

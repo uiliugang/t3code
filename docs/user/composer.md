@@ -183,7 +183,9 @@ refused when another thread or agent session also uses that directory, a folder
 inside it, or a folder that contains it, since
 restoring would erase their changes. A thread that works in the project directory
 rewinds the conversation only. The selected prompt and its attachments return to the composer for editing and
-resending. Any unsent draft stays above the restored prompt.
+resending. Any unsent draft stays above the restored prompt. You can edit while the
+conversation rewinds; sending becomes available when it finishes. If rewinding
+fails, your edits stay in the composer.
 
 This removes the selected message and later conversation from the active thread
 and provider history. It does not undo external actions or separate provider
