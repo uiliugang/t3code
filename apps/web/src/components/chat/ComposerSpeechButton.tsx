@@ -12,36 +12,11 @@ import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { resolveSpeechPresentation } from "./ComposerSpeechButton.logic";
 
 type DownloadProgress = { downloaded: number; total: number } | null;
 
 const keepFocus = (event: PointerEvent) => event.preventDefault();
-
-/** One short status line per phase; also mirrored into the preview annotation editor. */
-export function resolveSpeechPresentation(
-  state: VoiceInputState,
-  progress: DownloadProgress,
-): { status: string | null; active: boolean } {
-  switch (state.phase) {
-    case "idle":
-      return { status: null, active: false };
-    case "error":
-      return { status: state.error ?? "Voice input failed", active: false };
-    case "preparing":
-      return {
-        status: progress
-          ? `Downloading model ${Math.round((progress.downloaded / Math.max(1, progress.total)) * 100)}%`
-          : "Starting…",
-        active: true,
-      };
-    case "recording":
-      return { status: "Recording", active: true };
-    case "transcribing":
-      return { status: "Transcribing…", active: true };
-    case "post-processing":
-      return { status: "Cleaning up…", active: true };
-  }
-}
 
 function formatElapsed(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -154,7 +129,7 @@ export function ComposerSpeechRecordingPill(props: {
       />
     );
   }
-  const presentation = resolveSpeechPresentation(props.state, props.progress);
+  const presentation = resolveSpeechPresentation(props.state, props.progress, t);
   if (!presentation.active) return null;
   const recording = phase === "recording";
   const trailing = recording || phase === "post-processing";

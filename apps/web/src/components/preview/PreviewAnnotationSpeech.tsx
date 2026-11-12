@@ -7,7 +7,8 @@ import type {
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
-import { resolveSpeechPresentation } from "~/components/chat/ComposerSpeechButton";
+import { resolveSpeechPresentation } from "~/components/chat/ComposerSpeechButton.logic";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { VoiceInputSetup } from "~/components/chat/VoiceInputSetup";
 import { toastManager } from "~/components/ui/toast";
 import { useComposerDraftStore } from "~/composerDraftStore";
@@ -33,6 +34,7 @@ export function PreviewAnnotationSpeech({
   keybindings: Parameters<typeof useDictationShortcut>[0]["keybindings"];
 }) {
   const navigate = useNavigate();
+  const t = useUiTranslation();
   const thread = useThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const projectId = thread?.projectId ?? draftThread?.projectId ?? null;
@@ -95,7 +97,7 @@ export function PreviewAnnotationSpeech({
     available,
     phase: state.phase,
     errorAction: state.errorAction,
-    status: resolveSpeechPresentation(state, null).status,
+    status: resolveSpeechPresentation(state, null, t).status,
     preview: preview ? preview.committed + preview.tentative : null,
     level,
     shortcutLabel,
