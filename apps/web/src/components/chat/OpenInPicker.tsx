@@ -316,7 +316,7 @@ export const OpenInPicker = memo(function OpenInPicker({
           <MenuItemLabel>Terminal</MenuItemLabel>
         </MenuItem>
       ) : null}
-      {remote.mode === "remote-unavailable" ? (
+      {unavailableReason !== null ? (
         <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
           {unavailableReason}
         </MenuItem>

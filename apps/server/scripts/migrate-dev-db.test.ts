@@ -126,17 +126,21 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
         VALUES ('delivery-1', 'task-1', 'key-1', 1900000000000, '{}', '{}', '[]')`;
       yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
         VALUES ('session-1', 'user', '[]', 'pairing', '2026-08-01', '2027-08-01')`;
-      yield* sql`INSERT INTO peer_environment_links
+      if (toMigrationInclusive === undefined || toMigrationInclusive >= 70) {
+        yield* sql`INSERT INTO peer_environment_links
         (environment_id, secret_name, label, urls_json, access, linked_at, expires_at)
         VALUES ('environment-box', 'peer-link-box', 'Box', '["https://box.example"]', 'auto',
           '2026-08-01', '2027-08-01')`;
-      yield* sql`INSERT INTO wechat_connection (id, payload) VALUES (1, '{}')`;
-      yield* sql`INSERT INTO wechat_inbox (id, generation, payload, done)
+      }
+      if (toMigrationInclusive === undefined || toMigrationInclusive >= 87) {
+        yield* sql`INSERT INTO wechat_connection (id, payload) VALUES (1, '{}')`;
+        yield* sql`INSERT INTO wechat_inbox (id, generation, payload, done)
         VALUES ('incoming', 'live', '{"text":"run task"}', 0)`;
-      yield* sql`INSERT INTO wechat_deliveries
+        yield* sql`INSERT INTO wechat_deliveries
         (id, generation, text, status, created_at, attempts, next_at)
         VALUES ('outgoing', 'live', 'private result', 'pending', 0, 0, 0)`;
-      yield* sql`UPDATE wechat_lease SET owner = 'live-server', expires_at = 120000 WHERE id = 1`;
+        yield* sql`UPDATE wechat_lease SET owner = 'live-server', expires_at = 120000 WHERE id = 1`;
+      }
     }),
   );
   return databasePath;

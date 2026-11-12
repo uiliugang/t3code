@@ -364,7 +364,7 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                     }}
                   />
                 ))
-              ) : props.gitCwd && (show.branch || show.git) ? (
+              ) : props.gitCwd && (show.branch || show.pullRequests || show.git) ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
                   title="Version Control"

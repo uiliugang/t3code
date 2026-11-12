@@ -102,6 +102,7 @@ it("retains each thread's diff selection when returning from another thread or S
   using _environment = installFakeEnvironment([a, b]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const aRef = scopeThreadRef(ENVIRONMENT_ID, a.id);

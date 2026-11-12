@@ -83,6 +83,8 @@ vi.mock(import("~/state/vcs"), async (importOriginal) => {
 
 import { render } from "../../../test/render";
 import { useRightPanelStore } from "../../rightPanelStore";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { PopoverCreateHandle } from "../ui/popover";
 import { ChatCanvasContext } from "./ChatCanvasContext";
 import { resolveChatCanvasLayout } from "./chatCanvasLayout";
@@ -111,6 +113,7 @@ function setup(input: {
   pullRequests?: ThreadPullRequestLink[];
   configLoaded?: boolean;
 }) {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   state.configLoaded = input.configLoaded ?? true;
   state.workspaceRoot = input.workspaceRoot;
   state.folder = input.folder;

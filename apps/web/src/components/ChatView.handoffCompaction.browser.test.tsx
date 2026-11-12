@@ -85,6 +85,7 @@ it("sends a Codex follow-up on a cold Claude thread without compacting first", a
   });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const router = getRouter(

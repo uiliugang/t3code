@@ -8,7 +8,7 @@ import {
   type PullRequestDiffResult,
 } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
@@ -170,7 +170,7 @@ const detail: PullRequestDetailView = {
 
 function setup({ paged }: { paged: boolean }) {
   window.localStorage.removeItem("t3code.diffHideTestFiles");
-  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   mocks.paged = paged;
   mocks.diffCommits = [];
   mocks.viewedPaths = null;
@@ -201,7 +201,7 @@ const tab = (
 it("keeps the diff after a refresh that brings back the same page", async () => {
   setup({ paged: false });
   const container = document.createElement("div");
-  container.className = "flex h-[700px] w-[900px]";
+  container.className = "h-[700px] w-[900px]";
   await using screen = await render(tab(0), { container });
   await expect.element(screen.getByText("1 file", { exact: true })).toBeVisible();
 
@@ -224,7 +224,7 @@ it("keeps a revealed file open when its Viewed mark loads afterwards", async () 
   };
   mocks.viewedPaths = new Set();
   const container = document.createElement("div");
-  container.className = "flex h-[700px] w-[900px]";
+  container.className = "h-[700px] w-[900px]";
   await using screen = await render(tab(0, { path: "a.ts", nonce: 1 }), { container });
   await expect.element(screen.getByText("three()", { exact: true })).toBeVisible();
 
@@ -239,7 +239,7 @@ it("keeps a revealed file open when its Viewed mark loads afterwards", async () 
 
 function pagedContainer() {
   const container = document.createElement("div");
-  container.className = "flex h-[500px] w-[900px]";
+  container.className = "h-[500px] w-[900px]";
   return container;
 }
 
@@ -280,7 +280,11 @@ it("scrolls to a file asked for as the tab opens", async () => {
 
 it("pages forward to a file asked for that is not loaded yet, then scrolls to it", async () => {
   setup({ paged: true });
-  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: true });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
+    diffFilesCollapsed: true,
+  });
   using _preferences = {
     [Symbol.dispose]() {
       window.localStorage.removeItem("t3code.diffHideTestFiles");
@@ -290,7 +294,9 @@ it("pages forward to a file asked for that is not loaded yet, then scrolls to it
   const container = pagedContainer();
   await using screen = await render(tab(0), { container });
   await expect.element(screen.getByText("early-0.ts", { exact: true }).first()).toBeVisible();
-  await screen.getByRole("button", { name: "Hide test files" }).click();
+  await screen.getByRole("button", { name: "Filter files", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Hide test files", exact: true }).click();
+  await userEvent.keyboard("{Escape}");
 
   const url = `${detail.url}/files#diff-${bytesToHex(sha256(new TextEncoder().encode("late.test.ts")))}R4-R5`;
   const settled = vi.fn();
@@ -309,7 +315,7 @@ it("pages forward to a file asked for that is not loaded yet, then scrolls to it
 it("never requests the diff of a selected commit the pull request no longer has", async () => {
   setup({ paged: false });
   const container = document.createElement("div");
-  container.className = "flex h-[700px] w-[900px]";
+  container.className = "h-[700px] w-[900px]";
   // The timeline can open a commit that a force-push removed from the pull request.
   await using screen = await render(
     <PullRequestCodeTab
@@ -343,7 +349,7 @@ it("never requests the diff of a selected commit the pull request no longer has"
 it("answers a commit's diff link only once that commit's diff is shown", async () => {
   setup({ paged: false });
   const container = document.createElement("div");
-  container.className = "flex h-[700px] w-[900px]";
+  container.className = "h-[700px] w-[900px]";
   const oid = "c".repeat(40);
   const withCommit = {
     ...detail,
@@ -383,7 +389,7 @@ it("hides a resolved conversation behind avatars on its line until they are clic
     },
   };
   const container = document.createElement("div");
-  container.className = "flex h-[700px] w-[900px]";
+  container.className = "h-[700px] w-[900px]";
   const comment = {
     author: { login: "reviewer", name: null, avatarUrl: null },
     body: "Rename this.",

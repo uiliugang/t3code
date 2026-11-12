@@ -78,7 +78,10 @@ vi.mock(import("../../remoteOpen"), async (importOriginal) => ({
   useRemoteOpenHint: () => [false, state.markHintSeen] as const,
   openRemoteEditorUrl: state.openUrl,
 }));
-vi.mock(import("../../state/entities"), () => ({
+vi.mock(import("../../state/entities"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  readEnvironmentSupportsServerBrowser: () => false,
+  useEnvironmentSupportsServerBrowser: () => false,
   useProject: (() => ({
     id: projectId,
     environmentId: selected,
@@ -90,7 +93,10 @@ vi.mock(import("../../state/entities"), () => ({
     worktreePath: state.worktreePath,
   })) as never,
 }));
-vi.mock(import("../../state/terminalSessions"), () => ({ useKnownTerminalSessions: () => [] }));
+vi.mock(import("../../state/terminalSessions"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  useKnownTerminalSessions: () => [],
+}));
 vi.mock(import("../../hooks/useT3ProjectFileScripts"), () => ({
   useT3ProjectFileScripts: () => [],
 }));

@@ -353,10 +353,12 @@ describe("accepted server update recovery", () => {
         initialConfigValueAtom: () => Atom.make(config),
         ...("ssh" in scenario
           ? {
-              updateSshServer: () =>
-                loss === "server_error"
+              updateSshServer: () => {
+                requested = true;
+                return loss === "server_error"
                   ? Effect.fail(new ServerSelfUpdateError({ reason: "SSH download failed" }))
-                  : Effect.succeed({ targetVersion: "0.0.31", method: "respawn" as const }),
+                  : Effect.succeed({ targetVersion: "0.0.31", method: "respawn" as const });
+              },
             }
           : {}),
       });

@@ -44,6 +44,7 @@ import {
   claudeSignedOutMessage,
   hasClaudeManagedMcpConfig,
   makeClaudeEnvironment,
+  resolveClaudeHomePath,
 } from "./Drivers/ClaudeHome.ts";
 import {
   customClaudeApiEndpointHost,
@@ -784,7 +785,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const customApiEndpoint = customClaudeApiEndpointHost(baseUrl) !== undefined;
   if (!customApiEndpoint && claudeAuthStatus(capabilities) === "unauthenticated") {
     const path = yield* Path.Path;
-    const configDir = resolvedEnvironment.CLAUDE_CONFIG_DIR;
+    const configDir = claudeSettings.homePath.trim()
+      ? yield* resolveClaudeHomePath(claudeSettings, resolvedEnvironment)
+      : resolvedEnvironment.CLAUDE_CONFIG_DIR;
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,

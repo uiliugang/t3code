@@ -201,6 +201,7 @@ describe("sidebar thread rename", () => {
   it.each(["{Enter}", "{Tab}"])(
     "ending an untouched rename with %s keeps a title that arrived while it was open",
     async (finish) => {
+      __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
       const activeProject = project("active");
       const routeThreadRef: ScopedThreadRef = {
         environmentId: activeProject.environmentId,
