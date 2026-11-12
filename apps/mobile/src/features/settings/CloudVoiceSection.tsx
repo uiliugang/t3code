@@ -1,3 +1,7 @@
+import type { CloudSpeechModel } from "@t3tools/contracts";
+import type { SettingsSecretValue } from "@t3tools/contracts";
+import type { ReactNode } from "react";
+import type { EnvironmentPresentation } from "../../state/environments";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { cloudSpeechDisclosure } from "@t3tools/shared/speech";
@@ -14,9 +18,7 @@ import {
   CloudSpeechApiKey,
   CloudSpeechModelId,
   isSecretReference,
-  type CloudSpeechModel,
   type SecretProviderId,
-  type SettingsSecretValue,
   type VoiceTranscriptionDestination,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -31,7 +33,8 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { Chip } from "../../components/ui/Chip";
-import type { EnvironmentPresentation } from "../../state/environments";
+import { ListSection } from "../../components/ui/ListSection";
+
 import { useEnvironmentScope } from "../../state/session";
 import {
   chooseVoiceDestination,
@@ -41,7 +44,6 @@ import {
   cloudVoiceModelsAtom,
   runSpeech,
 } from "../voice-input/voiceDestination";
-import { SettingsSection } from "./components/SettingsSection";
 
 type CloudDestination = Extract<VoiceTranscriptionDestination, { kind: "cloud" }>;
 type Props = { environment: EnvironmentPresentation; active: CloudDestination | null };
@@ -49,24 +51,38 @@ const isApiKey = Schema.is(CloudSpeechApiKey);
 const isModelId = Schema.is(CloudSpeechModelId);
 const MODEL_ROWS = 6;
 
-export function CloudVoiceSection({ environment, active }: Props) {
-  const t = useUiTranslation();
-  const [open, setOpen] = useState(false);
+/** The cloud method row for one environment; opens the provider sheet. */
+export function CloudVoiceChoice({
+  environment,
+  active,
+  open,
+  onOpenChange,
+}: Props & { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const usable = useAtomValue(cloudVoiceConnectionAtom(environment.environmentId)) !== null;
   return (
-    <SettingsSection title={t("Cloud via {environment}", { environment: environment.label })}>
-      <ListActionRow
-        label={t("Cloud providers")}
+    <>
+      <ListChoiceRow
+        label="Cloud provider"
         description={
           active
-            ? t("Using {provider}", { provider: CLOUD_SPEECH_LABELS[active.provider] })
-            : t("Optional · use your own API key")
+            ? `${CLOUD_SPEECH_LABELS[active.provider]}${active.provider === "openrouter" ? ` · ${active.model}` : ""}`
+            : usable
+              ? "Use your own API key"
+              : "Not connected"
         }
-        onPress={() => setOpen(true)}
+        selected={active !== null}
+        disabled={!usable}
+        separated
+        onPress={() => onOpenChange(true)}
       />
       {open && (
-        <CloudChoices environment={environment} active={active} onClose={() => setOpen(false)} />
+        <CloudChoices
+          environment={environment}
+          active={active}
+          onClose={() => onOpenChange(false)}
+        />
       )}
-    </SettingsSection>
+    </>
   );
 }
 
@@ -84,7 +100,6 @@ function ModelPicker({
   disabled: boolean;
   onChange: (model: CloudSpeechModelId) => void;
 }) {
-  const t = useUiTranslation();
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
   const needle = query.trim().toLowerCase();
@@ -95,57 +110,68 @@ function ModelPicker({
   const shown = showAll ? matches : matches.slice(0, MODEL_ROWS);
   const delisted = current !== undefined && !models.some((model) => model.id === current);
   return (
-    <>
-      <TextInput
-        accessibilityLabel={t("Search OpenRouter models")}
-        placeholder={t("Search transcription models")}
-        autoCapitalize="none"
-        autoCorrect={false}
-        editable={!disabled}
-        value={query}
-        onChangeText={setQuery}
-        className="mx-4 rounded-lg bg-background px-3 py-2 text-foreground"
-      />
-      {delisted ? (
-        <Text className="mx-4 text-sm text-destructive">
-          {t(
-            "OpenRouter no longer lists {model}. Dictation stays off until you choose another model.",
-            { model: current ?? "" },
-          )}
-        </Text>
-      ) : null}
+    <ListSection
+      title="Model"
+      footer={
+        delisted
+          ? `OpenRouter no longer lists ${current}. Dictation stays off until you choose another model.`
+          : undefined
+      }
+    >
+      <View className="px-4 py-3">
+        <TextInput
+          accessibilityLabel="Search OpenRouter models"
+          placeholder="Search transcription models"
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!disabled}
+          value={query}
+          onChangeText={setQuery}
+          className="rounded-lg bg-background px-3 py-2 text-foreground"
+        />
+      </View>
       {selected && !shown.some((model) => model.id === selected.id) ? (
         <ListChoiceRow
           label={selected.name}
           description={selected.id}
           selected
+          separated
           disabled={disabled}
           onPress={() => {}}
         />
       ) : null}
-      {shown.map((model, index) => (
+      {shown.map((model) => (
         <ListChoiceRow
           key={model.id}
           label={model.name}
           description={model.id}
           selected={model.id === value}
-          separated={index > 0}
+          separated
           disabled={disabled}
           onPress={() => onChange(model.id)}
         />
       ))}
       {matches.length === 0 ? (
-        <Text className="mx-4 text-sm text-foreground-muted">
-          {t("No transcription model matches.")}
-        </Text>
+        <Separated>
+          <Text className="px-4 py-3 text-sm text-foreground-muted">
+            No transcription model matches.
+          </Text>
+        </Separated>
       ) : matches.length > shown.length ? (
-        <ListActionRow
-          label={t("Show all {count} models", { count: matches.length })}
-          onPress={() => setShowAll(true)}
-        />
+        <Separated>
+          <ListActionRow
+            label={`Show all ${matches.length} models`}
+            onPress={() => setShowAll(true)}
+          />
+        </Separated>
       ) : null}
-    </>
+    </ListSection>
   );
+}
+
+/** A hairline above a row that has no `separated` prop of its own. */
+function Separated({ children }: { children: ReactNode }) {
+  return <View className="border-t border-border-subtle">{children}</View>;
 }
 
 function CloudChoices({ environment, active, onClose }: Props & { onClose: () => void }) {
@@ -232,58 +258,35 @@ function CloudChoices({ environment, active, onClose }: Props & { onClose: () =>
     onClose();
   };
   const catalog = AsyncResult.isSuccess(models) ? (models.value?.models ?? null) : null;
-  const content =
-    !AsyncResult.isSuccess(keys) || !keys.value || !connection ? (
-      <ListActionRow
-        label={
-          !connection
-            ? t("Environment not connected")
-            : keys._tag === "Failure"
-              ? t("Could not load keys · Retry")
-              : t("Checking API keys…")
-        }
-        disabled={!connection || keys._tag !== "Failure"}
-        onPress={reload}
-      />
-    ) : (
-      CloudSpeechProvider.literals.map((provider) => {
-        if (editing && provider !== editing.provider) return null;
-        const label = CLOUD_SPEECH_LABELS[provider];
-        const company = CLOUD_SPEECH_PROVIDER_NAMES[provider];
-        const routed = provider === "openrouter";
-        const disclosure = cloudSpeechDisclosure(provider, environment.label, t);
-        const saved = keys.value![provider];
-        const isActive = active?.provider === provider;
-        const isEditing = editing?.provider === provider;
-        const modelChosen =
-          isModelId(model) && (catalog?.some((entry) => entry.id === model) ?? false);
-        const modelChanged = model !== (activeModel ?? "");
-        const original = environment.serverConfig?.settings.cloudSpeechCredentials?.[provider];
-        const keyChanged =
-          credential !== undefined &&
-          !(
-            isSecretReference(credential) &&
-            isSecretReference(original) &&
-            original.provider === credential.provider &&
-            original.reference === credential.reference
-          );
-        const routedReady =
-          modelChosen &&
-          (draft.trim() ? credential !== undefined : Boolean(saved)) &&
-          (!isActive || modelChanged || keyChanged);
-        const saveRouted = () => {
-          if (!routedReady || !isModelId(model)) return;
-          const grantChanges = !isActive || modelChanged;
-          if (credential !== undefined && keyChanged)
-            return void changeKey(provider, credential, model);
-          // Model-only changes never write to the environment.
-          if (grantChanges) enable(() => chooseVoiceDestination(id, provider, model));
-          onClose();
-        };
-        return (
-          <View key={provider}>
-            {!isEditing && (
+  const content = (() => {
+    if (!AsyncResult.isSuccess(keys) || !keys.value || !connection)
+      return (
+        <ListSection>
+          <ListActionRow
+            label={
+              !connection
+                ? "Environment not connected"
+                : keys._tag === "Failure"
+                  ? "Could not load keys · Retry"
+                  : "Checking API keys…"
+            }
+            disabled={!connection || keys._tag !== "Failure"}
+            onPress={reload}
+          />
+        </ListSection>
+      );
+    const saved = keys.value;
+    if (!editing)
+      return (
+        <ListSection footer={`Audio is sent through ${environment.label} using its API key.`}>
+          {CloudSpeechProvider.literals.map((provider, index) => {
+            const label = CLOUD_SPEECH_LABELS[provider];
+            const routed = provider === "openrouter";
+            const key = saved[provider];
+            const isActive = active?.provider === provider;
+            return (
               <ListChoiceRow
+                key={provider}
                 label={label}
                 leading={
                   <ProviderIcon
@@ -294,197 +297,217 @@ function CloudChoices({ environment, active, onClose }: Props & { onClose: () =>
                   />
                 }
                 selected={isActive}
-                disabled={saved === undefined || (!saved && !canManage) || saving}
+                separated={index > 0}
+                disabled={key === undefined || (!key && !canManage) || saving}
                 description={
-                  saved === undefined
-                    ? t("Update the environment to use this provider")
+                  key === undefined
+                    ? "Update the environment to use this provider"
                     : isActive && routed
-                      ? t(
-                          canManage
-                            ? "{model} · Tap to change model or key"
-                            : "{model} · Tap to change model",
-                          { model: activeModel ?? "" },
-                        )
-                      : isActive && saved && canManage
-                        ? t("Tap to manage key")
-                        : saved
+                      ? `${activeModel} · Tap to change model${canManage ? " or key" : ""}`
+                      : isActive && key && canManage
+                        ? "Tap to manage key"
+                        : key
                           ? routed
-                            ? t("API key saved · choose a model to use it")
-                            : t("API key saved on this environment")
+                            ? "API key saved · choose a model to use it"
+                            : "API key saved"
                           : canManage
                             ? t("Add an API key to use this provider")
                             : t("Ask an environment administrator to add an API key")
                 }
                 onPress={() => {
                   if (routed) return edit(provider, !isActive);
-                  if (!saved) return edit(provider, true);
+                  if (!key) return edit(provider, true);
                   if (isActive) {
                     if (canManage) edit(provider, false);
                     return;
                   }
                   Dialog.confirm({
-                    title: t("Use {provider} for dictation?", { provider: label }),
-                    message: t("{disclosure} Select This device to stop sharing.", { disclosure }),
-                    confirmText: t("Use {provider}", { provider: label }),
+                    title: `Use ${label} for dictation?`,
+                    message: `${cloudSpeechDisclosure(provider, environment.label)} Select This device to stop sharing.`,
+                    confirmText: `Use ${label}`,
                     onConfirm: () => enable(pendingCloudVoiceChoice(id, provider)),
                   });
                 }}
               />
-            )}
-            {isEditing && routed && (
-              <>
-                <Text className="mx-4 text-sm text-foreground-muted">{disclosure}</Text>
-                {catalog ? (
-                  <ModelPicker
-                    models={catalog}
-                    value={model}
-                    current={activeModel}
+            );
+          })}
+        </ListSection>
+      );
+
+    const provider = editing.provider;
+    const label = CLOUD_SPEECH_LABELS[provider];
+    const company = CLOUD_SPEECH_PROVIDER_NAMES[provider];
+    const routed = provider === "openrouter";
+    const disclosure = cloudSpeechDisclosure(provider, environment.label);
+    const key = saved[provider];
+    const isActive = active?.provider === provider;
+    const modelChosen = isModelId(model) && (catalog?.some((entry) => entry.id === model) ?? false);
+    const modelChanged = model !== (activeModel ?? "");
+    const original = environment.serverConfig?.settings.cloudSpeechCredentials?.[provider];
+    const keyChanged =
+      credential !== undefined &&
+      !(
+        isSecretReference(credential) &&
+        isSecretReference(original) &&
+        original.provider === credential.provider &&
+        original.reference === credential.reference
+      );
+    const routedReady =
+      modelChosen &&
+      (draft.trim() ? credential !== undefined : Boolean(key)) &&
+      (!isActive || modelChanged || keyChanged);
+    const saveRouted = () => {
+      if (!routedReady || !isModelId(model)) return;
+      const grantChanges = !isActive || modelChanged;
+      if (credential !== undefined && keyChanged)
+        return void changeKey(provider, credential, model);
+      // Model-only changes never write to the environment.
+      if (grantChanges) enable(() => chooseVoiceDestination(id, provider, model));
+      onClose();
+    };
+    const submit = () => {
+      if (routed) saveRouted();
+      else if (credential) void changeKey(provider, credential);
+    };
+    const keyFooter =
+      draft && !credential
+        ? (source?.invalidReferenceMessage ?? "Enter a valid API key.")
+        : routed
+          ? key && !credential
+            ? "Uses the API key saved on this environment. The model choice applies only to this device."
+            : `Anyone with dictation access to ${environment.label} can bill this key.`
+          : editing.enable
+            ? `Anyone with dictation access to ${environment.label} can bill this key.`
+            : `Updates the ${company} key on ${environment.label}. Your dictation destination stays the same.`;
+    return (
+      <>
+        <Text className="px-2 text-sm text-foreground-muted">{disclosure}</Text>
+        {routed ? (
+          catalog ? (
+            <ModelPicker
+              models={catalog}
+              value={model}
+              current={activeModel}
+              disabled={saving}
+              onChange={setModel}
+            />
+          ) : (
+            <ListSection title="Model">
+              <ListActionRow
+                label={
+                  AsyncResult.isFailure(models)
+                    ? "Could not load models · Retry"
+                    : "Loading transcription models…"
+                }
+                disabled={!AsyncResult.isFailure(models)}
+                onPress={reloadModels}
+              />
+            </ListSection>
+          )
+        ) : null}
+        {canManage ? (
+          <ListSection title="API key" footer={keyFooter}>
+            <View className="gap-3 px-4 py-3">
+              {sources.length > 0 && (
+                <View className="flex-row flex-wrap gap-2">
+                  <Chip
+                    label="Value"
+                    size="small"
+                    selected={sourceId === null}
                     disabled={saving}
-                    onChange={setModel}
+                    onPress={() => {
+                      setDraft("");
+                      setSourceId(null);
+                    }}
                   />
-                ) : (
-                  <ListActionRow
-                    label={
-                      AsyncResult.isFailure(models)
-                        ? t("Could not load models · Retry")
-                        : t("Loading transcription models…")
-                    }
-                    disabled={!AsyncResult.isFailure(models)}
-                    onPress={reloadModels}
-                  />
-                )}
-              </>
-            )}
-            {isEditing && (canManage || routed) && (
-              <>
-                {canManage && sources.length > 0 && (
-                  <View className="mx-4 flex-row flex-wrap gap-2">
+                  {sources.map((candidate) => (
                     <Chip
-                      label={t("Value")}
+                      key={candidate.id}
+                      label={candidate.label}
                       size="small"
-                      selected={sourceId === null}
+                      selected={sourceId === candidate.id}
                       disabled={saving}
                       onPress={() => {
                         setDraft("");
-                        setSourceId(null);
+                        setSourceId(candidate.id);
                       }}
                     />
-                    {sources.map((candidate) => (
-                      <Chip
-                        key={candidate.id}
-                        label={candidate.label}
-                        size="small"
-                        selected={sourceId === candidate.id}
-                        disabled={saving}
-                        onPress={() => {
-                          setDraft("");
-                          setSourceId(candidate.id);
-                        }}
-                      />
-                    ))}
-                  </View>
-                )}
-                {canManage && (
-                  <TextInput
-                    key={sourceId ?? "literal"}
-                    accessibilityLabel={
-                      sourceId
-                        ? t("{provider} API key reference", { provider: label })
-                        : t("{provider} API key", { provider: label })
-                    }
-                    placeholder={
-                      source?.referencePlaceholder ??
-                      (routed && saved ? t("Saved key · enter a new one to replace") : t("API key"))
-                    }
-                    secureTextEntry={sourceId === null}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="off"
-                    importantForAutofill="no"
-                    maxLength={4096}
-                    editable={!saving}
-                    returnKeyType="done"
-                    onSubmitEditing={() => {
-                      if (routed) saveRouted();
-                      else if (credential) void changeKey(provider, credential);
-                    }}
-                    value={draft}
-                    onChangeText={setDraft}
-                    className="mx-4 rounded-lg bg-background px-3 py-2 text-foreground"
-                  />
-                )}
-                {routed && !saved && !canManage ? (
-                  <ListActionRow
-                    label={t("Ask an administrator to add an OpenRouter key")}
-                    disabled
-                    onPress={() => {}}
-                  />
-                ) : (
-                  <ListActionRow
-                    label={
-                      routed
-                        ? isActive
-                          ? t("Save")
-                          : t("Save and enable")
-                        : editing.enable
-                          ? t("Save and enable")
-                          : t("Save key")
-                    }
-                    description={
-                      draft && !credential
-                        ? (source?.invalidReferenceMessage ?? t("Enter a valid API key."))
-                        : routed
-                          ? saved && !credential
-                            ? t(
-                                "Uses the API key saved on this environment. The model choice applies only to this device.",
-                              )
-                            : t(
-                                "Anyone with dictation access to {environment} can bill this key.",
-                                { environment: environment.label },
-                              )
-                          : editing.enable
-                            ? t(
-                                "{disclosure} Anyone with dictation access to {environment} can bill this key.",
-                                { disclosure, environment: environment.label },
-                              )
-                            : t(
-                                "Updates the {provider} key on {environment}. Your dictation destination stays the same.",
-                                { provider: company, environment: environment.label },
-                              )
-                    }
-                    disabled={(routed ? !routedReady : !credential) || saving}
-                    onPress={() => {
-                      if (routed) saveRouted();
-                      else if (credential) void changeKey(provider, credential);
-                    }}
-                  />
-                )}
-                {saved && canManage && (
-                  <ListActionRow
-                    tone="danger"
-                    label={t("Remove key from environment")}
-                    disabled={saving}
-                    onPress={() =>
-                      Dialog.confirm({
-                        title: t("Remove the {provider} key from {environment}?", {
-                          provider: label,
-                          environment: environment.label,
-                        }),
-                        message: t("Everyone using it for dictation will lose access."),
-                        confirmText: t("Remove key"),
-                        destructive: true,
-                        onConfirm: () => void changeKey(provider, null),
-                      })
-                    }
-                  />
-                )}
-                <ListActionRow label={t("Back to providers")} disabled={saving} onPress={reset} />
-              </>
+                  ))}
+                </View>
+              )}
+              <TextInput
+                key={sourceId ?? "literal"}
+                accessibilityLabel={sourceId ? `${label} API key reference` : `${label} API key`}
+                placeholder={
+                  source?.referencePlaceholder ??
+                  (key ? "Saved key · enter a new one to replace" : "API key")
+                }
+                secureTextEntry={sourceId === null}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                importantForAutofill="no"
+                maxLength={4096}
+                editable={!saving}
+                returnKeyType="done"
+                onSubmitEditing={submit}
+                value={draft}
+                onChangeText={setDraft}
+                className="rounded-lg bg-background px-3 py-2 text-foreground"
+              />
+            </View>
+          </ListSection>
+        ) : null}
+        {canManage || routed ? (
+          <ListSection>
+            {routed && !key && !canManage ? (
+              <ListActionRow
+                label="Ask an administrator to add an OpenRouter key"
+                disabled
+                onPress={() => {}}
+              />
+            ) : (
+              <ListActionRow
+                label={
+                  routed
+                    ? isActive
+                      ? "Save"
+                      : "Save and enable"
+                    : editing.enable
+                      ? "Save and enable"
+                      : "Save key"
+                }
+                loading={saving}
+                disabled={routed ? !routedReady : !credential}
+                onPress={submit}
+              />
             )}
-          </View>
-        );
-      })
+            {key && canManage ? (
+              <Separated>
+                <ListActionRow
+                  tone="danger"
+                  label="Remove key from environment"
+                  disabled={saving}
+                  onPress={() =>
+                    Dialog.confirm({
+                      title: `Remove the ${label} key from ${environment.label}?`,
+                      message: "Everyone using it for dictation will lose access.",
+                      confirmText: "Remove key",
+                      destructive: true,
+                      onConfirm: () => void changeKey(provider, null),
+                    })
+                  }
+                />
+              </Separated>
+            ) : null}
+          </ListSection>
+        ) : null}
+        <ListSection>
+          <ListActionRow label="Back to providers" disabled={saving} onPress={reset} />
+        </ListSection>
+      </>
     );
+  })();
   return (
     <Sheet
       title={editing ? CLOUD_SPEECH_LABELS[editing.provider] : t("Cloud providers")}
@@ -494,7 +517,7 @@ function CloudChoices({ environment, active, onClose }: Props & { onClose: () =>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
-        contentContainerClassName="gap-2 pb-8"
+        contentContainerClassName="gap-4 px-5 pt-2 pb-8"
       >
         {content}
       </ScrollView>

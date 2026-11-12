@@ -95,6 +95,7 @@ const APPLICATION_SERVER_SETTINGS_KEYS = [
   "branchNamePrefix",
   "branchNameInstructions",
   "sourceControlWritingStyle",
+  "offeredSourceControlProviders",
   "sourceControlWriterModelSelection",
   "removeAgentCreditsOnMerge",
   "ghqCloneLayout",

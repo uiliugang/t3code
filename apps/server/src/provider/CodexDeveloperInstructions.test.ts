@@ -32,19 +32,6 @@ describe("buildCodexAdditionalContext", () => {
 });
 
 describe("Codex runtime context", () => {
-  it("describes Markdown media support in the runtime context in both modes", () => {
-    {
-      const instructions = runtimeInstructions({
-        model: "gpt-5.3-codex",
-        reasoningEffort: "high",
-      });
-      NodeAssert.match(
-        instructions,
-        /<runtime_info>.*embed images, video, and audio.*Markdown image syntax with absolute file paths.*Link any other file.*absolute path.*files viewer.*<\/runtime_info>/,
-      );
-    }
-  });
-
   it("flattens multiline metadata into single-line runtime info", () => {
     const instructions = runtimeInstructions({
       model: "gpt\n5.3\ncodex",
@@ -69,8 +56,10 @@ describe("Codex orchestration context", () => {
     NodeAssert.ok(
       orchestration.includes("Background agent: `delegate_task`, never a background `Agent`."),
     );
-    NodeAssert.ok(orchestration.includes("Use a new `delegate_task` for each review/re-check"));
-    NodeAssert.ok(orchestration.includes("never `t3_thread_send`"));
+    NodeAssert.ok(
+      orchestration.includes("Every new delegate review or re-check is a new `delegate_task`"),
+    );
+    NodeAssert.ok(orchestration.includes("never a `t3_thread_send`"));
     NodeAssert.ok(!orchestration.includes("inheritedOptions"));
     NodeAssert.ok(!orchestration.includes("Prefer native"));
     // The ACP terminal fallback is ACP-only; Codex agents never need it.

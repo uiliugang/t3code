@@ -1,22 +1,33 @@
+import type { CodeViewItem } from "@pierre/diffs";
+import type { SelectedLineRange } from "@pierre/diffs";
+import type { CodeViewAnnotationArgs } from "@pierre/diffs/react";
+import type { CodeViewDiffItem } from "@pierre/diffs/react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { PullRequestDetailView } from "@t3tools/contracts";
+import type { PullRequestDiffSide } from "@t3tools/contracts";
+import type { PullRequestOmittedFileStat } from "@t3tools/contracts";
+import type { PullRequestRef } from "@t3tools/contracts";
+import type { PullRequestReviewPosition } from "@t3tools/contracts";
+import type { PullRequestThreadCommentsResult } from "@t3tools/contracts";
+import type { ReactNode } from "react";
+import type { PullRequestChatSubject } from "./pullRequestDetail.logic";
+import type { PullRequestFinding } from "./pullRequestDetail.logic";
+import type { ReviewCommentContext } from "~/reviewCommentContext";
+import type { PendingReviewComment } from "./pullRequestReviewStore";
 import { useCodeTheme } from "~/hooks/useCodeTheme";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import {
+  parsePullRequestAnchor,
+  pullRequestDiffPathMatches,
+  pullRequestLinkCommit,
+} from "@t3tools/shared/pullRequestAnchor";
 import {
   capitalizeTerm,
   sourceControlClients,
 } from "@t3tools/client-runtime/source-control-clients";
-import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
-import type { CodeViewAnnotationArgs, CodeViewDiffItem } from "@pierre/diffs/react";
-import type {
-  EnvironmentId,
-  PullRequestDetailView,
-  PullRequestDiffSide,
-  PullRequestDiffResult,
-  PullRequestOmittedFileStat,
-  PullRequestRef,
-  PullRequestReviewPosition,
-  PullRequestReviewThread,
-  PullRequestThreadCommentsResult,
-} from "@t3tools/contracts";
+import type { DiffLineAnnotation } from "@pierre/diffs";
+
+import type { PullRequestDiffResult, PullRequestReviewThread } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -29,34 +40,24 @@ import {
   Settings2Icon,
   TextWrapIcon,
   TriangleAlertIcon,
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
 } from "lucide-react";
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide";
 import { useAtomRefresh } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
-import {
-  createContext,
-  use,
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, use, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { observeIntersection } from "~/lib/observeIntersection";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
 import { useRenderedAppearance } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
-import {
-  pullRequestFindingKey,
-  type PullRequestChatSubject,
-  type PullRequestFinding,
-} from "./pullRequestDetail.logic";
+import { pullRequestFindingKey } from "./pullRequestDetail.logic";
 import {
   canEditPullRequestComment,
   canResolvePullRequestThread,
 } from "@t3tools/client-runtime/pull-request-editing";
+import { fileDiffRows } from "@t3tools/client-runtime/review-guide-tour";
 import { orderDiffFiles } from "./pullRequestFileOrder.logic";
 import {
   buildFileDiffRenderKey,
@@ -71,11 +72,7 @@ import { APP_BASE_NAME } from "~/branding";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
-import {
-  buildDiffReviewComment,
-  resolveDiffReviewAnchor,
-  type ReviewCommentContext,
-} from "~/reviewCommentContext";
+import { buildDiffReviewComment, resolveDiffReviewAnchor } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -91,7 +88,6 @@ import { DiffFileFilterMenu } from "../diffs/DiffFileFilterMenu";
 import { diffFileTreeEntries, orderDiffFilesLikeTree } from "../diffs/diffFileTree.logic";
 import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
 import { Button } from "../ui/button";
-import { MorphIcon } from "~/components/MorphIcon";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
@@ -109,6 +105,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   getReviewPositionAnchor,
+  InlineReviewThreads,
   PendingReviewCommentCard,
   ReviewThreadCard,
   toViewerSide,
@@ -118,8 +115,9 @@ import {
   getFileViewedRange,
   isFileDiffCollapsed,
   isLineInFileDiff,
-  toggleFileDiffFoldForViewed,
+  withFileDiffFold,
   type DiffFoldOverride,
+  type FileDiffFoldChoices,
 } from "./pullRequestDiff.logic";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import { PullRequestDiffUnavailableState } from "./PullRequestDiffUnavailableState";
@@ -129,7 +127,6 @@ import {
   pullRequestReviewKey,
   usePendingReviewComments,
   usePullRequestReviewStore,
-  type PendingReviewComment,
 } from "./pullRequestReviewStore";
 
 interface ReviewAnnotationGroup {
@@ -349,6 +346,8 @@ function PullRequestCodeTab({
   refreshToken = 0,
   backgroundRefreshToken = 0,
   revealRequest = null,
+  revealUrl,
+  onRevealSettled,
 }: {
   scrollerRef: (node: HTMLDivElement | null) => void;
   environmentId: EnvironmentId;
@@ -365,6 +364,9 @@ function PullRequestCodeTab({
   onRefresh: () => void;
   refreshToken?: number;
   backgroundRefreshToken?: number;
+  /** A clicked link to a file or line range, until onRevealSettled reports it shown. */
+  revealUrl?: string | undefined;
+  onRevealSettled?: ((revealUrl: string) => void) | undefined;
   revealRequest?: { readonly path: string; readonly nonce: number } | null;
 }) {
   const t = useUiTranslation();
@@ -378,11 +380,10 @@ function PullRequestCodeTab({
     diffLayout: settings.diffLayout,
     wordWrap: settings.wordWrap,
   }));
-  const [toggledFiles, setToggledFiles] = useState<ReadonlySet<string>>(() => new Set());
-  const [previewSelection, setPreviewSelection] = useState<{
-    scope: string;
-    path: string;
-  } | null>(null);
+  const [foldChoices, setFoldChoices] = useState<FileDiffFoldChoices>(() => new Map());
+  const [previewSelection, setPreviewSelection] = useState<{ scope: string; path: string } | null>(
+    null,
+  );
   const [lastViewedFileKey, setLastViewedFileKey] = useState<string | null>(null);
   const [visibleCommitCount, setVisibleCommitCount] = useState(COMMIT_PAGE_SIZE);
   const [foldOverride, setFoldOverride] = useState<DiffFoldOverride>(null);
@@ -427,7 +428,7 @@ function PullRequestCodeTab({
     setLastViewedFileKey(null);
     setDraft(null);
     setSelectedLines(null);
-    setToggledFiles(new Set());
+    setFoldChoices(new Map());
     setFoldOverride(null);
     setVisibleCommitCount(COMMIT_PAGE_SIZE);
     setOrphansOpen(false);
@@ -582,8 +583,23 @@ function PullRequestCodeTab({
     `pull-request:${scopeKey}:${resolvedTheme}:${ignoreWhitespace}`,
     ignoreWhitespace,
   );
-  const files = loadedFiles.filter((file) =>
-    fileFilters.isFileVisible(resolveFileDiffPath(file), revealRequest?.path),
+  const linkAnchor = parsePullRequestAnchor(revealUrl);
+  const linkFile =
+    linkAnchor?.kind === "diff"
+      ? loadedFiles.find((file) =>
+          pullRequestDiffPathMatches(linkAnchor.digest, resolveFileDiffPath(file)),
+        )
+      : undefined;
+  const pendingLinkPath = linkFile ? resolveFileDiffPath(linkFile) : null;
+  const [revealedLink, setRevealedLink] = useState<{
+    readonly scope: string;
+    readonly path: string;
+  } | null>(null);
+  const linkPath = pendingLinkPath ?? (revealedLink?.scope === scopeKey ? revealedLink.path : null);
+  const files = loadedFiles.filter(
+    (file) =>
+      resolveFileDiffPath(file) === linkPath ||
+      fileFilters.isFileVisible(resolveFileDiffPath(file), revealRequest?.path),
   );
   const hiddenFileCount = loadedFiles.length - files.length;
   const filePaths = files.map((file) => resolveFileDiffPath(file));
@@ -613,7 +629,19 @@ function PullRequestCodeTab({
     const fileKey = buildFileDiffRenderKey(fileDiff);
     const path = resolveFileDiffPath(fileDiff);
     const groups = new Map<string, MutableAnnotationGroup>();
-    const groupAt = (side: PullRequestDiffSide, line: number) => {
+    // Stacked view draws a context row once, so its old side shares the new side's annotation.
+    const contextNewLines = new Map<number, number>();
+    const groupAt = (anchorSide: PullRequestDiffSide, anchorLine: number) => {
+      if (anchorSide === "left" && diffLayout !== "split" && contextNewLines.size === 0) {
+        for (const row of fileDiffRows(fileDiff)) {
+          if (row.oldLine !== null && row.newLine !== null) {
+            contextNewLines.set(row.oldLine, row.newLine);
+          }
+        }
+      }
+      const contextLine = anchorSide === "left" ? contextNewLines.get(anchorLine) : undefined;
+      const side = contextLine === undefined ? anchorSide : "right";
+      const line = contextLine ?? anchorLine;
       const key = `${side}:${line}`;
       const existing = groups.get(key);
       if (existing) return existing;
@@ -716,9 +744,17 @@ function PullRequestCodeTab({
       </div>
     );
 
+  // A stale mark means the file changed since it was viewed; Fold all and Expand all outrank marks.
+  const foldsAsViewed = (path: string) =>
+    foldOverride === null && filesViewedEnabled && isFileViewed(path) && !isFileViewedStale(path);
   const items: CodeViewDiffItem<ReviewAnnotationGroup>[] = annotatedFiles.map(
     ({ fileKey, path, fileDiff, annotations, annotationsVersion }) => {
-      const collapsed = isFileDiffCollapsed(fileKey, effectiveFoldOverride, toggledFiles);
+      const collapsed = isFileDiffCollapsed(
+        fileKey,
+        effectiveFoldOverride,
+        foldChoices,
+        foldsAsViewed(path),
+      );
       const viewedMark = filesViewedEnabled
         ? `e${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
         : "";
@@ -769,13 +805,17 @@ function PullRequestCodeTab({
     );
   };
 
-  const toggleFile = (fileKey: string) =>
-    setToggledFiles((current) => {
-      const next = new Set(current);
-      if (next.has(fileKey)) next.delete(fileKey);
-      else next.add(fileKey);
-      return next;
-    });
+  const toggleFile = (fileKey: string) => {
+    const path = annotatedFiles.find((file) => file.fileKey === fileKey)?.path;
+    const viewed = path !== undefined && foldsAsViewed(path);
+    setFoldChoices((current) =>
+      withFileDiffFold(
+        current,
+        fileKey,
+        !isFileDiffCollapsed(fileKey, effectiveFoldOverride, current, viewed),
+      ),
+    );
+  };
 
   const setFileViewed = (fileKey: string, viewed: boolean, extendRange: boolean) => {
     const range = getFileViewedRange(
@@ -784,13 +824,12 @@ function PullRequestCodeTab({
       extendRange ? lastViewedFileKey : null,
     );
     setLastViewedFileKey(fileKey);
-    for (const file of range) setViewed(file.path, viewed);
-    setToggledFiles((current) =>
-      range.reduce(
-        (next, file) =>
-          toggleFileDiffFoldForViewed(file.fileKey, viewed, effectiveFoldOverride, next),
-        current,
-      ),
+    for (const file of range) {
+      // A commit's diff names that commit's version of the file, not the head's.
+      setViewed(file.path, viewed, commit === null ? file.fileDiff.newObjectId : undefined);
+    }
+    setFoldChoices((current) =>
+      range.reduce((next, file) => withFileDiffFold(next, file.fileKey, viewed), current),
     );
   };
   const fileViewedToggle = {
@@ -800,22 +839,19 @@ function PullRequestCodeTab({
     setFileViewed,
   };
 
-  const revealFile = (path: string) => {
+  const revealFile = (path: string, range?: SelectedLineRange) => {
     const item = items.find((candidate) => resolveFileDiffPath(candidate.fileDiff) === path);
     if (item === undefined) return;
+    // Record the unfold even when already open, so a Viewed mark that loads later cannot fold it.
     setPreviewSelection({ scope: scopeKey, path });
-    // Unfold only: a second reveal before the unfold renders must not fold the file again.
-    if (item.collapsed === true) {
-      setToggledFiles((current) =>
-        toggleFileDiffFoldForViewed(item.id, false, effectiveFoldOverride, current),
-      );
-    }
-    codeViewReveal.request(item.id);
+    setFoldChoices((current) => withFileDiffFold(current, item.id, false));
+    if (range) setSelectedLines({ id: item.id, range });
+    codeViewReveal.request(item.id, range);
   };
 
   const toggleAllFiles = () => {
     setFoldOverride(areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys) ? "expanded" : "folded");
-    setToggledFiles(new Set());
+    setFoldChoices(new Map());
   };
 
   const orderedCommits = // GitLab preserves UTC offsets, so compare instants.
@@ -909,10 +945,11 @@ function PullRequestCodeTab({
           toggleFile(item.id);
         }}
       >
-        <MorphIcon
-          className="size-4 text-muted-foreground/80"
-          icon={collapsed ? ChevronRight : ChevronDown}
-        />
+        {collapsed ? (
+          <ChevronRightIcon className="size-4" />
+        ) : (
+          <ChevronDownIcon className="size-4" />
+        )}
       </Button>
     );
   };
@@ -956,9 +993,7 @@ function PullRequestCodeTab({
     onPostRender: codeViewReveal.flush,
     // Find may repeat requests before render; only unfold, never toggle.
     onRevealSearchMatch: (item: CodeViewItem<ReviewAnnotationGroup>) =>
-      setToggledFiles((current) =>
-        toggleFileDiffFoldForViewed(item.id, false, effectiveFoldOverride, current),
-      ),
+      setFoldChoices((current) => withFileDiffFold(current, item.id, false)),
   };
 
   const runThreadCommand = async (
@@ -977,7 +1012,7 @@ function PullRequestCodeTab({
     return true;
   };
 
-  const renderThreadCard = (thread: PullRequestReviewThread) => (
+  const renderThreadCard = (thread: PullRequestReviewThread, hidden?: boolean) => (
     <ReviewThreadCard
       // Host thread ids can collide across pull requests.
       key={`${reference.projectId}#${reference.number}:${thread.id}`}
@@ -1042,12 +1077,14 @@ function PullRequestCodeTab({
         )
       }
       onReacted={onRefresh}
+      {...(hidden === undefined ? {} : { hidden })}
     />
   );
 
   const renderAnnotation = (...[annotation]: CodeViewAnnotationArgs<ReviewAnnotationGroup>) => (
-    <div className="py-1 font-sans text-foreground">
-      {annotation.metadata.threads.map(renderThreadCard)}
+    // Folded resolved conversations alone add no row, so the code reads straight through.
+    <div className="relative font-sans text-foreground has-[>:not([data-resolved-threads])]:py-1">
+      <InlineReviewThreads threads={annotation.metadata.threads} renderThread={renderThreadCard} />
       {annotation.metadata.pending.map((comment) => (
         <PendingReviewCommentCard
           key={comment.id}
@@ -1388,10 +1425,11 @@ function PullRequestCodeTab({
                 />
               }
             >
-              <MorphIcon
-                className="size-3.5"
-                icon={allFilesCollapsed ? ChevronsUpDown : ChevronsDownUp}
-              />
+              {allFilesCollapsed ? (
+                <ChevronsUpDownIcon className="size-3.5" />
+              ) : (
+                <ChevronsDownUpIcon className="size-3.5" />
+              )}
             </TooltipTrigger>
             <TooltipPopup side="top">
               {allFilesCollapsed ? t("Expand all files") : t("Collapse all files")}
@@ -1439,6 +1477,53 @@ function PullRequestCodeTab({
     answerReveal();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Re-checked as pages load until the requested file arrives.
   }, [canLoadNextSlice, items, revealRequest]);
+  // The store clears a settled link after this render, so one link must not reveal twice.
+  const answeredLink = useRef<string | null>(null);
+  const revealLink = useEffectEvent(() => {
+    if (revealUrl === undefined) answeredLink.current = null;
+    if (revealUrl === undefined || linkAnchor?.kind !== "diff") return;
+    // The panel selects the link's commit after this tab's effects run, so the files on screen
+    // can still be another commit's.
+    const linkCommit = pullRequestLinkCommit(revealUrl);
+    if ((detail.commits.some((entry) => entry.oid === linkCommit) ? linkCommit : null) !== commit) {
+      return;
+    }
+    const key = `${scopeKey}:${revealUrl}`;
+    if (answeredLink.current === key) return;
+    if (
+      !pendingLinkPath ||
+      !items.some((item) => resolveFileDiffPath(item.fileDiff) === pendingLinkPath)
+    ) {
+      if (canLoadNextSlice) loadNextSlice();
+      // Every page is loaded and none has the file.
+      else if (!pendingLinkPath && loadedSlices.length > 0 && nextCursor === null) {
+        answeredLink.current = key;
+        onRevealSettled?.(revealUrl);
+      }
+      return;
+    }
+    answeredLink.current = key;
+    setRevealedLink({ scope: scopeKey, path: pendingLinkPath });
+    onRevealSettled?.(revealUrl);
+    const range = linkAnchor.range;
+    revealFile(
+      pendingLinkPath,
+      range
+        ? {
+            start: range.start,
+            end: range.end,
+            side: toViewerSide(range.side),
+            endSide: toViewerSide(range.endSide),
+          }
+        : undefined,
+    );
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pages and scrolls the virtual diff to a clicked file or line range
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- revealing unfolds the target and may request the next diff page
+    revealLink();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- retries the reveal as diff pages and viewer items arrive
+  }, [revealUrl, pendingLinkPath, canLoadNextSlice, items]);
   const withToolbar = (body: ReactNode) => (
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
@@ -1518,7 +1603,7 @@ function PullRequestCodeTab({
               </CollapsibleTrigger>
             </h2>
             <CollapsiblePanel>
-              <div className="max-h-64 space-y-3 overflow-auto px-4 pb-3">
+              <div className="max-h-64 space-y-1 overflow-auto px-1 pb-1">
                 {[...orphanFiles].map(([path, threads]) => (
                   <div key={path}>
                     <Tooltip>
@@ -1551,6 +1636,10 @@ function PullRequestCodeTab({
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
           className="relative min-h-0 min-w-0 flex-1"
+          onWheelCapture={codeViewReveal.cancel}
+          onTouchStartCapture={codeViewReveal.cancel}
+          onPointerDownCapture={codeViewReveal.cancel}
+          onKeyDownCapture={codeViewReveal.cancel}
           // Headers live in shadow DOM; composedPath crosses that boundary.
           onClickCapture={(event) => {
             const composedPath = event.nativeEvent.composedPath?.() ?? [];

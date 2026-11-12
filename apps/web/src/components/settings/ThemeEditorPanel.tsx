@@ -1,6 +1,11 @@
-import { useUiTranslation } from "~/hooks/useUiTranslation";
-import { MousePointer2Icon, PaintbrushIcon, PlusIcon, XIcon } from "lucide-react";
-import { ChevronDown, ChevronUp } from "lucide";
+import {
+  MousePointer2Icon,
+  PaintbrushIcon,
+  PlusIcon,
+  XIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   applyThemeColorPreview,
@@ -26,7 +31,6 @@ import {
 import { useViewportSize } from "../../hooks/useViewportSize";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
-import { MorphIcon } from "~/components/MorphIcon";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -1209,7 +1213,7 @@ export function ThemeEditorPanel({
           variant="ghost"
           onClick={() => setIsMinimized(!isMinimized)}
         >
-          <MorphIcon icon={isMinimized ? ChevronUp : ChevronDown} />
+          {isMinimized ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </Button>
         <Button
           aria-label={t("Close the theme editor")}
@@ -1286,3 +1290,4 @@ export function ThemeEditorPanel({
     </div>
   );
 }
+import { useUiTranslation } from "../../hooks/useUiTranslation";

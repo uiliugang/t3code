@@ -143,6 +143,7 @@ export function fillNewTaskWorkspaceBranch(input: {
     readonly isDefault: boolean;
     readonly isRemote?: boolean;
     readonly worktreePath?: string | null;
+    readonly remoteName?: string;
   }>;
   readonly projectCwd: string | null;
   readonly worktreeDefaultSettled: boolean;
@@ -183,9 +184,10 @@ export function resolveNewTaskDraftWorkspace(input: {
   readonly isGitRepo: boolean;
   readonly branches: Parameters<typeof fillNewTaskWorkspaceBranch>[0]["branches"];
   readonly projectCwd: string | null;
+  readonly mainBranchOnly?: boolean;
 }): ComposerDraftWorkspaceSelection {
   const selection = input.canChooseWorkspace ? input.selection : undefined;
-  return fillNewTaskWorkspaceBranch({
+  const resolved = fillNewTaskWorkspaceBranch({
     selection: resolveNewTaskWorkspaceSelection({
       selection,
       fallback: { mode: input.defaultMode, branch: null, worktreePath: null },
@@ -195,4 +197,14 @@ export function resolveNewTaskDraftWorkspace(input: {
     projectCwd: input.projectCwd,
     worktreeDefaultSettled: selection?.mode !== undefined || input.defaultModeSettled,
   });
+  if (resolved.mode !== "worktree" || !input.mainBranchOnly) return resolved;
+  const bases = input.branches.filter((branch) =>
+    isMainOrMasterBranch(branch.name, branch.isRemote ? branch.remoteName : undefined),
+  );
+  if (bases.some((branch) => branch.name === resolved.branch)) return resolved;
+  return {
+    ...resolved,
+    branch: bases.find((branch) => branch.isDefault)?.name ?? bases[0]?.name ?? null,
+    worktreePath: null,
+  };
 }

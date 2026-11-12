@@ -1,4 +1,4 @@
-import { useUiTranslation } from "../../lib/useUiTranslation";
+import type { SettingsPageTarget } from "./components/settings-page-targets";
 import {
   navigationCustomizationAvailable,
   overflowNavigationTabs,
@@ -29,11 +29,14 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection, SettingsSidebarContext } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
-import type { SettingsPageTarget } from "./components/settings-page-targets";
+
 import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { filterSettingsSections } from "./settings-search";
 import { usePaneRole } from "../../components/ui/Pane";
+import { I18nProvider, useGT, useLanguagePreference } from "../../i18n/I18nProvider";
+import { nativeLanguageName } from "@t3tools/client-runtime/locales";
+import { SUPPORTED_LOCALES } from "../../i18n/locales";
 
 export function SettingsRouteScreen() {
   const list = useSettingsListPlacement();
@@ -46,7 +49,9 @@ export function WorkspaceSettingsList() {
   return (
     <SettingsSidebarContext value={list.sidebar ? { selected: list.selected } : null}>
       <View className="flex-1 bg-screen">
-        <SettingsListContent />
+        <I18nProvider>
+          <SettingsListContent />
+        </I18nProvider>
       </View>
     </SettingsSidebarContext>
   );
@@ -74,14 +79,25 @@ export function SettingsListScreen(props: {
   readonly sidebar: boolean;
   readonly selected: string | null;
 }) {
-  const t = useUiTranslation();
+  return (
+    <I18nProvider>
+      <TranslatedSettingsListScreen {...props} />
+    </I18nProvider>
+  );
+}
+
+function TranslatedSettingsListScreen(props: {
+  readonly sidebar: boolean;
+  readonly selected: string | null;
+}) {
+  const gt = useGT();
   const workspace = useWorkspaceTabs();
   const environmentMenu = useSettingsEnvironmentMenu();
   return (
     <SettingsSidebarContext value={props.sidebar ? { selected: props.selected } : null}>
       <View className="flex-1 bg-screen">
         <SettingsScreen
-          title={t("Settings")}
+          title={gt("Settings")}
           workspaceRoot={props.sidebar}
           menus={[environmentMenu]}
           search={
@@ -90,7 +106,7 @@ export function SettingsListScreen(props: {
                   value: workspace.state.tabs.settings.query,
                   onChangeText: (query) =>
                     workspace.dispatch({ type: "query", tab: "settings", query }),
-                  placeholder: t("Search settings"),
+                  placeholder: gt("Search settings"),
                 }
               : undefined
           }
@@ -110,16 +126,16 @@ interface SettingsListSection {
 }
 
 function ConfiguredSettingsRouteScreen() {
-  const t = useUiTranslation();
+  const gt = useGT();
   const navigation = useNavigation();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const accountLabel = !isLoaded
-    ? t("Checking")
+    ? gt("Checking")
     : !isSignedIn
-      ? t("Sign in")
-      : (user?.primaryEmailAddress?.emailAddress ?? t("Signed in"));
+      ? gt("Sign in")
+      : (user?.primaryEmailAddress?.emailAddress ?? gt("Signed in"));
 
   return (
     <SettingsList
@@ -127,16 +143,16 @@ function ConfiguredSettingsRouteScreen() {
         {
           id: "account",
           icon: "person.crop.circle",
-          label: "T3 Account",
+          label: gt("T3 Account"),
           value: accountLabel,
           disabled: !isLoaded,
           onPress: () => navigation.navigate("SettingsAuth"),
         },
-        environmentsRow(Object.keys(savedConnectionsById).length),
+        environmentsRow(gt("Environments"), Object.keys(savedConnectionsById).length),
         {
           id: "SettingsNotifications",
           icon: "bell.badge",
-          label: "Notifications",
+          label: gt("Notifications"),
           target: "SettingsNotifications",
         },
       ]}
@@ -145,15 +161,20 @@ function ConfiguredSettingsRouteScreen() {
 }
 
 function LocalSettingsRouteScreen() {
+  const gt = useGT();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  return <SettingsList connections={[environmentsRow(Object.keys(savedConnectionsById).length)]} />;
+  return (
+    <SettingsList
+      connections={[environmentsRow(gt("Environments"), Object.keys(savedConnectionsById).length)]}
+    />
+  );
 }
 
-function environmentsRow(count: number): SettingsListRow {
+function environmentsRow(label: string, count: number): SettingsListRow {
   return {
     id: "SettingsEnvironments",
     icon: "desktopcomputer",
-    label: "Environments",
+    label,
     value: `${count}`,
     valuePosition: "trailing",
     target: "SettingsEnvironments",
@@ -161,7 +182,7 @@ function environmentsRow(count: number): SettingsListRow {
 }
 
 function SettingsList(props: { readonly connections: readonly SettingsListRow[] }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   // UIKit's scroll-edge material takes the scroll view's own color; like the chat list, match
   // the sidebar's surface so the bar doesn't darken over content at rest.
   // Grouped cards only lift off the screen surface; the drawer is as dark as they are.
@@ -174,7 +195,11 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   const overflowRows = useOverflowRows();
   const indexSections = useSettingsIndexSections();
   const sections = filterSettingsSections(
-    [{ rows: overflowRows }, { title: "Connections", rows: props.connections }, ...indexSections],
+    [
+      { rows: overflowRows },
+      { title: gt("Connections"), rows: props.connections },
+      ...indexSections,
+    ],
     query,
   );
 
@@ -206,8 +231,8 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
         ) : (
           <EmptyState
             variant="plain"
-            title={t("No results")}
-            detail={t("No settings match “{query}”.", { query: query.trim() })}
+            title={gt("No results")}
+            detail={gt("No settings match “{query}”.", { query: query.trim() })}
           />
         )}
       </ScrollView>
@@ -217,6 +242,8 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
 
 function useSettingsIndexSections(): SettingsListSection[] {
   const navigation = useNavigation();
+  const gt = useGT();
+  const language = useLanguagePreference();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
@@ -232,7 +259,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
           representative: scopedProjectMembers[0]!,
           members: scopedProjectMembers,
         })
-      : (selectedProject?.label ?? "Unavailable project");
+      : (selectedProject?.label ?? gt("Unavailable project"));
   const page = (
     target: SettingsPageTarget,
     icon: SettingsListRow["icon"],
@@ -245,18 +272,23 @@ function useSettingsIndexSections(): SettingsListSection[] {
   return [
     {
       rows: [
-        page("SettingsOrganization", "gearshape", "General"),
-        page("SettingsAppearance", "paintbrush", "Appearance"),
-        page("SettingsFollowUp", "bubble.left.and.bubble.right", "Chat"),
+        page("SettingsOrganization", "gearshape", gt("General")),
+        page("SettingsAppearance", "paintbrush", gt("Appearance")),
+        page("SettingsLanguage", "globe", gt("Language"), {
+          value: SUPPORTED_LOCALES.includes(language)
+            ? nativeLanguageName(language)
+            : gt("System default"),
+        }),
+        page("SettingsFollowUp", "bubble.left.and.bubble.right", gt("Chat")),
         ...(navigationCustomizationAvailable()
-          ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
+          ? [page("SettingsNavigation", "line.3.horizontal", gt("Navigation tabs"))]
           : []),
-        page("SettingsKeyboard", "keyboard", "Keyboard"),
-        page("SettingsVoice", "mic", "Voice"),
+        page("SettingsKeyboard", "keyboard", gt("Keyboard")),
+        page("SettingsVoice", "mic", gt("Voice")),
       ],
     },
     {
-      title: "Agents",
+      title: gt("Agents"),
       rows: [
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
         serverPage("SettingsSkills", "doc.text", "Skills"),
@@ -271,12 +303,12 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ],
     },
     {
-      title: "Code",
+      title: gt("Code"),
       rows: [
         page(
           "SettingsProjectOverview",
           "folder",
-          "Projects",
+          gt("Projects"),
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
         serverPage("SettingsRequirements", "ticket", "Issue management"),
@@ -292,10 +324,10 @@ function useSettingsIndexSections(): SettingsListSection[] {
     },
     {
       rows: [
-        serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
-        page("SettingsLabs", "sparkles", "Labs"),
-        page("SettingsAbout", "info.circle", "About"),
-        page("SettingsArchive", "archivebox", "Archive"),
+        serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", gt("Maintenance")),
+        page("SettingsLabs", "flask", gt("Labs")),
+        page("SettingsAbout", "info.circle", gt("About")),
+        page("SettingsArchive", "archivebox", gt("Archive")),
       ],
     },
   ];

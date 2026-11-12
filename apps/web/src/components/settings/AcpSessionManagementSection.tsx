@@ -39,6 +39,10 @@ interface AcpSessionProject {
   readonly workspaceConfig?: ProjectWorkspaceConfig | undefined;
 }
 
+function needsImport(session: AcpRegistrySession) {
+  return session.importedThreadId === null || session.nativeHistoryPending === true;
+}
+
 function reportFailure(
   t: UiTranslator,
   title: string,
@@ -233,7 +237,7 @@ function InstanceSessionManagement(
       setSessions((current) =>
         current.map((candidate) =>
           candidate.sessionId === session.sessionId
-            ? { ...candidate, importedThreadId: result.value.threadId }
+            ? { ...candidate, importedThreadId: result.value.threadId, nativeHistoryPending: false }
             : candidate,
         ),
       );
@@ -497,13 +501,13 @@ function InstanceSessionManagement(
                         disabled={
                           !canOperate ||
                           !canImport ||
-                          session.importedThreadId !== null ||
+                          !needsImport(session) ||
                           importingSessionId !== null
                         }
                         onClick={() => void importNativeSession(session)}
                       >
-                        {session.importedThreadId !== null
-                          ? t("Imported")
+                        {!needsImport(session)
+                          ? "Imported"
                           : importingSessionId === session.sessionId
                             ? t("Importing")
                             : t("Import")}

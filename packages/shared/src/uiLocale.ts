@@ -14,6 +14,7 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  Preferences: "偏好设置",
   "Could not save Codex setup": "无法保存 Codex 配置",
   "Other folders": "其他文件夹",
   "{count} folder": "{count} 个文件夹",
@@ -3592,6 +3593,9 @@ const zhCN: Readonly<Record<string, string>> = {
     "合并后的快捷键数量过多，请先移除不用的快捷键再导入。",
   "File sharing is unavailable on this device.": "此设备不支持文件分享。",
   "Downloading speech model {progress}%": "正在下载语音模型 {progress}%",
+  "Downloading model {progress}%": "正在下载模型 {progress}%",
+  "Transcribing…": "正在转写…",
+  "Cleaning up…": "正在整理转写结果…",
   Preparing: "正在准备",
   Recording: "正在录音",
   Transcribing: "正在转写",

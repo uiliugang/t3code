@@ -39,7 +39,7 @@ export function SettingsRow(props: {
   const onPress = () => {
     if (props.target) {
       if (inList) openSettings(navigation, props.target);
-      else navigation.navigate(props.target);
+      else navigation.dispatch({ type: "NAVIGATE", payload: { name: props.target } });
     } else if (props.fullScreenTarget) {
       navigation.navigate(props.fullScreenTarget);
     } else {
