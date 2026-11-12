@@ -46,6 +46,7 @@ import {
 import * as CheckoutCloner from "./CheckoutCloner.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
+import { makeCheckpointIndexCache } from "./checkpointIndexCache.ts";
 
 export interface ExecuteGitInput {
   readonly operation: string;
@@ -597,6 +598,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   const vcsProcess = yield* VcsProcess.VcsProcess;
   const random = yield* SecureRandom.SecureRandom;
   const hostPlatform = yield* HostProcess.Platform;
+  const checkpointIndexes = makeCheckpointIndexCache();
   const isInsideWorkTree: VcsDriver.VcsDriver["Service"]["isInsideWorkTree"] = (cwd) =>
     gitCommand(
       vcsProcess,
@@ -880,6 +882,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "--git-common-dir",
         "--git-path",
         "index",
+        "--show-toplevel",
         "--verify",
         "--quiet",
         "HEAD",
@@ -889,12 +892,14 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     const headExists = result.exitCode === 0;
     const headChecked = headExists || result.exitCode === 1;
     const lines = result.stdout.split("\n");
-    const [gitCommonDir = "", indexPath = ""] = lines;
-    if (headChecked && lines.length === (headExists ? 4 : 3) && lines.at(-1) === "") {
+    const [gitCommonDir = "", indexPath = "", worktreeRoot = "", head = ""] = lines;
+    if (headChecked && lines.length === (headExists ? 5 : 4) && lines.at(-1) === "") {
       return {
         gitCommonDir: gitCommonDir.trim(),
         indexPath: indexPath.trim(),
         headExists,
+        worktreeRoot,
+        head,
       };
     }
     // Git before 2.31 echoes --path-format, and a path containing a newline spans lines.
@@ -903,6 +908,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       gitCommonDir: yield* resolveGitCommonDir(cwd),
       indexPath: undefined,
       headExists: headChecked ? headExists : yield* hasHeadCommit(cwd),
+      worktreeRoot: undefined,
+      head: undefined,
     };
   });
 
@@ -938,7 +945,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "-c",
         "splitIndex.sharedIndexExpire=never",
       ];
-      const { gitCommonDir, indexPath, headExists } = yield* resolveCaptureRepository(input.cwd);
+      const { gitCommonDir, indexPath, headExists, worktreeRoot, head } =
+        yield* resolveCaptureRepository(input.cwd);
+      let indexSeed: Effect.Success<ReturnType<typeof checkpointIndexes.load>>;
       const indexId = yield* random.uuidV4();
       const tempIndexPath = path.join(gitCommonDir, `t3-checkpoint-index-${indexId}`);
       const hostEnv = yield* HostProcess.Environment;
@@ -986,19 +995,30 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             const { mtime } = yield* fileSystem.stat(userIndexPath);
             if (Option.isNone(mtime)) return false;
             // Stay below the source timestamp even if Date rounded up, preserving Git's racy check.
-            const indexTime = Math.floor((mtime.value.getTime() - 1) / 1000);
+            indexSeed =
+              !sparseCheckout && worktreeRoot && head
+                ? yield* checkpointIndexes.load(userIndexPath, head)
+                : undefined;
+            const indexTime =
+              indexSeed?.cached?.timestamp ?? Math.floor((mtime.value.getTime() - 1) / 1000);
             if (indexTime <= 0) return false;
-            yield* fileSystem.copyFile(userIndexPath, tempIndexPath);
+            if (indexSeed?.cached)
+              yield* fileSystem.writeFile(tempIndexPath, indexSeed.cached.bytes);
+            else yield* fileSystem.copyFile(userIndexPath, tempIndexPath);
             yield* execute({
               operation,
               cwd: input.cwd,
               args: [...indexConfig, "read-tree", "--reset", "HEAD"],
               env: commitEnv,
             });
+            if (
+              indexSeed?.cached &&
+              !(yield* checkpointIndexes.prepare(tempIndexPath, worktreeRoot!, indexTime))
+            )
+              return false;
             // read-tree can rewrite the index, so restore its racy timestamp afterward.
             yield* fileSystem.utimes(tempIndexPath, indexTime, indexTime);
-            // Manually flagged entries hide edits from add -A, so they are re-added below
-            // with no stat cache. Every other entry keeps its stat data and is not rehashed.
+            // Manually flagged entries must lose their stat cache so add -A cannot hide edits.
             let fallback = false;
             let flaggedBytes = 0;
             let recordStart = true;
@@ -1361,6 +1381,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           cwd: input.cwd,
           args: [...durableWrite, "update-ref", input.checkpointRef, commitOid],
         });
+        if (indexSeed) yield* checkpointIndexes.remember(indexSeed, tempIndexPath);
       }).pipe(Effect.ensuring(cleanupTempIndex));
     }),
 

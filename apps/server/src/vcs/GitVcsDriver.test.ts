@@ -801,6 +801,139 @@ it.effect.each(
     }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 
+it.effect("checkpoint captures reuse validated stat data without rereading an unchanged file", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const liveProcess = yield* VcsProcess.VcsProcess;
+    const driver = yield* GitVcsDriver.makeVcsDriverShape();
+    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkpoint-cached-index-" });
+    const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
+    yield* fs.writeFileString(path.join(cwd, ".gitattributes"), "stable filter=probe\n");
+    yield* fs.writeFileString(path.join(cwd, "stable"), "unchanged\n");
+    yield* fs.writeFileString(
+      path.join(cwd, ".git/filter.cjs"),
+      'require("node:fs").appendFileSync(".git/reads", "read\\n"); process.stdin.pipe(process.stdout);',
+    );
+    yield* git(["config", "filter.probe.clean", "node .git/filter.cjs"]);
+    yield* git(["config", "core.trustctime", "false"]);
+    yield* fs.utimes(path.join(cwd, "stable"), 1_700_000_000, 1_700_000_000);
+    yield* git(["add", "."]);
+    yield* git(["commit", "-m", "cache fixture"]);
+    const indexPath = path.join(cwd, ".git/index");
+    yield* fs.utimes(indexPath, 1_700_000_000, 1_700_000_000);
+    const originalIndex = yield* fs.readFile(indexPath);
+    yield* fs.writeFileString(path.join(cwd, ".git/reads"), "");
+    const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+      Effect.provideService(VcsProcess.VcsProcess, {
+        run: Effect.fn(function* (input: VcsProcess.VcsProcessInput) {
+          const result = yield* liveProcess.run(input);
+          // Model a capture after file creation without waiting for the filesystem clock.
+          if (input.args.includes("write-tree") && input.env?.GIT_INDEX_FILE)
+            yield* fs
+              .utimes(input.env.GIT_INDEX_FILE, 2_000_000_000, 2_000_000_000)
+              .pipe(Effect.orDie);
+          return result;
+        }),
+      }),
+    );
+    yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+    assert.strictEqual(yield* fs.readFileString(path.join(cwd, ".git/reads")), "read\n");
+    yield* fs.writeFileString(path.join(cwd, ".git/reads"), "");
+    yield* fs.writeFileString(path.join(cwd, "file.txt"), "next turn\n");
+    yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+    assert.strictEqual(yield* fs.readFileString(path.join(cwd, ".git/reads")), "");
+    assert.strictEqual((yield* git(["show", `${checkpointRef}:file.txt`])).stdout, "next turn\n");
+    assert.strictEqual((yield* git(["show", `${checkpointRef}:stable`])).stdout, "unchanged\n");
+    assert.deepEqual(yield* fs.readFile(indexPath), originalIndex);
+    yield* fs.writeFileString(path.join(cwd, "stable"), "modified!\n");
+    yield* fs.utimes(path.join(cwd, "stable"), 1_700_000_000, 1_700_000_000);
+    yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+    assert.strictEqual((yield* git(["show", `${checkpointRef}:stable`])).stdout, "modified!\n");
+    yield* git(["update-index", "--assume-unchanged", "stable"]);
+    const flaggedIndex = yield* fs.readFile(indexPath);
+    yield* fs.writeFileString(path.join(cwd, "stable"), "again!!!!\n");
+    yield* fs.utimes(path.join(cwd, "stable"), 1_700_000_000, 1_700_000_000);
+    yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+    assert.strictEqual((yield* git(["show", `${checkpointRef}:stable`])).stdout, "again!!!!\n");
+    assert.deepEqual(yield* fs.readFile(indexPath), flaggedIndex);
+  }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+);
+
+it.effect(
+  "concurrent checkpoints keep separate indexes and cannot replace a newer cached index",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const liveProcess = yield* VcsProcess.VcsProcess;
+      const driver = yield* GitVcsDriver.makeVcsDriverShape();
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkpoint-cache-race-" });
+      const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
+      yield* fs.writeFileString(path.join(cwd, ".gitattributes"), "stable filter=probe\n");
+      yield* fs.writeFileString(path.join(cwd, "stable"), "unchanged\n");
+      yield* fs.writeFileString(
+        path.join(cwd, ".git/filter.cjs"),
+        'require("node:fs").appendFileSync(".git/reads", "read\\n"); process.stdin.pipe(process.stdout);',
+      );
+      yield* git(["config", "filter.probe.clean", "node .git/filter.cjs"]);
+      yield* fs.utimes(path.join(cwd, "stable"), 1_700_000_000, 1_700_000_000);
+      yield* git(["add", "."]);
+      yield* git(["commit", "-m", "concurrent cache fixture"]);
+      const indexPath = path.join(cwd, ".git/index");
+      const originalIndex = yield* fs.readFile(indexPath);
+      const staged = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const indexes = new Set<string>();
+      let holdNextAdd = false;
+      const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+        Effect.provideService(VcsProcess.VcsProcess, {
+          run: Effect.fn(function* (input: VcsProcess.VcsProcessInput) {
+            const privateIndex = input.env?.GIT_INDEX_FILE;
+            if (privateIndex) indexes.add(privateIndex);
+            const result = yield* liveProcess.run(input);
+            if (input.args.includes("write-tree") && privateIndex)
+              yield* fs.utimes(privateIndex, 2_000_000_000, 2_000_000_000).pipe(Effect.orDie);
+            if (input.args.includes("add") && holdNextAdd) {
+              holdNextAdd = false;
+              yield* Deferred.succeed(staged, undefined);
+              yield* Deferred.await(release);
+            }
+            return result;
+          }),
+        }),
+      );
+      yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      yield* fs.writeFileString(path.join(cwd, "file.txt"), "older snapshot\n");
+      holdNextAdd = true;
+      const olderRef = CheckpointRef.make("refs/t3/checkpoints/older");
+      const older = yield* captureDriver.checkpoints
+        .captureCheckpoint({ cwd, checkpointRef: olderRef })
+        .pipe(Effect.forkScoped);
+      yield* Deferred.await(staged);
+      yield* fs.writeFileString(path.join(cwd, "file.txt"), "newer snapshot\n");
+      yield* fs.writeFileString(path.join(cwd, "stable"), "unchanged\n");
+      yield* fs.utimes(path.join(cwd, "stable"), 1_700_000_000, 1_700_000_000);
+      yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(older);
+      assert.strictEqual((yield* git(["show", `${olderRef}:file.txt`])).stdout, "older snapshot\n");
+      assert.strictEqual(
+        (yield* git(["show", `${checkpointRef}:file.txt`])).stdout,
+        "newer snapshot\n",
+      );
+      yield* fs.writeFileString(path.join(cwd, ".git/reads"), "");
+      yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      assert.strictEqual(yield* fs.readFileString(path.join(cwd, ".git/reads")), "");
+      assert.strictEqual(indexes.size, 4);
+      for (const index of indexes) {
+        assert.isFalse(yield* fs.exists(index));
+        assert.isFalse(yield* fs.exists(`${index}.lock`));
+      }
+      assert.deepEqual(yield* fs.readFile(indexPath), originalIndex);
+    }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+);
+
 it.effect.each([1_700_000_000, 1_700_000_000.9999])(
   "checkpoint capture preserves same-size edits with racy index timestamps (%s)",
   (timestamp) =>
@@ -820,6 +953,7 @@ it.effect.each([1_700_000_000, 1_700_000_000.9999])(
       yield* fileSystem.utimes(indexPath, timestamp, timestamp);
       const originalIndex = yield* fileSystem.readFile(indexPath);
       const originalIndexMtime = (yield* fileSystem.stat(indexPath)).mtime;
+      yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
       yield* fileSystem.writeFileString(filePath, "after!\n");
       yield* fileSystem.utimes(filePath, timestamp, timestamp);
 
