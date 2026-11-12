@@ -1348,9 +1348,9 @@ export function ProviderInstanceCard({
           />
         </SettingsSection>
       ) : null}
-      {(!isByok && setup) || environmentFields.length > 0 ? (
+      {setup || environmentFields.length > 0 ? (
         <SettingsSection title="Setup">
-          {isByok ? null : setup}
+          {setup}
           {environmentFields.length > 0 ? (
             <div
               inert={readOnly}
@@ -1396,14 +1396,24 @@ export function ProviderInstanceCard({
           </FoldedSettingsSection>
         </div>
       ) : !driverOption || deriveProviderSettingsFields(driverOption).length > 0 ? (
-        <SettingsSection
-          title={t("Runtime")}
+        <div
           inert={readOnly}
           aria-disabled={readOnly || undefined}
           className={readOnly ? "opacity-50 select-none" : undefined}
         >
-          {runtimeFields}
-        </SettingsSection>
+          {instance.driver === "claudeAgent" ? (
+            <FoldedSettingsSection
+              key={instanceId}
+              id={`provider-instance-${instanceId}-runtime`}
+              title={t("Runtime")}
+              headerPlacement="outside"
+            >
+              {runtimeFields}
+            </FoldedSettingsSection>
+          ) : (
+            <SettingsSection title={t("Runtime")}>{runtimeFields}</SettingsSection>
+          )}
+        </div>
       ) : null}
 
       <SettingsSection
