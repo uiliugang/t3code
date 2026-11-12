@@ -995,10 +995,20 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             const { mtime } = yield* fileSystem.stat(userIndexPath);
             if (Option.isNone(mtime)) return false;
             // Stay below the source timestamp even if Date rounded up, preserving Git's racy check.
-            indexSeed =
-              !sparseCheckout && worktreeRoot && head
-                ? yield* checkpointIndexes.load(userIndexPath, head)
-                : undefined;
+            if (!sparseCheckout && worktreeRoot && head) {
+              const trustCtime = yield* execute({
+                operation,
+                cwd: input.cwd,
+                args: ["config", "--bool", "core.trustctime"],
+                allowNonZeroExit: true,
+              });
+              // Cached stat data needs Git to detect writes after validation and before staging.
+              if (
+                trustCtime.exitCode === 1 ||
+                (trustCtime.exitCode === 0 && trustCtime.stdout.trim() === "true")
+              )
+                indexSeed = yield* checkpointIndexes.load(userIndexPath, head);
+            }
             const indexTime =
               indexSeed?.cached?.timestamp ?? Math.floor((mtime.value.getTime() - 1) / 1000);
             if (indexTime <= 0) return false;

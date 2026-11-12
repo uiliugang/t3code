@@ -816,7 +816,6 @@ it.effect("checkpoint captures reuse validated stat data without rereading an un
       'require("node:fs").appendFileSync(".git/reads", "read\\n"); process.stdin.pipe(process.stdout);',
     );
     yield* git(["config", "filter.probe.clean", "node .git/filter.cjs"]);
-    yield* git(["config", "core.trustctime", "false"]);
     yield* fs.utimes(path.join(cwd, "stable"), 1_700_000_000, 1_700_000_000);
     yield* git(["add", "."]);
     yield* git(["commit", "-m", "cache fixture"]);
@@ -965,47 +964,68 @@ it.effect.each([1_700_000_000, 1_700_000_000.9999])(
     }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 
-it.effect("checkpoint capture preserves racy edits made after resetting the index", () =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const liveProcess = yield* VcsProcess.VcsProcess;
-    const driver = yield* GitVcsDriver.makeVcsDriverShape();
-    const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-checkpoint-racy-reset-" });
-    const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
-    const racyPath = path.join(cwd, "racy.txt");
-    const indexPath = path.join(cwd, ".git", "index");
-    const timestamp = 1_700_000_000;
-    yield* git(["config", "core.trustctime", "false"]);
-    yield* fileSystem.writeFileString(racyPath, "before\n");
-    yield* fileSystem.utimes(racyPath, timestamp, timestamp);
-    yield* git(["add", "."]);
-    yield* git(["commit", "-m", "record racy file"]);
-    yield* fileSystem.writeFileString(path.join(cwd, "file.txt"), "staged\n");
-    yield* git(["add", "file.txt"]);
-    yield* fileSystem.utimes(indexPath, timestamp, timestamp);
-    const originalIndex = yield* fileSystem.readFile(indexPath);
-    const originalIndexMtime = (yield* fileSystem.stat(indexPath)).mtime;
-    const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
-      Effect.provideService(VcsProcess.VcsProcess, {
-        run: Effect.fn(function* (input: VcsProcess.VcsProcessInput) {
-          const result = yield* liveProcess.run(input);
-          if (input.args.includes("read-tree") && input.args.includes("--reset")) {
-            yield* fileSystem.writeFileString(racyPath, "after!\n").pipe(Effect.orDie);
-            yield* fileSystem.utimes(racyPath, timestamp, timestamp).pipe(Effect.orDie);
-          }
-          return result;
+it.effect.each(["default", "minimal"] as const)(
+  "checkpoint capture preserves racy edits after cached validation (checkStat=%s)",
+  (checkStat) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const liveProcess = yield* VcsProcess.VcsProcess;
+      const driver = yield* GitVcsDriver.makeVcsDriverShape();
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-checkpoint-racy-reset-",
+      });
+      const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
+      const racyPath = path.join(cwd, "racy.txt");
+      const indexPath = path.join(cwd, ".git", "index");
+      const timestamp = 1_700_000_000;
+      yield* git(["config", "core.trustctime", "false"]);
+      yield* git(["config", "core.checkstat", checkStat]);
+      yield* fileSystem.writeFileString(racyPath, "before\n");
+      yield* fileSystem.utimes(racyPath, timestamp, timestamp);
+      yield* git(["add", "."]);
+      yield* git(["commit", "-m", "record racy file"]);
+      yield* fileSystem.writeFileString(path.join(cwd, "file.txt"), "staged\n");
+      yield* git(["add", "file.txt"]);
+      yield* fileSystem.utimes(indexPath, timestamp, timestamp);
+      const originalIndex = yield* fileSystem.readFile(indexPath);
+      const originalIndexMtime = (yield* fileSystem.stat(indexPath)).mtime;
+      let editBeforeStage = false;
+      const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+        Effect.provideService(VcsProcess.VcsProcess, {
+          run: Effect.fn(function* (input: VcsProcess.VcsProcessInput) {
+            const result = yield* liveProcess.run(input);
+            if (input.args.includes("write-tree") && input.env?.GIT_INDEX_FILE)
+              yield* fileSystem
+                .utimes(input.env.GIT_INDEX_FILE, 2_000_000_000, 2_000_000_000)
+                .pipe(Effect.orDie);
+            if (editBeforeStage && input.args.includes("ls-files") && input.env?.GIT_INDEX_FILE) {
+              editBeforeStage = false;
+              yield* fileSystem.writeFileString(racyPath, "after!\n").pipe(Effect.orDie);
+              yield* fileSystem.utimes(racyPath, timestamp, timestamp).pipe(Effect.orDie);
+            }
+            return result;
+          }),
         }),
-      }),
-    );
+      );
 
-    yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      editBeforeStage = true;
+      yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
 
-    assert.strictEqual((yield* git(["show", `${checkpointRef}:racy.txt`])).stdout, "after!\n");
-    assert.strictEqual((yield* git(["show", `${checkpointRef}:file.txt`])).stdout, "staged\n");
-    assert.deepEqual(yield* fileSystem.readFile(indexPath), originalIndex);
-    assert.deepEqual((yield* fileSystem.stat(indexPath)).mtime, originalIndexMtime);
-  }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+      assert.strictEqual((yield* git(["show", `${checkpointRef}:racy.txt`])).stdout, "after!\n");
+      assert.strictEqual((yield* git(["show", `${checkpointRef}:file.txt`])).stdout, "staged\n");
+      assert.deepEqual(yield* fileSystem.readFile(indexPath), originalIndex);
+      assert.deepEqual((yield* fileSystem.stat(indexPath)).mtime, originalIndexMtime);
+      assert.strictEqual(
+        (yield* git(["config", "--get", "core.trustctime"])).stdout.trim(),
+        "false",
+      );
+      assert.strictEqual(
+        (yield* git(["config", "--get", "core.checkstat"])).stdout.trim(),
+        checkStat,
+      );
+    }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 
 it.effect.each(
@@ -1156,7 +1176,7 @@ it.effect.each(["committed", "unborn"] as const)(
       assert.deepStrictEqual(commands, [
         "rev-parse",
         "config",
-        ...(head === "committed" ? ["read-tree", "ls-files"] : []),
+        ...(head === "committed" ? ["config", "read-tree", "ls-files"] : []),
         "check-ignore",
         "add",
         "write-tree",
