@@ -29,6 +29,7 @@ import { environmentAtomList } from "./environmentAtomList";
 import { primaryEnvironmentIdAtom, themeEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
 import { reuseProvidersIgnoringCheckedAt } from "./serverProviders.logic";
+import { updateServerOverSsh } from "./sshServerUpdate";
 
 // Subscribe to every environment's themes; primary can change without reconnecting or updating the subscription.
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
@@ -36,6 +37,7 @@ export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRunt
   environmentThemes: true,
   usageLimitSources: true,
   usageLimitsCommand: true,
+  updateSshServer: updateServerOverSsh,
 });
 export const environmentUpdateStatesAtom = environmentAtomList(
   "web-environment-update-states",

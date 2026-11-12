@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { serverEnvironment } from "~/state/server";
-import { startDesktopUpdateLaunchNotice } from "./updateEverythingRun";
+import {
+  startDesktopUpdateLaunchNotice,
+  setUpdateEverythingRun,
+  settleUpdateRunMachine,
+} from "./updateEverythingRun";
 
 function relaunchWhileRestarting(environmentId: EnvironmentId) {
   const now = 1_800_000_000_000;
@@ -34,6 +38,42 @@ describe("startDesktopUpdateLaunchNotice", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("retains cancelled SSH updates for retry instead of reporting them as done", () => {
+    const environmentId = EnvironmentId.make("cancelled-ssh");
+    const server = { environmentId, serverLabel: "SSH", selfUpdate: null, targetVersion: "1.2.4" };
+    setUpdateEverythingRun(() => ({
+      localVersion: null,
+      phase: "servers",
+      restartAt: null,
+      machines: [
+        {
+          environmentId,
+          label: "SSH",
+          server,
+          updatesProviders: false,
+          handedOffVersion: null,
+          startedAt: 0,
+          result: null,
+          failure: null,
+          providerFailure: null,
+        },
+      ],
+    }));
+    try {
+      settleUpdateRunMachine(environmentId, null, { serverOutcome: { status: "skipped" } });
+      setUpdateEverythingRun((run) => {
+        expect(run?.machines[0]).toMatchObject({
+          result: "failed",
+          server,
+          failure: "Could not start the update",
+        });
+        return run;
+      });
+    } finally {
+      setUpdateEverythingRun(() => null);
+    }
   });
 
   it("keeps a server that is still restarting from looking idle after the app relaunches", async () => {

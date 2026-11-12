@@ -15,6 +15,14 @@ const testState = vi.hoisted(() => ({
   clipboard: vi.fn(),
   sessionAtom: null as unknown,
   serverVersions: new Map<string, string>(),
+  ssh: false,
+}));
+
+vi.mock(import("~/state/sshServerUpdate"), () => ({
+  canUpdateServerOverSsh: () => testState.ssh,
+  updateServerOverSsh: () => {
+    throw new Error("Unexpected direct update");
+  },
 }));
 
 vi.mock(import("~/hooks/useCopyToClipboard"), async (original) => ({
@@ -56,7 +64,12 @@ vi.mock(import("./ui/toast"), async (original) => {
   return { ...actual, toastManager: { ...actual.toastManager, add: testState.toast } };
 });
 
-import { resetConfirmDialogForTests } from "~/confirmDialog";
+import {
+  resetConfirmDialogForTests,
+  subscribeConfirmDialogHost,
+  respondToConfirmDialog,
+  readConfirmDialogState,
+} from "~/confirmDialog";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
   ServerUpdateAction,
@@ -96,6 +109,7 @@ function setup(): Disposable {
   testState.toast.mockReset();
   testState.clipboard.mockReset();
   testState.serverVersions.clear();
+  testState.ssh = false;
   sessionAtom = Atom.make<SessionResult>(AsyncResult.success(currentSession));
   testState.sessionAtom = sessionAtom;
   resetConfirmDialogForTests();
@@ -182,6 +196,24 @@ describe("ServerUpdateAction", () => {
 });
 
 describe("ServerUpdatesAction", () => {
+  it.each([false, true])("requires SSH restart confirmation: %s", async (confirmed) => {
+    using _state = setup();
+    testState.ssh = true;
+    testState.updateServer.mockResolvedValue(success());
+    await using screen = await renderAction({ selfUpdate: null });
+    const unsubscribe = subscribeConfirmDialogHost(() => undefined);
+    try {
+      expect(button(screen, "Update")).toBeDefined();
+      await click(screen, "Update");
+      expect(readConfirmDialogState()).toMatchObject({ status: "confirming" });
+      expect(testState.clipboard).not.toHaveBeenCalled();
+      await act(() => respondToConfirmDialog(confirmed));
+      expect(testState.updateServer).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   const targets: ReadonlyArray<ServerUpdateTarget> = [
     {
       environmentId: "batch-a" as EnvironmentId,

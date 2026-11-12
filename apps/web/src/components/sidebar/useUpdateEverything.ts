@@ -8,6 +8,7 @@ import { useEnvironments } from "~/state/environments";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
+import { canUpdateServerOverSsh } from "~/state/sshServerUpdate";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer, type ServerUpdateOutcome, useServerUpdate } from "../ServerUpdateAction";
@@ -64,6 +65,7 @@ export function useUpdateEverything(
     connected: environment.connection.phase === "connected",
     hostedByThisApp: isHostedByThisApp(environment),
     canMaintain: canUpdateServer(sessionStates[index]!),
+    canUpdateOverSsh: canUpdateServerOverSsh(environment.environmentId),
     updateState: updateStates[index]!,
   }));
   const { targets: servers, skipped } = channelSwitch
@@ -186,11 +188,9 @@ export function useUpdateEverything(
               const serverOutcome = await updateServer(server, { quiet: true });
               settleUpdateRunMachine(
                 server.environmentId,
-                serverOutcome.status === "failed"
-                  ? serverOutcome.message
-                  : (providerFailures.get(server.environmentId) ?? null),
+                providerFailures.get(server.environmentId) ?? null,
                 {
-                  serverUpdated: serverOutcome.status !== "failed",
+                  serverOutcome,
                   providerFailure: providerFailures.get(server.environmentId) ?? null,
                 },
               );

@@ -67,6 +67,8 @@ describe("collectServerUpdateTargets", () => {
         machine("current", "0.0.50", "boot-service"),
         machine("current-offline", "0.0.50", "boot-service", { connected: false }),
         machine("manual", "0.0.40", undefined),
+        machine("ssh", "0.0.40", undefined, { canUpdateOverSsh: true }),
+        machine("nightly-ssh", "0.0.49-nightly.20261001.3", undefined, { canUpdateOverSsh: true }),
       ],
       "0.0.50",
     );
@@ -74,6 +76,7 @@ describe("collectServerUpdateTargets", () => {
     expect(targets.map((target) => [target.serverLabel, target.targetVersion])).toEqual([
       ["service", "0.0.50"],
       ["other-desktop", "0.0.50"],
+      ["ssh", "0.0.50"],
     ]);
     expect(skipped.map((entry) => [entry.label, entry.reason])).toEqual([
       ["nightly-service", "on the nightly channel"],
@@ -82,6 +85,7 @@ describe("collectServerUpdateTargets", () => {
       ["no-scope", "no permission"],
       ["busy", "already updating"],
       ["manual", "needs a manual update"],
+      ["nightly-ssh", "on the nightly channel"],
     ]);
   });
 

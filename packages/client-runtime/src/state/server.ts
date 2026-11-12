@@ -9,6 +9,7 @@ import {
   type ServerProviderWorkspaceSnapshot,
   type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateResult,
+  type ServerSelfUpdateError,
   shouldRecommendDatabaseCompaction,
   WS_METHODS,
 } from "@t3tools/contracts";
@@ -787,6 +788,10 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly usageLimitSources?: boolean;
     readonly usageLimitsCommand?: boolean;
     readonly providerCatalogsOnDemand?: boolean;
+    readonly updateSshServer?: (
+      target: ServerUpdateTarget,
+      config: ServerConfig | null,
+    ) => Effect.Effect<ServerSelfUpdateResult | undefined, ServerSelfUpdateError, R>;
   },
 ) {
   const configScheduler = createAtomCommandScheduler();
@@ -917,71 +922,83 @@ export function createServerEnvironmentAtoms<R, E>(
 
             const supportsProgress =
               currentConfig?.environment.capabilities.serverSelfUpdateProgress === true;
-            const updateResult: ServerSelfUpdateResult = supportsProgress
-              ? yield* Effect.gen(function* () {
-                  let receivedProgress = false;
-                  const terminal = yield* Ref.make<Option.Option<ServerSelfUpdateResult>>(
-                    Option.none(),
-                  );
-                  const streamExit = yield* environmentRegistry
-                    .runStream(
-                      target.environmentId,
-                      runStream(WS_METHODS.serverUpdateServerWithProgress, target.input),
-                    )
-                    .pipe(
-                      Stream.runForEach((event) =>
-                        Effect.sync(() => {
-                          receivedProgress ||= event.type === "progress";
-                          const state = serverUpdateStateForProgressEvent(
-                            fromVersion,
-                            targetVersion,
-                            event,
-                          );
-                          currentStage = state.stage;
-                          atomRegistry.set(stateAtom, state);
-                        }).pipe(
-                          Effect.andThen(
-                            event.type === "complete"
-                              ? Ref.set(terminal, Option.some(event.result))
-                              : Effect.void,
+            const sshResult =
+              currentConfig?.environment.capabilities.serverSelfUpdate == null &&
+              target.input.channel === undefined
+                ? yield* options.updateSshServer?.(target, currentConfig) ?? Effect.undefined
+                : undefined;
+            const updateResult: ServerSelfUpdateResult =
+              sshResult ??
+              (supportsProgress
+                ? yield* Effect.gen(function* () {
+                    let receivedProgress = false;
+                    const terminal = yield* Ref.make<Option.Option<ServerSelfUpdateResult>>(
+                      Option.none(),
+                    );
+                    const streamExit = yield* environmentRegistry
+                      .runStream(
+                        target.environmentId,
+                        runStream(WS_METHODS.serverUpdateServerWithProgress, target.input),
+                      )
+                      .pipe(
+                        Stream.runForEach((event) =>
+                          Effect.sync(() => {
+                            receivedProgress ||= event.type === "progress";
+                            const state = serverUpdateStateForProgressEvent(
+                              fromVersion,
+                              targetVersion,
+                              event,
+                            );
+                            currentStage = state.stage;
+                            atomRegistry.set(stateAtom, state);
+                          }).pipe(
+                            Effect.andThen(
+                              event.type === "complete"
+                                ? Ref.set(terminal, Option.some(event.result))
+                                : Effect.void,
+                            ),
                           ),
                         ),
-                      ),
-                      Effect.exit,
+                        Effect.exit,
+                      );
+                    const selfUpdateMethod =
+                      currentConfig?.environment.capabilities.serverSelfUpdate;
+                    // Desktop preparation needs its terminal commit token.
+                    const accepted =
+                      receivedProgress &&
+                      (selfUpdateMethod === "boot-service" || selfUpdateMethod === "respawn")
+                        ? { targetVersion, method: selfUpdateMethod }
+                        : undefined;
+                    return yield* resolveServerUpdateProgressResult(
+                      targetVersion,
+                      yield* Ref.get(terminal),
+                      streamExit,
+                      accepted,
                     );
-                  const selfUpdateMethod = currentConfig?.environment.capabilities.serverSelfUpdate;
-                  // Desktop preparation needs its terminal commit token.
-                  const accepted =
-                    receivedProgress &&
-                    (selfUpdateMethod === "boot-service" || selfUpdateMethod === "respawn")
-                      ? { targetVersion, method: selfUpdateMethod }
-                      : undefined;
-                  return yield* resolveServerUpdateProgressResult(
-                    targetVersion,
-                    yield* Ref.get(terminal),
-                    streamExit,
-                    accepted,
-                  );
-                })
-              : yield* Effect.gen(function* () {
-                  const selfUpdateMethod = currentConfig?.environment.capabilities.serverSelfUpdate;
-                  const exit = yield* environmentRegistry
-                    .run(target.environmentId, request(WS_METHODS.serverUpdateServer, target.input))
-                    .pipe(Effect.exit);
-                  if (Exit.isSuccess(exit)) {
-                    return exit.value;
-                  }
-                  if (
-                    (selfUpdateMethod === "boot-service" || selfUpdateMethod === "respawn") &&
-                    isLegacyUpdateHandoffLoss(exit.cause)
-                  ) {
-                    // Older servers can tear down the transport before their
-                    // unary acknowledgement arrives. Treat only that transport
-                    // loss as a handoff, then prove it by waiting for target ready.
-                    return { targetVersion, method: selfUpdateMethod };
-                  }
-                  return yield* Effect.failCause(exit.cause);
-                });
+                  })
+                : yield* Effect.gen(function* () {
+                    const selfUpdateMethod =
+                      currentConfig?.environment.capabilities.serverSelfUpdate;
+                    const exit = yield* environmentRegistry
+                      .run(
+                        target.environmentId,
+                        request(WS_METHODS.serverUpdateServer, target.input),
+                      )
+                      .pipe(Effect.exit);
+                    if (Exit.isSuccess(exit)) {
+                      return exit.value;
+                    }
+                    if (
+                      (selfUpdateMethod === "boot-service" || selfUpdateMethod === "respawn") &&
+                      isLegacyUpdateHandoffLoss(exit.cause)
+                    ) {
+                      // Older servers can tear down the transport before their
+                      // unary acknowledgement arrives. Treat only that transport
+                      // loss as a handoff, then prove it by waiting for target ready.
+                      return { targetVersion, method: selfUpdateMethod };
+                    }
+                    return yield* Effect.failCause(exit.cause);
+                  }));
 
             if (
               updateResult.method === "desktop-app" &&

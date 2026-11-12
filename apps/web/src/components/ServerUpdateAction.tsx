@@ -25,6 +25,7 @@ import { type ComponentProps, useRef, useState } from "react";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
+import { canUpdateServerOverSsh } from "~/state/sshServerUpdate";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useServerConfigs } from "~/state/entities";
@@ -32,7 +33,7 @@ import { useManagedPolicy } from "~/state/managedPolicy";
 import { environmentPresentations } from "~/state/presentation";
 import { ManagedControl } from "./ManagedPolicy";
 import { manualServerUpdateCommand } from "~/versionSkew";
-import { crossesReleaseTrack } from "@t3tools/shared/cliRelease";
+import { crossesReleaseTrack, cliReleaseChannelOf } from "@t3tools/shared/cliRelease";
 import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -49,10 +50,14 @@ export function serverUpdateStageLabel(stage: ServerUpdateStage): string {
 }
 
 /** Why the environment's policy refuses server updates, read outside render. */
-function readUpdatesDenial(environmentId: EnvironmentId): string | undefined {
+function readUpdatesDenial(
+  environmentId: EnvironmentId,
+  targetVersion?: string,
+): string | undefined {
   return managedUpdatesDenial(
     appAtomRegistry.get(environmentPresentations.serverConfigsAtom).get(environmentId)
       ?.managedPolicy,
+    targetVersion === undefined ? undefined : cliReleaseChannelOf(targetVersion),
   );
 }
 
@@ -61,6 +66,7 @@ const CROSS_TRACK_NOTE = "Switch tracks in About → Update track";
 /** Hosts refuse a Stable/Nightly crossing outside a track switch, which checks the database first. */
 function refusedCrossing(
   target: {
+    readonly environmentId: EnvironmentId;
     readonly selfUpdate: ServerSelfUpdateCapability | null;
     readonly targetVersion: string;
     readonly channel?: DesktopUpdateChannel | undefined;
@@ -69,7 +75,7 @@ function refusedCrossing(
 ): boolean {
   return (
     target.channel === undefined &&
-    target.selfUpdate !== null &&
+    (target.selfUpdate !== null || canUpdateServerOverSsh(target.environmentId)) &&
     serverVersion !== undefined &&
     crossesReleaseTrack(serverVersion, target.targetVersion)
   );
@@ -115,7 +121,10 @@ export function useServerUpdate() {
     { quiet = false }: { readonly quiet?: boolean } = {},
   ): Promise<ServerUpdateOutcome> => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
-    const denial = readUpdatesDenial(environmentId);
+    const denial = readUpdatesDenial(
+      environmentId,
+      selfUpdate === "desktop-managed" ? undefined : targetVersion,
+    );
     if (denial !== undefined) {
       if (!quiet) {
         toastManager.add({
@@ -132,6 +141,15 @@ export function useServerUpdate() {
     )
       return { status: "skipped" };
     pendingUpdateEnvironmentIds.add(environmentId);
+    if (selfUpdate === null && canUpdateServerOverSsh(environmentId)) {
+      const confirmed = await requestConfirmDialog(
+        `Update T3 Code on ${serverLabel} over SSH? The server will stop and restart, interrupting any running agent tasks.`,
+      );
+      if (confirmed !== true) {
+        pendingUpdateEnvironmentIds.delete(environmentId);
+        return { status: "skipped" };
+      }
+    }
     const result = await updateServer({
       environmentId,
       input: {
@@ -184,9 +202,14 @@ export function ServerUpdatesAction({
   const [isPending, setIsPending] = useState(false);
   const eligible = targets.filter(
     (target) =>
-      target.selfUpdate !== null &&
+      (target.selfUpdate !== null || canUpdateServerOverSsh(target.environmentId)) &&
       (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate) &&
-      managedUpdatesDenial(serverConfigs.get(target.environmentId)?.managedPolicy) === undefined &&
+      managedUpdatesDenial(
+        serverConfigs.get(target.environmentId)?.managedPolicy,
+        target.selfUpdate === "desktop-managed"
+          ? undefined
+          : cliReleaseChannelOf(target.targetVersion),
+      ) === undefined &&
       !refusedCrossing(target, serverConfigs.get(target.environmentId)?.environment.serverVersion),
   );
   const handleUpdate = async () => {
@@ -273,7 +296,10 @@ export function ServerUpdateAction({
   const serverVersion = useServerConfigs().get(environmentId)?.environment.serverVersion;
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
-  const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
+  const updatesDenial = managedUpdatesDenial(
+    useManagedPolicy(environmentId),
+    isDesktopAppUpdate ? undefined : cliReleaseChannelOf(targetVersion),
+  );
   const update = useServerUpdate();
   const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
     target: installation?.kind === "npm-global" ? "update command" : "relaunch command",
@@ -343,12 +369,14 @@ export function ServerUpdateAction({
     );
   }
 
-  if (refusedCrossing({ selfUpdate, targetVersion, channel }, serverVersion)) {
+  if (refusedCrossing({ environmentId, selfUpdate, targetVersion, channel }, serverVersion)) {
     return <CrossTrackNote />;
   }
 
   const manualCommand =
-    selfUpdate === null ? manualServerUpdateCommand(targetVersion, installation) : null;
+    selfUpdate === null && !canUpdateServerOverSsh(environmentId)
+      ? manualServerUpdateCommand(targetVersion, installation)
+      : null;
   const actionLabel =
     manualCommand !== null
       ? installation?.kind === "npm-global"

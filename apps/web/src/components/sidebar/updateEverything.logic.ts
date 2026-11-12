@@ -2,7 +2,6 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
   type DesktopUpdateChannel,
   type EnvironmentId,
-  managedNightlyDeniedMessage,
   managedUpdatesDenial,
   type ServerConfig,
   type ServerSelfUpdateCapability,
@@ -28,6 +27,7 @@ export interface UpdateEverythingMachine {
   readonly connected: boolean;
   readonly hostedByThisApp: boolean;
   readonly canMaintain: boolean;
+  readonly canUpdateOverSsh?: boolean;
   readonly updateState: ServerUpdateState;
 }
 
@@ -104,7 +104,7 @@ export function collectServerUpdateTargets(
       continue;
     }
     const desktopAppUpdate = supportsDesktopAppUpdate(config);
-    if (selfUpdate === null) {
+    if (selfUpdate === null && !machine.canUpdateOverSsh) {
       skip("needs a manual update");
       continue;
     }
@@ -209,15 +209,9 @@ function managedMachineUpdateDenial(
   config: NonNullable<UpdateEverythingMachine["serverConfig"]>,
   targetVersion: string | undefined,
 ): string | undefined {
-  const policy = config.managedPolicy;
-  return (
-    managedUpdatesDenial(policy) ??
-    (policy !== undefined &&
-    policy.limits?.updates?.allowNightly === false &&
-    targetVersion !== undefined &&
-    cliReleaseChannelOf(targetVersion) !== "stable"
-      ? managedNightlyDeniedMessage(policy.organization)
-      : undefined)
+  return managedUpdatesDenial(
+    config.managedPolicy,
+    targetVersion === undefined ? undefined : cliReleaseChannelOf(targetVersion),
   );
 }
 
