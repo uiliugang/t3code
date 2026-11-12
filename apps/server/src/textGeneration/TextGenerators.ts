@@ -155,9 +155,11 @@ export const make = Effect.gen(function* () {
       }
       const connection = yield* connect(config);
       const driver = TEXT_GENERATOR_DRIVERS[config.kind];
-      const models = yield* driver
-        .listModels(connection)
-        .pipe(Effect.provideService(HttpClient.HttpClient, http));
+      const models = config.model
+        ? [{ id: config.model, name: config.model }]
+        : yield* driver
+            .listModels(connection)
+            .pipe(Effect.provideService(HttpClient.HttpClient, http));
       if (input.test === true) {
         // An explicit test sends one tiny request: some APIs list models without checking the key.
         const model =

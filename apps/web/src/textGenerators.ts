@@ -114,6 +114,7 @@ type ModelsKey = readonly [
   kind: TextGeneratorKind,
   baseUrl: string,
   apiKey: TextGeneratorConfig["apiKey"],
+  model: TextGeneratorConfig["model"],
 ];
 
 const refreshCountAtom = Atom.family((key: string) =>
@@ -186,7 +187,7 @@ export async function checkTextGeneratorConfig(
   const result = await runAtomCommand(
     appAtomRegistry,
     serverEnvironment.listTextGeneratorModels,
-    { environmentId, input: { id, config } },
+    { environmentId, input: { id, config, ...(config.model ? { test: true } : {}) } },
     { reportFailure: false },
   );
   return result._tag === "Success"
@@ -226,6 +227,7 @@ export function useTextGeneratorModels(
         config.kind,
         config.baseUrl,
         config.apiKey,
+        config.model,
       ] satisfies ModelsKey),
     ),
   );
@@ -307,6 +309,7 @@ export function useTextGenerationTargets(input: {
               config.kind,
               config.baseUrl,
               config.apiKey,
+              config.model,
             ] satisfies ModelsKey),
           }));
   const results = useAtomValue(
