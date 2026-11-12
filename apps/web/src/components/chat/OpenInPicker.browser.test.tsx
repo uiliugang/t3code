@@ -263,6 +263,8 @@ it.each([null, "/work/project-worktree"])(
         handle={handle}
         environmentId={selected}
         threadId={threadId}
+        composerDraftTarget={{ environmentId: selected, threadId }}
+        workspaceMutationId={null}
         projectId={projectId}
         worktreePath={worktreePath}
         isServerThread
@@ -352,6 +354,25 @@ describe("remote editor links", () => {
     expect((await pressOpenFavorite()).defaultPrevented).toBe(true);
     expect(state.openUrl).toHaveBeenCalledWith(expect.stringContaining("ssh-remote+sol"));
     expect(state.run).not.toHaveBeenCalled();
+  });
+
+  it("explains why a phone or tablet browser has no editor to open", async () => {
+    await using fixture = await setup();
+    const { renderPicker, byLabel, primaryButton, menuItems, click, pressOpenFavorite } = fixture;
+    state.remote = { mode: "remote-links", host: { kind: "ssh-alias", host: "sol" } };
+    state.clientEditors = [];
+    await renderPicker();
+
+    expect(primaryButton().disabled).toBe(true);
+    expect((await pressOpenFavorite()).defaultPrevented).toBe(false);
+    await click(byLabel("Choose editor"));
+    await vi.waitFor(() =>
+      expect(menuItems().map((item) => item.textContent)).toEqual([
+        "Open from a computer to edit on Test host",
+      ]),
+    );
+    expect(menuItems()[0]!.getAttribute("aria-disabled")).toBe("true");
+    expect(state.openUrl).not.toHaveBeenCalled();
   });
 });
 

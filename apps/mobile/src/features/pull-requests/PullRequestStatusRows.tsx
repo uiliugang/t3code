@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { parsePullRequestAnchor } from "@t3tools/shared/pullRequestAnchor";
 import { usePullRequestConnected } from "./usePullRequestConnected";
 import { PullRequestSendReviewLink } from "./PullRequestSendReviewLink";
 import { useAtomValue } from "@effect/atom-react";
@@ -108,9 +109,15 @@ export function PullRequestStatusMenu(props: RowProps) {
 }
 
 export function PullRequestChecksRow(props: RowProps) {
+  const linked = parsePullRequestAnchor(props.params.navigationUrl)?.kind === "checks";
   const t = useUiTranslation();
-  const [expanded, setExpanded] = useState(false);
-  const checks = pullRequestChecksSummary(props.pr, t);
+  const [expanded, setExpanded] = useState(linked);
+  const [seenNavigation, setSeenNavigation] = useState(props.params.navigationId);
+  if (props.params.navigationId !== seenNavigation) {
+    setSeenNavigation(props.params.navigationId);
+    if (linked) setExpanded(true);
+  }
+  const checks = pullRequestChecksSummary(props.pr);
   const action = usePullRequestAction(props.params, props.pr);
   const definition = sourceControlClients.get(props.pr.provider);
   return (

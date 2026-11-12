@@ -16,6 +16,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import {
   applyPreferredCodexDefaultModel,
   checkCodexProviderStatus,
+  codexRoutesSpendNativeQuota,
   mapCodexModelCapabilities,
 } from "./CodexProvider.ts";
 
@@ -27,7 +28,7 @@ const decodeProbeRequest = Schema.decodeUnknownSync(
 );
 
 it.effect.each(["native", "api", "api-empty", "api-error", "api-timeout"] as const)(
-  "reads idle account usage alongside %s model discovery",
+  "discovers %s models and reads quota only for the native account route",
   (catalogSource) =>
     Effect.gen(function* () {
       const custom = catalogSource !== "native";
@@ -59,7 +60,10 @@ it.effect.each(["native", "api", "api-empty", "api-error", "api-timeout"] as con
               platformFamily: "unix",
               platformOs: "darwin",
             },
-            "account/read": { account: null, requiresOpenaiAuth: false },
+            "account/read": {
+              account: { type: "chatgpt", email: "a@example.com", planType: "pro" },
+              requiresOpenaiAuth: true,
+            },
             "model/list": {
               data: ["native-only", "CaseSensitive"].map((slug) => ({
                 id: slug,
@@ -149,27 +153,27 @@ it.effect.each(["native", "api", "api-empty", "api-error", "api-timeout"] as con
         ),
         Effect.forkChild,
       );
-      const id = yield* Deferred.await(usageRequest);
       if (catalogSource === "api-timeout") {
         yield* Deferred.await(apiRequest);
         yield* TestClock.adjust("10 seconds");
       } else if (catalogSource === "native") {
+        const id = yield* Deferred.await(usageRequest);
+        yield* Queue.offer(
+          output,
+          encoder.encode(
+            `${JSON.stringify({
+              id,
+              result: {
+                rateLimits: {
+                  primary: { usedPercent: 46, windowDurationMins: 10_080, resetsAt: null },
+                  secondary: null,
+                },
+              },
+            })}\n`,
+          ),
+        );
         yield* TestClock.adjust("5 seconds");
       }
-      yield* Queue.offer(
-        output,
-        encoder.encode(
-          `${JSON.stringify({
-            id,
-            result: {
-              rateLimits: {
-                primary: { usedPercent: 46, windowDurationMins: 10_080, resetsAt: null },
-                secondary: null,
-              },
-            },
-          })}\n`,
-        ),
-      );
       const status = yield* Fiber.join(probe);
       assert.strictEqual(status.status, failed ? "warning" : "ready");
       assert.deepStrictEqual(
@@ -199,16 +203,25 @@ it.effect.each(["native", "api", "api-empty", "api-error", "api-timeout"] as con
             ),
         );
       }
-      assert.deepStrictEqual(status.usageLimits?.windows, [
-        {
-          id: "primary",
-          kind: "weekly",
-          label: "Weekly",
-          usedPercent: 46,
-          windowDurationMins: 10_080,
-        },
-      ]);
-      assert.strictEqual(status.usageLimits?.unavailable, undefined);
+      assert.deepStrictEqual(
+        status.usageLimits?.windows,
+        custom
+          ? []
+          : [
+              {
+                id: "primary",
+                kind: "weekly",
+                label: "Weekly",
+                usedPercent: 46,
+                windowDurationMins: 10_080,
+              },
+            ],
+      );
+      if (custom) assert.isFalse(yield* Deferred.isDone(usageRequest));
+      assert.strictEqual(
+        status.usageLimits?.unavailable?.reason,
+        custom ? "unsupported" : undefined,
+      );
     }).pipe(Effect.scoped),
 );
 
@@ -362,4 +375,29 @@ it("ignores custom models that shadow a preferred slug", () => {
   ]);
 
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.4");
+});
+
+it("reports native quota only for an OpenAI login on a native route", () => {
+  const chatgpt = { type: "chatgpt", email: "a@example.com", planType: "pro" } as const;
+  const hub = {
+    model_provider: "hub",
+    model_providers: { hub: { base_url: "https://hub.example.com/v1" } },
+  };
+  const cases = [
+    ["default route", chatgpt, true, {}, true],
+    ["openai base url", chatgpt, true, { openai_base_url: "https://chatgpt.com/x" }, true],
+    ["openai proxy url", chatgpt, true, { openai_base_url: "https://proxy.example.com" }, false],
+    ["custom provider", chatgpt, true, hub, false],
+    ["unknown provider id", chatgpt, true, { model_provider: "missing" }, false],
+    ["unreadable config", chatgpt, true, null, false],
+    ["login not required", chatgpt, false, {}, false],
+    ["api key", { type: "apiKey" }, true, {}, false],
+  ] as const;
+  for (const [name, account, requiresOpenaiAuth, config, expected] of cases) {
+    assert.strictEqual(
+      codexRoutesSpendNativeQuota({ account, requiresOpenaiAuth }, config),
+      expected,
+      name,
+    );
+  }
 });

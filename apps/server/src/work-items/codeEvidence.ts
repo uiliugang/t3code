@@ -1,5 +1,4 @@
 import type { OrchestrationV2ThreadProjection, RunId, WorkItemExecution } from "@t3tools/contracts";
-import { orchestrationV2WorktreePending } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 export function workItemCodeEvidence(
@@ -24,9 +23,12 @@ export function workItemCodeEvidence(
   const unrelatedRuns = records.runs.some((run) => !runIds.has(run.id));
   const pendingWorktree =
     !checkpoint &&
-    orchestrationV2WorktreePending(
-      records.thread.worktreePath,
-      records.runs.filter((run) => runIds.has(run.id)),
+    records.thread.worktreePath === null &&
+    records.runs.some(
+      (run) =>
+        runIds.has(run.id) &&
+        (run.status === "preparing" || run.status === "failed" || run.status === "interrupted") &&
+        run.workspacePreparation?.type === "worktree",
     );
   const binding = scope?.workspace?.bindings.find(
     (entry) => entry.rootId === scope.workspace?.primaryRootId,

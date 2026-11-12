@@ -7,6 +7,7 @@ import {
   resolveNewTaskBranchLabel,
   resolveNewTaskBranchWorktreePath,
   resolveNewTaskLocalWorkspaceSelection,
+  resolveNewTaskDraftWorkspace,
   resolveNewTaskWorkspaceSelection,
 } from "./new-task-context-presentation";
 
@@ -46,6 +47,36 @@ describe("filterNewTaskBranches", () => {
       ),
     ).toEqual(input.expected);
   });
+});
+
+it.each([
+  { mainBranchOnly: true, mode: "worktree", branch: "feature/a", expected: "team/origin/main" },
+  { mainBranchOnly: false, mode: "worktree", branch: "feature/a", expected: "feature/a" },
+  { mainBranchOnly: true, mode: "local", branch: "feature/a", expected: "feature/a" },
+  { mainBranchOnly: true, mode: "worktree", branch: "master", expected: "master" },
+] as const)("resolves restricted draft branches: $mode/$branch/$mainBranchOnly", (input) => {
+  expect(
+    resolveNewTaskDraftWorkspace({
+      selection: { mode: input.mode, branch: input.branch, worktreePath: null },
+      canChooseWorkspace: true,
+      defaultMode: "worktree",
+      defaultModeSettled: true,
+      isGitRepo: true,
+      branches: [
+        { name: "feature/a", current: true, isDefault: false },
+        { name: "master", current: false, isDefault: false },
+        {
+          name: "team/origin/main",
+          current: false,
+          isDefault: true,
+          isRemote: true,
+          remoteName: "team/origin",
+        },
+      ],
+      projectCwd: "/repo",
+      mainBranchOnly: input.mainBranchOnly,
+    }),
+  ).toMatchObject({ mode: input.mode, branch: input.expected });
 });
 
 describe("resolveNewTaskWorkspaceSelection", () => {

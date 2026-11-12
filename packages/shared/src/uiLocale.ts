@@ -14,6 +14,7 @@ export const UI_LANGUAGES = [
 ] as const;
 
 const zhCN: Readonly<Record<string, string>> = {
+  Preferences: "偏好设置",
   "Could not save Codex setup": "无法保存 Codex 配置",
   "Other folders": "其他文件夹",
   "{count} folder": "{count} 个文件夹",

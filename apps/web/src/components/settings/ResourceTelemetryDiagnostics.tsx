@@ -12,8 +12,9 @@ import {
   GaugeIcon,
   HardDriveIcon,
   MemoryStickIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from "lucide-react";
-import { ChevronDown, ChevronRight } from "lucide";
 import type {
   BackgroundBooleanState,
   EnvironmentId,
@@ -49,7 +50,6 @@ import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import { Button } from "../ui/button";
-import { MorphIcon } from "~/components/MorphIcon";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -488,7 +488,11 @@ function ProcessTreeName({
           onClick={() => onToggle(process)}
           aria-label={t(collapsed ? "Expand {name}" : "Collapse {name}", { name })}
         >
-          <MorphIcon className="size-3.5" icon={collapsed ? ChevronRight : ChevronDown} />
+          {collapsed ? (
+            <ChevronRightIcon className="size-3.5" />
+          ) : (
+            <ChevronDownIcon className="size-3.5" />
+          )}
         </Button>
       ) : (
         <span className="size-5" aria-hidden />

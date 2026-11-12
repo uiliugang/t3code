@@ -1,3 +1,17 @@
+import type { EditorId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectScript } from "@t3tools/contracts";
+import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import type { ThreadId } from "@t3tools/contracts";
+import type { WorkspaceRootId } from "@t3tools/contracts";
+import type { ComposerThreadTarget } from "../../composerDraftStore";
+import type { DraftId } from "../../composerDraftStore";
+import type { EnvMode } from "../BranchToolbar.logic";
+import type { EnvironmentOption } from "../BranchToolbar.logic";
+import type { NewProjectScriptInput } from "../ProjectScriptsControl";
+import type { ProjectScriptActionResult } from "../ProjectScriptsControl";
+import type { ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { WorkspaceRecoveryControl } from "./WorkspaceRecoveryControl";
 import { useProject, useQuietThreadShell } from "../../state/entities";
@@ -8,25 +22,14 @@ import { RepositoryDetails } from "./RepositoryDetails";
 import { BranchIssuesPanel } from "./BranchIssuesPanel";
 import { GroupedBranchIssuesPanel } from "./GroupedBranchIssuesPanel";
 import { BranchIssueAssociationProvider } from "./branchIssueAssociation";
-import type {
-  EditorId,
-  EnvironmentId,
-  ProjectId,
-  ProjectScript,
-  ResolvedKeybindingsConfig,
-  ThreadId,
-  WorkspaceRootId,
-} from "@t3tools/contracts";
 
-import type { DraftId } from "../../composerDraftStore";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+
 import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
-import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
+
 import { BranchToolbar } from "../BranchToolbar";
 import BaseGitActionsControl from "../GitActionsControl";
-import ProjectScriptsControl, {
-  type NewProjectScriptInput,
-  type ProjectScriptActionResult,
-} from "../ProjectScriptsControl";
+import ProjectScriptsControl from "../ProjectScriptsControl";
 import { memo, useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
@@ -34,14 +37,12 @@ import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadServersPanel } from "./ThreadServersPanel";
-import {
-  ThreadDetailsContext,
-  ThreadDetailsUsage,
-  type ThreadDetailsUsageInput,
-} from "./ThreadDetailsUsage";
+import { ThreadDetailsContext, ThreadDetailsUsage } from "./ThreadDetailsUsage";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useServerConfigs } from "../../state/entities";
+import { ThreadDetailsThreadPrRows } from "./ThreadDetailsPrRows";
 import { cn } from "../../lib/utils";
 import { SlidersHorizontalIcon } from "lucide-react";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
@@ -64,6 +65,7 @@ interface ThreadDetailsPanelProps extends Pick<
   worktreePath: string | null;
   isServerThread: boolean;
   draftId?: DraftId;
+  composerDraftTarget: ComposerThreadTarget;
   activeProjectName: string | undefined;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
@@ -72,6 +74,7 @@ interface ThreadDetailsPanelProps extends Pick<
   showOpenInPicker: boolean;
   openInShortcutEnabled: boolean;
   gitCwd: string | null;
+  workspaceMutationId: string | null;
   isGitRepo: boolean;
   envLocked: boolean;
   availableEnvironments: readonly EnvironmentOption[];
@@ -144,6 +147,14 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
   );
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
   const terminals = useThreadTerminalActions(workspace ? null : activeThreadRef);
+  const serverConfig = useServerConfigs().get(props.environmentId);
+  // A No project thread's folder sits inside the shared scratch root, so it must never get git.
+  // Until the config and project load, a No project thread looks like any other folder.
+  const offersGit =
+    props.gitCwd !== null &&
+    serverConfig !== undefined &&
+    project !== null &&
+    !isScratchProject(project, serverConfig.scratchWorkspaceRoot);
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
     environmentId: props.environmentId,
@@ -222,9 +233,11 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
             ((density !== "essential" && props.showOpenInPicker) ||
               (showTerminalButton && props.gitCwd !== null)),
           scripts: visible.scripts && props.activeProjectScripts !== undefined,
-          branch: props.gitCwd !== null && props.isGitRepo && visible.branch,
+          branch: offersGit && props.isGitRepo && visible.branch,
+          // Without a branch selector, linked pull requests still need somewhere to show.
+          pullRequests: !(offersGit && props.isGitRepo) && visible.branch,
           git:
-            props.gitCwd !== null &&
+            offersGit &&
             props.activeProjectName !== undefined &&
             (visible.gitActions || (visible.changes && props.isGitRepo)),
         };
@@ -362,12 +375,20 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                     {show.branch ? (
                       <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />
                     ) : null}
-                    {show.git ? (
+                    {show.pullRequests ? (
+                      <ThreadDetailsThreadPrRows
+                        threadRef={activeThreadRef}
+                        project={project}
+                        composerTarget={props.composerDraftTarget}
+                      />
+                    ) : null}
+                    {show.git && props.gitCwd ? (
                       <GitActionsControl
                         compact={density !== "full"}
                         showActions={visible.gitActions}
                         showChanges={visible.changes}
                         gitCwd={props.gitCwd}
+                        workspaceMutationId={props.workspaceMutationId}
                         activeThreadRef={activeThreadRef}
                         {...(props.draftId ? { draftId: props.draftId } : {})}
                         {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
