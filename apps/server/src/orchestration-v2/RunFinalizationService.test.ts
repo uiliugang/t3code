@@ -79,6 +79,54 @@ it.effect.each([false, true])(
   },
 );
 
+it.effect("finishes while workspace refresh is pending and replaces it after the next run", () => {
+  const threadId = ThreadId.make("thread-slow-status");
+  const runId = RunId.make("run-slow-status");
+  const scopeId = CheckpointScopeId.make("scope-slow-status");
+  return Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const interrupted = yield* Deferred.make<void>();
+    let refreshes = 0;
+    const layer = RunFinalization.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
+            execute: () => Effect.void,
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getCheckpointContext: () =>
+              Effect.succeed({
+                runs: [],
+                checkpointScopes: [{ id: scopeId, runId, kind: "root_run" as const, cwd: "/repo" }],
+                checkpoints: [],
+              }),
+          }),
+          Layer.succeed(RunFinalization.RunFinalizationObserver, {
+            refreshAfterTurn: () => Effect.void,
+            refresh: () =>
+              Effect.gen(function* () {
+                refreshes++;
+                yield* Deferred.succeed(started, undefined);
+                return yield* Effect.never;
+              }).pipe(Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))),
+          }),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* RunFinalization.RunFinalizationService;
+      const first = yield* service
+        .finalize({ threadId, runId, scopeId })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(started);
+      assert.isDefined(first.pollUnsafe(), "finalization waited on Git status");
+      yield* service.finalize({ threadId, runId: RunId.make("next-run"), scopeId });
+      yield* Deferred.await(interrupted);
+      assert.equal(refreshes, 2);
+    }).pipe(Effect.provide(layer));
+  });
+});
+
 it.effect.each(
   (
     [
