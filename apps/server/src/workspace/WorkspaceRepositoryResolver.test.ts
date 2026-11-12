@@ -6,10 +6,16 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
+
+const decodeDirectoryIdentity = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
+);
 
 const layerTest = WorkspaceRepositoryResolver.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
@@ -109,6 +115,22 @@ it.live("distinguishes clones and worktrees while retaining shared Git store ide
     assert.equal(workspace.resources[0]?.name, workspace.resources[1]?.name);
     const identity = yield* resolver.inspect(cwd);
     yield* resolver.verify(identity);
+    const afterRemount = {
+      ...identity,
+      ...Object.fromEntries(
+        (["gitDirIdentity", "commonDirIdentity"] as const).map((key) => {
+          const [dev, ino, birthtime] = decodeDirectoryIdentity(identity[key]);
+          return [key, JSON.stringify([String(Number(dev) + 1), ino, birthtime])];
+        }),
+      ),
+    };
+    if ((yield* HostProcess.Platform) === "darwin") {
+      yield* resolver.verify(afterRemount);
+      yield* resolver.verifyRepository(afterRemount);
+    } else {
+      const changedDevice = yield* resolver.verify(afterRemount).pipe(Effect.flip);
+      assert.equal(changedDevice.operation, "verify-identity");
+    }
     yield* fs.rename(path.join(cwd, ".git"), path.join(temp, "original-git"));
     yield* run(cwd, ["init"]);
     const replaced = yield* resolver.verify(identity).pipe(Effect.flip);

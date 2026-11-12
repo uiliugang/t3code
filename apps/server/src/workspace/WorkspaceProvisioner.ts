@@ -45,6 +45,7 @@ import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
+import { sameDirectoryIdentity } from "./directoryIdentity.ts";
 
 const PreparedResource = Schema.Struct({
   source: WorkspaceExecutionResource,
@@ -108,6 +109,7 @@ const isWorkspacePreparationError = Schema.is(WorkspacePreparationError);
 export const layer = Layer.effect(
   WorkspaceProvisioner,
   Effect.gen(function* () {
+    const platform = yield* HostProcess.Platform;
     const sql = yield* SqlClient.SqlClient;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -274,7 +276,11 @@ export const layer = Layer.effect(
                   const source = resolved.resources[0]!.identity;
                   if (
                     checkout.commonDir !== source.commonDir ||
-                    checkout.commonDirIdentity !== source.commonDirIdentity
+                    !sameDirectoryIdentity(
+                      checkout.commonDirIdentity,
+                      source.commonDirIdentity,
+                      platform,
+                    )
                   )
                     return yield* new WorkspacePreparationError({
                       threadId: input.threadId,
