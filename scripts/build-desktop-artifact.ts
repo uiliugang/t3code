@@ -2274,7 +2274,25 @@ export const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBund
       ChildProcess.make(
         process.execPath,
         // Clearing NODE_PATH leaves CommonJS global fallbacks; disable them so host packages cannot satisfy missing dependencies.
-        ["--no-global-search-paths", entryPoint, "--version"],
+        [
+          "--no-global-search-paths",
+          "--input-type=commonjs",
+          "-e",
+          `
+const { createRequire } = require("node:module");
+const { pathToFileURL } = require("node:url");
+const entry = process.argv[1];
+const requireSdk = createRequire(entry);
+const { Agent, Cursor } = requireSdk("@cursor/sdk");
+const { SqliteLocalAgentStore } = requireSdk("@cursor/sdk/sqlite");
+if (typeof Agent?.create !== "function" || typeof Cursor !== "function" || typeof SqliteLocalAgentStore?.open !== "function") {
+  throw new Error("The packaged @cursor/sdk or its SQLite entry is unusable.");
+}
+process.argv = [process.execPath, entry, "--version"];
+import(pathToFileURL(entry).href).catch((error) => { console.error(error); process.exitCode = 1; });
+`,
+          entryPoint,
+        ],
         {
           cwd: probeApp,
           stdout: "pipe",
@@ -2283,7 +2301,7 @@ export const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBund
         },
       ),
       {
-        label: "server sidecar self-containment check (node bin.mjs --version)",
+        label: "server and Cursor SDK self-containment check",
         verbose: input.verbose,
       },
     ).pipe(

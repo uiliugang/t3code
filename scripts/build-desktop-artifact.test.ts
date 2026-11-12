@@ -1,10 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { createPackageWithOptions, extractFile } from "@electron/asar";
+import { createPackageWithOptions, extractAll, extractFile } from "@electron/asar";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
@@ -135,6 +137,27 @@ function mockProcess(exitCode: number, stdout = "") {
 
 const WINDOWS_PAYLOAD_FIXTURE_VERSION = "1.2.3";
 
+const writeCursorSdkFixture = Effect.fn("test.writeCursorSdkFixture")(function* (
+  sourceDir: string,
+  indexSource = "module.exports = { Agent: { create() {} }, Cursor: class Cursor {} };",
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const sdkDir = path.join(sourceDir, "node_modules/@cursor/sdk");
+  yield* fs.makeDirectory(path.join(sdkDir, "dist/cjs"), { recursive: true });
+  yield* fs.writeFileString(
+    path.join(sdkDir, "package.json"),
+    JSON.stringify({
+      exports: { ".": "./dist/cjs/index.cjs", "./sqlite": "./dist/cjs/sqlite.cjs" },
+    }),
+  );
+  yield* fs.writeFileString(path.join(sdkDir, "dist/cjs/index.cjs"), indexSource);
+  yield* fs.writeFileString(
+    path.join(sdkDir, "dist/cjs/sqlite.cjs"),
+    "module.exports = { SqliteLocalAgentStore: class SqliteLocalAgentStore { static open() {} } };",
+  );
+});
+
 const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(function* (input: {
   readonly copyUnpackedNatives: boolean;
   readonly serverEntrySource?: string;
@@ -154,6 +177,7 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
   yield* fs.makeDirectory(path.dirname(nativePath), { recursive: true });
   yield* fs.writeFileString(serverEntryPath, input.serverEntrySource ?? "console.log('server');\n");
   yield* fs.writeFileString(nativePath, "MZ native-binary");
+  yield* writeCursorSdkFixture(sourceDir);
 
   const generatedAsarPath = path.join(tempDir, WINDOWS_SERVER_ASAR_RESOURCE);
   yield* packWindowsServerAsar({ sourceDir, asarPath: generatedAsarPath, arch: "x64" });
@@ -220,6 +244,7 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
 
 const makeMacPayloadFixture = Effect.fn("test.makeMacPayloadFixture")(function* (input: {
   readonly serverEntrySource?: string;
+  readonly cursorEntrySource?: string;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -228,6 +253,7 @@ const makeMacPayloadFixture = Effect.fn("test.makeMacPayloadFixture")(function* 
   const serverEntryPath = path.join(sourceDir, "apps/server/dist/bin.mjs");
   yield* fs.makeDirectory(path.dirname(serverEntryPath), { recursive: true });
   yield* fs.writeFileString(serverEntryPath, input.serverEntrySource ?? "console.log('server');\n");
+  yield* writeCursorSdkFixture(sourceDir, input.cursorEntrySource);
 
   const stageDistDir = path.join(tempDir, "dist");
   const resourcesDir = path.join(stageDistDir, "mac-arm64/T3 Code.app/Contents/Resources");
@@ -774,6 +800,78 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }
     }
   });
+
+  it.effect("loads the real Cursor SDK and opens SQLite after pruning its packaged formats", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cursor-package-test-" });
+        const serverRequire = NodeModule.createRequire(
+          new URL("../apps/server/package.json", import.meta.url),
+        );
+        const sdkRoot = path.dirname(
+          path.dirname(path.dirname(serverRequire.resolve("@cursor/sdk"))),
+        );
+        const source = path.join(root, "source");
+        const sdkDestination = path.join(source, "node_modules/@cursor/sdk");
+        yield* Effect.promise(() => NodeFSP.cp(sdkRoot, sdkDestination, { recursive: true }));
+        const archive = path.join(root, "app.asar");
+        yield* Effect.promise(() =>
+          createPackageWithOptions(source, archive, {
+            globOptions: { cwd: source, ignore: [...WINDOWS_SERVER_ASAR_IGNORE_GLOBS] },
+          }),
+        );
+        const probe = path.join(root, "probe");
+        yield* Effect.sync(() => extractAll(archive, probe));
+        const probeModules = path.join(probe, "node_modules");
+        const storeModules = path.dirname(path.dirname(sdkRoot));
+        // Only dependencies are linked to the install; the SDK under test is the pruned archive copy.
+        for (const name of yield* fs.readDirectory(storeModules)) {
+          if (name.startsWith(".") || name === "@cursor") continue;
+          const target = yield* fs.realPath(path.join(storeModules, name));
+          yield* Effect.promise(() =>
+            NodeFSP.symlink(target, path.join(probeModules, name), "junction"),
+          );
+        }
+        assert.isFalse(yield* fs.exists(path.join(probeModules, "@cursor/sdk/dist/esm/index.js")));
+        assert.isFalse(
+          yield* fs.exists(path.join(probeModules, "@cursor/sdk/dist/bundled/index.js")),
+        );
+        const handle = yield* spawner.spawn(
+          ChildProcess.make(
+            process.execPath,
+            [
+              "--no-global-search-paths",
+              "--input-type=commonjs",
+              "-e",
+              `
+const requireSdk = require("node:module").createRequire(process.argv[1]);
+const { Agent, Cursor } = requireSdk("@cursor/sdk");
+const { SqliteLocalAgentStore } = requireSdk("@cursor/sdk/sqlite");
+if (typeof Agent.create !== "function" || typeof Cursor !== "function") throw Error("Invalid SDK exports");
+SqliteLocalAgentStore.open({ workspaceRef: process.cwd(), stateRoot: require("node:path").join(process.cwd(), "state") })
+  .then((store) => store.dispose()).then(() => console.log("Cursor SDK and SQLite OK"))
+  .catch((error) => { console.error(error); process.exitCode = 1; });
+`,
+              path.join(probeModules, "@cursor/sdk/package.json"),
+            ],
+            { cwd: probe, env: { ...process.env, NODE_PATH: "" }, stdout: "pipe", stderr: "pipe" },
+          ),
+        );
+        const [exitCode, stdout, stderr] = yield* Effect.all(
+          [handle.exitCode, Stream.runCollect(handle.stdout), Stream.runCollect(handle.stderr)],
+          { concurrency: "unbounded" },
+        );
+        const output = [...stdout, ...stderr]
+          .map((bytes) => new TextDecoder().decode(bytes))
+          .join("");
+        assert.equal(exitCode, 0, output);
+        assert.include(output, "Cursor SDK and SQLite OK");
+      }),
+    ),
+  );
 
   it.effect("ships Cursor platform assets outside asar for spawning and native loading", () =>
     Effect.scoped(
@@ -1517,6 +1615,23 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       Effect.gen(function* () {
         const fixture = yield* makeMacPayloadFixture({});
         yield* validateMacPackagedPayload({ stageDistDir: fixture.stageDistDir });
+      }),
+    ),
+  );
+
+  it.effect.each([
+    'require("./missing-chunk.cjs");',
+    'require("../esm/index.js");',
+    "module.exports = {};",
+  ])("rejects a packaged Cursor SDK with an unusable CJS entry: %s", (cursorEntrySource) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeMacPayloadFixture({ cursorEntrySource });
+        const error = yield* validateMacPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+        }).pipe(Effect.flip);
+        assert.instanceOf(error, BundleNotSelfContainedError);
+        assert.include(error.output, "cursor");
       }),
     ),
   );
