@@ -122,7 +122,7 @@ export const layer = Layer.effect(
                     detail: "This task needs restore recovery.",
                   });
                 return yield* withWorkspaceLeases(
-                  workspace.resources.map((resource) => `resource:${resource.id}`),
+                  workspace.resources.map((resource) => `checkout:${resource.checkoutRoot}`),
                   Effect.gen(function* () {
                     for (const resource of workspace.resources)
                       yield* resolver.verify(resource.identity);
