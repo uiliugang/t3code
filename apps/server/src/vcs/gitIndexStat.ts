@@ -94,6 +94,50 @@ function kindForMode(mode: number): IndexEntryStat["kind"] {
   }
 }
 
+export function invalidateChangedIndexStats(
+  parsed: ParsedIndex,
+  stats: ReadonlyArray<IndexEntryStat | undefined>,
+  timestamp: number,
+): Uint8Array {
+  const bytes = new Uint8Array(parsed.bytes);
+  const view = new DataView(bytes.buffer);
+  for (const [index, entry] of parsed.entries.entries()) {
+    const stat = stats[index];
+    const fields =
+      stat &&
+      ([
+        [0, stat.ctimeSeconds],
+        [4, stat.ctimeNanoseconds],
+        [8, stat.mtimeSeconds],
+        [12, stat.mtimeNanoseconds],
+        [16, stat.dev],
+        [20, stat.ino],
+        [28, stat.uid],
+        [32, stat.gid],
+        [36, stat.size],
+      ] as const);
+    if (
+      stat &&
+      stat.kind !== "directory" &&
+      stat.kind === kindForMode(view.getUint32(entry.offset + 24)) &&
+      stat.mtimeSeconds < timestamp &&
+      stat.ctimeSeconds < timestamp &&
+      fields?.every(([offset, value]) => view.getUint32(entry.offset + offset) === value)
+    )
+      continue;
+    // Preserve mode and object identity; zero stat data makes Git reread the file.
+    for (const offset of [0, 4, 8, 12, 16, 20, 28, 32, 36])
+      view.setUint32(entry.offset + offset, 0);
+  }
+  bytes.set(
+    NodeCrypto.createHash("sha1")
+      .update(bytes.subarray(0, bytes.length - SHA1_BYTES))
+      .digest(),
+    bytes.length - SHA1_BYTES,
+  );
+  return bytes;
+}
+
 /**
  * Returns a copy of the index with each entry's stat data replaced by `stats[i]`, so Git trusts
  * files it did not write itself. With `verify`, an entry whose recorded mtime, size or type
