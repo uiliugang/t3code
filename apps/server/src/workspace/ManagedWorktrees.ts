@@ -39,6 +39,7 @@ import { removeLinkedWorktree } from "../vcs/worktreeRemoval.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLeases } from "./workspaceLease.ts";
+import { sameDirectoryIdentity } from "./directoryIdentity.ts";
 
 const SavedResource = Schema.Struct({
   identity: WorkspaceCheckoutIdentity,
@@ -93,6 +94,7 @@ export class ManagedWorktrees extends Context.Service<
 >()("t3/workspace/ManagedWorktrees") {}
 
 const make = Effect.gen(function* () {
+  const platform = yield* HostProcess.Platform;
   const sql = yield* SqlClient.SqlClient;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -764,7 +766,13 @@ const make = Effect.gen(function* () {
               ],
             });
             const restoredIdentity = yield* resolver.inspect(resource.identity.checkoutRoot);
-            if (restoredIdentity.commonDirIdentity !== resource.identity.commonDirIdentity)
+            if (
+              !sameDirectoryIdentity(
+                restoredIdentity.commonDirIdentity,
+                resource.identity.commonDirIdentity,
+                platform,
+              )
+            )
               return yield* new ManagedWorktreeError({
                 detail: "The source repository was replaced. Recovery stopped.",
               });

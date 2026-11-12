@@ -8,6 +8,8 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as WorkspaceCheckout from "./WorkspaceCheckout.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { gitCheckoutChanges } from "./gitCheckoutCommand.ts";
+import { sameDirectoryIdentity } from "./directoryIdentity.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 interface RunCheckoutReconcilerShape {
   readonly reconcile: (input: {
@@ -28,6 +30,7 @@ export class RunCheckoutReconciler extends Context.Reference<RunCheckoutReconcil
 ) {}
 
 const make = Effect.gen(function* () {
+  const platform = yield* HostProcess.Platform;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const checkout = yield* WorkspaceCheckout.WorkspaceCheckout;
   const resolver = yield* WorkspaceRepositoryResolver.WorkspaceRepositoryResolver;
@@ -69,7 +72,11 @@ const make = Effect.gen(function* () {
           );
           if (
             bound.gitDir !== targets[0]!.identity.gitDir ||
-            bound.gitDirIdentity !== targets[0]!.identity.gitDirIdentity
+            !sameDirectoryIdentity(
+              bound.gitDirIdentity,
+              targets[0]!.identity.gitDirIdentity,
+              platform,
+            )
           )
             return [];
           targets[0]!.checkoutPath = bound.checkoutRoot;
@@ -122,13 +129,21 @@ const make = Effect.gen(function* () {
             const candidates = targets.filter(
               (target) =>
                 target.identity.commonDir === from.value.commonDir &&
-                target.identity.commonDirIdentity === from.value.commonDirIdentity,
+                sameDirectoryIdentity(
+                  target.identity.commonDirIdentity,
+                  from.value.commonDirIdentity,
+                  platform,
+                ),
             );
             const exact = candidates.filter((target) =>
               [target.identity, target.currentIdentity].some(
                 (identity) =>
                   identity.gitDir === from.value.gitDir &&
-                  identity.gitDirIdentity === from.value.gitDirIdentity,
+                  sameDirectoryIdentity(
+                    identity.gitDirIdentity,
+                    from.value.gitDirIdentity,
+                    platform,
+                  ),
               ),
             );
             const target =
@@ -138,7 +153,11 @@ const make = Effect.gen(function* () {
             if (
               Option.isNone(to) ||
               to.value.commonDir !== target.identity.commonDir ||
-              to.value.commonDirIdentity !== target.identity.commonDirIdentity
+              !sameDirectoryIdentity(
+                to.value.commonDirIdentity,
+                target.identity.commonDirIdentity,
+                platform,
+              )
             )
               continue;
             target.checkoutPath = to.value.checkoutRoot;
