@@ -1,6 +1,4 @@
-# On-demand Windows test lane. Manual only: nothing in the suite passes on
-# Windows yet, so this exists to give contributors (and agents) a cloud Windows
-# box to iterate against. Once the suite is green here, fold it into ci.yml.
+# Packaging tests run on relevant PRs; other Windows suites remain on demand.
 #
 #   gh workflow run windows-tests.yml --ref <branch> -f package=packages/shared
 #   gh workflow run windows-tests.yml --ref <branch> -f package=apps/server \
@@ -9,6 +7,11 @@
 name: Windows Tests
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-tests.yml
+      - scripts/build-desktop-artifact.ts
+      - scripts/build-desktop-artifact.test.ts
   workflow_dispatch:
     inputs:
       package:
@@ -25,7 +28,7 @@ permissions:
 
 jobs:
   test:
-    name: Test (${{ inputs.package || 'all non-server' }})
+    name: Test (${{ github.event_name == 'pull_request' && 'desktop packaging' || inputs.package || 'all non-server' }})
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
@@ -61,7 +64,7 @@ jobs:
         run: vp install
 
       - name: Ensure Electron runtime is installed
-        if: inputs.package == '' || inputs.package == 'apps/desktop'
+        if: github.event_name == 'workflow_dispatch' && (inputs.package == '' || inputs.package == 'apps/desktop')
         run: vp run --filter "@t3tools/desktop" ensure:electron
 
       # `vp run ... test -- <files>` does not forward positional args to vitest,
@@ -71,6 +74,10 @@ jobs:
         run: |
           $package = '${{ inputs.package }}'
           $files = '${{ inputs.files }}'
+          if ('${{ github.event_name }}' -eq 'pull_request') {
+            $package = '.'
+            $files = 'scripts/build-desktop-artifact.test.ts'
+          }
           if ($package -eq '') {
             vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test
           } elseif ($files -eq '') {
