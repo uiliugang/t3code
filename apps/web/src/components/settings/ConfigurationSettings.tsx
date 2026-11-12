@@ -13,6 +13,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import type { ServerSettings } from "@t3tools/contracts";
 import { BUILT_IN_THEMES, RESERVED_THEME_IDS } from "@t3tools/shared/themePalettes";
 import * as Struct from "effect/Struct";
+import { useState } from "react";
 
 import {
   ensureClientSettingsHydrated,
@@ -38,11 +39,17 @@ import { SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectImportHistory } from "./ProjectImportHistory";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
+import type { SettingsScopeSearch } from "./settingsScope";
 
 export function ApplicationConfigurationSettings() {
   const t = useUiTranslation();
   const { scope, connectedEnvironments } = useSettingsScope();
-  const environment = connectedEnvironments.length === 1 ? connectedEnvironments[0] : null;
+  const [selection, setSelection] = useState<SettingsScopeSearch>({});
+  const environment =
+    connectedEnvironments.find((entry) => entry.environmentId === selection.machine) ??
+    connectedEnvironments[0] ??
+    null;
   const environmentId = environment?.environmentId ?? null;
   const canWrite = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const canWriteBindings = useAtomValue(
@@ -62,6 +69,17 @@ export function ApplicationConfigurationSettings() {
 
   return (
     <SettingsSection id="settings-import-export" title={t("Import and export")}>
+      {connectedEnvironments.length > 1 ? (
+        <div className="px-4 py-3">
+          <EnvironmentScopeMenu
+            value={environment ? { machine: environment.environmentId } : {}}
+            groups={[]}
+            environments={connectedEnvironments}
+            singleEnvironment
+            onChange={setSelection}
+          />
+        </div>
+      ) : null}
       {environment?.serverConfig ? (
         <SettingsTransfer
           key={environment.environmentId}
