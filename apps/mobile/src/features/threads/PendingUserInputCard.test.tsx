@@ -6,6 +6,11 @@ import { expect, it, vi } from "vite-plus/test";
 
 import type { PendingUserInput } from "../../lib/threadActivity";
 
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 const harness = vi.hoisted(() => ({
   navigate: [] as Array<[string, object | undefined]>,
   openedUrls: [] as string[],
