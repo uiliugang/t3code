@@ -42,6 +42,30 @@ const request = {
   modelSelection: { instanceId: ID, model: "some/model" },
 } as const;
 
+it.effect("uses a configured model without discovery or an API key", () =>
+  Effect.gen(function* () {
+    const upstream = vi.fn<typeof fetch>(async (url, init) => {
+      expect(new URL(String(url)).pathname).toBe("/v1/chat/completions");
+      expect(new Headers(init?.headers).has("authorization")).toBe(false);
+      expect(JSON.parse(String(init?.body)).model).toBe("deepseek-v4.1-flash");
+      return Response.json({ choices: [{ finish_reason: "stop", message: { content: "OK" } }] });
+    });
+    const generators = yield* TextGenerators.TextGenerators.pipe(
+      Effect.provide(layer({ model: "deepseek-v4.1-flash" })),
+    );
+    const listed = yield* generators
+      .listModels({ id: ID })
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+    expect(listed.models).toEqual([{ id: "deepseek-v4.1-flash", name: "deepseek-v4.1-flash" }]);
+    expect(upstream).not.toHaveBeenCalled();
+    const tested = yield* generators
+      .listModels({ id: ID, test: true })
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+    expect(tested.testedModel).toBe("deepseek-v4.1-flash");
+    expect(upstream).toHaveBeenCalledTimes(1);
+  }),
+);
+
 it.effect.each([
   {
     kind: "openaiCompatible",

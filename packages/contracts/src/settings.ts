@@ -997,6 +997,7 @@ export const TextGeneratorConfig = Schema.Struct({
   kind: TextGeneratorKind,
   label: Schema.optional(TrimmedNonEmptyString),
   baseUrl: TextGeneratorBaseUrl,
+  model: Schema.optional(TrimmedNonEmptyString),
   apiKey: SettingsSecretValue.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
