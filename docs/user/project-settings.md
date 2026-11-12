@@ -97,10 +97,12 @@ cannot be restored; rewind the conversation without files instead. If recovery i
 inspect every repository and use **Group recovery**. Accepting current files preserves them
 and starts a fresh provider conversation, while keeping backups and earlier history.
 
-Automatic group cleanup runs only for deleted tasks when **Delete worktrees with deleted threads**
-is enabled. It retains the whole group if any checkout has local files, an open terminal, or
-another owner. Branches and checkpoint refs are retained. Failed preparations are also retained
-for inspection; cleanup does not remove them automatically.
+Automatic group cleanup follows each project's cleanup rules, including merged branches,
+unchanged worktrees, and retention after a task settles or becomes inactive. Every repository
+and linked task must qualify before the group is removed. Active work, local changes, open
+terminals, and unfinished recovery retain the group; idle provider sessions are released when
+cleanup is ready. **Delete worktrees with deleted threads** also removes eligible deleted groups.
+Branches and thread history are retained. Failed preparations remain available for inspection.
 
 To free disk space manually, open **Settings > Worktrees > Local worktrees**. Select individual
 worktrees or complete multi-repository groups within a project, then confirm cleanup. A group

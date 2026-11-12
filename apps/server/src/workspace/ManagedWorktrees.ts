@@ -86,6 +86,10 @@ export class ManagedWorktrees extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<ManagedWorktreeGroup>, ManagedWorktreeError>;
     readonly remove: (
       input: ManagedWorktreesRemoveInput,
+      options?: {
+        readonly beforeRemove: Effect.Effect<void, ManagedWorktreeError>;
+        readonly releaseIdleSessions: boolean;
+      },
     ) => Effect.Effect<ReadonlyArray<ManagedWorktreeResult>, ManagedWorktreeError>;
     readonly restore: (
       input: ManagedWorktreesRestoreInput,
@@ -184,7 +188,10 @@ const make = Effect.gen(function* () {
     return groups;
   });
   type Group = Effect.Success<ReturnType<typeof inventory>>[number];
-  const assertIdle = Effect.fn("ManagedWorktrees.assertIdle")(function* (group: Group) {
+  const assertIdle = Effect.fn("ManagedWorktrees.assertIdle")(function* (
+    group: Group,
+    releaseIdleSessions = false,
+  ) {
     const serverDirectory = yield* canonical(workingDirectory);
     if (group.paths.some((root) => contains(root, serverDirectory)))
       return yield* new ManagedWorktreeError({
@@ -235,10 +242,15 @@ const make = Effect.gen(function* () {
     for (const row of rows) {
       const session = yield* decodeSession(row.payload_json);
       const cwd = yield* canonical(session.cwd);
-      if (group.paths.some((root) => contains(root, cwd)) && (yield* sessions.isLive(session.id)))
+      if (group.paths.some((root) => contains(root, cwd)) && (yield* sessions.isLive(session.id))) {
+        if (releaseIdleSessions) {
+          yield* sessions.releaseIfIdle(session.id);
+          if (!(yield* sessions.isLive(session.id))) continue;
+        }
         return yield* new ManagedWorktreeError({
           detail: "A provider session is still using this worktree.",
         });
+      }
     }
     for (const thread of group.threads) {
       const pending =
@@ -323,6 +335,7 @@ const make = Effect.gen(function* () {
       : null;
     const resources: ManagedWorktreeGroup["resources"][number][] = [];
     const identities: Array<typeof SavedResource.Type> = [];
+    let inspectionFailed = false;
     let ordinaryDirectories = 0;
     const idle = yield* assertIdle(group).pipe(Effect.result);
     if (idle._tag === "Failure") reason = failure(idle.failure).message;
@@ -438,7 +451,8 @@ const make = Effect.gen(function* () {
         }).pipe(Effect.result);
         if (checked._tag === "Failure") {
           resource.inspection = "unavailable";
-          reason ??= "Could not inspect this checkout. Check repository access and retry.";
+          inspectionFailed = true;
+          reason = "Could not inspect this checkout. Check repository access and retry.";
         }
       } else if (previous) {
         identities.push(previous);
@@ -482,7 +496,7 @@ const make = Effect.gen(function* () {
     const status =
       missing === resources.length
         ? "removed"
-        : resources.some((resource) => resource.inspection === "unavailable")
+        : inspectionFailed
           ? "failed"
           : reason
             ? "blocked"
@@ -502,7 +516,6 @@ const make = Effect.gen(function* () {
         thread.worktreePath,
         thread.deletedAt,
       ]),
-      reason,
     });
     const report: ManagedWorktreeGroup = {
       id: group.id,
@@ -565,6 +578,10 @@ const make = Effect.gen(function* () {
   }, Effect.mapError(failure));
   const remove = Effect.fn("ManagedWorktrees.remove")(function* (
     input: ManagedWorktreesRemoveInput,
+    options?: {
+      readonly beforeRemove: Effect.Effect<void, ManagedWorktreeError>;
+      readonly releaseIdleSessions: boolean;
+    },
   ) {
     const results: ManagedWorktreeResult[] = [];
     for (const target of input.targets) {
@@ -577,7 +594,8 @@ const make = Effect.gen(function* () {
         });
         continue;
       }
-      const result = yield* assertIdle(group).pipe(
+      const result = yield* (options?.beforeRemove ?? Effect.void).pipe(
+        Effect.andThen(assertIdle(group, options?.releaseIdleSessions)),
         Effect.andThen(
           withWorkspaceLeases(
             group.threads.flatMap(
@@ -637,7 +655,8 @@ const make = Effect.gen(function* () {
                 yield* save(snapshot);
                 for (const resource of snapshot.resources) {
                   if (!(yield* fs.exists(resource.identity.checkoutRoot))) continue;
-                  yield* assertIdle(current);
+                  yield* options?.beforeRemove ?? Effect.void;
+                  yield* assertIdle(current, options?.releaseIdleSessions);
                   yield* resolver.verify(resource.identity);
                   const status = yield* git.execute({
                     operation: "ManagedWorktrees.recheck",

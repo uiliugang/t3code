@@ -22,6 +22,7 @@ import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
+import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { planWorkspaceBinding } from "../orchestration-v2/WorkspaceBinding.ts";
 import {
   workspaceFixture,
@@ -129,6 +130,8 @@ const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
   yield* persist(thread);
   yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at) VALUES (${thread.projectId}, 'Example project', ${bindings[0]!.sourcePathAtBind}, '[]', '2026-10-28T00:00:00Z', '2026-10-28T00:00:00Z')`;
   const rejectBinding = yield* Ref.make(false);
+  const sessionLive = yield* Ref.make(false);
+  const sessionBusy = yield* Ref.make(false);
   const layer = ManagedWorktrees.layer.pipe(
     Layer.provide(Layer.succeed(HostProcess.Platform, "darwin")),
     Layer.provide(
@@ -144,7 +147,13 @@ const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
             listener({ type: "snapshot", terminals: [] }).pipe(Effect.as(() => {})),
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
-          isLive: () => Effect.succeed(false),
+          isLive: () => Ref.get(sessionLive),
+          releaseIfIdle: () =>
+            Ref.get(sessionBusy).pipe(
+              Effect.flatMap((busy) =>
+                busy ? Effect.succeed(false) : Ref.set(sessionLive, false).pipe(Effect.as(true)),
+              ),
+            ),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords: () => Ref.get(projection),
@@ -191,9 +200,90 @@ const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
     projection,
     persist,
     rejectBinding,
+    sessionLive,
+    sessionBusy,
     layer,
   };
 });
+
+it.live("releases idle providers only for eligible automatic cleanup and retains busy groups", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { sql, resources, sessionLive, sessionBusy, fs } = context;
+    const payload = JSON.stringify({
+      id: "session-1",
+      driver: "codex",
+      providerInstanceId: "codex",
+      status: "ready",
+      cwd: resources[0]!.checkoutRoot,
+      model: null,
+      capabilities: CodexProviderCapabilitiesV2,
+      createdAt: "2026-10-28T00:00:00Z",
+      updatedAt: "2026-10-28T00:00:00Z",
+      lastError: null,
+    });
+    yield* sql`INSERT INTO orchestration_v2_projection_provider_sessions (provider_session_id, provider, status, updated_at, payload_json) VALUES ('session-1', 'codex', 'ready', 'now', ${payload})`;
+    yield* Ref.set(sessionLive, true);
+    yield* Ref.set(sessionBusy, true);
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const [group] = yield* service.list({});
+      assert.equal(group!.status, "blocked");
+      assert.equal(
+        (yield* service.remove({ targets: [group!], deleteIgnoredFiles: false }))[0]!.outcome,
+        "failed",
+      );
+      assert.isTrue(yield* Ref.get(sessionLive));
+      const options = { beforeRemove: Effect.void, releaseIdleSessions: true };
+      assert.equal(
+        (yield* service.remove({ targets: [group!], deleteIgnoredFiles: false }, options))[0]!
+          .outcome,
+        "failed",
+      );
+      assert.isTrue(yield* Ref.get(sessionLive));
+      yield* Ref.set(sessionBusy, false);
+      const [removed] = yield* service.remove(
+        { targets: [group!], deleteIgnoredFiles: false },
+        options,
+      );
+      assert.equal(removed!.outcome, "removed", removed!.detail);
+      assert.isFalse(yield* Ref.get(sessionLive));
+      for (const resource of resources) assert.isFalse(yield* fs.exists(resource.checkoutRoot));
+      assert.isTrue((yield* service.list({}))[0]!.actions!.restore);
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("reports inspection failures instead of masking them with occupied task reasons", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { thread, workspace, persist, projection } = context;
+    yield* persist({
+      ...thread,
+      workspace: {
+        ...workspace,
+        resources: workspace.resources.map((resource) => ({
+          ...resource,
+          identity: { ...resource.identity, gitDirIdentity: "replaced" },
+        })),
+      },
+    });
+    yield* Ref.update(projection, (current) => ({
+      ...current,
+      runs: [{ status: "waiting" } as (typeof current.runs)[number]],
+    }));
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const [group] = yield* service.list({});
+      assert.equal(group!.status, "failed");
+      assert.equal(
+        group!.reason,
+        "Could not inspect this checkout. Check repository access and retry.",
+      );
+      assert.isFalse(group!.actions!.remove);
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
 
 it.live(
   "preflights the whole group, rejects stale selections, retains branches and rebuilds every repository after an interrupted binding",

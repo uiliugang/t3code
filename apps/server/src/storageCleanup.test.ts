@@ -36,6 +36,8 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
+import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
+import { workspaceFixture } from "./orchestration-v2/testkit/workspaceFixtures.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
   EventId,
@@ -379,8 +381,50 @@ const cleanupFixture = (
     let pullRequest: GitManager.GitBranchPullRequest | null = null;
     let moveBranchBeforeDelete = false;
     let fetchCalls = 0;
+    let workspaceRemovals = 0;
+    let beforeWorkspaceRemoval: Effect.Effect<void> = Effect.void;
     const activated = yield* Deferred.make<void>();
     const context = yield* Layer.build(StorageCleanup.layer).pipe(
+      Effect.provideService(
+        ManagedWorktrees.ManagedWorktrees,
+        ManagedWorktrees.ManagedWorktrees.of({
+          list: () =>
+            Effect.sync(() =>
+              threads
+                .filter((thread) => thread.workspace)
+                .map((thread) => ({
+                  id: thread.workspace!.id,
+                  fingerprint: "inspected",
+                  projectId: thread.projectId,
+                  projectTitle: "Project",
+                  title: thread.title,
+                  threads: threads.map(({ id, title }) => ({ id, title })),
+                  resources: thread.workspace!.resources.map((resource) => ({
+                    path: resource.checkoutRoot,
+                    name: resource.name,
+                    branch:
+                      thread.workspace!.bindings.find(
+                        (binding) => binding.resourceId === resource.id,
+                      )?.launchBranch ?? null,
+                    present: true,
+                    ignoredFiles: false,
+                    inspection: "linked" as const,
+                  })),
+                  status: "ready" as const,
+                  recoveryPending: false,
+                  reason: null,
+                })),
+            ),
+          remove: (_input, options) =>
+            Effect.gen(function* () {
+              yield* beforeWorkspaceRemoval;
+              if (options) yield* options.beforeRemove;
+              workspaceRemovals++;
+              return [{ id: "workspace:1", outcome: "removed" as const, detail: "removed" }];
+            }),
+          restore: () => Effect.void,
+        }),
+      ),
       Effect.provideService(GitVcsDriver.GitVcsDriver, {
         ...git,
         fetchRemoteTrackingBranch: (input) => {
@@ -465,6 +509,7 @@ const cleanupFixture = (
           Effect.sync(() => threads.find((thread) => thread.id === threadId) ?? null),
       } as unknown as ProjectionStore.ProjectionStoreV2["Service"]),
       Effect.provideService(ProviderSessionManager.ProviderSessionManagerV2, {
+        releaseIfIdle: () => Effect.succeed(false),
         isLive: () =>
           Effect.sync(() => {
             sessionLiveChecks++;
@@ -530,6 +575,10 @@ const cleanupFixture = (
     return {
       service: Context.get(context, StorageCleanup.StorageCleanup),
       repo,
+      workspaceRemovals: () => workspaceRemovals,
+      beforeWorkspaceRemoval: (effect: Effect.Effect<void>) => {
+        beforeWorkspaceRemoval = effect;
+      },
       setTerminals: (terminals: TerminalSummary[]) =>
         terminalListener?.({ type: "snapshot", terminals }) ?? Effect.void,
       editBeforeRemoval: () => {
@@ -632,6 +681,112 @@ const cleanupFixture = (
       },
     };
   });
+it.live.each([
+  "unchanged",
+  "merged",
+  "settled",
+  "inactive",
+  "disabled",
+  "pending",
+  "changed-resource",
+  "unmerged-resource",
+  "shared-busy",
+  "new-activity",
+] as const)("applies automatic cleanup to complete workspace groups: %s", (scenario) =>
+  Effect.gen(function* () {
+    const policy = {
+      ...disabledCleanup,
+      worktreeUnchanged: [
+        "unchanged",
+        "pending",
+        "changed-resource",
+        "unmerged-resource",
+        "shared-busy",
+        "new-activity",
+      ].includes(scenario),
+      worktreeOnMerge: scenario === "merged",
+      worktreeSettledAfterDays: scenario === "settled" ? 0 : null,
+      worktreeAfterDays: scenario === "inactive" ? 8 : null,
+    };
+    const fixture = yield* cleanupFixture(policy);
+    const second = `${fixture.config.worktreesDir}/second`;
+    yield* fixture.command(fixture.repo, ["worktree", "add", "-b", "second", second]);
+    const base = workspaceFixture();
+    const workspace = {
+      ...base,
+      projectId: ProjectId.make("project-1"),
+      resources: base.resources.map((resource, index) => ({
+        ...resource,
+        checkoutRoot: index === 0 ? fixture.worktree : second,
+      })),
+      bindings: base.bindings.map((binding, index) => ({
+        ...binding,
+        sourcePathAtBind: fixture.repo,
+        executionPath: index === 0 ? fixture.worktree : second,
+        launchBranch: index === 0 ? "feature" : "second",
+      })),
+    };
+    fixture.setThreads([
+      shell({
+        branch: "feature",
+        worktreePath: fixture.worktree,
+        workspace,
+        settledAt: scenario === "settled" ? at(-2 * DAY_MS) : null,
+        status: scenario === "pending" ? "waiting" : "completed",
+      }),
+    ]);
+    if (scenario === "merged") {
+      yield* fixture.command(fixture.repo, ["remote", "add", "origin", fixture.repo]);
+      const head = yield* fixture.command(fixture.worktree, ["rev-parse", "HEAD"]);
+      fixture.setPullRequest({
+        number: 1,
+        url: "https://github.com/test/repo/pull/1",
+        state: "merged",
+        headRef: "feature",
+        baseRef: "main",
+        headSha: head.stdout.trim(),
+        title: "Merged",
+      } as GitManager.GitBranchPullRequest);
+    }
+    if (scenario === "changed-resource") {
+      yield* fixture.fs.writeFileString(`${second}/tracked.txt`, "keep this edit");
+    }
+    if (scenario === "unmerged-resource") {
+      yield* fixture.fs.writeFileString(`${second}/tracked.txt`, "unmerged work");
+      yield* fixture.command(second, ["commit", "-am", "unmerged"]);
+    }
+    if (scenario === "shared-busy") {
+      fixture.setThreads([
+        shell({ branch: "feature", worktreePath: fixture.worktree, workspace }),
+        shell({
+          id: ThreadId.make("shared"),
+          branch: "feature",
+          worktreePath: fixture.worktree,
+          status: "running",
+        }),
+      ]);
+    }
+    if (scenario === "new-activity") {
+      fixture.beforeWorkspaceRemoval(
+        Effect.sync(() =>
+          fixture.setThreads([
+            shell({
+              branch: "feature",
+              worktreePath: fixture.worktree,
+              workspace,
+              latestUserMessageAt: at(0),
+            }),
+          ]),
+        ),
+      );
+    }
+    const report = yield* fixture.service.runNow;
+    const expected = ["unchanged", "merged", "settled", "inactive"].includes(scenario);
+    expect(fixture.workspaceRemovals()).toBe(expected ? 1 : 0);
+    if (expected) expect(report.entries.some((entry) => entry.outcome === "removed")).toBe(true);
+  }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
+);
+
 const pausedMeasurementFixture = (storageCleanup?: StorageCleanupSettings) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
