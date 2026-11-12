@@ -405,6 +405,7 @@ export function useComposerSend(input: ComposerSendInput) {
       !activeThread ||
       (isSendBusy && !sendQueuesBehindSetup) ||
       isRevertingCheckpoint ||
+      useComposerDraftStore.getState().rewindingThreadKeys.has(routeThreadKey) ||
       !clientSettingsHydrated ||
       threadDetailLoading ||
       readPendingEnvironmentChange() !== null ||

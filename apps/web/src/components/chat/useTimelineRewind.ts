@@ -100,6 +100,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
       !localApi ||
       !activeThread ||
       isRevertingCheckpoint ||
+      useComposerDraftStore.getState().rewindingThreadKeys.has(routeThreadKey) ||
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
     )
       return;
@@ -144,6 +145,15 @@ export function useTimelineRewind(input: TimelineRewindInput) {
       checkpoint: findRevertCheckpoint(serverProjection?.checkpoints ?? [], turnCount),
       draftTarget: composerDraftTarget,
       composerHasPendingAttachments: composerRef.current?.hasPendingAttachments() === true,
+      onPromptRestored: (prompt) => {
+        if (currentRouteThreadKeyRef.current !== routeThreadKey) return;
+        promptRef.current = prompt;
+        composerRef.current?.resetCursorState({ prompt, cursor: prompt.length });
+        requestAnimationFrame(() => {
+          if (currentRouteThreadKeyRef.current === routeThreadKey)
+            composerRef.current?.focusAtEnd();
+        });
+      },
       createAssetUrl: createAttachmentAssetUrl,
       revertThreadCheckpoint,
     });
@@ -155,14 +165,6 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     if (rewind.error !== null) {
       setThreadError(activeThread.id, rewind.error);
       return;
-    }
-    if (currentRouteThreadKeyRef.current === routeThreadKey) {
-      const nextPrompt = rewind.prompt;
-      promptRef.current = nextPrompt;
-      composerRef.current?.resetCursorState({ prompt: nextPrompt, cursor: nextPrompt.length });
-      requestAnimationFrame(() => {
-        if (currentRouteThreadKeyRef.current === routeThreadKey) composerRef.current?.focusAtEnd();
-      });
     }
   };
   const onRevertToTurnCountStable = useStableCallback(onRevertToTurnCount);

@@ -3504,7 +3504,6 @@ export default function ChatView(props: ChatViewProps) {
                 setComposerOverlayElement(overlay);
                 attachFollowComposerOverlay(overlay);
               }}
-              inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
               className={
                 isDraftHeroState

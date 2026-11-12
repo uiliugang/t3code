@@ -1,11 +1,13 @@
 import {
   CommandId,
+  type MessageId,
   type EnvironmentId,
   type ModelSelection,
   type ScopedThreadRef,
   type ThreadId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
@@ -26,6 +28,7 @@ import {
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   useComposerDraftStore,
+  composerDraftHasUserContent,
   DraftId,
 } from "../../composerDraftStore";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
@@ -146,11 +149,9 @@ export async function startFanoutThread(input: {
   }
 }
 
-/**
- * Reverts the thread to before `message` and puts that message's text and
- * attachments back in the composer draft. Returns the restored prompt, or the
- * error to show; on error the draft is untouched.
- */
+// Failed rewinds keep the recalled draft so retrying cannot duplicate it or discard edits.
+const recalledRewinds = new Map<string, { messageId: MessageId; attachmentsRestored: boolean }>();
+
 export async function rewindToMessage(input: {
   readonly message: ChatMessage;
   readonly environmentId: EnvironmentId;
@@ -161,6 +162,7 @@ export async function rewindToMessage(input: {
   readonly checkpoint: ReturnType<typeof findRevertCheckpoint>;
   readonly draftTarget: ScopedThreadRef | DraftId;
   readonly composerHasPendingAttachments: boolean;
+  readonly onPromptRestored?: (prompt: string) => void;
   readonly createAssetUrl: Parameters<
     typeof prepareRevertedMessageAttachments
   >[0]["createAssetUrl"];
@@ -175,10 +177,7 @@ export async function rewindToMessage(input: {
       scopeId?: string;
     };
   }) => Promise<AtomCommandResult<unknown, unknown>>;
-}): Promise<
-  | { readonly error: string; readonly prompt?: never }
-  | { readonly error: null; readonly prompt: string }
-> {
+}): Promise<{ readonly error: string | null }> {
   const { message, environmentId, draftTarget } = input;
   try {
     if (input.composerHasPendingAttachments) {
@@ -186,45 +185,48 @@ export async function rewindToMessage(input: {
     }
     const connection = readPreparedConnection(environmentId);
     if (!connection) throw new Error("The environment is not connected.");
-    const files = await prepareRevertedMessageAttachments({
-      message,
-      environmentId,
-      httpBaseUrl: connection.httpBaseUrl,
-      createAssetUrl: input.createAssetUrl,
-    });
     const store = useComposerDraftStore.getState();
+    const rewindKey = typeof draftTarget === "string" ? draftTarget : scopedThreadKey(draftTarget);
+    const recalled = recalledRewinds.get(rewindKey);
     const draft = store.getComposerDraft(draftTarget);
+    const isRetry = recalled?.messageId === message.id && composerDraftHasUserContent(draft);
     if (
-      (draft?.images.length ?? 0) + (draft?.files.length ?? 0) + files.length >
+      (draft?.images.length ?? 0) +
+        (draft?.files.length ?? 0) +
+        (isRetry && recalled.attachmentsRestored ? 0 : (message.attachments?.length ?? 0)) >
       PROVIDER_SEND_TURN_MAX_ATTACHMENTS
     ) {
       throw new Error("Make room for this message's attachments in the composer before rewinding.");
     }
-    const commandId = CommandId.make(randomUUID());
-    await waitForRevertedMessage(input.routeThreadRef, input.turnCount, commandId, async () => {
-      const result = await input.revertThreadCheckpoint({
-        environmentId,
-        input: {
-          commandId,
-          threadId: input.threadId,
-          turnCount: input.turnCount,
-          restoreFiles: input.restoreFiles,
-          ...(input.checkpoint === undefined
-            ? {}
-            : { checkpointId: input.checkpoint.id, scopeId: input.checkpoint.scopeId }),
-        },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    });
-    const currentPrompt = store.getComposerDraft(draftTarget)?.prompt ?? "";
-    const restoredPrompt = recallableComposerPrompt(message.text);
-    const nextPrompt =
-      restoredPrompt.length === 0
-        ? currentPrompt
-        : currentPrompt.length > 0
-          ? `${currentPrompt}\n\n${restoredPrompt}`
-          : restoredPrompt;
-    store.setPrompt(draftTarget, nextPrompt);
+    if (!isRetry) {
+      const currentPrompt = draft?.prompt ?? "";
+      const restoredPrompt = recallableComposerPrompt(message.text);
+      const nextPrompt =
+        restoredPrompt.length === 0
+          ? currentPrompt
+          : currentPrompt.length > 0
+            ? `${currentPrompt}\n\n${restoredPrompt}`
+            : restoredPrompt;
+      store.setPrompt(draftTarget, nextPrompt);
+      recalledRewinds.set(rewindKey, { messageId: message.id, attachmentsRestored: false });
+      input.onPromptRestored?.(nextPrompt);
+    }
+    const files =
+      isRetry && recalled.attachmentsRestored
+        ? []
+        : await prepareRevertedMessageAttachments({
+            message,
+            environmentId,
+            httpBaseUrl: connection.httpBaseUrl,
+            createAssetUrl: input.createAssetUrl,
+          });
+    const currentDraft = store.getComposerDraft(draftTarget);
+    if (
+      (currentDraft?.images.length ?? 0) + (currentDraft?.files.length ?? 0) + files.length >
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+    ) {
+      throw new Error("Make room for this message's attachments in the composer before rewinding.");
+    }
     const images: ComposerImageAttachment[] = [];
     const restoredFiles: ComposerFileAttachment[] = [];
     files.forEach((file, index) => {
@@ -243,7 +245,25 @@ export async function rewindToMessage(input: {
     });
     store.addImages(draftTarget, images, { allowDuplicates: true });
     store.addFiles(draftTarget, restoredFiles, { allowDuplicates: true });
-    return { error: null, prompt: nextPrompt };
+    recalledRewinds.set(rewindKey, { messageId: message.id, attachmentsRestored: true });
+    const commandId = CommandId.make(randomUUID());
+    await waitForRevertedMessage(input.routeThreadRef, input.turnCount, commandId, async () => {
+      const result = await input.revertThreadCheckpoint({
+        environmentId,
+        input: {
+          commandId,
+          threadId: input.threadId,
+          turnCount: input.turnCount,
+          restoreFiles: input.restoreFiles,
+          ...(input.checkpoint === undefined
+            ? {}
+            : { checkpointId: input.checkpoint.id, scopeId: input.checkpoint.scopeId }),
+        },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    });
+    recalledRewinds.delete(rewindKey);
+    return { error: null };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to revert thread state." };
   }
