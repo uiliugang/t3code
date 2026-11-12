@@ -7,6 +7,16 @@ import { Button, InlineButton } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
+import { useEnvironmentQuery } from "~/state/query";
+import { desktopSshHostsStateAtom, filterDiscoveredSshHosts } from "~/state/desktopSshHosts";
+import { formatDesktopSshTarget } from "./EnvironmentRow";
+import {
+  Autocomplete,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteList,
+  AutocompletePopup,
+} from "../ui/autocomplete";
 import {
   Dialog,
   DialogPopup,
@@ -78,6 +88,8 @@ function DeviceHostEditorForm({
 }) {
   const t = useUiTranslation();
   const [draft, setDraft] = useState(host);
+  const sshHosts = useEnvironmentQuery(window.desktopBridge ? desktopSshHostsStateAtom : null);
+  const suggestions = filterDiscoveredSshHosts(sshHosts.data ?? [], draft.target);
   const [expandedChecks, setExpandedChecks] = useState<{ key: string; open: boolean } | null>(null);
   const { checks, testConnection } = useHostConnectionChecks(targets);
   const connectionKey = deviceHostConnectionKey(draft);
@@ -128,21 +140,78 @@ function DeviceHostEditorForm({
             placeholder="Mac mini"
           />
         </label>
-        <label className="block space-y-1.5 text-sm">
-          <span>{t("SSH target")}</span>
-          <Input
-            required
+        <div className="block space-y-1.5 text-sm">
+          <label htmlFor="device-host-ssh-target">{t("SSH target")}</label>
+          <Autocomplete
+            items={suggestions}
+            itemToStringValue={(target) => target.alias}
+            mode="none"
+            openOnInputClick
             value={draft.target}
-            disabled={busy}
-            onChange={(event) => {
-              const target = event.target.value;
-              setDraft((current) => ({ ...current, target }));
+            onValueChange={(target, details) => {
+              const selected =
+                details.reason === "item-press"
+                  ? suggestions.find((item) => item.alias === target)
+                  : undefined;
+              setDraft((current) => {
+                const { port, ...rest } = current;
+                return {
+                  ...rest,
+                  target:
+                    selected?.source === "ssh-config"
+                      ? selected.alias
+                      : selected
+                        ? `${selected.username ? `${selected.username}@` : ""}${selected.hostname}`
+                        : target,
+                  ...(!selected && port !== undefined ? { port } : {}),
+                  ...(selected?.source !== "ssh-config" && selected?.port
+                    ? { port: selected.port }
+                    : {}),
+                  label: current.label || selected?.alias || "",
+                };
+              });
             }}
-            placeholder={t("user@host or SSH alias")}
-          />
-        </label>
+          >
+            <AutocompleteInput
+              id="device-host-ssh-target"
+              required
+              disabled={busy}
+              showTrigger={suggestions.length > 0}
+              placeholder={t(
+                window.desktopBridge ? "Search hosts or type devbox" : "user@host or SSH alias",
+              )}
+              spellCheck={false}
+            />
+            {sshHosts.isPending || suggestions.length > 0 ? (
+              <AutocompletePopup>
+                {sshHosts.isPending && sshHosts.data === null ? (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                    {t("Loading hosts…")}
+                  </div>
+                ) : (
+                  <AutocompleteList className="max-h-72">
+                    {suggestions.map((target) => (
+                      <AutocompleteItem
+                        key={`${target.alias}:${target.hostname}:${target.port ?? ""}`}
+                        value={target}
+                      >
+                        <span className="min-w-0 truncate">{target.alias}</span>
+                        {formatDesktopSshTarget(target) !== target.alias ? (
+                          <span className="min-w-0 truncate text-xs text-muted-foreground">
+                            {formatDesktopSshTarget(target)}
+                          </span>
+                        ) : null}
+                      </AutocompleteItem>
+                    ))}
+                  </AutocompleteList>
+                )}
+              </AutocompletePopup>
+            ) : null}
+          </Autocomplete>
+          {sshHosts.error ? <p className="text-xs text-destructive">{t(sshHosts.error)}</p> : null}
+        </div>
         <details
-          open={host.port !== undefined || host.identityFile !== undefined || undefined}
+          open={draft.port !== undefined || draft.identityFile !== undefined || undefined}
           className="text-sm"
         >
           <summary className="cursor-pointer text-muted-foreground">{t("SSH options")}</summary>
