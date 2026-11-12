@@ -81,6 +81,14 @@ const encodeModuleUrl = Schema.encodeEffect(Schema.fromJsonString(Schema.String)
 const decodePackageVersion = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
 );
+const decodeSdkDependencies = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      dependencies: Schema.Record(Schema.String, Schema.String),
+      peerDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+    }),
+  ),
+);
 
 // Keeps pnpm from auto-installing TypeScript, a types-only peer, into the app.
 
@@ -826,14 +834,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const probe = path.join(root, "probe");
         yield* Effect.sync(() => extractAll(archive, probe));
         const probeModules = path.join(probe, "node_modules");
-        const storeModules = path.dirname(path.dirname(sdkRoot));
+        const manifest = yield* decodeSdkDependencies(
+          yield* fs.readFileString(path.join(sdkRoot, "package.json")),
+        );
         // Only dependencies are linked to the install; the SDK under test is the pruned archive copy.
-        for (const name of yield* fs.readDirectory(storeModules)) {
-          if (name.startsWith(".") || name === "@cursor") continue;
-          const target = yield* fs.realPath(path.join(storeModules, name));
-          yield* Effect.promise(() =>
-            NodeFSP.symlink(target, path.join(probeModules, name), "junction"),
-          );
+        for (const name of Object.keys({
+          ...manifest.dependencies,
+          ...manifest.peerDependencies,
+        })) {
+          const packageJson = NodeModule.findPackageJSON(name, path.join(sdkRoot, "package.json"));
+          if (packageJson === undefined) throw new Error(`Cannot resolve SDK dependency ${name}`);
+          const target = yield* fs.realPath(path.dirname(packageJson));
+          const link = path.join(probeModules, name);
+          yield* fs.makeDirectory(path.dirname(link), { recursive: true });
+          yield* Effect.promise(() => NodeFSP.symlink(target, link, "junction"));
         }
         assert.isFalse(yield* fs.exists(path.join(probeModules, "@cursor/sdk/dist/esm/index.js")));
         assert.isFalse(
