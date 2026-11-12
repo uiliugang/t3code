@@ -1797,6 +1797,60 @@ it.effect(
     }),
 );
 
+it.effect.each(["idle", "background", "probe-error", "new-activity"] as const)(
+  "ProviderSessionManagerV2 cleanup releases only idle sessions: %s",
+  (scenario) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const probe = yield* Ref.make<Effect.Effect<boolean>>(Effect.succeed(false));
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const threadId = ThreadId.make("cleanup-idle-session");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+          ],
+        });
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        yield* Ref.set(
+          probe,
+          scenario === "background"
+            ? Effect.succeed(true)
+            : scenario === "probe-error"
+              ? Effect.fail("unavailable").pipe(Effect.orDie)
+              : scenario === "new-activity"
+                ? Ref.set(probe, Effect.succeed(false)).pipe(
+                    Effect.andThen(manager.get(providerSessionId)),
+                    Effect.as(false),
+                    Effect.orDie,
+                  )
+                : Effect.succeed(false),
+        );
+        assert.equal(yield* manager.releaseIfIdle(providerSessionId), scenario === "idle");
+        assert.equal(yield* manager.isLive(providerSessionId), scenario !== "idle");
+        if (scenario !== "idle") {
+          yield* Ref.set(probe, Effect.succeed(false));
+          assert.isTrue(yield* manager.releaseIfIdle(providerSessionId));
+        }
+        assert.equal((yield* Ref.get(state)).closeCount, 1);
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            hasPendingBackgroundWork: Ref.get(probe).pipe(Effect.flatten),
+          }),
+        ),
+      );
+    }),
+);
+
 it.effect.each(["session metadata", "session status changes", "provider work"] as const)(
   "ProviderSessionManagerV2 expires idle sessions according to %s",
   (activity) =>

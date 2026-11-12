@@ -176,6 +176,9 @@ export interface ProviderSessionManagerV2Shape {
     ProviderSessionManagerV2Error
   >;
   readonly isLive: (providerSessionId: ProviderSessionId) => Effect.Effect<boolean>;
+  readonly releaseIfIdle: (
+    providerSessionId: ProviderSessionId,
+  ) => Effect.Effect<boolean, ProviderSessionManagerV2Error>;
   readonly close: (
     providerSessionId: ProviderSessionId,
   ) => Effect.Effect<void, ProviderSessionManagerV2Error>;
@@ -2571,6 +2574,46 @@ export const layerWithOptions = (
               return exposedRuntime;
             }),
           ),
+        releaseIfIdle: Effect.fn("ProviderSessionManager.releaseIfIdle")(
+          function* (providerSessionId) {
+            const entry = (yield* Ref.get(sessions)).get(sessionKey(providerSessionId));
+            if (!entry) return true;
+            if (entry.busyTurns.size > 0) return false;
+            const generation = entry.idleGeneration;
+            const keepIf = Effect.gen(function* () {
+              if (
+                entry.runtime.hasPendingBackgroundWork &&
+                (yield* entry.runtime.hasPendingBackgroundWork)
+              )
+                return true;
+              for (const threadId of entry.attachedThreadIds) {
+                const records = yield* projectionStore.getThreadRecords(threadId, [
+                  "runs",
+                  "runtimeRequests",
+                  "providerThreads",
+                ]);
+                if (
+                  records.runs.some((run) =>
+                    ["queued", "preparing", "starting", "running", "waiting"].includes(run.status),
+                  ) ||
+                  records.runtimeRequests.some((request) => request.status === "pending") ||
+                  records.providerThreads.some(
+                    (thread) => (thread.pendingBackgroundTasks?.length ?? 0) > 0,
+                  )
+                )
+                  return true;
+              }
+              return false;
+            }).pipe(Effect.catchCause(() => Effect.succeed(true)));
+            yield* releaseEntry({
+              providerSessionId,
+              reason: "idle_timeout",
+              onlyIfIdleGeneration: generation,
+              keepIf,
+            });
+            return !(yield* Ref.get(sessions)).has(sessionKey(providerSessionId));
+          },
+        ),
         isLive: (providerSessionId) =>
           Ref.get(sessions).pipe(
             Effect.map((current) => current.has(sessionKey(providerSessionId))),
