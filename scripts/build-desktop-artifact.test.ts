@@ -738,6 +738,43 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
   });
 
+  it("excludes unused SDK formats and build resources while retaining runtime assets", () => {
+    const excluded = [
+      "node_modules/@cursor/sdk/dist/esm/index.js",
+      "node_modules/@cursor/sdk/dist/bundled/index.js",
+      "apps/desktop/prod-resources/dmg/dmg-background-latest.png",
+      "apps/desktop/prod-resources/linux/com.t3tools.t3code.metainfo.xml",
+      "apps/desktop/prod-resources/installer.nsh",
+      "apps/desktop/prod-resources/icon.icns",
+      "apps/desktop/prod-resources/resource-monitor/t3-resource-monitor",
+    ];
+    const retained = [
+      "node_modules/@cursor/sdk/package.json",
+      "node_modules/@cursor/sdk/LICENSE.md",
+      "node_modules/@cursor/sdk/dist/cjs/index.js",
+      "node_modules/@cursor/sdk/dist/cjs/sqlite.js",
+      "node_modules/@cursor/sdk/dist/cjs/587.js",
+      "apps/desktop/prod-resources/icon.png",
+    ];
+    for (const globs of [
+      DESKTOP_FILE_EXCLUSIONS.map((glob) => glob.slice(1)),
+      WINDOWS_SERVER_ASAR_IGNORE_GLOBS,
+    ]) {
+      for (const file of excluded) {
+        assert.isTrue(
+          globs.some((glob) => NodePath.matchesGlob(file, glob)),
+          file,
+        );
+      }
+      for (const file of retained) {
+        assert.isFalse(
+          globs.some((glob) => NodePath.matchesGlob(file, glob)),
+          file,
+        );
+      }
+    }
+  });
+
   it.effect("ships Cursor platform assets outside asar for spawning and native loading", () =>
     Effect.scoped(
       Effect.gen(function* () {

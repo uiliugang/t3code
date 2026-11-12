@@ -983,7 +983,21 @@ interface StagePackageJson {
 
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
+// The packaged server loads Cursor with createRequire; its CJS chunks stay together.
+const UNUSED_CURSOR_SDK_GLOBS = [
+  "**/node_modules/@cursor/sdk/dist/esm/**/*",
+  "**/node_modules/@cursor/sdk/dist/bundled/**/*",
+] as const;
+const DESKTOP_BUILD_ONLY_RESOURCE_GLOBS = [
+  "apps/desktop/prod-resources/dmg/**/*",
+  "apps/desktop/prod-resources/linux/**/*",
+  "apps/desktop/prod-resources/installer.nsh",
+  "apps/desktop/prod-resources/icon.icns",
+  "apps/desktop/prod-resources/resource-monitor/**/*",
+] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
+  ...UNUSED_CURSOR_SDK_GLOBS.map((glob) => `!${glob}`),
+  ...DESKTOP_BUILD_ONLY_RESOURCE_GLOBS.map((glob) => `!${glob}`),
   // Cursor walks from argv[1] to platform assets; helpers and native addons need real paths outside ASAR.
   "!**/node_modules/@cursor/sdk-*/**/*",
   "!apps/desktop/prod-resources/cursor-sdk",
@@ -1038,6 +1052,8 @@ export const WINDOWS_SERVER_ASAR_UNPACK_GLOBS = [
 ] as const;
 // Keep sidecar exclusions aligned with the app; .bin symlinks are unused and unsupported by ASAR extraction.
 export const WINDOWS_SERVER_ASAR_IGNORE_GLOBS = [
+  ...UNUSED_CURSOR_SDK_GLOBS,
+  ...DESKTOP_BUILD_ONLY_RESOURCE_GLOBS,
   "**/node_modules/@cursor/sdk-*",
   "**/node_modules/@cursor/sdk-*/**",
   "**/node_modules/@anthropic-ai/claude-agent-sdk-*",
