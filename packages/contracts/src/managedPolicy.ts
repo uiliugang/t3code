@@ -237,8 +237,14 @@ export function isManagedDriverAllowed(
 }
 
 /** Why updates are unavailable on an environment with `summary`, or undefined when allowed. */
-export function managedUpdatesDenial(summary: ManagedPolicySummary | undefined) {
-  return summary?.limits?.updates?.mode === "off"
-    ? managedUpdatesMessage(summary.organization)
+export function managedUpdatesDenial(
+  summary: ManagedPolicySummary | undefined,
+  targetChannel?: "stable" | "nightly" | "preview",
+) {
+  if (summary?.limits?.updates?.mode === "off") return managedUpdatesMessage(summary.organization);
+  return summary?.limits?.updates?.allowNightly === false &&
+    targetChannel !== undefined &&
+    targetChannel !== "stable"
+    ? managedNightlyDeniedMessage(summary.organization)
     : undefined;
 }

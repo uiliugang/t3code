@@ -681,7 +681,7 @@ export const layer: Layer.Layer<
       const workspace = input.scope.workspace;
       if (workspace === undefined) return captureSingle(input);
       return withWorkspaceLeases(
-        workspace.resources.map((resource) => `resource:${resource.id}`),
+        workspace.resources.map((resource) => `checkout:${resource.checkoutRoot}`),
         Effect.forEach(workspace.resources, (resource) =>
           Effect.gen(function* () {
             if (Option.isSome(repositoryResolver))

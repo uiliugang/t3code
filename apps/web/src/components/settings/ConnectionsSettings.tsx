@@ -89,6 +89,7 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { RemoveT3ConnectEnvironmentDialog } from "../clerk/RemoveT3ConnectEnvironmentDialog";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
+import { canUpdateServerOverSsh } from "~/state/sshServerUpdate";
 import {
   readEnvironmentScope,
   useEnvironmentScope,
@@ -292,7 +293,7 @@ function ConnectionsSettingsContent({
         !environment.entry.enabled ||
         environment.connection.phase !== "connected" ||
         isDesktopLocalConnectionTarget(environment.entry.target) ||
-        selfUpdate === null ||
+        (selfUpdate === null && !canUpdateServerOverSsh(environment.environmentId)) ||
         (selfUpdate === "desktop-managed" && !desktopAppUpdate)
       ) {
         return [];

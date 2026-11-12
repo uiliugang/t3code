@@ -22,6 +22,8 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
+import { sameDirectoryIdentity } from "./directoryIdentity.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 export class WorkspaceCheckout extends Context.Service<
   WorkspaceCheckout,
@@ -35,6 +37,7 @@ export class WorkspaceCheckout extends Context.Service<
 const isWorkspaceCheckoutError = Schema.is(WorkspaceCheckoutError);
 
 const make = Effect.gen(function* () {
+  const platform = yield* HostProcess.Platform;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
   const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -105,7 +108,11 @@ const make = Effect.gen(function* () {
             const checkout = yield* resolver.inspect(input.cwd);
             if (
               checkout.commonDir !== previous.commonDir ||
-              checkout.commonDirIdentity !== previous.commonDirIdentity
+              !sameDirectoryIdentity(
+                checkout.commonDirIdentity,
+                previous.commonDirIdentity,
+                platform,
+              )
             ) {
               return yield* new WorkspaceCheckoutError({
                 detail: "The selected checkout belongs to another repository.",
@@ -114,7 +121,7 @@ const make = Effect.gen(function* () {
             const branch = yield* git.resolveBranchName(checkout.checkoutRoot, "HEAD");
             const changingCheckout =
               checkout.gitDir !== previous.gitDir ||
-              checkout.gitDirIdentity !== previous.gitDirIdentity;
+              !sameDirectoryIdentity(checkout.gitDirIdentity, previous.gitDirIdentity, platform);
             const current = yield* readCurrent(changingCheckout);
             const commandId = CommandId.make(yield* random.uuidV4().pipe(Effect.orDie));
             let worktreePath: string | null = checkout.checkoutRoot;
@@ -169,7 +176,11 @@ const make = Effect.gen(function* () {
               if (
                 resolved.resources.length !== 1 ||
                 replacement.identity.gitDir !== checkout.gitDir ||
-                replacement.identity.gitDirIdentity !== checkout.gitDirIdentity ||
+                !sameDirectoryIdentity(
+                  replacement.identity.gitDirIdentity,
+                  checkout.gitDirIdentity,
+                  platform,
+                ) ||
                 workspace.resources.some(
                   (other) =>
                     other.id !== resource!.id &&

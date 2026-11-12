@@ -42,6 +42,56 @@ const request = {
   modelSelection: { instanceId: ID, model: "some/model" },
 } as const;
 
+it.effect("uses a configured model without discovery or an API key", () =>
+  Effect.gen(function* () {
+    const upstream = vi.fn<typeof fetch>(async (url, init) => {
+      expect(new URL(String(url)).pathname).toBe("/v1/chat/completions");
+      expect(new Headers(init?.headers).has("authorization")).toBe(false);
+      expect(JSON.parse(String(init?.body)).model).toBe("deepseek-v4.1-flash");
+      return Response.json({ choices: [{ finish_reason: "stop", message: { content: "OK" } }] });
+    });
+    const generators = yield* TextGenerators.TextGenerators;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const listed = yield* generators
+      .listModels({ id: ID })
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+    expect(listed.models).toEqual([{ id: "deepseek-v4.1-flash", name: "deepseek-v4.1-flash" }]);
+    expect(upstream).not.toHaveBeenCalled();
+    const tested = yield* generators
+      .listModels({ id: ID, test: true })
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+    expect(tested.testedModel).toBe("deepseek-v4.1-flash");
+    expect(upstream).toHaveBeenCalledTimes(1);
+
+    const config = {
+      kind: "openaiCompatible",
+      baseUrl: "https://api.test/v1",
+      apiKey: "",
+      enabled: true,
+    } as const;
+    yield* settings.updateSettings({
+      textGenerators: { [ID]: { ...config, model: "replacement-model" } },
+    });
+    const changed = yield* generators
+      .listModels({ id: ID })
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+    expect(changed.models).toEqual([{ id: "replacement-model", name: "replacement-model" }]);
+    expect(upstream).toHaveBeenCalledTimes(1);
+
+    yield* settings.updateSettings({ textGenerators: { [ID]: config } });
+    upstream.mockImplementation(async (url, init) => {
+      expect(new URL(String(url)).pathname).toBe("/v1/models");
+      expect(new Headers(init?.headers).has("authorization")).toBe(false);
+      return Response.json({ data: [{ id: "discovered-model" }] });
+    });
+    const discovered = yield* generators
+      .listModels({ id: ID })
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+    expect(discovered.models).toEqual([{ id: "discovered-model", name: "discovered-model" }]);
+    expect(upstream).toHaveBeenCalledTimes(2);
+  }).pipe(Effect.provide(layer({ model: "deepseek-v4.1-flash" }))),
+);
+
 it.effect.each([
   {
     kind: "openaiCompatible",

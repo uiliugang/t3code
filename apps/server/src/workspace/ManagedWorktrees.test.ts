@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -36,7 +37,10 @@ import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 
 const infrastructure = Layer.mergeAll(
   GitVcsDriver.layer,
-  WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer)),
+  WorkspaceRepositoryResolver.layer.pipe(
+    Layer.provide(GitVcsDriver.layer),
+    Layer.provide(Layer.succeed(HostProcess.Platform, "darwin")),
+  ),
   ProjectStore.layer,
 ).pipe(
   Layer.provideMerge(Sqlite.layerMemory),
@@ -46,7 +50,10 @@ const infrastructure = Layer.mergeAll(
 );
 
 const encodeThread = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2AppThread));
-const fixture = Effect.gen(function* () {
+const decodeIdentity = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
+);
+const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const sql = yield* SqlClient.SqlClient;
@@ -85,7 +92,14 @@ const fixture = Effect.gen(function* () {
       cwd: source,
       args: ["worktree", "add", "-b", `feature/${resource.name}`, checkout],
     });
-    const identity = yield* resolver.inspect(checkout);
+    let identity = yield* resolver.inspect(checkout);
+    if (remounted) {
+      const [dev, ino, birthtime] = decodeIdentity(identity.commonDirIdentity);
+      identity = {
+        ...identity,
+        commonDirIdentity: JSON.stringify([String(Number(dev) + 1), ino, birthtime]),
+      };
+    }
     resources.push({ ...resource, checkoutRoot: checkout, identity });
     bindings.push({
       ...base.bindings.find((binding) => binding.resourceId === resource.id)!,
@@ -116,10 +130,14 @@ const fixture = Effect.gen(function* () {
   yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at) VALUES (${thread.projectId}, 'Example project', ${bindings[0]!.sourcePathAtBind}, '[]', '2026-10-28T00:00:00Z', '2026-10-28T00:00:00Z')`;
   const rejectBinding = yield* Ref.make(false);
   const layer = ManagedWorktrees.layer.pipe(
+    Layer.provide(Layer.succeed(HostProcess.Platform, "darwin")),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ServerSettings.ServerSettingsService)({
-          getSettings: Effect.succeed({ ...DEFAULT_SERVER_SETTINGS, worktreesDirectory: managed }),
+          getSettings: Effect.succeed({
+            ...DEFAULT_SERVER_SETTINGS,
+            worktreesDirectory: managed,
+          }),
         }),
         Layer.mock(TerminalManager.TerminalManager)({
           subscribeMetadata: (listener) =>
@@ -181,7 +199,7 @@ it.live(
   "preflights the whole group, rejects stale selections, retains branches and rebuilds every repository after an interrupted binding",
   () =>
     Effect.gen(function* () {
-      const context = yield* fixture;
+      const context = yield* fixture(true);
       const { fs, path, git, resources, thread, projection, rejectBinding, resolver, sql } =
         context;
       yield* Effect.gen(function* () {
@@ -254,6 +272,10 @@ it.live(
         for (const resource of restored.resources) {
           yield* resolver.verify(resource.identity);
           assert.equal(
+            resource.identity.commonDirIdentity,
+            resources.find((entry) => entry.id === resource.id)!.identity.commonDirIdentity,
+          );
+          assert.equal(
             yield* fs.readFileString(path.join(resource.checkoutRoot, "file.txt")),
             resource.name,
           );
@@ -267,7 +289,7 @@ it.live(
 
 it.live("deduplicates shared checkouts, protects nested project roots and filters by project", () =>
   Effect.gen(function* () {
-    const context = yield* fixture;
+    const context = yield* fixture();
     const { thread, persist, sql, resources, fs, path, git } = context;
     yield* persist({
       ...thread,
@@ -328,7 +350,7 @@ it.live("deduplicates shared checkouts, protects nested project roots and filter
 
 it.live("classifies missing and leftover worktrees without losing historical branches", () =>
   Effect.gen(function* () {
-    const context = yield* fixture;
+    const context = yield* fixture();
     const { resources, git, fs, path, workspace } = context;
     yield* Effect.gen(function* () {
       const service = yield* ManagedWorktrees.ManagedWorktrees;

@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as WorkspaceRepositoryResolver from "../workspace/WorkspaceRepositoryResolver.ts";
-import { EventId } from "@t3tools/contracts";
+import { EventId, ExecutionResourceId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import {
   type ManagedPolicySummary,
@@ -267,6 +267,21 @@ it.effect(
         policy.resolve({ thread, modelSelection }),
       ).pipe(Effect.provide(sharedLayer), Effect.result);
       assert.isTrue(result._tag === "Failure");
+      const remountedWorkspace = {
+        ...workspace,
+        bindings: workspace.bindings.map((binding) => ({
+          ...binding,
+          resourceId: ExecutionResourceId.make(`${binding.resourceId}:after-remount`),
+        })),
+        resources: workspace.resources.map((resource) => ({
+          ...resource,
+          id: ExecutionResourceId.make(`${resource.id}:after-remount`),
+        })),
+      };
+      const remounted = yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
+        policy.resolve({ thread: { ...thread, workspace: remountedWorkspace }, modelSelection }),
+      ).pipe(Effect.provide(sharedLayer), Effect.result);
+      assert.isTrue(remounted._tag === "Failure");
       yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
         policy.resolve({
           thread: { ...thread, lineage: { ...thread.lineage, isolatedWorkspace: true } },

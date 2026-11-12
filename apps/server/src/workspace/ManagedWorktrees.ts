@@ -39,6 +39,7 @@ import { removeLinkedWorktree } from "../vcs/worktreeRemoval.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLeases } from "./workspaceLease.ts";
+import { sameDirectoryIdentity } from "./directoryIdentity.ts";
 
 const SavedResource = Schema.Struct({
   identity: WorkspaceCheckoutIdentity,
@@ -93,6 +94,7 @@ export class ManagedWorktrees extends Context.Service<
 >()("t3/workspace/ManagedWorktrees") {}
 
 const make = Effect.gen(function* () {
+  const platform = yield* HostProcess.Platform;
   const sql = yield* SqlClient.SqlClient;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -580,7 +582,9 @@ const make = Effect.gen(function* () {
           withWorkspaceLeases(
             group.threads.flatMap(
               (thread) =>
-                thread.workspace?.resources.map((resource) => `resource:${resource.id}`) ?? [],
+                thread.workspace?.resources.map(
+                  (resource) => `checkout:${resource.checkoutRoot}`,
+                ) ?? [],
             ),
             withWorkspaceLeases(
               group.paths,
@@ -732,7 +736,8 @@ const make = Effect.gen(function* () {
     yield* assertIdle(group);
     yield* withWorkspaceLeases(
       group.threads.flatMap(
-        (thread) => thread.workspace?.resources.map((resource) => `resource:${resource.id}`) ?? [],
+        (thread) =>
+          thread.workspace?.resources.map((resource) => `checkout:${resource.checkoutRoot}`) ?? [],
       ),
       withWorkspaceLeases(
         group.paths,
@@ -764,7 +769,13 @@ const make = Effect.gen(function* () {
               ],
             });
             const restoredIdentity = yield* resolver.inspect(resource.identity.checkoutRoot);
-            if (restoredIdentity.commonDirIdentity !== resource.identity.commonDirIdentity)
+            if (
+              !sameDirectoryIdentity(
+                restoredIdentity.commonDirIdentity,
+                resource.identity.commonDirIdentity,
+                platform,
+              )
+            )
               return yield* new ManagedWorktreeError({
                 detail: "The source repository was replaced. Recovery stopped.",
               });
@@ -798,7 +809,15 @@ const make = Effect.gen(function* () {
                   (entry) => entry.identity.checkoutRoot === resource.checkoutRoot,
                 )?.restoredIdentity;
                 return restored
-                  ? { ...resource, identity: restored, generation: resource.generation + 1 }
+                  ? {
+                      ...resource,
+                      // The source identity was verified above; retain its persisted binding invariant.
+                      identity: {
+                        ...restored,
+                        commonDirIdentity: resource.identity.commonDirIdentity,
+                      },
+                      generation: resource.generation + 1,
+                    }
                   : resource;
               }),
             };

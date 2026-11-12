@@ -52,7 +52,7 @@ export const layer = Layer.effect(
           const reject = (detail: string) =>
             new WorkspaceCleanupError({ revisionId: workspace.id, detail });
           return yield* withWorkspaceLeases(
-            workspace.resources.map((resource) => `resource:${resource.id}`),
+            workspace.resources.map((resource) => `checkout:${resource.checkoutRoot}`),
             withWorkspaceLeases(
               workspace.resources.map((resource) => resource.checkoutRoot),
               Effect.gen(function* () {

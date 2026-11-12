@@ -19,6 +19,8 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Hex from "effect/encoding/Hex";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { sameDirectoryIdentity } from "./directoryIdentity.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 export class WorkspaceRepositoryError extends Schema.TaggedError<WorkspaceRepositoryError>()(
   "WorkspaceRepositoryError",
@@ -76,7 +78,6 @@ export class WorkspaceRepositoryResolver extends Context.Service<
 >()("t3/workspace/WorkspaceRepositoryResolver") {}
 
 const encodeIdentityParts = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
-const sameIdentity = Schema.toEquivalence(WorkspaceCheckoutIdentity);
 const RepositorySettings = Schema.Struct({
   accessIntent: ProjectWorkspaceRoot.fields.accessIntent,
   baseCommit: Schema.String,
@@ -85,6 +86,7 @@ const RepositorySettings = Schema.Struct({
 const sameSettings = Schema.toEquivalence(RepositorySettings);
 
 const make = Effect.gen(function* () {
+  const platform = yield* HostProcess.Platform;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -159,7 +161,13 @@ const make = Effect.gen(function* () {
     identity: WorkspaceCheckoutIdentity,
   ) {
     const current = yield* inspect(identity.checkoutRoot);
-    if (!sameIdentity(current, identity)) {
+    if (
+      current.checkoutRoot !== identity.checkoutRoot ||
+      current.gitDir !== identity.gitDir ||
+      current.commonDir !== identity.commonDir ||
+      !sameDirectoryIdentity(current.gitDirIdentity, identity.gitDirIdentity, platform) ||
+      !sameDirectoryIdentity(current.commonDirIdentity, identity.commonDirIdentity, platform)
+    ) {
       return yield* new WorkspaceRepositoryError({
         path: identity.checkoutRoot,
         operation: "verify-identity",
@@ -285,7 +293,11 @@ const make = Effect.gen(function* () {
     function* (identity: WorkspaceCheckoutIdentity) {
       if (
         (yield* fs.realPath(identity.commonDir)) !== identity.commonDir ||
-        (yield* directoryIdentity(identity.commonDir)) !== identity.commonDirIdentity
+        !sameDirectoryIdentity(
+          yield* directoryIdentity(identity.commonDir),
+          identity.commonDirIdentity,
+          platform,
+        )
       )
         return yield* new WorkspaceRepositoryError({
           path: identity.commonDir,

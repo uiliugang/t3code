@@ -275,6 +275,7 @@ function TextGeneratorWizard({
   const [preset, setPreset] = useState(TEXT_GENERATOR_PRESETS[0]!);
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? preset.baseUrl);
   const [label, setLabel] = useState(existing?.label ?? "");
+  const [model, setModel] = useState(existing?.model ?? "");
   const secretSources = useSecretSources(environmentId);
   const [keyDraft, setKeyDraft] = useState<string | SecretReference>(
     isSecretReference(existing?.apiKey) ? existing.apiKey : "",
@@ -296,6 +297,7 @@ function TextGeneratorWizard({
     kind,
     ...(label.trim() ? { label: label.trim() } : {}),
     baseUrl: baseUrl.trim(),
+    ...(model.trim() ? { model: model.trim() } : {}),
     apiKey,
     enabled: existing?.enabled ?? true,
   });
@@ -437,6 +439,19 @@ function TextGeneratorWizard({
                     onSecretChange={(secret) => setKeyDraft(secret ?? "")}
                     autoFocus={existing === null && preset.id !== "custom"}
                     onValidityChange={setKeyValid}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="text-generator-model">{t("Model ID (optional)")}</Label>
+                  <Input
+                    id="text-generator-model"
+                    placeholder="deepseek-v4.1-flash"
+                    value={model}
+                    onChange={(event) => {
+                      setModel(event.target.value);
+                      setCheckError(null);
+                    }}
+                    spellCheck={false}
                   />
                 </div>
                 <div className="grid gap-1.5">

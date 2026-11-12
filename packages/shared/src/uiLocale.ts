@@ -209,6 +209,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Use it": "使用设置",
   Service: "服务",
   "API key (optional)": "API 密钥（可选）",
+  "Model ID (optional)": "模型 ID（可选）",
   "Name (optional)": "名称（可选）",
   "e.g. My local model": "例如：我的本地模型",
   "{name} is connected and lists {count} models. Switch any of these to it, or keep what they use now.":

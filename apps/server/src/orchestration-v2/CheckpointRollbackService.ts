@@ -401,7 +401,7 @@ export const layer: Layer.Layer<
           const thread = yield* projections.getThread(input.threadId);
           yield* thread.workspace !== undefined
             ? withWorkspaceLeases(
-                thread.workspace.resources.map((resource) => `resource:${resource.id}`),
+                thread.workspace.resources.map((resource) => `checkout:${resource.checkoutRoot}`),
                 withWorkspaceLeases(
                   thread.workspace.resources.map((resource) => resource.checkoutRoot),
                   execute(input),

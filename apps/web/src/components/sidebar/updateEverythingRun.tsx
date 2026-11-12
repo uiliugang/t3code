@@ -46,10 +46,20 @@ export function settleUpdateRunMachine(
   environmentId: EnvironmentId,
   failure: string | null,
   {
-    serverUpdated = false,
     providerFailure,
-  }: { readonly serverUpdated?: boolean; readonly providerFailure?: string | null } = {},
+    serverOutcome,
+  }: {
+    readonly providerFailure?: string | null;
+    readonly serverOutcome?: ServerUpdateOutcome;
+  } = {},
 ): void {
+  const serverUpdated = serverOutcome?.status === "updated";
+  if (serverOutcome !== undefined) {
+    if (serverOutcome.status !== "updated") {
+      failure =
+        serverOutcome.status === "failed" ? serverOutcome.message : "Could not start the update";
+    }
+  }
   updateRunMachines((machine) =>
     machine.environmentId === environmentId
       ? {
@@ -85,15 +95,7 @@ export function retryFailedUpdateRunServers(
   );
   for (const { target, providerFailure } of failed) {
     void update(target, { quiet: true }).then((outcome) =>
-      settleUpdateRunMachine(
-        target.environmentId,
-        outcome.status === "updated"
-          ? providerFailure
-          : outcome.status === "failed"
-            ? outcome.message
-            : "Could not start the update",
-        { serverUpdated: outcome.status === "updated" },
-      ),
+      settleUpdateRunMachine(target.environmentId, providerFailure, { serverOutcome: outcome }),
     );
   }
 }
