@@ -132,9 +132,23 @@ export const layer = Layer.effect(
           Effect.andThen(
             input.repositoryTarget === undefined
               ? operation
-              : withWorkspaceLease(
-                  `resource:${input.repositoryTarget.resourceId}`,
-                  validate(input, write).pipe(Effect.andThen(operation)),
+              : fs.realPath(input.cwd).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new GitCommandError({
+                        operation: "WorkspaceAccess.run",
+                        command: "git",
+                        cwd: input.cwd,
+                        detail: "Repository path resolution failed.",
+                        cause,
+                      }),
+                  ),
+                  Effect.flatMap((cwd) =>
+                    withWorkspaceLease(
+                      `checkout:${cwd}`,
+                      validate(input, write).pipe(Effect.andThen(operation)),
+                    ),
+                  ),
                 ),
           ),
         ),

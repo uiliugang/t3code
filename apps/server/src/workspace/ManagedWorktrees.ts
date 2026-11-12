@@ -582,7 +582,9 @@ const make = Effect.gen(function* () {
           withWorkspaceLeases(
             group.threads.flatMap(
               (thread) =>
-                thread.workspace?.resources.map((resource) => `resource:${resource.id}`) ?? [],
+                thread.workspace?.resources.map(
+                  (resource) => `checkout:${resource.checkoutRoot}`,
+                ) ?? [],
             ),
             withWorkspaceLeases(
               group.paths,
@@ -734,7 +736,8 @@ const make = Effect.gen(function* () {
     yield* assertIdle(group);
     yield* withWorkspaceLeases(
       group.threads.flatMap(
-        (thread) => thread.workspace?.resources.map((resource) => `resource:${resource.id}`) ?? [],
+        (thread) =>
+          thread.workspace?.resources.map((resource) => `checkout:${resource.checkoutRoot}`) ?? [],
       ),
       withWorkspaceLeases(
         group.paths,
@@ -806,7 +809,15 @@ const make = Effect.gen(function* () {
                   (entry) => entry.identity.checkoutRoot === resource.checkoutRoot,
                 )?.restoredIdentity;
                 return restored
-                  ? { ...resource, identity: restored, generation: resource.generation + 1 }
+                  ? {
+                      ...resource,
+                      // The source identity was verified above; retain its persisted binding invariant.
+                      identity: {
+                        ...restored,
+                        commonDirIdentity: resource.identity.commonDirIdentity,
+                      },
+                      generation: resource.generation + 1,
+                    }
                   : resource;
               }),
             };

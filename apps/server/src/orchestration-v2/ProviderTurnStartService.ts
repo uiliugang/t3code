@@ -1798,7 +1798,7 @@ export const layer: Layer.Layer<
             return yield* thread.lineage.sideChat === true
               ? turn
               : withWorkspaceLeases(
-                  thread.workspace.resources.map((resource) => `resource:${resource.id}`),
+                  thread.workspace.resources.map((resource) => `checkout:${resource.checkoutRoot}`),
                   turn,
                 );
           }

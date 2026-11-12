@@ -235,6 +235,9 @@ export const layerFromProjectStore: Layer.Layer<
               ),
             );
             const resourceIds = new Set(workspace.resources.map((resource) => resource.id));
+            const checkoutRoots = new Set(
+              workspace.resources.map((resource) => resource.checkoutRoot),
+            );
             for (const thread of [...shell.threads, ...shell.archivedThreads]) {
               if (
                 thread.id === input.thread.id ||
@@ -245,8 +248,10 @@ export const layerFromProjectStore: Layer.Layer<
               )
                 continue;
               let shared =
-                thread.workspace?.resources.some((resource) => resourceIds.has(resource.id)) ??
-                false;
+                thread.workspace?.resources.some(
+                  (resource) =>
+                    resourceIds.has(resource.id) || checkoutRoots.has(resource.checkoutRoot),
+                ) ?? false;
               const cwd =
                 thread.worktreePath ??
                 thread.projectWorkspaceRoot ??
