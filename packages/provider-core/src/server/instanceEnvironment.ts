@@ -31,3 +31,8 @@ export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   }
   return next;
 });
+
+export const RESOURCE_OWNER_ENV = "T3CODE_RESOURCE_OWNER";
+
+// Encode whitespace so the value is also unambiguous in macOS ps environment output.
+export const resourceOwner = (stateDir: string): string => encodeURIComponent(stateDir);

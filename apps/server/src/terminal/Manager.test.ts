@@ -871,7 +871,7 @@ it.layer(
   );
 
   it.effect(
-    "closes idle shells and opted-in actions on settlement without stopping other commands",
+    "closes all thread terminals and their services on settlement without stopping other threads",
     () =>
       Effect.gen(function* () {
         const { manager, ptyAdapter } = yield* createManager(5, {
@@ -891,8 +891,8 @@ it.layer(
         yield* manager.open(openInput({ terminalId: "idle" }));
         yield* manager.open(openInput({ terminalId: "dev-server" }));
         yield* manager.open(openInput({ terminalId: "subshell" }));
-        yield* manager.open(openInput({ threadId: "thread-2", stopOnSettle: true }));
-        yield* manager.open(openInput({ terminalId: "managed-dev", stopOnSettle: true }));
+        yield* manager.open(openInput({ threadId: "thread-2" }));
+        yield* manager.open(openInput({ terminalId: "managed-dev" }));
 
         yield* manager.closeIdle({ threadId: "thread-1" });
 
@@ -903,19 +903,46 @@ it.layer(
           false,
           false,
         ]);
-        yield* manager.open(openInput({ terminalId: "managed-dev", stopOnSettle: false }));
-        yield* manager.closeOnSettle({ threadId: "thread-1" });
-        expect(ptyAdapter.processes[4]?.killed).toBe(false);
-        yield* manager.open(openInput({ terminalId: "managed-dev", stopOnSettle: true }));
+        yield* manager.closeOnSettle({ threadId: "thread-1", shouldClose: Effect.succeed(false) });
+        expect(ptyAdapter.processes[1]?.killed).toBe(false);
         yield* manager.closeOnSettle({ threadId: "thread-1" });
         expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([
           true,
-          false,
-          false,
+          true,
+          true,
           false,
           true,
         ]);
+        yield* manager.closeOnSettle({ threadId: "thread-1" });
+        expect(ptyAdapter.processes[3]?.killed).toBe(false);
       }),
+  );
+
+  it.effect("keeps a reopened terminal when settlement cleanup waited for its thread lock", () =>
+    Effect.gen(function* () {
+      const ptyAdapter = new GatedPtyAdapter();
+      const { manager } = yield* createManager(5, { ptyAdapter });
+      yield* manager.open(openInput());
+      yield* manager.close({ threadId: "thread-1" });
+      const gate = {
+        spawning: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+      ptyAdapter.gate = gate;
+      const opening = yield* manager
+        .open(openInput())
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(gate.spawning);
+      const settled = yield* Ref.make(true);
+      const closing = yield* manager
+        .closeOnSettle({ threadId: "thread-1", shouldClose: Ref.get(settled) })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Ref.set(settled, false);
+      yield* Deferred.succeed(gate.release, undefined);
+      yield* Fiber.join(opening);
+      yield* Fiber.join(closing);
+      expect(ptyAdapter.processes[1]?.killed).toBe(false);
+    }),
   );
 
   it.effect("labels a running command by its whole process name, spaces included", () =>

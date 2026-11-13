@@ -6,11 +6,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
   PREVIEW_URL_MAX_LENGTH,
+  ThreadId,
   type DiscoveredLocalServer,
 } from "@t3tools/contracts";
 import * as ProcessGroup from "@t3tools/provider-core/server/processGroup";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -42,6 +45,8 @@ const processProbeFailure: ProcessRunner.ProcessRunner["Service"]["run"] = (inpu
     }),
   );
 
+const scannerLayer = Layer.effect(PortScanner.PortDiscovery, PortScanner.make("scanner-state"));
+
 const layerNoProc = FileSystem.layerNoop({});
 
 const layerProbeFailure = (
@@ -49,7 +54,7 @@ const layerProbeFailure = (
   fetch: typeof globalThis.fetch = globalThis.fetch,
   fileSystem: Layer.Layer<FileSystem.FileSystem> = layerNoProc,
 ) =>
-  PortScanner.layer.pipe(
+  scannerLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
         fileSystem,
@@ -87,7 +92,7 @@ const layerLsofScanner = (input: {
   readonly fetch: typeof globalThis.fetch;
   readonly stdout?: () => string;
 }) =>
-  PortScanner.layer.pipe(
+  scannerLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
         layerNoProc,
@@ -554,7 +559,7 @@ effectIt.effect.each([
   let lsofSpawns = 0;
   let procWalks = 0;
   const missing = FileSystem.makeNoop({});
-  const layer = PortScanner.layer.pipe(
+  const layer = scannerLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
         FileSystem.layerNoop({
@@ -635,7 +640,7 @@ effectIt.effect("ignores a partial Windows netstat snapshot when one query exits
     requests.push(String(input));
     return Promise.resolve(new Response("hello", { headers: { "content-type": "text/html" } }));
   }) as typeof globalThis.fetch;
-  const layer = PortScanner.layer.pipe(
+  const layer = scannerLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
         layerNoProc,
@@ -699,7 +704,9 @@ effectIt.effect("rechecks the socket owner before stopping a Linux server withou
         }
         if (/^\/proc\/(4242|5000)\/comm$/.test(path)) return Effect.succeed("node\n");
         if (/^\/proc\/(4242|5000)\/environ$/.test(path)) {
-          return Effect.succeed(`${PortScanner.AGENT_THREAD_ENV}=thread-agent\0`);
+          return Effect.succeed(
+            `T3CODE_RESOURCE_OWNER=scanner-state\0${PortScanner.AGENT_THREAD_ENV}=thread-agent\0`,
+          );
         }
         return missing.readFileString(path);
       },
@@ -744,7 +751,7 @@ effectIt.effect.each(["linux", "darwin", "win32"] as const)(
     const fileReads: string[] = [];
     const requests: string[] = [];
     const missing = FileSystem.makeNoop({});
-    const layer = PortScanner.layer.pipe(
+    const layer = scannerLayer.pipe(
       Layer.provide(
         Layer.mergeAll(
           FileSystem.layerNoop({
@@ -808,10 +815,10 @@ effectIt.effect.each(["linux", "darwin"] as const)(
     const requests: string[] = [];
     const missing = FileSystem.makeNoop({});
     const procEnviron: Record<string, string> = {
-      "/proc/4242/environ": `PATH=/usr/bin\0${PortScanner.AGENT_THREAD_ENV}=thread-agent\0`,
+      "/proc/4242/environ": `PATH=/usr/bin\0T3CODE_RESOURCE_OWNER=scanner-state\0${PortScanner.AGENT_THREAD_ENV}=thread-agent\0`,
       "/proc/5000/environ": "PATH=/usr/bin\0",
     };
-    const layer = PortScanner.layer.pipe(
+    const layer = scannerLayer.pipe(
       Layer.provide(
         Layer.mergeAll(
           FileSystem.layerNoop({
@@ -853,7 +860,7 @@ effectIt.effect.each(["linux", "darwin"] as const)(
               environmentReads += 1;
               return Effect.succeed(
                 processOutput(
-                  `  4242 node server.js PATH=/usr/bin ${PortScanner.AGENT_THREAD_ENV}=thread-agent HOME=/Users/dev\n` +
+                  `  4242 node server.js PATH=/usr/bin T3CODE_RESOURCE_OWNER=scanner-state ${PortScanner.AGENT_THREAD_ENV}=thread-agent HOME=/Users/dev\n` +
                     "  5000 postgres -D /data PATH=/usr/bin\n",
                 ),
               );
@@ -954,7 +961,7 @@ server.listen(0, "127.0.0.1", () => {
  * job: under a detached shell with job control, in a group of its own. Release kills only the pids
  * it started.
  */
-const agentServer = () =>
+const agentServer = (owner = "scanner-state") =>
   Effect.acquireRelease(
     Effect.callback<{
       readonly child: NodeChildProcess.ChildProcess;
@@ -962,7 +969,11 @@ const agentServer = () =>
       readonly port: number;
       readonly exited: Promise<void>;
     }>((resume) => {
-      const env = { ...process.env, [PortScanner.AGENT_THREAD_ENV]: "thread-live" };
+      const env = {
+        ...process.env,
+        [PortScanner.AGENT_THREAD_ENV]: "thread-live",
+        T3CODE_RESOURCE_OWNER: owner,
+      };
       // dash ignores `set -m` without a terminal; bash, like agent tool shells, honors it.
       const child = NodeChildProcess.spawn(
         "bash",
@@ -1004,6 +1015,7 @@ effectIt.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
         Effect.sync(release),
       );
       const job = yield* agentServer();
+      const foreign = yield* agentServer("other-state");
 
       expect(yield* scanner.scan()).toEqual(
         expect.arrayContaining([
@@ -1018,14 +1030,41 @@ effectIt.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       const unlisted = yield* Effect.flip(scanner.stopServer({ pid: process.pid, port: job.port }));
       expect(unlisted.reason).toBe("not-found");
 
-      yield* scanner.stopServer({ pid: job.pid, port: job.port });
+      const wrongOwner = yield* Effect.flip(
+        scanner.stopServer({
+          pid: job.pid,
+          port: job.port,
+          threadId: ThreadId.make("other-thread"),
+        }),
+      );
+      expect(wrongOwner.reason).toBe("not-found");
+      expect(isRunning(job.pid)).toBe(true);
+      yield* scanner.stopThreadServers(ThreadId.make("other-thread"));
+      expect(isRunning(job.pid)).toBe(true);
+      const checked = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const staleCleanup = yield* scanner
+        .stopThreadServers(
+          ThreadId.make("thread-live"),
+          Deferred.succeed(checked, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as(false),
+          ),
+        )
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(checked);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(staleCleanup);
+      expect(isRunning(job.pid)).toBe(true);
+      yield* scanner.stopThreadServers(ThreadId.make("thread-live"));
       // The shell waits on its job, so it exits once the job has.
       yield* Effect.promise(() => job.exited);
       expect(isRunning(job.pid)).toBe(false);
+      expect(isRunning(foreign.pid)).toBe(true);
     }).pipe(
       Effect.scoped,
       Effect.provide(
-        PortScanner.layer.pipe(
+        scannerLayer.pipe(
           Layer.provide(ProcessRunner.layer),
           Layer.provide(Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)),
         ),

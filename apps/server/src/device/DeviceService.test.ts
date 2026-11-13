@@ -8,6 +8,7 @@ import {
   LOCAL_DEVICE_HOST_ID,
   ThreadId,
   type DeviceSummary,
+  type DeviceSession,
   type ServerSettings as Settings,
   type SshDeviceHostConfig,
 } from "@t3tools/contracts";
@@ -95,6 +96,8 @@ const fixture = Effect.fn("fixture")(function* (
   inspectError = false,
   installTool?: Parameters<typeof DeviceService.makeWithHosts>[3],
   options: {
+    readonly persistence?: Parameters<typeof DeviceService.makeWithHosts>[5];
+    readonly restoreExistingAgent?: boolean;
     readonly endsDevices?: boolean;
     readonly routesStreams?: boolean;
     readonly onClose?: Effect.Effect<"ok" | "missing" | "reject" | "http_error" | "malformed">;
@@ -275,6 +278,14 @@ const fixture = Effect.fn("fixture")(function* (
           agentDevice: { baseUrl: "http://agent.test", token: "test", entryPath: "/agent" },
         };
       }),
+    ...(options.restoreExistingAgent
+      ? {
+          releaseAgentSession: releaseAgentDeviceSession(http, {
+            baseUrl: "http://agent.test",
+            token: "test",
+          }),
+        }
+      : {}),
     current: Effect.sync(() =>
       connection.online
         ? {
@@ -302,6 +313,8 @@ const fixture = Effect.fn("fixture")(function* (
     undefined,
     () => Effect.succeed("/host.json"),
     installTool,
+    undefined,
+    options.persistence,
   ).pipe(
     Effect.provide(NodeCrypto.layer),
     Effect.provideService(DeviceHost.DeviceHost, host),
@@ -1800,6 +1813,32 @@ it.effect("a failed tool update reports npm's exit code but not its output", () 
 );
 
 describe("agent session release on close", () => {
+  it.effect("restores persisted device ownership and clears it after releasing the daemon", () =>
+    Effect.gen(function* () {
+      const persisted = yield* Ref.make<ReadonlyArray<DeviceSession>>([]);
+      const first = yield* fixture(Effect.void, undefined, false, undefined, false, undefined, {
+        persistence: { initial: [], save: (sessions) => Ref.set(persisted, sessions) },
+      });
+      yield* first.service.configure({ enabled: true, agentAccessEnabled: true });
+      const threadId = ThreadId.make("restart-owner");
+      yield* first.service.open({ threadId, deviceId: "Pixel_API_35", platform: "android" });
+      const recorded = yield* Ref.get(persisted);
+      expect(recorded).toHaveLength(1);
+      const restarted = yield* fixture(Effect.void, undefined, false, undefined, false, undefined, {
+        restoreExistingAgent: true,
+        persistence: { initial: recorded, save: (sessions) => Ref.set(persisted, sessions) },
+      });
+      expect((yield* restarted.service.state).sessions).toEqual(recorded);
+      yield* restarted.service.close({ threadId }, Effect.succeed(false));
+      expect(restarted.closedSessions).toHaveLength(0);
+      expect((yield* restarted.service.state).sessions).toEqual(recorded);
+      yield* restarted.service.close({ threadId });
+      expect(restarted.closedSessions).toHaveLength(1);
+      expect(yield* Ref.get(persisted)).toEqual([]);
+      expect((yield* restarted.service.state).sessions).toEqual([]);
+    }),
+  );
+
   const openClaim = (
     service: DeviceService.DeviceService["Service"],
     threadId: ThreadId,
@@ -2009,9 +2048,16 @@ describe("agent session release on close", () => {
       yield* Deferred.await(releasing);
       const opening = yield* openClaim(service, threadId, session.deviceId).pipe(Effect.forkChild);
       yield* Queue.take(entered);
+      const retired = yield* Ref.make(true);
+      const staleCleanup = yield* service
+        .close({ threadId }, Ref.get(retired))
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Ref.set(retired, false);
       yield* Deferred.succeed(finish, undefined);
       yield* Fiber.join(closing);
       const reopened = yield* Fiber.join(opening);
+      yield* Fiber.join(staleCleanup);
+      expect((yield* service.state).sessions).toEqual([reopened]);
       const published = (yield* PubSub.takeAll(publications))
         .map(({ sessions }) =>
           sessions.includes(session) ? "old" : sessions.includes(reopened) ? "reopened" : "none",

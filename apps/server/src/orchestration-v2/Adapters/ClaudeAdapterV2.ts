@@ -1,3 +1,7 @@
+import {
+  RESOURCE_OWNER_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 import type { ThreadWorkspaceRevision } from "@t3tools/contracts";
 import { workspaceContext } from "@t3tools/provider-core/server/workspacePolicy";
 import * as DocumentText from "../../provider/DocumentText.ts";
@@ -13824,7 +13828,10 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     return yield* makeClaudeAdapterV2({
       instanceId,
       settings: { ...config, enabled, binaryPath },
-      environment: claudeEnvironment,
+      environment: {
+        ...claudeEnvironment,
+        [RESOURCE_OWNER_ENV]: resourceOwner(serverConfig.stateDir),
+      },
       attachmentsDir: serverConfig.attachmentsDir,
       fileSystem,
       path,

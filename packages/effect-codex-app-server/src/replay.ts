@@ -260,7 +260,8 @@ function normalizeThreadRequest(frame: unknown, ignoredConfigKeys: ReadonlySet<s
       ([key]) =>
         key !== "mcp_servers" &&
         !key.startsWith("mcp_servers.") &&
-        key !== "shell_environment_policy.set.T3CODE_THREAD_ID",
+        key !== "shell_environment_policy.set.T3CODE_THREAD_ID" &&
+        key !== "shell_environment_policy.set.T3CODE_RESOURCE_OWNER",
     ),
   );
   for (const key of ignoredConfigKeys) delete owned[key];

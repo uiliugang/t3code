@@ -1,3 +1,7 @@
+import {
+  RESOURCE_OWNER_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 // @effect-diagnostics nodeBuiltinImport:off
 
 import {
@@ -1778,7 +1782,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const { flavor, selfInvocation: self } = options;
   const readMcpContext = (threadId: ThreadId | null) =>
-    threadId === null
+    (threadId === null
       ? Effect.succeed(acpMcpContext(undefined, self, flavor.mcpOverHttp, flavor.deferMcpTools))
       : mcpSessions
           .read(threadId)
@@ -1786,7 +1790,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             Effect.map((session) =>
               acpMcpContext(session, self, flavor.mcpOverHttp, flavor.deferMcpTools),
             ),
-          );
+          )
+    ).pipe(
+      Effect.map((context) => ({
+        ...context,
+        processEnvironment: {
+          ...context.processEnvironment,
+          [RESOURCE_OWNER_ENV]: resourceOwner(host.paths.stateDir),
+        },
+      })),
+    );
   const driver = flavor.driver;
   const continuationRequests = options.continuationRequests;
   const postSettleContinuationEnabled =

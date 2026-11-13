@@ -10,6 +10,7 @@ import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../atta
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import * as PortScanner from "../preview/PortScanner.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 
@@ -47,6 +48,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const terminals = yield* TerminalManager.TerminalManager;
     const previews = yield* PreviewManager.PreviewManager;
+    const ports = yield* PortScanner.PortDiscovery;
     const devices = yield* DeviceService.DeviceService;
     const fileSystem = yield* FileSystem.FileSystem;
     const config = yield* ServerConfig.ServerConfig;
@@ -64,16 +66,20 @@ export const layer = Layer.effect(
             ),
           );
       }),
-      cleanupTerminals: Effect.fn("ResourceCleanupService.cleanupTerminals")(function (
+      cleanupTerminals: Effect.fn("ResourceCleanupService.cleanupTerminals")(function* (
         threadId: string,
       ) {
-        return terminals
-          .close({ threadId, deleteHistory: true })
-          .pipe(
-            Effect.mapError(
-              (cause) => new ResourceCleanupError({ operation: "terminal", threadId, cause }),
-            ),
-          );
+        const results = yield* Effect.all([
+          Effect.result(ports.stopThreadServers(ThreadId.make(threadId))),
+          Effect.result(terminals.close({ threadId, deleteHistory: true })),
+        ]);
+        for (const result of results)
+          if (result._tag === "Failure")
+            return yield* new ResourceCleanupError({
+              operation: "terminal",
+              threadId,
+              cause: result.failure,
+            });
       }),
       cleanupPreviews: Effect.fn("ResourceCleanupService.cleanupPreviews")(function (
         threadId: string,

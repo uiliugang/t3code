@@ -6,6 +6,10 @@ import {
   type DiscoveredLocalServer,
   type PreviewStopLocalServerInput,
 } from "@t3tools/contracts";
+import {
+  RESOURCE_OWNER_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isLoopbackHost, LSOF_LOCAL_HOST_TOKENS } from "@t3tools/shared/preview";
@@ -24,6 +28,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { FetchHttpClient, HttpClient } from "effect/http";
 
+import * as ServerConfig from "../config.ts";
 import * as WindowsTcpListeners from "../process/windowsTcpListeners.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
@@ -58,7 +63,14 @@ export class PortDiscovery extends Context.Service<
     readonly trackAgent: () => () => void;
     /** Stops a listed server's process group, never this server, an agent CLI, or a shell. */
     readonly stopServer: (
-      input: PreviewStopLocalServerInput,
+      input: PreviewStopLocalServerInput & {
+        readonly threadId?: ThreadId;
+        readonly shouldStop?: Effect.Effect<boolean>;
+      },
+    ) => Effect.Effect<void, PreviewStopLocalServerError>;
+    readonly stopThreadServers: (
+      threadId: ThreadId,
+      shouldStop?: Effect.Effect<boolean>,
     ) => Effect.Effect<void, PreviewStopLocalServerError>;
   }
 >()("t3/preview/PortScanner/PortDiscovery") {}
@@ -357,7 +369,8 @@ const lsofProcessIds = (raw: string): ReadonlyArray<number> => {
 const AGENT_THREAD_ASSIGNMENT = new RegExp(`(?:^|\\s)${AGENT_THREAD_ENV}=(\\S+)`);
 
 /** Reads `/proc/<pid>/environ`, whose entries are NUL-separated. */
-const parseProcEnvironThread = (raw: string): ThreadId | null => {
+const parseProcEnvironThread = (raw: string, owner: string): ThreadId | null => {
+  if (!raw.split("\0").includes(`${RESOURCE_OWNER_ENV}=${owner}`)) return null;
   const prefix = `${AGENT_THREAD_ENV}=`;
   const value = raw
     .split("\0")
@@ -371,12 +384,18 @@ const parseProcEnvironThread = (raw: string): ThreadId | null => {
  * Reads macOS `ps -E -o pid=,command=`, which appends each process's launch environment to its
  * argv with spaces, so an argument that spells the assignment out also matches.
  */
-const parsePsEnvironmentThreads = (raw: string): ReadonlyMap<number, ThreadId | null> => {
+const parsePsEnvironmentThreads = (
+  raw: string,
+  owner: string,
+): ReadonlyMap<number, ThreadId | null> => {
   const threads = new Map<number, ThreadId | null>();
   for (const line of raw.split("\n")) {
     const match = /^\s*(\d+)\s(.*)$/.exec(line);
     if (!match) continue;
-    const value = AGENT_THREAD_ASSIGNMENT.exec(match[2]!)?.[1];
+    const environment = match[2]!.split(/\s+/);
+    const value = environment.includes(`${RESOURCE_OWNER_ENV}=${owner}`)
+      ? AGENT_THREAD_ASSIGNMENT.exec(match[2]!)?.[1]
+      : undefined;
     threads.set(Number(match[1]), value ? ThreadId.make(value) : null);
   }
   return threads;
@@ -451,7 +470,8 @@ const isCommandNotFound = (error: ProcessRunner.ProcessSpawnError): boolean =>
   PlatformError.isPlatformError(error.cause) && error.cause.reason._tag === "NotFound";
 
 /** @public */
-export const make = Effect.gen(function* PortDiscoveryMake() {
+export const make = Effect.fn("PortDiscovery.make")(function* (stateDir: string) {
+  const owner = resourceOwner(stateDir);
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const fileSystem = yield* FileSystem.FileSystem;
   const hostPlatform = yield* HostProcess.Platform;
@@ -495,7 +515,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
                 unread,
                 (pid) =>
                   fileSystem.readFileString(`/proc/${pid}/environ`).pipe(
-                    Effect.map(parseProcEnvironThread),
+                    Effect.map((raw) => parseProcEnvironThread(raw, owner)),
                     Effect.orElseSucceed(() => null),
                     Effect.map((threadId) => [pid, threadId] as const),
                   ),
@@ -510,7 +530,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
                 maxOutputBytes: PS_MAX_OUTPUT_BYTES,
               })
               .pipe(
-                Effect.map((result) => parsePsEnvironmentThreads(result.stdout)),
+                Effect.map((result) => parsePsEnvironmentThreads(result.stdout, owner)),
                 Effect.orElseSucceed(() => {
                   agentScanPending = true;
                   return new Map();
@@ -1034,7 +1054,10 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   );
 
   const signalUntilStopped = Effect.fn("PortDiscovery.signalUntilStopped")(function* (
-    input: PreviewStopLocalServerInput,
+    input: PreviewStopLocalServerInput & {
+      readonly threadId?: ThreadId;
+      readonly shouldStop?: Effect.Effect<boolean>;
+    },
   ) {
     if (hostPlatform === "win32") {
       return yield* new PreviewStopLocalServerError({ reason: "unsupported" });
@@ -1056,7 +1079,13 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     });
     agentScanPending = true;
     const listed = (yield* scanOnce()).some(
-      (server) => server.pid === input.pid && server.port === input.port && isOwned(server),
+      (server) =>
+        server.pid === input.pid &&
+        server.port === input.port &&
+        isOwned(server) &&
+        (input.threadId === undefined ||
+          server.terminal?.threadId === input.threadId ||
+          server.agent?.threadId === input.threadId),
     );
     if (!listed) return yield* new PreviewStopLocalServerError({ reason: "not-found" });
     const table = yield* readProcessTable;
@@ -1076,6 +1105,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
             : Effect.fail(new PreviewStopLocalServerError({ reason: "signal-failed", cause }));
         }
       });
+    if (input.shouldStop && !(yield* input.shouldStop)) return;
     if (!(yield* signalGroup("SIGTERM"))) return;
     // While one of the group's original members is still in it, the group has not been reused,
     // so SIGKILL goes only to the job that ignored SIGTERM.
@@ -1096,6 +1126,39 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     // Subscribers see the server leave now rather than on the next poll.
     signalUntilStopped(input).pipe(Effect.andThen(pollIfRetained));
 
+  const stopThreadServers = Effect.fn("PortDiscovery.stopThreadServers")(function* (
+    threadId: ThreadId,
+    shouldStop?: Effect.Effect<boolean>,
+  ) {
+    if (hostPlatform === "win32") return;
+    agentScanPending = true;
+    const servers = yield* scanOnce();
+    const seen = new Set<number>();
+    const [, failures] = yield* Effect.partition(servers, (server) => {
+      const pid = server.pid;
+      if (
+        pid === null ||
+        seen.has(pid) ||
+        (server.terminal?.threadId !== threadId && server.agent?.threadId !== threadId)
+      )
+        return Effect.void;
+      seen.add(pid);
+      return stopServer({
+        pid,
+        port: server.port,
+        threadId,
+        ...(shouldStop ? { shouldStop } : {}),
+      }).pipe(
+        Effect.catchIf(
+          (error) => error.reason === "not-found",
+          () => Effect.void,
+        ),
+      );
+    });
+    const [failure] = failures;
+    if (failure) return yield* failure;
+  });
+
   return PortDiscovery.of({
     scan: scanOnce,
     subscribe,
@@ -1104,10 +1167,17 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     unregisterTerminal,
     trackAgent,
     stopServer,
+    stopThreadServers,
   });
-}).pipe(Effect.withSpan("PortDiscovery.make"));
+});
 
-export const layer = Layer.effect(PortDiscovery, make);
+export const layer = Layer.effect(
+  PortDiscovery,
+  Effect.flatMap(ServerConfig.ServerConfig, (config) => make(config.stateDir)),
+);
 
 /** A scanner that tracks nothing, for tests that build provider runners without a host. */
-export const layerTest = Layer.mock(PortDiscovery)({ trackAgent: () => () => undefined });
+export const layerTest = Layer.mock(PortDiscovery)({
+  trackAgent: () => () => undefined,
+  stopThreadServers: () => Effect.void,
+});

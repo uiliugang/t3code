@@ -24,7 +24,7 @@ const onDelete = vi.fn();
 function request(name: string, error?: string): ProjectScriptEditorRequest {
   return {
     scriptId: name,
-    initial: { ...EMPTY_PROJECT_SCRIPT_INPUT, name, command: `run-${name}` },
+    initial: { ...EMPTY_PROJECT_SCRIPT_INPUT, name, command: `run-${name}`, stopOnSettle: true },
     ...(error === undefined ? {} : { error }),
   };
 }
@@ -71,6 +71,10 @@ describe("project action editor save lifecycle", () => {
     onSubmit.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     await open(screen, request("build"));
     await act(async () => submit());
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      "build",
+      expect.objectContaining({ stopOnSettle: true }),
+    );
 
     await open(screen, request("test"));
     expect(saveButton().disabled).toBe(false);

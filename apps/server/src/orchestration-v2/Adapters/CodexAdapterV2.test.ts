@@ -1,3 +1,4 @@
+import { expect } from "vite-plus/test";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import {
@@ -1835,11 +1836,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             if (method === "thread/start") requests.push(params);
           }),
       );
-      assert.deepEqual(requests, [
+      expect(requests).toEqual([
         {
           cwd: "/workspace",
           model: "gpt-5.4",
           config: {
+            "shell_environment_policy.set.T3CODE_RESOURCE_OWNER": expect.stringContaining(
+              "t3-orchestration-v2-replay-launch-mcp-servers-",
+            ),
             "tools.update_plan.enabled": true,
             mcp_optional_startup_grace_ms: 10_000,
             "features.concurrent_reasoning_summaries": true,
