@@ -52,8 +52,9 @@ describe("APK updates", () => {
     await updater.check();
     expect(options.fetchManifest).toHaveBeenCalledTimes(2);
     expect(options.download).toHaveBeenCalledOnce();
+    expect(options.install).toHaveBeenCalledTimes(foreground ? 1 : 0);
     expect(states.at(-1)).toMatchObject({
-      status: foreground ? "installing" : "ready",
+      status: "ready",
       version: "0.0.8",
     });
 
@@ -71,6 +72,27 @@ describe("APK updates", () => {
       version: "0.0.12",
     });
   });
+
+  it.each([false, true])(
+    "keeps a downloaded update installable after a failed check with permissionRequired=%s",
+    async (permissionRequired) => {
+      const { updater, options, states } = setup({
+        install: vi.fn(async () =>
+          permissionRequired ? ("permission-required" as const) : ("installing" as const),
+        ),
+      });
+      await updater.check();
+      await updater.foreground();
+      const installs = vi.mocked(options.install).mock.calls.length;
+      vi.mocked(options.fetchManifest).mockRejectedValue(new Error("Offline"));
+      await updater.check();
+      expect(states.at(-1)).toEqual({ status: "ready", version: "0.0.8", permissionRequired });
+      expect(options.install).toHaveBeenCalledTimes(installs);
+      await updater.install();
+      expect(options.install).toHaveBeenCalledTimes(installs + 1);
+      expect(options.download).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each([7, 6])(
     "keeps version %s without downloading or reinstalling it",

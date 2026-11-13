@@ -93,6 +93,22 @@ export function createApkUpdater(options: {
     return promise;
   };
 
+  const foreground = async () => {
+    if (pending) {
+      options.onStateChange({
+        status: "ready",
+        version: pending.manifest.versionName,
+        permissionRequired,
+      });
+    }
+    if (autoInstallPending) {
+      await install();
+    } else if (resumeAfterPermission) {
+      resumeAfterPermission = false;
+      await install(false);
+    }
+  };
+
   const check = (): Promise<void> => {
     const signal = cancellation.signal;
     if (inFlight) {
@@ -115,12 +131,7 @@ export function createApkUpdater(options: {
           throw new Error("The update is for a different app.");
         }
         if (pending && pending.manifest.versionCode >= manifest.versionCode) {
-          options.onStateChange({
-            status: "ready",
-            version: pending.manifest.versionName,
-            permissionRequired,
-          });
-          await install(false);
+          await foreground();
           return;
         }
         if (manifest.versionCode <= options.versionCode) {
@@ -141,7 +152,10 @@ export function createApkUpdater(options: {
         });
         await install();
       } catch (error) {
-        if (!signal.aborted) fail(error);
+        if (!signal.aborted) {
+          if (pending) await foreground();
+          else fail(error);
+        }
       } finally {
         inFlight = undefined;
       }
@@ -152,20 +166,7 @@ export function createApkUpdater(options: {
   return {
     check,
     install,
-    async foreground() {
-      if (autoInstallPending) {
-        await install();
-      } else if (resumeAfterPermission) {
-        resumeAfterPermission = false;
-        await install(false);
-      } else if (pending) {
-        options.onStateChange({
-          status: "ready",
-          version: pending.manifest.versionName,
-          permissionRequired,
-        });
-      }
-    },
+    foreground,
     cancel() {
       cancellation.abort();
       cancellation = new AbortController();
