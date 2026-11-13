@@ -17,7 +17,7 @@ download its Actions artifacts. Push a plain `vX.Y.Z` tag to publish one GitHub 
 after all builds pass. The manual Actions entry becomes available once the workflow is
 merged into the default branch; packaging changes in same-repository PRs also build
 automatically. Tags with prerelease suffixes are rejected. The workflow builds
-an Apple Silicon arm64 DMG, Linux x64/arm64 AppImages and self-contained CLI runtime
+an Apple Silicon arm64 DMG, Linux x64/arm64 AppImages and Debian packages, self-contained CLI runtime
 archives, and a standalone, signed ARM64 Android APK, with `SHA256SUMS` covering
 every asset. CLI archives cover macOS arm64 and Linux x64/arm64. This fork's clients,
 CLI installers, and npm launcher download runtimes from `uiliugang/t3code`,
@@ -29,7 +29,7 @@ allow at least a minute between builds intended to upgrade each other.
 The macOS app is ad hoc signed without Apple notarization, so Gatekeeper can require
 approval in System Settings. It has no automatic update feed: Settings → About →
 Check for Updates reads this fork's GitHub Releases and offers its installer. Linux
-AppImages update in the app using the `latest-linux*.yml` files published beside them. Existing builds
+AppImages and Debian packages update in the app using the `latest-linux*.yml` files published beside them. Existing builds
 with updates disabled need one manual install of a release containing this change.
 Release stamping preserves the source version for provider compatibility checks;
 the fork's independent version numbers must not select upstream protocol policies.
