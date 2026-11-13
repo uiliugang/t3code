@@ -5754,6 +5754,14 @@ const zhCN: Readonly<Record<string, string>> = {
   "No model installed · Choose one to download": "未安装模型 · 请选择要下载的模型",
   "Not available on this environment": "此环境不可用",
   "Use your own API key": "使用你自己的 API 密钥",
+  "What should we build in {project}?": "我们要在{project}中构建什么？",
+  "What should we build?": "我们要构建什么？",
+  "Choose a project": "选择项目",
+  "Add a project": "添加项目",
+  "What should we work on?": "我们要做什么？",
+  "{project} to start": "{project}以开始",
+  "Add a project to start": "添加项目以开始",
+  "or start without a project": "或直接开始，无需项目",
 };
 
 export function translateUi(
