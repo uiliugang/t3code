@@ -100,7 +100,6 @@ export function createApkUpdater(options: {
         ? inFlight.then(() => (signal.aborted ? undefined : check()))
         : inFlight;
     }
-    if (pending) return install();
     inFlightSignal = signal;
     // Publish the promise before callbacks can reenter the updater.
     inFlight = Promise.resolve().then(async () => {
@@ -115,10 +114,20 @@ export function createApkUpdater(options: {
         if (manifest.packageName !== options.packageName) {
           throw new Error("The update is for a different app.");
         }
+        if (pending && pending.manifest.versionCode >= manifest.versionCode) {
+          options.onStateChange({
+            status: "ready",
+            version: pending.manifest.versionName,
+            permissionRequired,
+          });
+          await install(false);
+          return;
+        }
         if (manifest.versionCode <= options.versionCode) {
           options.onStateChange({ status: "current" });
           return;
         }
+        pending = undefined;
         options.onStateChange({ status: "downloading", version: manifest.versionName });
         const uri = await options.download(manifest, signal);
         signal.throwIfAborted();

@@ -107,8 +107,7 @@ export function installApkUpdateChecks(): () => void {
   let enabled = false;
   let backgroundedAt: number | undefined;
   const checkAutomatically = () => {
-    const state = appAtomRegistry.get(apkUpdateStateAtom);
-    if (state.status !== "ready" && state.status !== "installing") void updater.check();
+    void updater.check();
   };
   const unsubscribe = appAtomRegistry.subscribe(
     mobilePreferencesAtom,
@@ -125,9 +124,10 @@ export function installApkUpdateChecks(): () => void {
   const subscription = AppState.addEventListener("change", (state) => {
     if (state === "background") backgroundedAt = Date.now();
     if (state !== "active") return;
-    void updater.foreground();
     if (enabled && backgroundedAt !== undefined && Date.now() - backgroundedAt >= 15 * 60 * 1000) {
       checkAutomatically();
+    } else {
+      void updater.foreground();
     }
     backgroundedAt = undefined;
   });
