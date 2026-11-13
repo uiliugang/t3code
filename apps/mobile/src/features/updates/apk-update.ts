@@ -93,6 +93,22 @@ export function createApkUpdater(options: {
     return promise;
   };
 
+  const foreground = async () => {
+    if (pending) {
+      options.onStateChange({
+        status: "ready",
+        version: pending.manifest.versionName,
+        permissionRequired,
+      });
+    }
+    if (autoInstallPending) {
+      await install();
+    } else if (resumeAfterPermission) {
+      resumeAfterPermission = false;
+      await install(false);
+    }
+  };
+
   const check = (): Promise<void> => {
     const signal = cancellation.signal;
     if (inFlight) {
@@ -100,7 +116,6 @@ export function createApkUpdater(options: {
         ? inFlight.then(() => (signal.aborted ? undefined : check()))
         : inFlight;
     }
-    if (pending) return install();
     inFlightSignal = signal;
     // Publish the promise before callbacks can reenter the updater.
     inFlight = Promise.resolve().then(async () => {
@@ -115,10 +130,15 @@ export function createApkUpdater(options: {
         if (manifest.packageName !== options.packageName) {
           throw new Error("The update is for a different app.");
         }
+        if (pending && pending.manifest.versionCode >= manifest.versionCode) {
+          await foreground();
+          return;
+        }
         if (manifest.versionCode <= options.versionCode) {
           options.onStateChange({ status: "current" });
           return;
         }
+        pending = undefined;
         options.onStateChange({ status: "downloading", version: manifest.versionName });
         const uri = await options.download(manifest, signal);
         signal.throwIfAborted();
@@ -132,7 +152,10 @@ export function createApkUpdater(options: {
         });
         await install();
       } catch (error) {
-        if (!signal.aborted) fail(error);
+        if (!signal.aborted) {
+          if (pending) await foreground();
+          else fail(error);
+        }
       } finally {
         inFlight = undefined;
       }
@@ -143,20 +166,7 @@ export function createApkUpdater(options: {
   return {
     check,
     install,
-    async foreground() {
-      if (autoInstallPending) {
-        await install();
-      } else if (resumeAfterPermission) {
-        resumeAfterPermission = false;
-        await install(false);
-      } else if (pending) {
-        options.onStateChange({
-          status: "ready",
-          version: pending.manifest.versionName,
-          permissionRequired,
-        });
-      }
-    },
+    foreground,
     cancel() {
       cancellation.abort();
       cancellation = new AbortController();

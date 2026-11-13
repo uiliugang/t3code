@@ -36,12 +36,63 @@ function setup(overrides: Partial<Parameters<typeof createApkUpdater>[0]> = {}) 
 }
 
 describe("APK updates", () => {
-  it("downloads a newer APK and saves pending work before opening the installer", async () => {
-    const { updater, states, operations } = setup();
+  it.each([7, 1])(
+    "updates version %s directly to the latest APK before opening the installer",
+    async (versionCode) => {
+      const { updater, states, operations } = setup({ versionCode });
+      await updater.check();
+      expect(operations).toEqual(["download", "flush", "install"]);
+      expect(states.at(-1)).toEqual({ status: "installing", version: "0.0.8" });
+    },
+  );
+
+  it.each([true, false])("refreshes a downloaded update with foreground=%s", async (foreground) => {
+    const { updater, options, states } = setup({ isForeground: () => foreground });
     await updater.check();
-    expect(operations).toEqual(["download", "flush", "install"]);
-    expect(states.at(-1)).toEqual({ status: "installing", version: "0.0.8" });
+    await updater.check();
+    expect(options.fetchManifest).toHaveBeenCalledTimes(2);
+    expect(options.download).toHaveBeenCalledOnce();
+    expect(options.install).toHaveBeenCalledTimes(foreground ? 1 : 0);
+    expect(states.at(-1)).toMatchObject({
+      status: "ready",
+      version: "0.0.8",
+    });
+
+    const latest = {
+      ...update,
+      versionCode: 12,
+      versionName: "0.0.12",
+      url: "https://example.com/t3code-12.apk",
+    };
+    vi.mocked(options.fetchManifest).mockResolvedValue(latest);
+    await updater.check();
+    expect(options.download).toHaveBeenLastCalledWith(latest, expect.any(AbortSignal));
+    expect(states.at(-1)).toMatchObject({
+      status: foreground ? "installing" : "ready",
+      version: "0.0.12",
+    });
   });
+
+  it.each([false, true])(
+    "keeps a downloaded update installable after a failed check with permissionRequired=%s",
+    async (permissionRequired) => {
+      const { updater, options, states } = setup({
+        install: vi.fn(async () =>
+          permissionRequired ? ("permission-required" as const) : ("installing" as const),
+        ),
+      });
+      await updater.check();
+      await updater.foreground();
+      const installs = vi.mocked(options.install).mock.calls.length;
+      vi.mocked(options.fetchManifest).mockRejectedValue(new Error("Offline"));
+      await updater.check();
+      expect(states.at(-1)).toEqual({ status: "ready", version: "0.0.8", permissionRequired });
+      expect(options.install).toHaveBeenCalledTimes(installs);
+      await updater.install();
+      expect(options.install).toHaveBeenCalledTimes(installs + 1);
+      expect(options.download).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each([7, 6])(
     "keeps version %s without downloading or reinstalling it",
@@ -107,6 +158,9 @@ describe("APK updates", () => {
     expect(states.at(-1)).toMatchObject({ status: "ready", permissionRequired: true });
     await updater.foreground();
     expect(install).toHaveBeenCalledTimes(2);
+    await updater.check();
+    expect(install).toHaveBeenLastCalledWith(expect.anything(), false);
+    expect(states.at(-1)).toMatchObject({ status: "ready", permissionRequired: true });
   });
 
   it("cancels a download before it can install when automatic updates are disabled", async () => {
