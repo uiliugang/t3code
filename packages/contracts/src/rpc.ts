@@ -4,6 +4,8 @@ import {
   WorkItemCommandInput,
   WorkItemMutationResult,
   WorkItemDiscoverInput,
+  WorkItemDraftInput,
+  WorkItemDraft,
   WorkItemDiscoverResult,
   WorkItemError,
   WorkItemCreateIssueInput,
@@ -655,6 +657,7 @@ export const WS_METHODS = {
   workItemsSubscribe: "workItems.subscribe",
   workItemsMutate: "workItems.mutate",
   workItemsDiscover: "workItems.discover",
+  workItemsGenerateDraft: "workItems.generateDraft",
   workItemsCreateIssue: "workItems.createIssue",
   workItemsRefreshDelivery: "workItems.refreshDelivery",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
@@ -2305,6 +2308,11 @@ const WsWorkItemsDiscoverRpc = Rpc.make(WS_METHODS.workItemsDiscover, {
   success: WorkItemDiscoverResult,
   error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
 });
+const WsWorkItemsGenerateDraftRpc = Rpc.make(WS_METHODS.workItemsGenerateDraft, {
+  payload: WorkItemDraftInput,
+  success: WorkItemDraft,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
 const WsWorkItemsCreateIssueRpc = Rpc.make(WS_METHODS.workItemsCreateIssue, {
   payload: WorkItemCreateIssueInput,
   success: WorkItemMutationResult,
@@ -2471,6 +2479,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkItemsSubscribeRpc,
   WsWorkItemsMutateRpc,
   WsWorkItemsDiscoverRpc,
+  WsWorkItemsGenerateDraftRpc,
   WsWorkItemsCreateIssueRpc,
   WsWorkItemsRefreshDeliveryRpc,
   WsScheduledTasksSubscribeRpc,

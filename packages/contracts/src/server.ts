@@ -710,6 +710,7 @@ export const ServerConfig = Schema.Struct({
   workItems: Schema.optionalKey(Schema.Boolean),
   workItemDelivery: Schema.optionalKey(Schema.Boolean),
   workItemDiscovery: Schema.optionalKey(Schema.Boolean),
+  workItemDraftGeneration: Schema.optionalKey(Schema.Boolean),
   workItemAnalysis: Schema.optionalKey(Schema.Boolean),
   threadPredictions: Schema.optionalKey(Schema.Boolean),
   threadFindProgressive: Schema.optionalKey(Schema.Boolean),

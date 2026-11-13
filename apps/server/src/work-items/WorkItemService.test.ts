@@ -36,6 +36,9 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import { threadShellFromProjection } from "../orchestration-v2/ProjectionStore.ts";
 import { workspaceThreadFixture } from "../orchestration-v2/testkit/workspaceFixtures.ts";
+import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
 const projectId = ProjectId.make("project:tasks");
 const now = "2026-11-09T01:00:00.000Z";
@@ -105,6 +108,18 @@ function setup(
   const stopped: ThreadId[] = [];
   const failures = { shell: false, records: false, launch: false };
   const dependencies = Layer.mergeAll(
+    Layer.mock(TextGeneration.TextGeneration)({
+      generateWorkItemDraft: () =>
+        Effect.succeed({
+          title: "Draft",
+          description: "Goal",
+          constraints: [],
+          acceptanceCriteria: ["Observable result"],
+        }),
+    }),
+    Layer.mock(ServerSettings.ServerSettingsService)({
+      getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+    }),
     Layer.mock(ThreadLaunch.ThreadLaunchService)({
       launch: (input) =>
         Effect.gen(function* () {
@@ -225,6 +240,17 @@ const create = (service: WorkItems.WorkItemService["Service"], suffix = "create"
     sources: [],
   });
 
+it.effect("generates an editable draft without persisting or dispatching a task", () => {
+  const { layer, launched } = setup();
+  return Effect.gen(function* () {
+    const service = yield* WorkItems.WorkItemService;
+    const draft = yield* service.generateDraft({ projectId, context: "Goal" });
+    assert.equal(draft.title, "Draft");
+    assert.deepEqual((yield* service.list({ projectId })).items, []);
+    assert.deepEqual(launched, []);
+  }).pipe(Effect.provide(layer), Effect.scoped);
+});
+
 it.effect(
   "preserves local history and invalidates delivery confirmation when scope changes",
   () => {
@@ -344,6 +370,25 @@ it.effect("deduplicates issue conversations and preserves explicit unlinking acr
     assert.equal(repeated.sources.length, 1);
     assert.equal((yield* service.list({ threadId })).items[0]?.id, first.id);
     assert.equal((yield* service.list({ issueUrl: input.issue.url })).item?.id, first.id);
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`WITH RECURSIVE newer(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM newer WHERE n < 101)
+      INSERT INTO work_items (id, project_id, updated_at, active_count, item_json)
+      SELECT 'newer-' || n, project_id, '2026-11-10T01:00:00.000Z', 0,
+        json_remove(json_set(item_json, '$.id', 'newer-' || n), '$.delivery')
+      FROM work_items, newer WHERE id = ${first.id}`;
+    assert.equal(
+      (yield* service.list({ limit: 100 })).items.some((item) => item.id === first.id),
+      false,
+    );
+    const tracked = yield* service.list({ issueUrls: [input.issue.url], limit: 100 });
+    assert.deepEqual(
+      tracked.items.map((item) => item.id),
+      [first.id],
+    );
+    assert.equal(tracked.nextCursor, null);
+    assert.equal(tracked.item, undefined);
+    assert.deepEqual(tracked.candidates, []);
+    yield* sql`DELETE FROM work_items WHERE id LIKE 'newer-%'`;
     const unlinked = yield* service.mutate({
       type: "unlink_issue_thread",
       commandId: command("unlink"),

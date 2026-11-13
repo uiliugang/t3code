@@ -1922,6 +1922,7 @@ export const layerWsRpc = (
           workItems: true,
           workItemDelivery: true,
           workItemDiscovery: true,
+          workItemDraftGeneration: true,
           workItemAnalysis: false,
           threadPredictions: true,
           threadFindProgressive: true,
@@ -2329,6 +2330,7 @@ export const layerWsRpc = (
         [WS_METHODS.workItemsSubscribe]: (input) => workItems.subscribeList(input),
         [WS_METHODS.workItemsMutate]: (input) => workItems.mutate(input),
         [WS_METHODS.workItemsDiscover]: (input) => workItems.discover(input),
+        [WS_METHODS.workItemsGenerateDraft]: (input) => workItems.generateDraft(input),
         [WS_METHODS.workItemsCreateIssue]: (input) => deliveryAutomation.createIssue(input),
         [WS_METHODS.workItemsRefreshDelivery]: (input) => deliverySync.refresh(input.id),
         [ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion]: (input) =>

@@ -74,7 +74,7 @@ export const WorkItemToolkit = Toolkit.make(
     ...shared,
     description:
       "List project task cards and their independent agent executions. Omit projectId for the calling thread's project.",
-    parameters: WorkItemListInput,
+    parameters: WorkItemListInput.mapFields(Struct.omit(["issueUrls"])),
     success: WorkItemListResult,
   }).annotate(Tool.Readonly, true),
   Tool.make("work_item_get", {

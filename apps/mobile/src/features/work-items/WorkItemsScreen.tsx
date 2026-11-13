@@ -1,4 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
+import { DraftFillButton } from "../requirements/DraftFillButton";
+import {
+  ProjectTag,
+  Disclosure,
+  useRequirementGroups,
+} from "../requirements/RequirementPrimitives";
 import type { StaticScreenProps } from "@react-navigation/native";
 import {
   CommandId,
@@ -27,12 +33,14 @@ import {
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useRef, useState, type ReactNode } from "react";
-import { View } from "react-native";
+import { View, Pressable } from "react-native";
+import { Menu } from "../../components/ui/Menu";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { IconButton } from "../../components/ui/IconButton";
 
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
-import { ListRow } from "../../components/ui/ListRow";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { buildModelOptions } from "../../lib/modelOptions";
@@ -83,8 +91,8 @@ function displayLines(values: ReadonlyArray<string>) {
 
 function Section(props: { readonly title: string; readonly children: ReactNode }) {
   return (
-    <View className="gap-3 rounded-2xl border border-border-subtle p-4">
-      <Text className="text-base font-t3-semibold">{props.title}</Text>
+    <View className="gap-3 border-t border-border-subtle pt-4">
+      <Text className="text-sm font-t3-semibold">{props.title}</Text>
       {props.children}
     </View>
   );
@@ -140,9 +148,15 @@ export function WorkItemsScreen({ route }: StaticScreenProps<WorkItemsRouteParam
 
   return (
     <SettingsScreen title={t("Local work items")}>
-      <View className="px-5">
+      <View className="flex-row items-center gap-2 px-5">
+        {project ? (
+          <View className="min-w-0 flex-1">
+            <ProjectTag title={project.title} />
+          </View>
+        ) : null}
         {environments.length > 1 ? (
           <IssuePicker
+            icon="desktopcomputer"
             label={t("Environment")}
             value={environmentId ?? ""}
             options={environments.map((entry) => ({
@@ -156,6 +170,7 @@ export function WorkItemsScreen({ route }: StaticScreenProps<WorkItemsRouteParam
           />
         ) : null}
         <IssuePicker
+          icon="folder"
           label={t("Project")}
           value={project?.id ?? ""}
           options={projects.map((entry) => ({ value: entry.id, label: entry.title }))}
@@ -190,9 +205,23 @@ function ProjectWorkItems(props: {
 }) {
   const t = useUiTranslation();
   const { environmentId, projectId } = props;
+  const { collapsed, toggle } = useRequirementGroups();
+  const project = useProjects().find(
+    (entry) => entry.environmentId === environmentId && entry.id === projectId,
+  );
   const config = useEnvironmentServerConfig(environmentId);
   const supported = config?.workItems === true;
   const [selectedId, setSelectedId] = useState<WorkItemId | null>(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const listOffset = useRef(0);
+  const showItem = (id: WorkItemId) => {
+    setScrollOffset(0);
+    setSelectedId(id);
+  };
+  const showList = () => {
+    setScrollOffset(listOffset.current);
+    setSelectedId(null);
+  };
   const [cursorHistory, setCursorHistory] = useState<
     ReadonlyArray<NonNullable<WorkItemListInput["cursor"]>>
   >([]);
@@ -219,6 +248,10 @@ function ProjectWorkItems(props: {
     readonly source?: WorkItemSource;
     readonly description: string;
   } | null>(props.sourceText ? { source: props.source, description: props.sourceText } : null);
+  const showEditor = (draft: NonNullable<typeof creating>) => {
+    setScrollOffset(0);
+    setCreating(draft);
+  };
   const [status, setStatus] = useState("all");
   const [archived, setArchived] = useState(false);
   const [query, setQuery] = useState("");
@@ -280,21 +313,35 @@ function ProjectWorkItems(props: {
   }
 
   return (
-    <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
+    <ScreenScrollView
+      key={creating !== null ? "create" : (selectedId ?? "list")}
+      className="flex-1"
+      contentContainerClassName="gap-4 px-5 pb-12"
+      contentOffset={{ x: 0, y: scrollOffset }}
+      scrollEventThrottle={100}
+      onScroll={(event) => {
+        if (selectedId === null && creating === null)
+          listOffset.current = event.nativeEvent.contentOffset.y;
+      }}
+    >
       {result.error ? <Text className="text-danger">{result.error}</Text> : null}
       {result.isPending && !result.data ? <Text>{t("Loading...")}</Text> : null}
       {creating !== null ? (
         <TaskEditor
+          environmentId={environmentId}
           projectId={projectId}
           source={creating.source}
           initialDescription={creating.description}
           item={null}
           disabled={!available}
           run={run}
-          onCancel={() => setCreating(null)}
+          onCancel={() => {
+            setCreating(null);
+            showList();
+          }}
           onSaved={(item) => {
             setCreating(null);
-            setSelectedId(item.id);
+            showItem(item.id);
           }}
         />
       ) : selectedId !== null ? (
@@ -305,11 +352,11 @@ function ProjectWorkItems(props: {
             disabled={!available}
             busy={busy}
             run={run}
-            onBack={() => setSelectedId(null)}
+            onBack={showList}
           />
         ) : (
           <View className="gap-3">
-            <Button label={t("Back to tasks")} onPress={() => setSelectedId(null)} />
+            <Button label={t("Back to tasks")} onPress={showList} />
             <Text className={detail.error ? "text-danger" : "text-foreground-muted"}>
               {detail.error ?? (detail.isPending ? t("Loading...") : t("Task not found."))}
             </Text>
@@ -317,63 +364,120 @@ function ProjectWorkItems(props: {
         )
       ) : (
         <>
-          <View className="flex-row flex-wrap gap-3">
-            <Button
-              label={t("New task")}
-              icon="plus"
-              disabled={!available}
-              onPress={() => setCreating({ description: "" })}
-            />
-            {props.source ? (
-              <Button
-                label={t("Create from this chat")}
-                disabled={!available}
-                onPress={() => setCreating({ source: props.source, description: "" })}
+          <View className="flex-row items-center gap-1">
+            <View className="min-w-0 flex-1">
+              <AppTextInput
+                accessibilityLabel={t("Search current page")}
+                placeholder={t("Search current page")}
+                value={query}
+                onChangeText={setQuery}
               />
-            ) : null}
-            <Button
-              label={t("Scan chats")}
-              icon="arrow.clockwise"
-              loading={busy}
-              disabled={!canDiscover || !discoverySupported || busy || result.error !== null}
-              onPress={() => void scan()}
+            </View>
+            <Menu
+              title={t("Filters")}
+              actions={[
+                {
+                  id: "status",
+                  title: t("Status"),
+                  subactions: [
+                    {
+                      id: "status:all",
+                      title: t("All statuses"),
+                      state: status === "all" ? ("on" as const) : ("off" as const),
+                    },
+                    ...STATUSES.map((entry) => ({
+                      id: "status:" + entry,
+                      title: t(WORK_ITEM_STATUS_LABELS[entry]),
+                      state: status === entry ? ("on" as const) : ("off" as const),
+                    })),
+                  ],
+                },
+                { id: "archived", title: t("Show archived"), state: archived ? "on" : "off" },
+                {
+                  id: "scan",
+                  title: t("Scan chats"),
+                  attributes: {
+                    disabled: !canDiscover || !discoverySupported || busy || result.error !== null,
+                  },
+                },
+                ...(props.source
+                  ? [
+                      {
+                        id: "from-chat",
+                        title: t("Create from this chat"),
+                        attributes: { disabled: !available },
+                      },
+                    ]
+                  : []),
+              ]}
+              onPressAction={(event) => {
+                const id = event.nativeEvent.event;
+                if (id.startsWith("status:")) setStatus(id.slice(7));
+                if (id === "archived") setArchived(!archived);
+                if (id === "scan") void scan();
+                if (id === "from-chat") showEditor({ source: props.source, description: "" });
+              }}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Filters")}
+                className="size-12 items-center justify-center"
+              >
+                <SymbolView
+                  name="line.3.horizontal.decrease"
+                  size={22}
+                  tintColorClassName="accent-foreground"
+                />
+              </Pressable>
+            </Menu>
+            <IconButton
+              icon="plus"
+              accessibilityLabel={t("New task")}
+              disabled={!available}
+              onPress={() => showEditor({ description: "" })}
             />
           </View>
-          <AppTextInput
-            accessibilityLabel={t("Search current page")}
-            placeholder={t("Search current page")}
-            value={query}
-            onChangeText={setQuery}
-          />
-          <IssuePicker
-            label={t("Status")}
-            value={status}
-            options={[
-              { value: "all", label: t("All statuses") },
-              ...STATUSES.map((entry) => ({
-                value: entry,
-                label: t(WORK_ITEM_STATUS_LABELS[entry]),
-              })),
-            ]}
-            onChange={setStatus}
-          />
-          <ListToggleRow label={t("Show archived")} value={archived} onValueChange={setArchived} />
-          {(result.data?.items ?? [])
-            .filter(
+          {STATUSES.map((group) => {
+            const items = (result.data?.items ?? []).filter(
               (item) =>
-                item.issue === undefined &&
+                !item.issue &&
                 item.archived === archived &&
+                item.status === group &&
                 (status === "all" || item.status === status) &&
-                `${item.title}\n${item.description}`.toLowerCase().includes(query.toLowerCase()),
-            )
-            .map((item) => (
-              <ListRow
-                key={item.id}
-                label={item.title}
-                description={`${t(WORK_ITEM_STATUS_LABELS[item.status])} · ${item.priority} · ${item.activeExecutionCount} ${t("Active agents")}`}
-                onPress={() => setSelectedId(item.id)}
-              />
-            ))}
+                (item.title + "\n" + item.description).toLowerCase().includes(query.toLowerCase()),
+            );
+            if (!items.length) return null;
+            return (
+              <Disclosure
+                key={group}
+                title={t(WORK_ITEM_STATUS_LABELS[group])}
+                count={items.length}
+                open={!collapsed.includes("local:" + group)}
+                onToggle={() => toggle("local:" + group)}
+              >
+                {items.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    accessibilityRole="button"
+                    onPress={() => showItem(item.id)}
+                    className="gap-2 border-b border-border-subtle py-3"
+                  >
+                    <View className="flex-row gap-3">
+                      <Text className="min-w-0 flex-1 text-base font-t3-medium">{item.title}</Text>
+                      <Text className="text-xs text-foreground-muted">{item.priority}</Text>
+                    </View>
+                    <View className="flex-row flex-wrap items-center gap-2">
+                      <ProjectTag title={project?.title ?? projectId} />
+                      <Text className="text-xs text-foreground-muted">{t("Local work item")}</Text>
+                      <Text className="text-xs text-foreground-muted">
+                        {item.activeExecutionCount} {t("Active agents")}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </Disclosure>
+            );
+          })}
           {!result.isPending &&
           !(result.data?.items ?? []).some((item) => item.archived === archived) ? (
             <Text className="text-foreground-muted">{t("No tasks yet.")}</Text>
@@ -401,7 +505,7 @@ function ProjectWorkItems(props: {
                   candidate={candidate}
                   disabled={!available || !canDiscover || !discoverySupported}
                   onCreate={() =>
-                    setCreating({
+                    showEditor({
                       source: { threadId: candidate.id, title: candidate.title },
                       description: candidate.description,
                     })
@@ -420,6 +524,7 @@ function ProjectWorkItems(props: {
 type RunCommand = (input: WorkItemCommandInput) => Promise<WorkItem | null>;
 
 function TaskEditor(props: {
+  readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
   readonly source?: WorkItemSource;
   readonly item: WorkItem | null;
@@ -438,6 +543,8 @@ function TaskEditor(props: {
   const [constraints, setConstraints] = useState(props.item?.constraints.join("\n") ?? "");
   const [criteria, setCriteria] = useState(props.item?.acceptanceCriteria.join("\n") ?? "");
   const [priority, setPriority] = useState(props.item?.priority ?? "P2");
+  const [generating, setGenerating] = useState(false);
+  const disabled = props.disabled || generating;
   const save = async () => {
     const fields = {
       title: title.trim(),
@@ -466,27 +573,40 @@ function TaskEditor(props: {
   };
   return (
     <Section title={t(props.item ? "Edit task" : "New task")}>
-      <Field label={t("Title")} value={title} onChange={setTitle} disabled={props.disabled} />
+      <DraftFillButton
+        environmentId={props.environmentId}
+        projectId={props.projectId}
+        context={[title, description, constraints, criteria].filter(Boolean).join("\n\n")}
+        disabled={disabled}
+        onBusyChange={setGenerating}
+        onDraft={(draft) => {
+          setTitle(draft.title);
+          setDescription(draft.description);
+          setConstraints(draft.constraints.join("\n"));
+          setCriteria(draft.acceptanceCriteria.join("\n"));
+        }}
+      />
+      <Field label={t("Title")} value={title} onChange={setTitle} disabled={disabled} />
       <Field
         label={t("Goal")}
         value={description}
         onChange={setDescription}
         multiline
-        disabled={props.disabled}
+        disabled={disabled}
       />
       <Field
         label={t("Constraints (one per line)")}
         value={constraints}
         onChange={setConstraints}
         multiline
-        disabled={props.disabled}
+        disabled={disabled}
       />
       <Field
         label={t("Acceptance criteria (one per line)")}
         value={criteria}
         onChange={setCriteria}
         multiline
-        disabled={props.disabled}
+        disabled={disabled}
       />
       <IssuePicker
         label={t("Priority")}
@@ -496,7 +616,7 @@ function TaskEditor(props: {
           if (value === "P0" || value === "P1" || value === "P2" || value === "P3")
             setPriority(value);
         }}
-        disabled={props.disabled}
+        disabled={disabled}
       />
       {props.source ? (
         <Text className="text-xs text-foreground-muted">
@@ -513,13 +633,11 @@ function TaskEditor(props: {
           label={t("Save")}
           tone="primary"
           disabled={
-            props.disabled ||
-            !title.trim() ||
-            (props.item !== null && props.item.version !== baseVersion)
+            disabled || !title.trim() || (props.item !== null && props.item.version !== baseVersion)
           }
           onPress={() => void save()}
         />
-        <Button label={t("Cancel")} disabled={props.disabled} onPress={props.onCancel} />
+        <Button label={t("Cancel")} disabled={disabled} onPress={props.onCancel} />
       </View>
     </Section>
   );
@@ -556,6 +674,9 @@ function TaskDetail(props: {
 }) {
   const t = useUiTranslation();
   const { item, environmentId } = props;
+  const project = useProjects().find(
+    (entry) => entry.environmentId === environmentId && entry.id === item.projectId,
+  );
   const selectDetail = useSelectWorkspaceDetail();
   const [editing, setEditing] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -606,6 +727,7 @@ function TaskDetail(props: {
   if (editing)
     return (
       <TaskEditor
+        environmentId={props.environmentId}
         item={item}
         projectId={item.projectId}
         disabled={props.disabled}
@@ -621,21 +743,22 @@ function TaskDetail(props: {
         <Button label={t("Back to tasks")} icon="chevron.left" onPress={props.onBack} />
         <Button label={t("Edit task")} disabled={props.disabled} onPress={() => setEditing(true)} />
       </View>
+      <ProjectTag title={project?.title ?? item.projectId} />
       <Text className="text-xl font-t3-semibold">{item.title}</Text>
       <Text className="text-foreground-muted">
         {t(WORK_ITEM_STATUS_LABELS[item.status])} · {item.priority} · v{item.specRevision}
       </Text>
-      <Section title={t("Goal")}>
+      <Disclosure title={t("Goal")}>
         <Text selectable>{item.description || t("No description.")}</Text>
-      </Section>
+      </Disclosure>
       {item.constraints.length ? (
-        <Section title={t("Constraints")}>
+        <Disclosure title={t("Constraints")}>
           {displayLines(item.constraints).map((line) => (
             <Text key={line.key}>• {line.text}</Text>
           ))}
-        </Section>
+        </Disclosure>
       ) : null}
-      <Section title={t("Acceptance criteria")}>
+      <Disclosure title={t("Acceptance criteria")}>
         {item.acceptanceCriteria.length ? (
           displayLines(item.acceptanceCriteria).map((line) => (
             <Text key={line.key}>• {line.text}</Text>
@@ -643,7 +766,7 @@ function TaskDetail(props: {
         ) : (
           <Text className="text-foreground-muted">{t("No acceptance criteria yet.")}</Text>
         )}
-      </Section>
+      </Disclosure>
       {item.reviewFeedback ? (
         <Section title={t("Review notes")}>
           <Text selectable>{item.reviewFeedback}</Text>

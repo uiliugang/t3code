@@ -8,7 +8,7 @@ import {
   type IssueOption,
   type DeliverySummary,
 } from "@t3tools/contracts";
-import { DELIVERY_PROGRESS_LABELS } from "@t3tools/client-runtime/work-item";
+import { DELIVERY_PROGRESS_LABELS, pullRequestLabel } from "@t3tools/client-runtime/work-item";
 import { useState } from "react";
 import { Linking, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -19,6 +19,9 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { IssuePicker } from "./IssuePicker";
+import { DeliveryStages } from "./DeliveryStages";
+import { Disclosure } from "./RequirementPrimitives";
+import { IconButton } from "../../components/ui/IconButton";
 
 export function RequirementDeliveryPanel({
   environmentId,
@@ -48,22 +51,25 @@ export function RequirementDeliveryPanel({
   };
   if (!delivery) return null;
   return (
-    <View className="gap-3 border-t border-border-subtle py-4">
-      <Button
-        label={t("Refresh delivery")}
-        icon="arrow.clockwise"
-        disabled={!allowed || busy}
-        onPress={async () => {
-          setBusy(true);
-          await refresh({ environmentId, input: { id: item.id } });
-          setBusy(false);
-        }}
-      />
-      <Text className="font-t3-semibold">{t("Delivery progress")}</Text>
-      <Text>
+    <View className="gap-3">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-sm font-t3-medium">{t("Delivery progress")}</Text>
+        <IconButton
+          accessibilityLabel={t("Refresh delivery")}
+          icon="arrow.clockwise"
+          disabled={!allowed || busy}
+          onPress={async () => {
+            setBusy(true);
+            await refresh({ environmentId, input: { id: item.id } });
+            setBusy(false);
+          }}
+        />
+      </View>
+      <DeliveryStages provider={delivery.issue.provider} summary={summary} />
+      <Text className="text-xs text-foreground-muted">
         {summary
           ? t(
-              summary.synced && summary.progress !== "delivery_exception"
+              summary.synced && summary.progress === "delivery_complete"
                 ? "Completed"
                 : DELIVERY_PROGRESS_LABELS[summary.progress],
             )
@@ -103,37 +109,51 @@ export function RequirementDeliveryPanel({
           />
         </>
       ) : null}
-      <Text className="font-t3-medium">{t("Linked conversations")}</Text>
-      {item.sources.map((source) => (
-        <View key={source.threadId} className="gap-2">
-          <ListRow
-            label={source.title}
-            onPress={() =>
-              navigation.dispatch(
-                StackActions.push("Thread", { environmentId, threadId: source.threadId }),
-              )
-            }
-          />
-          <Button
-            label={t("Unlink")}
-            disabled={!allowed || busy}
-            onPress={() =>
-              void run({
-                type: "unlink_issue_thread",
-                commandId: CommandId.make(uuidv4()),
-                id: item.id,
-                expectedVersion: item.version,
-                threadId: source.threadId,
-              })
-            }
-          />
-        </View>
-      ))}
-      <Text className="font-t3-medium">{t("Necessary pull requests")}</Text>
+      {item.sources.length > 0 ? (
+        <Disclosure title={t("Linked conversations")} count={item.sources.length}>
+          {item.sources.map((source) => (
+            <View key={source.threadId} className="flex-row items-center gap-2">
+              <View className="min-w-0 flex-1">
+                <ListRow
+                  label={source.title}
+                  onPress={() =>
+                    navigation.dispatch(
+                      StackActions.push("Thread", { environmentId, threadId: source.threadId }),
+                    )
+                  }
+                />
+              </View>
+              <IconButton
+                accessibilityLabel={t("Unlink")}
+                icon="xmark"
+                disabled={!allowed || busy}
+                onPress={() =>
+                  void run({
+                    type: "unlink_issue_thread",
+                    commandId: CommandId.make(uuidv4()),
+                    id: item.id,
+                    expectedVersion: item.version,
+                    threadId: source.threadId,
+                  })
+                }
+              />
+            </View>
+          ))}
+        </Disclosure>
+      ) : null}
+      <View className="border-t border-border-subtle pt-4">
+        <Text className="text-sm font-t3-medium">
+          {t("Necessary pull requests")} {summary?.mergedPullRequests ?? 0}/
+          {delivery.scope.requiredPullRequests.length}
+        </Text>
+      </View>
+      {!delivery.scope.requiredPullRequests.length ? (
+        <Text className="text-xs text-foreground-muted">{t("No pull requests linked yet.")}</Text>
+      ) : null}
       {delivery.scope.requiredPullRequests.map((url) => (
         <ListRow
           key={url}
-          label={url}
+          label={pullRequestLabel(url)}
           description={t(
             delivery.evidence.pullRequests.some((pr) => pr.url === url && pr.merged)
               ? "Merged"
@@ -144,10 +164,12 @@ export function RequirementDeliveryPanel({
       ))}
       {delivery.issue.provider === "meituan" ? (
         <>
-          <Text className="font-t3-medium">{t("MCM releases")}</Text>
+          <View className="border-t border-border-subtle pt-4">
+            <Text className="text-sm font-t3-medium">{t("MCM releases")}</Text>
+          </View>
           {delivery.scope.changedServices.map((service) => (
             <Text key={`${service.appkey}/${service.target}/${service.revision}`}>
-              {service.appkey} · {service.target} ·{" "}
+              {service.appkey} · {service.target} · {service.revision} ·{" "}
               {t(
                 delivery.evidence.releases.some(
                   (release) =>
@@ -183,7 +205,7 @@ export function RequirementDeliveryPanel({
         />
       ) : null}
       {delivery.issue.provider === "meituan" && transitions.length > 0 ? (
-        <>
+        <Disclosure title={t("Completed workflow state")}>
           <IssuePicker
             label={t("Completed workflow state")}
             value={state}
@@ -203,7 +225,7 @@ export function RequirementDeliveryPanel({
               })
             }
           />
-        </>
+        </Disclosure>
       ) : null}
     </View>
   );

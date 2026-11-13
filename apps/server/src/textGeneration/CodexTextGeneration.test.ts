@@ -604,6 +604,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         snapshot: { getSnapshot: Effect.succeed(snapshot) } as ProviderInstance["snapshot"],
         orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
         textGeneration: TextGeneration.TextGeneration.of({
+          generateWorkItemDraft: () => Effect.die("unused"),
           generatePredictedMessage: () => Effect.die("unused"),
           generateCommitMessage: () => Effect.die("unused"),
           generatePrContent: () => Effect.die("unused"),
@@ -705,6 +706,7 @@ it.effect(
           generateBranchName: () => Effect.die("unused"),
           generateThreadTitle: () => Effect.die("unused"),
           generateTranscriptionPostProcessing: () => Effect.die("unused"),
+          generateWorkItemDraft: () => Effect.die("unused"),
           generatePredictedMessage: () => Effect.die("unused"),
           generateReviewGuide: (input) =>
             Effect.sync(() => {

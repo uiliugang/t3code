@@ -5,7 +5,75 @@ import type {
   WorkItemExecution,
   WorkItemExecutionId,
   DeliverySummary,
+  IssueProvider,
 } from "@t3tools/contracts";
+
+export function deliveryStages(provider: IssueProvider, summary?: DeliverySummary) {
+  const confirmed = summary !== undefined && summary.progress !== "needs_confirmation";
+  const merged =
+    confirmed &&
+    summary.requiredPullRequests > 0 &&
+    summary.mergedPullRequests === summary.requiredPullRequests;
+  const released =
+    merged && summary.changedServices > 0 && summary.releasedServices === summary.changedServices;
+  const complete = summary?.progress === "delivery_complete" && summary.synced && !summary.error;
+  return [
+    {
+      key: "development",
+      label: "Development stage",
+      state: merged ? "complete" : "active",
+    },
+    // Merge evidence does not establish that tests passed.
+    { key: "testing", label: "Testing", state: "unknown" },
+    { key: "merge", label: "Merge", state: merged ? "complete" : confirmed ? "active" : "pending" },
+    {
+      key: "release",
+      label: "Release",
+      state:
+        provider === "github" ? "skipped" : released ? "complete" : merged ? "active" : "pending",
+    },
+    { key: "complete", label: "Complete", state: complete ? "complete" : "pending" },
+  ] as const;
+}
+
+export const REQUIREMENT_GROUPS = [
+  { key: "attention", label: "Needs attention" },
+  { key: "active", label: "In progress" },
+  { key: "release", label: "Awaiting release" },
+  { key: "todo", label: "To do" },
+  { key: "done", label: "Completed" },
+] as const;
+export type RequirementGroup = (typeof REQUIREMENT_GROUPS)[number]["key"];
+
+export function requirementGroup(status: string, summary?: DeliverySummary): RequirementGroup {
+  if (
+    summary?.error ||
+    summary?.progress === "delivery_exception" ||
+    summary?.progress === "needs_confirmation"
+  )
+    return "attention";
+  if (summary) {
+    if (summary.progress === "delivery_complete") return summary.synced ? "done" : "release";
+    if (["awaiting_plan", "awaiting_release", "partially_released"].includes(summary.progress))
+      return "release";
+    return "active";
+  }
+  if (status === "done") return "done";
+  if (status === "todo") return "todo";
+  return "active";
+}
+
+export function pullRequestLabel(url: string): string {
+  try {
+    const path = new URL(url).pathname.split("/").filter(Boolean);
+    const marker = path.findIndex((part) => part === "pull" || part === "pulls");
+    return marker > 0 && path[marker + 1]
+      ? `${path[marker - 1]} #${path[marker + 1]}`
+      : new URL(url).pathname;
+  } catch {
+    return url;
+  }
+}
 
 export const DELIVERY_PROGRESS_LABELS = {
   needs_confirmation: "Needs confirmation",

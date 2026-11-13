@@ -1031,6 +1031,7 @@ describe("providerMaintenanceRunner", () => {
           generateCommitMessage: () => Effect.die("unused"),
           generatePrContent: () => Effect.die("unused"),
           generateBranchName: () => Effect.die("unused"),
+          generateWorkItemDraft: () => Effect.die("unused"),
           generatePredictedMessage: () => Effect.die("unused"),
           generateReviewGuide: () => Effect.die("unused"),
           generateTranscriptionPostProcessing: () => Effect.die("unused"),

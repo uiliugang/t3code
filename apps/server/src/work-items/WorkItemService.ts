@@ -23,6 +23,8 @@ import {
   type WorkItemListInput,
   type WorkItemListResult,
   type WorkItemMutationResult,
+  type WorkItemDraft,
+  type WorkItemDraftInput,
 } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { delegatedTaskProgress } from "@t3tools/provider-core/server/subagentProjection";
@@ -51,11 +53,17 @@ import { buildWorkItemPrompt, decideWorkItem, executionIsActive } from "./decide
 import { workItemExecutionScope, WORK_ITEM_UNRELATED_WORK } from "./executionScope.ts";
 import { workItemCodeEvidence } from "./codeEvidence.ts";
 import { decideDelivery } from "./deliveryDecision.ts";
+import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
 export class WorkItemService extends Context.Service<
   WorkItemService,
   {
     readonly get: (id: WorkItemId) => Effect.Effect<WorkItem, WorkItemError>;
+    readonly generateDraft: (
+      input: WorkItemDraftInput,
+    ) => Effect.Effect<WorkItemDraft, WorkItemError>;
     readonly list: (input: WorkItemListInput) => Effect.Effect<WorkItemListResult, WorkItemError>;
     readonly subscribeList: (
       input: WorkItemListInput,
@@ -128,6 +136,8 @@ const make = Effect.gen(function* () {
   const launches = yield* ThreadLaunchService.ThreadLaunchService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const projects = yield* ProjectStore.ProjectStoreV2;
+  const textGeneration = yield* TextGeneration.TextGeneration;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const scope = yield* Effect.scope;
   const writes = yield* Semaphore.make(1);
   const effects = yield* Semaphore.make(1);
@@ -175,9 +185,11 @@ const make = Effect.gen(function* () {
         ? sql`1 = 1`
         : sql`(project_id = ${input.projectId} OR id IN (SELECT work_item_id FROM work_item_issue_projects WHERE project_id = ${input.projectId}))`;
     const issueFilter =
-      input.issueUrl === undefined
-        ? sql`1 = 1`
-        : sql`json_extract(item_json, '$.delivery.issue.url') = ${input.issueUrl}`;
+      input.issueUrls !== undefined
+        ? sql`json_extract(item_json, '$.delivery.issue.url') IN ${sql.in(input.issueUrls)}`
+        : input.issueUrl === undefined
+          ? sql`1 = 1`
+          : sql`json_extract(item_json, '$.delivery.issue.url') = ${input.issueUrl}`;
     const attentionFilter = input.attentionOnly
       ? sql`(json_extract(item_json, '$.delivery.evidence.anomaly') IS NOT NULL OR json_extract(item_json, '$.delivery.syncError') IS NOT NULL)`
       : sql`1 = 1`;
@@ -193,7 +205,7 @@ const make = Effect.gen(function* () {
   const list = Effect.fn("WorkItemService.list")(function* (input: WorkItemListInput) {
     const items = yield* readItems(input);
     const rows =
-      input.id !== undefined
+      input.id !== undefined || input.issueUrl !== undefined || input.issueUrls !== undefined
         ? []
         : input.projectId === undefined
           ? yield* sql<{
@@ -1198,6 +1210,30 @@ const make = Effect.gen(function* () {
   );
   yield* Queue.offer(pending, undefined);
   return WorkItemService.of({
+    generateDraft: Effect.fn("WorkItemService.generateDraft")(
+      function* (input) {
+        const project = yield* requireProject(input.projectId);
+        const resolved = resolveProjectSettings(
+          yield* settings.getSettings,
+          input.projectId,
+        ).settings;
+        return yield* textGeneration.generateWorkItemDraft({
+          ...input,
+          cwd: project.workspaceRoot,
+          projectTitle: project.title,
+          modelSelection: resolved.textGenerationModelSelection,
+        });
+      },
+      Effect.mapError((cause) =>
+        isWorkItemError(cause)
+          ? cause
+          : new WorkItemError({
+              code: "execution",
+              message: "Could not generate a draft. Try again or fill in the fields manually.",
+              cause,
+            }),
+      ),
+    ),
     get,
     list,
     subscribeList,

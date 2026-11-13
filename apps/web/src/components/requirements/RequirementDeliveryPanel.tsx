@@ -1,3 +1,4 @@
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -8,7 +9,7 @@ import {
   type DeliverySummary,
   type IssueOption,
 } from "@t3tools/contracts";
-import { DELIVERY_PROGRESS_LABELS } from "@t3tools/client-runtime/work-item";
+import { DELIVERY_PROGRESS_LABELS, pullRequestLabel } from "@t3tools/client-runtime/work-item";
 import { useState } from "react";
 import { randomUUID } from "~/lib/utils";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -16,8 +17,9 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { IssueSelect } from "./IssueSelect";
-import { RefreshCwIcon } from "lucide-react";
+import { RefreshCwIcon, UnlinkIcon, MessageSquareIcon } from "lucide-react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { DeliveryStages } from "./DeliveryStages";
 
 export function RequirementDeliveryPanel({
   environmentId,
@@ -46,8 +48,9 @@ export function RequirementDeliveryPanel({
     setBusy(false);
   };
   return (
-    <section className="space-y-4 border-t border-border py-4">
-      <div className="flex justify-end">
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium">{t("Delivery progress")}</h3>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -69,12 +72,12 @@ export function RequirementDeliveryPanel({
           <TooltipPopup>{t("Refresh delivery")}</TooltipPopup>
         </Tooltip>
       </div>
+      <DeliveryStages provider={delivery.issue.provider} summary={summary} />
       <div>
-        <h3 className="text-sm font-medium">{t("Delivery progress")}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {summary
             ? t(
-                summary.synced && summary.progress !== "delivery_exception"
+                summary.synced && summary.progress === "delivery_complete"
                   ? "Completed"
                   : DELIVERY_PROGRESS_LABELS[summary.progress],
               )
@@ -124,47 +127,69 @@ export function RequirementDeliveryPanel({
           </Button>
         </div>
       ) : null}
-      <div className="space-y-2">
-        <h3 className="text-xs font-medium">{t("Linked conversations")}</h3>
-        {item.sources.map((source) => (
-          <div key={source.threadId} className="flex min-w-0 items-center gap-2">
-            <Link
-              className="min-w-0 flex-1 truncate text-xs text-primary hover:underline"
-              to="/$environmentId/$threadId"
-              params={{ environmentId, threadId: source.threadId }}
-            >
-              {source.title}
-            </Link>
-            <Button
-              size="xs"
-              variant="ghost"
-              disabled={!allowed || busy}
-              onClick={() =>
-                void run({
-                  type: "unlink_issue_thread",
-                  id: item.id,
-                  expectedVersion: item.version,
-                  commandId: CommandId.make(randomUUID()),
-                  threadId: source.threadId,
-                })
-              }
-            >
-              {t("Unlink")}
-            </Button>
+      {item.sources.length > 0 ? (
+        <details className="border-t border-border/60 pt-3">
+          <summary className="cursor-pointer text-xs font-medium">
+            {t("Linked conversations")}{" "}
+            <span className="text-muted-foreground">{item.sources.length}</span>
+          </summary>
+          <div className="mt-2 space-y-1">
+            {item.sources.map((source) => (
+              <div key={source.threadId} className="flex min-w-0 items-center gap-2">
+                <Link
+                  className="flex min-w-0 flex-1 items-center gap-2 py-2 text-xs hover:underline"
+                  to="/$environmentId/$threadId"
+                  params={{ environmentId, threadId: source.threadId }}
+                >
+                  <MessageSquareIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{source.title}</span>
+                </Link>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={t("Unlink")}
+                  title={t("Unlink")}
+                  disabled={!allowed || busy}
+                  onClick={() =>
+                    void run({
+                      type: "unlink_issue_thread",
+                      id: item.id,
+                      expectedVersion: item.version,
+                      commandId: CommandId.make(randomUUID()),
+                      threadId: source.threadId,
+                    })
+                  }
+                >
+                  <UnlinkIcon />
+                </Button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="space-y-2">
-        <h3 className="text-xs font-medium">{t("Necessary pull requests")}</h3>
+        </details>
+      ) : null}
+      <div className="space-y-2 border-t border-border/60 pt-4">
+        <h3 className="text-xs font-medium">
+          {t("Necessary pull requests")}{" "}
+          <span className="font-normal text-muted-foreground">
+            {summary?.mergedPullRequests ?? 0}/{delivery.scope.requiredPullRequests.length}
+          </span>
+        </h3>
+        {!delivery.scope.requiredPullRequests.length ? (
+          <p className="text-xs text-muted-foreground">{t("No pull requests linked yet.")}</p>
+        ) : null}
         {delivery.scope.requiredPullRequests.map((url) => (
-          <div key={url} className="flex min-w-0 items-start justify-between gap-2 text-xs">
+          <div
+            key={url}
+            className="flex min-h-10 min-w-0 items-center justify-between gap-2 text-xs"
+          >
+            <PullRequestGlyph.pullRequest className="size-3.5 shrink-0 text-muted-foreground" />
             <a
-              className="min-w-0 break-all text-primary hover:underline"
+              className="min-w-0 flex-1 wrap-anywhere hover:underline"
               href={url}
               target="_blank"
               rel="noreferrer"
             >
-              {url}
+              {pullRequestLabel(url)}
             </a>
             <span className="shrink-0 text-muted-foreground">
               {t(
@@ -177,15 +202,18 @@ export function RequirementDeliveryPanel({
         ))}
       </div>
       {delivery.issue.provider === "meituan" ? (
-        <div className="space-y-2">
+        <div className="space-y-2 border-t border-border/60 pt-4">
           <h3 className="text-xs font-medium">{t("MCM releases")}</h3>
           {delivery.scope.changedServices.map((service) => (
             <div
               key={`${service.appkey}/${service.target}/${service.revision}`}
-              className="flex min-w-0 items-start justify-between gap-2 text-xs"
+              className="flex min-h-10 min-w-0 items-start justify-between gap-2 text-xs"
             >
               <span className="min-w-0 break-all">
-                {service.appkey} · {service.target}
+                {service.appkey}
+                <span className="mt-1 block text-2xs text-muted-foreground">
+                  {service.target} · {service.revision}
+                </span>
               </span>
               <span className="shrink-0 text-muted-foreground">
                 {t(
@@ -229,32 +257,37 @@ export function RequirementDeliveryPanel({
         </Button>
       ) : null}
       {delivery.issue.provider === "meituan" && transitions.length > 0 ? (
-        <div className="space-y-2">
-          <IssueSelect
-            label={t("Completed workflow state")}
-            value={state}
-            options={[
-              { value: "", label: t("Choose completed state") },
-              ...transitions.filter((transition) => transition.category === "DONE"),
-            ]}
-            onChange={setState}
-          />
-          <Button
-            size="xs"
-            disabled={!allowed || busy || !state}
-            onClick={() =>
-              void run({
-                type: "completion_state",
-                commandId: CommandId.make(randomUUID()),
-                id: item.id,
-                expectedVersion: item.version,
-                state,
-              })
-            }
-          >
-            {t("Save")}
-          </Button>
-        </div>
+        <details className="border-t border-border/60 pt-3">
+          <summary className="cursor-pointer text-xs font-medium">
+            {t("Completed workflow state")}
+          </summary>
+          <div className="mt-3 space-y-2">
+            <IssueSelect
+              label={t("Completed workflow state")}
+              value={state}
+              options={[
+                { value: "", label: t("Choose completed state") },
+                ...transitions.filter((transition) => transition.category === "DONE"),
+              ]}
+              onChange={setState}
+            />
+            <Button
+              size="xs"
+              disabled={!allowed || busy || !state}
+              onClick={() =>
+                void run({
+                  type: "completion_state",
+                  commandId: CommandId.make(randomUUID()),
+                  id: item.id,
+                  expectedVersion: item.version,
+                  state,
+                })
+              }
+            >
+              {t("Save")}
+            </Button>
+          </div>
+        </details>
       ) : null}
       {delivery.lastSyncedAt ? (
         <p className="text-2xs text-muted-foreground">

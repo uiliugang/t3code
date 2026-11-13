@@ -1,7 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { RequirementDeliveryPanel } from "../requirements/RequirementDeliveryPanel";
+import { DraftFillButton } from "../requirements/DraftFillButton";
+import { ProjectTag } from "../requirements/ProjectTag";
 import { useNavigate } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   CommandId,
   type EnvironmentId,
@@ -30,7 +32,20 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ArchiveIcon, ArrowLeftIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  PlusIcon,
+  SearchIcon,
+  XIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ListIcon,
+  LayoutGridIcon,
+  SlidersHorizontalIcon,
+  EllipsisIcon,
+  PencilIcon,
+} from "lucide-react";
 import { randomUUID } from "../../lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -59,6 +74,20 @@ import {
 } from "../ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
 import { toastManager } from "../ui/toast";
+import {
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  MenuSub,
+  MenuSubTrigger,
+  MenuSubPopup,
+  MenuCheckboxItem,
+} from "../ui/menu";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
+import * as Schema from "effect/Schema";
+
+const CollapsedWorkItemGroups = Schema.Array(Schema.String);
 
 const STATUSES = ["todo", "in_progress", "in_review", "done"] as const;
 const commandId = () => CommandId.make(randomUUID());
@@ -163,12 +192,14 @@ export function WorkItemsBoard({
   threadRef,
   compact = false,
   localOnly = false,
+  filterItems,
 }: {
   environmentId: EnvironmentId;
   initialProjectId?: ProjectId | undefined;
   threadRef?: ScopedThreadRef | undefined;
   compact?: boolean;
   localOnly?: boolean;
+  filterItems?: ReactNode;
 }) {
   const t = useUiTranslation();
   const projects = useProjects().filter(
@@ -202,6 +233,12 @@ export function WorkItemsBoard({
   const [draggedItem, setDraggedItem] = useState<WorkItemSummary | null>(null);
   const [search, setSearch] = useState("");
   const [archived, setArchived] = useState(false);
+  const [view, setView] = useState<"list" | "board">("list");
+  const [collapsed, setCollapsed] = useLocalStorage<ReadonlyArray<string>, ReadonlyArray<string>>(
+    "work-items.collapsed",
+    ["done"],
+    CollapsedWorkItemGroups,
+  );
   const [selectedId, setSelectedId] = useState<WorkItem["id"] | null>(null);
   const [editor, setEditor] = useState<{ item?: WorkItem; candidate?: WorkItemCandidate } | null>(
     null,
@@ -305,29 +342,79 @@ export function WorkItemsBoard({
             {t("Back")}
           </Button>
         ) : null}
-        <div className="min-w-36 flex-1">
-          <WorkItemSelect
-            label={t("Project")}
-            value={projectId ?? ""}
-            options={projects.map((project) => ({ value: project.id, label: project.title }))}
-            onChange={(value) => {
-              const project = projects.find((entry) => entry.id === value);
-              if (project) {
-                setChosenProject(project.id);
-                setSelectedId(null);
-              }
-            }}
+        <div className="min-w-0 flex-1">
+          <Input
+            aria-label={t("Search tasks")}
+            placeholder={t("Search tasks")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            size="sm"
           />
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!projectId || !canOperate || busy || config?.workItemDiscovery !== true}
-          onClick={() => void discoverTasks()}
-        >
-          <SearchIcon />
-          {t("Discover")}
-        </Button>
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t("Filters")}
+                title={t("Filters")}
+              />
+            }
+          >
+            <SlidersHorizontalIcon />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            {filterItems}
+            <MenuSub>
+              <MenuSubTrigger>{t("Project")}</MenuSubTrigger>
+              <MenuSubPopup>
+                {projects.map((project) => (
+                  <MenuItem
+                    key={project.id}
+                    onClick={() => {
+                      setChosenProject(project.id);
+                      setSelectedId(null);
+                    }}
+                  >
+                    {project.title}
+                  </MenuItem>
+                ))}
+              </MenuSubPopup>
+            </MenuSub>
+            <MenuCheckboxItem checked={archived} onCheckedChange={setArchived}>
+              {t("Archived")}
+            </MenuCheckboxItem>
+            <MenuItem
+              disabled={!projectId || !canOperate || busy || config?.workItemDiscovery !== true}
+              onClick={() => void discoverTasks()}
+            >
+              <SearchIcon />
+              {t("Discover")}
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+        {!compact ? (
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button size="icon-sm" variant="ghost" aria-label={t("View")} title={t("View")} />
+              }
+            >
+              {view === "list" ? <ListIcon /> : <LayoutGridIcon />}
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={() => setView("list")}>
+                <ListIcon />
+                {t("List view")}
+              </MenuItem>
+              <MenuItem onClick={() => setView("board")}>
+                <LayoutGridIcon />
+                {t("Board view")}
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        ) : null}
         <Button
           size="sm"
           disabled={!projectId || !canOperate || busy}
@@ -352,43 +439,25 @@ export function WorkItemsBoard({
       {query.isPending && !query.data ? (
         <p className="p-4 text-sm text-muted-foreground">{t("Loading tasks…")}</p>
       ) : null}
-      {selected ? (
-        <WorkItemDetails
-          key={selected.id}
-          item={selected}
-          deliverySummary={selectedQuery.data?.items[0]?.deliverySummary}
-          environmentId={environmentId}
-          busy={busy}
-          canOperate={canOperate}
-          run={run}
-          edit={() => setEditor({ item: selected })}
-          continueTask={(newConversation) => void continueTask(selected, newConversation)}
-        />
-      ) : selectedId ? (
-        <p className="p-4 text-sm text-muted-foreground">
-          {selectedQuery.error ?? t("Loading task…")}
-        </p>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-3">
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <div className="min-w-36 flex-1">
-              <Input
-                aria-label={t("Search tasks")}
-                placeholder={t("Search tasks")}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={archived} onCheckedChange={setArchived} />
-              {t("Archived")}
-            </label>
-          </div>
-          <div className={compact ? "space-y-4" : "grid gap-4 md:grid-cols-2 xl:grid-cols-4"}>
-            {STATUSES.map((status) => (
+      <div className="flex min-h-0 flex-1">
+        <div
+          className={
+            "min-h-0 min-w-0 flex-1 overflow-auto px-5 py-3 " + (selectedId ? "max-md:hidden" : "")
+          }
+        >
+          <div
+            className={
+              compact || view === "list"
+                ? "space-y-4"
+                : "grid auto-cols-[minmax(240px,1fr)] grid-flow-col gap-4 overflow-x-auto"
+            }
+          >
+            {STATUSES.filter(
+              (status) => view === "board" || filtered.some((item) => item.status === status),
+            ).map((status) => (
               <section
                 key={status}
-                className="min-w-0 rounded-xl border border-border bg-muted/20 p-3"
+                className="min-w-0"
                 aria-label={t(WORK_ITEM_STATUS_LABELS[status])}
                 onDragOver={(event) => {
                   if (
@@ -416,13 +485,32 @@ export function WorkItemsBoard({
                     });
                 }}
               >
-                <h2 className="mb-3 flex items-center justify-between text-sm font-medium">
+                <button
+                  type="button"
+                  aria-expanded={!collapsed.includes(status)}
+                  onClick={() =>
+                    setCollapsed((previous) =>
+                      previous.includes(status)
+                        ? previous.filter((value) => value !== status)
+                        : [...previous, status],
+                    )
+                  }
+                  className="flex min-h-11 w-full items-center gap-2 text-left text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  {collapsed.includes(status) ? (
+                    <ChevronRightIcon className="size-3.5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDownIcon className="size-3.5 text-muted-foreground" />
+                  )}
                   {t(WORK_ITEM_STATUS_LABELS[status])}
                   <span className="text-muted-foreground">
                     {filtered.filter((item) => item.status === status).length}
                   </span>
-                </h2>
-                <div className="space-y-2">
+                </button>
+                <div
+                  hidden={collapsed.includes(status)}
+                  className={view === "board" ? "space-y-2" : "divide-y divide-border/50"}
+                >
                   {filtered
                     .filter((item) => item.status === status)
                     .map((item) => (
@@ -438,7 +526,8 @@ export function WorkItemsBoard({
                         }
                         onDragStart={() => setDraggedItem(item)}
                         onDragEnd={() => setDraggedItem(null)}
-                        className="w-full rounded-lg border border-border bg-background p-3 text-left shadow-xs outline-none transition-colors hover:border-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        aria-current={selectedId === item.id ? "true" : undefined}
+                        className={`w-full rounded-md p-3 text-left outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selectedId === item.id ? "bg-accent" : ""} ${view === "board" ? "border border-border/70" : ""}`}
                       >
                         <span className="mb-2 flex items-start gap-2">
                           <span className="min-w-0 flex-1 break-words text-sm font-medium">
@@ -446,12 +535,14 @@ export function WorkItemsBoard({
                           </span>
                           <span className="text-xs text-muted-foreground">{item.priority}</span>
                         </span>
-                        {item.description ? (
-                          <span className="mb-3 block line-clamp-2 text-xs text-muted-foreground">
-                            {item.description}
-                          </span>
-                        ) : null}
-                        <span className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <ProjectTag
+                            title={
+                              projects.find((project) => project.id === item.projectId)?.title ??
+                              item.projectId
+                            }
+                          />
+                          <span>{t("Local work item")}</span>
                           <span>{t("{count} agents", { count: item.executionCount })}</span>
                           {item.activeExecutionCount > 0 ? <span>{t("Running")}</span> : null}
                         </span>
@@ -488,13 +579,10 @@ export function WorkItemsBoard({
           {(query.data?.candidates.length ?? 0) > 0 ? (
             <section className="mt-6 space-y-2">
               <h2 className="text-sm font-medium">{t("Discovered conversations")}</h2>
-              <p className="text-xs text-muted-foreground">
-                {t("Suggestions do not start agents or change existing tasks.")}
-              </p>
               {query.data?.candidates.map((candidate) => (
                 <div
                   key={candidate.id}
-                  className="flex items-center gap-3 rounded-lg border border-border p-3"
+                  className="flex items-center gap-3 border-b border-border/50 py-3"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm">{candidate.title}</p>
@@ -523,9 +611,31 @@ export function WorkItemsBoard({
             </section>
           ) : null}
         </div>
-      )}
+        {selectedId ? (
+          <aside className="flex min-h-0 min-w-0 flex-1 border-l border-border/60 md:max-w-[440px]">
+            {selected ? (
+              <WorkItemDetails
+                key={selected.id}
+                item={selected}
+                deliverySummary={selectedQuery.data?.items[0]?.deliverySummary}
+                environmentId={environmentId}
+                busy={busy}
+                canOperate={canOperate}
+                run={run}
+                edit={() => setEditor({ item: selected })}
+                continueTask={(newConversation) => void continueTask(selected, newConversation)}
+              />
+            ) : (
+              <p className="p-4 text-sm text-muted-foreground">
+                {selectedQuery.error ?? t("Loading task…")}
+              </p>
+            )}
+          </aside>
+        ) : null}
+      </div>
       {editor && projectId ? (
         <WorkItemEditor
+          environmentId={environmentId}
           key={editor.item?.id ?? editor.candidate?.id ?? "new"}
           original={editor.item}
           candidate={editor.candidate}
@@ -541,6 +651,7 @@ export function WorkItemsBoard({
 }
 
 export function WorkItemEditor({
+  environmentId,
   initialTitle,
   initialDescription,
   initialSources,
@@ -552,6 +663,7 @@ export function WorkItemEditor({
   run,
   close,
 }: {
+  environmentId: EnvironmentId;
   initialTitle?: string | undefined;
   initialDescription?: string | undefined;
   initialSources?: ReadonlyArray<WorkItemSource> | undefined;
@@ -572,6 +684,7 @@ export function WorkItemEditor({
   const [constraints, setConstraints] = useState(original?.constraints.join("\n") ?? "");
   const [criteria, setCriteria] = useState(original?.acceptanceCriteria.join("\n") ?? "");
   const [priority, setPriority] = useState<WorkItem["priority"]>(original?.priority ?? "P2");
+  const [generating, setGenerating] = useState(false);
   const intent = useRef(randomUUID());
   const save = async () => {
     const sources: ReadonlyArray<WorkItemSource> =
@@ -603,7 +716,7 @@ export function WorkItemEditor({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) close();
+        if (!open && !busy && !generating) close();
       }}
     >
       <DialogPopup>
@@ -611,7 +724,22 @@ export function WorkItemEditor({
           <DialogTitle>{t(original ? "Edit task" : "New task")}</DialogTitle>
         </DialogHeader>
         <DialogPanel>
-          <div className="space-y-4">
+          <div className="flex justify-end">
+            <DraftFillButton
+              environmentId={environmentId}
+              projectId={projectId}
+              disabled={busy}
+              context={[title, description, constraints, criteria].filter(Boolean).join("\n\n")}
+              onBusyChange={setGenerating}
+              onDraft={(draft) => {
+                setTitle(draft.title);
+                setDescription(draft.description);
+                setConstraints(draft.constraints.join("\n"));
+                setCriteria(draft.acceptanceCriteria.join("\n"));
+              }}
+            />
+          </div>
+          <fieldset disabled={busy || generating} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="work-item-title">{t("Title")}</Label>
               <Input
@@ -662,13 +790,13 @@ export function WorkItemEditor({
                 )}
               </p>
             ) : null}
-          </div>
+          </fieldset>
         </DialogPanel>
         <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={close}>
+          <Button variant="outline" disabled={busy || generating} onClick={close}>
             {t("Cancel")}
           </Button>
-          <Button disabled={busy || !title.trim()} onClick={() => void save()}>
+          <Button disabled={busy || generating || !title.trim()} onClick={() => void save()}>
             {t("Save")}
           </Button>
         </DialogFooter>
@@ -706,8 +834,12 @@ function WorkItemDetails({
   const [artifacts, setArtifacts] = useState("");
   const [reviewNote, setReviewNote] = useState("");
   const active = item.executions.some(workItemExecutionIsActive);
+  const project = useProjects().find(
+    (entry) => entry.environmentId === environmentId && entry.id === item.projectId,
+  );
   return (
     <div className="min-h-0 flex-1 space-y-5 overflow-auto p-4">
+      <ProjectTag title={project?.title ?? item.projectId} />
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="min-w-0 flex-1 break-words text-lg font-semibold">{item.title}</h2>
         <Badge variant="secondary">{t(WORK_ITEM_STATUS_LABELS[item.status])}</Badge>
@@ -720,16 +852,7 @@ function WorkItemDetails({
           summary={deliverySummary}
         />
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" disabled={!canOperate || busy} onClick={edit}>
-          {t("Edit")}
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => continueTask()}>
-          {t("Continue in conversation")}
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => continueTask(true)}>
-          {t("New conversation draft")}
-        </Button>
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
           disabled={!canOperate || busy || item.archived || item.status === "done"}
@@ -738,113 +861,114 @@ function WorkItemDetails({
           <PlusIcon />
           {t("Assign agents")}
         </Button>
-        {active ? (
-          <Button
-            size="sm"
-            variant="destructive-outline"
-            disabled={!canOperate || busy}
-            onClick={() => void run({ type: "stop", commandId: commandId(), id: item.id })}
-          >
-            {t("Stop all agents")}
-          </Button>
-        ) : null}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!canOperate || busy || active}
-          onClick={() =>
-            void run({
-              type: "archive",
-              commandId: commandId(),
-              id: item.id,
-              expectedVersion: item.version,
-              archived: !item.archived,
-            })
-          }
-        >
-          <ArchiveIcon />
-          {t(item.archived ? "Restore" : "Archive")}
+        <Button size="sm" variant="ghost" onClick={() => continueTask()}>
+          {t("Continue in conversation")}
         </Button>
-        {item.status === "done" ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canOperate || busy}
-            onClick={() =>
-              void run({
-                type: "reopen",
-                commandId: commandId(),
-                id: item.id,
-                expectedVersion: item.version,
-              })
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t("More actions")}
+                title={t("More actions")}
+              />
             }
           >
-            {t("Reopen")}
-          </Button>
-        ) : null}
-      </div>
-      {(item.status === "todo" || item.status === "in_progress") && !item.archived ? (
-        <div className="flex flex-wrap gap-2">
-          {item.status === "todo" ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canOperate || busy}
-              onClick={() =>
-                void run({
-                  type: "move",
-                  commandId: commandId(),
-                  id: item.id,
-                  expectedVersion: item.version,
-                  status: "in_progress",
-                })
-              }
-            >
-              {t("Mark in progress")}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
+            <EllipsisIcon />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem disabled={!canOperate || busy} onClick={edit}>
+              <PencilIcon />
+              {t("Edit")}
+            </MenuItem>
+            <MenuItem onClick={() => continueTask(true)}>{t("New conversation draft")}</MenuItem>
+            {active ? (
+              <MenuItem
+                variant="destructive"
+                disabled={!canOperate || busy}
+                onClick={() => void run({ type: "stop", commandId: commandId(), id: item.id })}
+              >
+                {t("Stop all agents")}
+              </MenuItem>
+            ) : null}
+            <MenuItem
               disabled={!canOperate || busy || active}
               onClick={() =>
                 void run({
-                  type: "move",
+                  type: "archive",
                   commandId: commandId(),
                   id: item.id,
                   expectedVersion: item.version,
-                  status: "todo",
+                  archived: !item.archived,
                 })
               }
             >
-              {t("Move to to do")}
-            </Button>
-          )}
+              <ArchiveIcon />
+              {t(item.archived ? "Restore" : "Archive")}
+            </MenuItem>
+            {item.status === "done" ? (
+              <MenuItem
+                disabled={!canOperate || busy}
+                onClick={() =>
+                  void run({
+                    type: "reopen",
+                    commandId: commandId(),
+                    id: item.id,
+                    expectedVersion: item.version,
+                  })
+                }
+              >
+                {t("Reopen")}
+              </MenuItem>
+            ) : null}
+            {(item.status === "todo" || item.status === "in_progress") && !item.archived ? (
+              <MenuItem
+                disabled={!canOperate || busy || (item.status === "in_progress" && active)}
+                onClick={() =>
+                  void run({
+                    type: "move",
+                    commandId: commandId(),
+                    id: item.id,
+                    expectedVersion: item.version,
+                    status: item.status === "todo" ? "in_progress" : "todo",
+                  })
+                }
+              >
+                {t(item.status === "todo" ? "Mark in progress" : "Move to to do")}
+              </MenuItem>
+            ) : null}
+          </MenuPopup>
+        </Menu>
+      </div>
+      <details className="border-t border-border/60 pt-3">
+        <summary className="cursor-pointer text-xs font-medium">{t("Goal")}</summary>
+        <div className="mt-3 space-y-4">
+          <p className="whitespace-pre-wrap text-sm">{item.description}</p>
+          {item.constraints.length ? (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">{t("Constraints")}</h3>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                {[...new Set(item.constraints)].map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {item.acceptanceCriteria.length ? (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">{t("Acceptance criteria")}</h3>
+              <ul className="list-disc space-y-1 pl-5 text-sm">
+                {[...new Set(item.acceptanceCriteria)].map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      <p className="whitespace-pre-wrap text-sm">{item.description}</p>
-      {item.constraints.length ? (
-        <div>
-          <h3 className="mb-2 text-sm font-medium">{t("Constraints")}</h3>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            {[...new Set(item.constraints)].map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {item.acceptanceCriteria.length ? (
-        <div>
-          <h3 className="mb-2 text-sm font-medium">{t("Acceptance criteria")}</h3>
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            {[...new Set(item.acceptanceCriteria)].map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      </details>
       {item.reviewFeedback ? (
-        <section className="space-y-2 rounded-lg border border-border p-3">
+        <section className="space-y-2 border-t border-border/60 pt-4">
           <h3 className="text-sm font-medium">{t("Review notes")}</h3>
           <p className="whitespace-pre-wrap text-sm">{item.reviewFeedback}</p>
         </section>

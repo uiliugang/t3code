@@ -101,6 +101,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.workItemsSubscribe]: "workItems",
   [WS_METHODS.workItemsMutate]: "workItems",
   [WS_METHODS.workItemsDiscover]: "workItems",
+  [WS_METHODS.workItemsGenerateDraft]: "workItems",
   [WS_METHODS.workItemsCreateIssue]: "workItems",
   [WS_METHODS.workItemsRefreshDelivery]: "workItems",
   [WS_METHODS.scheduledTasksSubscribe]: "scheduledTasks",

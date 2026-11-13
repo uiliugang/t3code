@@ -297,6 +297,7 @@ function createTextGeneration(
         title: "Update workflow",
       }),
     generateReviewGuide: () => Effect.succeed({ stops: [] }),
+    generateWorkItemDraft: () => Effect.die("unused"),
     generatePredictedMessage: () => Effect.succeed({ text: null }),
     generateTranscriptionPostProcessing: () => Effect.die("unused"),
     ...overrides,
@@ -348,6 +349,7 @@ function createTextGeneration(
         ),
       ),
     generateReviewGuide: (input) => implementation.generateReviewGuide(input),
+    generateWorkItemDraft: () => Effect.die("unused"),
     generatePredictedMessage: (input) => implementation.generatePredictedMessage(input),
     generateTranscriptionPostProcessing: (input) =>
       implementation.generateTranscriptionPostProcessing(input),

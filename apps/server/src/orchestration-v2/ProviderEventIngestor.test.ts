@@ -253,6 +253,7 @@ it.effect("refreshes the failing instance snapshot after a committed usage_limit
         displayName: undefined,
         orchestrationAdapter: adapter,
         textGeneration: {
+          generateWorkItemDraft: () => Effect.die("unused"),
           generatePredictedMessage: () => Effect.die("unused"),
           generateBranchName: () => Effect.die("unused"),
           generateCommitMessage: () => Effect.die("unused"),

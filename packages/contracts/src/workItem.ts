@@ -42,6 +42,16 @@ export const WorkItemSpecification = Schema.Struct({
   acceptanceCriteria: Lines,
 });
 export type WorkItemSpecification = typeof WorkItemSpecification.Type;
+export const WorkItemDraft = Schema.Struct({
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  ...WorkItemSpecification.fields,
+});
+export type WorkItemDraft = typeof WorkItemDraft.Type;
+export const WorkItemDraftInput = Schema.Struct({
+  projectId: ProjectId,
+  context: TrimmedNonEmptyString.check(Schema.isMaxLength(16_000)),
+});
+export type WorkItemDraftInput = typeof WorkItemDraftInput.Type;
 export const WorkItemExecution = Schema.Struct({
   id: WorkItemExecutionId,
   workItemId: WorkItemId,
@@ -134,6 +144,7 @@ export const WorkItemListInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
   threadId: Schema.optional(ThreadId),
   issueUrl: Schema.optional(TrimmedNonEmptyString),
+  issueUrls: Schema.optional(Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(100))),
   attentionOnly: Schema.optional(Schema.Boolean),
   id: Schema.optional(WorkItemId),
   cursor: Schema.optional(WorkItemCursor),
