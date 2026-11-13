@@ -448,6 +448,7 @@ const bootedSimulatorHost = DeviceHost.DeviceHost.of({
   ensureReady: () => Effect.succeed(bootedSimulatorReady),
   ensureAgentReady: () => Effect.succeed(bootedSimulatorReady),
   current: Effect.succeed(bootedSimulatorReady),
+  releaseAgentSession: () => Effect.void,
   stopAgent: Effect.void,
   stop: Effect.void,
 });

@@ -97,7 +97,6 @@ const fixture = Effect.fn("fixture")(function* (
   installTool?: Parameters<typeof DeviceService.makeWithHosts>[3],
   options: {
     readonly persistence?: Parameters<typeof DeviceService.makeWithHosts>[5];
-    readonly restoreExistingAgent?: boolean;
     readonly endsDevices?: boolean;
     readonly routesStreams?: boolean;
     readonly onClose?: Effect.Effect<"ok" | "missing" | "reject" | "http_error" | "malformed">;
@@ -278,14 +277,16 @@ const fixture = Effect.fn("fixture")(function* (
           agentDevice: { baseUrl: "http://agent.test", token: "test", entryPath: "/agent" },
         };
       }),
-    ...(options.restoreExistingAgent
-      ? {
-          releaseAgentSession: releaseAgentDeviceSession(http, {
-            baseUrl: "http://agent.test",
-            token: "test",
-          }),
-        }
-      : {}),
+    releaseAgentSession: (session) =>
+      connection.kind === "ssh" && !connection.online
+        ? Effect.fail(
+            new DeviceOperationError({
+              operation: "close",
+              reason: "request_failed",
+              cause: new Error("offline fixture"),
+            }),
+          )
+        : releaseAgentDeviceSession(http, { baseUrl: "http://agent.test", token: "test" })(session),
     current: Effect.sync(() =>
       connection.online
         ? {
@@ -1147,6 +1148,7 @@ it.effect.each(["shutdown", "close"] as const)(
         ensureReady: () => Effect.succeed(ready),
         ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
         current: Effect.succeed(ready),
+        releaseAgentSession: () => Effect.void,
         stopAgent: Effect.void,
         stop: Effect.void,
       };
@@ -1318,6 +1320,7 @@ it.effect("leaves a session its host leases to every thread open when one thread
       ensureReady: () => Effect.succeed(ready),
       ensureAgentReady: () => Effect.succeed(ready),
       current: Effect.succeed(ready),
+      releaseAgentSession: () => Effect.void,
       stopAgent: Effect.void,
       stop: Effect.void,
     };
@@ -1430,6 +1433,7 @@ it.effect.each([
         ensureReady: () => Effect.succeed(ready),
         ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
         current: Effect.succeed(ready),
+        releaseAgentSession: () => Effect.void,
         stopAgent: Effect.void,
         stop: Effect.void,
       };
@@ -1502,6 +1506,7 @@ it.effect.each([LOCAL_DEVICE_HOST_ID, "ssh-fixture"])(
         ensureReady: () => Effect.succeed(ready),
         ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
         current: Effect.succeed(ready),
+        releaseAgentSession: () => Effect.void,
         stop: Effect.void,
         stopAgent: Effect.void,
       };
@@ -1825,7 +1830,6 @@ describe("agent session release on close", () => {
       const recorded = yield* Ref.get(persisted);
       expect(recorded).toHaveLength(1);
       const restarted = yield* fixture(Effect.void, undefined, false, undefined, false, undefined, {
-        restoreExistingAgent: true,
         persistence: { initial: recorded, save: (sessions) => Ref.set(persisted, sessions) },
       });
       expect((yield* restarted.service.state).sessions).toEqual(recorded);
@@ -2114,6 +2118,7 @@ describe("locating a device id across hosts", () => {
       ensureReady: () => Effect.succeed(ready),
       ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
       current: Effect.succeed(ready),
+      releaseAgentSession: () => Effect.void,
       stopAgent: Effect.void,
       stop: Effect.void,
     };

@@ -947,24 +947,13 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         const released: DeviceSession[] = [];
         for (const session of ending) {
           const host = yield* resolveHost(session.hostId);
-          const ready = yield* host.current;
-          // A lost SSH tunnel does not establish that the remote daemon stopped.
-          if (!ready && (yield* host.summary).kind === "ssh")
-            return yield* new DeviceHostUnavailableError({
-              hostId: session.hostId,
-              hostLabel: host.label,
-              reason: "Device host is reconnecting. Retry close after it reconnects.",
-            });
+          const name = yield* agentDeviceSession(
+            session.threadId,
+            session.hostId,
+            session.deviceId,
+          ).pipe(Effect.provideService(Digest.Digest, digest));
           if (shouldClose && !(yield* shouldClose)) break;
-          const release = ready?.releaseAgentSession ?? host.releaseAgentSession;
-          if (release) {
-            const name = yield* agentDeviceSession(
-              session.threadId,
-              session.hostId,
-              session.deviceId,
-            ).pipe(Effect.provideService(Digest.Digest, digest));
-            yield* release(name, session.deviceId);
-          }
+          yield* host.releaseAgentSession(name, session.deviceId);
           released.push(session);
         }
         if (input.shutdown) yield* releaseLaunchers(ending);

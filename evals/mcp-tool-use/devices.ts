@@ -632,6 +632,7 @@ const fakeHost = (
     ensureReady: () => Effect.succeed(ready),
     ensureAgentReady: () => Effect.succeed({ ...ready, agentDevice }),
     current: Effect.succeed(ready),
+    releaseAgentSession: Effect.fn("EvalDeviceHost.releaseAgentSession")(() => Effect.void),
     stopAgent: Effect.void,
     stop: Effect.void,
   };

@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { expect, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeHttp from "node:http";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -145,5 +146,53 @@ it.effect("keeps a daemon record its missing agent CLI cannot stop", () =>
         await NodeFSP.rm(home, { recursive: true, force: true });
       }
     });
+  }),
+);
+
+it.live("releases a recorded remote session without starting the hub or device tools", () =>
+  Effect.promise(async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-release-"));
+    const requests: unknown[] = [];
+    const server = NodeHttp.createServer(async (request, response) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      requests.push(JSON.parse(Buffer.concat(chunks).toString()));
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ result: { ok: true } }));
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing fixture listener");
+      const state = NodePath.join(home, ".t3/device/hosts/owner");
+      await NodeFSP.mkdir(state, { recursive: true });
+      await NodeFSP.writeFile(
+        NodePath.join(state, "daemon.json"),
+        JSON.stringify({ httpPort: address.port, token: "fixture", pid: process.pid }),
+      );
+      const script = remoteDeviceScript("owner", { releaseSession: "restored-session" });
+      await exec(process.execPath, ["-e", script], {
+        env: {
+          ...process.env,
+          HOME: home,
+          USERPROFILE: home,
+          PATH: NodePath.dirname(process.execPath),
+        },
+      });
+      expect(requests).toEqual([
+        {
+          jsonrpc: "2.0",
+          id: "restored-session",
+          method: "agent_device.command",
+          params: { command: "close", session: "restored-session", positionals: [], flags: {} },
+        },
+      ]);
+      expect(await NodeFSP.readdir(state)).toEqual(["daemon.json"]);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
   }),
 );

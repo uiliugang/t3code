@@ -20,11 +20,18 @@ if [ -n "$JAVA_HOME" ]; then export PATH="$JAVA_HOME/bin:$PATH"; fi
 /** Runs on the host and returns host-local paths. */
 export const remoteDeviceScript = (
   owner: string,
-  mode: "probe" | "start" | "agent-start" | "stop-agent" | "stop",
+  mode:
+    | "probe"
+    | "start"
+    | "agent-start"
+    | "stop-agent"
+    | "stop"
+    | { readonly releaseSession: string },
 ) =>
   `
 const owner = ${JSON.stringify(owner)};
-const mode = ${JSON.stringify(mode)};
+const mode = ${JSON.stringify(typeof mode === "string" ? mode : "release-session")};
+const releaseSession = ${JSON.stringify(typeof mode === "string" ? null : mode.releaseSession)};
 const hubVersion = ${JSON.stringify(DEVICE_HUB_VERSION)};
 const agentVersion = ${JSON.stringify(AGENT_DEVICE_VERSION)};
 ` +
@@ -132,6 +139,18 @@ async function install(name, version, entry) {
   }
 }
 (async () => {
+  if (mode === 'release-session') {
+    const daemon = read(path.join(state, 'daemon.json'));
+    if (!daemon || (daemon.pid && !maintenanceAlive(daemon.pid))) return;
+    const response = await fetch('http://127.0.0.1:' + daemon.httpPort + '/rpc', {
+      method: 'POST', headers: { authorization: 'Bearer ' + daemon.token, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: releaseSession, method: 'agent_device.command', params: { command: 'close', session: releaseSession, positionals: [], flags: {} } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const result = await response.json();
+    if ((response.ok || response.status === 404) && (result?.result?.ok === true || result?.error?.data?.code === 'SESSION_NOT_FOUND')) return;
+    throw Error('Could not release the device session');
+  }
   const ios = process.platform === 'darwin' && run('xcrun', ['simctl', 'help']).status === 0;
   const android = run('adb', ['version']).status === 0;
   const platforms = [

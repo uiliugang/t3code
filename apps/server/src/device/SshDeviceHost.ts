@@ -1,3 +1,4 @@
+import { DeviceOperationError } from "@t3tools/contracts";
 import {
   type DeviceHostSummary,
   DevicePlatformAvailability,
@@ -75,7 +76,7 @@ const commandArgs = (script: string) => [
 const bootstrap = (
   config: SshDeviceHostConfig,
   owner: string,
-  mode: "probe" | "start" | "agent-start" | "stop-agent" | "stop",
+  mode: Parameters<typeof remoteDeviceScript>[1],
 ) =>
   runSshCommand(targetFor(config), {
     preHostArgs: identityArgs(config),
@@ -86,7 +87,12 @@ const bootstrap = (
     timeoutMs: mode === "start" || mode === "agent-start" ? 1_300_000 : 45_000,
   }).pipe(
     Effect.mapError(
-      (cause) => new DeviceHost.DeviceHostError({ hostId: config.id, step: mode, cause }),
+      (cause) =>
+        new DeviceHost.DeviceHostError({
+          hostId: config.id,
+          step: typeof mode === "string" ? mode : "release-session",
+          cause,
+        }),
     ),
   );
 
@@ -564,6 +570,17 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
       ),
     ),
     current: Effect.sync(() => ready),
+    releaseAgentSession: Effect.fn("SshDeviceHost.releaseAgentSession")(
+      function* (session: string, deviceId: string) {
+        const active = ready?.releaseAgentSession;
+        if (active) return yield* active(session, deviceId);
+        yield* provide(bootstrap(config, owner, { releaseSession: session }));
+      },
+      Effect.mapError(
+        (cause) =>
+          new DeviceOperationError({ operation: "close", reason: "request_failed", cause }),
+      ),
+    ),
     ensureReady,
     ensureAgentReady: (onPhase) =>
       ensureReady(onPhase).pipe(

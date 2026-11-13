@@ -838,6 +838,16 @@ export const make = Effect.fn("EasDeviceHost.make")(function* (config: EasDevice
       };
     });
 
+  const releaseAgentSession = Effect.fn("EasDeviceHost.releaseAgentSession")(function* (
+    session: string,
+    deviceId: string,
+  ) {
+    yield* adoptRecorded;
+    yield* Option.match(sessionFor(deviceId), {
+      onNone: () => Effect.void,
+      onSome: (running) => releaseAgentDeviceSession(http, running.agent)(session),
+    });
+  });
   const nodePath = yield* HostProcess.ExecutablePath;
   const ensureReady: DeviceHost.DeviceHost["Service"]["ensureReady"] = Effect.fn(
     "EasDeviceHost.ensureReady",
@@ -853,11 +863,7 @@ export const make = Effect.fn("EasDeviceHost.make")(function* (config: EasDevice
       devices,
       upstream,
       // Each session runs its own daemon, so one that has ended holds no agent sessions.
-      releaseAgentSession: (session, deviceId) =>
-        Option.match(sessionFor(deviceId), {
-          onNone: () => Effect.void,
-          onSome: (running) => releaseAgentDeviceSession(http, running.agent)(session),
-        }),
+      releaseAgentSession,
       // Device settings run simctl on the simulator's own machine, which EAS does not expose.
       run: () =>
         Effect.succeed({
@@ -941,6 +947,7 @@ export const make = Effect.fn("EasDeviceHost.make")(function* (config: EasDevice
       return ensureReady(onPhase).pipe(Effect.map((value) => ({ ...value, agentDevice: null })));
     }),
     current: Effect.sync(() => ready),
+    releaseAgentSession,
     stopAgent: Effect.void,
     // Unlike machines the user owns, every running session here is billed.
     stop: stopAll,
