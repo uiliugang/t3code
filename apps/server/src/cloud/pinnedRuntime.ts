@@ -556,7 +556,9 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
     // A runtime's own entry, on the macOS service PATH or recorded by an earlier prune, is no launcher.
     // It is named as `versions/<version>/t3`, and neither it nor its directory is a link.
     const entryDir = path.dirname(path.resolve(launcher));
-    const parent = path.dirname(entryDir);
+    const parent = yield* fs
+      .realPath(path.dirname(entryDir))
+      .pipe(Effect.orElseSucceed(() => path.dirname(entryDir)));
     if (
       platform !== "win32" &&
       (parent === versionsDir || parent === realVersionsDir) &&

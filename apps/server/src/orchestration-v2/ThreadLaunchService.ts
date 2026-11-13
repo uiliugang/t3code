@@ -439,7 +439,7 @@ const make = Effect.gen(function* () {
       .getThreadShell(threadId)
       .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
     const settings = resolveProjectSettings(
-      yield* serverSettings.getSettings,
+      yield* serverSettings.getSettings.pipe(Effect.orElseSucceed(() => DEFAULT_SERVER_SETTINGS)),
       input.projectId,
     ).settings;
     const initialMessage = input.initialMessage;

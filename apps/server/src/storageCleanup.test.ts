@@ -698,6 +698,7 @@ const cleanupFixture = (
   });
 it.live.each([
   "unchanged",
+  "unsettled",
   "merged",
   "settled",
   "inactive",
@@ -718,6 +719,7 @@ it.live.each([
       ...disabledCleanup,
       worktreeUnchanged: [
         "unchanged",
+        "unsettled",
         "pending",
         "changed-resource",
         "unmerged-resource",
@@ -737,6 +739,8 @@ it.live.each([
         : null,
       worktreeAfterDays: scenario === "inactive" ? 8 : null,
     };
+    const unchangedSettlement =
+      policy.worktreeUnchanged && scenario !== "unsettled" ? at(-2 * DAY_MS) : null;
     const fixture = yield* cleanupFixture(policy);
     const second = `${fixture.config.worktreesDir}/second`;
     yield* fixture.command(fixture.repo, ["worktree", "add", "-b", "second", second]);
@@ -761,7 +765,7 @@ it.live.each([
         branch: "feature",
         worktreePath: fixture.worktree,
         workspace,
-        settledAt: scenario === "settled" ? at(-2 * DAY_MS) : null,
+        settledAt: scenario === "settled" ? at(-2 * DAY_MS) : unchangedSettlement,
         status: scenario === "pending" ? "waiting" : "completed",
       }),
     ]);
@@ -785,7 +789,12 @@ it.live.each([
       yield* fixture.command(fixture.worktree, ["branch", "-m", "generated-feature"]);
       yield* fixture.command(second, ["branch", "-m", "generated-second"]);
       fixture.setThreads([
-        shell({ branch: "generated-feature", worktreePath: fixture.worktree, workspace }),
+        shell({
+          branch: "generated-feature",
+          worktreePath: fixture.worktree,
+          workspace,
+          settledAt: unchangedSettlement,
+        }),
       ]);
     }
     if (scenario === "subdirectory") {
@@ -840,7 +849,12 @@ it.live.each([
     }
     if (scenario === "shared-busy") {
       fixture.setThreads([
-        shell({ branch: "feature", worktreePath: fixture.worktree, workspace }),
+        shell({
+          branch: "feature",
+          worktreePath: fixture.worktree,
+          workspace,
+          settledAt: unchangedSettlement,
+        }),
         shell({
           id: ThreadId.make("shared"),
           branch: "feature",
@@ -2051,7 +2065,7 @@ describe("subagent worktree ownership", () => {
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW_MS);
       const fixture = yield* cleanupFixture({
-        ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+        ...disabledCleanup,
         worktreeSettledAfterDays: 8,
       });
       const linkedParent = `${yield* fixture.fs.makeTempDirectoryScoped({ prefix: "cleanup-link-" })}/worktrees`;
@@ -2073,7 +2087,7 @@ describe("subagent worktree ownership", () => {
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW_MS);
       const fixture = yield* cleanupFixture({
-        ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+        ...disabledCleanup,
         worktreeSettledAfterDays: 8,
       }).pipe(Effect.provideService(HostProcess.Platform, "win32"));
       const settled = { branch: "feature", settledAt: at(-20 * DAY_MS) };

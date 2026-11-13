@@ -63,7 +63,9 @@ describe("discoverFxSkills", () => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-fx-skills-home-" });
+      const home = yield* fileSystem.realPath(
+        yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-fx-skills-home-" }),
+      );
       const workspace = path.join(home, "app");
       const writeSkillFile = (folder: string, contents: string) =>
         fileSystem
@@ -164,36 +166,47 @@ describe("discoverFxSkills", () => {
 
   // Nix home-manager and dotfile setups link ~/.fx/skills; fx then loads
   // nothing from it, while the compatibility roots still count.
-  it.effect("lists nothing from a linked ~/.fx/skills", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-fx-skills-home-" });
-      for (const [root, name] of [
-        ["dotfiles/fx-skills", "managed"],
-        [".claude/skills", "compat"],
-      ] as const) {
-        yield* fileSystem.makeDirectory(path.join(home, root, name), { recursive: true });
-        yield* fileSystem.writeFileString(
-          path.join(home, root, name, "SKILL.md"),
-          `---\nname: ${name}\n---\n`,
+  it.effect.each([false, true])(
+    "lists nothing from linked ~/.fx/skills with a linked home=%s",
+    (linkedHome) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const physicalHome = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-fx-skills-home-",
+        });
+        const home = linkedHome
+          ? path.join(
+              yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-fx-home-alias-" }),
+              "home",
+            )
+          : physicalHome;
+        if (linkedHome) yield* fileSystem.symlink(physicalHome, home);
+        for (const [root, name] of [
+          ["dotfiles/fx-skills", "managed"],
+          [".claude/skills", "compat"],
+        ] as const) {
+          yield* fileSystem.makeDirectory(path.join(home, root, name), { recursive: true });
+          yield* fileSystem.writeFileString(
+            path.join(home, root, name, "SKILL.md"),
+            `---\nname: ${name}\n---\n`,
+          );
+        }
+        yield* fileSystem.makeDirectory(path.join(home, ".fx"));
+        yield* fileSystem.symlink(
+          path.join(home, "dotfiles/fx-skills"),
+          path.join(home, ".fx/skills"),
         );
-      }
-      yield* fileSystem.makeDirectory(path.join(home, ".fx"));
-      yield* fileSystem.symlink(
-        path.join(home, "dotfiles/fx-skills"),
-        path.join(home, ".fx/skills"),
-      );
 
-      const skills = yield* discoverFxSkills({
-        cwd: path.join(home, "app"),
-        environment: { HOME: home },
-      });
+        const skills = yield* discoverFxSkills({
+          cwd: path.join(home, "app"),
+          environment: { HOME: home },
+        });
 
-      assert.deepEqual(
-        skills.map((skill) => skill.name),
-        ["compat"],
-      );
-    }).pipe(Effect.provide(NodeServices.layer)),
+        assert.deepEqual(
+          skills.map((skill) => skill.name),
+          ["compat"],
+        );
+      }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

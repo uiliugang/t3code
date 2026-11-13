@@ -829,18 +829,7 @@ echo 'Verified relay installed and executed.'
       NodeChildProcess.execFileSync("sh", ["-c", `sha256sum ${archive} > SHA256SUMS`], {
         cwd: release,
       });
-      for (const tool of [
-        "sh",
-        "mkdir",
-        "mktemp",
-        "cat",
-        "rm",
-        "grep",
-        "cut",
-        "sha256sum",
-        "tar",
-        "mv",
-      ]) {
+      for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm", "grep", "cut", "sha256sum", "mv"]) {
         NodeFS.symlinkSync(
           NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], {
             encoding: "utf8",
@@ -848,6 +837,11 @@ echo 'Verified relay installed and executed.'
           NodePath.join(bin, tool),
         );
       }
+      NodeFS.writeFileSync(
+        NodePath.join(bin, "tar"),
+        '#!/bin/sh\nprintf "%s\\n" "gzip: not found" >&2\nexit 2\n',
+        { mode: 0o755 },
+      );
       NodeFS.writeFileSync(
         NodePath.join(bin, "uname"),
         '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n',

@@ -633,54 +633,73 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
   );
 
   it.effect.each([
-    { name: "its directory is on PATH", onPath: true, recorded: false, linkedHome: false },
+    {
+      name: "its directory is on PATH",
+      onPath: true,
+      recorded: false,
+      linkedHome: false,
+      linkedParent: false,
+    },
     {
       name: "an earlier prune recorded its entry as a launcher",
       onPath: false,
       recorded: true,
       linkedHome: false,
+      linkedParent: false,
     },
     {
       name: "its real directory in a symlinked home is on PATH",
       onPath: true,
       recorded: false,
       linkedHome: true,
+      linkedParent: false,
     },
-  ])("removes a runtime only its own entry names when $name", ({ onPath, recorded, linkedHome }) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const { baseDir, versionsDir } = yield* setup(["1.0.0", "1.1.0"]);
-      const binDir = path.join(baseDir, "bin");
-      yield* fs.makeDirectory(binDir);
-      yield* fs.symlink(path.join(versionsDir, "1.1.0", "t3"), path.join(binDir, "t3"));
-      const ownDir = path.join(versionsDir, "1.0.0");
-      if (recorded) {
-        yield* fs.writeFileString(
-          path.join(baseDir, "runtime", "launchers"),
-          `${path.join(ownDir, "t3")}\n`,
+    {
+      name: "its version directory's parent is linked on PATH",
+      onPath: true,
+      recorded: false,
+      linkedHome: false,
+      linkedParent: true,
+    },
+  ])(
+    "removes a runtime only its own entry names when $name",
+    ({ onPath, recorded, linkedHome, linkedParent }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { baseDir, versionsDir } = yield* setup(["1.0.0", "1.1.0"]);
+        const binDir = path.join(baseDir, "bin");
+        yield* fs.makeDirectory(binDir);
+        yield* fs.symlink(path.join(versionsDir, "1.1.0", "t3"), path.join(binDir, "t3"));
+        const entryRoot = linkedParent ? path.join(baseDir, "linked-versions") : versionsDir;
+        if (linkedParent) yield* fs.symlink(versionsDir, entryRoot);
+        const ownDir = path.join(entryRoot, "1.0.0");
+        if (recorded) {
+          yield* fs.writeFileString(
+            path.join(baseDir, "runtime", "launchers"),
+            `${path.join(ownDir, "t3")}\n`,
+          );
+        }
+
+        const home = linkedHome
+          ? path.join(yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-link-" }), "home")
+          : baseDir;
+        if (linkedHome) yield* fs.symlink(baseDir, home);
+
+        // The launch agent puts the running runtime's own directory on PATH.
+        const removed = yield* prunePinnedRuntimes({ baseDir: home, keep: ["2.0.0"] }).pipe(
+          Effect.provideService(
+            ProcessRunner.ProcessRunner,
+            lsofRunner("p1\nftxt\nn/sbin/launchd\n"),
+          ),
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(HostProcess.Environment, {
+            T3CODE_INSTALL_BIN_DIR: binDir,
+            PATH: onPath ? `${ownDir}:/usr/bin:/bin` : "/usr/bin:/bin",
+          }),
         );
-      }
-
-      const home = linkedHome
-        ? path.join(yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-link-" }), "home")
-        : baseDir;
-      if (linkedHome) yield* fs.symlink(baseDir, home);
-
-      // The launch agent puts the running runtime's own directory on PATH.
-      const removed = yield* prunePinnedRuntimes({ baseDir: home, keep: ["2.0.0"] }).pipe(
-        Effect.provideService(
-          ProcessRunner.ProcessRunner,
-          lsofRunner("p1\nftxt\nn/sbin/launchd\n"),
-        ),
-        Effect.provideService(HostProcess.Platform, "darwin"),
-        Effect.provideService(HostProcess.Environment, {
-          T3CODE_INSTALL_BIN_DIR: binDir,
-          PATH: onPath ? `${ownDir}:/usr/bin:/bin` : "/usr/bin:/bin",
-        }),
-      );
-      assert.deepEqual(removed, ["1.0.0"]);
-    }),
+        assert.deepEqual(removed, ["1.0.0"]);
+      }),
   );
 
   it.effect.each([

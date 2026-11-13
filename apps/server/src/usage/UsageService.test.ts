@@ -1435,7 +1435,11 @@ describe("UsageService", () => {
       assert.strictEqual(totalOutputTokens(pending), 5);
       assert.deepStrictEqual(museSources(pending), [["muse", "ok", true]]);
       assert.deepStrictEqual(museSources(refreshed), [
-        [NodePath.join(museHome, "sessions"), "ok", undefined],
+        [
+          yield* Effect.promise(() => NodeFSP.realpath(NodePath.join(museHome, "sessions"))),
+          "ok",
+          undefined,
+        ],
       ]);
     }),
   );

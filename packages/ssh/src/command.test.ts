@@ -7,6 +7,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -16,6 +17,7 @@ import { parseSshResolveOutput, remoteStateKey, runSshCommand } from "./command.
 import { SshCommandError } from "./errors.ts";
 
 const encoder = new TextEncoder();
+const isSshCommandError = Schema.is(SshCommandError);
 
 const makeFailedProcess = (input: {
   readonly stdout: string;

@@ -5684,6 +5684,62 @@ const zhCN: Readonly<Record<string, string>> = {
   "Use $frontend-design to fix the flaky test in [surface.test.ts](apps/web/src/terminal/ghostty/surface.test.ts) and align the header with [SettingsPanels.tsx](apps/web/src/components/settings/SettingsPanels.tsx) before shipping.":
     "使用 $frontend-design 修复 [surface.test.ts](apps/web/src/terminal/ghostty/surface.test.ts) 中不稳定的测试，并在发布前参照 [SettingsPanels.tsx](apps/web/src/components/settings/SettingsPanels.tsx) 对齐页眉。",
   "fast-forward": "快进合并",
+  "Voice input uses the first connected microphone in this list.":
+    "语音输入会使用此列表中第一个已连接的麦克风。",
+  "Saved microphone": "已保存的麦克风",
+  "Microphones, preferred first": "麦克风列表，按优先顺序排列",
+  "Record ten seconds and play it back. The audio stays on this device.":
+    "录制十秒音频并回放。音频仅保存在此设备上。",
+  Record: "录制",
+  "Discard recording": "丢弃录音",
+  "No microphone found.": "未找到麦克风。",
+  "Microphone access is required for voice input. Allow access in your browser or system settings and try again.":
+    "语音输入需要麦克风权限。请在浏览器或系统设置中允许访问，然后重试。",
+  "Tap to toggle, hold to talk": "轻按切换录音，按住说话",
+  "Tap to toggle, hold to talk.": "轻按切换录音，按住说话。",
+  "Record while held": "按住时录音",
+  "Record while held.": "按住时录音。",
+  "Tap to start, tap to stop": "轻按开始，再次轻按停止",
+  "Tap to start, tap to stop.": "轻按开始，再次轻按停止。",
+  "Where your speech is turned into text.": "选择将语音转为文字的位置。",
+  "{environment} can’t transcribe audio locally. Choose another destination.":
+    "{environment} 无法在本地转写音频，请选择其他目标。",
+  "The provider detects your language automatically.": "提供商会自动检测你使用的语言。",
+  "{model} detects the language automatically.": "{model} 会自动检测语言。",
+  "{model} uses one fixed language.": "{model} 仅使用一种固定语言。",
+  "This model": "此模型",
+  "OpenAI handles silence itself.": "OpenAI 会自行处理静音。",
+  "Skip silence and background noise before transcribing.": "转写前跳过静音和背景噪声。",
+  "Drop “um” and “uh” from transcripts.": "从转写文本中移除“嗯”“呃”等语气词。",
+  "Your dictionary": "你的词典",
+  "Names and terms to spell your way, saved on this device.":
+    "按你的习惯拼写姓名和术语，仅保存在此设备上。",
+  "Add words, separated by commas": "添加词语，用逗号分隔",
+  "Used by everyone who dictates in {project}.": "供在 {project} 中使用语音输入的所有人使用。",
+  "Used by everyone who dictates on this environment.": "供在此环境中使用语音输入的所有人使用。",
+  "Off by default. Sends the transcript and nearby draft text, never audio, to the cleanup model.":
+    "默认关闭。仅向整理模型发送转写文本和附近的草稿文本，不发送音频。",
+  Instructions: "指令",
+  "Your own instructions for cleanup.": "用于整理转写文本的自定义指令。",
+  "Fix punctuation, numbers, lists, and spoken corrections.": "修正标点、数字、列表及口头更正。",
+  "The phrase you say to fix a mistake, like “scratch that”.":
+    "用于更正口误的提示语，例如“刚才说错了”。",
+  "Using your file at {path}": "正在使用你的文件：{path}",
+  "Stop using your {model} file; the file stays on disk":
+    "停止使用你的 {model} 文件，磁盘上的文件会保留",
+  "Grades are error rates and speed is seconds per 30 s of audio, from Handy’s benchmark {hardware}.":
+    "评级表示错误率，速度表示处理每 30 秒音频所需的秒数，数据来自 Handy 的 {hardware} 基准测试。",
+  "Filter by language: {languages}": "按语言筛选：{languages}",
+  "Sort and filter models: {sort}, downloaded only": "模型排序和筛选：{sort}，仅显示已下载",
+  "Sort and filter models: {sort}": "模型排序和筛选：{sort}",
+  "Most accurate in {language}": "{language}中最准确",
+  "Path to a model file or folder already on this environment":
+    "此环境上现有模型文件或文件夹的路径",
+  "Already downloaded elsewhere? Paste the model file or folder path":
+    "已在其他位置下载？粘贴模型文件或文件夹路径",
+  "Use existing": "使用现有文件",
+  "Say a sentence. Cleanup is skipped, so you see exactly what the model heard.":
+    "说一句话。测试会跳过文本整理，直接显示模型识别到的内容。",
 };
 
 export function translateUi(

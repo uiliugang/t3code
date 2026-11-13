@@ -22,6 +22,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.wechatMutate]: AuthAccessWriteScope,
   [WS_METHODS.wechatSend]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerEndpointValidate]: AuthProvidersManageScope,
+  [WS_METHODS.providerAuthRemoveMethod]: AuthProvidersManageScope,
   [WS_METHODS.skillsMutate]: AuthProvidersManageScope,
   [WS_METHODS.skillsInspect]: AuthProvidersManageScope,
   [WS_METHODS.projectsImportFolders]: AuthOrchestrationOperateScope,

@@ -1747,7 +1747,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
             latestUserAuthoredMessageAt: DateTime.makeUnsafe("2026-08-28T06:00:00.000Z"),
           }),
         ]),
-        settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null },
+        settings: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: true },
         branchPullRequest: (_input, lookupOptions) =>
           Ref.update(
             freshReads,
@@ -1780,7 +1780,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
       const freshState = yield* Ref.make<"open" | "merged">("open");
       const fixture = yield* makeHarness({
         snapshot: makeSnapshot([makeThread("merged-branch", { branch: "merged-feature" })]),
-        settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null },
+        settings: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: true },
         branchPullRequest: (_input, lookupOptions) =>
           readsFreshGitState(lookupOptions)
             ? Ref.get(freshState).pipe(Effect.map(makeBranchPullRequest))

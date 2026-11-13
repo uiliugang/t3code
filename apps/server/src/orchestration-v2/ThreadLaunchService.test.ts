@@ -2728,6 +2728,7 @@ it.effect.each([false, true])(
         })),
       };
       const harness = makeHarness({
+        serverSettings: { branchNamePrefix: "t3" },
         ...(group ? { workspace: temporaryWorkspace } : {}),
         generateBranchName: () =>
           Deferred.succeed(branchNameStarted, undefined).pipe(
@@ -2845,6 +2846,7 @@ it.effect.each(["success", "both-fail", "same-model"] as const)(
     Effect.gen(function* () {
       const harness = makeHarness({
         serverSettings: {
+          branchNamePrefix: "t3",
           textGenerationModelSelection:
             outcome === "same-model" ? modelSelection : claudeModelSelection,
         },
