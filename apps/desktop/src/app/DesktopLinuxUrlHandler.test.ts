@@ -575,6 +575,39 @@ const themeIconFixture = (source: Uint8Array) =>
 const iconCacheRuns = (run: ThemeIconRun) =>
   run.commands.filter(({ command }) => command === "gtk-update-icon-cache").length;
 
+const withCaseSensitiveThemeIcons = Effect.fn("test.caseSensitiveThemeIcons")(function* <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const upperName = "com.t3tools.T3Code.png";
+  const backingName = "mixed-case-app-id.png";
+  // Separate backing files preserve Linux casing on case-insensitive host filesystems.
+  const physicalPath = (target: string) =>
+    path.basename(target) === upperName ? path.join(path.dirname(target), backingName) : target;
+  return yield* effect.pipe(
+    Effect.provideService(
+      FileSystem.FileSystem,
+      FileSystem.FileSystem.of({
+        ...fileSystem,
+        readFile: (target) => fileSystem.readFile(physicalPath(target)),
+        writeFile: (target, data, options) =>
+          fileSystem.writeFile(physicalPath(target), data, options),
+        stat: (target) => fileSystem.stat(physicalPath(target)),
+        utimes: (target, atime, mtime) => fileSystem.utimes(physicalPath(target), atime, mtime),
+        readDirectory: (directory, options) =>
+          fileSystem
+            .readDirectory(directory, options)
+            .pipe(
+              Effect.map((entries) =>
+                entries.map((name) => (name === backingName ? upperName : name)),
+              ),
+            ),
+      }),
+    ),
+  );
+});
+
 it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
   it.effect("installs both app id spellings without creating an icon cache", () =>
     Effect.gen(function* () {
@@ -602,7 +635,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       }
       assert.isFalse(yield* fileSystem.exists(fixture.cachePath));
       assert.equal(iconCacheRuns(run), 0);
-    }).pipe(Effect.scoped),
+    }).pipe(withCaseSensitiveThemeIcons),
   );
 
   it.effect("replaces same-length stale icons and refreshes an existing cache once", () =>
@@ -634,7 +667,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
         run.commands.filter(({ command }) => command === "gtk-update-icon-cache"),
         [{ command: "gtk-update-icon-cache", args: ["-f", "-t", fixture.hicolorDir] }],
       );
-    }).pipe(Effect.scoped),
+    }).pipe(withCaseSensitiveThemeIcons),
   );
 
   it.effect("refreshes when this launch changed an icon even if the cache looks newer", () =>
@@ -655,7 +688,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
 
       assert.isTrue(yield* fileSystem.exists(path.join(fixture.appsDir, "com.t3tools.T3Code.png")));
       assert.equal(iconCacheRuns(run), 1);
-    }).pipe(Effect.scoped),
+    }),
   );
 
   it.effect("retries a failed icon cache refresh on the next launch", () =>
@@ -678,7 +711,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       yield* registerWithRealFileSystem(recovering);
       yield* registerWithRealFileSystem(recovering);
       assert.equal(iconCacheRuns(recovering), 1);
-    }).pipe(Effect.scoped),
+    }),
   );
 
   it.effect("still registers the handler when the theme icon install fails", () =>
@@ -702,6 +735,6 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
         missingTool.commands.map(({ command }) => command),
         ["gtk-update-icon-cache", "update-desktop-database", "xdg-mime"],
       );
-    }).pipe(Effect.scoped),
+    }),
   );
 });

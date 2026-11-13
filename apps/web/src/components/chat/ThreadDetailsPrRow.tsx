@@ -22,6 +22,7 @@ import { useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import type { ComposerThreadTarget } from "~/composerDraftStore";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { usePullRequestChecksRefresh } from "~/hooks/usePullRequestChecksRefresh";
 import { cn } from "~/lib/utils";
 import { useServerConfigs } from "~/state/entities";
@@ -72,6 +73,7 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -113,6 +115,7 @@ export function ThreadDetailsPrRow({
   /** Fix and Resolve write here instead of checking the pull request out in a new thread. */
   composerTarget?: ComposerThreadTarget | undefined;
 }) {
+  const t = useUiTranslation();
   const serverConfigs = useServerConfigs();
   const supportsPullRequests = serverConfigs.get(environmentId) !== undefined;
   const repository = sourceControlClients.repositorySelector(project?.repositoryIdentity);
@@ -196,6 +199,8 @@ export function ThreadDetailsPrRow({
     lastSelectedMergeMethod,
   );
 
+  const selectedMergeMethodLabel = t(selectedMergeMethod);
+
   const handOff = (kind: "conflicts" | "findings", task: PullRequestThreadTask) => {
     if (composerTarget === undefined) {
       void startHandoff(kind, task);
@@ -204,8 +209,8 @@ export function ThreadDetailsPrRow({
     writeHandoffToComposer(composerTarget, task);
     toastManager.add({
       type: "success",
-      title: "Added to the composer",
-      description: "The task is in the composer. Read it over, then send.",
+      title: t("Added to the composer"),
+      description: t("The task is in the composer. Read it over, then send."),
     });
   };
 
@@ -267,7 +272,9 @@ export function ThreadDetailsPrRow({
   const rowTooltip =
     detail === null || statePresentation === null ? (
       <TooltipPopup side="top">
-        {status?.tooltip ?? `${capitalizeTerm(terminology.singular)} #${number}`}
+        {status?.tooltip
+          ? t(status.tooltip)
+          : `${t(capitalizeTerm(terminology.singular))} #${number}`}
       </TooltipPopup>
     ) : (
       <TooltipPopup
@@ -288,7 +295,9 @@ export function ThreadDetailsPrRow({
                 aria-hidden
                 className={cn("size-3 shrink-0", statePresentation.toneClassName)}
               />
-              <div className="min-w-0 truncate text-foreground/75">{statePresentation.label}</div>
+              <div className="min-w-0 truncate text-foreground/75">
+                {t(statePresentation.label)}
+              </div>
             </div>
             <div className="flex min-w-0 items-center gap-2">
               <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />
@@ -308,7 +317,7 @@ export function ThreadDetailsPrRow({
                   }
                 />
                 <div className="min-w-0 truncate text-foreground/75">
-                  {describePullRequestChecks(detail.checks)}
+                  {describePullRequestChecks(detail.checks, t)}
                 </div>
               </div>
             ) : null}
@@ -316,15 +325,16 @@ export function ThreadDetailsPrRow({
               <div className="flex min-w-0 items-start gap-2 text-destructive">
                 <TriangleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0 stroke-current" />
                 <div className="min-w-0 flex-1 wrap-break-word">
-                  Merge conflicts with {detail.baseBranch}
+                  {t("Merge conflicts with {branch}", { branch: detail.baseBranch })}
                 </div>
               </div>
             ) : null}
             <div className="flex min-w-0 items-center gap-2">
               <FileDiffIcon className="size-3 shrink-0 stroke-muted-foreground" />
               <div className="min-w-0 flex items-baseline gap-1 truncate text-foreground/75">
-                {detail.changedFiles.toLocaleString()}{" "}
-                {detail.changedFiles === 1 ? "file" : "files"}
+                {t(detail.changedFiles === 1 ? "{count} file" : "{count} files", {
+                  count: detail.changedFiles.toLocaleString(),
+                })}
                 <PullRequestDiffStat additions={detail.additions} deletions={detail.deletions} />
               </div>
             </div>
@@ -347,48 +357,56 @@ export function ThreadDetailsPrRow({
   const trailingAction =
     rowAction === "resolve"
       ? {
-          label: "Resolve",
-          pendingLabel: "Preparing...",
+          label: t("Resolve conflicts"),
+          pendingLabel: t("Preparing..."),
           pending: handoff === "conflicts",
           destructive: true,
           suffix: newThreadSuffix,
           tooltip:
             composerTarget === undefined
-              ? "Check the branch out and resolve the conflicts in a new thread"
-              : "Resolve the conflicts in this thread",
+              ? t("Check the branch out and resolve the conflicts in a new thread")
+              : t("Resolve the conflicts in this thread"),
           onClick: startResolveConflicts,
         }
       : rowAction === "ready"
         ? {
-            label: "Ready",
-            pendingLabel: "Marking...",
+            label: t("Ready"),
+            pendingLabel: t("Marking..."),
             pending: actionPending,
             destructive: false,
             suffix: null,
-            tooltip: `Mark this ${terminology.singular} as ready for review`,
+            tooltip: t("Mark this {kind} as ready for review", { kind: t(terminology.singular) }),
             onClick: () => void perform("ready"),
           }
         : rowAction === "fix"
           ? {
-              label: "Fix",
-              pendingLabel: "Preparing...",
+              label: t("Fix"),
+              pendingLabel: t("Fix"),
               pending: handoff === "findings",
               destructive: true,
-              suffix: newThreadSuffix,
+              suffix:
+                handoff === "findings" ? (
+                  <Spinner size="xs" aria-label={t("Preparing fix")} />
+                ) : (
+                  newThreadSuffix
+                ),
               tooltip:
                 composerTarget === undefined
-                  ? "Fix the failing checks in a new thread"
-                  : "Fix the failing checks in this thread",
+                  ? t("Fix the failing checks in a new thread")
+                  : t("Fix the failing checks in this thread"),
               onClick: startFixChecks,
             }
           : rowAction === "merge"
             ? {
-                label: "Merge",
-                pendingLabel: "Merging...",
+                label: t("Merge"),
+                pendingLabel: t("Merging..."),
                 pending: actionPending,
                 destructive: false,
                 suffix: null,
-                tooltip: `Merge this ${terminology.singular} (${selectedMergeMethod})`,
+                tooltip: t("Merge this {kind} ({method})", {
+                  kind: t(terminology.singular),
+                  method: selectedMergeMethodLabel,
+                }),
                 onClick: () => setConfirmingMerge(true),
               }
             : null;
@@ -406,7 +424,7 @@ export function ThreadDetailsPrRow({
               size="sm"
               part={part}
               className="group/watch"
-              aria-label={`Stop watching #${number}`}
+              aria-label={t("Stop watching #{number}", { number })}
               onClick={onStopWatching}
             />
           }
@@ -424,8 +442,9 @@ export function ThreadDetailsPrRow({
           />
         </TooltipTrigger>
         <TooltipPopup side="top">
-          Watching: the agent wakes when checks finish, someone comments, or the branch conflicts.
-          Click to stop.
+          {t(
+            "Watching: the agent wakes when checks finish, someone comments, or the branch conflicts. Click to stop.",
+          )}
         </TooltipPopup>
       </Tooltip>
     ) : null;
@@ -478,7 +497,7 @@ export function ThreadDetailsPrRow({
                 checksState={checksRollup}
                 checks={detail.checks}
                 variant="count"
-                render={<ThreadDetailsControl part="meta" />}
+                render={<ThreadDetailsControl part="meta" className="min-w-0 shrink" />}
               />
             ) : null}
             {watchControl("icon")}
@@ -519,14 +538,19 @@ export function ThreadDetailsPrRow({
         <AlertDialog open={confirmingMerge} onOpenChange={(open) => setConfirmingMerge(open)}>
           <AlertDialogPopup>
             <AlertDialogHeader>
-              <AlertDialogTitle>Merge {terminology.singular}?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {t("Merge {kind}?", { kind: t(terminology.singular) })}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                This merges #{number} using {selectedMergeMethod}.
+                {t("This merges #{number} using {method}.", {
+                  number,
+                  method: selectedMergeMethodLabel,
+                })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogClose render={<Button variant="outline" size="sm" />}>
-                Cancel
+                {t("Cancel")}
               </AlertDialogClose>
               <Button
                 size="sm"
@@ -536,7 +560,7 @@ export function ThreadDetailsPrRow({
                   void perform("merge", selectedMergeMethod);
                 }}
               >
-                Merge
+                {t("Merge")}
               </Button>
             </AlertDialogFooter>
           </AlertDialogPopup>

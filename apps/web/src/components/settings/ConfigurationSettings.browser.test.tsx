@@ -45,7 +45,9 @@ it("switches the transfer environment and recovers when that environment disconn
   await expect
     .element(screen.getByRole("button", { name: "Environment scope: Server" }))
     .toBeVisible();
-  await expect.element(screen.getByRole("heading", { name: "Server", exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("heading", { name: "Environment scope: Server", exact: true }))
+    .toBeVisible();
   await screen.rerender(view(environments.slice(0, 1)));
   await expect
     .element(screen.getByRole("button", { name: /^Environment scope:/ }))

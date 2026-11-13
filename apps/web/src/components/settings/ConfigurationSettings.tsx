@@ -69,17 +69,6 @@ export function ApplicationConfigurationSettings() {
 
   return (
     <SettingsSection id="settings-import-export" title={t("Import and export")}>
-      {connectedEnvironments.length > 1 ? (
-        <div className="px-4 py-3">
-          <EnvironmentScopeMenu
-            value={environment ? { machine: environment.environmentId } : {}}
-            groups={[]}
-            environments={connectedEnvironments}
-            singleEnvironment
-            onChange={setSelection}
-          />
-        </div>
-      ) : null}
       {environment?.serverConfig ? (
         <SettingsTransfer
           key={environment.environmentId}
@@ -87,6 +76,18 @@ export function ApplicationConfigurationSettings() {
           environmentId={environment.environmentId}
           supportsProjectImport={supportsProjectImport}
           title={environment.label}
+          titleControl={
+            connectedEnvironments.length > 1 ? (
+              <EnvironmentScopeMenu
+                value={{ machine: environment.environmentId }}
+                groups={[]}
+                environments={connectedEnvironments}
+                singleEnvironment
+                variant="ghost"
+                onChange={setSelection}
+              />
+            ) : undefined
+          }
           description={t(
             "Back up app preferences, themes, shortcuts, environment defaults and project/workspace definitions as JSON. Credentials and machine paths are excluded.",
           )}

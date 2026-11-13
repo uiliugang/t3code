@@ -51,6 +51,7 @@ const APPLICATION_SERVER_SETTINGS_KEYS = [
   "responseStreamingMode",
   "enableProviderUpdateChecks",
   "continueThreadsAfterServerUpdate",
+  "keepAwakeWhileAgentsWork",
   "enableAgentBrowserAccess",
   "speechModelId",
   "speechModelUnloadTimeout",

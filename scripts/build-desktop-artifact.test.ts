@@ -620,6 +620,14 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             jobs: Schema.Struct({
               linux: Schema.Struct({
                 env: Schema.Record(Schema.String, Schema.String),
+                steps: Schema.Array(
+                  Schema.Struct({
+                    with: Schema.optional(Schema.Struct({ path: Schema.optional(Schema.String) })),
+                  }),
+                ),
+              }),
+              publish: Schema.Struct({
+                steps: Schema.Array(Schema.Struct({ run: Schema.optional(Schema.String) })),
               }),
             }),
           }),
@@ -653,6 +661,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(config.publish, [
         { provider: "github", owner: "uiliugang", repo: "t3code", releaseType: "release" },
       ]);
+      const uploadPaths = workflow.jobs.linux.steps.flatMap(
+        (step) => step.with?.path?.split("\n") ?? [],
+      );
+      const publishCommands = workflow.jobs.publish.steps.flatMap(
+        (step) => step.run?.split("\n") ?? [],
+      );
+      const checksumFiles =
+        publishCommands.find((command) => command.startsWith("sha256sum "))?.split(/\s+/) ?? [];
+      const releaseFiles =
+        publishCommands.find((command) => command.startsWith("gh release create "))?.split(/\s+/) ??
+        [];
+      const targets = ["AppImage", "deb"];
+      assert.deepNestedPropertyVal(config, "linux.target", targets);
+      for (const target of targets) {
+        const glob = `*.${target}`;
+        assert.include(uploadPaths, `release/${glob}`);
+        assert.include(checksumFiles, glob);
+        assert.include(releaseFiles, glob);
+      }
     }),
   );
 

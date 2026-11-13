@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
   ProjectId,
   SourceControlProviderKind,
@@ -118,6 +119,7 @@ vi.mock(import("../ui/toast"), async (original) => {
 import { act, render as renderUi } from "../../../test/render";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useUiStateStore } from "~/uiStateStore";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
 import { ThreadDetailsThreadPrRows } from "./ThreadDetailsPrRows";
 
@@ -233,6 +235,7 @@ it("requires a new merge click after passing checks become pending and pass agai
 });
 
 async function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   state.perform.mockReset();
   state.checkoutError = null;
   state.newThread.mockReset().mockResolvedValue({
