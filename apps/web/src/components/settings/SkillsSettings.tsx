@@ -55,6 +55,7 @@ import { requestConfirmDialog } from "../../confirmDialog";
 import { randomUUID } from "../../lib/utils";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { SkillCopyDialog } from "./SkillCopyDialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
@@ -1587,11 +1588,13 @@ function OperationHistory({
                 <span>
                   {t(skillJobNames[job.input.type])} ·{" "}
                   {data.skills.find((skill) => skill.id === job.skillId)?.name ??
-                    ("locator" in job.input
-                      ? job.input.locator
-                      : "path" in job.input
-                        ? job.input.path
-                        : "")}
+                    (job.input.type === "copy"
+                      ? `${job.input.name} → ${job.input.directory}`
+                      : "locator" in job.input
+                        ? job.input.locator
+                        : "path" in job.input
+                          ? job.input.path
+                          : "")}
                 </span>
                 <span>{t(states[job.status])}</span>
               </div>
@@ -1678,6 +1681,7 @@ function EnvironmentSkills({
   const [showExternal, setShowExternal] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [install, setInstall] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [previews, setPreviews] = useState<AdoptionPreview[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState(false);
@@ -1730,6 +1734,19 @@ function EnvironmentSkills({
   };
   return (
     <div className="min-w-0 space-y-4">
+      {copying && (
+        <SkillCopyDialog
+          environmentId={environmentId}
+          items={[
+            ...selectedManaged.map((skill) => ({ name: skill.name, source: { id: skill.id } })),
+            ...selectedDiscovered.map((skill) => ({
+              name: skill.name,
+              source: { path: skill.path },
+            })),
+          ]}
+          onClose={() => setCopying(false)}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-muted-foreground">
           <span>
@@ -1911,6 +1928,14 @@ function EnvironmentSkills({
                     {t("Adopt selected ({count})", { count: selectedDiscovered.length })}
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!canManage}
+                  onClick={() => setCopying(true)}
+                >
+                  {t("Copy to environment...")}
+                </Button>
                 {selectedManaged.length > 0 && (
                   <>
                     <Button

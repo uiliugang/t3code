@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import { Switch, TextInput, View } from "react-native";
+import { Pressable, Switch, TextInput, View } from "react-native";
 import {
   skillFailureMessage,
   type DiscoveredSkill,
@@ -42,9 +43,9 @@ import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
+import { Sheet } from "../../components/ui/Sheet";
 import { SettingsScreen } from "./components/SettingsScreen";
-import { SettingsSection } from "./components/SettingsSection";
+import { SkillCopySheet } from "./SkillCopySheet";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 
 type Mutate = (input: SkillMutation) => Promise<boolean>;
@@ -305,6 +306,31 @@ function SkillPackageGroup({
         onPress={() => setExpanded(!expanded)}
       />
       {expanded || search.trim() ? children : null}
+    </View>
+  );
+}
+function DiscoveredSkillDetails({ skill }: { skill: DiscoveredSkill }) {
+  const t = useUiTranslation();
+  return (
+    <View className="min-w-0 flex-1 gap-2 py-4">
+      <Text className="text-xs text-foreground-muted">
+        {t(skill.external ? "Maintained externally" : "Unmanaged")} ·{" "}
+        {(skill.providers ?? [skill.provider]).join(", ")}
+      </Text>
+      {!!skill.description && (
+        <Text className="text-sm text-foreground-muted">{skill.description}</Text>
+      )}
+      <Text className="pt-4 text-xs font-t3-medium text-foreground">{t("Usage locations")}</Text>
+      {(skill.paths ?? [skill.path]).map((path) => (
+        <Text key={path} selectable className="text-xs text-foreground-muted">
+          {path}
+        </Text>
+      ))}
+      {skill.external && (
+        <Text className="text-xs text-foreground-muted">
+          {t("Update this skill through its plugin or provider.")}
+        </Text>
+      )}
     </View>
   );
 }
@@ -719,6 +745,7 @@ function Source({
 }
 function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) {
   const t = useUiTranslation();
+  const insets = useSafeAreaInsets();
   const query = useEnvironmentQuery(serverEnvironment.skills({ environmentId, input: {} }));
   const permitted = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
   const command = useAtomCommand(serverEnvironment.mutateSkills);
@@ -729,7 +756,10 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [showExternal, setShowExternal] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [selecting, setSelecting] = useState(false);
+  const [detailKey, setDetailKey] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [previews, setPreviews] = useState<
     Array<{ skill: DiscoveredSkill; preview: SkillInspection }>
   >([]);
@@ -740,7 +770,6 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [label, setLabel] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [sourceKind, setSourceKind] = useState<SkillSource["kind"]>("skills");
-  const [history, setHistory] = useState(false);
   const mutate: Mutate = async (input) =>
     (await command({ environmentId, input }))._tag === "Success";
   const inspect: Inspect = async (input) => {
@@ -788,568 +817,758 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const discovered = data.discovered.filter(
     (skill) => selected.includes(skill.identity ?? skill.path) && !skill.external,
   );
-  return (
-    <View className="gap-3 p-4">
-      {disabled && (
-        <Text className="text-foreground-muted">
-          {t("Read-only access. Full access is required to manage skills.")}
+  const detail = skillRows(data, "", "all", true).rows.find((row) => row.key === detailKey);
+  const selectionActions = selecting && tab === "skills" && (
+    <View
+      className="border-t border-border-subtle bg-sheet px-5 pt-3"
+      style={{ paddingBottom: Math.max(12, insets.bottom) }}
+    >
+      <View className="flex-row items-center gap-3">
+        <Text className="min-w-0 flex-1 text-sm font-t3-medium text-foreground">
+          {t("{count} selected", { count: selected.length })}
         </Text>
-      )}
-      <View className="flex-row flex-wrap gap-2">
         <ControlPill
-          label={t("Install skill")}
-          disabled={disabled}
-          onPress={() => setInstalling(!installing)}
+          icon="xmark"
+          accessibilityLabel={t("Clear selection")}
+          onPress={() => {
+            setSelected([]);
+            setSelecting(false);
+          }}
         />
         <ControlPill
-          label={t("Refresh discoveries")}
-          disabled={disabled}
-          onPress={() => void mutate({ type: "refresh" })}
+          icon="square.on.square"
+          label={t("Copy")}
+          accessibilityLabel={t("Copy to environment...")}
+          variant="primary"
+          disabled={disabled || chosen.length + discovered.length === 0}
+          onPress={() => setCopying(true)}
         />
-      </View>
-      <Menu
-        actions={[
-          { id: "skills", title: t("Skills list") },
-          { id: "sources", title: t("Installation sources") },
-          { id: "targets", title: t("Usage locations") },
-        ]}
-        onPressAction={({ nativeEvent }) => setTab(nativeEvent.event)}
-      >
-        <ControlPill
-          label={t(
-            tab === "skills"
-              ? "Skills list"
-              : tab === "sources"
-                ? "Installation sources"
-                : "Usage locations",
-          )}
-        />
-      </Menu>
-      {data.lastFailure &&
-        data.lastFailureReason !== "select-skill" &&
-        (tab !== "sources" || !failedSource) && (
-          <View className="gap-2">
-            <ErrorBanner
-              message={t(
-                data.lastFailureReason
-                  ? skillFailureMessage(data.lastFailureReason)
-                  : data.lastFailure,
-              )}
-            />
-            {failedSource ? (
-              <ControlPill label={t("Installation sources")} onPress={() => setTab("sources")} />
-            ) : (
-              data.lastFailureDiagnostics && (
-                <>
-                  <ControlPill
-                    label={t(showDiagnostics ? "Hide details" : "Error details")}
-                    onPress={() => setShowDiagnostics(!showDiagnostics)}
-                  />
-                  {showDiagnostics && (
-                    <Text selectable className="text-xs text-foreground-muted">
-                      {data.lastFailureDiagnostics}
-                    </Text>
-                  )}
-                </>
-              )
-            )}
-          </View>
-        )}
-      {installing && (
-        <Install
-          data={data}
-          disabled={disabled}
-          mutate={mutate}
-          onClose={() => setInstalling(false)}
-        />
-      )}
-      {previewError && (
-        <Text accessibilityRole="alert" className="text-danger-foreground">
-          {t("Some skills could not be previewed. Refresh discoveries and try again.")}
-        </Text>
-      )}
-      {previews.length > 0 && (
-        <View className="gap-3 border-t border-border-subtle py-4">
-          <Text className="font-semibold text-foreground">{t("Review adoption")}</Text>
-          {previews.map(({ skill, preview: item }) => (
-            <View key={skill.path} className="gap-1">
-              <Text className="text-foreground">
-                {skill.name} · {item.digest.slice(0, 12)}
-              </Text>
-              <Text selectable className="text-xs text-foreground-muted">
-                {skill.path}
-              </Text>
-              <Text className="text-xs text-foreground-muted">
-                {item.origin
-                  ? `${item.origin.locator} · ${item.origin.evidence}`
-                  : t(
-                      "Source unknown. A takeover is saved as a local snapshot until a source is connected.",
-                    )}
-              </Text>
-              <TargetSelection
-                data={{
-                  ...data,
-                  targets: data.targets.filter(
-                    (target) =>
-                      target.id === "directory:shared" || skill.targetIds?.includes(target.id),
-                  ),
-                }}
-                selected={locations[skill.path] ?? []}
-                disabled={disabled}
-                onChange={(ids) => setLocations((current) => ({ ...current, [skill.path]: ids }))}
-              />
-            </View>
-          ))}
-          <Text className="text-xs text-foreground-muted">
-            {t(
-              "Original locations are backed up before switching to managed files. You can restore them when stopping management.",
-            )}
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
-            <ControlPill
-              label={t("Take over selected locations")}
-              disabled={
-                disabled ||
-                previews.some(
-                  ({ skill }) => !skill.targetIds?.length || !locations[skill.path]?.length,
-                )
-              }
-              onPress={() =>
+        <Menu
+          actions={[
+            { id: "select-all", title: t("Select filtered skills") },
+            ...(discovered.length
+              ? [
+                  {
+                    id: "adopt",
+                    title: t("Adopt selected ({count})", { count: discovered.length }),
+                    attributes: { disabled: disabled || previewing },
+                  },
+                ]
+              : []),
+            ...(chosen.length
+              ? [
+                  { id: "check", title: t("Check updates"), attributes: { disabled } },
+                  { id: "update", title: t("Apply available updates"), attributes: { disabled } },
+                  ...Object.entries(skillPolicies)
+                    .filter(([id]) => id !== "manual")
+                    .map(([id, title]) => ({
+                      id: `policy:${id}`,
+                      title: t(title),
+                      attributes: { disabled },
+                    })),
+                ]
+              : []),
+          ]}
+          onPressAction={({ nativeEvent }) => {
+            const action = nativeEvent.event;
+            if (action === "select-all") {
+              setSelected(
+                rows
+                  .filter((row) => row.kind === "managed" || !row.skill.external)
+                  .map((row) => row.key),
+              );
+              return;
+            }
+            if (disabled) return;
+            if (action === "adopt") {
+              if (!previewing) void preview(discovered);
+              return;
+            }
+            if (action === "check")
+              void mutate({
+                type: "batch",
+                operations: chosen.map((skill) => ({ type: "check", id: skill.id })),
+              });
+            else if (action === "update")
+              void mutate({
+                type: "batch",
+                operations: chosen
+                  .filter((skill) => skill.availableDigest && skill.policy !== "pinned")
+                  .map((skill) => ({
+                    type: "update",
+                    id: skill.id,
+                    digest: skill.availableDigest!,
+                  })),
+              });
+            else {
+              const policy = Object.keys(skillPolicies).find((id) => action === `policy:${id}`) as
+                | SkillUpdatePolicy
+                | undefined;
+              if (policy)
                 void mutate({
                   type: "batch",
-                  operations: previews
-                    .filter((item) => !item.preview.external)
-                    .map(({ skill, preview: item }) => ({
-                      type: "adopt",
-                      path: skill.path,
-                      digest: item.digest,
-                      mode: "takeover",
-                      targetIds: locations[skill.path] ?? [],
-                      ...(item.origin ? { origin: item.origin } : {}),
-                    })),
+                  operations: chosen.map((skill) => ({ type: "policy", id: skill.id, policy })),
+                });
+            }
+          }}
+        >
+          <ControlPill icon="ellipsis" accessibilityLabel={t("Batch actions")} />
+        </Menu>
+      </View>
+    </View>
+  );
+  return (
+    <View className="flex-1">
+      {detail && (
+        <Sheet title={detail.name} onClose={() => setDetailKey(null)}>
+          <ScreenScrollView
+            className="flex-1"
+            contentInsetAdjustmentBehavior="automatic"
+            contentContainerStyle={{ padding: 20, paddingBottom: Math.max(20, insets.bottom) }}
+          >
+            {detail.kind === "managed" ? (
+              <Skill
+                skill={detail.skill}
+                data={data}
+                disabled={disabled || detail.skill.status === "fetching"}
+                mutate={mutate}
+                inspect={inspect}
+              />
+            ) : (
+              <DiscoveredSkillDetails skill={detail.skill} />
+            )}
+          </ScreenScrollView>
+        </Sheet>
+      )}
+      <ScreenScrollView
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerClassName="gap-4 px-5 pt-4 pb-8"
+      >
+        {copying && (
+          <SkillCopySheet
+            environmentId={environmentId}
+            items={[
+              ...chosen.map((skill) => ({ name: skill.name, source: { id: skill.id } })),
+              ...discovered.map((skill) => ({ name: skill.name, source: { path: skill.path } })),
+            ]}
+            onClose={() => setCopying(false)}
+          />
+        )}
+        {disabled && (
+          <Text className="text-foreground-muted">
+            {t("Read-only access. Full access is required to manage skills.")}
+          </Text>
+        )}
+        <View className="flex-row items-center gap-2">
+          <View className="min-w-0 flex-1">
+            <Text className="text-sm font-t3-medium text-foreground">
+              {tab === "skills"
+                ? t("{count} skills", { count: rows.length })
+                : t(
+                    tab === "sources"
+                      ? "Installation sources"
+                      : tab === "history"
+                        ? "Recent operations"
+                        : "Usage locations",
+                  )}
+            </Text>
+          </View>
+          <ControlPill
+            icon="plus"
+            accessibilityLabel={t("Install skill")}
+            disabled={disabled}
+            onPress={() => setInstalling(!installing)}
+          />
+          {tab === "skills" && (
+            <ControlPill
+              label={t(selecting ? "Done" : "Select")}
+              onPress={() => {
+                setSelecting(!selecting);
+                setSelected([]);
+              }}
+            />
+          )}
+          <Menu
+            actions={[
+              { id: "skills", title: t("Skills list") },
+              { id: "sources", title: t("Installation sources") },
+              { id: "targets", title: t("Usage locations") },
+              { id: "refresh", title: t("Refresh discoveries"), attributes: { disabled } },
+              {
+                id: "history",
+                title: t("Recent operations ({count})", { count: data.jobs?.length ?? 0 }),
+              },
+            ]}
+            onPressAction={({ nativeEvent }) => {
+              if (nativeEvent.event === "refresh") {
+                if (!disabled) void mutate({ type: "refresh" });
+                return;
+              }
+              setTab(nativeEvent.event);
+            }}
+          >
+            <ControlPill icon="ellipsis" accessibilityLabel={t("Skill management")} />
+          </Menu>
+        </View>
+        {data.lastFailure &&
+          data.lastFailureReason !== "select-skill" &&
+          (tab !== "sources" || !failedSource) && (
+            <View className="gap-2">
+              <ErrorBanner
+                message={t(
+                  data.lastFailureReason
+                    ? skillFailureMessage(data.lastFailureReason)
+                    : data.lastFailure,
+                )}
+              />
+              {failedSource ? (
+                <ControlPill label={t("Installation sources")} onPress={() => setTab("sources")} />
+              ) : (
+                data.lastFailureDiagnostics && (
+                  <>
+                    <ControlPill
+                      label={t(showDiagnostics ? "Hide details" : "Error details")}
+                      onPress={() => setShowDiagnostics(!showDiagnostics)}
+                    />
+                    {showDiagnostics && (
+                      <Text selectable className="text-xs text-foreground-muted">
+                        {data.lastFailureDiagnostics}
+                      </Text>
+                    )}
+                  </>
+                )
+              )}
+            </View>
+          )}
+        {installing && (
+          <Install
+            data={data}
+            disabled={disabled}
+            mutate={mutate}
+            onClose={() => setInstalling(false)}
+          />
+        )}
+        {previewError && (
+          <Text accessibilityRole="alert" className="text-danger-foreground">
+            {t("Some skills could not be previewed. Refresh discoveries and try again.")}
+          </Text>
+        )}
+        {previews.length > 0 && (
+          <View className="gap-3 border-t border-border-subtle py-4">
+            <Text className="font-semibold text-foreground">{t("Review adoption")}</Text>
+            {previews.map(({ skill, preview: item }) => (
+              <View key={skill.path} className="gap-1">
+                <Text className="text-foreground">
+                  {skill.name} · {item.digest.slice(0, 12)}
+                </Text>
+                <Text selectable className="text-xs text-foreground-muted">
+                  {skill.path}
+                </Text>
+                <Text className="text-xs text-foreground-muted">
+                  {item.origin
+                    ? `${item.origin.locator} · ${item.origin.evidence}`
+                    : t(
+                        "Source unknown. A takeover is saved as a local snapshot until a source is connected.",
+                      )}
+                </Text>
+                <TargetSelection
+                  data={{
+                    ...data,
+                    targets: data.targets.filter(
+                      (target) =>
+                        target.id === "directory:shared" || skill.targetIds?.includes(target.id),
+                    ),
+                  }}
+                  selected={locations[skill.path] ?? []}
+                  disabled={disabled}
+                  onChange={(ids) => setLocations((current) => ({ ...current, [skill.path]: ids }))}
+                />
+              </View>
+            ))}
+            <Text className="text-xs text-foreground-muted">
+              {t(
+                "Original locations are backed up before switching to managed files. You can restore them when stopping management.",
+              )}
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              <ControlPill
+                label={t("Take over selected locations")}
+                disabled={
+                  disabled ||
+                  previews.some(
+                    ({ skill }) => !skill.targetIds?.length || !locations[skill.path]?.length,
+                  )
+                }
+                onPress={() =>
+                  void mutate({
+                    type: "batch",
+                    operations: previews
+                      .filter((item) => !item.preview.external)
+                      .map(({ skill, preview: item }) => ({
+                        type: "adopt",
+                        path: skill.path,
+                        digest: item.digest,
+                        mode: "takeover",
+                        targetIds: locations[skill.path] ?? [],
+                        ...(item.origin ? { origin: item.origin } : {}),
+                      })),
+                  }).then((ok) => {
+                    if (ok) {
+                      setPreviews([]);
+                      setSelected([]);
+                    }
+                  })
+                }
+              />
+              <ControlPill label={t("Cancel")} onPress={() => setPreviews([])} />
+            </View>
+          </View>
+        )}
+        {tab === "skills" && (
+          <>
+            {data.skills.length + data.discovered.length > 0 && (
+              <>
+                <View className="flex-row items-center gap-2">
+                  <TextInput
+                    accessibilityLabel={t("Search skills")}
+                    placeholder={t("Search skills")}
+                    value={search}
+                    onChangeText={setSearch}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    className="h-11 min-w-0 flex-1 rounded-lg border border-border-subtle px-3 text-foreground"
+                  />
+                  <Menu
+                    actions={[
+                      { id: "select-all", title: t("Select filtered skills") },
+                      ...Object.entries(skillFilters).map(([id, title]) => ({
+                        id,
+                        title: `${t(title)} (${counts[id as SkillFilter]})`,
+                      })),
+                      {
+                        id: "external",
+                        title: `${showExternal ? "✓ " : ""}${t("Show externally maintained skills")}`,
+                      },
+                    ]}
+                    onPressAction={({ nativeEvent }) => {
+                      if (nativeEvent.event === "select-all") {
+                        setSelecting(true);
+                        setSelected(
+                          rows
+                            .filter((row) => row.kind === "managed" || !row.skill.external)
+                            .map((row) => row.key),
+                        );
+                        return;
+                      }
+                      if (nativeEvent.event === "external") setShowExternal(!showExternal);
+                      else setFilter(nativeEvent.event as SkillFilter);
+                      setSelected([]);
+                    }}
+                  >
+                    <ControlPill
+                      icon={
+                        filter === "all" && !showExternal
+                          ? "line.3.horizontal.decrease.circle"
+                          : "line.3.horizontal.decrease.circle.fill"
+                      }
+                      accessibilityLabel={t("Filter skills")}
+                    />
+                  </Menu>
+                </View>
+              </>
+            )}
+            {filter !== "all" && (
+              <Text className="text-xs text-foreground-muted">{t(skillFilters[filter])}</Text>
+            )}
+            {!rows.length && (
+              <Text className="text-foreground-muted">
+                {t(counts.all ? "No matching skills" : "No skills found in this environment")}
+              </Text>
+            )}
+            {skillGroups(rows).map((group) => (
+              <SkillPackageGroup
+                key={group.key}
+                name={group.name}
+                count={group.rows.length}
+                search={search}
+              >
+                {group.rows.map((row) => (
+                  <View
+                    key={row.key}
+                    className="flex-row items-start gap-2 border-t border-border-subtle"
+                  >
+                    {selecting && (
+                      <Pressable
+                        accessibilityRole="checkbox"
+                        accessibilityLabel={t("Select {name}", { name: row.name })}
+                        accessibilityState={{
+                          checked: selected.includes(row.key),
+                          disabled: row.kind === "discovered" && row.skill.external,
+                        }}
+                        className="h-12 w-12 items-center justify-center mt-2"
+                        disabled={row.kind === "discovered" && row.skill.external}
+                        onPress={() =>
+                          setSelected(
+                            !selected.includes(row.key)
+                              ? [...selected, row.key]
+                              : selected.filter((key) => key !== row.key),
+                          )
+                        }
+                      >
+                        <SymbolView
+                          name={selected.includes(row.key) ? "checkmark.circle.fill" : "circle"}
+                          size={22}
+                          tintColorClassName={
+                            selected.includes(row.key) ? "accent-primary" : "accent-icon-subtle"
+                          }
+                        />
+                      </Pressable>
+                    )}
+                    <Pressable
+                      accessibilityRole={selecting ? "checkbox" : "button"}
+                      accessibilityLabel={t(selecting ? "Select {name}" : "View skill {name}", {
+                        name: row.name,
+                      })}
+                      accessibilityState={
+                        selecting
+                          ? {
+                              checked: selected.includes(row.key),
+                              disabled: row.kind === "discovered" && row.skill.external,
+                            }
+                          : undefined
+                      }
+                      disabled={selecting && row.kind === "discovered" && row.skill.external}
+                      className="min-w-0 flex-1 flex-row items-center gap-3 py-4"
+                      onPress={() => {
+                        if (selecting) {
+                          if (row.kind === "discovered" && row.skill.external) return;
+                          setSelected((current) =>
+                            current.includes(row.key)
+                              ? current.filter((key) => key !== row.key)
+                              : [...current, row.key],
+                          );
+                        } else setDetailKey(row.key);
+                      }}
+                    >
+                      <View className="min-w-0 flex-1 gap-1.5">
+                        <Text
+                          numberOfLines={1}
+                          className="font-t3-medium text-base text-foreground"
+                        >
+                          {row.name}
+                        </Text>
+                        <Text numberOfLines={1} className="text-xs text-foreground-muted">
+                          {row.kind === "managed"
+                            ? `${t(skillStatus(row.skill))} · ${row.skill.sourceLabel}`
+                            : `${t(row.skill.external ? "Maintained externally" : "Unmanaged")} · ${(row.skill.providers ?? [row.skill.provider]).join(", ")}`}
+                        </Text>
+                        {!!row.skill.description && (
+                          <Text numberOfLines={2} className="text-sm text-foreground-muted">
+                            {row.skill.description}
+                          </Text>
+                        )}
+                      </View>
+                      {!selecting && (
+                        <SymbolView
+                          name="chevron.right"
+                          size={16}
+                          tintColorClassName="accent-icon-subtle"
+                        />
+                      )}
+                    </Pressable>
+                  </View>
+                ))}
+              </SkillPackageGroup>
+            ))}
+          </>
+        )}
+        {tab === "sources" && (
+          <>
+            {data.sources.map((source) => (
+              <Source
+                key={`${source.id}:${source.enabled}:${source.executable}`}
+                source={source}
+                mutate={mutate}
+                disabled={disabled}
+              />
+            ))}
+            <Field label={t("Source name")} value={sourceName} onChange={setSourceName} />
+            <Menu
+              actions={["skills", "mtskills", "local"].map((kind) => ({
+                id: kind,
+                title: t(
+                  kind === "local"
+                    ? "Local directory"
+                    : kind === "mtskills"
+                      ? "Meituan mtskills"
+                      : "Vercel skills",
+                ),
+              }))}
+              onPressAction={({ nativeEvent }) =>
+                setSourceKind(nativeEvent.event as SkillSource["kind"])
+              }
+            >
+              <ControlPill
+                label={t(
+                  sourceKind === "local"
+                    ? "Local directory"
+                    : sourceKind === "mtskills"
+                      ? "Meituan mtskills"
+                      : "Vercel skills",
+                )}
+                accessibilityLabel={t("Installer type")}
+              />
+            </Menu>
+            <ControlPill
+              label={t("Add source")}
+              disabled={disabled || !sourceName.trim()}
+              onPress={() =>
+                void mutate({
+                  type: "source.save",
+                  source: {
+                    id: `custom-${Date.now()}`,
+                    label: sourceName.trim(),
+                    kind: sourceKind,
+                    enabled: true,
+                    executable: "",
+                    registry:
+                      sourceKind === "mtskills"
+                        ? "http://r.npm.sankuai.com"
+                        : sourceKind === "skills"
+                          ? "https://registry.npmjs.org"
+                          : "",
+                  },
+                }).then((ok) => {
+                  if (ok) setSourceName("");
+                })
+              }
+            />
+          </>
+        )}
+        {tab === "targets" && (
+          <>
+            {skillTargetGroups(data.targets).map((group) => (
+              <View key={group.directory} className="gap-2 border-t border-border-subtle py-4">
+                <View className="flex-row flex-wrap items-center gap-3">
+                  <Text className="flex-1 text-foreground">
+                    {group.targets
+                      .map((target) =>
+                        target.id === "directory:shared" ? t("Shared skills") : target.label,
+                      )
+                      .join(" · ")}
+                  </Text>
+                  {!group.enabled && (
+                    <View
+                      className="flex-row items-center gap-1"
+                      accessibilityLabel={t("Disabled")}
+                    >
+                      <SymbolView
+                        name="slash.circle"
+                        size={16}
+                        tintColorClassName="text-foreground-muted"
+                      />
+                      <Text className="text-xs text-foreground-muted">{t("Disabled")}</Text>
+                    </View>
+                  )}
+                  {!group.shared && !group.hasSkills && (
+                    <ControlPill
+                      label={t("Remove location")}
+                      icon="trash"
+                      accessibilityLabel={t("Remove location {name}", {
+                        name: group.targets.map((target) => target.label).join(" · "),
+                      })}
+                      disabled={disabled}
+                      onPress={() =>
+                        void mutate({ type: "target.remove", targetId: group.targets[0]!.id })
+                      }
+                    />
+                  )}
+                  {(group.hasSkills || !group.enabled) && (
+                    <Switch
+                      accessibilityLabel={t("Enable location {name}", {
+                        name: group.targets.map((target) => target.label).join(" · "),
+                      })}
+                      value={group.enabled}
+                      disabled={disabled}
+                      onValueChange={(enabled) =>
+                        void mutate({
+                          type: "target.configure",
+                          targetId: group.targets[0]!.id,
+                          enabled,
+                        })
+                      }
+                    />
+                  )}
+                </View>
+                <Text selectable className="text-xs text-foreground-muted">
+                  {group.directory}
+                </Text>
+                <Text className="text-xs text-foreground-muted">
+                  {t("{count} managed skills", {
+                    count: data.skills.filter((skill) =>
+                      skill.bindings.some(
+                        (binding) =>
+                          group.targets.some((target) => target.id === binding.id) ||
+                          binding.directory === group.directory,
+                      ),
+                    ).length,
+                  })}
+                </Text>
+                {group.targets.length > 1 && (
+                  <Text className="text-xs text-foreground-muted">
+                    {t("This directory is shared by multiple instances.")}
+                  </Text>
+                )}
+              </View>
+            ))}
+            <Field label={t("Agent name")} value={label} onChange={setLabel} />
+            <Field label={t("Skills directory")} value={directory} onChange={setDirectory} />
+            <ControlPill
+              label={t("Add usage location")}
+              disabled={disabled || !label.trim() || !directory.trim()}
+              onPress={() =>
+                void mutate({
+                  type: "target.save",
+                  target: { id: `custom:${directory}`, label, directory },
                 }).then((ok) => {
                   if (ok) {
-                    setPreviews([]);
-                    setSelected([]);
+                    setDirectory("");
+                    setLabel("");
                   }
                 })
               }
             />
-            <ControlPill label={t("Cancel")} onPress={() => setPreviews([])} />
-          </View>
-        </View>
-      )}
-      {tab === "skills" && (
-        <>
-          {data.skills.length + data.discovered.length > 0 && (
-            <>
-              <Field label={t("Search skills")} value={search} onChange={setSearch} />
-              <Menu
-                actions={[
-                  ...Object.entries(skillFilters).map(([id, title]) => ({
-                    id,
-                    title: `${t(title)} (${counts[id as SkillFilter]})`,
-                  })),
-                  {
-                    id: "external",
-                    title: `${showExternal ? "✓ " : ""}${t("Show externally maintained skills")}`,
-                  },
-                ]}
-                onPressAction={({ nativeEvent }) => {
-                  if (nativeEvent.event === "external") setShowExternal(!showExternal);
-                  else setFilter(nativeEvent.event as SkillFilter);
-                  setSelected([]);
-                }}
-              >
-                <ControlPill
-                  icon={
-                    filter === "all" && !showExternal
-                      ? "line.3.horizontal.decrease.circle"
-                      : "line.3.horizontal.decrease.circle.fill"
-                  }
-                  accessibilityLabel={t("Filter skills")}
-                />
-              </Menu>
-              <ControlPill
-                label={t("Select all")}
-                onPress={() =>
-                  setSelected(
-                    rows
-                      .filter((row) => row.kind === "managed" || !row.skill.external)
-                      .map((row) => row.key),
-                  )
-                }
-              />
-            </>
-          )}
-          {selected.length > 0 && (
-            <View className="flex-row flex-wrap gap-2">
-              <ControlPill label={t("Clear selection")} onPress={() => setSelected([])} />
-              {chosen.length > 0 && (
-                <>
-                  <ControlPill
-                    label={t("Check updates")}
-                    disabled={disabled}
-                    onPress={() =>
-                      void mutate({
-                        type: "batch",
-                        operations: chosen.map((skill) => ({ type: "check", id: skill.id })),
-                      })
-                    }
-                  />
-                  <ControlPill
-                    label={t("Apply available updates")}
-                    disabled={disabled}
-                    onPress={() =>
-                      void mutate({
-                        type: "batch",
-                        operations: chosen
-                          .filter((skill) => skill.availableDigest && skill.policy !== "pinned")
-                          .map((skill) => ({
-                            type: "update",
-                            id: skill.id,
-                            digest: skill.availableDigest!,
-                          })),
-                      })
-                    }
-                  />
-                  <Policy
-                    value="automatic"
-                    disabled={disabled}
-                    onChange={(policy) =>
-                      void mutate({
-                        type: "batch",
-                        operations: chosen.map((skill) => ({
-                          type: "policy",
-                          id: skill.id,
-                          policy,
-                        })),
-                      })
-                    }
-                  />
-                </>
-              )}
-              {discovered.length > 0 && (
-                <ControlPill
-                  label={t("Adopt selected ({count})", { count: discovered.length })}
-                  disabled={disabled || previewing}
-                  onPress={() => void preview(discovered)}
-                />
-              )}
-            </View>
-          )}
-          {!rows.length && (
-            <Text className="text-foreground-muted">
-              {t(counts.all ? "No matching skills" : "No skills found in this environment")}
-            </Text>
-          )}
-          {skillGroups(rows).map((group) => (
-            <SkillPackageGroup
-              key={group.key}
-              name={group.name}
-              count={group.rows.length}
-              search={search}
-            >
-              {group.rows.map((row) => (
-                <View key={row.key}>
-                  <View className="flex-row items-center justify-between gap-2">
-                    <Text className="min-w-0 flex-1 text-xs text-foreground-muted">
-                      {t("Select {name}", { name: row.name })}
-                    </Text>
-                    <Switch
-                      accessibilityLabel={t("Select {name}", { name: row.name })}
-                      disabled={row.kind === "discovered" && row.skill.external}
-                      value={selected.includes(row.key)}
-                      onValueChange={(checked) =>
-                        setSelected(
-                          checked
-                            ? [...selected, row.key]
-                            : selected.filter((key) => key !== row.key),
-                        )
-                      }
-                    />
-                  </View>
-                  {row.kind === "managed" ? (
-                    <Skill
-                      skill={row.skill}
-                      data={data}
-                      disabled={disabled || row.skill.status === "fetching"}
-                      mutate={mutate}
-                      inspect={inspect}
-                    />
-                  ) : (
-                    <View className="gap-2 border-t border-border-subtle py-4">
-                      <Text className="font-semibold text-foreground">{row.name}</Text>
-                      <Text className="text-xs text-foreground-muted">
-                        {t(row.skill.external ? "Maintained externally" : "Unmanaged")} ·{" "}
-                        {(row.skill.providers ?? [row.skill.provider]).join(", ")}
-                      </Text>
-                      <Text numberOfLines={2} className="text-sm text-foreground-muted">
-                        {row.skill.description}
-                      </Text>
-                      {(row.skill.paths ?? [row.skill.path]).map((path) => (
-                        <Text key={path} selectable className="text-xs text-foreground-muted">
-                          {path}
-                        </Text>
-                      ))}
-                      {row.skill.external && (
-                        <Text className="text-xs text-foreground-muted">
-                          {t("Update this skill through its plugin or provider.")}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                </View>
-              ))}
-            </SkillPackageGroup>
-          ))}
-        </>
-      )}
-      {tab === "sources" && (
-        <>
-          {data.sources.map((source) => (
-            <Source
-              key={`${source.id}:${source.enabled}:${source.executable}`}
-              source={source}
-              mutate={mutate}
-              disabled={disabled}
-            />
-          ))}
-          <Field label={t("Source name")} value={sourceName} onChange={setSourceName} />
-          <Menu
-            actions={["skills", "mtskills", "local"].map((kind) => ({
-              id: kind,
-              title: t(
-                kind === "local"
-                  ? "Local directory"
-                  : kind === "mtskills"
-                    ? "Meituan mtskills"
-                    : "Vercel skills",
-              ),
-            }))}
-            onPressAction={({ nativeEvent }) =>
-              setSourceKind(nativeEvent.event as SkillSource["kind"])
-            }
-          >
-            <ControlPill
-              label={t(
-                sourceKind === "local"
-                  ? "Local directory"
-                  : sourceKind === "mtskills"
-                    ? "Meituan mtskills"
-                    : "Vercel skills",
-              )}
-              accessibilityLabel={t("Installer type")}
-            />
-          </Menu>
-          <ControlPill
-            label={t("Add source")}
-            disabled={disabled || !sourceName.trim()}
-            onPress={() =>
-              void mutate({
-                type: "source.save",
-                source: {
-                  id: `custom-${Date.now()}`,
-                  label: sourceName.trim(),
-                  kind: sourceKind,
-                  enabled: true,
-                  executable: "",
-                  registry:
-                    sourceKind === "mtskills"
-                      ? "http://r.npm.sankuai.com"
-                      : sourceKind === "skills"
-                        ? "https://registry.npmjs.org"
-                        : "",
-                },
-              }).then((ok) => {
-                if (ok) setSourceName("");
-              })
-            }
-          />
-        </>
-      )}
-      {tab === "targets" && (
-        <>
-          {skillTargetGroups(data.targets).map((group) => (
-            <View key={group.directory} className="gap-2 border-t border-border-subtle py-4">
-              <View className="flex-row flex-wrap items-center gap-3">
-                <Text className="flex-1 text-foreground">
-                  {group.targets
-                    .map((target) =>
-                      target.id === "directory:shared" ? t("Shared skills") : target.label,
-                    )
-                    .join(" · ")}
-                </Text>
-                {!group.enabled && (
-                  <View className="flex-row items-center gap-1" accessibilityLabel={t("Disabled")}>
-                    <SymbolView
-                      name="slash.circle"
-                      size={16}
-                      tintColorClassName="text-foreground-muted"
-                    />
-                    <Text className="text-xs text-foreground-muted">{t("Disabled")}</Text>
-                  </View>
-                )}
-                {!group.shared && !group.hasSkills && (
-                  <ControlPill
-                    label={t("Remove location")}
-                    icon="trash"
-                    accessibilityLabel={t("Remove location {name}", {
-                      name: group.targets.map((target) => target.label).join(" · "),
-                    })}
-                    disabled={disabled}
-                    onPress={() =>
-                      void mutate({ type: "target.remove", targetId: group.targets[0]!.id })
-                    }
-                  />
-                )}
-                {(group.hasSkills || !group.enabled) && (
-                  <Switch
-                    accessibilityLabel={t("Enable location {name}", {
-                      name: group.targets.map((target) => target.label).join(" · "),
-                    })}
-                    value={group.enabled}
-                    disabled={disabled}
-                    onValueChange={(enabled) =>
-                      void mutate({
-                        type: "target.configure",
-                        targetId: group.targets[0]!.id,
-                        enabled,
-                      })
-                    }
-                  />
-                )}
-              </View>
-              <Text selectable className="text-xs text-foreground-muted">
-                {group.directory}
+          </>
+        )}
+        {data.jobs?.some((job) => job.status === "waiting") && (
+          <Text accessibilityRole="text" className="text-foreground-muted">
+            {t("{count} operations waiting for idle agents", {
+              count: data.jobs.filter((job) => job.status === "waiting").length,
+            })}
+          </Text>
+        )}
+        {tab === "history" && !data.jobs?.length && (
+          <Text className="py-8 text-center text-foreground-muted">{t("No operations yet")}</Text>
+        )}
+        {tab === "history" &&
+          [...(data.jobs ?? [])].reverse().map((job) => (
+            <View key={job.id} className="gap-2">
+              <Text className="text-foreground">
+                {t(skillJobNames[job.input.type])} ·{" "}
+                {t(
+                  job.status === "completed"
+                    ? "Completed"
+                    : job.status === "failed"
+                      ? "Failed"
+                      : job.status === "cancelled"
+                        ? "Cancelled"
+                        : job.status === "running"
+                          ? "Running"
+                          : job.status === "waiting"
+                            ? "Waiting for idle agents"
+                            : "Queued",
+                )}{" "}
+                ·{" "}
+                {data.skills.find((skill) => skill.id === job.skillId)?.name ??
+                  (job.input.type === "copy"
+                    ? `${job.input.name} → ${job.input.directory}`
+                    : job.input.type === "adopt"
+                      ? job.input.path
+                      : "")}
               </Text>
+              <SkillDate value={job.finishedAt ?? job.createdAt} />
               <Text className="text-xs text-foreground-muted">
-                {t("{count} managed skills", {
-                  count: data.skills.filter((skill) =>
-                    skill.bindings.some(
-                      (binding) =>
-                        group.targets.some((target) => target.id === binding.id) ||
-                        binding.directory === group.directory,
-                    ),
-                  ).length,
-                })}
+                {t(
+                  job.origin === "schedule"
+                    ? "Automatic schedule"
+                    : job.origin === "recovery"
+                      ? "Recovery"
+                      : "Requested",
+                )}
+                {job.afterDigest && job.afterDigest !== job.beforeDigest
+                  ? ` · ${job.beforeDigest?.slice(0, 8) ?? "–"} → ${job.afterDigest.slice(0, 8)}`
+                  : ""}
               </Text>
-              {group.targets.length > 1 && (
-                <Text className="text-xs text-foreground-muted">
-                  {t("This directory is shared by multiple instances.")}
+              {job.reason && (
+                <Text selectable className="text-danger-foreground">
+                  {t(skillFailureMessage(job.reason))}
+                  {job.diagnostics ? `\n${job.diagnostics}` : ""}
                 </Text>
               )}
-            </View>
-          ))}
-          <Field label={t("Agent name")} value={label} onChange={setLabel} />
-          <Field label={t("Skills directory")} value={directory} onChange={setDirectory} />
-          <ControlPill
-            label={t("Add usage location")}
-            disabled={disabled || !label.trim() || !directory.trim()}
-            onPress={() =>
-              void mutate({
-                type: "target.save",
-                target: { id: `custom:${directory}`, label, directory },
-              }).then((ok) => {
-                if (ok) {
-                  setDirectory("");
-                  setLabel("");
-                }
-              })
-            }
-          />
-        </>
-      )}
-      {data.jobs?.some((job) => job.status === "waiting") && (
-        <Text accessibilityRole="text" className="text-foreground-muted">
-          {t("{count} operations waiting for idle agents", {
-            count: data.jobs.filter((job) => job.status === "waiting").length,
-          })}
-        </Text>
-      )}
-      <ControlPill
-        label={t("Recent operations ({count})", { count: data.jobs?.length ?? 0 })}
-        onPress={() => setHistory(!history)}
-      />
-      {history &&
-        [...(data.jobs ?? [])].reverse().map((job) => (
-          <View key={job.id} className="gap-2">
-            <Text className="text-foreground">
-              {t(skillJobNames[job.input.type])} ·{" "}
-              {t(
-                job.status === "completed"
-                  ? "Completed"
-                  : job.status === "failed"
-                    ? "Failed"
-                    : job.status === "cancelled"
-                      ? "Cancelled"
-                      : job.status === "running"
-                        ? "Running"
-                        : job.status === "waiting"
-                          ? "Waiting for idle agents"
-                          : "Queued",
-              )}{" "}
-              ·{" "}
-              {data.skills.find((skill) => skill.id === job.skillId)?.name ??
-                (job.input.type === "adopt" ? job.input.path : "")}
-            </Text>
-            <SkillDate value={job.finishedAt ?? job.createdAt} />
-            <Text className="text-xs text-foreground-muted">
-              {t(
-                job.origin === "schedule"
-                  ? "Automatic schedule"
-                  : job.origin === "recovery"
-                    ? "Recovery"
-                    : "Requested",
-              )}
-              {job.afterDigest && job.afterDigest !== job.beforeDigest
-                ? ` · ${job.beforeDigest?.slice(0, 8) ?? "–"} → ${job.afterDigest.slice(0, 8)}`
-                : ""}
-            </Text>
-            {job.reason && (
-              <Text selectable className="text-danger-foreground">
-                {t(skillFailureMessage(job.reason))}
-                {job.diagnostics ? `\n${job.diagnostics}` : ""}
-              </Text>
-            )}
-            {job.status === "failed" && (
-              <ControlPill
-                label={t("Retry this operation")}
-                disabled={disabled}
-                onPress={() => void mutate(job.input)}
-              />
-            )}
-            {job.input.type === "adopt" &&
-              (job.status === "queued" || job.status === "waiting") && (
+              {job.status === "failed" && (
                 <ControlPill
-                  label={t("Cancel adoption")}
+                  label={t("Retry this operation")}
                   disabled={disabled}
-                  onPress={() => void mutate({ type: "cancel", id: job.id })}
+                  onPress={() => void mutate(job.input)}
                 />
               )}
-          </View>
-        ))}
+              {job.input.type === "adopt" &&
+                (job.status === "queued" || job.status === "waiting") && (
+                  <ControlPill
+                    label={t("Cancel adoption")}
+                    disabled={disabled}
+                    onPress={() => void mutate({ type: "cancel", id: job.id })}
+                  />
+                )}
+            </View>
+          ))}
+      </ScreenScrollView>
+      {selectionActions}
     </View>
   );
 }
 export function SettingsSkillsRouteScreen() {
-  const environmentMenu = useSettingsEnvironmentMenu();
   const t = useUiTranslation();
-  const { selectedTargets } = useSettingsEnvironmentFilter();
+  const { selectedTargets, availableTargets } = useSettingsEnvironmentFilter();
+  const [environmentId, setEnvironmentId] = useState<EnvironmentId | null>(null);
+  const environment =
+    availableTargets.find((entry) => entry.environmentId === environmentId) ??
+    selectedTargets[0] ??
+    availableTargets[0];
   return (
     <>
-      <SettingsScreen title={t("Skill management")} menus={[environmentMenu]}>
-        <ScreenScrollView
-          className="flex-1"
-          contentInsetAdjustmentBehavior="automatic"
-          contentContainerClassName="gap-6 px-5 pt-4 pb-12"
-        >
-          {selectedTargets.map((environment) => (
-            <SettingsSection key={environment.environmentId} title={environment.label}>
-              <EnvironmentSkills environmentId={environment.environmentId} />
-            </SettingsSection>
-          ))}
-        </ScreenScrollView>
+      <SettingsScreen title={t("Skill management")}>
+        <View className="border-b border-border-subtle px-5 py-3">
+          <Menu
+            actions={availableTargets.map((entry) => ({
+              id: entry.environmentId,
+              title: entry.displayUrl ? `${entry.label} · ${entry.displayUrl}` : entry.label,
+              state: entry.environmentId === environment?.environmentId ? "on" : "off",
+            }))}
+            onPressAction={({ nativeEvent }) =>
+              setEnvironmentId(
+                availableTargets.find((entry) => entry.environmentId === nativeEvent.event)
+                  ?.environmentId ?? null,
+              )
+            }
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Choose environment")}
+              className="min-h-12 flex-row items-center gap-3"
+            >
+              <SymbolView name="desktopcomputer" size={22} tintColorClassName="accent-primary" />
+              <View className="min-w-0 flex-1 gap-1">
+                <Text numberOfLines={1} className="text-sm font-t3-medium text-foreground">
+                  {environment?.label ?? t("Choose environment")}
+                </Text>
+                <Text numberOfLines={1} className="text-xs text-foreground-muted">
+                  {environment?.displayUrl ?? t("No environment selected")}
+                </Text>
+              </View>
+              <SymbolView name="chevron.down" size={16} tintColorClassName="accent-icon-subtle" />
+            </Pressable>
+          </Menu>
+        </View>
+        {environment ? (
+          <EnvironmentSkills
+            key={environment.environmentId}
+            environmentId={environment.environmentId}
+          />
+        ) : (
+          <Text className="p-5 text-foreground-muted">{t("No environment selected")}</Text>
+        )}
       </SettingsScreen>
     </>
   );

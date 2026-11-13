@@ -216,6 +216,7 @@ export function skillNextCheck(skill: ManagedSkill) {
 }
 
 export const skillJobNames: Record<SkillAction["type"], string> = {
+  copy: "Copy skill",
   install: "Install",
   adopt: "Adopt",
   check: "Check updates",

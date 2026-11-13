@@ -38,6 +38,11 @@ import {
   SkillManagerError,
   SkillInspect,
   SkillInspection,
+  SkillCopySource,
+  SkillCopyPackage,
+  SkillCopyPreviewInput,
+  SkillCopyPreview,
+  SkillCopyInput,
 } from "./skills.ts";
 import {
   McpAppCallToolInput,
@@ -618,6 +623,9 @@ export const WS_METHODS = {
   skillsSubscribe: "skills.subscribe",
   skillsMutate: "skills.mutate",
   skillsInspect: "skills.inspect",
+  skillsExport: "skills.export",
+  skillsPreviewCopy: "skills.previewCopy",
+  skillsCopy: "skills.copy",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
   serverReclaimDatabaseSpace: "server.reclaimDatabaseSpace",
@@ -961,6 +969,21 @@ const WsSkillsInspectRpc = Rpc.make(WS_METHODS.skillsInspect, {
 });
 const WsSkillsMutateRpc = Rpc.make(WS_METHODS.skillsMutate, {
   payload: SkillMutation,
+  success: Schema.Void,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsExportRpc = Rpc.make(WS_METHODS.skillsExport, {
+  payload: SkillCopySource,
+  success: SkillCopyPackage,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsPreviewCopyRpc = Rpc.make(WS_METHODS.skillsPreviewCopy, {
+  payload: SkillCopyPreviewInput,
+  success: SkillCopyPreview,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsCopyRpc = Rpc.make(WS_METHODS.skillsCopy, {
+  payload: SkillCopyInput,
   success: Schema.Void,
   error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
 });
@@ -2431,6 +2454,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsSubscribeRpc,
   WsSkillsMutateRpc,
   WsSkillsInspectRpc,
+  WsSkillsExportRpc,
+  WsSkillsPreviewCopyRpc,
+  WsSkillsCopyRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
   WsServerReclaimDatabaseSpaceRpc,
