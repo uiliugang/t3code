@@ -704,11 +704,7 @@ const readCodexRateLimits = (
   client: CodexClient.CodexAppServerClient["Service"],
   deadlineMs: number,
 ) =>
-  withCodexDiscoveryDeadline(
-    client.request("account/rateLimits/read", null),
-    deadlineMs,
-    CODEX_CONFIG_PROBE_TIMEOUT_MS,
-  ).pipe(
+  withCodexDiscoveryDeadline(client.request("account/rateLimits/read", null), deadlineMs).pipe(
     Effect.map((response): CodexRateLimitsProbe =>
       response
         ? {

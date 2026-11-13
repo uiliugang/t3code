@@ -2,11 +2,17 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
-import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthSourceControlWriteScope,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import { act, render } from "../../test/render";
 import { CommandPalette } from "./CommandPalette";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { sourceControlEnvironment } from "../state/sourceControl";
+import { projectFolderImportAtom } from "../projectFolderImport";
 
 const scopes = vi.hoisted(() => ({
   denied: undefined as string | undefined,
@@ -39,7 +45,11 @@ const githubAvailable = {
 vi.mock("@effect/atom-react", async (original) => ({
   ...(await original<typeof import("@effect/atom-react")>()),
   useAtomValue: (atom: unknown) =>
-    atom === primaryServerKeybindingsAtom ? DEFAULT_RESOLVED_KEYBINDINGS : [],
+    atom === primaryServerKeybindingsAtom
+      ? DEFAULT_RESOLVED_KEYBINDINGS
+      : atom === projectFolderImportAtom
+        ? null
+        : [],
 }));
 vi.mock("../hooks/useTheme", () => ({
   getRenderedAppearance: () => "light",
@@ -126,7 +136,14 @@ vi.mock("../state/filesystem", async (original) => ({
 }));
 vi.mock("../state/query", async (original) => ({
   ...(await original<typeof import("../state/query")>()),
-  useEnvironmentQuery: () => ({ data: scopes.sourceControl, isLoading: false }),
+  useEnvironmentQuery: (query: unknown) => ({
+    data:
+      query ===
+      sourceControlEnvironment.discovery({ environmentId: EnvironmentId.make("local"), input: {} })
+        ? scopes.sourceControl
+        : null,
+    isPending: false,
+  }),
 }));
 vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => [],
