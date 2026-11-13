@@ -29,6 +29,7 @@ import { CheckIcon, LinkIcon, MinusIcon, XIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { useEnvironmentScope, usePreparedConnection } from "../../state/session";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { mintPairingCodeOn } from "../../state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "../../state/peerLinks";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -169,6 +170,7 @@ function LinkRequestDialog(props: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const t = useUiTranslation();
   const { item } = props;
   const formId = useId();
   const pickMachine = picksMachine(item);
@@ -297,7 +299,9 @@ function LinkRequestDialog(props: {
       <WizardPopup>
         <WizardHeader
           title={pickMachine ? "Link a machine" : `Link ${targetName}`}
-          description="Agents here can then launch, message and wait on threads there. Revoke it in that machine's Connections."
+          description={t(
+            "Agents here can then launch, message and wait on threads there. Revoke it in that machine's Sharing & access.",
+          )}
         >
           {steps.length > 1 && !useExisting ? (
             <WizardSteps
@@ -380,8 +384,10 @@ function LinkRequestDialog(props: {
                           spellCheck={false}
                         />
                         <span className="block text-xs text-muted-foreground">
-                          Create a link on {targetName}: Settings → Connections → Create link, then
-                          paste its code here.
+                          {t(
+                            "Create a link on {machine}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.",
+                            { machine: targetName },
+                          )}
                         </span>
                       </label>
                     )}
@@ -392,8 +398,10 @@ function LinkRequestDialog(props: {
             )}
             {useExisting ? (
               <p className="text-xs text-muted-foreground">
-                This environment is already linked to {targetName}. The agent can use that link as
-                it is; change its access in Settings → Connections.
+                {t(
+                  "This environment is already linked to {machine}. The agent can use that link as it is; change its access in Settings → Environments.",
+                  { machine: targetName },
+                )}
               </p>
             ) : null}
             {error !== null ? (

@@ -144,10 +144,10 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "Deselect all": "取消全选",
   "This app has no reachable address for {machine}. Enter its HTTPS or Tailscale address.":
     "此应用尚无其他机器可访问的 {machine} 地址，请输入其 HTTPS 或 Tailscale 地址。",
-  "This environment is already linked to {machine}. The agent can use that link; change its access in Settings → Connections.":
-    "此环境已连接至 {machine}，智能体可直接使用此连接。可在“设置 → 连接”中修改权限。",
-  "Create a link on {machine}: Settings → Connections → Create link, then paste its code here.":
-    "请在 {machine} 的“设置 → 连接 → 创建连接”中生成配对码，然后粘贴到此处。",
+  "This environment is already linked to {machine}. The agent can use that link as it is; change its access in Settings → Environments.":
+    "此环境已连接至 {machine}，智能体可直接使用此连接。可在“设置 → 环境”中修改权限。",
+  "Create a link on {machine}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.":
+    "请在 {machine} 的“设置 → 共享与访问权限 → 已授权客户端 → 创建链接”中生成配对码，然后粘贴到此处。",
   "The {server} app is open full screen": "{server} 应用已全屏打开",
   "The {server} app was closed": "{server} 应用已关闭",
   "The {server} app left its page and was stopped": "{server} 应用已离开页面并停止",
@@ -411,8 +411,8 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "Page unavailable": "页面不可用",
   "Only a session that manages access here can answer this.":
     "只有具备此处访问管理权限的会话才能处理此请求。",
-  "Agents here can then launch, message and wait on threads there. It appears in that machine's Connections, where it can be revoked.":
-    "连接后，此处的智能体可在目标机器启动会话、发送消息并等待结果。连接会显示在目标机器的“连接”中，可随时撤销。",
+  "Agents here can then launch, message and wait on threads there. It appears under Authorized clients in that machine's Sharing & access, where it can be revoked.":
+    "连接后，此处的智能体可在目标机器启动会话、发送消息并等待结果。连接会显示在目标机器的“共享与访问权限 → 已授权客户端”中，可随时撤销。",
   "Another address…": "其他地址…",
   "Link a machine this app does not know, by its https or Tailscale address.":
     "通过 HTTPS 或 Tailscale 地址连接此应用尚未添加的机器。",

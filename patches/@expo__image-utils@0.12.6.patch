@@ -1,0 +1,22 @@
+diff --git a/build/Cache.js b/build/Cache.js
+--- a/build/Cache.js
++++ b/build/Cache.js
+@@ -104,11 +104,16 @@
+     }
+ }
+ async function cacheImageAsync(fileName, buffer, cacheKey) {
++    const cachedKey = cacheKeys[cacheKey];
++    const filePath = cachedKey != null ? (0, _path().resolve)(cachedKey, fileName) : (0, _path().resolve)(fileName);
++    const temporaryPath = `${filePath}.${_crypto().default.randomUUID()}.tmp`;
+     try {
+-        const cachedKey = cacheKeys[cacheKey];
+-        await _fs().default.promises.writeFile(cachedKey != null ? (0, _path().resolve)(cachedKey, fileName) : (0, _path().resolve)(fileName), buffer);
++        await _fs().default.promises.writeFile(temporaryPath, buffer, { flag: 'wx' });
++        await _fs().default.promises.rename(temporaryPath, filePath);
+     } catch (error) {
+         console.warn(`Error caching image: "${fileName}". ${error.message}`);
++    } finally {
++        await _fs().default.promises.rm(temporaryPath, { force: true }).catch(() => {});
+     }
+ }
+ async function clearUnusedCachesAsync(projectRoot, type) {
