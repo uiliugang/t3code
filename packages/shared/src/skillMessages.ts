@@ -1,4 +1,34 @@
 export const skillMessages: Readonly<Record<string, string>> = {
+  "Copy skill": "复制技能",
+  "Duplicate names selected: {names}. Close this dialog and select only one source for each name.":
+    "所选技能存在同名来源：{names}。请关闭此窗口，每个名称只选择一个来源。",
+  "Copy to environment...": "复制到其他环境…",
+  "Copy to another environment": "复制到其他环境",
+  "Destination environment": "目标环境",
+  "Destination directory": "目标目录",
+  "Choose environment": "选择环境",
+  "Current version only": "仅复制当前版本",
+  "Confirm copy": "确认复制",
+  "Preview copy": "预览复制",
+  "Copy and overwrite ({count})": "复制并覆盖 {count} 项",
+  New: "新增",
+  Select: "选择",
+  "View skill {name}": "查看技能 {name}",
+  "Recent operations": "最近操作",
+  "Overwrite skill": "覆盖技能",
+  "Overwrite directory": "覆盖目录",
+  "Matching skills or directories will be fully replaced, including old files missing from the source. Other directories are unchanged.":
+    "同名技能或目录将被完整替换，包括源技能中不存在的旧文件。其他目录不受影响。",
+  "Connect another environment to copy skills.": "请连接另一个环境以复制技能。",
+  "Both environments must be connected with permission to manage skills.":
+    "两个环境均需在线，且拥有技能管理权限。",
+  "Could not preview the destination. Check its connection, permissions and path.":
+    "无法预览目标，请检查连接、权限和目录路径。",
+  "Could not copy {name}. Refresh the source and retry.": "无法复制 {name}，请刷新源环境后重试。",
+  "Could not copy {name}. Check the destination and retry.":
+    "无法复制 {name}，请检查目标环境后重试。",
+  "{count} queued. View results in Recent operations on the destination environment.":
+    "已提交 {count} 项，可在目标环境的“最近操作”中查看结果。",
   "Error details": "错误详情",
   "Showing {count} skills": "当前显示 {count} 个技能",
   "Package actions · {name}": "技能包操作 · {name}",

@@ -1465,6 +1465,21 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.skillsMutate,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
+    exportSkill: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:export",
+      tag: WS_METHODS.skillsExport,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    previewSkillCopy: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:preview-copy",
+      tag: WS_METHODS.skillsPreviewCopy,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    copySkill: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:copy",
+      tag: WS_METHODS.skillsCopy,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
     prepareTriage: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:prepare-triage",
       tag: WS_METHODS.serverPrepareTriage,
