@@ -185,7 +185,9 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   );
   const projectFilterOptions = pickableProjectGroups(projectScopes).map((scope) => ({
     key: scope.key,
-    label: formatProjectDisplayName(scope.title, capitalizeProjectNames),
+    label: scope.representative.isScratch
+      ? t("No project")
+      : formatProjectDisplayName(scope.title, capitalizeProjectNames),
   }));
   const projectTitleByProjectKey = useMemo(
     () =>
@@ -537,6 +539,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       filter={{
         customized: options.selectedEnvironmentId !== null || selectedProjectKey !== null,
         items: buildHomeListFilterMenuItems({
+          t,
           environments,
           projects: projectFilterOptions,
           selectedEnvironmentId: options.selectedEnvironmentId,

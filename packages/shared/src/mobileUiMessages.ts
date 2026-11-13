@@ -1,4 +1,6 @@
 export const mobileUiMessages: Readonly<Record<string, string>> = {
+  "Show threads from every environment": "显示所有环境中的会话",
+  "Show threads from every project": "显示所有项目中的会话",
   "App updates": "应用更新",
   "Automatically download APK updates": "自动下载 APK 更新",
   "Install downloaded update": "安装已下载的更新",

@@ -145,9 +145,11 @@ export function HomeRouteScreen() {
     () =>
       pickableProjectGroups(projectScopes).map((scope) => ({
         key: scope.key,
-        label: formatProjectDisplayName(scope.title, capitalizeProjectNames),
+        label: scope.representative.isScratch
+          ? t("No project")
+          : formatProjectDisplayName(scope.title, capitalizeProjectNames),
       })),
-    [capitalizeProjectNames, projectScopes],
+    [capitalizeProjectNames, projectScopes, t],
   );
   const selectedProjectKey =
     resolveHomeProjectFilterScope(projectScopes, projects, listOptions)?.key ?? null;
@@ -177,6 +179,7 @@ export function HomeRouteScreen() {
           filter={{
             customized: selectedEnvironmentId !== null || selectedProjectKey !== null,
             items: buildHomeListFilterMenuItems({
+              t,
               environments,
               projects: projectFilterOptions,
               selectedEnvironmentId,
