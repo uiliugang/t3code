@@ -129,21 +129,29 @@ export function getLastNonEmptyOutputLine(stdout: string): string | null {
   );
 }
 
-const collectProcessOutput = <E>(stream: Stream.Stream<Uint8Array, E>, keepTail: boolean) =>
+interface SshCommandOutput {
+  stdout: { text: string; truncated: boolean };
+  stderr: { text: string; truncated: boolean };
+}
+
+const collectProcessOutput = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
+  output: SshCommandOutput,
+  key: keyof SshCommandOutput,
+  keepTail: boolean,
+): Effect.Effect<void, E> =>
   stream.pipe(
     Stream.decodeText(),
-    Stream.runFold(
-      () => ({ text: "", truncated: false }),
-      (acc, chunk) => {
-        const combined = acc.text + chunk;
-        const truncated = acc.truncated || combined.length > MAX_SSH_COMMAND_OUTPUT_LENGTH;
-        return {
+    Stream.runForEach((chunk) =>
+      Effect.sync(() => {
+        const combined = output[key].text + chunk;
+        output[key] = {
           text: keepTail
             ? combined.slice(-MAX_SSH_COMMAND_OUTPUT_LENGTH)
             : combined.slice(0, MAX_SSH_COMMAND_OUTPUT_LENGTH),
-          truncated,
+          truncated: output[key].truncated || combined.length > MAX_SSH_COMMAND_OUTPUT_LENGTH,
         };
-      },
+      }),
     ),
   );
 
@@ -237,6 +245,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   target: DesktopSshEnvironmentTarget,
   input: RunSshCommandOptions,
   commandScope: Scope.Scope,
+  output: SshCommandOutput,
 ): Effect.fn.Return<
   SshCommandResult,
   SshCommandError | SshInvalidTargetError,
@@ -285,6 +294,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       ChildProcess.make(sshCommand, args, {
         env: environment,
         extendEnv: true,
+        forceKillAfter: "1 second",
         stdin: {
           stream: stdinStream(input.stdin),
           endOnDone: true,
@@ -308,10 +318,10 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       ),
     );
 
-  const [stdout, stderr, exitCode] = yield* Effect.all(
+  const [, , exitCode] = yield* Effect.all(
     [
-      collectProcessOutput(child.stdout, input.keepErrorOutputTail ?? false),
-      collectProcessOutput(child.stderr, input.keepErrorOutputTail ?? false),
+      collectProcessOutput(child.stdout, output, "stdout", input.keepErrorOutputTail ?? false),
+      collectProcessOutput(child.stderr, output, "stderr", input.keepErrorOutputTail ?? false),
       child.exitCode.pipe(Effect.map(Number)),
     ],
     { concurrency: "unbounded" },
@@ -329,6 +339,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     ),
   );
 
+  const { stdout, stderr } = output;
   if (exitCode !== 0) {
     const diagnosticStdout = redactSshErrorOutput(stdout, input.keepErrorOutputTail);
     const diagnosticStderr = redactSshErrorOutput(stderr, input.keepErrorOutputTail);
@@ -383,8 +394,12 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
   SshCommandError | SshInvalidTargetError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
+  const output: SshCommandOutput = {
+    stdout: { text: "", truncated: false },
+    stderr: { text: "", truncated: false },
+  };
   return yield* Effect.scopedWith((commandScope) =>
-    runSshCommandInScope(target, input, commandScope),
+    runSshCommandInScope(target, input, commandScope, output),
   ).pipe(
     Effect.timeoutOption(Duration.millis(input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS)),
     Effect.flatMap((result) =>
@@ -392,17 +407,22 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
         onSome: Effect.succeed,
         // The enclosing operation owns the span for this inline handler.
         onNone: Effect.fnUntraced(function* () {
+          const diagnosticStdout = redactSshErrorOutput(output.stdout, input.keepErrorOutputTail);
+          const stderr = redactSshErrorOutput(output.stderr, input.keepErrorOutputTail);
           yield* Effect.logWarning("ssh.command.timedOut", {
             ...sshTargetLogFields(target),
             timeoutMs: input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS,
             remoteCommandArgs: input.remoteCommandArgs ?? [],
             preHostArgs: input.preHostArgs ?? [],
             hasStdin: input.stdin !== undefined,
+            stdout: diagnosticStdout,
+            stderr,
           });
           return yield* new SshCommandError({
             command: ["ssh"],
             exitCode: null,
-            stderr: "",
+            stdout: diagnosticStdout,
+            stderr,
             message: `SSH command timed out after ${input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS}ms.`,
           });
         }),

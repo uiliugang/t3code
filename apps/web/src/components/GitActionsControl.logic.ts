@@ -1,3 +1,4 @@
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import type {
   GitRunStackedActionResult,
   GitStackedAction,
@@ -340,52 +341,71 @@ export function resolveQuickAction(
   };
 }
 
-export function resolveDefaultBranchActionDialogCopy(input: {
-  action: DefaultBranchConfirmableAction;
-  branchName: string;
-  includesCommit: boolean;
-  terminology: ChangeRequestTerminology;
-}): DefaultBranchActionDialogCopy {
-  const branchLabel = input.branchName;
-  const suffix = ` on "${branchLabel}". You can continue on this ref or create a feature ref and run the same action there.`;
-  const { terminology } = input;
-
+export function resolveDefaultBranchActionDialogCopy(
+  input: {
+    action: DefaultBranchConfirmableAction;
+    branchName: string;
+    includesCommit: boolean;
+    terminology: ChangeRequestTerminology;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): DefaultBranchActionDialogCopy {
+  const branch = input.branchName;
+  const kind = t(input.terminology.singular);
+  const shortLabel = t(input.terminology.shortLabel);
   if (input.action === "push" || input.action === "commit_push") {
     if (input.includesCommit) {
       return {
-        title: "Commit & push to default ref?",
-        description: `This action will commit and push changes${suffix}`,
-        continueLabel: `Commit & push to ${branchLabel}`,
+        title: t("Commit & push to default ref?"),
+        description: t(
+          'This action will commit and push changes on "{branch}". You can continue on this ref or create a feature ref and run the same action there.',
+          { branch },
+        ),
+        continueLabel: t("Commit & push to {branch}", { branch }),
       };
     }
     return {
-      title: "Push to default ref?",
-      description: `This action will push local commits${suffix}`,
-      continueLabel: `Push to ${branchLabel}`,
+      title: t("Push to default ref?"),
+      description: t(
+        'This action will push local commits on "{branch}". You can continue on this ref or create a feature ref and run the same action there.',
+        { branch },
+      ),
+      continueLabel: t("Push to {branch}", { branch }),
     };
   }
-
   if (input.includesCommit) {
     return {
-      title: `Commit, push & create ${terminology.shortLabel} from default ref?`,
-      description: `This action will commit, push, and create a ${terminology.singular}${suffix}`,
-      continueLabel: `Commit, push & create ${terminology.shortLabel}`,
+      title: t("Commit, push & create {kind} from default ref?", { kind: shortLabel }),
+      description: t(
+        'This action will commit, push, and create a {kind} on "{branch}". You can continue on this ref or create a feature ref and run the same action there.',
+        { kind, branch },
+      ),
+      continueLabel: t("Commit, push & create {kind}", { kind: shortLabel }),
     };
   }
   return {
-    title: `Push & create ${terminology.shortLabel} from default ref?`,
-    description: `This action will push local commits and create a ${terminology.singular}${suffix}`,
-    continueLabel: `Push & create ${terminology.shortLabel}`,
+    title: t("Push & create {kind} from default ref?", { kind: shortLabel }),
+    description: t(
+      'This action will push local commits and create a {kind} on "{branch}". You can continue on this ref or create a feature ref and run the same action there.',
+      { kind, branch },
+    ),
+    continueLabel: t("Push & create {kind}", { kind: shortLabel }),
   };
 }
 
 /** Clean trees cannot create feature branches because the server derives names from uncommitted changes. */
-export function resolveFeatureBranchUnavailableReason(input: {
-  branchName: string;
-  hasWorkingTreeChanges: boolean;
-}): string | null {
+export function resolveFeatureBranchUnavailableReason(
+  input: {
+    branchName: string;
+    hasWorkingTreeChanges: boolean;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): string | null {
   if (input.hasWorkingTreeChanges) return null;
-  return `There are no changes to commit, so a feature branch can't be named. Create a branch yourself or continue on ${input.branchName}.`;
+  return t(
+    "There are no changes to commit, so a feature branch can't be named. Create a branch yourself or continue on {branch}.",
+    { branch: input.branchName },
+  );
 }
 
 export function resolveThreadBranchUpdate(

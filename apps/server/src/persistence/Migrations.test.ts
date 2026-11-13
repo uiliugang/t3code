@@ -69,7 +69,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90])("upgrades a database at exactly %s", (id) =>
+  it.effect.each([54, 78, 79, 80, 87, 90, 96])("upgrades a database at exactly %s", (id) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: id });
@@ -182,6 +182,22 @@ describe("runMigrations", () => {
       );
       assert.notInclude(String(exit), "57_ScheduledTaskWebhooks");
       assert.deepStrictEqual(yield* history, before);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("keeps the migrations that finished before a later one failed", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 92 });
+      yield* sql`CREATE TABLE orchestration_v2_projection_turn_item_counts (thread_id TEXT)`;
+
+      const exit = yield* Effect.exit(runMigrations());
+
+      assert.isTrue(Exit.isFailure(exit));
+      assert.deepStrictEqual(
+        yield* history,
+        migrationManifest.filter(([id]) => id <= 95),
+      );
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

@@ -5533,6 +5533,105 @@ const zhCN: Readonly<Record<string, string>> = {
   "background task": "后台任务",
   "{count} background task": "{count} 个后台任务",
   "{count} background tasks": "{count} 个后台任务",
+  "Get {name}": "获取 {name}",
+  checks: "项检查",
+  "Different actions across checkouts": "检出目录中的操作不同",
+  "Narrow the selection above to one checkout to edit its list. Adding an action here adds it to every selected checkout.":
+    "在上方选择一个检出目录后编辑其操作列表。在此添加操作会将其添加到所有选中的检出目录。",
+  "Checkout scope": "检出目录范围",
+  "Unavailable checkout": "检出目录不可用",
+  "All checkouts": "所有检出目录",
+  "Search checkouts": "搜索检出目录",
+  "Check {label}": "检查{label}",
+  "Could not reach the server": "无法连接服务器",
+  "You cannot check secrets on this environment": "你无权检查此环境中的密钥",
+  "Check that the secret resolves": "检查能否读取此密钥",
+  "Checking the secret": "正在检查密钥",
+  "Secret resolved": "已读取密钥",
+  "{label} failed: {detail}": "{label}失败：{detail}",
+  "{label} resolved": "已读取{label}",
+  "Writer model not saved": "未保存写作模型",
+  "This model is unavailable on {environment}. Select that environment to choose its model separately.":
+    "此模型在 {environment} 上不可用。请选择该环境，单独设置其模型。",
+  "a selected environment": "某个选中的环境",
+  "No active threads in these projects": "这些项目中暂无活跃会话",
+  "No threads in these projects yet": "这些项目中暂无会话",
+  "No active threads in {project}": "{project} 中暂无活跃会话",
+  "No threads in {project} yet": "{project} 中暂无会话",
+  "Show all projects": "显示所有项目",
+  "Title generation failed.": "标题生成失败。",
+  "Failed to regenerate {failed} of {total} thread titles":
+    "{total} 个会话中有 {failed} 个标题重新生成失败",
+  "Title kept": "保留原标题",
+  "The current title already fits this thread.": "当前标题已符合此会话内容。",
+  "Titles kept": "保留原标题",
+  "Kept {count} of {total} titles": "保留了 {total} 个标题中的 {count} 个",
+  "The current titles already fit these threads.": "当前标题已符合这些会话的内容。",
+  "Those titles already fit their threads.": "这些标题已符合相应会话的内容。",
+  "Commit & push to default ref?": "提交并推送到默认引用？",
+  "Push to default ref?": "推送到默认引用？",
+  "Commit, push & create {kind} from default ref?": "从默认引用提交、推送并创建{kind}？",
+  "Push & create {kind} from default ref?": "从默认引用推送并创建{kind}？",
+  'This action will commit and push changes on "{branch}". You can continue on this ref or create a feature ref and run the same action there.':
+    "此操作将在“{branch}”上提交并推送更改。你可以继续使用此引用，也可以创建功能引用并在那里执行相同操作。",
+  'This action will push local commits on "{branch}". You can continue on this ref or create a feature ref and run the same action there.':
+    "此操作将推送“{branch}”上的本地提交。你可以继续使用此引用，也可以创建功能引用并在那里执行相同操作。",
+  'This action will commit, push, and create a {kind} on "{branch}". You can continue on this ref or create a feature ref and run the same action there.':
+    "此操作将在“{branch}”上提交、推送并创建{kind}。你可以继续使用此引用，也可以创建功能引用并在那里执行相同操作。",
+  'This action will push local commits and create a {kind} on "{branch}". You can continue on this ref or create a feature ref and run the same action there.':
+    "此操作将推送“{branch}”上的本地提交并创建{kind}。你可以继续使用此引用，也可以创建功能引用并在那里执行相同操作。",
+  "Commit & push to {branch}": "提交并推送到 {branch}",
+  "Push to {branch}": "推送到 {branch}",
+  "Commit, push & create {kind}": "提交、推送并创建{kind}",
+  "Push & create {kind}": "推送并创建{kind}",
+  "There are no changes to commit, so a feature branch can't be named. Create a branch yourself or continue on {branch}.":
+    "没有可提交的更改，无法为功能分支命名。请自行创建分支，或继续使用 {branch}。",
+  "Line {line}": "第 {line} 行",
+  "File comment": "文件评论",
+  "Lines {from}-{to}": "第 {from}–{to} 行",
+  "{count} lines selected": "已选择 {count} 行",
+  "Could not paste image": "无法粘贴图片",
+  "Keep awake while agents work": "智能体工作时保持唤醒",
+  "Environment-wide setting. Select All projects to change it.":
+    "此设置适用于整个环境。请选择“所有项目”后修改。",
+  "Stop the computer from sleeping while agents work. Closing a laptop lid still sleeps it.":
+    "智能体工作时阻止电脑休眠。合上笔记本电脑盖仍会进入休眠。",
+  "Choose how to continue.": "选择继续方式。",
+  "Continued for {duration}": "继续工作 {duration}",
+  Continued: "继续工作",
+  "Hide secret": "隐藏密钥",
+  "Show secret": "显示密钥",
+  "a PR": "一个 PR",
+  "an MR": "一个 MR",
+  "a change request": "一个变更请求",
+  'This action will commit and push changes on "{branch}". You can continue on this branch or create a feature branch and run the same action there.':
+    "此操作将在“{branch}”上提交并推送更改。你可以继续使用当前分支，或创建功能分支并在其中执行相同操作。",
+  'This action will push local commits on "{branch}". You can continue on this branch or create a feature branch and run the same action there.':
+    "此操作将在“{branch}”上推送本地提交。你可以继续使用当前分支，或创建功能分支并在其中执行相同操作。",
+  "Commit, push & create {kind} from default branch?": "从默认分支提交、推送并创建 {kind}？",
+  'This action will commit, push, and create {kind} on "{branch}". You can continue on this branch or create a feature branch and run the same action there.':
+    "此操作将在“{branch}”上提交、推送并创建{kind}。你可以继续使用当前分支，或创建功能分支并在其中执行相同操作。",
+  "Push & create {kind} from default branch?": "从默认分支推送并创建 {kind}？",
+  'This action will push local commits and create {kind} on "{branch}". You can continue on this branch or create a feature branch and run the same action there.':
+    "此操作将在“{branch}”上推送本地提交并创建{kind}。你可以继续使用当前分支，或创建功能分支并在其中执行相同操作。",
+  "Fast-forward merge": "快进合并",
+  "Add the commits as they are. Needs the branch to contain the base.":
+    "保留并添加原有提交。此分支需要包含目标分支。",
+  "{method} stack ({count})": "{method}堆栈（{count} 层）",
+  "Merge unavailable": "无法合并",
+  "Merge {count} stack layers?": "合并 {count} 层堆栈？",
+  "Merge {kind}?": "合并{kind}？",
+  "Enable auto-merge?": "启用自动合并？",
+  "Disable auto-merge?": "禁用自动合并？",
+  "Merge {layers} into {branch} using {method}. Layers above #{number} stay open.":
+    "使用 {method} 将 {layers} 合并到 {branch}。#{number} 以上的堆栈层将保持打开。",
+  "Merge #{number} using {method} when its requirements are met. This may happen immediately.":
+    "满足条件时，使用 {method} 合并 #{number}。合并可能立即发生。",
+  "Stop the provider from automatically merging this {kind}.": "阻止提供方自动合并此{kind}。",
+  "Merge #{number} into {branch} using {method}.": "使用 {method} 将 #{number} 合并到 {branch}。",
+  "Merge options": "合并选项",
+  "Markdown image": "Markdown 图片",
+  "Image unavailable. {detail}": "图片不可用。{detail}",
 };
 
 export function translateUi(

@@ -3,6 +3,7 @@ import type {
   GitStackedAction,
   VcsStatusResult,
 } from "@t3tools/contracts";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { type ChangeRequestTerminology, sourceControlClients } from "../sourceControlClients.ts";
 
 export type GitActionIconName = "commit" | "push" | "pr";
@@ -326,41 +327,56 @@ export function requiresDefaultBranchConfirmation(
   );
 }
 
-export function resolveDefaultBranchActionDialogCopy(input: {
-  action: DefaultBranchConfirmableAction;
-  branchName: string;
-  includesCommit: boolean;
-  terminology: ChangeRequestTerminology;
-}): DefaultBranchActionDialogCopy {
-  const branchLabel = input.branchName;
-  const { shortLabel, shortLabelWithArticle } = input.terminology;
-  const suffix = ` on "${branchLabel}". You can continue on this branch or create a feature branch and run the same action there.`;
+export function resolveDefaultBranchActionDialogCopy(
+  input: {
+    action: DefaultBranchConfirmableAction;
+    branchName: string;
+    includesCommit: boolean;
+    terminology: ChangeRequestTerminology;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): DefaultBranchActionDialogCopy {
+  const branch = input.branchName;
+  const kind = t(input.terminology.shortLabel);
+  const kindWithArticle = t(input.terminology.shortLabelWithArticle);
 
   if (input.action === "push" || input.action === "commit_push") {
     if (input.includesCommit) {
       return {
-        title: "Commit & push to default branch?",
-        description: `This action will commit and push changes${suffix}`,
-        continueLabel: `Commit & push to ${branchLabel}`,
+        title: t("Commit & push to default branch?"),
+        description: t(
+          'This action will commit and push changes on "{branch}". You can continue on this branch or create a feature branch and run the same action there.',
+          { branch },
+        ),
+        continueLabel: t("Commit & push to {branch}", { branch }),
       };
     }
     return {
-      title: "Push to default branch?",
-      description: `This action will push local commits${suffix}`,
-      continueLabel: `Push to ${branchLabel}`,
+      title: t("Push to default branch?"),
+      description: t(
+        'This action will push local commits on "{branch}". You can continue on this branch or create a feature branch and run the same action there.',
+        { branch },
+      ),
+      continueLabel: t("Push to {branch}", { branch }),
     };
   }
 
   if (input.includesCommit) {
     return {
-      title: `Commit, push & create ${shortLabel} from default branch?`,
-      description: `This action will commit, push, and create ${shortLabelWithArticle}${suffix}`,
-      continueLabel: `Commit, push & create ${shortLabel}`,
+      title: t("Commit, push & create {kind} from default branch?", { kind }),
+      description: t(
+        'This action will commit, push, and create {kind} on "{branch}". You can continue on this branch or create a feature branch and run the same action there.',
+        { kind: kindWithArticle, branch },
+      ),
+      continueLabel: t("Commit, push & create {kind}", { kind }),
     };
   }
   return {
-    title: `Push & create ${shortLabel} from default branch?`,
-    description: `This action will push local commits and create ${shortLabelWithArticle}${suffix}`,
-    continueLabel: `Push & create ${shortLabel}`,
+    title: t("Push & create {kind} from default branch?", { kind }),
+    description: t(
+      'This action will push local commits and create {kind} on "{branch}". You can continue on this branch or create a feature branch and run the same action there.',
+      { kind: kindWithArticle, branch },
+    ),
+    continueLabel: t("Push & create {kind}", { kind }),
   };
 }
