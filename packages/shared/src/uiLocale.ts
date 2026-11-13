@@ -5632,6 +5632,58 @@ const zhCN: Readonly<Record<string, string>> = {
   "Merge options": "合并选项",
   "Markdown image": "Markdown 图片",
   "Image unavailable. {detail}": "图片不可用。{detail}",
+  "Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep.":
+    "智能体工作时阻止电脑休眠，工作完成后允许休眠。合上笔记本电脑盖仍会进入休眠。",
+  "Send a message to start the conversation.": "发送消息以开始对话。",
+  "Ask anything. @ files, $ skills, / commands": "尽管提问。@ 引用文件，$ 使用技能，/ 执行命令",
+  "Prompt font preview": "输入框字体预览",
+  "New thread ({shortcut})": "新建会话（{shortcut}）",
+  "Run context: {context}": "运行上下文：{context}",
+  "Local checkout": "本地检出",
+  "Merge conflicts with {branch}": "与 {branch} 存在合并冲突",
+  "Check the branch out and resolve the conflicts in a new thread":
+    "检出此分支，并在新会话中解决冲突",
+  "Resolve the conflicts in this thread": "在此会话中解决冲突",
+  "Marking...": "正在标记…",
+  "Mark this {kind} as ready for review": "将此{kind}标记为可评审",
+  "Preparing fix": "正在准备修复",
+  "Fix the failing checks in a new thread": "在新会话中修复失败的检查",
+  "Fix the failing checks in this thread": "在此会话中修复失败的检查",
+  "Merge this {kind} ({method})": "合并此{kind}（{method}）",
+  "Stop watching #{number}": "停止关注 #{number}",
+  "Watching: the agent wakes when checks finish, someone comments, or the branch conflicts. Click to stop.":
+    "正在关注：检查完成、有人评论或分支出现冲突时，智能体会继续工作。点击停止关注。",
+  "This merges #{number} using {method}.": "使用{method}合并 #{number}。",
+  "{count} of {total} awaiting action": "{total} 项检查中 {count} 项等待操作",
+  "Mark unread": "标记为未读",
+  "Filter by {project}": "按 {project} 筛选",
+  "Thread ID": "会话 ID",
+  "Unpin ({count})": "取消置顶（{count}）",
+  "Settle ({count})": "结束会话（{count}）",
+  "Snooze ({count})": "稍后处理（{count}）",
+  "Regenerating… ({count})": "正在重新生成…（{count}）",
+  "Regenerate titles ({count})": "重新生成标题（{count}）",
+  "Mark unread ({count})": "标记为未读（{count}）",
+  "Delete ({count})": "删除（{count}）",
+  'Archive thread "{title}"?': "归档会话“{title}”？",
+  'Delete thread "{title}"?': "删除会话“{title}”？",
+  "Delete {count} thread?": "删除 {count} 个会话？",
+  "Delete {count} threads?": "删除 {count} 个会话？",
+  "This permanently clears conversation history for this thread.":
+    "此操作会永久清除此会话的对话历史。",
+  "This permanently clears conversation history for these threads.":
+    "此操作会永久清除这些会话的对话历史。",
+  "Thread archived, but navigation failed": "会话已归档，但跳转失败",
+  "Failed to archive thread": "归档会话失败",
+  "Choose an option above": "请选择上方选项",
+  "Type your answer": "输入你的回答",
+  "Type your own answer, or leave this blank to use the selected option":
+    "输入你的回答，或留空以使用所选选项",
+  "Choose a project above to start a thread": "请在上方选择项目以开始会话",
+  "Enable a provider in Settings to send a message": "请在设置中启用提供商后发送消息",
+  "Use $frontend-design to fix the flaky test in [surface.test.ts](apps/web/src/terminal/ghostty/surface.test.ts) and align the header with [SettingsPanels.tsx](apps/web/src/components/settings/SettingsPanels.tsx) before shipping.":
+    "使用 $frontend-design 修复 [surface.test.ts](apps/web/src/terminal/ghostty/surface.test.ts) 中不稳定的测试，并在发布前参照 [SettingsPanels.tsx](apps/web/src/components/settings/SettingsPanels.tsx) 对齐页眉。",
+  "fast-forward": "快进合并",
 };
 
 export function translateUi(

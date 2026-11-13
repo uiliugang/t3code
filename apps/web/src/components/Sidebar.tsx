@@ -2356,18 +2356,24 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         api.contextMenu.show(
           [
             ...(unpinMenuItem
-              ? [{ ...unpinMenuItem, disabled: !canOperateThreads(pinnedSelectedThreads) }]
+              ? [
+                  {
+                    ...unpinMenuItem,
+                    label: t("Unpin ({count})", { count: pinnedSelectedThreads.length }),
+                    disabled: !canOperateThreads(pinnedSelectedThreads),
+                  },
+                ]
               : []),
             {
               id: "settle",
-              label: `Settle (${count})`,
+              label: t("Settle ({count})", { count }),
               disabled: settlingThreads.length === 0 || !canOperateThreads(settlingThreads),
             },
             ...(canSnoozeSelection
               ? [
                   {
                     id: "snooze",
-                    label: `Snooze (${count})`,
+                    label: t("Snooze ({count})", { count }),
                     disabled: !canOperateThreads(selectedThreads),
                     children: [
                       ...snoozePresets.map((preset) => ({
@@ -2390,16 +2396,22 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               ? [
                   {
                     ...titleRegenerationMenuItem,
+                    label:
+                      regeneratableTitleThreads.length === 0
+                        ? t("Regenerating… ({count})", { count: titleRegenerationThreads.length })
+                        : t("Regenerate titles ({count})", {
+                            count: regeneratableTitleThreads.length,
+                          }),
                     disabled:
                       titleRegenerationMenuItem.disabled ||
                       !canOperateThreads(regeneratableTitleThreads),
                   },
                 ]
               : []),
-            { id: "mark-unread", label: `Mark unread (${count})` },
+            { id: "mark-unread", label: t("Mark unread ({count})", { count }) },
             {
               id: "delete",
-              label: `Delete (${count})`,
+              label: t("Delete ({count})", { count }),
               destructive: true,
               disabled: !canOperateThreads(selectedThreads),
             },
@@ -2512,8 +2524,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const confirmed = await settlePromise(() =>
           api.dialogs.confirm(
             [
-              `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-              "This permanently clears conversation history for these threads.",
+              t(count === 1 ? "Delete {count} thread?" : "Delete {count} threads?", { count }),
+              t("This permanently clears conversation history for these threads."),
             ].join("\n"),
             { variant: "destructive" },
           ),
@@ -2649,40 +2661,43 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ) ?? null;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
-            buildThreadActionMenuItems({
-              canOperate: readEnvironmentScope(
-                threadRef.environmentId,
-                AuthOrchestrationOperateScope,
-              ),
-              branch: thread.branch ?? null,
-              // An archived project is not a filter choice.
-              projectFilter:
-                threadProjectGroup && !threadProjectGroup.archived
-                  ? {
-                      label: threadProjectGroup.displayName,
-                      isActive: projectScopeKeys.includes(threadProjectGroup.projectKey),
-                    }
-                  : null,
-              isPinned,
-              isSettled,
-              autoSettleEnabled: thread.autoSettleDisabledAt == null,
-              isSnoozed,
-              canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
-              isRegeneratingTitle,
-              isRunning: !threadRuntimeCanArchive(thread.runtime),
-              canShareWithGuest: appAtomRegistry.get(
-                canShareWithGuestAtom(threadRef.environmentId),
-              ),
-              canTurnIntoProject: canTurnThreadIntoProject(threadRef),
-              supports: {
-                settlement: configLoaded,
-                autoSettleOptOut: supportsAutoSettleOptOut,
-                snooze: configLoaded,
-                pinning: configLoaded,
-                titleRegeneration: configLoaded,
+            buildThreadActionMenuItems(
+              {
+                canOperate: readEnvironmentScope(
+                  threadRef.environmentId,
+                  AuthOrchestrationOperateScope,
+                ),
+                branch: thread.branch ?? null,
+                // An archived project is not a filter choice.
+                projectFilter:
+                  threadProjectGroup && !threadProjectGroup.archived
+                    ? {
+                        label: threadProjectGroup.displayName,
+                        isActive: projectScopeKeys.includes(threadProjectGroup.projectKey),
+                      }
+                    : null,
+                isPinned,
+                isSettled,
+                autoSettleEnabled: thread.autoSettleDisabledAt == null,
+                isSnoozed,
+                canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
+                isRegeneratingTitle,
+                isRunning: !threadRuntimeCanArchive(thread.runtime),
+                canShareWithGuest: appAtomRegistry.get(
+                  canShareWithGuestAtom(threadRef.environmentId),
+                ),
+                canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+                supports: {
+                  settlement: configLoaded,
+                  autoSettleOptOut: supportsAutoSettleOptOut,
+                  snooze: configLoaded,
+                  pinning: configLoaded,
+                  titleRegeneration: configLoaded,
+                },
+                snoozePresets,
               },
-              snoozePresets,
-            }),
+              t,
+            ),
             position,
           ),
         );
@@ -2844,7 +2859,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(`Archive thread "${thread.title}"?`),
+                api.dialogs.confirm(t('Archive thread "{title}"?', { title: thread.title })),
               );
               if (confirmed._tag === "Failure" || !confirmed.value) return;
             }
@@ -2859,9 +2874,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: didArchive
-                    ? "Thread archived, but navigation failed"
-                    : "Failed to archive thread",
+                  title: t(
+                    didArchive
+                      ? "Thread archived, but navigation failed"
+                      : "Failed to archive thread",
+                  ),
                   description: error instanceof Error ? error.message : "An error occurred.",
                 }),
               );
@@ -2874,8 +2891,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               const confirmed = await settlePromise(() =>
                 api.dialogs.confirm(
                   [
-                    `Delete thread "${thread.title}"?`,
-                    "This permanently clears conversation history for this thread.",
+                    t('Delete thread "{title}"?', { title: thread.title }),
+                    t("This permanently clears conversation history for this thread."),
                   ].join("\n"),
                   { variant: "destructive" },
                 ),

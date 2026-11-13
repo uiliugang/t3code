@@ -196,12 +196,14 @@ const RunContextSelector = memo(function RunContextSelector({
         ? FolderGitIcon
         : FolderIcon;
   const workspaceLabel = forceNewWorktree
-    ? resolveEnvModeLabel("worktree")
+    ? t(resolveEnvModeLabel("worktree"))
     : envModeLocked
-      ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)
+      ? activeWorktreePath
+        ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)
+        : t(resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode))
       : effectiveEnvMode === "worktree"
-        ? resolveEnvModeLabel("worktree")
-        : resolveCurrentWorkspaceLabel(activeWorktreePath);
+        ? t(resolveEnvModeLabel("worktree"))
+        : t(resolveCurrentWorkspaceLabel(activeWorktreePath));
   const isPanel = displayMode === "panel";
   const isLocked = envLocked || (envModeLocked && (!isPanel || !showEnvironmentPicker));
   const workspacePath =
@@ -254,7 +256,7 @@ const RunContextSelector = memo(function RunContextSelector({
       {icon}
       <ComposerContextLabel displayMode={displayMode}>
         {autoEnvironmentLabel ??
-          (showEnvironmentIndicator ? (activeEnvironment?.label ?? "Run on") : workspaceLabel)}
+          (showEnvironmentIndicator ? (activeEnvironment?.label ?? t("Run on")) : workspaceLabel)}
       </ComposerContextLabel>
       {/* Trailing in the panel, so every row label starts on the same edge. */}
       {isPanel && showEnvironmentIndicator ? (
@@ -281,7 +283,11 @@ const RunContextSelector = memo(function RunContextSelector({
         onContextMenu={handleContextMenu}
         aria-label={
           isPanel
-            ? `Run context: ${[autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel].filter(Boolean).join(", ")}`
+            ? t("Run context: {context}", {
+                context: [autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel]
+                  .filter(Boolean)
+                  .join(", "),
+              })
             : undefined
         }
         data-composer-context-control
@@ -306,7 +312,11 @@ const RunContextSelector = memo(function RunContextSelector({
         }
         aria-label={
           isPanel
-            ? `Run context: ${[autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel].filter(Boolean).join(", ")}`
+            ? t("Run context: {context}", {
+                context: [autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel]
+                  .filter(Boolean)
+                  .join(", "),
+              })
             : undefined
         }
         data-composer-context-control
@@ -421,13 +431,13 @@ const RunContextSelector = memo(function RunContextSelector({
                 ) : (
                   <FolderIcon className="size-3" />
                 )}
-                <MiddleTruncate value={resolveCurrentWorkspaceLabel(activeWorktreePath)} />
+                <MiddleTruncate value={t(resolveCurrentWorkspaceLabel(activeWorktreePath))} />
               </span>
             </MenuRadioItem>
             <MenuRadioItem disabled={envModeLocked} value="worktree" closeOnClick>
               <span className="flex min-w-0 items-center gap-1.5">
                 <FolderGit2Icon className="size-3" />
-                <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree")}</span>
+                <span className="min-w-0 truncate">{t(resolveEnvModeLabel("worktree"))}</span>
               </span>
             </MenuRadioItem>
             {previousWorktreeLabel ? (

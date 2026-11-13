@@ -24,6 +24,7 @@ import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/s
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
 import { useStableCallback } from "~/hooks/useStableCallback";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
@@ -422,6 +423,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   topFadeEnabled = false,
   historyControls,
 }: MessagesTimelineProps) {
+  const t = useUiTranslation();
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -1410,7 +1412,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
           className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
           style={{ paddingBottom: emptyPlaceholderInset }}
         >
-          <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
+          <p className="text-sm text-muted-foreground">
+            {t("Send a message to start the conversation.")}
+          </p>
         </div>
       </>
     );

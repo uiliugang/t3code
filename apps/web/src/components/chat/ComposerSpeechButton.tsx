@@ -75,8 +75,9 @@ export function ComposerSpeechButton(props: {
   size?: "default" | "compact";
   onStart(): void;
 }) {
+  const t = useUiTranslation();
   if (props.state.phase !== "idle") return null;
-  const label = "Start voice input";
+  const label = t("Start voice input");
 
   return (
     <ShortcutTooltip label={label} shortcut={props.shortcutLabel}>
@@ -136,12 +137,12 @@ export function ComposerSpeechRecordingPill(props: {
 
   return (
     <VoiceInputPill size={props.size}>
-      <ShortcutTooltip label="Cancel voice input" shortcut={props.cancelShortcutLabel}>
+      <ShortcutTooltip label={t("Cancel voice input")} shortcut={props.cancelShortcutLabel}>
         <Button
           type="button"
           size={compact ? "icon-xs" : "icon-sm-pill"}
           variant="ghost"
-          aria-label="Cancel voice input"
+          aria-label={t("Cancel voice input")}
           onPointerDown={keepFocus}
           onClick={props.onCancel}
           className="shrink-0"
@@ -184,11 +185,11 @@ export function ComposerSpeechRecordingPill(props: {
           {t("Skip")}
         </Button>
       ) : recording ? (
-        <ShortcutTooltip label="Finish voice input" shortcut={props.finishShortcutLabel}>
+        <ShortcutTooltip label={t("Finish voice input")} shortcut={props.finishShortcutLabel}>
           <Button
             type="button"
             size={compact ? "icon-xs" : "icon-sm-pill"}
-            aria-label="Finish voice input"
+            aria-label={t("Finish voice input")}
             onPointerDown={keepFocus}
             onClick={props.onStop}
             className="shrink-0"

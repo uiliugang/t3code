@@ -139,23 +139,26 @@ export function useThreadActionMenu(input: {
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat, threadRef.environmentId);
-      const items = buildThreadActionMenuItems({
-        canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
-        canFind: onFind !== undefined,
-        branch: thread.branch ?? null,
-        projectFilter: null,
-        isPinned: thread.pinnedAt != null,
-        isSettled: supports.settlement && thread.settledOverride === "settled",
-        autoSettleEnabled: thread.autoSettleDisabledAt == null,
-        isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
-        canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
-        isRegeneratingTitle,
-        isRunning: !threadRuntimeCanArchive(thread.runtime),
-        supports,
-        snoozePresets,
-        canShareWithGuest,
-        canTurnIntoProject: canTurnThreadIntoProject(threadRef),
-      });
+      const items = buildThreadActionMenuItems(
+        {
+          canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
+          canFind: onFind !== undefined,
+          branch: thread.branch ?? null,
+          projectFilter: null,
+          isPinned: thread.pinnedAt != null,
+          isSettled: supports.settlement && thread.settledOverride === "settled",
+          autoSettleEnabled: thread.autoSettleDisabledAt == null,
+          isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
+          canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
+          isRegeneratingTitle,
+          isRunning: !threadRuntimeCanArchive(thread.runtime),
+          supports,
+          snoozePresets,
+          canShareWithGuest,
+          canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+        },
+        t,
+      );
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
       const action: ThreadActionMenuId = clicked.value;
@@ -323,7 +326,7 @@ export function useThreadActionMenu(input: {
         case "archive": {
           if (confirmThreadArchive) {
             const confirmed = await settlePromise(() =>
-              api.dialogs.confirm(`Archive thread "${thread.title}"?`),
+              api.dialogs.confirm(t('Archive thread "{title}"?', { title: thread.title })),
             );
             if (confirmed._tag === "Failure" || !confirmed.value) return;
           }
@@ -346,8 +349,8 @@ export function useThreadActionMenu(input: {
             const confirmed = await settlePromise(() =>
               api.dialogs.confirm(
                 [
-                  `Delete thread "${thread.title}"?`,
-                  "This permanently clears conversation history for this thread.",
+                  t('Delete thread "{title}"?', { title: thread.title }),
+                  t("This permanently clears conversation history for this thread."),
                 ].join("\n"),
                 { variant: "destructive" },
               ),

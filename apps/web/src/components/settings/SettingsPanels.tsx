@@ -2336,12 +2336,14 @@ export function MaintenanceSettingsPanel() {
           serverScoped
           settingKeys={["keepAwakeWhileAgentsWork"]}
           {...searchableSetting("keep-awake-while-agents-work")}
-          description="Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep."
+          description={t(
+            "Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep.",
+          )}
           resetAction={
             settings.keepAwakeWhileAgentsWork !==
             DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork ? (
               <SettingResetButton
-                label="keep awake while agents work"
+                label={t("Keep awake while agents work")}
                 onClick={() =>
                   updateSettings({
                     keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
@@ -2357,7 +2359,7 @@ export function MaintenanceSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ keepAwakeWhileAgentsWork: Boolean(checked) })
               }
-              aria-label="Keep awake while agents work"
+              aria-label={t("Keep awake while agents work")}
             />
           }
         />

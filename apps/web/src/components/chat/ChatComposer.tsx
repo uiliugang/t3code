@@ -3691,7 +3691,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onCitationSubmitAndSend={submitCitationAndSendStable}
                     onCitationDraftSave={saveCitationDraftToPromptStable}
                     onPaste={onComposerPasteStable}
-                    placeholder={
+                    placeholder={t(
                       isComposerApprovalState
                         ? activePendingApproval?.supportsFeedback
                           ? "Send feedback to decline this request"
@@ -3706,8 +3706,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? "Choose a project above to start a thread"
                             : showProviderUnavailable
                               ? "Enable a provider in Settings to send a message"
-                              : DEFAULT_COMPOSER_PLACEHOLDER
-                    }
+                              : DEFAULT_COMPOSER_PLACEHOLDER,
+                    )}
                     disabled={
                       projectSelectionRequired ||
                       isChoiceOnlyPendingQuestion ||
