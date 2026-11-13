@@ -5,7 +5,10 @@ import { translateUi } from "@t3tools/shared/uiLocale";
 
 import { buildSidebarProjectSnapshots } from "../../sidebarProjectGrouping";
 import type { Project } from "../../types";
-import { scopeProjectSettingsGroup } from "./ProjectSettingsPanel.logic";
+import {
+  projectGroupTitleNeedsUpdate,
+  scopeProjectSettingsGroup,
+} from "./ProjectSettingsPanel.logic";
 
 const localEnvironmentId = EnvironmentId.make("local");
 const remoteEnvironmentId = EnvironmentId.make("remote");
@@ -210,5 +213,22 @@ describe("project removal confirmation", () => {
     expect(translated.confirmationMessage).toBe(
       "移除项目“Repo”并删除其中的 2 个会话？\n这将移除 2 个分组项目记录。\n这些会话和所有已归档会话将从 T3 Code 中删除，服务商会话会保留。\n此操作只移除项目记录，不删除磁盘上的文件。\n此操作无法撤销。",
     );
+  });
+});
+
+describe("projectGroupTitleNeedsUpdate", () => {
+  const folderTitle = { title: "repo" };
+  const renamed = { title: "repo", hasCustomTitle: true };
+
+  // regression: #15049 renaming to the default folder title was never saved
+  it("saves a title that matches the folder default so the rename is recorded", () => {
+    expect(projectGroupTitleNeedsUpdate([folderTitle, folderTitle], "repo", true)).toBe(true);
+  });
+
+  it("skips untouched fields and renames every member already carries", () => {
+    expect(projectGroupTitleNeedsUpdate([folderTitle, { title: "other" }], "repo", false)).toBe(
+      false,
+    );
+    expect(projectGroupTitleNeedsUpdate([renamed, renamed], "repo", true)).toBe(false);
   });
 });

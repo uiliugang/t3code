@@ -291,6 +291,7 @@ export function LocalModelChoice(props: {
   readonly selected: boolean;
   readonly onSelect: () => void;
 }) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const voice = useVoiceModels(props.environmentId, props.label);
   const { status } = voice;
@@ -299,13 +300,13 @@ export function LocalModelChoice(props: {
   if (!voice.connection || !status || !status.supported)
     return (
       <ListChoiceRow
-        label="Local model"
+        label={t("Local model")}
         description={
           !voice.connection
-            ? "Not available on this environment"
+            ? t("Not available on this environment")
             : status?.supported === false
-              ? status.reason
-              : "Checking…"
+              ? t(status.reason)
+              : t("Checking…")
         }
         selected={props.selected}
         disabled
@@ -319,17 +320,22 @@ export function LocalModelChoice(props: {
     pending?.downloaded === undefined ? undefined : pending.downloaded / pending.size;
   return (
     <ListRow
-      label={active?.model ?? "Local model"}
+      label={active?.model ?? t("Local model")}
       description={
         pending
           ? pending.state === "verifying"
-            ? `Verifying ${pending.name}…`
-            : `Downloading ${pending.name} · ${Math.round((progress ?? 0) * 100)}%`
+            ? t("Verifying {model}…", { model: pending.name })
+            : t("Downloading {model} · {percent}%", {
+                model: pending.name,
+                percent: Math.round((progress ?? 0) * 100),
+              })
           : active
-            ? `Local model · ${formatBytes(active.size)}`
+            ? t("Local model · {size}", { size: formatBytes(active.size) })
             : voice.canManage
-              ? "No model installed · Choose one to download"
-              : `No model installed · Add one using T3 Code on ${props.label}`
+              ? t("No model installed · Choose one to download")
+              : t("No model installed · Add one using T3 Code on {environment}", {
+                  environment: props.label,
+                })
       }
       selected={props.selected}
       onPress={() => {

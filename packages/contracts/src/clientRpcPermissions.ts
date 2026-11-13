@@ -22,6 +22,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.wechatMutate]: AuthAccessWriteScope,
   [WS_METHODS.wechatSend]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerEndpointValidate]: AuthProvidersManageScope,
+  [WS_METHODS.providerAuthRemoveMethod]: AuthProvidersManageScope,
   [WS_METHODS.skillsMutate]: AuthProvidersManageScope,
   [WS_METHODS.skillsInspect]: AuthProvidersManageScope,
   [WS_METHODS.projectsImportFolders]: AuthOrchestrationOperateScope,
@@ -36,6 +37,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   // Restarts the server, as an update does.
   [WS_METHODS.serverReclaimDatabaseSpace]: AuthEnvironmentMaintainScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
+  [WS_METHODS.serverCheckSecretSource]: AuthSettingsWriteScope,
   // Listing models spends the stored API key, so only those who can choose a model may.
   [WS_METHODS.serverListTextGeneratorModels]: AuthSettingsWriteScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,

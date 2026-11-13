@@ -720,7 +720,7 @@ function PrimaryAction({ app, mcpUrl }: { readonly app: McpApp; readonly mcpUrl:
                 children:
                   appLink === null
                     ? t("Open {name}", { name: app.name })
-                    : t("Open {name} on the web", { name: app.name }),
+                    : t("Get {name}", { name: app.name }),
                 onClick: () => openLink(link),
               },
             }),

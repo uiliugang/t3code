@@ -1,3 +1,4 @@
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   parsePullRequestAnchor,
   pullRequestAnchorMatchesUrl,
@@ -54,6 +55,7 @@ export const PULL_REQUEST_MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, st
   merge: "Merge",
   squash: "Squash and merge",
   rebase: "Rebase and merge",
+  "fast-forward": "Fast-forward merge",
 };
 
 export function allowsSinglePullRequestMerge(input: {
@@ -329,8 +331,11 @@ export function classifyPullRequestChecks(
   return "passing";
 }
 
-export function describePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
-  if (checks.length === 0) return "No checks reported";
+export function describePullRequestChecks(
+  checks: ReadonlyArray<PullRequestCheck>,
+  t: UiTranslator = translateUi.bind(null, "en"),
+): string {
+  if (checks.length === 0) return t("No checks reported");
   const failed = checks.filter(
     (check) => check.status === "failure" || check.status === "cancelled",
   ).length;
@@ -338,13 +343,24 @@ export function describePullRequestChecks(checks: ReadonlyArray<PullRequestCheck
   const actionRequired = checks.filter((check) => check.status === "action-required").length;
   const passed = checks.filter((check) => check.status === "success").length;
   const parts: string[] = [];
-  if (pending > 0) parts.push(`${pending} of ${checks.length} running`);
-  if (actionRequired > 0) parts.push(`${actionRequired} of ${checks.length} awaiting action`);
+  if (pending > 0)
+    parts.push(t("{count} of {total} running", { count: pending, total: checks.length }));
+  if (actionRequired > 0)
+    parts.push(
+      t("{count} of {total} awaiting action", { count: actionRequired, total: checks.length }),
+    );
   if (failed > 0) {
-    parts.push(parts.length > 0 ? `${failed} failed` : `${failed} of ${checks.length} failing`);
+    parts.push(
+      t(parts.length > 0 ? "{count} failed" : "{count} of {total} failing", {
+        count: failed,
+        total: checks.length,
+      }),
+    );
   }
   if (parts.length === 0) {
-    return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
+    return passed === checks.length
+      ? t("All checks passed")
+      : t("{count} of {total} passing", { count: passed, total: checks.length });
   }
   return parts.join(" · ");
 }

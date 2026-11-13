@@ -350,11 +350,22 @@ export const discoverFxSkills = Effect.fn("discoverFxSkills")(function* (input: 
   const configuredHome = input.environment.HOME?.trim();
   if (!configuredHome) return [];
   const fileSystem = yield* FileSystem.FileSystem;
-  const realPath = (target: string) =>
-    fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => target));
+  const path = yield* Path.Path;
+  const realPath = Effect.fn("discoverFxSkills.realPath")((target: string): Effect.Effect<string> =>
+    fileSystem.realPath(target).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => {
+        const parent = path.dirname(target);
+        return parent === target
+          ? Effect.succeed(target)
+          : realPath(parent).pipe(
+              Effect.map((resolved) => path.join(resolved, path.basename(target))),
+            );
+      }),
+      Effect.orElseSucceed(() => target),
+    ),
+  );
   const home = yield* realPath(configuredHome);
   const cwd = yield* realPath(input.cwd);
-  const path = yield* Path.Path;
   const seenFolders = new Set<string>();
   // `$review` and `$Review` each load the skill whose name matches the typed
   // case, so only an exact repeat of a name is dropped.
