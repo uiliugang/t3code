@@ -961,7 +961,7 @@ server.listen(0, "127.0.0.1", () => {
  * job: under a detached shell with job control, in a group of its own. Release kills only the pids
  * it started.
  */
-const agentServer = (owner = "scanner-state") =>
+const agentServer = (owner = "scanner-state", role = "interactive") =>
   Effect.acquireRelease(
     Effect.callback<{
       readonly child: NodeChildProcess.ChildProcess;
@@ -973,6 +973,7 @@ const agentServer = (owner = "scanner-state") =>
         ...process.env,
         [PortScanner.AGENT_THREAD_ENV]: "thread-live",
         T3CODE_RESOURCE_OWNER: owner,
+        T3CODE_RESOURCE_ROLE: role,
       };
       // dash ignores `set -m` without a terminal; bash, like agent tool shells, honors it.
       const child = NodeChildProcess.spawn(
@@ -1016,6 +1017,13 @@ effectIt.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       );
       const job = yield* agentServer();
       const foreign = yield* agentServer("other-state");
+      const settlement = yield* agentServer("scanner-state", "settlement:cleanup-action");
+      yield* scanner.registerTerminalProcesses({
+        threadId: "thread-live",
+        terminalId: "cleanup-action",
+        processIds: [],
+        keepOnSettle: true,
+      });
 
       expect(yield* scanner.scan()).toEqual(
         expect.arrayContaining([
@@ -1039,28 +1047,46 @@ effectIt.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       );
       expect(wrongOwner.reason).toBe("not-found");
       expect(isRunning(job.pid)).toBe(true);
-      yield* scanner.stopThreadServers(ThreadId.make("other-thread"));
+      yield* scanner.stopThreadServers({
+        threadId: ThreadId.make("other-thread"),
+        shouldStop: Effect.succeed(true),
+        mode: "settled",
+      });
       expect(isRunning(job.pid)).toBe(true);
       const checked = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
       const staleCleanup = yield* scanner
-        .stopThreadServers(
-          ThreadId.make("thread-live"),
-          Deferred.succeed(checked, undefined).pipe(
+        .stopThreadServers({
+          threadId: ThreadId.make("thread-live"),
+          mode: "settled",
+          shouldStop: Deferred.succeed(checked, undefined).pipe(
             Effect.andThen(Deferred.await(release)),
             Effect.as(false),
           ),
-        )
+        })
         .pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.await(checked);
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(staleCleanup);
       expect(isRunning(job.pid)).toBe(true);
-      yield* scanner.stopThreadServers(ThreadId.make("thread-live"));
+      yield* scanner.stopThreadServers({
+        threadId: ThreadId.make("thread-live"),
+        shouldStop: Effect.succeed(true),
+        mode: "settled",
+      });
       // The shell waits on its job, so it exits once the job has.
       yield* Effect.promise(() => job.exited);
       expect(isRunning(job.pid)).toBe(false);
       expect(isRunning(foreign.pid)).toBe(true);
+      expect(isRunning(settlement.pid)).toBe(true);
+      yield* scanner.unregisterTerminal({ threadId: "thread-live", terminalId: "cleanup-action" });
+      yield* scanner.stopThreadServers({
+        threadId: ThreadId.make("thread-live"),
+        shouldStop: Effect.succeed(true),
+        mode: "settled",
+      });
+      yield* Effect.promise(() => settlement.exited);
+      expect(isRunning(settlement.pid)).toBe(false);
     }).pipe(
       Effect.scoped,
       Effect.provide(

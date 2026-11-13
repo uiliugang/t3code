@@ -32,9 +32,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
-import * as TerminalManager from "../terminal/Manager.ts";
-import * as DeviceService from "../device/DeviceService.ts";
-import * as PortScanner from "../preview/PortScanner.ts";
+import * as ResourceCleanupService from "./ResourceCleanupService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
@@ -317,12 +315,9 @@ export const make = Effect.gen(function* () {
   // A shell merge or close sends no event, and the branch lookup caches an open pull request for
   // a minute, so these threads' next lookup reads the host fresh.
   const shellClosedThreads = new Set<ThreadId>();
-  const terminals = yield* TerminalManager.TerminalManager;
-  const devices = yield* DeviceService.DeviceService;
-  const ports = yield* PortScanner.PortDiscovery;
+  const resourceCleanup = yield* ResourceCleanupService.ResourceCleanupService;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const pendingResourceCleanup = new Set<ThreadId>();
-  const cleanedRuntimeAt = new Map<ThreadId, string>();
   const cleanupLock = yield* KeyedLock.make<ThreadId>();
   const readThread = Effect.fn("ThreadSettlementServiceV2.readCleanupThread")(function* (
     threadId: ThreadId,
@@ -334,62 +329,23 @@ export const make = Effect.gen(function* () {
         Effect.orDie,
       );
   });
-  const retirementKey = (
-    thread: Pick<
-      OrchestrationV2ThreadShell,
-      "settledOverride" | "settledAt" | "archivedAt" | "deletedAt"
-    >,
-  ) =>
-    thread.settledOverride !== "settled" && thread.archivedAt === null && thread.deletedAt === null
-      ? null
-      : JSON.stringify([
-          toMillis(thread.settledAt),
-          toMillis(thread.archivedAt),
-          toMillis(thread.deletedAt),
-        ]);
-  const cleanUpResource = Effect.fn("ThreadSettlementServiceV2.cleanUpResource")(function* <E>(
-    threadId: ThreadId,
-    operation: string,
-    cleanup: Effect.Effect<void, E>,
-  ) {
-    const result = yield* Effect.result(cleanup);
-    if (result._tag === "Success") return true;
-    yield* Effect.logWarning("thread resource cleanup failed", {
-      threadId,
-      operation,
-      cause: result.failure,
-    });
-    return false;
-  });
   const cleanUpRuntime = Effect.fn("ThreadSettlementServiceV2.cleanUpRuntime")(function* (
     threadId: ThreadId,
   ) {
     const thread = yield* readThread(threadId);
-    const key = thread === null ? null : retirementKey(thread);
-    if (key === null) {
-      pendingResourceCleanup.delete(threadId);
-      return false;
-    }
-    if (cleanedRuntimeAt.get(threadId) === key) return true;
-    // Resource services evaluate this inside their lifecycle lock, immediately before release.
-    const shouldCleanUp = readThread(threadId).pipe(
-      Effect.map((current) => current !== null && retirementKey(current) === key),
-    );
-    const results = yield* Effect.all([
-      cleanUpResource(threadId, "servers", ports.stopThreadServers(threadId, shouldCleanUp)),
-      cleanUpResource(
+    if (thread === null) return false;
+    const result = yield* Effect.result(
+      resourceCleanup.cleanupRuntime({
         threadId,
-        "terminals",
-        terminals.closeOnSettle({ threadId, shouldClose: shouldCleanUp }),
-      ),
-      cleanUpResource(threadId, "devices", devices.close({ threadId }, shouldCleanUp)),
-    ]);
-    if (results.every(Boolean)) {
-      cleanedRuntimeAt.set(threadId, key);
+        mode: thread.archivedAt !== null || thread.deletedAt !== null ? "removed" : "settled",
+      }),
+    );
+    if (result._tag === "Success") {
       pendingResourceCleanup.delete(threadId);
-      return yield* shouldCleanUp;
+      return result.success;
     }
     pendingResourceCleanup.add(threadId);
+    yield* Effect.logWarning("thread resource cleanup failed", { threadId, cause: result.failure });
     return false;
   });
   const cleanUpRetiredResources = Effect.fn("ThreadSettlementServiceV2.cleanUpRetiredResources")(
@@ -397,11 +353,7 @@ export const make = Effect.gen(function* () {
       // Surviving processes and persisted device claims recover missed events without an in-memory queue.
       const ids = new Set([
         ...pendingResourceCleanup,
-        ...(yield* devices.state).sessions.map((session) => session.threadId),
-        ...(yield* ports.scan()).flatMap((server) => {
-          const owner = server.terminal?.threadId ?? server.agent?.threadId;
-          return owner === undefined ? [] : [owner];
-        }),
+        ...(yield* resourceCleanup.runtimeThreadIds),
       ]);
       yield* Effect.forEach(
         ids,

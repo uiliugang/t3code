@@ -1,3 +1,4 @@
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -439,6 +440,7 @@ describe("question answer paths", () => {
               Layer.mergeAll(
                 Layer.mock(TerminalManager.TerminalManager)({}),
                 PortScanner.layerTest,
+                Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
                 Layer.mock(PreviewManager.PreviewManager)({}),
                 Layer.mock(DeviceService.DeviceService)({}),
                 Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),

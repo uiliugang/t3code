@@ -32,6 +32,7 @@ export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   return next;
 });
 
+export const RESOURCE_ROLE_ENV = "T3CODE_RESOURCE_ROLE";
 export const RESOURCE_OWNER_ENV = "T3CODE_RESOURCE_OWNER";
 
 // Encode whitespace so the value is also unambiguous in macOS ps environment output.

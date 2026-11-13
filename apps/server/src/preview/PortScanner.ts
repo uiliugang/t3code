@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import {
   RESOURCE_OWNER_ENV,
+  RESOURCE_ROLE_ENV,
   resourceOwner,
 } from "@t3tools/provider-core/server/instanceEnvironment";
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
@@ -37,6 +38,7 @@ export class PortDiscovery extends Context.Service<
   {
     readonly scan: (
       configuredUrls?: ReadonlyArray<string>,
+      options?: { readonly refreshAgents: true },
     ) => Effect.Effect<ReadonlyArray<DiscoveredLocalServer>>;
     readonly subscribe: (
       input: {
@@ -50,6 +52,7 @@ export class PortDiscovery extends Context.Service<
       readonly threadId: string;
       readonly terminalId: string;
       readonly processIds: ReadonlyArray<number>;
+      readonly keepOnSettle?: boolean;
     }) => Effect.Effect<void>;
     readonly unregisterTerminal: (input: {
       readonly threadId: string;
@@ -68,10 +71,11 @@ export class PortDiscovery extends Context.Service<
         readonly shouldStop?: Effect.Effect<boolean>;
       },
     ) => Effect.Effect<void, PreviewStopLocalServerError>;
-    readonly stopThreadServers: (
-      threadId: ThreadId,
-      shouldStop?: Effect.Effect<boolean>,
-    ) => Effect.Effect<void, PreviewStopLocalServerError>;
+    readonly stopThreadServers: (input: {
+      readonly threadId: ThreadId;
+      readonly shouldStop: Effect.Effect<boolean>;
+      readonly mode: "settled" | "removed";
+    }) => Effect.Effect<void, PreviewStopLocalServerError>;
   }
 >()("t3/preview/PortScanner/PortDiscovery") {}
 
@@ -115,6 +119,7 @@ interface ScannerState {
     {
       readonly owner: TerminalProcessOwner;
       readonly processIds: ReadonlySet<number>;
+      readonly keepOnSettle: boolean;
     }
   >;
   readonly retainCount: number;
@@ -900,7 +905,8 @@ export const make = Effect.fn("PortDiscovery.make")(function* (stateDir: string)
   const scanSnapshot = (configuredUrls: ReadonlyArray<string>) =>
     scanSemaphore.withPermits(1)(scanUnlocked(configuredUrls));
 
-  const scanOnce: PortDiscovery["Service"]["scan"] = (configuredUrls = []) => {
+  const scanOnce: PortDiscovery["Service"]["scan"] = (configuredUrls = [], options) => {
+    if (options?.refreshAgents) agentScanPending = true;
     const normalized = normalizeConfiguredUrls(configuredUrls);
     return scanSnapshot(normalized).pipe(
       Effect.map((snapshot) => projectWebProbeSnapshot(snapshot, normalized)),
@@ -1006,10 +1012,12 @@ export const make = Effect.fn("PortDiscovery.make")(function* (stateDir: string)
       yield* Ref.update(stateRef, (state) => {
         const terminalProcesses = new Map(state.terminalProcesses);
         const key = terminalOwnerKey(owner);
-        if (processIds.size === 0) {
+        const keepOnSettle =
+          input.keepOnSettle ?? terminalProcesses.get(key)?.keepOnSettle ?? false;
+        if (processIds.size === 0 && !keepOnSettle) {
           terminalProcesses.delete(key);
         } else {
-          terminalProcesses.set(key, { owner, processIds });
+          terminalProcesses.set(key, { owner, processIds, keepOnSettle });
         }
         return { ...state, terminalProcesses };
       });
@@ -1126,35 +1134,69 @@ export const make = Effect.fn("PortDiscovery.make")(function* (stateDir: string)
     // Subscribers see the server leave now rather than on the next poll.
     signalUntilStopped(input).pipe(Effect.andThen(pollIfRetained));
 
-  const stopThreadServers = Effect.fn("PortDiscovery.stopThreadServers")(function* (
-    threadId: ThreadId,
-    shouldStop?: Effect.Effect<boolean>,
-  ) {
+  const stopThreadServers = Effect.fn("PortDiscovery.stopThreadServers")(function* ({
+    threadId,
+    shouldStop,
+    mode,
+  }: Parameters<PortDiscovery["Service"]["stopThreadServers"]>[0]) {
     if (hostPlatform === "win32") return;
     agentScanPending = true;
     const servers = yield* scanOnce();
     const seen = new Set<number>();
-    const [, failures] = yield* Effect.partition(servers, (server) => {
-      const pid = server.pid;
-      if (
-        pid === null ||
-        seen.has(pid) ||
-        (server.terminal?.threadId !== threadId && server.agent?.threadId !== threadId)
-      )
-        return Effect.void;
-      seen.add(pid);
-      return stopServer({
-        pid,
-        port: server.port,
-        threadId,
-        ...(shouldStop ? { shouldStop } : {}),
-      }).pipe(
-        Effect.catchIf(
-          (error) => error.reason === "not-found",
-          () => Effect.void,
-        ),
-      );
-    });
+    const [, failures] = yield* Effect.partition(
+      servers,
+      Effect.fn("PortDiscovery.stopThreadServer")(function* (server) {
+        const pid = server.pid;
+        if (
+          pid === null ||
+          seen.has(pid) ||
+          (server.terminal?.threadId !== threadId && server.agent?.threadId !== threadId)
+        )
+          return;
+        seen.add(pid);
+        if (mode === "settled") {
+          const environment = yield* (
+            hostPlatform === "linux"
+              ? fileSystem.readFileString(`/proc/${pid}/environ`)
+              : processRunner
+                  .run({
+                    command: "ps",
+                    args: ["-E", "-ww", "-o", "command=", "-p", String(pid)],
+                    timeout: "5 seconds",
+                  })
+                  .pipe(Effect.map((result) => result.stdout))
+          ).pipe(
+            Effect.mapError(
+              (cause) => new PreviewStopLocalServerError({ reason: "signal-failed", cause }),
+            ),
+          );
+          const registrations = (yield* Ref.get(stateRef)).terminalProcesses.values();
+          const protectedRoles = new Set(
+            [...registrations]
+              .filter(
+                (registration) =>
+                  registration.keepOnSettle && registration.owner.threadId === threadId,
+              )
+              .map(
+                (registration) =>
+                  `${RESOURCE_ROLE_ENV}=settlement:${registration.owner.terminalId}`,
+              ),
+          );
+          if (environment.split(/\s+|\0/).some((entry) => protectedRoles.has(entry))) return;
+        }
+        return yield* stopServer({
+          pid,
+          port: server.port,
+          threadId,
+          ...(shouldStop ? { shouldStop } : {}),
+        }).pipe(
+          Effect.catchIf(
+            (error) => error.reason === "not-found",
+            () => Effect.void,
+          ),
+        );
+      }),
+    );
     const [failure] = failures;
     if (failure) return yield* failure;
   });

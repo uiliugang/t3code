@@ -212,3 +212,10 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 ## Additional tips
 
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Enforced correction rules
+
+| Rule                                                                                                                                                                                                  | Enforcement                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Automatic terminal, server, and device retirement uses `ResourceCleanupService.cleanupRuntime`; validate current retirement under resource locks and process independent device claims independently. | `t3code/no-runtime-cleanup-bypass`, required guard parameters, `ResourceCleanupService.test.ts`, and `ThreadSettlementService.test.ts`. |
+| Settlement actions survive repeated cleanup; discover surviving resources again instead of caching a whole thread as cleaned.                                                                         | `TerminalManager` owns `keepOnSettle`; terminal lifecycle and repeated settlement tests.                                                |

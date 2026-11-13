@@ -491,6 +491,7 @@ export const make = Effect.gen(function* () {
         .open({
           threadId: input.threadId,
           terminalId,
+          keepOnSettle: trigger === "settle",
           stopOnSettle: script.stopOnSettle ?? false,
           cwd,
           worktreePath: input.worktreePath,

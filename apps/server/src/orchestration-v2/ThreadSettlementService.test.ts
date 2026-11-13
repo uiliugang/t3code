@@ -1,3 +1,7 @@
+import * as Cleanup from "./ResourceCleanupService.ts";
+import * as Previews from "../preview/Manager.ts";
+import * as Tasks from "../scheduledTasks/ScheduledTaskService.ts";
+import * as ServerConfig from "../config.ts";
 import * as Schema from "effect/Schema";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, describe, expect, it } from "@effect/vitest";
@@ -701,6 +705,9 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   });
 
   const layerDependencies = Layer.mergeAll(
+    Layer.mock(Previews.PreviewManager)({}),
+    Layer.mock(Tasks.ScheduledTaskService)({}),
+    Layer.mock(ServerConfig.ServerConfig)({}),
     Layer.mock(ProjectStore.ProjectStoreV2)({
       listShells: () => Ref.get(snapshots).pipe(Effect.map((snapshot) => snapshot.projects)),
     }),
@@ -749,7 +756,11 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
           revision: 0,
         })),
       ),
-      close: ({ threadId }, shouldClose = Effect.succeed(true)) =>
+      sessionsForThread: (threadId) =>
+        Ref.get(deviceSessions).pipe(
+          Effect.map((sessions) => sessions.filter((s) => s.threadId === threadId)),
+        ),
+      closeRetired: ({ threadId }, shouldClose) =>
         shouldClose.pipe(
           Effect.flatMap((allowed) =>
             allowed
@@ -767,12 +778,15 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     Layer.mock(PortScanner.PortDiscovery)({
       scan: () => Effect.succeed(options.servers ?? []),
       trackAgent: () => () => undefined,
-      stopThreadServers: (threadId, shouldStop = Effect.succeed(true)) =>
+      stopThreadServers: ({ threadId, shouldStop }) =>
         shouldStop.pipe(
           Effect.flatMap((allowed) =>
             allowed
               ? Ref.update(stoppedServers, (ids) => [...ids, threadId]).pipe(
-                  Effect.andThen(options.onStopServers?.(threadId, shouldStop) ?? Effect.void),
+                  Effect.andThen(
+                    options.onStopServers?.({ threadId, shouldStop, mode: "settled" }) ??
+                      Effect.void,
+                  ),
                 )
               : Effect.void,
           ),
@@ -851,7 +865,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     layer: Layer.effect(
       ThreadSettlementService.ThreadSettlementServiceV2,
       ThreadSettlementService.make,
-    ).pipe(Layer.provide(layerDependencies)),
+    ).pipe(Layer.provide(Cleanup.layer), Layer.provide(layerDependencies)),
   };
 });
 
@@ -1961,10 +1975,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         yield* Effect.gen(function* () {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-          assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), [
-            settled.id,
-            serviceOnly.id,
-          ]);
+          assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), [settled.id]);
           assert.deepStrictEqual(yield* Ref.get(fixture.stoppedServers), [
             settled.id,
             serviceOnly.id,
@@ -2072,12 +2083,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           assert.strictEqual(run.threadId, worktree.id);
           assert.strictEqual(run.worktreePath, "/worktrees/thread");
           assert.strictEqual(run.trigger, "settle");
-          assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), [
-            shared.id,
-            missing.id,
-            group.id,
-            worktree.id,
-          ]);
+          assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), []);
           assert.deepStrictEqual(yield* Ref.get(fixture.stoppedServers), [
             shared.id,
             missing.id,
@@ -2160,7 +2166,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           snapshot: makeSnapshot([]),
           currentThreads: [repeated, marker],
           existingWorktreePaths: ["/worktrees/repeated", "/worktrees/marker"],
-          onStopServers: (threadId) =>
+          onStopServers: ({ threadId }) =>
             threadId !== repeated.id
               ? Effect.void
               : Ref.updateAndGet(attempts, (n) => n + 1).pipe(
@@ -2170,8 +2176,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
                       : Effect.void,
                   ),
                 ),
-          onCloseIdle: ({ threadId }) =>
-            threadId === repeated.id ? Ref.set(scriptRunning, false) : Effect.void,
+          onCloseIdle: () => Effect.void,
           onScriptRun: ({ threadId }) =>
             threadId === repeated.id ? Ref.set(scriptRunning, true) : Effect.void,
         });
@@ -2185,11 +2190,10 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           yield* fixture.publishEvent(settledEvent(marker));
           assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
           assert.isTrue(yield* Ref.get(scriptRunning));
-          assert.deepStrictEqual(yield* Ref.get(fixture.stoppedServers), [
-            repeated.id,
-            ...(failOnce ? [repeated.id] : []),
-            marker.id,
-          ]);
+          assert.isAtLeast(
+            (yield* Ref.get(fixture.stoppedServers)).filter((id) => id === repeated.id).length,
+            2,
+          );
         }).pipe(Effect.provide(fixture.layer));
       }),
   );

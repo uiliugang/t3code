@@ -214,9 +214,10 @@ export class DeviceService extends Context.Service<
       input: DeviceOpenInput,
       context?: DeviceHost.DeviceOpenContext,
     ) => Effect.Effect<DeviceSession, DeviceError>;
-    readonly close: (
-      input: DeviceCloseInput,
-      shouldClose?: Effect.Effect<boolean>,
+    readonly close: (input: DeviceCloseInput) => Effect.Effect<void, DeviceError>;
+    readonly closeRetired: (
+      session: DeviceSession,
+      shouldClose: Effect.Effect<boolean>,
     ) => Effect.Effect<void, DeviceError>;
     readonly shutdown: (input: DeviceShutdownInput) => Effect.Effect<void, DeviceError>;
     readonly detail: (input: DeviceDetailInput) => Effect.Effect<DeviceDetail, DeviceError>;
@@ -918,82 +919,92 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     }));
   });
 
-  const close: DeviceService["Service"]["close"] = Effect.fn("DeviceService.close")(
-    function* (input, shouldClose) {
-      const expected = shouldClose
-        ? (yield* SynchronizedRef.get(stateRef)).state.sessions
-        : undefined;
-      // Open publishes under the same lock; an old close must not release a reopened claim.
-      const closing = yield* lifecycleLock.withPermit(
-        Effect.gen(function* () {
-          const { state } = yield* SynchronizedRef.get(stateRef);
-          const closing = state.sessions.filter(
-            (session) =>
-              session.threadId === input.threadId &&
-              (expected === undefined || expected.includes(session)) &&
-              (input.hostId === undefined || session.hostId === input.hostId) &&
-              (input.deviceId === undefined || session.deviceId === input.deviceId),
-          );
-          const ending = input.shutdown
-            ? state.sessions.filter((session) =>
-                closing.some(
-                  (closed) =>
-                    closed.hostId === session.hostId && closed.deviceId === session.deviceId,
-                ),
-              )
-            : closing;
-          const released: DeviceSession[] = [];
-          for (const session of ending) {
-            const host = yield* resolveHost(session.hostId);
-            const ready = yield* host.current;
-            // A lost SSH tunnel does not establish that the remote daemon stopped.
-            if (!ready && (yield* host.summary).kind === "ssh")
+  const closeSession = Effect.fn("DeviceService.closeSession")(function* (
+    input: DeviceCloseInput,
+    shouldClose?: Effect.Effect<boolean>,
+    expectedSession?: DeviceSession,
+  ) {
+    const expected = expectedSession ? [expectedSession] : undefined;
+    // Open publishes under the same lock; an old close must not release a reopened claim.
+    const closing = yield* lifecycleLock.withPermit(
+      Effect.gen(function* () {
+        const { state } = yield* SynchronizedRef.get(stateRef);
+        const closing = state.sessions.filter(
+          (session) =>
+            session.threadId === input.threadId &&
+            (expected === undefined || expected.includes(session)) &&
+            (input.hostId === undefined || session.hostId === input.hostId) &&
+            (input.deviceId === undefined || session.deviceId === input.deviceId),
+        );
+        const ending = input.shutdown
+          ? state.sessions.filter((session) =>
+              closing.some(
+                (closed) =>
+                  closed.hostId === session.hostId && closed.deviceId === session.deviceId,
+              ),
+            )
+          : closing;
+        const released: DeviceSession[] = [];
+        for (const session of ending) {
+          const host = yield* resolveHost(session.hostId);
+          const ready = yield* host.current;
+          // A lost SSH tunnel does not establish that the remote daemon stopped.
+          if (!ready && (yield* host.summary).kind === "ssh")
+            return yield* new DeviceHostUnavailableError({
+              hostId: session.hostId,
+              hostLabel: host.label,
+              reason: "Device host is reconnecting. Retry close after it reconnects.",
+            });
+          if (shouldClose && !(yield* shouldClose)) break;
+          const release = ready?.releaseAgentSession ?? host.releaseAgentSession;
+          if (release) {
+            const name = yield* agentDeviceSession(
+              session.threadId,
+              session.hostId,
+              session.deviceId,
+            ).pipe(Effect.provideService(Digest.Digest, digest));
+            yield* release(name, session.deviceId);
+          }
+          released.push(session);
+        }
+        if (input.shutdown) yield* releaseLaunchers(ending);
+        if (input.shutdown) {
+          for (const session of closing) {
+            const ready = yield* currentReadiness(session.hostId);
+            if (!ready)
               return yield* new DeviceHostUnavailableError({
                 hostId: session.hostId,
-                hostLabel: host.label,
-                reason: "Device host is reconnecting. Retry close after it reconnects.",
+                reason: "Device host is not running. Reconnect before retrying close.",
               });
-            if (shouldClose && !(yield* shouldClose)) break;
-            const release = ready?.releaseAgentSession ?? host.releaseAgentSession;
-            if (release) {
-              const name = yield* agentDeviceSession(
-                session.threadId,
-                session.hostId,
-                session.deviceId,
-              ).pipe(Effect.provideService(Digest.Digest, digest));
-              yield* release(name, session.deviceId);
-            }
-            released.push(session);
+            yield* shutdownDevice(ready, session.deviceId, session.platform);
           }
-          if (input.shutdown) yield* releaseLaunchers(ending);
-          if (input.shutdown) {
-            for (const session of closing) {
-              const ready = yield* currentReadiness(session.hostId);
-              if (!ready)
-                return yield* new DeviceHostUnavailableError({
-                  hostId: session.hostId,
-                  reason: "Device host is not running. Reconnect before retrying close.",
-                });
-              yield* shutdownDevice(ready, session.deviceId, session.platform);
-            }
-          }
-          yield* publish((current) => ({
-            ...current,
-            sessions: current.sessions.filter((session) => !released.includes(session)),
-          }));
-          return closing;
-        }),
+        }
+        yield* publish((current) => ({
+          ...current,
+          sessions: current.sessions.filter((session) => !released.includes(session)),
+        }));
+        return closing;
+      }),
+    );
+    if (input.shutdown)
+      yield* Effect.forEach(
+        closing,
+        (session) =>
+          currentReadiness(session.hostId).pipe(
+            Effect.flatMap((ready) => (ready ? refreshAfterShutdown(ready) : Effect.void)),
+          ),
+        { discard: true },
       );
-      if (input.shutdown)
-        yield* Effect.forEach(
-          closing,
-          (session) =>
-            currentReadiness(session.hostId).pipe(
-              Effect.flatMap((ready) => (ready ? refreshAfterShutdown(ready) : Effect.void)),
-            ),
-          { discard: true },
-        );
-    },
+  });
+
+  const close = Effect.fn("DeviceService.close")((input: DeviceCloseInput) => closeSession(input));
+  const closeRetired = Effect.fn("DeviceService.closeRetired")(
+    (session: DeviceSession, shouldClose: Effect.Effect<boolean>) =>
+      closeSession(
+        { threadId: session.threadId, hostId: session.hostId, deviceId: session.deviceId },
+        shouldClose,
+        session,
+      ),
   );
 
   // Sessions retire before the power-off, while their agent-device sessions can still close the app;
@@ -1245,6 +1256,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       list,
       open,
       close,
+      closeRetired,
       shutdown,
       detail,
       action,

@@ -68,6 +68,7 @@ import * as ServerConfig from "../config.ts";
 import {
   mergeProviderInstanceEnvironment,
   RESOURCE_OWNER_ENV,
+  RESOURCE_ROLE_ENV,
   resourceOwner,
 } from "@t3tools/provider-core/server/instanceEnvironment";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
@@ -179,7 +180,7 @@ export class TerminalManager extends Context.Service<
   TerminalManager,
   {
     readonly open: (
-      input: TerminalOpenInput,
+      input: TerminalOpenInput & { readonly keepOnSettle?: boolean },
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     readonly getShell: (input: TerminalObserveInput) => Effect.Effect<string, TerminalError>;
@@ -230,7 +231,8 @@ export class TerminalManager extends Context.Service<
     readonly close: (input: TerminalCloseInput) => Effect.Effect<void, TerminalError>;
 
     readonly closeOnSettle: (input: {
-      readonly shouldClose?: Effect.Effect<boolean>;
+      readonly shouldClose: Effect.Effect<boolean>;
+      readonly deleteHistory?: boolean;
       readonly threadId: string;
     }) => Effect.Effect<void, TerminalError>;
 
@@ -295,6 +297,7 @@ interface TerminalStartInput {
 
 interface TerminalSessionState {
   processGeneration: number;
+  keepOnSettle: boolean;
   threadId: string;
   terminalId: string;
   cwd: string;
@@ -1511,6 +1514,7 @@ interface TerminalManagerOptions {
     readonly threadId: string;
     readonly terminalId: string;
     readonly processIds: ReadonlyArray<number>;
+    readonly keepOnSettle?: boolean;
   }) => Effect.Effect<void>;
   unregisterTerminal?: (input: {
     readonly threadId: string;
@@ -2578,6 +2582,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               yield* HostProcess.HomeDirectory,
             );
             terminalEnv[PortScanner.AGENT_THREAD_ENV] = session.threadId;
+            if (session.keepOnSettle)
+              terminalEnv[RESOURCE_ROLE_ENV] = `settlement:${session.terminalId}`;
             if (options.stateDir) terminalEnv[RESOURCE_OWNER_ENV] = resourceOwner(options.stateDir);
             // Append managed install directories so agent commands resolve without shadowing user/system tools.
             if (
@@ -2833,6 +2839,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         threadId: session.threadId,
         terminalId: session.terminalId,
         processIds: next.processIds,
+        keepOnSettle: session.keepOnSettle,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
       const event = yield* modifyManagerState((state) => {
@@ -2959,7 +2966,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   );
 
   const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
-    requestedInput: TerminalOpenInput,
+    requestedInput: TerminalOpenInput & { readonly keepOnSettle?: boolean },
   ) {
     const terminalId = requestedInput.terminalId;
     yield* assertValidCwd(requestedInput.cwd);
@@ -2999,6 +3006,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         eventSequence: 0,
         inputCount: 0,
         processGeneration: 0,
+        keepOnSettle: input.keepOnSettle === true,
         cols,
         rows,
         process: null,
@@ -3010,6 +3018,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
+      if (session.keepOnSettle)
+        yield* registerTerminalProcesses({
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+          processIds: [],
+          keepOnSettle: true,
+        });
       const createdSession = session;
       yield* modifyManagerState((state) => {
         const sessions = new Map(state.sessions);
@@ -3088,7 +3103,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return snapshot(liveSession);
   });
 
-  const openLocked = (input: TerminalOpenInput) =>
+  const openLocked = (input: TerminalOpenInput & { readonly keepOnSettle?: boolean }) =>
     withWorkspaceLease(
       path.resolve(input.worktreePath ?? input.cwd),
       openWithWorkspaceLease(input),
@@ -3624,10 +3639,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       input.threadId,
       Effect.gen(function* () {
         for (const session of yield* sessionsForThread(input.threadId)) {
-          if (expected.get(session) !== session.processGeneration) continue;
-          if (input.shouldClose && !(yield* input.shouldClose)) return;
+          if (
+            (!input.deleteHistory && session.keepOnSettle) ||
+            expected.get(session) !== session.processGeneration
+          )
+            continue;
+          if (!(yield* input.shouldClose)) return;
           yield* closeSession(input.threadId, session.terminalId, false);
         }
+        if (input.deleteHistory && (yield* input.shouldClose))
+          yield* deleteAllHistoryForThread(input.threadId);
       }),
     );
   });

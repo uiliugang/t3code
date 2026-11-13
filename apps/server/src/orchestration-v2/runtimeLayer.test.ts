@@ -452,6 +452,7 @@ const bootedSimulatorHost = DeviceHost.DeviceHost.of({
   stop: Effect.void,
 });
 const layerResourceCleanupTest = ResourceCleanupService.layer.pipe(
+  Layer.provideMerge(ProjectionStore.layer),
   Layer.provideMerge(layerScheduledTasksTest),
   Layer.provideMerge(
     Layer.effect(
@@ -463,7 +464,7 @@ const layerResourceCleanupTest = ResourceCleanupService.layer.pipe(
     Layer.mergeAll(
       PortScanner.layerTest,
       Layer.mock(PreviewManager.PreviewManager)({ close: () => Effect.void }),
-      Layer.mock(TerminalManager.TerminalManager)({ close: () => Effect.void }),
+      Layer.mock(TerminalManager.TerminalManager)({ closeOnSettle: () => Effect.void }),
     ),
   ),
 );

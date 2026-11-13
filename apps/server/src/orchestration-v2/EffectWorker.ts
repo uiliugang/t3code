@@ -552,25 +552,19 @@ export const layerExecutor: Layer.Layer<
           // Archive and delete queue this one per-thread teardown, so it also releases the
           // thread's device claims; the devices stay booted for other threads.
           case "terminal.cleanup":
-            return Effect.partition(
-              [
-                resourceCleanup.cleanupTerminals(effect.threadId),
-                resourceCleanup.cleanupDevices(effect.threadId),
-              ],
-              (cleanup) => cleanup,
-            ).pipe(
-              Effect.flatMap(([, [failure]]) =>
-                failure === undefined ? Effect.void : Effect.fail(failure),
-              ),
-              Effect.mapError(
-                (cause) =>
-                  new OrchestrationEffectExecutionError({
-                    effectId: effect.id,
-                    effectType: effect.request.type,
-                    cause,
-                  }),
-              ),
-            );
+            return resourceCleanup
+              .cleanupRuntime({ threadId: effect.threadId, mode: "removed" })
+              .pipe(
+                Effect.asVoid,
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationEffectExecutionError({
+                      effectId: effect.id,
+                      effectType: effect.request.type,
+                      cause,
+                    }),
+                ),
+              );
           case "preview.cleanup":
             return resourceCleanup.cleanupPreviews(effect.threadId).pipe(
               Effect.mapError(

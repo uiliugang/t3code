@@ -1829,7 +1829,7 @@ describe("agent session release on close", () => {
         persistence: { initial: recorded, save: (sessions) => Ref.set(persisted, sessions) },
       });
       expect((yield* restarted.service.state).sessions).toEqual(recorded);
-      yield* restarted.service.close({ threadId }, Effect.succeed(false));
+      yield* restarted.service.closeRetired(recorded[0]!, Effect.succeed(false));
       expect(restarted.closedSessions).toHaveLength(0);
       expect((yield* restarted.service.state).sessions).toEqual(recorded);
       yield* restarted.service.close({ threadId });
@@ -2050,7 +2050,7 @@ describe("agent session release on close", () => {
       yield* Queue.take(entered);
       const retired = yield* Ref.make(true);
       const staleCleanup = yield* service
-        .close({ threadId }, Ref.get(retired))
+        .closeRetired(session, Ref.get(retired))
         .pipe(Effect.forkChild({ startImmediately: true }));
       yield* Ref.set(retired, false);
       yield* Deferred.succeed(finish, undefined);

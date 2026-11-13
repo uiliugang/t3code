@@ -212,7 +212,9 @@ class GatedPtyAdapter extends FakePtyAdapter {
   }
 }
 
-function openInput(overrides: Partial<TerminalOpenInput> = {}): TerminalOpenInput {
+function openInput(
+  overrides: Partial<TerminalOpenInput> & { readonly keepOnSettle?: boolean } = {},
+): TerminalOpenInput & { readonly keepOnSettle?: boolean } {
   return {
     threadId: "thread-1",
     terminalId: DEFAULT_TERMINAL_ID,
@@ -903,17 +905,19 @@ it.layer(
           false,
           false,
         ]);
+        yield* manager.open(openInput({ terminalId: "settle-script", keepOnSettle: true }));
         yield* manager.closeOnSettle({ threadId: "thread-1", shouldClose: Effect.succeed(false) });
         expect(ptyAdapter.processes[1]?.killed).toBe(false);
-        yield* manager.closeOnSettle({ threadId: "thread-1" });
+        yield* manager.closeOnSettle({ threadId: "thread-1", shouldClose: Effect.succeed(true) });
         expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([
           true,
           true,
           true,
           false,
           true,
+          false,
         ]);
-        yield* manager.closeOnSettle({ threadId: "thread-1" });
+        yield* manager.closeOnSettle({ threadId: "thread-1", shouldClose: Effect.succeed(true) });
         expect(ptyAdapter.processes[3]?.killed).toBe(false);
       }),
   );
