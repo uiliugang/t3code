@@ -356,6 +356,7 @@ export function WorkItemsBoard({
         <WorkItemDetails
           key={selected.id}
           item={selected}
+          deliverySummary={selectedQuery.data?.items[0]?.deliverySummary}
           environmentId={environmentId}
           busy={busy}
           canOperate={canOperate}
@@ -678,6 +679,7 @@ export function WorkItemEditor({
 
 function WorkItemDetails({
   item,
+  deliverySummary,
   environmentId,
   busy,
   canOperate,
@@ -686,6 +688,7 @@ function WorkItemDetails({
   continueTask,
 }: {
   item: WorkItem;
+  deliverySummary: WorkItemSummary["deliverySummary"];
   environmentId: EnvironmentId;
   busy: boolean;
   canOperate: boolean;
@@ -710,10 +713,14 @@ function WorkItemDetails({
         <Badge variant="secondary">{t(WORK_ITEM_STATUS_LABELS[item.status])}</Badge>
         <Badge variant="outline">v{item.specRevision}</Badge>
       </div>
+      {item.delivery ? (
+        <RequirementDeliveryPanel
+          environmentId={environmentId}
+          item={item}
+          summary={deliverySummary}
+        />
+      ) : null}
       <div className="flex flex-wrap gap-2">
-        {item.delivery ? (
-          <RequirementDeliveryPanel environmentId={environmentId} item={item} />
-        ) : null}
         <Button size="sm" variant="outline" disabled={!canOperate || busy} onClick={edit}>
           {t("Edit")}
         </Button>

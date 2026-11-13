@@ -1172,46 +1172,19 @@ const make = Effect.gen(function* () {
     Effect.forkIn(scope),
   );
   yield* threads.streamDomainEvents.pipe(
-    Stream.filter(
-      (event) =>
-        [
-          "run.created",
-          "run.updated",
-          "subagent.updated",
-          "runtime-request.updated",
-          "provider-thread.updated",
-          "checkpoint.captured",
-          "thread.deleted",
-        ].includes(event.type) ||
-        (event.type === "message.updated" &&
-          event.payload.role === "user" &&
-          !event.payload.streaming),
+    Stream.filter((event) =>
+      [
+        "run.created",
+        "run.updated",
+        "subagent.updated",
+        "runtime-request.updated",
+        "provider-thread.updated",
+        "checkpoint.captured",
+        "thread.deleted",
+      ].includes(event.type),
     ),
     Stream.runForEach((event) =>
-      Effect.gen(function* () {
-        if (
-          event.type === "message.updated" &&
-          event.payload.role === "user" &&
-          !event.payload.streaming &&
-          event.payload.createdBy === "user"
-        ) {
-          const thread = yield* threads.getThreadShell(event.threadId);
-          if (thread !== null) {
-            for (const match of event.payload.text.matchAll(/https:\/\/[^\s<>[\]()]+/g)) {
-              const issue = parseBranchIssueUrl(match[0]);
-              if (issue !== null)
-                yield* associateIssue({
-                  projectId: thread.projectId,
-                  threadId: event.threadId,
-                  issue,
-                  title: thread.title,
-                  automatic: true,
-                }).pipe(Effect.ignoreCause({ log: true }));
-            }
-          }
-        }
-        yield* Ref.update(changedThreads, (ids) => new Set([...ids, event.threadId]));
-      }).pipe(
+      Ref.update(changedThreads, (ids) => new Set([...ids, event.threadId])).pipe(
         Effect.andThen(
           event.type === "checkpoint.captured"
             ? Ref.update(evidenceThreads, (ids) => new Set([...ids, event.threadId]))

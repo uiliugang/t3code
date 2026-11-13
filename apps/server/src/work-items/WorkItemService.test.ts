@@ -20,6 +20,7 @@ import {
   TurnItemId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -95,7 +96,10 @@ function projection(threadId: ThreadId): OrchestrationV2ThreadProjection {
   };
 }
 
-function setup(events?: Queue.Queue<OrchestrationV2DomainEvent>) {
+function setup(
+  events?: Queue.Queue<OrchestrationV2DomainEvent>,
+  eventStream?: Stream.Stream<OrchestrationV2DomainEvent>,
+) {
   const projections = new Map<ThreadId, OrchestrationV2ThreadProjection>();
   const launched: Array<Parameters<ThreadLaunch.ThreadLaunchService["Service"]["launch"]>[0]> = [];
   const stopped: ThreadId[] = [];
@@ -129,7 +133,8 @@ function setup(events?: Queue.Queue<OrchestrationV2DomainEvent>) {
         }),
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
-      streamDomainEvents: events === undefined ? Stream.never : Stream.fromQueue(events),
+      streamDomainEvents:
+        eventStream ?? (events === undefined ? Stream.never : Stream.fromQueue(events)),
       getThreadShell: (id) =>
         failures.shell
           ? Effect.fail(new Orchestrator.OrchestratorProjectionError({ threadId: id }))
@@ -276,6 +281,43 @@ it.effect(
       assert.equal(stale._tag, "Failure");
     }).pipe(Effect.provide(test.layer), Effect.scoped);
   },
+);
+
+it.effect("leaves reference URLs unassociated until the agent identifies a delivery goal", () =>
+  Effect.gen(function* () {
+    const consumed = yield* Deferred.make<void>();
+    const threadId = ThreadId.make("reference-source");
+    const event: OrchestrationV2DomainEvent = {
+      id: EventId.make("reference-message"),
+      type: "message.updated",
+      threadId,
+      occurredAt: DateTime.makeUnsafe(now),
+      payload: {
+        id: MessageId.make("reference-message"),
+        threadId,
+        runId: null,
+        nodeId: null,
+        createdBy: "user",
+        creationSource: "web",
+        role: "user",
+        text: "Only explain this background issue; do not implement it: https://github.com/acme/app/issues/42",
+        attachments: [],
+        streaming: false,
+        createdAt: DateTime.makeUnsafe(now),
+        updatedAt: DateTime.makeUnsafe(now),
+      },
+    };
+    const test = setup(
+      undefined,
+      Stream.make(event).pipe(Stream.ensuring(Deferred.succeed(consumed, undefined))),
+    );
+    test.projections.set(threadId, projection(threadId));
+    yield* Effect.gen(function* () {
+      const service = yield* WorkItems.WorkItemService;
+      yield* Deferred.await(consumed);
+      assert.deepEqual((yield* service.list({ threadId })).items, []);
+    }).pipe(Effect.provide(test.layer), Effect.scoped);
+  }),
 );
 
 it.effect("deduplicates issue conversations and preserves explicit unlinking across replay", () => {
