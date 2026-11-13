@@ -18,7 +18,7 @@ after all builds pass. The manual Actions entry becomes available once the workf
 merged into the default branch; packaging changes in same-repository PRs also build
 automatically. Tags with prerelease suffixes are rejected. The workflow builds
 an Apple Silicon arm64 DMG, Linux x64/arm64 AppImages and self-contained CLI runtime
-archives, and a standalone, signed universal Android APK, with `SHA256SUMS` covering
+archives, and a standalone, signed ARM64 Android APK, with `SHA256SUMS` covering
 every asset. CLI archives cover macOS arm64 and Linux x64/arm64. This fork's clients,
 CLI installers, and npm launcher download runtimes from `uiliugang/t3code`,
 independently of desktop update settings. Use a tagged release for SSH connections:

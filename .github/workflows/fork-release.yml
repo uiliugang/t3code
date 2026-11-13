@@ -423,4 +423,4 @@ jobs:
           gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz android-update.json SHA256SUMS --verify-tag \
             --title "T3 Code $RELEASE_TAG (fork)" \
             "${notes_args[@]}" \
-            --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone ARM64 Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Android downloads APK updates from this repository and asks for installation confirmation. Upstream Android OTA updates are disabled.'
+            --notes '本版本提供 Apple Silicon macOS DMG 与 CLI、支持自动更新的 Linux x64/arm64 AppImage 与 CLI，以及独立签名的 ARM64 Android APK。macOS 应用采用临时签名，未经 Apple 公证，可从“设置 → 关于”下载安装包更新。Android 从本仓库下载 APK 更新，并在安装前请求确认。此 fork 已关闭上游 Android OTA 更新。'
