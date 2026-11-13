@@ -1,3 +1,4 @@
+import { getClientSettings } from "../hooks/useSettings";
 import {
   foldSearchQuery,
   PALETTE_SECONDARY_LIMIT,
@@ -486,6 +487,8 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         description,
         timestamp: formatRelativeTimeLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+          undefined,
+          getClientSettings().uiLanguage,
         ),
         icon: input.icon,
       },

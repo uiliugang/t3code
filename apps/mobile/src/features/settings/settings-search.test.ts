@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
 import { filterSettingsSections } from "./settings-search";
 
@@ -66,5 +67,13 @@ describe("filterSettingsSections", () => {
 
   it("drops sections that start empty", () => {
     expect(filterSettingsSections([{ rows: [] }, ...SECTIONS], "").length).toBe(SECTIONS.length);
+  });
+
+  it("matches translated labels and their English aliases", () => {
+    const sections = [{ rows: [{ id: "SettingsSkills", label: "Skills" }] }];
+    const t = translateUi.bind(null, "zh-CN");
+    for (const query of ["技能", "技能管理", "Skills"]) {
+      expect(filterSettingsSections(sections, query, t)).toEqual(sections);
+    }
   });
 });

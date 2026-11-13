@@ -1,4 +1,5 @@
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useEnvironmentsWithScope } from "../../state/session";
 import {
   requiredScopesForServerSettingsPatch,
@@ -48,13 +49,14 @@ export function useScopedSettingSource(keys: readonly (keyof ServerSettings)[]) 
 }
 
 function useRunScopedPlan() {
+  const t = useUiTranslation();
   const persistServer = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   return (plan: ReturnType<typeof planScopedSettingsPatch>, onFailed?: () => void) => {
     if (plan.unavailableReason) {
       toastManager.add({
         type: "warning",
-        title: "Setting not saved",
-        description: plan.unavailableReason,
+        title: t("Setting not saved"),
+        description: t(plan.unavailableReason),
       });
       onFailed?.();
       return;
@@ -70,7 +72,7 @@ function useRunScopedPlan() {
             Cause.fail(
               new EnvironmentAuthorizationError({
                 requiredScope: missing,
-                message: "This connection lacks permission to change these settings.",
+                message: t("This connection lacks permission to change these settings."),
               }),
             ),
           );
@@ -82,14 +84,22 @@ function useRunScopedPlan() {
       onFailed?.();
       toastManager.add({
         type: "error",
-        title:
+        title: t(
           savedEnvironmentCount > 0 ? "Setting saved on some environments" : "Setting not saved",
+        ),
         description: [
-          ...failedEnvironments.map(
-            ({ label, message }) => `Could not save on ${label}: ${message}`,
+          ...failedEnvironments.map(({ label, message }) =>
+            t("Could not save on {environment}: {message}", {
+              environment: label,
+              message: t(message),
+            }),
           ),
           ...(savedEnvironmentCount > 0
-            ? [`Saved on ${savedEnvironments.map(({ label }) => label).join(", ")}.`]
+            ? [
+                t("Saved on {environments}.", {
+                  environments: savedEnvironments.map(({ label }) => label).join(", "),
+                }),
+              ]
             : []),
         ].join("\n"),
       });

@@ -1,4 +1,5 @@
 import { foldSearchQuery, rankSearchItems, scoreSearchTerms } from "@t3tools/shared/paletteSearch";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 import type { SettingsPageTarget } from "./components/settings-page-targets";
 
@@ -174,7 +175,7 @@ export interface SettingsSearchSection<Row extends SettingsSearchRow> {
 export function filterSettingsSections<
   Row extends SettingsSearchRow,
   Section extends SettingsSearchSection<Row>,
->(sections: readonly Section[], query: string): Section[] {
+>(sections: readonly Section[], query: string, t: UiTranslator = (message) => message): Section[] {
   const normalizedQuery = foldSearchQuery(query);
   const rows = sections.flatMap((section) =>
     section.rows.map((row) => ({ row, section: section.title })),
@@ -184,7 +185,12 @@ export function filterSettingsSections<
         rankSearchItems(rows, ({ row, section }, options) =>
           scoreSearchTerms(
             normalizedQuery,
-            [row.label, ...(section ? [section] : []), ...(termsById.get(row.id) ?? [])],
+            [
+              row.label,
+              t(row.label),
+              ...(section ? [section, t(section)] : []),
+              ...(termsById.get(row.id) ?? []),
+            ],
             options,
           ),
         ).map(({ item }) => item.row),

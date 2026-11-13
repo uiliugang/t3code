@@ -146,34 +146,6 @@ export function AppearanceSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="language" title={t("Language")}>
-        <SettingsRow
-          title={t("Interface language")}
-          description={t("Choose the language for this device.")}
-          control={
-            <Select
-              value={settings.uiLanguage}
-              onValueChange={(value) => {
-                if (value === "en" || value === "zh-CN") updateSettings({ uiLanguage: value });
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-40"
-                aria-label={t("Interface language")}
-              >
-                <SelectValue>
-                  {settings.uiLanguage === "zh-CN" ? "简体中文" : "English"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="zh-CN">简体中文</SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-      </SettingsSection>
       <SettingsSection id="appearance" title={t("Colors & themes")} variant="plain" hideTitle>
         <div id={searchableSetting("theme").id}>
           <ThemeLibrary
