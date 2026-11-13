@@ -63,6 +63,7 @@ interface SettingsScopeMenuProps {
   readonly groups: readonly SidebarProjectSnapshot[];
   readonly environments: readonly EnvironmentPresentation[];
   readonly singleEnvironment: boolean;
+  readonly variant?: "outline" | "ghost";
   readonly onChange: (next: SettingsScopeSearch) => void;
 }
 
@@ -162,6 +163,7 @@ function ScopeMenu({
   searchLabel,
   header,
   searchable = false,
+  variant = "outline",
   onChange,
 }: {
   ariaLabel: string;
@@ -174,6 +176,7 @@ function ScopeMenu({
   searchLabel: string;
   header?: ReactNode;
   searchable?: boolean;
+  variant?: "outline" | "ghost";
   onChange: (next: string) => void;
 }) {
   const t = useUiTranslation();
@@ -183,7 +186,7 @@ function ScopeMenu({
   const trigger = (
     <Trigger
       aria-label={`${ariaLabel}: ${label}`}
-      render={<Button variant="outline" size="sm" />}
+      render={<Button variant={variant} size="sm" />}
       className="min-w-0 max-w-72 shrink"
     >
       {icon}
@@ -276,6 +279,7 @@ export function EnvironmentScopeMenu({
   environments,
   onChange,
   singleEnvironment,
+  variant = "outline",
 }: SettingsScopeMenuProps) {
   const t = useUiTranslation();
   const resolved = resolveSettingsScope(value, groups, environments);
@@ -295,6 +299,7 @@ export function EnvironmentScopeMenu({
     : environments;
   return (
     <ScopeMenu
+      variant={variant}
       ariaLabel={t("Environment scope")}
       icon={
         selected ? (
