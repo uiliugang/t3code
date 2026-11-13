@@ -188,12 +188,30 @@ export function applyProviderInstanceMutation(
   mutation: ProviderInstanceMutation,
 ): ServerSettings {
   const providerInstances = { ...settings.providerInstances };
+  const removedIds = new Set(settings.removedProviderInstances);
   if (mutation.operation === "upsert" || mutation.operation === "create") {
     providerInstances[mutation.instanceId] = mutation.instance;
+    removedIds.delete(mutation.instanceId);
   } else {
     delete providerInstances[mutation.instanceId];
+    if (mutation.operation === "delete") removedIds.add(mutation.instanceId);
+    else removedIds.delete(mutation.instanceId);
   }
-  return { ...settings, providerInstances };
+  const projectSettingsOverrides = Object.fromEntries(
+    Object.entries(settings.projectSettingsOverrides).map(([projectId, override]) => {
+      if (mutation.operation !== "delete" || !override?.providerInstances) {
+        return [projectId, override];
+      }
+      const { [mutation.instanceId]: _removed, ...remaining } = override.providerInstances;
+      return [projectId, { ...override, providerInstances: remaining }];
+    }),
+  );
+  return {
+    ...settings,
+    providerInstances,
+    projectSettingsOverrides,
+    removedProviderInstances: [...removedIds],
+  };
 }
 
 const secretProviderConfigGuards = new Map(

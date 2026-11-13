@@ -45,6 +45,31 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 
+it.effect("removes a default provider across reloads and restores it on upsert", () =>
+  Effect.gen(function* () {
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+    const instanceId = ProviderInstanceId.make("codex");
+    yield* service.updateProviderInstance({ operation: "delete", instanceId });
+    const removed = yield* service.getSettings;
+    assert.isUndefined(deriveProviderInstanceConfigMap(removed)[instanceId]);
+    const config = yield* ServerConfig.ServerConfig;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const reloaded = yield* decodeServerSettingsJson(
+      yield* fileSystem.readFileString(config.settingsPath),
+    );
+    assert.isUndefined(deriveProviderInstanceConfigMap(reloaded)[instanceId]);
+    yield* service.updateProviderInstance({
+      operation: "upsert",
+      instanceId,
+      instance: { driver: ProviderDriverKind.make("codex") },
+    });
+    assert.isDefined(deriveProviderInstanceConfigMap(yield* service.getSettings)[instanceId]);
+  }).pipe(
+    Effect.provide(layerServerSettings()),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  ),
+);
+
 const layerServerSettings = (policy?: ManagedPolicyDocument) =>
   ServerSettingsModule.layer.pipe(
     Layer.provide(ServerSecretStore.layer),

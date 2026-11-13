@@ -995,7 +995,14 @@ const zhCN: Readonly<Record<string, string>> = {
   "Unsupported provider ({kind})": "不支持的提供商（{kind}）",
   "Toggle account visibility": "切换账户可见性",
   "Remove provider": "移除提供商",
+  "Update this environment's server to remove providers.": "请升级此环境的服务器以移除提供商。",
   "Remove {name}?": "移除 {name}？",
+  "Active sessions will be stopped. Saved settings and unused T3-managed resources will be removed. Personal CLI installations and configuration will be kept.":
+    "将停止活动会话、移除保存的设置，并清理未被其他提供方使用的 T3 托管资源。个人 CLI 安装和配置会保留。",
+  "Reset the {name} provider to its defaults?": "将 {name} 提供方重置为默认设置？",
+  "Its saved settings, including any custom binary path, will be removed.":
+    "将移除保存的设置，包括自定义可执行文件路径。",
+  "It will also be turned off.": "同时会停用此提供方。",
   "Provider variables that read from {name} stop resolving until a provider with the same name is added again. The secrets themselves are untouched.":
     "引用 {name} 的提供商变量将无法解析，直到重新添加同名提供商。密钥本身不受影响。",
   "Edit {name}": "编辑 {name}",

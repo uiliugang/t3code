@@ -38,6 +38,7 @@ import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-en
 import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
 import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
+import { RemoveProvider } from "./RemoveProvider";
 
 export function SettingsProviderAccountsRouteScreen() {
   const t = useUiTranslation();
@@ -130,6 +131,7 @@ function EnvironmentProviders({
         <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider} />
       ))}
       {canAddClaude ? <AddClaudeAccount environment={environment} /> : null}
+      <RemoveProvider environment={environment} providers={providers} />
     </>
   );
 }

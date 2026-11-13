@@ -1637,6 +1637,7 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  removedProviderInstances: Schema.optionalKey(Schema.Array(ProviderInstanceId)),
   daxiang: Schema.Struct({
     clientId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
     clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
@@ -1712,10 +1713,14 @@ export const resolveProviderInstanceEnabled = (
 };
 
 export const resolveProjectProviderInstanceEnabled = (
-  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
+  settings: Pick<
+    ServerSettings,
+    "providerInstances" | "projectSettingsOverrides" | "removedProviderInstances"
+  >,
   projectId: ProjectId | null,
   instanceId: ProviderInstanceId,
 ): boolean => {
+  if (settings.removedProviderInstances?.includes(instanceId)) return false;
   const override =
     projectId === null
       ? undefined
@@ -1803,6 +1808,8 @@ export const ServerSettingsOperation = Schema.Literals([
   "normalize",
   "check-exists",
   "create-provider-instance",
+  "remove-provider-resources",
+  "stop-provider-sessions",
   "read-file",
   "read-provider-history",
   "read-project-settings",
@@ -1838,6 +1845,12 @@ export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>
   },
 ) {
   override get message(): string {
+    if (this.operation === "remove-provider-resources") {
+      return "The provider was removed, but some managed resources could not be cleaned up.";
+    }
+    if (this.operation === "stop-provider-sessions") {
+      return "Could not stop this provider's active sessions. Its settings and managed resources were kept.";
+    }
     if (this.operation === "write-managed-setting") {
       return `${this.managedSetting ?? "This setting"} is managed by ${this.managedBy ?? "your organization"} and cannot be changed.`;
     }

@@ -156,26 +156,33 @@ function setup() {
 }
 
 describe("AddProviderInstanceDialog environment routing", () => {
-  it("chooses an unused identity for another account without replacing configured instances", async () => {
-    setup();
-    settingsHooks.read.mockReturnValue({
-      providerInstances: { codex_2: { driver: "codex", enabled: false } },
-    });
-    await using _screen = await render(dialog());
-    await click("Configure manually");
-    await click("Next");
-    await click("Add instance");
-    expect(settingsHooks.mutate).toHaveBeenCalledWith({
-      operation: "create",
-      instanceId: "codex_3",
-      instance: {
-        driver: "codex",
-        enabled: true,
-        displayName: "Codex",
-        config: { setupMode: "existing" },
-      },
-    });
-  });
+  it.each([
+    { name: "another account", removed: false, expectedId: "codex_3" },
+    { name: "a removed default account", removed: true, expectedId: "codex" },
+  ])(
+    "chooses an unused identity for $name without replacing configured instances",
+    async ({ removed, expectedId }) => {
+      setup();
+      settingsHooks.read.mockReturnValue({
+        providerInstances: { codex_2: { driver: "codex", enabled: false } },
+        ...(removed ? { removedProviderInstances: ["codex"] } : {}),
+      });
+      await using _screen = await render(dialog());
+      await click("Configure manually");
+      await click("Next");
+      await click("Add instance");
+      expect(settingsHooks.mutate).toHaveBeenCalledWith({
+        operation: "create",
+        instanceId: expectedId,
+        instance: {
+          driver: "codex",
+          enabled: true,
+          displayName: "Codex",
+          config: { setupMode: "existing" },
+        },
+      });
+    },
+  );
 
   it("includes the explicitly added default accent color when creating a provider", async () => {
     setup();

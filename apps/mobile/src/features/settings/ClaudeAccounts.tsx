@@ -22,8 +22,8 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   claudeConfigDir,
-  DEFAULT_CLAUDE_INSTANCE_ID,
   planClaudeAccountSave,
+  DEFAULT_CLAUDE_INSTANCE_ID,
   type ClaudeAccountDraft,
 } from "./claude-accounts";
 import type { SettingsTarget } from "./settings-environment-filter";
@@ -82,8 +82,10 @@ export function ClaudeAccount({
         : !provider.installed
           ? t("Not installed")
           : null;
+  const supportsDeletion =
+    environment.serverConfig.environment.capabilities.providerInstanceDeletion === true;
   const removable =
-    provider.instanceId !== DEFAULT_CLAUDE_INSTANCE_ID &&
+    (supportsDeletion || provider.instanceId !== DEFAULT_CLAUDE_INSTANCE_ID) &&
     !isManagedSettingPath(
       environment.serverConfig.managedPolicy,
       `providerInstances.${provider.instanceId}`,
@@ -104,17 +106,21 @@ export function ClaudeAccount({
   function remove() {
     Dialog.alert(
       t("Remove {name}?", { name }),
-      t(
-        "It leaves the model picker on {environment}. The config folder and its sign-in stay on the server.",
-        { environment: environment.label },
-      ),
+      supportsDeletion
+        ? t(
+            "Active sessions will be stopped. Saved settings and unused T3-managed resources will be removed. Personal CLI installations and configuration will be kept.",
+          )
+        : t("Its saved settings, including any custom binary path, will be removed."),
       [
         { text: t("Cancel"), style: "cancel" },
         {
           text: t("Remove"),
           style: "destructive",
           onPress: () => {
-            void run({ operation: "remove", instanceId: provider.instanceId });
+            void run({
+              operation: supportsDeletion ? "delete" : "remove",
+              instanceId: provider.instanceId,
+            });
           },
         },
       ],

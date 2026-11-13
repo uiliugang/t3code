@@ -328,6 +328,7 @@ it.layer(
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.serverResolvedCommandContext).toBe(true);
       expect(second.capabilities.projectProviderInstanceOverrides).toBe(true);
+      expect(second.capabilities.providerInstanceDeletion).toBe(true);
       expect(second.capabilities.agentActivityPublishing).toBe(false);
     }),
   );

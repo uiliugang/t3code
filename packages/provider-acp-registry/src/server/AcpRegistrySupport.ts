@@ -17,6 +17,7 @@ import { cliArchiveTarCommand } from "@t3tools/shared/cliRelease";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   mergePathEntries,
+  resolveCommandPath,
   resolveSpawnCommand,
   SpawnExecutableResolution,
 } from "@t3tools/shared/shell";
@@ -47,6 +48,8 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 
 const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 
@@ -520,7 +523,7 @@ export class AcpRegistryCatalog extends Context.Service<
       environment?: NodeJS.ProcessEnv,
     ) => Effect.Effect<ResolvedAcpRegistryAgent, AcpRegistryError>;
     readonly uninstallManagedBinary: (
-      input: AcpRegistryManagedBinaryUninstallInput,
+      input: AcpRegistryManagedBinaryUninstallInput & { readonly includePackages?: boolean },
     ) => Effect.Effect<AcpRegistryManagedBinaryUninstallResult, AcpRegistryError>;
   }
 >()("@t3tools/provider-acp-registry/server/AcpRegistrySupport/AcpRegistryCatalog") {}
@@ -1961,6 +1964,41 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
                   }),
               ),
             );
+            const agentRoot = path.join(installsDirectory, safeAgentId);
+            const realRoot = yield* fileSystem
+              .realPath(agentRoot)
+              .pipe(Effect.orElseSucceed(() => agentRoot));
+            const home = yield* HostProcess.HomeDirectory;
+            const pathReferences = yield* Effect.forEach(
+              Object.values(settings.providerInstances),
+              Effect.fnUntraced(function* (instance) {
+                if (instance.config === null || typeof instance.config !== "object") return false;
+                for (const key of ["binaryPath", "commandPath", "homePath", "shadowHomePath"]) {
+                  const value: unknown = Reflect.get(instance.config, key);
+                  if (typeof value !== "string" || !value.trim()) continue;
+                  const expanded = expandHomePath(value.trim(), home);
+                  const resolved =
+                    key === "binaryPath" || key === "commandPath"
+                      ? yield* resolveCommandPath(expanded, {
+                          env: yield* mergeProviderInstanceEnvironment(instance.environment),
+                        })
+                      : null;
+                  const candidate = resolved ?? path.resolve(expanded);
+                  const real = yield* fileSystem
+                    .realPath(candidate)
+                    .pipe(Effect.orElseSucceed(() => candidate));
+                  const relative = path.relative(realRoot, real);
+                  if (
+                    relative === "" ||
+                    (relative !== ".." &&
+                      !relative.startsWith(`..${path.sep}`) &&
+                      !path.isAbsolute(relative))
+                  )
+                    return true;
+                }
+                return false;
+              }),
+            );
             const isReferenced = Object.values(settings.providerInstances).some((instance) => {
               if (
                 instance.driver !== "acpRegistry" ||
@@ -1975,14 +2013,13 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
                 config.agentId.trim() === safeAgentId
               );
             });
-            if (isReferenced) {
+            if (isReferenced || pathReferences.some(Boolean)) {
               yield* consumePreparedBinaryReservation(safeAgentId);
               return { agentId: safeAgentId, removed: false };
             }
             if (yield* hasPreparedBinaryReservation(safeAgentId)) {
               return { agentId: safeAgentId, removed: false };
             }
-            const agentRoot = path.join(installsDirectory, safeAgentId);
             const existed = yield* fileSystem.exists(agentRoot).pipe(
               Effect.mapError(
                 (cause) =>
@@ -2000,7 +2037,11 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
               for (const version of yield* fileSystem.readDirectory(agentRoot)) {
                 const versionRoot = path.join(agentRoot, version);
                 for (const entry of yield* fileSystem.readDirectory(versionRoot)) {
-                  if (!/^(?:darwin|linux|windows)-(?:aarch64|x86_64)$/u.test(entry)) continue;
+                  if (
+                    !/^(?:darwin|linux|windows)-(?:aarch64|x86_64)$/u.test(entry) &&
+                    !(input.includePackages && (entry === "npm" || entry === "python"))
+                  )
+                    continue;
                   yield* fileSystem.remove(path.join(versionRoot, entry), {
                     recursive: true,
                     force: true,
@@ -2012,6 +2053,18 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
               }
               if ((yield* fileSystem.readDirectory(agentRoot)).length === 0)
                 yield* fileSystem.remove(agentRoot, { recursive: true });
+              if (input.includePackages && (yield* fileSystem.exists(packageReceiptsDirectory))) {
+                for (const entry of yield* fileSystem.readDirectory(packageReceiptsDirectory)) {
+                  const receiptPath = path.join(packageReceiptsDirectory, entry);
+                  const receipt = yield* fileSystem.readFileString(receiptPath).pipe(
+                    Effect.map(decodePackageInstallReceipt),
+                    Effect.orElseSucceed(() => Option.none()),
+                  );
+                  if (Option.isSome(receipt) && receipt.value.agentId === safeAgentId) {
+                    yield* fileSystem.remove(receiptPath, { force: true });
+                  }
+                }
+              }
             }).pipe(
               Effect.mapError(
                 (cause) =>
@@ -2027,6 +2080,8 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
         ),
       )
       .pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
         Effect.catchTags({
           ServerSettingsError: (cause) =>
             new AcpRegistryError({
