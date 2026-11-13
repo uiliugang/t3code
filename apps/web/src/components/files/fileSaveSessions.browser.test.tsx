@@ -12,8 +12,6 @@ vi.mock(import("@t3tools/client-runtime/state/runtime"), async (original) => ({
   ...(await original()),
   runAtomCommand: runAtomCommand as never,
 }));
-// The real session atom boots the connection runtime, whose endless discovery poll
-// would keep vi.runAllTimersAsync from ever draining once its timers are faked.
 vi.mock(import("~/state/session"), async (original) => {
   const actual = await original();
   const reactivity = await import("effect/reactivity");
@@ -78,7 +76,7 @@ describe("file save sessions in React", () => {
     );
     finishWrite();
     getUnsavedFile.mockReturnValue(null);
-    await vi.runAllTimersAsync();
+    await vi.waitFor(() => expect(onPendingChange).toHaveBeenLastCalledWith("README.md", false));
 
     expect(runAtomCommand.mock.calls.map(([, , request]) => request)).toEqual([
       {
@@ -86,6 +84,5 @@ describe("file save sessions in React", () => {
         input: { cwd: "/workspace", relativePath: "README.md", contents: "draft" },
       },
     ]);
-    expect(onPendingChange).toHaveBeenLastCalledWith("README.md", false);
   });
 });
