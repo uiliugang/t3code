@@ -49,7 +49,7 @@ export function ComposerAttachmentButton(props: {
       accessible
       accessibilityLabel={t("Add attachment")}
       accessibilityRole="button"
-      actions={ATTACHMENT_MENU_ACTIONS}
+      actions={ATTACHMENT_MENU_ACTIONS.map((action) => ({ ...action, title: t(action.title) }))}
       onPressAction={({ nativeEvent }) => {
         if (nativeEvent.event === "photos") {
           void props.onPickMedia();

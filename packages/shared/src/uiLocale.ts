@@ -5740,6 +5740,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Use existing": "使用现有文件",
   "Say a sentence. Cleanup is skipped, so you see exactly what the model heard.":
     "说一句话。测试会跳过文本整理，直接显示模型识别到的内容。",
+  "Photo Library": "照片图库",
+  "Choose Files": "选择文件",
 };
 
 export function translateUi(
