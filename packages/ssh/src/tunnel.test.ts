@@ -1867,7 +1867,9 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
       const final = yield* launch({ ...target, alias: "devbox-final" }, updatedServer);
       assert.equal(final.remoteServerKind, "external");
       assert.isTrue(yield* isRunning(unownedPid), "a stale launcher ID claimed another's server");
-    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    }).pipe(
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, FetchHttpClient.layer)),
+    ),
   );
 
   it.live.each(staleIds)("disconnecting does not signal %s named by the managed pid file", (kind) =>

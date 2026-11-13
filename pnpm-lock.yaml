@@ -277,6 +277,7 @@ overrides:
   alchemy: 2.0.0-beta.85
   expo-audio: 58.0.11
   expo-network: 58.0.4
+  '@expo/image-utils': 0.12.6
   '@clerk/expo-native-components': 0.4.4
   '@cursor/sdk': 1.2.0
   expo-sharing: 58.0.22
@@ -4977,9 +4978,6 @@ packages:
   '@expo/image-utils@0.12.6':
     resolution: {integrity: sha512-AWzD/c3mM/a+sDbRgOSNzBpkUW8sUVUFcwnZ7xqkkhc5Hi9Fms0pDGw24JLxccgA6cC6bbJ8sZiQbnXBf75onA==}
 
-  '@expo/image-utils@0.8.14':
-    resolution: {integrity: sha512-5Sn+jG4Cw+shC2wDMXoqSAJnvERbiwzHn05FpWtD5IBflfTIs5gUmjzwiGVyjOdlMSQhgRrw/AymPbmO9h9mpQ==}
-
   '@expo/inline-modules@0.2.9':
     resolution: {integrity: sha512-Ksrw66Urvj9YptFWmGYRP7w8PtDBEebhb11tkLgF5kUqDbJT1A07Sr2e8jvRVPLksn+Pkfb0eN2dnvnPh1CNnQ==}
 
@@ -5096,17 +5094,6 @@ packages:
 
   '@expo/prebuild-config@58.0.19':
     resolution: {integrity: sha512-hnXk/CsXOnKk4eRfA7Qh1JO793wRFzUfCJlu+5NpRwbpuMw6J+0LRRTRY2fIXOL+UefeTi6TD5EGXFKuJU9c4Q==}
-
-  '@expo/require-utils@55.0.5':
-    resolution: {integrity: sha512-U4K/CQ2VpXuwfNGsN+daKmYOt15hCP8v/pXaYH6eut7kdYZo6SfJ1yr67BIcJ+1Gzzs+QzTxswAZChKpXmceyw==}
-    peerDependencies:
-      '@types/typescript': '*'
-      typescript: ^5.0.0 || ^5.0.0-0
-    peerDependenciesMeta:
-      '@types/typescript':
-        optional: true
-      typescript:
-        optional: true
 
   '@expo/require-utils@58.0.5':
     resolution: {integrity: sha512-14dGubYUBmJjK9aqVSGnwSDs9uaxfzvtqJugtMCEWyuTa/eIvToUbzUwpKCSek6S/hYSEYcgds23vDJhXSBpbQ==}
@@ -17349,22 +17336,6 @@ snapshots:
       - supports-color
       - typescript
 
-  '@expo/image-utils@0.8.14(supports-color@8.1.1)(typescript@6.0.3)':
-    dependencies:
-      '@expo/require-utils': 55.0.5(supports-color@8.1.1)(typescript@6.0.3)
-      '@expo/spawn-async': 1.8.0
-      chalk: 4.1.2
-      getenv: 2.0.0
-      jimp-compact: 0.16.1
-      parse-png: 2.1.0
-      semver: 7.8.5
-    transitivePeerDependencies:
-      - '@types/babel__core'
-      - '@types/browserslist'
-      - '@types/typescript'
-      - supports-color
-      - typescript
-
   '@expo/inline-modules@0.2.9(supports-color@8.1.1)(typescript@6.0.3)':
     dependencies:
       '@expo/config-plugins': 58.0.12(supports-color@8.1.1)(typescript@6.0.3)
@@ -17556,18 +17527,6 @@ snapshots:
       - '@types/typescript'
       - supports-color
       - typescript
-
-  '@expo/require-utils@55.0.5(supports-color@8.1.1)(typescript@6.0.3)':
-    dependencies:
-      '@babel/code-frame': 7.29.7
-      '@babel/core': 7.29.7(supports-color@8.1.1)
-      '@babel/plugin-transform-modules-commonjs': 7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)
-    optionalDependencies:
-      typescript: 6.0.3
-    transitivePeerDependencies:
-      - '@types/babel__core'
-      - '@types/browserslist'
-      - supports-color
 
   '@expo/require-utils@58.0.5(supports-color@8.1.1)(typescript@6.0.3)':
     dependencies:
@@ -22300,7 +22259,7 @@ snapshots:
   expo-quick-actions@6.0.2(expo@58.0.23)(supports-color@8.1.1)(typescript@6.0.3):
     dependencies:
       '@expo/config-plugins': 58.0.12(supports-color@8.1.1)(typescript@6.0.3)
-      '@expo/image-utils': 0.8.14(supports-color@8.1.1)(typescript@6.0.3)
+      '@expo/image-utils': 0.12.6(patch_hash=142c2d105900edff20ac92017ad755a761563b119f1b4544356ff76c5a6b1978)(supports-color@8.1.1)(typescript@6.0.3)
       expo: 58.0.23(546582cc920d0097a02265c21b792644)
       schema-utils: 4.3.3
       sf-symbols-typescript: 2.2.0
