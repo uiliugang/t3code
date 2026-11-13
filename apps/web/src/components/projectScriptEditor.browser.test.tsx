@@ -1,3 +1,7 @@
+import { Atom } from "effect/reactivity";
+import { page } from "vite-plus/test/browser";
+import { serverEnvironment } from "~/state/server";
+import { makeServerConfig } from "../../test/fakeEnvironment";
 import { act, render, type Screen } from "../../test/render";
 import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
@@ -90,3 +94,40 @@ describe("project action editor save lifecycle", () => {
     expect(onSubmit.mock.calls.map(([scriptId]) => scriptId)).toEqual(["build", "test"]);
   });
 });
+
+it.each([false, true])(
+  "preserves action cleanup controls for legacy environments (automatic=%s)",
+  async (automatic) => {
+    setup();
+    const base = makeServerConfig([]);
+    const config = {
+      ...base,
+      environment: {
+        ...base.environment,
+        capabilities: {
+          ...base.environment.capabilities,
+          ...(automatic ? { threadTerminalCleanup: true } : {}),
+        },
+      },
+    };
+    using _config = vi
+      .spyOn(serverEnvironment, "configValueAtom")
+      .mockReturnValue(Atom.make(config));
+    onSubmit.mockResolvedValue(AsyncResult.success(undefined));
+    await using screen = await render(null);
+    const next = request("dev");
+    await open(screen, {
+      ...next,
+      scriptId: null,
+      initial: { ...next.initial, stopOnSettle: false },
+    });
+    const toggle = page.getByRole("switch", { name: "Stop this action when the thread settles" });
+    if (automatic) await expect.element(toggle).not.toBeInTheDocument();
+    else await page.getByText("Stop this action when the thread settles", { exact: true }).click();
+    await act(async () => submit());
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      null,
+      expect.objectContaining({ stopOnSettle: !automatic }),
+    );
+  },
+);

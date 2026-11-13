@@ -1,3 +1,5 @@
+import { useAtomValue } from "@effect/atom-react";
+import { serverEnvironment } from "~/state/server";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { Checkbox } from "./ui/checkbox";
 import {
@@ -290,7 +292,10 @@ function ProjectScriptEditorForm({
   );
   const [waitForSetup, setWaitForSetup] = useState(request.initial.waitForSetup);
   const [runOnSettle, setRunOnSettle] = useState(request.initial.runOnSettle);
-  const stopOnSettle = request.initial.stopOnSettle ?? false;
+  const automaticCleanup =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.environment.capabilities
+      .threadTerminalCleanup === true;
+  const [stopOnSettle, setStopOnSettle] = useState(request.initial.stopOnSettle ?? false);
   const [keybinding, setKeybinding] = useState(request.initial.keybinding ?? "");
   const [previewUrl, setPreviewUrl] = useState(request.initial.previewUrl ?? "");
   const [autoOpenPreview, setAutoOpenPreview] = useState(request.initial.autoOpenPreview);
@@ -582,6 +587,18 @@ function ProjectScriptEditorForm({
                 onCheckedChange={(checked) => setRunOnSettle(Boolean(checked))}
               />
             </label>
+            {!automaticCleanup ? (
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                <span id={`${formId}-stop-on-settle-label`}>
+                  Stop this action when the thread settles
+                </span>
+                <Switch
+                  aria-labelledby={`${formId}-stop-on-settle-label`}
+                  checked={stopOnSettle}
+                  onCheckedChange={(checked) => setStopOnSettle(Boolean(checked))}
+                />
+              </label>
+            ) : null}
             <label
               className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
                 previewUrl.trim().length === 0 ? "opacity-60" : ""

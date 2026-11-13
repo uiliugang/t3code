@@ -154,6 +154,7 @@ it.layer(
           projectWorktreeCleanup: true,
           worktreesDirectory: true,
           threadAutoSettlementScope: true,
+          threadTerminalCleanup: true,
         });
       }
     }),
