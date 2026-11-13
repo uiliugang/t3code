@@ -40,6 +40,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../apps/server/src/mcp/McpInvocationContext.ts";
 import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSchema.ts";
+import * as SkillManager from "../../apps/server/src/skills/SkillManager.ts";
 import * as Contracts from "@t3tools/contracts";
 import {
   EnvironmentId,
@@ -968,7 +969,9 @@ export const withBackgroundWait = Effect.fn("evaluateMcpToolUse.withBackgroundWa
 ) {
   const running = sample.testCase.setup.world?.backgroundTasks;
   if (running === undefined) return;
-  const backgroundWait = yield* makeBackgroundWait(running);
+  const backgroundWait = yield* makeBackgroundWait(running).pipe(
+    Effect.provide(Layer.mock(SkillManager.SkillManager)({})),
+  );
   sample.backgroundWait = backgroundWait;
   for (const call of (sample.testCase.setup.priorTurns ?? []).flatMap((t) => t.toolCalls ?? [])) {
     if (call.result !== "default" || call.tool !== "t3_background_wait") continue;
