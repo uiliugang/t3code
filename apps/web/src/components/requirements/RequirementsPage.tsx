@@ -37,6 +37,8 @@ import type { RequirementsSearch } from "../../routes/_chat.requirements";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { serverEnvironment } from "../../state/server";
 import { Atom } from "effect/reactivity";
+import { WorkItemsBoard } from "../work-items/WorkItemsPage";
+import { DELIVERY_PROGRESS_LABELS } from "@t3tools/client-runtime/work-item";
 
 const noSettings = Atom.make(null);
 
@@ -71,9 +73,25 @@ export function RequirementsPage() {
   const settings = useAtomValue(
     environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noSettings,
   );
+  const config = useAtomValue(
+    environmentId ? serverEnvironment.configValueAtom(environmentId) : noSettings,
+  );
   const allowed = useAtomValue(sourceControlEnvironment.createIssue.permissionAtom(environmentId));
+  const tracking = useEnvironmentQuery(
+    environmentId && config?.workItemDelivery === true
+      ? serverEnvironment.workItemsLive({
+          environmentId,
+          input: { ...(search.projectId ? { projectId: search.projectId } : {}), limit: 100 },
+        })
+      : null,
+  );
+  const tracked = new Map(
+    (tracking.data?.items ?? [])
+      .filter((item) => item.issue)
+      .map((item) => [item.issue!.url, item]),
+  );
   const query = useEnvironmentQuery(
-    environmentId
+    environmentId && !search.local
       ? sourceControlEnvironment.issues({
           environmentId,
           input: {
@@ -188,28 +206,32 @@ export function RequirementsPage() {
             <div className="flex min-w-0 items-center gap-3">
               <ClipboardListIcon className="size-5 shrink-0 text-muted-foreground" />
               <h1 className="truncate text-base font-semibold">{t("Requirements board")}</h1>
-              <span className="text-xs text-muted-foreground">{entries.length}</span>
+              {!search.local ? (
+                <span className="text-xs text-muted-foreground">{entries.length}</span>
+              ) : null}
             </div>
             <div className="flex items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={t("Refresh issues")}
-                      onClick={() => {
-                        setPage(1);
-                        setPages({ key, data: [], last: null });
-                        query.refresh();
-                      }}
-                    />
-                  }
-                >
-                  <RefreshCwIcon />
-                </TooltipTrigger>
-                <TooltipPopup>{t("Refresh issues")}</TooltipPopup>
-              </Tooltip>
+              {!search.local ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={t("Refresh issues")}
+                        onClick={() => {
+                          setPage(1);
+                          setPages({ key, data: [], last: null });
+                          query.refresh();
+                        }}
+                      />
+                    }
+                  >
+                    <RefreshCwIcon />
+                  </TooltipTrigger>
+                  <TooltipPopup>{t("Refresh issues")}</TooltipPopup>
+                </Tooltip>
+              ) : null}
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -225,14 +247,16 @@ export function RequirementsPage() {
                 </TooltipTrigger>
                 <TooltipPopup>{t("Issue management")}</TooltipPopup>
               </Tooltip>
-              <Button
-                size="sm"
-                onClick={() => setCreating(true)}
-                disabled={!allowed || !environmentId || createProjects.length === 0}
-              >
-                <PlusIcon />
-                {t("New issue")}
-              </Button>
+              {!search.local ? (
+                <Button
+                  size="sm"
+                  onClick={() => setCreating(true)}
+                  disabled={!allowed || !environmentId || createProjects.length === 0}
+                >
+                  <PlusIcon />
+                  {t("New issue")}
+                </Button>
+              ) : null}
             </div>
           </header>
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-5 py-3">
@@ -259,14 +283,16 @@ export function RequirementsPage() {
             <div className="w-36">
               <IssueSelect
                 label={t("Issue source")}
-                value={provider}
+                value={search.local ? "local" : provider}
                 options={[
                   { value: "meituan", label: "MEP ONES" },
                   { value: "github", label: "GitHub Issues" },
+                  { value: "local", label: t("Local work items") },
                 ]}
                 onChange={(value) =>
                   updateSearch({
                     provider: value === "github" ? "github" : "meituan",
+                    local: value === "local" ? true : undefined,
                     projectId: undefined,
                     issueId: undefined,
                     issueProjectId: undefined,
@@ -274,256 +300,298 @@ export function RequirementsPage() {
                 }
               />
             </div>
-            <div className="w-44">
-              <IssueSelect
-                label={t("Project")}
-                value={search.projectId ?? "all"}
-                options={[
-                  { value: "all", label: t("All projects") },
-                  ...projects.map((project) => ({ value: project.id, label: project.title })),
-                ]}
-                onChange={(value) =>
-                  updateSearch({ projectId: value === "all" ? undefined : ProjectId.make(value) })
-                }
-              />
-            </div>
-            <div className="w-40">
-              <IssueSelect
-                label={t("Assignee")}
-                value={assignee}
-                options={[
-                  { value: "me", label: t("Assigned to me") },
-                  { value: "all", label: t("All assignees") },
-                  { value: "unassigned", label: t("Unassigned") },
-                  ...assigneeOptions.filter(
-                    (person) => !["me", "all", "unassigned"].includes(person.value),
-                  ),
-                ]}
-                onChange={(value) => updateSearch({ assignee: value })}
-              />
-            </div>
-            <form
-              className="min-w-40 flex-1"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                updateSearch({ q: String(data.get("query") ?? "") });
-              }}
-            >
-              <Input
-                name="query"
-                key={search.q ?? ""}
-                defaultValue={search.q ?? ""}
-                placeholder={t("Search title or number")}
-                aria-label={t("Search title or number")}
-                size="sm"
-              />
-            </form>
-          </div>
-          <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-3">
-            <span className="text-xs text-muted-foreground">
-              {t("{count} loaded", { count: entries.length })}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() => updateSearch({ assignee: "all", projectId: undefined, q: "" })}
-              >
-                {t("Reset filters")}
-              </Button>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon-sm"
-                      variant={view === "board" ? "secondary" : "ghost"}
-                      onClick={() => updateSearch({ view: "board" })}
-                      aria-label={t("Board view")}
-                      aria-pressed={view === "board"}
-                    />
-                  }
+            {!search.local ? (
+              <>
+                <div className="w-44">
+                  <IssueSelect
+                    label={t("Project")}
+                    value={search.projectId ?? "all"}
+                    options={[
+                      { value: "all", label: t("All projects") },
+                      ...projects.map((project) => ({ value: project.id, label: project.title })),
+                    ]}
+                    onChange={(value) =>
+                      updateSearch({
+                        projectId: value === "all" ? undefined : ProjectId.make(value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="w-40">
+                  <IssueSelect
+                    label={t("Assignee")}
+                    value={assignee}
+                    options={[
+                      { value: "me", label: t("Assigned to me") },
+                      { value: "all", label: t("All assignees") },
+                      { value: "unassigned", label: t("Unassigned") },
+                      ...assigneeOptions.filter(
+                        (person) => !["me", "all", "unassigned"].includes(person.value),
+                      ),
+                    ]}
+                    onChange={(value) => updateSearch({ assignee: value })}
+                  />
+                </div>
+                <form
+                  className="min-w-40 flex-1"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    updateSearch({ q: String(data.get("query") ?? "") });
+                  }}
                 >
-                  <LayoutGridIcon />
-                </TooltipTrigger>
-                <TooltipPopup>{t("Board view")}</TooltipPopup>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon-sm"
-                      variant={view === "list" ? "secondary" : "ghost"}
-                      onClick={() => updateSearch({ view: "list" })}
-                      aria-label={t("List view")}
-                      aria-pressed={view === "list"}
-                    />
-                  }
-                >
-                  <ListIcon />
-                </TooltipTrigger>
-                <TooltipPopup>{t("List view")}</TooltipPopup>
-              </Tooltip>
-            </div>
-          </div>
-          <div
-            className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
-          >
-            {query.error ? (
-              <p role="alert" className="mb-3 text-sm text-destructive">
-                {query.error}
-              </p>
+                  <Input
+                    name="query"
+                    key={search.q ?? ""}
+                    defaultValue={search.q ?? ""}
+                    placeholder={t("Search title or number")}
+                    aria-label={t("Search title or number")}
+                    size="sm"
+                  />
+                </form>
+              </>
             ) : null}
-            {query.data?.failures.map((failure) => (
-              <p role="alert" key={failure.projectId} className="mb-3 text-sm text-destructive">
-                {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
-                {t(failure.reason)}
-              </p>
-            ))}
-            {query.isPending && !entries.length ? (
-              <p className="py-8 text-sm text-muted-foreground">{t("Loading...")}</p>
-            ) : !entries.length ? (
-              <div className="flex min-h-64 flex-col items-center justify-center gap-4">
-                <ClipboardListIcon className="size-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    query.data?.groups.length
-                      ? "No matching issues."
-                      : "Connect an issue source to start.",
-                  )}
-                </p>
+          </div>
+          {!search.local ? (
+            <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-3">
+              <span className="text-xs text-muted-foreground">
+                {t("{count} loaded", { count: entries.length })}
+              </span>
+              <div className="flex items-center gap-1">
                 <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void navigate({ to: "/settings/requirements" })}
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => updateSearch({ assignee: "all", projectId: undefined, q: "" })}
                 >
-                  <SettingsIcon />
-                  {t("Issue management")}
+                  {t("Reset filters")}
                 </Button>
-              </div>
-            ) : view === "list" ? (
-              <div className="divide-y divide-border">
-                <button
-                  type="button"
-                  className="flex items-center gap-2 py-3 text-sm"
-                  aria-expanded={!doneCollapsed}
-                  onClick={() => setDoneCollapsed(!doneCollapsed)}
-                >
-                  {doneCollapsed ? (
-                    <ChevronRightIcon className="size-4" />
-                  ) : (
-                    <ChevronDownIcon className="size-4" />
-                  )}
-                  {t("Done")} (
-                  {entries.filter(({ issue }) => issue.stateCategory === "done").length})
-                </button>
-                {entries
-                  .filter(({ issue }) => !doneCollapsed || issue.stateCategory !== "done")
-                  .map(({ issue, projectId, scope }) => (
-                    <button
-                      type="button"
-                      key={`${projectId}/${scope}/${issue.id}`}
-                      onClick={() => open(issue, projectId, scope)}
-                      className="grid w-full grid-cols-[4rem_minmax(0,1fr)_7rem] items-center gap-3 py-4 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                    >
-                      <span className="text-xs text-muted-foreground">#{issue.id}</span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">{issue.title}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {projects.find((project) => project.id === projectId)?.title} ·{" "}
-                          {issue.assignees.map((person) => person.label).join(", ") ||
-                            t("Unassigned")}
-                        </span>
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">{issue.state}</span>
-                    </button>
-                  ))}
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto">
-                {visibleColumns.map(({ key: category, label, Icon }) => (
-                  <section key={category} className="flex min-h-0 min-w-60 flex-1 flex-col">
-                    <div className="mb-3 flex h-9 shrink-0 items-center gap-2 border-b border-border text-sm">
-                      <Icon
-                        className={`size-4 ${category === "done" ? "text-success" : category === "doing" ? "text-warning" : "text-muted-foreground"}`}
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant={view === "board" ? "secondary" : "ghost"}
+                        onClick={() => updateSearch({ view: "board" })}
+                        aria-label={t("Board view")}
+                        aria-pressed={view === "board"}
                       />
-                      <h2 className="font-medium">
-                        {category === "done" ? (
-                          <button
-                            type="button"
-                            className="flex items-center gap-2"
-                            aria-expanded={!doneCollapsed}
-                            onClick={() => setDoneCollapsed(!doneCollapsed)}
-                          >
-                            {t(provider === "github" ? "Closed" : label)}
-                            {doneCollapsed ? (
-                              <ChevronRightIcon className="size-4" />
-                            ) : (
-                              <ChevronDownIcon className="size-4" />
-                            )}
-                          </button>
-                        ) : (
-                          t(
-                            provider === "github"
-                              ? category === "todo"
-                                ? "Open"
-                                : "Closed"
-                              : label,
-                          )
-                        )}
-                      </h2>
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {entries.filter(({ issue }) => issue.stateCategory === category).length}
-                      </span>
-                    </div>
-                    <div
-                      className="min-h-0 space-y-3 overflow-y-auto"
-                      hidden={category === "done" && doneCollapsed}
-                    >
-                      {entries
-                        .filter(({ issue }) => issue.stateCategory === category)
-                        .map(({ issue, projectId, scope }) => (
-                          <button
-                            type="button"
-                            key={`${projectId}/${scope}/${issue.id}`}
-                            onClick={() => open(issue, projectId, scope)}
-                            className="flex w-full flex-col gap-3 rounded-md border border-border bg-card p-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                          >
-                            <span className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
-                              <span>#{issue.id}</span>
-                              <span>{issue.priority}</span>
+                    }
+                  >
+                    <LayoutGridIcon />
+                  </TooltipTrigger>
+                  <TooltipPopup>{t("Board view")}</TooltipPopup>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant={view === "list" ? "secondary" : "ghost"}
+                        onClick={() => updateSearch({ view: "list" })}
+                        aria-label={t("List view")}
+                        aria-pressed={view === "list"}
+                      />
+                    }
+                  >
+                    <ListIcon />
+                  </TooltipTrigger>
+                  <TooltipPopup>{t("List view")}</TooltipPopup>
+                </Tooltip>
+              </div>
+            </div>
+          ) : null}
+          {search.local && environmentId ? (
+            <WorkItemsBoard
+              environmentId={environmentId}
+              initialProjectId={search.projectId}
+              localOnly
+            />
+          ) : (
+            <div
+              className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
+            >
+              {query.error ? (
+                <p role="alert" className="mb-3 text-sm text-destructive">
+                  {query.error}
+                </p>
+              ) : null}
+              {query.data?.failures.map((failure) => (
+                <p role="alert" key={failure.projectId} className="mb-3 text-sm text-destructive">
+                  {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
+                  {t(failure.reason)}
+                </p>
+              ))}
+              {query.isPending && !entries.length ? (
+                <p className="py-8 text-sm text-muted-foreground">{t("Loading...")}</p>
+              ) : !entries.length ? (
+                <div className="flex min-h-64 flex-col items-center justify-center gap-4">
+                  <ClipboardListIcon className="size-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      query.data?.groups.length
+                        ? "No matching issues."
+                        : "Connect an issue source to start.",
+                    )}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void navigate({ to: "/settings/requirements" })}
+                  >
+                    <SettingsIcon />
+                    {t("Issue management")}
+                  </Button>
+                </div>
+              ) : view === "list" ? (
+                <div className="divide-y divide-border">
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 py-3 text-sm"
+                    aria-expanded={!doneCollapsed}
+                    onClick={() => setDoneCollapsed(!doneCollapsed)}
+                  >
+                    {doneCollapsed ? (
+                      <ChevronRightIcon className="size-4" />
+                    ) : (
+                      <ChevronDownIcon className="size-4" />
+                    )}
+                    {t("Done")} (
+                    {entries.filter(({ issue }) => issue.stateCategory === "done").length})
+                  </button>
+                  {entries
+                    .filter(({ issue }) => !doneCollapsed || issue.stateCategory !== "done")
+                    .map(({ issue, projectId, scope }) => (
+                      <button
+                        type="button"
+                        key={`${projectId}/${scope}/${issue.id}`}
+                        onClick={() => open(issue, projectId, scope)}
+                        className="grid w-full grid-cols-[4rem_minmax(0,1fr)_7rem] items-center gap-3 py-4 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                      >
+                        <span className="text-xs text-muted-foreground">#{issue.id}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">{issue.title}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {projects.find((project) => project.id === projectId)?.title} ·{" "}
+                            {issue.assignees.map((person) => person.label).join(", ") ||
+                              t("Unassigned")}
+                          </span>
+                          {tracked.get(issue.url)?.deliverySummary ? (
+                            <span className="block text-xs text-muted-foreground">
+                              {t(
+                                DELIVERY_PROGRESS_LABELS[
+                                  tracked.get(issue.url)!.deliverySummary!.progress
+                                ],
+                              )}{" "}
+                              · PR {tracked.get(issue.url)!.deliverySummary!.mergedPullRequests}/
+                              {tracked.get(issue.url)!.deliverySummary!.requiredPullRequests}
                             </span>
-                            <span className="text-sm font-medium wrap-anywhere">{issue.title}</span>
-                            <span className="truncate text-xs text-muted-foreground">
-                              {projects.find((project) => project.id === projectId)?.title}
-                            </span>
-                            <span className="flex w-full flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                              <span>{issue.state}</span>
-                              <span>
-                                {issue.assignees.map((person) => person.label).join(", ") ||
-                                  t("Unassigned")}
+                          ) : null}
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {issue.state}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              ) : (
+                <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto">
+                  {visibleColumns.map(({ key: category, label, Icon }) => (
+                    <section key={category} className="flex min-h-0 min-w-60 flex-1 flex-col">
+                      <div className="mb-3 flex h-9 shrink-0 items-center gap-2 border-b border-border text-sm">
+                        <Icon
+                          className={`size-4 ${category === "done" ? "text-success" : category === "doing" ? "text-warning" : "text-muted-foreground"}`}
+                        />
+                        <h2 className="font-medium">
+                          {category === "done" ? (
+                            <button
+                              type="button"
+                              className="flex items-center gap-2"
+                              aria-expanded={!doneCollapsed}
+                              onClick={() => setDoneCollapsed(!doneCollapsed)}
+                            >
+                              {t(provider === "github" ? "Closed" : label)}
+                              {doneCollapsed ? (
+                                <ChevronRightIcon className="size-4" />
+                              ) : (
+                                <ChevronDownIcon className="size-4" />
+                              )}
+                            </button>
+                          ) : (
+                            t(
+                              provider === "github"
+                                ? category === "todo"
+                                  ? "Open"
+                                  : "Closed"
+                                : label,
+                            )
+                          )}
+                        </h2>
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {entries.filter(({ issue }) => issue.stateCategory === category).length}
+                        </span>
+                      </div>
+                      <div
+                        className="min-h-0 space-y-3 overflow-y-auto"
+                        hidden={category === "done" && doneCollapsed}
+                      >
+                        {entries
+                          .filter(({ issue }) => issue.stateCategory === category)
+                          .map(({ issue, projectId, scope }) => (
+                            <button
+                              type="button"
+                              key={`${projectId}/${scope}/${issue.id}`}
+                              onClick={() => open(issue, projectId, scope)}
+                              className="flex w-full flex-col gap-3 rounded-md border border-border bg-card p-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                            >
+                              <span className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
+                                <span>#{issue.id}</span>
+                                <span>{issue.priority}</span>
                               </span>
-                            </span>
-                          </button>
-                        ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            )}
-            {query.data?.groups.some((group) => group.hasMore) ? (
-              <div className="flex shrink-0 justify-center py-5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setPage(page + 1)}
-                  disabled={query.isPending}
-                >
-                  {t("Load more")}
-                </Button>
-              </div>
-            ) : null}
-          </div>
+                              <span className="text-sm font-medium wrap-anywhere">
+                                {issue.title}
+                              </span>
+                              {tracked.get(issue.url)?.deliverySummary ? (
+                                <span className="text-xs text-muted-foreground">
+                                  {t(
+                                    DELIVERY_PROGRESS_LABELS[
+                                      tracked.get(issue.url)!.deliverySummary!.progress
+                                    ],
+                                  )}{" "}
+                                  · PR {tracked.get(issue.url)!.deliverySummary!.mergedPullRequests}
+                                  /{tracked.get(issue.url)!.deliverySummary!.requiredPullRequests}
+                                </span>
+                              ) : null}
+                              <span className="truncate text-xs text-muted-foreground">
+                                {projects.find((project) => project.id === projectId)?.title}
+                              </span>
+                              <span className="flex w-full flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                                <span>{issue.state}</span>
+                                <span>
+                                  {issue.assignees.map((person) => person.label).join(", ") ||
+                                    t("Unassigned")}
+                                </span>
+                              </span>
+                            </button>
+                          ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
+              {query.data?.groups.some((group) => group.hasMore) ? (
+                <div className="flex shrink-0 justify-center py-5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPage(page + 1)}
+                    disabled={query.isPending}
+                  >
+                    {t("Load more")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
         {environmentId && search.issueId && selectedProject ? (
           <IssueDetailPanel

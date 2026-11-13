@@ -4,7 +4,18 @@ import type {
   WorkItemCommandInput,
   WorkItemExecution,
   WorkItemExecutionId,
+  DeliverySummary,
 } from "@t3tools/contracts";
+
+export const DELIVERY_PROGRESS_LABELS = {
+  needs_confirmation: "Needs confirmation",
+  awaiting_merge: "Awaiting merge",
+  awaiting_plan: "Awaiting release plan",
+  awaiting_release: "Awaiting release",
+  partially_released: "Partially released",
+  delivery_complete: "Delivery complete",
+  delivery_exception: "Delivery exception",
+} satisfies Record<DeliverySummary["progress"], string>;
 
 export const WORK_ITEM_STATUS_LABELS = {
   todo: "To do",

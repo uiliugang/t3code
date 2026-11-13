@@ -1856,6 +1856,14 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:work-items:discover",
       tag: WS_METHODS.workItemsDiscover,
     }),
+    createWorkItemIssue: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:work-items:create-issue",
+      tag: WS_METHODS.workItemsCreateIssue,
+    }),
+    refreshWorkItemDelivery: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:work-items:refresh-delivery",
+      tag: WS_METHODS.workItemsRefreshDelivery,
+    }),
     upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:upsert",
       tag: WS_METHODS.scheduledTasksUpsert,

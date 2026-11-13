@@ -27,6 +27,126 @@ export function decideWorkItem(input: {
   };
   if (item.archived && command.type !== "archive") invalid("Restore this task before changing it.");
   switch (command.type) {
+    case "reopen_delivery": {
+      if (item.delivery === undefined || !item.delivery.evidence.anomaly)
+        return invalid("Confirm a delivery exception before reopening the issue.");
+      return {
+        ...item,
+        delivery: {
+          ...item.delivery,
+          reopenRequest: { scopeRevision: item.delivery.scope.revision, state: command.state },
+        },
+        version: item.version + 1,
+        updatedAt: now,
+      };
+    }
+    case "completion_state":
+    case "delivery_exception":
+    case "release_plans":
+    case "unlink_issue_thread": {
+      if (item.delivery === undefined) return invalid("Link an external issue first.");
+      return {
+        ...item,
+        sources:
+          command.type === "unlink_issue_thread"
+            ? item.sources.filter((source) => source.threadId !== command.threadId)
+            : item.sources,
+        delivery: {
+          ...item.delivery,
+          ...(command.type === "completion_state" ? { completionState: command.state } : {}),
+          ...(command.type === "unlink_issue_thread"
+            ? {
+                dismissedThreadIds: [
+                  ...new Set([...(item.delivery.dismissedThreadIds ?? []), command.threadId]),
+                ],
+              }
+            : {}),
+          evidence: {
+            ...item.delivery.evidence,
+            ...(command.type === "release_plans" ? { planIds: [...new Set(command.planIds)] } : {}),
+            ...(command.type === "delivery_exception" ? { anomaly: command.reason } : {}),
+          },
+        },
+        version: item.version + 1,
+        updatedAt: now,
+      };
+    }
+    case "link_issue": {
+      if (item.delivery !== undefined && item.delivery.issue.url !== command.issue.url)
+        return invalid("This work item already has an external issue.");
+      return {
+        ...item,
+        delivery: item.delivery ?? {
+          issue: command.issue,
+          scope: {
+            revision: 1,
+            confirmedRevision: null,
+            requiredPullRequests: [],
+            changedServices: [],
+          },
+          evidence: { pullRequests: [], releases: [], planIds: [], anomaly: null },
+        },
+        version: item.version + 1,
+        updatedAt: now,
+      };
+    }
+    case "delivery_scope": {
+      if (item.delivery === undefined) return invalid("Link an external issue first.");
+      if (
+        command.requiredPullRequests.some((value) => {
+          const url = URL.parse(value);
+          return url === null || url.protocol !== "https:" || !!url.username || !!url.password;
+        })
+      )
+        return invalid("Use HTTPS pull request links without embedded credentials.");
+      if (
+        command.changedServices.some(
+          (service) => !command.requiredPullRequests.includes(service.revision),
+        )
+      )
+        return invalid("Each changed service must reference a necessary delivery pull request.");
+      if (new Set(command.requiredPullRequests).size !== command.requiredPullRequests.length)
+        return invalid("Include each necessary pull request once.");
+      return {
+        ...item,
+        executions: item.executions.map((execution) =>
+          execution.deliveryRevision !== undefined && executionIsActive(execution)
+            ? { ...execution, stopRequested: true, status: "stopping" as const }
+            : execution,
+        ),
+        delivery: {
+          ...item.delivery,
+          evidence: {
+            ...item.delivery.evidence,
+            anomaly:
+              item.delivery.syncedRevision !== undefined
+                ? "The delivery scope changed after completion. Confirm whether to reopen the issue."
+                : item.delivery.evidence.anomaly,
+          },
+          scope: {
+            revision: item.delivery.scope.revision + 1,
+            confirmedRevision: null,
+            requiredPullRequests: command.requiredPullRequests,
+            changedServices: command.changedServices,
+          },
+        },
+        version: item.version + 1,
+        updatedAt: now,
+      };
+    }
+    case "confirm_scope": {
+      if (item.delivery === undefined || command.scopeRevision !== item.delivery.scope.revision)
+        return invalid("Confirm the current delivery scope.");
+      return {
+        ...item,
+        delivery: {
+          ...item.delivery,
+          scope: { ...item.delivery.scope, confirmedRevision: command.scopeRevision },
+        },
+        version: item.version + 1,
+        updatedAt: now,
+      };
+    }
     case "update": {
       const changed =
         JSON.stringify([
@@ -60,6 +180,12 @@ export function decideWorkItem(input: {
       };
     }
     case "start":
+      if (
+        command.deliveryRevision !== undefined &&
+        (item.delivery?.scope.revision !== command.deliveryRevision ||
+          item.delivery.scope.confirmedRevision !== command.deliveryRevision)
+      )
+        invalid("The delivery scope changed before this automatic action started.");
       if (command.specRevision !== item.specRevision)
         invalid("Start from the current requirements version.");
       if (item.status === "done") invalid("Reopen this task before starting another agent.");

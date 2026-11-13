@@ -85,6 +85,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.serverPrepareTriage]: AuthOrchestrationOperateScope,
   [WS_METHODS.workItemsDiscover]: AuthOrchestrationOperateScope,
   [WS_METHODS.workItemsMutate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workItemsCreateIssue]: AuthSourceControlWriteScope,
+  [WS_METHODS.workItemsRefreshDelivery]: AuthSourceControlWriteScope,
   [WS_METHODS.scheduledTasksUpsert]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksSetEnabled]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksDelete]: AuthOrchestrationOperateScope,
@@ -109,6 +111,16 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  if (method === WS_METHODS.workItemsCreateIssue || method === WS_METHODS.workItemsRefreshDelivery)
+    return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
+  if (
+    method === WS_METHODS.workItemsMutate &&
+    typeof input === "object" &&
+    input !== null &&
+    "type" in input &&
+    ["confirm_scope", "completion_state", "reopen_delivery"].includes(String(input.type))
+  )
+    return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
   if (method === WS_METHODS.wechatMutate)
     return [AuthAccessWriteScope, AuthOrchestrationOperateScope];
   if (

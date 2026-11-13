@@ -58,8 +58,28 @@ the selected subtype. GitHub supports closing as completed or not planned and re
 links follow the rules above. If a creation result is uncertain, check the original platform
 before submitting again to avoid a duplicate.
 
-Use the [task board](task-board.md) to assign agents and review their results. The requirements
-board manages work items on the original platform; it does not start agents or create T3 tasks.
+Send a requirement link in a conversation to associate that work with the requirement. The agent
+records the necessary pull requests and changed services, and confirms the delivery scope when
+it is complete. Uncertain scope needs your confirmation. The board shows linked conversations,
+pull requests, and release progress after the agent finishes its turn. You can unlink an incorrect
+association without changing the original issue.
+
+Without a requirement link, use **Create issue** in the conversation's linked-issues area. The
+agent prepares the issue from the conversation and associates it automatically. The project
+selects the destination platform; choose one when multiple sources are configured. Missing
+required fields may need your input. Creating an issue starts an agent and can incur provider costs.
+
+GitHub Issues close automatically after the confirmed scope's necessary pull requests all merge.
+For MEP ONES, merging the necessary pull requests starts an agent to find or create MCM plan
+drafts. This does not submit, approve, or execute a release. ONES completes after successful MCM
+releases cover every changed service and deployment target for this delivery. MCM requires its
+CLI, skill, and authentication on the owning environment. A workflow with an ambiguous completion
+state needs your confirmation.
+
+Delivery exceptions and synchronization failures remain visible for review. A rollback does not
+automatically reopen an issue; confirm reopening in its delivery details. Use **Refresh delivery**
+to retry synchronization. Older environments retain issue browsing without automatic tracking.
+Choose **Local work items** for [work without an external issue](task-board.md).
 
 ## Review turn changes
 

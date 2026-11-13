@@ -418,14 +418,14 @@ export const ChatHeader = memo(function ChatHeader({
               <Button
                 size="icon-xs"
                 variant="ghost"
-                aria-label={t("Task board")}
+                aria-label={t("Requirements board")}
                 onClick={() => useRightPanelStore.getState().open(activeThreadRef, "tasks")}
               />
             }
           >
             <ClipboardListIcon />
           </TooltipTrigger>
-          <TooltipPopup>{t("Task board")}</TooltipPopup>
+          <TooltipPopup>{t("Requirements board")}</TooltipPopup>
         </Tooltip>
       ) : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}

@@ -11,6 +11,8 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ChatMarkdown from "../ChatMarkdown";
 import { IssueSelect } from "./IssueSelect";
+import { serverEnvironment } from "../../state/server";
+import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 
 const isBranchIssueError = Schema.is(BranchIssueError);
 
@@ -34,6 +36,12 @@ export function IssueDetailPanel({
     sourceControlEnvironment.issueDetail({ environmentId, input: { ...target, id } }),
   );
   const detail = query.data;
+  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const deliveryQuery = useEnvironmentQuery(
+    detail && config?.workItemDelivery === true
+      ? serverEnvironment.workItemsLive({ environmentId, input: { issueUrl: detail.url } })
+      : null,
+  );
   const branches = useEnvironmentQuery(
     detail
       ? sourceControlEnvironment.issueBranches({ environmentId, input: { cwd, url: detail.url } })
@@ -117,6 +125,14 @@ export function IssueDetailPanel({
         ) : (
           <>
             <h2 className="text-lg font-semibold wrap-anywhere">{detail.title}</h2>
+            {deliveryQuery.data?.item ? (
+              <RequirementDeliveryPanel
+                environmentId={environmentId}
+                item={deliveryQuery.data.item}
+                summary={deliveryQuery.data.items[0]?.deliverySummary}
+                transitions={detail.transitions}
+              />
+            ) : null}
             <dl className="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 text-sm">
               <dt className="text-muted-foreground">{t("Status")}</dt>
               <dd>{detail.state}</dd>

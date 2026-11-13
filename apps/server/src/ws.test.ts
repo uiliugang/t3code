@@ -1,4 +1,6 @@
 import * as WorkItems from "./work-items/WorkItemService.ts";
+import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
+import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
 import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
@@ -900,6 +902,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(WorkItems.WorkItemService)({}),
+  Layer.mock(DeliveryAutomation.DeliveryAutomationService)({}),
+  Layer.mock(DeliverySync.DeliverySyncReactor)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(SecretResolver.SecretResolver)({}),
   Layer.mock(GuestShareService.GuestShareService)({}),

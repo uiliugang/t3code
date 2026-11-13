@@ -5,6 +5,8 @@ import {
   WorkItemListInput,
   WorkItemListResult,
   WorkItemMutationResult,
+  BranchIssueRef,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
@@ -22,6 +24,52 @@ const shared = { dependencies, failure: OrchestratorMcpFailure, failureMode: "re
 const [create, update, start, stop, report] = WorkItemCommandInput.members;
 
 export const WorkItemToolkit = Toolkit.make(
+  Tool.make("work_item_link_issue", {
+    ...shared,
+    description:
+      "Attach a created external issue to this existing local work item. Use the canonical platform URL and current expectedVersion. Preserve its source conversations; do not create a duplicate task.",
+    parameters: WorkItemCommandInput.members[10].mapFields(Struct.omit(["type"])),
+    success: WorkItemMutationResult,
+  }).annotate(Tool.Destructive, true),
+  Tool.make("work_item_associate_issue", {
+    ...shared,
+    description:
+      "Associate the current conversation with its delivery issue. References are not automatically delivery goals. Reuse the existing issue record across conversations. Never create duplicate task cards for the same issue.",
+    parameters: Schema.Struct({
+      issue: BranchIssueRef,
+      threadId: Schema.optional(ThreadId),
+      title: WorkItem.fields.title,
+    }),
+    success: WorkItem,
+  }).annotate(Tool.Destructive, true),
+  Tool.make("work_item_update_delivery_scope", {
+    ...shared,
+    description:
+      "Record every necessary PR and changed service/deployment target for this issue. revision for a service is the exact delivery PR URL exposed by MCM. Updating invalidates scope confirmation. Exclude replaced PRs explicitly. Ask the user if ownership or coverage is uncertain.",
+    parameters: WorkItemCommandInput.members[11].mapFields(Struct.omit(["type"])),
+    success: WorkItemMutationResult,
+  }).annotate(Tool.Destructive, true),
+  Tool.make("work_item_confirm_delivery_scope", {
+    ...shared,
+    description:
+      "Confirm only the current complete delivery scope after identifying ALL necessary PRs and changed services. Do not confirm partial or uncertain scope. T3 then tracks PRs, creates MCM plans after all required PRs merge, and closes the external issue only when its platform-specific delivery condition is met.",
+    parameters: WorkItemCommandInput.members[12].mapFields(Struct.omit(["type"])),
+    success: WorkItemMutationResult,
+  }).annotate(Tool.Destructive, true),
+  Tool.make("work_item_report_release", {
+    ...shared,
+    description:
+      "Associate MCM plan identifiers with this delivery. T3 verifies service, environment and delivery PR against MCM; this report cannot declare a deployment successful. Reuse existing plans, never create duplicates after an uncertain response. Creation does not authorize submission, approval or execution.",
+    parameters: WorkItemCommandInput.members[13].mapFields(Struct.omit(["type"])),
+    success: WorkItemMutationResult,
+  }).annotate(Tool.Destructive, true),
+  Tool.make("work_item_report_delivery_exception", {
+    ...shared,
+    description:
+      "Report verified rollback, deployment reversal or missing necessary delivery. T3 flags the exception for the user. Never reopen the external issue without the user's confirmation.",
+    parameters: WorkItemCommandInput.members[14].mapFields(Struct.omit(["type"])),
+    success: WorkItemMutationResult,
+  }).annotate(Tool.Destructive, true),
   Tool.make("work_item_list", {
     ...shared,
     description:

@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { WorkspaceRecoveryControl } from "./WorkspaceRecoveryControl";
 import { BranchIssuesPanel } from "./BranchIssuesPanel";
+import { ThreadIssueCreationButton } from "../../requirements/ThreadIssueCreationButton";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { mobilePreferencesAtom } from "../../../state/preferences";
@@ -155,11 +156,20 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     gitStatus.data?.refName &&
     issuePreferences.branchIssuesVisible !== false &&
     (issueProvider === "github" || issueProvider === "meituan") ? (
-      <BranchIssuesPanel
-        key={`${environmentId}:${selectedThreadCwd}:${gitStatus.data.refName}`}
-        target={{ environmentId, cwd: selectedThreadCwd, branch: gitStatus.data.refName }}
-        provider={issueProvider}
-      />
+      <View className="gap-2">
+        <BranchIssuesPanel
+          key={`${environmentId}:${selectedThreadCwd}:${gitStatus.data.refName}`}
+          target={{ environmentId, cwd: selectedThreadCwd, branch: gitStatus.data.refName }}
+          provider={issueProvider}
+        />
+        {selectedThread ? (
+          <ThreadIssueCreationButton
+            environmentId={environmentId}
+            projectId={selectedThread.projectId}
+            threadId={selectedThread.id}
+          />
+        ) : null}
+      </View>
     ) : null;
   const currentStatusSummary = statusSummary(gitStatus.data, t);
   const currentWorktreePath = selectedThreadWorktreePath;

@@ -45,6 +45,10 @@ describe("RPC authorization scopes", () => {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
     }
   });
+  it("protects delivery automation with source-control write access", () => {
+    for (const method of [WS_METHODS.workItemsCreateIssue, WS_METHODS.workItemsRefreshDelivery])
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSourceControlWriteScope);
+  });
 
   it("keeps triage, which seeds an agent that reads logs and the database, behind operate scope", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverPrepareTriage)).toBe(

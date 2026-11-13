@@ -3,7 +3,6 @@ import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   ClipboardListIcon,
-  ListTodoIcon,
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -12,7 +11,6 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { useServerConfigs } from "../../state/entities";
 import { usePullRequestsSupported } from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
 import {
@@ -177,9 +175,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
   const pullRequestsSupported = usePullRequestsSupported();
-  const workItemsSupported = [...useServerConfigs().values()].some(
-    (config) => config.workItems === true,
-  );
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -240,16 +235,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               void navigate({ to: "/requirements" });
             }}
           />
-          {workItemsSupported ? (
-            <SidebarUtilityItem
-              icon={<ListTodoIcon />}
-              label={t("Task board")}
-              onClick={() => {
-                closeMobileSidebar();
-                void navigate({ to: "/tasks" });
-              }}
-            />
-          ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label={t("Usage")}

@@ -139,7 +139,7 @@ export function WorkItemsScreen({ route }: StaticScreenProps<WorkItemsRouteParam
       : undefined;
 
   return (
-    <SettingsScreen title={t("Task board")}>
+    <SettingsScreen title={t("Local work items")}>
       <View className="px-5">
         {environments.length > 1 ? (
           <IssuePicker
@@ -361,6 +361,7 @@ function ProjectWorkItems(props: {
           {(result.data?.items ?? [])
             .filter(
               (item) =>
+                item.issue === undefined &&
                 item.archived === archived &&
                 (status === "all" || item.status === status) &&
                 `${item.title}\n${item.description}`.toLowerCase().includes(query.toLowerCase()),

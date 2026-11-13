@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { RequirementDeliveryPanel } from "../requirements/RequirementDeliveryPanel";
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
@@ -29,18 +30,11 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  ArchiveIcon,
-  ArrowLeftIcon,
-  ClipboardListIcon,
-  PlusIcon,
-  SearchIcon,
-  XIcon,
-} from "lucide-react";
+import { ArchiveIcon, ArrowLeftIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { randomUUID } from "../../lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { useEnvironments, usePrimaryEnvironmentId, useEnvironment } from "../../state/environments";
+import { useEnvironment } from "../../state/environments";
 import { useProjects, useQuietThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { formatEnvironmentQueryError } from "../../state/query";
@@ -55,7 +49,6 @@ import { Textarea } from "../ui/textarea";
 import { Badge } from "../ui/badge";
 import { Checkbox } from "../ui/checkbox";
 import { Label } from "../ui/label";
-import { SidebarInset } from "../ui/sidebar";
 import {
   Dialog,
   DialogPopup,
@@ -151,41 +144,6 @@ function WorkItemSelect(props: {
   );
 }
 
-export function WorkItemsPage() {
-  const t = useUiTranslation();
-  const primary = usePrimaryEnvironmentId();
-  const { environments } = useEnvironments();
-  const [chosenEnvironment, setChosenEnvironment] = useState<EnvironmentId | null>(null);
-  const environmentId = chosenEnvironment ?? primary;
-  return (
-    <SidebarInset className="h-dvh overflow-hidden">
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-5 py-4">
-        <ClipboardListIcon className="size-5 text-muted-foreground" />
-        <h1 className="flex-1 text-lg font-semibold">{t("Task board")}</h1>
-        <div className="w-56">
-          <WorkItemSelect
-            label={t("Environment")}
-            value={environmentId ?? ""}
-            options={environments.map((environment) => ({
-              value: environment.environmentId,
-              label: environment.label,
-            }))}
-            onChange={(value) => {
-              const environment = environments.find((entry) => entry.environmentId === value);
-              if (environment) setChosenEnvironment(environment.environmentId);
-            }}
-          />
-        </div>
-      </header>
-      {environmentId ? (
-        <WorkItemsBoard key={environmentId} environmentId={environmentId} />
-      ) : (
-        <p className="p-6 text-muted-foreground">{t("Connect an environment to manage tasks.")}</p>
-      )}
-    </SidebarInset>
-  );
-}
-
 export function ThreadWorkItemsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
   const thread = useQuietThreadShell(threadRef);
   return thread ? (
@@ -204,11 +162,13 @@ export function WorkItemsBoard({
   initialProjectId,
   threadRef,
   compact = false,
+  localOnly = false,
 }: {
   environmentId: EnvironmentId;
   initialProjectId?: ProjectId | undefined;
   threadRef?: ScopedThreadRef | undefined;
   compact?: boolean;
+  localOnly?: boolean;
 }) {
   const t = useUiTranslation();
   const projects = useProjects().filter(
@@ -260,6 +220,7 @@ export function WorkItemsBoard({
   const filtered = (query.data?.items ?? []).filter(
     (item) =>
       item.archived === archived &&
+      (!localOnly || item.issue === undefined) &&
       `${item.title}\n${item.description}`.toLowerCase().includes(search.toLowerCase()),
   );
   const run = async (input: WorkItemCommandInput, intent?: string) => {
@@ -750,6 +711,9 @@ function WorkItemDetails({
         <Badge variant="outline">v{item.specRevision}</Badge>
       </div>
       <div className="flex flex-wrap gap-2">
+        {item.delivery ? (
+          <RequirementDeliveryPanel environmentId={environmentId} item={item} />
+        ) : null}
         <Button size="sm" variant="outline" disabled={!canOperate || busy} onClick={edit}>
           {t("Edit")}
         </Button>
@@ -1037,7 +1001,7 @@ function WorkItemDetails({
           </article>
         ))}
       </section>
-      {item.status !== "done" && !item.archived ? (
+      {item.status !== "done" && !item.archived && !item.delivery ? (
         <section className="space-y-3 rounded-lg border border-border p-3">
           <h3 className="text-sm font-medium">{t("Submit for acceptance")}</h3>
           <p className="text-xs text-muted-foreground">

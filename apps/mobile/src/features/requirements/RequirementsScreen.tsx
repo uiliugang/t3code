@@ -28,6 +28,8 @@ import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { IssuePicker } from "./IssuePicker";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
+import { serverEnvironment } from "../../state/server";
+import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 
 type Target = {
   environmentId: EnvironmentId;
@@ -112,8 +114,16 @@ export function RequirementsScreen() {
           options={[
             { value: "meituan", label: "MEP ONES" },
             { value: "github", label: "GitHub Issues" },
+            { value: "local", label: t("Local work items") },
           ]}
           onChange={(value) => {
+            if (value === "local") {
+              navigation.navigate("WorkItems", {
+                ...(environmentId ? { environmentId } : {}),
+                ...(projectId ? { projectId } : {}),
+              });
+              return;
+            }
             setProvider(value === "github" ? "github" : "meituan");
             setPage(1);
           }}
@@ -231,6 +241,11 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
   const result = useEnvironmentQuery(
     sourceControlEnvironment.issueDetail({ environmentId, input: target }),
   );
+  const tracking = useEnvironmentQuery(
+    result.data
+      ? serverEnvironment.workItemsLive({ environmentId, input: { issueUrl: result.data.url } })
+      : null,
+  );
   const command = useAtomCommand(sourceControlEnvironment.setIssueState);
   const canWrite = useAtomValue(
     sourceControlEnvironment.setIssueState.permissionAtom(environmentId),
@@ -278,6 +293,14 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
         {result.data ? (
           <>
             <Text className="text-xl font-t3-semibold">{result.data.title}</Text>
+            {tracking.data?.item ? (
+              <RequirementDeliveryPanel
+                environmentId={environmentId}
+                item={tracking.data.item}
+                summary={tracking.data.items[0]?.deliverySummary}
+                transitions={result.data.transitions}
+              />
+            ) : null}
             <Text className="text-foreground-muted">
               #{target.id} · {result.data.state}
             </Text>

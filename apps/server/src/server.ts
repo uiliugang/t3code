@@ -147,6 +147,9 @@ import * as SourceControlRateLimit from "@t3tools/source-control-core/server/Sou
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as BranchIssueService from "./sourceControl/BranchIssueService.ts";
 import * as IssueService from "./sourceControl/IssueService.ts";
+import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
+import * as McmRelease from "./work-items/McmReleaseService.ts";
+import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as Observability from "./observability/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
@@ -679,6 +682,11 @@ const layerServerRestart = Layer.effect(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  DeliveryAutomation.layer.pipe(Layer.provide(layerSourceControlRepositoryService)),
+  DeliverySync.layer.pipe(
+    Layer.provide(layerSourceControlRepositoryService),
+    Layer.provide(McmRelease.layer.pipe(Layer.provide(ProcessRunner.layer))),
+  ),
   WechatBridge.layer.pipe(
     Layer.provide(RuntimeLayer.layerEventSink),
     Layer.provide(WechatClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
