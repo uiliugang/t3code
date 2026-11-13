@@ -149,19 +149,22 @@ function EnvironmentChoice({
       disabled={!usable}
       description={
         environment.connection.phase !== "connected"
-          ? "Not connected"
+          ? t("Not connected")
           : !usable
-            ? "Transcription unavailable"
-            : (environment.displayUrl ?? "Send finished recordings to this environment.")
+            ? t("Transcription unavailable")
+            : (environment.displayUrl ?? t("Send finished recordings to this environment."))
       }
       separated
       onPress={() => {
         if (selected) return;
         if (!local) return onCloudOnly();
         Dialog.confirm({
-          title: `Send microphone audio to ${environment.label}?`,
-          message: `Finished recordings will be sent to ${environment.displayUrl ?? environment.label} for transcription. You can switch back to This device at any time.`,
-          confirmText: "Use environment",
+          title: t("Send microphone audio to {environment}?", { environment: environment.label }),
+          message: t(
+            "Finished recordings will be sent to {environment} for transcription. You can switch back to This device at any time.",
+            { environment: environment.displayUrl ?? environment.label },
+          ),
+          confirmText: t("Use environment"),
           onConfirm: () => saveDestination(environment.environmentId, t),
         });
       }}
@@ -188,7 +191,7 @@ function EnvironmentMethodSection({
     environment.serverConfig?.environment.capabilities.cloudVoiceTranscription === true ||
     destination?.kind === "cloud";
   return (
-    <SettingsSection title={`Method on ${environment.label}`}>
+    <SettingsSection title={t("Method on {environment}", { environment: environment.label })}>
       <LocalModelChoice
         environmentId={id}
         label={environment.label}
@@ -282,10 +285,10 @@ export function SettingsVoiceRouteScreen() {
         contentContainerClassName="gap-3 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
-        <SettingsSection title="Transcribe on">
+        <SettingsSection title={t("Transcribe on")}>
           <ListChoiceRow
-            label="This device"
-            description="Audio stays on this device and is transcribed here."
+            label={t("This device")}
+            description={t("Audio stays on this device and is transcribed here.")}
             selected={!grant && !sheetEnvironment}
             onPress={() => {
               setCloudSheet(null);

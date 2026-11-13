@@ -5742,6 +5742,18 @@ const zhCN: Readonly<Record<string, string>> = {
     "说一句话。测试会跳过文本整理，直接显示模型识别到的内容。",
   "Photo Library": "照片图库",
   "Choose Files": "选择文件",
+  "API key saved": "API 密钥已保存",
+  "Audio is sent through {environment} using its API key.":
+    "音频通过 {environment} 发送，并使用该环境的 API 密钥。",
+  "Cloud provider": "云端提供商",
+  "Local model": "本地模型",
+  "Local model · {size}": "本地模型 · {size}",
+  "Method on {environment}": "{environment} 上的转录方式",
+  "No model installed · Add one using T3 Code on {environment}":
+    "未安装模型 · 请在 {environment} 上使用 T3 Code 添加模型",
+  "No model installed · Choose one to download": "未安装模型 · 请选择要下载的模型",
+  "Not available on this environment": "此环境不可用",
+  "Use your own API key": "使用你自己的 API 密钥",
 };
 
 export function translateUi(
