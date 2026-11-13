@@ -1,3 +1,4 @@
+import { useClientSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useAtomMount } from "@effect/atom-react";
 import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
@@ -146,11 +147,12 @@ function compactSidebarTimeLabel(label: string): string {
 // Subscribes to the minute tick itself, so only the label re-renders each
 // minute. The minute is passed as the clock so it is the formatter's input.
 function RelativeTimeLabel(props: { timestamp: string | null }) {
+  const uiLanguage = useClientSettings((settings) => settings.uiLanguage);
   const nowMinute = useNowMinute();
   return props.timestamp === null
     ? null
     : compactSidebarTimeLabel(
-        formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`)),
+        formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`), uiLanguage),
       );
 }
 

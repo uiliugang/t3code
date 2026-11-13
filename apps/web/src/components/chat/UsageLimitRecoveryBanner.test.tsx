@@ -3,10 +3,17 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { usageLimitRecoveryBannerItem } from "./UsageLimitRecoveryBanner";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const stoppedAt = new Date(2026, 9, 20, 12, 0);
 
-function bannerDescription(resetAt: Date, timestampFormat: TimestampFormat) {
+function bannerDescription(
+  resetAt: Date,
+  timestampFormat: TimestampFormat,
+  uiLanguage: "en" | "zh-CN" = "en",
+) {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage });
   return usageLimitRecoveryBannerItem({
     runId: RunId.make("run-1"),
     errorCode: null,
@@ -34,6 +41,9 @@ describe("usageLimitRecoveryBannerItem", () => {
     using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
     expect(bannerDescription(new Date(2026, 9, 21, 17, 30), "24-hour")).toBe(
       "Resets tomorrow at 17:30",
+    );
+    expect(bannerDescription(new Date(2026, 9, 21, 17, 30), "24-hour", "zh-CN")).toBe(
+      "重置时间：明天 17:30",
     );
   });
 });

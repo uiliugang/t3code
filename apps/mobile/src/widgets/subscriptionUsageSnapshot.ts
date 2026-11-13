@@ -7,8 +7,10 @@ import {
 } from "@t3tools/shared/usageLimits";
 
 import type { WidgetTheme } from "./widgetTheme";
+import { translateUi, type UiLocale } from "@t3tools/shared/uiLocale";
 
 export interface SubscriptionUsageSnapshot {
+  language?: UiLocale;
   theme?: WidgetTheme;
   url?: string;
   checkedAt: number;
@@ -54,7 +56,9 @@ function subscriptionUsageProps(
   now: number,
   configuredDrivers: ReadonlySet<string>,
   maxWindowsPerProvider: number,
+  language: UiLocale,
 ): SubscriptionUsageSnapshot {
+  const t = translateUi.bind(null, language);
   const pools = collectLimitPools(accounts, now);
   const checked = accounts
     .filter((account) => account.driver === "codex" || account.driver === "claudeAgent")
@@ -72,7 +76,7 @@ function subscriptionUsageProps(
         if (!pool)
           return {
             name,
-            detail: "No limits available",
+            detail: t("No limits available"),
             windows: [],
             expiresAt: 0,
             totalWindows: 0,
@@ -101,27 +105,27 @@ function subscriptionUsageProps(
         return {
           name,
           detail: !fresh
-            ? "Open T3 to refresh"
+            ? t("Open T3 to refresh")
             : pool.accounts.length > 1
-              ? `${pool.accounts.length} accounts · pooled`
-              : "Subscription remaining",
+              ? t("{count} accounts · pooled", { count: pool.accounts.length })
+              : t("Subscription remaining"),
           expiresAt: fresh ? expiresAt : 0,
           totalWindows: fresh ? pool.windows.length : 0,
           windows: fresh
             ? selectedWindows.map((window) => ({
                 kind: window.kind,
-                label: window.label,
+                label: t(window.label),
                 remaining: Math.round(window.remainingPercent),
                 reset: window.resets[0]
-                  ? `${isUpcoming(window.resets[0]) ? "Next reset" : "Reset"} ${new Date(
+                  ? `${t(isUpcoming(window.resets[0]) ? "Next reset" : "Reset")} ${new Date(
                       window.resets[0].at,
-                    ).toLocaleString(undefined, {
+                    ).toLocaleString(language, {
                       month: "short",
                       day: "numeric",
                       hour: "numeric",
                       minute: "2-digit",
                     })}`
-                  : "Reset time unavailable",
+                  : t("Reset time unavailable"),
               }))
             : [],
         };
@@ -133,6 +137,7 @@ export function buildSubscriptionUsageSnapshot(
   presentations: LimitPresentations,
   url: string,
   maxWindowsPerProvider = 6,
+  language: UiLocale = "en",
 ): SubscriptionUsageSnapshot {
   const configuredDrivers = new Set(
     [...presentations.values()].flatMap((presentation) =>
@@ -153,7 +158,9 @@ export function buildSubscriptionUsageSnapshot(
       0,
       configuredDrivers,
       maxWindowsPerProvider,
+      language,
     ),
+    language,
     url,
   };
 }
@@ -168,7 +175,12 @@ export function subscriptionUsageTimeline(snapshot: SubscriptionUsageSnapshot, n
       ...snapshot,
       providers: snapshot.providers.map((provider) =>
         provider.windows.length > 0 && provider.expiresAt <= date
-          ? { ...provider, detail: "Open T3 to refresh", windows: [], totalWindows: 0 }
+          ? {
+              ...provider,
+              detail: translateUi(snapshot.language ?? "en", "Open T3 to refresh"),
+              windows: [],
+              totalWindows: 0,
+            }
           : provider,
       ),
     },

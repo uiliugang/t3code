@@ -144,10 +144,16 @@ function usePullRequestActivityRows(params: PullRequestParams, filter: ActivityF
   const filtered = result.data ? filterPullRequestActivity(result.data, filter) : null;
   const rows = (() => {
     if (!filtered) return [];
-    const rows = pullRequestTimelineRows(filtered.activity, params, navigation, {
-      permissions,
-      onChanged: result.refresh,
-    });
+    const rows = pullRequestTimelineRows(
+      filtered.activity,
+      params,
+      navigation,
+      {
+        permissions,
+        onChanged: result.refresh,
+      },
+      t,
+    );
     if (filter.newestFirst) {
       const notice = rows.at(-1)?.key === "truncated" ? rows.pop() : undefined;
       rows.reverse();

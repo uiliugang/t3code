@@ -2,7 +2,14 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { UsageSource } from "@t3tools/contracts";
 
-import { formatHourShort, formatTokens, makeWindow, usageSourceMessages } from "./usageFormat.ts";
+import {
+  formatDayShort,
+  formatHourShort,
+  formatRelativeHourShort,
+  formatTokens,
+  makeWindow,
+  usageSourceMessages,
+} from "./usageFormat.ts";
 
 function malformedSource(count: number, overrides: Partial<UsageSource> = {}): UsageSource {
   return {
@@ -139,6 +146,17 @@ describe("hourly usage formatting", () => {
     }
     expect(() => formatHourShort(instant, "Etc/Unknown")).toThrow(RangeError);
     expect(formatHourShort("invalid", "UTC")).toBe("invalid");
+    expect(formatDayShort("2026-11-14", "zh-CN")).toBe("11月14日");
+    expect(formatHourShort("2026-11-14T15:00:00Z", "UTC", true, "zh-CN")).toBe("下午3时");
+    expect(
+      formatRelativeHourShort(
+        "2026-11-14T12:00:00Z",
+        "2026-11-14T15:00:00Z",
+        "UTC",
+        false,
+        "zh-CN",
+      ),
+    ).toBe("今天 12:00");
   });
 
   it("disambiguates repeated hours during a fall-back transition", () => {

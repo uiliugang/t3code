@@ -63,6 +63,10 @@ describe("subscription widget snapshots", () => {
     });
     expect(snapshot.url).toBe(deepLink);
     expect(JSON.stringify(snapshot)).not.toContain("private@example.com");
+    const chinese = buildSubscriptionUsageSnapshot(presentations(), deepLink, 6, "zh-CN");
+    expect(chinese.language).toBe("zh-CN");
+    expect(chinese.providers[0]?.detail).toBe("订阅剩余额度");
+    expect(chinese.providers[0]?.windows[0]?.reset).toMatch(/^下次重置/);
   });
   it("uses upstream deduplication for a native account also present in a proxy hub", () => {
     const input = new Map([

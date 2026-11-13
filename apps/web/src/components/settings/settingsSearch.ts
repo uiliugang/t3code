@@ -245,7 +245,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "language",
     title: "Interface language",
-    to: "/settings/appearance",
+    to: "/settings/general",
     searchTerms: ["语言", "中文", "简体中文", "English", "language", "locale"],
   },
   {
