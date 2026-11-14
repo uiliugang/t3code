@@ -619,11 +619,14 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
                 subtitle={
                   canCreateProjectInEnvironment(environment.connectionState)
                     ? undefined
-                    : connectionStatusText({
-                        phase: environment.connectionState,
-                        error: environment.connectionError,
-                        traceId: environment.connectionErrorTraceId,
-                      })
+                    : connectionStatusText(
+                        {
+                          phase: environment.connectionState,
+                          error: environment.connectionError,
+                          traceId: environment.connectionErrorTraceId,
+                        },
+                        t,
+                      )
                 }
                 icon={
                   <EnvironmentMachineSymbol

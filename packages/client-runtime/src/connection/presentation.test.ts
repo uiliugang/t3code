@@ -188,6 +188,32 @@ describe("connection presentation", () => {
       "等待主机批准，验证码：K7QM-2XFD",
     );
     expect(connectionStatusTitle(awaitingApproval)).toBe("Waiting for approval");
+    const t = translateUi.bind(null, "zh-CN");
+    for (const [phase, english, chinese] of [
+      ["available", "Available", "可用"],
+      ["offline", "Offline", "离线"],
+      ["connecting", "Connecting...", "正在连接…"],
+      ["reconnecting", "Reconnecting...", "正在重新连接…"],
+      ["connected", "Connected", "已连接"],
+      ["unsupported", "Client not supported", "不支持此客户端"],
+      ["error", "Connection failed", "连接失败"],
+    ] as const) {
+      const connection = { phase, error: null, traceId: null };
+      expect(connectionStatusText(connection)).toBe(english);
+      expect(connectionStatusText(connection, t)).toBe(chinese);
+      expect(connectionStatusTitle(connection, t)).toBe(chinese);
+    }
+    const error = "SSH: /tmp/{host}";
+    expect(connectionStatusText({ phase: "reconnecting", error, traceId: null }, t)).toBe(
+      `连接失败，正在重新连接… 原因：${error}`,
+    );
+    expect(connectionStatusText({ phase: "error", error, traceId: null }, t)).toBe(
+      `连接失败，原因：${error}`,
+    );
+    expect(connectionStatusTitle({ phase: "reconnecting", error, traceId: null }, t)).toBe(
+      "连接失败，正在重新连接…",
+    );
+    expect(connectionStatusTitle(awaitingApproval, t)).toBe("等待批准");
   });
 
   it("preserves an explicitly available environment while offline", () => {

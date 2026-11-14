@@ -262,6 +262,7 @@ function EnvironmentUnavailablePlaceholder({
   readonly access: Exclude<ProviderEnvironmentAccess, { kind: "editable" | "read-only" }>;
   readonly deviceTabs?: ReactNode;
 }) {
+  const t = useUiTranslation();
   const isLoading = access.kind === "loading";
   const title = isLoading
     ? "Loading provider settings"
@@ -272,7 +273,7 @@ function EnvironmentUnavailablePlaceholder({
     ? access.reason === "permissions"
       ? "Checking what this session is allowed to change."
       : `Waiting for ${environment.label}'s configuration.`
-    : connectionStatusTitle(environment.connection);
+    : connectionStatusTitle(environment.connection, t);
   const error = isLoading ? null : environment.connection.error;
   // Wedged devices can remain here indefinitely; a spinner would continuously repaint.
   return (
@@ -385,7 +386,7 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
           {options.map((environment) => {
             const machine = resolveEnvironmentMachineKind(environment.serverConfig);
             const detail = providerEnvironmentDetail(environment);
-            const statusText = connectionStatusTitle(environment.connection);
+            const statusText = connectionStatusTitle(environment.connection, t);
             return (
               <Tooltip key={environment.environmentId}>
                 <TooltipTrigger
