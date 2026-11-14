@@ -16,13 +16,22 @@ export interface TextGeneratorConnection {
   readonly label: string;
 }
 
+const TokenParameter = Schema.Literals(["max_tokens", "max_completion_tokens"]);
+type TokenParameter = typeof TokenParameter.Type;
+const decodeTokenParameter = Schema.decodeUnknownOption(TokenParameter);
+
 /** Why a model API call failed, worded for the person who configured it. */
 export class TextGeneratorRequestError extends Schema.TaggedError<
   TextGeneratorRequestError,
   { readonly brand: unique symbol }
 >()("TextGeneratorRequestError", {
   detail: Schema.String,
-  unsupportedParameter: Schema.optional(Schema.Literal("max_tokens")),
+  tokenParameterIssue: Schema.optional(
+    Schema.Struct({
+      parameter: TokenParameter,
+      kind: Schema.Literals(["unsupported", "rejected"]),
+    }),
+  ),
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
@@ -95,13 +104,15 @@ const sendJson = Effect.fn("TextGenerator.sendJson")(function* <S extends Schema
     const error = decodeApiErrorBody(body).pipe((option) =>
       option._tag === "Some" ? option.value.error : undefined,
     );
+    const parameter = decodeTokenParameter(error?.param);
     return yield* new TextGeneratorRequestError({
       detail: describeStatus(label, response.status, error?.message),
-      unsupportedParameter:
-        response.status === 400 &&
-        error?.code === "unsupported_parameter" &&
-        error.param === "max_tokens"
-          ? "max_tokens"
+      tokenParameterIssue:
+        response.status === 400 && parameter._tag === "Some"
+          ? {
+              parameter: parameter.value,
+              kind: error?.code === "unsupported_parameter" ? "unsupported" : "rejected",
+            }
           : undefined,
     });
   }
@@ -167,7 +178,7 @@ const openAICompatible: TextGeneratorDriver = {
     prompt: string,
   ) {
     const { label } = connection;
-    let tokenParameter: "max_tokens" | "max_completion_tokens" = "max_tokens";
+    let tokenParameter: TokenParameter | undefined = "max_tokens";
     const complete = Effect.fn("TextGenerator.openAICompatible.complete")(function* (
       maxTokens: number,
     ) {
@@ -176,7 +187,7 @@ const openAICompatible: TextGeneratorDriver = {
           HttpClientRequest.bodyJsonUnsafe({
             model,
             messages: [{ role: "user", content: prompt }],
-            [parameter]: maxTokens,
+            ...(parameter === undefined ? {} : { [parameter]: maxTokens }),
           }),
         );
         if (connection.apiKey) request = HttpClientRequest.bearerToken(request, connection.apiKey);
@@ -185,17 +196,34 @@ const openAICompatible: TextGeneratorDriver = {
       const completion = yield* send(tokenParameter).pipe(
         Effect.catchTags({
           TextGeneratorRequestError: (error) => {
-            if (tokenParameter !== "max_tokens" || error.unsupportedParameter !== "max_tokens") {
+            if (
+              tokenParameter !== "max_tokens" ||
+              error.tokenParameterIssue?.kind !== "unsupported" ||
+              error.tokenParameterIssue.parameter !== tokenParameter
+            ) {
               return Effect.fail(error);
             }
             tokenParameter = "max_completion_tokens";
             return send(tokenParameter);
           },
         }),
+        Effect.catchTags({
+          TextGeneratorRequestError: (error) => {
+            if (
+              tokenParameter === undefined ||
+              error.tokenParameterIssue?.parameter !== tokenParameter
+            ) {
+              return Effect.fail(error);
+            }
+            tokenParameter = undefined;
+            return send(tokenParameter);
+          },
+        }),
       );
       const usage = decodeTokenUsage(completion.usage);
       yield* Effect.annotateCurrentSpan({
-        "text_generation.max_tokens": maxTokens,
+        ...(tokenParameter === undefined ? {} : { "text_generation.max_tokens": maxTokens }),
+        "text_generation.token_parameter": tokenParameter ?? "provider_default",
         "text_generation.finish_reason": completion.choices[0]?.finish_reason ?? "unknown",
         ...(usage._tag === "Some" ? { "text_generation.usage": usage.value } : {}),
       });
@@ -203,7 +231,8 @@ const openAICompatible: TextGeneratorDriver = {
     });
     return yield* complete(8192).pipe(
       Effect.filterOrElse(
-        (completion) => completion.choices[0]?.finish_reason !== "length",
+        (completion) =>
+          completion.choices[0]?.finish_reason !== "length" || tokenParameter === undefined,
         () => complete(16384),
       ),
       Effect.flatMap((completion) => {
