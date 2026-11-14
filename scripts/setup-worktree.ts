@@ -49,14 +49,15 @@ if (!projectRoot) {
 // Use the shell for Windows vp shims. Unattended installs need pnpm's confirmation
 // flag and closed stdin so other prompts fail. A stale lockfile must fail, not be rewritten.
 // Pipe output so the failure marker can keep its tail.
-const install = NodeChildProcess.spawn(
-  "vp i --frozen-lockfile --prefer-offline -- --yes --config.virtual-store-type=global",
-  {
-    cwd: worktree,
-    shell: true,
-    stdio: ["ignore", "pipe", "pipe"],
+const install = NodeChildProcess.spawn("vp i --frozen-lockfile --prefer-offline -- --yes", {
+  cwd: worktree,
+  shell: true,
+  stdio: ["ignore", "pipe", "pipe"],
+  env: {
+    ...process.env,
+    PNPM_CONFIG_VIRTUAL_STORE_TYPE: process.env.PNPM_CONFIG_VIRTUAL_STORE_TYPE ?? "global",
   },
-);
+});
 activeInstall = install;
 let installOutput = "";
 for (const [source, target] of [

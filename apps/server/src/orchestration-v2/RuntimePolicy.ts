@@ -21,6 +21,7 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectStore from "./ProjectStore.ts";
+import { worktreeDependencyEnvironment } from "../workspace/worktreeDependencyEnvironment.ts";
 
 export class RuntimePolicyResolveError extends Schema.TaggedError<
   RuntimePolicyResolveError,
@@ -188,7 +189,8 @@ export const layerFromProjectStore: Layer.Layer<
     );
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     // The same ceiling the orchestrator enforces, fixed for the server's life.
-    const { managedPolicy } = yield* ServerSettings.ServerSettingsService;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const { managedPolicy } = serverSettings;
     const maxRuntimeMode = managedPolicy?.limits?.maxRuntimeMode;
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
@@ -421,6 +423,24 @@ export const layerFromProjectStore: Layer.Layer<
           ...(sideChat ? { approvalPolicy: "never", sandboxPolicy: { type: "readOnly" } } : {}),
           cwd,
           ...(input.thread.workspace === undefined ? {} : { workspace: input.thread.workspace }),
+          ...(input.thread.workspace?.mode === "isolated" ||
+          (input.thread.workspace === undefined && input.thread.worktreePath !== null)
+            ? {
+                environment: worktreeDependencyEnvironment(
+                  yield* serverSettings.getSettings.pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new RuntimePolicyResolveError({
+                          projectId: input.thread.projectId,
+                          providerInstanceId: input.modelSelection.instanceId,
+                          cause,
+                        }),
+                    ),
+                  ),
+                  input.thread.projectId,
+                ),
+              }
+            : {}),
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
         });
       }),

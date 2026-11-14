@@ -1,4 +1,5 @@
 import noRuntimeCleanupBypass from "./rules/no-runtime-cleanup-bypass.ts";
+import noWorktreeDependencyPolicyBypass from "./rules/no-worktree-dependency-policy-bypass.ts";
 import { definePlugin } from "@oxlint/plugins";
 
 import maxSettingsDescriptionLength from "./rules/max-settings-description-length.ts";
@@ -43,6 +44,7 @@ export default definePlugin({
   },
   rules: {
     "no-runtime-cleanup-bypass": noRuntimeCleanupBypass,
+    "no-worktree-dependency-policy-bypass": noWorktreeDependencyPolicyBypass,
     "max-settings-description-length": maxSettingsDescriptionLength,
     "namespace-node-imports": namespaceNodeImports,
     "no-dom-test-environment": noDomTestEnvironment,

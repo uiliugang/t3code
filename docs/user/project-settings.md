@@ -351,6 +351,15 @@ itself, or **Skip** to leave them for a setup script. It resolves in the same or
 workspace default: a `"worktreeSubmodules"` value in the `t3.json` of the branch being checked out
 applies when the project and environment are both on **Inherit**.
 
+**Shared dependencies**, in **Settings → Worktrees → Creation**, is on by default. Worktree setup
+scripts and new terminals use pnpm's shared package storage while each worktree keeps its own
+dependency versions. Select a project to override the setting for that project. After changing
+it, rerun setup or reinstall dependencies from a new terminal to update an existing worktree.
+Running terminals and installed dependencies are not changed by toggling the setting. This
+requires pnpm with `virtualStoreType` support; other package managers keep their own storage behavior.
+Codex and Claude sessions also receive the project's dependency mode. Reopen an existing agent
+session after changing the setting before asking it to reinstall dependencies.
+
 ## Worktree location
 
 New worktrees go in the `worktrees` folder of the T3 home directory. To put them somewhere else,

@@ -42,6 +42,7 @@ import { expect, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import { workspaceFixture } from "../orchestration-v2/testkit/workspaceFixtures.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -486,15 +487,71 @@ it.layer(
   ),
   { excludeTestServices: true },
 )("TerminalManager", (it) => {
+  it.effect.each([true, false])(
+    "applies shared dependencies=%s to secondary workspace terminals",
+    (sharedDependencies) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { manager, ptyAdapter, baseDir } = yield* createManager();
+        const base = workspaceFixture({ projectId: ProjectId.make("project-1") });
+        const workspace = {
+          ...base,
+          resources: base.resources.map((resource) => ({
+            ...resource,
+            checkoutRoot: path.join(baseDir, resource.name),
+          })),
+        };
+        const worktreePath = workspace.resources[1]!.checkoutRoot;
+        const cwd = path.join(worktreePath, "src");
+        yield* fs.makeDirectory(cwd, { recursive: true });
+        const prepare = yield* makePrepareTerminalLaunch(() =>
+          Effect.succeed({
+            id: ThreadId.make("thread-1"),
+            projectId: workspace.projectId,
+            worktreePath: workspace.resources[0]!.checkoutRoot,
+            branch: "feature",
+            workspace,
+          }),
+        ).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              ServerConfig.layerTest(baseDir, path.join(baseDir, "state")),
+              ServerSettings.layerTest({
+                worktreeSharedDependencies: !sharedDependencies,
+                projectSettingsOverrides: {
+                  [workspace.projectId]: { worktreeSharedDependencies: sharedDependencies },
+                },
+              }),
+              Layer.mock(ProjectService.ProjectService)({}),
+              Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+            ),
+          ),
+        );
+        const launch = yield* prepare(
+          openInput({
+            cwd,
+            worktreePath,
+            env: { PNPM_CONFIG_VIRTUAL_STORE_TYPE: sharedDependencies ? "project" : "global" },
+          }),
+        );
+        yield* manager.open(launch.input);
+        assert.equal(
+          ptyAdapter.spawnInputs[0]?.env.PNPM_CONFIG_VIRTUAL_STORE_TYPE,
+          sharedDependencies ? "global" : "project",
+        );
+      }),
+  );
+
   it.effect.each([
-    { method: "open", location: "managed" },
-    { method: "attach", location: "managed" },
-    { method: "open", location: "subdirectory" },
-    { method: "open", location: "unmanaged" },
-    { method: "open", location: "no-worktree" },
+    { method: "open", location: "managed", sharedDependencies: true },
+    { method: "attach", location: "managed", sharedDependencies: false },
+    { method: "open", location: "subdirectory", sharedDependencies: false },
+    { method: "open", location: "unmanaged", sharedDependencies: true },
+    { method: "open", location: "no-worktree", sharedDependencies: true },
   ] as const)(
     "recovers $method with a $location cwd without a cleanup gap",
-    ({ method, location }) =>
+    ({ method, location, sharedDependencies }) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -520,7 +577,11 @@ it.layer(
               Layer.mock(ServerConfig.ServerConfig)({
                 worktreesDir,
               } as ServerConfig.ServerConfig["Service"]),
-              ServerSettings.layerTest(),
+              ServerSettings.layerTest({
+                projectSettingsOverrides: {
+                  [ProjectId.make("project-1")]: { worktreeSharedDependencies: sharedDependencies },
+                },
+              }),
               Layer.mock(ProjectService.ProjectService)({
                 getById: () => Effect.succeedSome({ workspaceRoot: baseDir } as never),
               }),
@@ -568,6 +629,9 @@ it.layer(
         assert.equal(creations, 1);
         assert.equal(ptyAdapter.spawnInputs.length, 1);
         assert.isTrue(yield* fs.exists(cwd));
+        expect(ptyAdapter.spawnInputs[0]?.env.PNPM_CONFIG_VIRTUAL_STORE_TYPE).toBe(
+          sharedDependencies ? "global" : "project",
+        );
       }),
   );
 

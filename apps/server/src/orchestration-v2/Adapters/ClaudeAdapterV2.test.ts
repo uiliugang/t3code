@@ -4399,6 +4399,51 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
     );
 
+    it.effect("applies dependency environment changes when reopening a query", () =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          environment: { PNPM_CONFIG_VIRTUAL_STORE_TYPE: "inherited", KEPT: "yes" },
+          close: Queue.shutdown,
+          freshQueueOnReopen: true,
+        });
+        const now = yield* DateTime.now;
+        for (const [index, mode] of ["project", "global"].entries()) {
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now,
+              attemptId: RunAttemptId.make(`dependency-mode-${index}`),
+              providerTurnOrdinal: index + 1,
+              text: "Install dependencies.",
+              attachments: [],
+              runtimePolicy: {
+                ...CLAUDE_TEST_RUNTIME_POLICY,
+                environment: { PNPM_CONFIG_VIRTUAL_STORE_TYPE: mode },
+              },
+            }),
+          );
+          assert.equal(harness.getOpenedOptions()?.env?.PNPM_CONFIG_VIRTUAL_STORE_TYPE, mode);
+          assert.equal(harness.getOpenedOptions()?.env?.KEPT, "yes");
+          yield* harness.offerAndWait(
+            makeResultFrame({ uuid: `dependency-result-${index}`, result: "Done." }),
+          );
+          yield* Queue.take(harness.terminalReceipts);
+        }
+        assert.lengthOf(harness.processQueues, 2);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    );
+
     it.effect("asks before restricted Full access tools and follows policy across turns", () =>
       Effect.gen(function* () {
         const resolveSettings = vi

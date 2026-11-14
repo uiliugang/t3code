@@ -22,6 +22,7 @@ import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import { TerminalCwdRecovery } from "../terminal/Manager.ts";
+import { worktreeDependencyEnvironment } from "./worktreeDependencyEnvironment.ts";
 
 export class WorktreeRecreateError extends Schema.TaggedError<
   WorktreeRecreateError,
@@ -293,17 +294,29 @@ export const makePrepareTerminalLaunch = Effect.fn(
 ) {
   const path = yield* Path.Path;
   const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   return Effect.fn("restoreMissingWorktree.prepareTerminalLaunch")(function* <
     Input extends {
       readonly threadId: string;
       readonly cwd?: string | undefined;
       readonly worktreePath?: string | null | undefined;
+      readonly env?: Record<string, string> | undefined;
     },
   >(input: Input) {
     const thread = yield* getThreadShell(ThreadId.make(input.threadId)).pipe(
       Effect.orElseSucceed(() => null),
     );
-    const worktreePath = thread?.worktreePath ?? null;
+    const worktreePath = thread?.workspace
+      ? ((thread.workspace.mode === "isolated"
+          ? thread.workspace.resources.find((resource) =>
+              isWithinRoot(
+                path,
+                path.resolve(input.cwd ?? input.worktreePath ?? thread.worktreePath ?? ""),
+                resource.checkoutRoot,
+              ),
+            )?.checkoutRoot
+          : null) ?? null)
+      : (thread?.worktreePath ?? null);
     if (
       thread === null ||
       worktreePath === null ||
@@ -311,6 +324,7 @@ export const makePrepareTerminalLaunch = Effect.fn(
     ) {
       return { input, recover: TerminalCwdRecovery.defaultValue() };
     }
+    const settings = yield* serverSettings.getSettings;
     const recover = (error: TerminalCwdNotFoundError) =>
       restoreMissingWorktree(thread).pipe(
         Effect.catch((cause) =>
@@ -322,6 +336,16 @@ export const makePrepareTerminalLaunch = Effect.fn(
         ),
       );
     // The lease must cover the worktree root, even when the terminal opens in a subdirectory.
-    return { input: { ...input, worktreePath }, recover };
+    return {
+      input: {
+        ...input,
+        worktreePath,
+        env: {
+          ...input.env,
+          ...worktreeDependencyEnvironment(settings, thread.projectId),
+        },
+      },
+      recover,
+    };
   });
 });

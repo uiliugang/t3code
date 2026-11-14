@@ -7,6 +7,7 @@ packages:
   - scripts
 
 addMissingPeerTypes: true
+virtualStoreType: global
 
 # Successor to onlyBuiltDependencies/ignoredBuiltDependencies (pnpm 11+).
 # true = allowed to run build scripts; false mirrors the pnpm 10 behavior
@@ -145,6 +146,9 @@ overrides:
   # The dbus-next patch drops usocket from the package, but pnpm resolves from the
   # registry manifest, so the edge has to be cut here as well.
   "dbus-next>usocket": "-"
+  # This runtime's ranges drift apart without a lockfile; the preset peers on exactly rc.24.
+  "@alchemy.run/cloudflare-runtime@2.0.0-beta.85>@cloudflare/unenv-preset": 2.16.2
+  "@alchemy.run/cloudflare-runtime@2.0.0-beta.85>unenv": 2.0.0-rc.24
   # The SDK always receives the user's Claude executable, so its bundled binaries are unused.
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64": "-"
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-x64": "-"
@@ -218,6 +222,13 @@ overrides:
   "@vercel/config>zod": 4.6.7
 
 packageExtensions:
+  # Electron comes from the host app; shared stores need the peer edge to resolve it.
+  "electron-updater@6.8.9":
+    peerDependencies:
+      electron: "*"
+    peerDependenciesMeta:
+      electron:
+        optional: true
   # The tarball's web sources import React types from its isolated package directory.
   "react-native-enriched-markdown@1.2.0-t3.18":
     peerDependencies:

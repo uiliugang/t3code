@@ -3386,9 +3386,11 @@ export function claudeEffectiveQueryPolicyKey(
     readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
   },
   workspaceRevisionId?: string,
+  environment?: Readonly<Record<string, string>>,
 ): string {
   return JSON.stringify({
     workspaceRevisionId,
+    environment,
     runtimePolicy: claudeRuntimeQueryPolicyKey({
       ...queryPolicy,
       ...(mcpOverrides.allowedTools === undefined
@@ -12239,6 +12241,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             queryPolicy,
             mcpOverrides,
             turnInput.runtimePolicy.workspace?.id,
+            turnInput.runtimePolicy.environment,
           );
           const compiledSelection = compileClaudeModelSelection(
             turnInput.modelSelection,
@@ -12376,7 +12379,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { sdkSettings: claudeSdkLaunchArgSettings(launchArgSettings) }),
             environment: claudeQueryEnvironment(
-              adapterOptions.environment,
+              { ...adapterOptions.environment, ...turnInput.runtimePolicy.environment },
               turnInput.appThread,
               turnInput.appThread.lineage.relationshipToParent === "subagent"
                 ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
