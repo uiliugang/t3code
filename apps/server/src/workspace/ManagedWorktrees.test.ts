@@ -5,6 +5,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
   EventId,
+  GitCommandError,
   OrchestrationV2AppThread,
   ThreadId,
   type ThreadWorkspaceRevision,
@@ -282,7 +283,7 @@ it.live("reports inspection failures instead of masking them with occupied task 
       assert.equal(group!.status, "failed");
       assert.equal(
         group!.reason,
-        "Could not inspect this checkout. Check repository access and retry.",
+        "Could not inspect this checkout. Check the server logs and retry.",
       );
       assert.isFalse(group!.actions!.remove);
     }).pipe(Effect.provide(context.layer));
@@ -344,9 +345,22 @@ it.live.each([
       );
       yield* fs.makeDirectory(path.dirname(target), { recursive: true });
       yield* fs.writeFileString(target, "preserve according to policy");
+      if (files === "dependencies")
+        yield* Effect.forEach(
+          Array.from({ length: 5_000 }, (_, index) =>
+            path.join(path.dirname(target), `${index}-${"dependency".repeat(23)}.js`),
+          ),
+          (file) => fs.writeFileString(file, ""),
+          { concurrency: 32, discard: true },
+        );
       yield* Effect.gen(function* () {
         const service = yield* ManagedWorktrees.ManagedWorktrees;
         const [group] = yield* service.list({});
+        if (files === "dependencies") {
+          assert.equal(group!.status, "ready", group!.reason ?? undefined);
+          assert.isTrue(group!.resources.some((resource) => resource.ignoredFiles));
+          assert.isTrue(group!.resources.every((resource) => resource.branchSource === "git"));
+        }
         if (files === "untracked") {
           assert.equal(
             (yield* service.remove({ targets: [group!], deleteIgnoredFiles: true }))[0]!.outcome,
@@ -374,6 +388,147 @@ it.live.each([
           );
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live(
+  "cleans empty gitlinks on older Git but retains files hidden inside uninitialized submodules",
+  () =>
+    Effect.gen(function* () {
+      const context = yield* fixture();
+      const { fs, path, git, resources } = context;
+      const checkout = resources[0]!.checkoutRoot;
+      const head = yield* git.resolveCommit({ cwd: checkout, revision: "HEAD" });
+      for (const name of ["empty\nmodule", "empty module"])
+        yield* git.execute({
+          operation: "test",
+          cwd: checkout,
+          args: ["update-index", "--add", "--cacheinfo", `160000,${head.commitSha},${name}`],
+        });
+      yield* git.execute({
+        operation: "test",
+        cwd: checkout,
+        args: [
+          "-c",
+          "user.name=Test",
+          "-c",
+          "user.email=test@example.com",
+          "commit",
+          "--quiet",
+          "-m",
+          "gitlinks",
+        ],
+      });
+      const empty = path.join(checkout, "empty\nmodule");
+      yield* fs.makeDirectory(empty);
+      yield* fs.makeDirectory(path.join(checkout, "empty module"));
+      yield* Effect.gen(function* () {
+        const service = yield* ManagedWorktrees.ManagedWorktrees;
+        const [initial] = yield* service.list({});
+        assert.equal(initial!.status, "ready", initial!.reason ?? undefined);
+        const local = path.join(empty, "local.txt");
+        yield* fs.writeFileString(local, "keep");
+        const [blocked] = yield* service.list({});
+        assert.isFalse(blocked!.actions!.remove);
+        yield* fs.remove(local);
+        const rechecks = yield* Ref.make(0);
+        const [raced] = yield* service.remove(
+          { targets: [initial!], deleteIgnoredFiles: true },
+          {
+            beforeRemove: Ref.updateAndGet(rechecks, (count) => count + 1).pipe(
+              Effect.flatMap((count) =>
+                count === 2 ? fs.writeFileString(local, "keep").pipe(Effect.orDie) : Effect.void,
+              ),
+            ),
+            releaseIdleSessions: true,
+            keepWhen: "uncommitted-changes",
+          },
+        );
+        assert.equal(raced!.outcome, "failed");
+        assert.equal(yield* fs.readFileString(local), "keep");
+        yield* fs.remove(local);
+        const [refreshed] = yield* service.list({});
+        const [removed] = yield* service.remove(
+          { targets: [refreshed!], deleteIgnoredFiles: true },
+          { beforeRemove: Effect.void, releaseIdleSessions: true, keepWhen: "uncommitted-changes" },
+        );
+        assert.equal(removed!.outcome, "removed", removed!.detail);
+        assert.isFalse(yield* fs.exists(checkout));
+      }).pipe(
+        Effect.provide(
+          context.layer.pipe(
+            Layer.provide(
+              Layer.succeed(GitVcsDriver.GitVcsDriver, {
+                ...git,
+                execute: (input) =>
+                  input.args[0] === "ls-files" &&
+                  input.args.some((arg) => arg.startsWith("--format"))
+                    ? Effect.fail(
+                        new GitCommandError({
+                          operation: input.operation,
+                          command: "git",
+                          cwd: input.cwd,
+                          exitCode: 129,
+                          detail: "unknown option `format'",
+                        }),
+                      )
+                    : git.execute(input),
+              }),
+            ),
+          ),
+        ),
+      );
+    }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("inspects large indexes and retains submodules beyond the output buffer", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { fs, path, git, resources, workspace } = context;
+    const checkout = resources[0]!.checkoutRoot;
+    yield* Effect.forEach(
+      Array.from({ length: 10_000 }, (_, index) =>
+        path.join(checkout, `${index}-${"tracked-file".repeat(6)}.txt`),
+      ),
+      (file) => fs.writeFileString(file, ""),
+      { concurrency: 32, discard: true },
+    );
+    const command = (args: ReadonlyArray<string>) =>
+      git.execute({ operation: "test", cwd: checkout, args });
+    const commit = command([
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "fixture",
+    ]);
+    yield* command(["add", "."]);
+    yield* commit;
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const [group] = yield* service.list({});
+      assert.equal(group!.status, "ready", group!.reason ?? undefined);
+      yield* command([
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        workspace.bindings[1]!.sourcePathAtBind,
+        "z-submodule",
+      ]);
+      yield* commit;
+      const [blocked] = yield* service.list({});
+      assert.equal(blocked!.status, "blocked");
+      assert.equal(blocked!.reason, "Worktrees containing submodules must be cleaned manually.");
+      assert.equal(
+        (yield* service.remove({ targets: [blocked!], deleteIgnoredFiles: true }))[0]!.outcome,
+        "failed",
+      );
+      assert.isTrue(yield* fs.exists(path.join(checkout, "z-submodule", "file.txt")));
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );
 
 it.live(

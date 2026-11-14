@@ -1554,8 +1554,8 @@ const zhCN: Readonly<Record<string, string>> = {
     "显示此环境中与会话关联的 worktree。已不存在的目录单独展示，普通工作文件夹不计入。",
   "Worktree metadata is missing. Files in this directory were retained.":
     "工作树元数据已不存在，此目录中的剩余文件已保留。",
-  "Could not inspect this checkout. Check repository access and retry.":
-    "无法检查此工作目录，请检查仓库访问权限后重试。",
+  "Could not inspect this checkout. Check the server logs and retry.":
+    "无法检查此工作目录，请查看服务端日志后重试。",
   "Some working directories are missing and have no cleanup snapshot.":
     "部分工作目录已不存在，且没有清理快照。",
   "The working directory no longer exists. Thread history is kept.":
