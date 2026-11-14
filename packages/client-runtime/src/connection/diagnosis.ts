@@ -107,6 +107,8 @@ function headline(
       return t("This device is offline");
     case "session_pending":
       return t("This device is still loading its T3 Connect sign-in");
+    case "approval_pending":
+      return t("{host} is waiting for someone to approve this device", { host });
     case "outdated":
       return t("{host} runs an older T3 Code", { host });
     case "clock_skew":
@@ -176,6 +178,25 @@ function steps(
         t("Wait a moment. T3 Code retries on its own."),
         t("If it keeps waiting, reload or restart T3 Code on this device."),
       ];
+    case "approval_pending": {
+      const code =
+        failure?._tag === "ConnectionTransientError" ? failure.verificationCode : undefined;
+      return [
+        code
+          ? t(
+              "On a device already connected to {host}, open Settings > Sharing & access and approve the device showing {code}.",
+              { host, code },
+            )
+          : t(
+              "On a device already connected to {host}, open Settings > Sharing & access and approve this device.",
+              { host },
+            ),
+        t("Or run `t3 auth connect-device approve {code}` on {host}.", {
+          code: code ?? "<code>",
+          host,
+        }),
+      ];
+    }
     case "outdated":
       return [t("Update T3 Code on {host}.", { host })];
     case "clock_skew":
@@ -261,6 +282,7 @@ function helpSection(
     case "clock_skew":
       return "the-clock-is-off";
     case "session_pending":
+    case "approval_pending":
     case "not_linked":
     case "tunnel_not_enabled":
       return "sign-in-account-or-link-problems";

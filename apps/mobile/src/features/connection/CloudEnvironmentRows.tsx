@@ -207,6 +207,8 @@ function ConnectedCloudEnvironmentRow(props: {
       connectionError={enabled || unsupported ? props.environment.connectionError : null}
       connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
       connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
+      awaitingApproval={enabled && presentation?.connection.awaitingApproval === true}
+      verificationCode={presentation?.connection.verificationCode}
       errorExpanded={props.errorExpanded}
       label={props.environment.environmentLabel}
       machine={resolveEnvironmentMachineKind(
@@ -273,6 +275,9 @@ function CloudEnvironmentRowShell(props: {
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
   readonly connectionState: EnvironmentConnectionPhase;
+  /** Waiting on the host to approve this device: say so plainly, not as a failure. */
+  readonly awaitingApproval?: boolean;
+  readonly verificationCode?: string | undefined;
   readonly disabled?: boolean;
   readonly errorExpanded: boolean;
   readonly label: string;
@@ -286,16 +291,23 @@ function CloudEnvironmentRowShell(props: {
   const isRetrying =
     props.connectionState === "connecting" || props.connectionState === "reconnecting";
   const shouldPulse = isRetrying;
-  const statusText = t(
-    props.statusText ??
-      environmentStatusText({
-        phase: props.connectionState,
-        error: props.connectionError,
-        traceId: props.connectionErrorTraceId,
-      }),
-  );
+  const statusText =
+    props.statusText !== undefined && !props.awaitingApproval
+      ? t(props.statusText)
+      : environmentStatusText(
+          {
+            phase: props.connectionState,
+            error: props.connectionError,
+            traceId: props.connectionErrorTraceId,
+            ...(props.awaitingApproval ? { awaitingApproval: true as const } : {}),
+            ...(props.verificationCode !== undefined
+              ? { verificationCode: props.verificationCode }
+              : {}),
+          },
+          t,
+        );
   const statusClassName =
-    props.connectionError && props.connectionState !== "unsupported"
+    props.connectionError && props.connectionState !== "unsupported" && !props.awaitingApproval
       ? "text-danger-foreground"
       : "text-foreground-muted";
   const [errorMeasurement, setErrorMeasurement] = useState<{

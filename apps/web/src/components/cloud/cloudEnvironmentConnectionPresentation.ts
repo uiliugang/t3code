@@ -1,3 +1,4 @@
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   connectionStatusText,
   type EnvironmentConnectionPresentation,
@@ -11,48 +12,49 @@ export interface SavedCloudEnvironmentConnectionPresentation {
 
 export function presentSavedCloudEnvironmentConnection(
   connection: EnvironmentConnectionPresentation,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): SavedCloudEnvironmentConnectionPresentation {
   switch (connection.phase) {
     case "connected":
       return {
-        buttonLabel: "Connected",
-        statusText: connectionStatusText(connection),
+        buttonLabel: t("Connected"),
+        statusText: connectionStatusText(connection, t),
         tone: "connected",
       };
     case "connecting":
       return {
-        buttonLabel: "Connecting…",
-        statusText: connectionStatusText(connection),
+        buttonLabel: t("Connecting…"),
+        statusText: connectionStatusText(connection, t),
         tone: "connecting",
       };
     case "reconnecting":
       return {
-        buttonLabel: "Reconnecting…",
-        statusText: connectionStatusText(connection),
+        buttonLabel: t(connection.awaitingApproval ? "Waiting for approval…" : "Reconnecting…"),
+        statusText: connectionStatusText(connection, t),
         tone: "connecting",
       };
     case "unsupported":
       return {
-        buttonLabel: "Client not supported",
-        statusText: connectionStatusText(connection),
+        buttonLabel: t("Client not supported"),
+        statusText: connectionStatusText(connection, t),
         tone: "idle",
       };
     case "error":
       return {
-        buttonLabel: "Connection failed",
-        statusText: connectionStatusText(connection),
+        buttonLabel: t("Connection failed"),
+        statusText: connectionStatusText(connection, t),
         tone: "error",
       };
     case "offline":
       return {
-        buttonLabel: "Offline",
-        statusText: connectionStatusText(connection),
+        buttonLabel: t("Offline"),
+        statusText: connectionStatusText(connection, t),
         tone: "idle",
       };
     case "available":
       return {
-        buttonLabel: "Not connected",
-        statusText: connectionStatusText(connection),
+        buttonLabel: t("Not connected"),
+        statusText: connectionStatusText(connection, t),
         tone: "idle",
       };
   }

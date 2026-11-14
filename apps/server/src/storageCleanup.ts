@@ -50,6 +50,7 @@ import * as GitManager from "./git/GitManager.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { sourceControlDefinitions } from "./sourceControl/sourceControlDefinitions.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import { scratchFolderRoot } from "./project/ManagedProjectFolders.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
@@ -392,13 +393,14 @@ const make = Effect.gen(function* () {
   );
 
   const measureWorktree = Effect.fn("storageCleanup.measureWorktree")(
-    function* (worktreePath: string, inspectRepositories = false) {
+    function* (worktreePath: string, inspectRepositories: boolean | "plain-folder" = false) {
       const root = yield* fs.realPath(worktreePath);
       const skipped = yield* sharedPnpmVirtualStore(root);
       const incomplete = { bytes: null, reason: "worktree could not be fully inspected" };
-      const repositories = new Set([pathKey(root)]);
+      // A plain folder is not a checkout, so a repository at its root counts like one below it.
+      const repositories = new Set(inspectRepositories === "plain-folder" ? [] : [pathKey(root)]);
       const moduleStores: string[] = [];
-      if (inspectRepositories && (yield* fs.exists(path.join(root, ".gitmodules")))) {
+      if (inspectRepositories === true && (yield* fs.exists(path.join(root, ".gitmodules")))) {
         const submodules = yield* git.execute({
           operation: "StorageCleanup.nestedRepositories",
           cwd: root,
@@ -548,6 +550,7 @@ const make = Effect.gen(function* () {
     roots: ReadonlyArray<string>,
     projects: ReadonlyArray<{ readonly workspaceRoot: string }>,
     entries: StorageCleanupReportEntry[],
+    scratchRoot: string | null,
   ) {
     const rows = yield* sql<{ worktreePath: string }>`
       SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
@@ -590,12 +593,14 @@ const make = Effect.gen(function* () {
         (root) =>
           !inside(root, managedRoot) && (pathKey(root) === pathKey(target) || inside(root, target)),
       );
-    const directories = Effect.fnUntraced(function* (parent: string, managedRoot: string) {
-      if (inProject(parent, managedRoot)) return [];
+    // The scratch root is itself a project, so its folders skip the project check.
+    const directories = Effect.fnUntraced(function* (parent: string, managedRoot: string | null) {
+      const skipped = (target: string) => managedRoot !== null && inProject(target, managedRoot);
+      if (skipped(parent)) return [];
       const result: string[] = [];
       for (const name of yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => []))) {
         const target = path.join(parent, name);
-        if (!inside(parent, target) || inProject(target, managedRoot)) continue;
+        if (!inside(parent, target) || skipped(target)) continue;
         const directory = yield* Effect.gen(function* () {
           if (pathKey(yield* fs.realPath(target)) !== pathKey(target)) return false;
           return (yield* fs.stat(target)).type === "Directory";
@@ -610,7 +615,7 @@ const make = Effect.gen(function* () {
     let firstMeasurement = true;
     const reported = new Set<string>();
     const report = Effect.fnUntraced(
-      function* (worktreePath: string) {
+      function* (worktreePath: string, scratch = false) {
         const key = pathKey(worktreePath);
         if (
           reported.has(key) ||
@@ -638,7 +643,9 @@ const make = Effect.gen(function* () {
           outcome: "kept",
           reason: linked
             ? "No thread uses this worktree"
-            : "No thread uses this folder, and it isn't a git worktree",
+            : scratch
+              ? "No thread uses this folder"
+              : "No thread uses this folder, and it isn't a git worktree",
           path: worktreePath,
           projectPath: null,
           threadId: null,
@@ -686,6 +693,8 @@ const make = Effect.gen(function* () {
         }).pipe(Effect.orElseSucceed(() => undefined));
       }
     }
+    if (scratchRoot !== null)
+      for (const folder of yield* directories(scratchRoot, null)) yield* report(folder, true);
     for (const key of orphanSizes.keys()) {
       if (!reported.has(key)) orphanSizes.delete(key);
     }
@@ -1043,6 +1052,32 @@ const make = Effect.gen(function* () {
       );
       if (root !== null && !isFilesystemRoot(root, path)) roots.push(root);
     }
+    const scratchRoot = yield* fs
+      .realPath(scratchFolderRoot(config.baseDir, path))
+      .pipe(Effect.orElseSucceed(() => null));
+    // Nothing can bring a scratch folder's files back, so these hold whatever the retention says.
+    const scratchKeepReason = Effect.fn("StorageCleanup.scratchKeepReason")(function* (
+      folder: string,
+      threadIds: ReadonlyArray<string>,
+      rules: WorktreeCleanupRules,
+    ) {
+      const realParent = yield* fs.realPath(path.dirname(folder));
+      if ((yield* fs.realPath(folder)) !== path.join(realParent, path.basename(folder)))
+        return "folder is a symbolic link";
+      // Every file here is untracked, and only "tracked-changes" lets cleanup delete those.
+      if (rules.worktreeKeepWhen !== "tracked-changes") {
+        const file = (yield* fs.readDirectory(folder)).find((name) => name !== "node_modules");
+        if (file !== undefined) return `has local files (${file})`;
+      }
+      // Each run of a scheduled task works on what its earlier runs left in the folder.
+      const scheduled = yield* sql<{ threadId: string }>`
+        SELECT thread_id AS "threadId" FROM scheduled_tasks
+        WHERE enabled = 1 AND thread_id IS NOT NULL
+      `.pipe(NodeSqliteClient.readOnly);
+      if (scheduled.some((task) => threadIds.includes(task.threadId)))
+        return "thread has a scheduled task";
+      return null;
+    });
     const worktreePathReason = Effect.fn("StorageCleanup.worktreePathReason")(function* (
       worktreePath: string,
     ) {
@@ -1540,6 +1575,11 @@ const make = Effect.gen(function* () {
       const worktreeKey = yield* canonical(worktreePath);
       const worktreePaths = [worktreePath, worktreeKey];
       const group = groups.get(worktreeKey) ?? [];
+      // No project threads have no branch; their folders sit directly in the scratch root.
+      const scratch =
+        thread.branch === null &&
+        scratchRoot !== null &&
+        pathKey(path.dirname(worktreeKey)) === pathKey(scratchRoot);
       const activityAt = Math.max(...group.map(storageCleanupActivityAt));
       const deleted = "workspaceRoot" in thread;
       const settlementChain = deleted
@@ -1583,6 +1623,7 @@ const make = Effect.gen(function* () {
         );
         if (!exists) return;
         if (
+          !scratch &&
           thread.branch === null &&
           !roots.some((root) => inside(root, worktreePath)) &&
           !(yield* fs.exists(path.join(worktreePath, ".git")))
@@ -1593,7 +1634,7 @@ const make = Effect.gen(function* () {
           return keep(`shared by ${members.length} threads`);
         if (project === undefined) return keep("project is unavailable");
         if (
-          thread.branch === null ||
+          (thread.branch === null && !scratch) ||
           !group.every((member) => storageCleanupThreadIdle(member, now, serverSettings))
         )
           return keep(waitForStop("thread is running or has pending work"));
@@ -1645,35 +1686,15 @@ const make = Effect.gen(function* () {
                   : settings.worktreeUnchanged
                     ? "not settled"
                     : "no rules apply";
+        // The merge and unchanged rules read Git, which a scratch folder does not have.
+        if (scratch && !eligible)
+          return keep(
+            settings.worktreeAfterDays !== null || settings.worktreeSettledAfterDays !== null
+              ? notDueReason
+              : "no rules apply",
+          );
         // Only Git-based rules can make a not-yet-due worktree eligible, so skip Git otherwise.
         if (!eligible && !unchangedApplies && !settings.worktreeOnMerge) return keep(notDueReason);
-        const pathReason = yield* worktreePathReason(worktreePath);
-        if (pathReason !== null) return keep(pathReason);
-        if (yield* containsProjectRoot(worktreePaths, [project, ...snapshot.projects]))
-          return keep("contains a project checkout");
-        if (yield* branchChanged(worktreePath, thread.branch))
-          return keep("repository or branch changed");
-        const lockReason = yield* worktreeLockReason(worktreePath);
-        if (lockReason !== null) return keep(lockReason);
-        const changes = yield* localChangesReason(worktreePath, settings);
-        if (changes !== null) return keep(changes);
-        const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
-        if (!eligible) {
-          const integration = yield* integrationReason(
-            worktreePath,
-            path.resolve(project.workspaceRoot),
-            thread.branch,
-            settings,
-            unchangedApplies,
-            notDueReason,
-          );
-          eligible = integration.eligible;
-          if (integration.reason !== null) {
-            if (!eligible) return keep(integration.reason);
-            removalReason = integration.reason;
-          }
-        }
-        if (!eligible) return keep(notDueReason);
         // Re-read this path's threads and sessions so new activity cancels removal; full per-worktree snapshots take seconds.
         const blockedSinceCheck = Effect.fnUntraced(function* () {
           const latestProjects = yield* projectStore.listShells();
@@ -1768,6 +1789,79 @@ const make = Effect.gen(function* () {
           }
           return null;
         });
+        const settingsChangedSinceCheck = Effect.gen(function* () {
+          const currentSettings = yield* settingsService.getSettings;
+          const current = resolveWorktreeCleanup(currentSettings, thread.projectId);
+          return (
+            currentSettings.autoResumeLimitedThreads !== serverSettings.autoResumeLimitedThreads ||
+            currentSettings.snoozeLimitedThreads !== serverSettings.snoozeLimitedThreads ||
+            Object.keys(settings).some(
+              (key) =>
+                current[key as keyof typeof settings] !== settings[key as keyof typeof settings],
+            )
+          );
+        });
+        if (scratch) {
+          const threadIds = group.map((member) => member.id);
+          const blocked =
+            (yield* scratchKeepReason(worktreePath, threadIds, settings)) ??
+            (yield* blockedSinceCheck());
+          if (blocked !== null) return keep(blocked);
+          const inspection = yield* measureWorktree(worktreePath, "plain-folder");
+          if (inspection.reason !== null) return keep(inspection.reason);
+          return yield* withWorkspaceLease(
+            worktreePath,
+            Effect.gen(function* () {
+              // Walked again under the lease: a repository deleted with the folder is gone for good.
+              const finalInspection = yield* measureWorktree(worktreePath, "plain-folder");
+              if (finalInspection.reason !== null) return keep(finalInspection.reason);
+              // The walk takes time, so the cheap checks run last, right before removal.
+              const blockedWhileMeasuring =
+                (yield* scratchKeepReason(worktreePath, threadIds, settings)) ??
+                (yield* blockedSinceCheck());
+              if (blockedWhileMeasuring !== null) return keep(blockedWhileMeasuring);
+              if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
+              yield* fs.remove(worktreePath, { recursive: true });
+              entries.push({
+                ...entry,
+                outcome: "removed",
+                reason: sentence(removalReason),
+                bytes: inspection.bytes,
+              });
+              // The stored path stays so the next turn recreates the folder, empty.
+              yield* Effect.logInfo("storage cleanup removed scratch folder", {
+                threadId: thread.id,
+              });
+            }),
+          );
+        }
+        const pathReason = yield* worktreePathReason(worktreePath);
+        if (pathReason !== null) return keep(pathReason);
+        if (yield* containsProjectRoot(worktreePaths, [project, ...snapshot.projects]))
+          return keep("contains a project checkout");
+        if (yield* branchChanged(worktreePath, thread.branch))
+          return keep("repository or branch changed");
+        const lockReason = yield* worktreeLockReason(worktreePath);
+        if (lockReason !== null) return keep(lockReason);
+        const changes = yield* localChangesReason(worktreePath, settings);
+        if (changes !== null) return keep(changes);
+        const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
+        if (!eligible) {
+          const integration = yield* integrationReason(
+            worktreePath,
+            path.resolve(project.workspaceRoot),
+            thread.branch,
+            settings,
+            unchangedApplies,
+            notDueReason,
+          );
+          eligible = integration.eligible;
+          if (integration.reason !== null) {
+            if (!eligible) return keep(integration.reason);
+            removalReason = integration.reason;
+          }
+        }
+        if (!eligible) return keep(notDueReason);
         const blocked = yield* blockedSinceCheck();
         if (blocked !== null) return keep(blocked);
         // Inspect before the lease; provider startup must not wait for directory traversal.
@@ -1792,18 +1886,7 @@ const make = Effect.gen(function* () {
               return keep("commit changed since check");
             const finalChanges = yield* localChangesReason(worktreePath, settings);
             if (finalChanges !== null) return keep(finalChanges);
-            const currentSettings = yield* settingsService.getSettings;
-            const current = resolveWorktreeCleanup(currentSettings, thread.projectId);
-            if (
-              currentSettings.autoResumeLimitedThreads !==
-                serverSettings.autoResumeLimitedThreads ||
-              currentSettings.snoozeLimitedThreads !== serverSettings.snoozeLimitedThreads ||
-              Object.keys(settings).some(
-                (key) =>
-                  current[key as keyof typeof settings] !== settings[key as keyof typeof settings],
-              )
-            )
-              return keep("settings changed since check");
+            if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
             // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
             if (settings.worktreeKeepWhen === "tracked-changes")
               yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
@@ -1849,6 +1932,7 @@ const make = Effect.gen(function* () {
       roots,
       yield* projectStore.list({ includeDeleted: true }),
       entries,
+      scratchRoot,
     );
     return { waiting, kept };
   });

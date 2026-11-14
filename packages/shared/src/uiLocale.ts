@@ -9,6 +9,55 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "A device wants to connect to {environment}": "有设备请求连接 {environment}",
+  "{device}. Approve only if it shows code {code}.":
+    "{device}。仅当该设备显示验证码 {code} 时批准。",
+  "Could not revoke the device": "无法撤销此设备的访问权限",
+  "T3 Connect devices": "T3 Connect 设备",
+  "Waiting for approval": "等待批准",
+  "{device}. Approve only if the device in front of you shows this code.":
+    "{device}。仅当你面前的设备显示此验证码时批准。",
+  "Trusted since {time}": "自 {time} 起受信任",
+  "Revoke {device}?": "撤销 {device} 的访问权限？",
+  "No device has connected through T3 Connect yet.": "尚无设备通过 T3 Connect 连接。",
+  "Approval for new devices is off, so a revoked device signed in to your T3 Connect account can connect again on its own.":
+    "新设备审批已关闭，因此已登录你的 T3 Connect 账号的设备即使被撤销访问权限，也能自行重新连接。",
+  "Require approval for new devices": "新设备连接前需批准",
+  "The device has to be approved here before it can connect again.":
+    "此设备需要在这里获批后才能重新连接。",
+  "Unknown device": "未知设备",
+  "this device": "此设备",
+  "Revoke all other clients?": "撤销所有其他客户端的访问权限？",
+  "{host} is waiting for someone to approve this device": "{host} 正在等待批准此设备",
+  "On a device already connected to {host}, open Settings > Sharing & access and approve the device showing {code}.":
+    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问权限”，批准显示验证码 {code} 的设备。",
+  "On a device already connected to {host}, open Settings > Sharing & access and approve this device.":
+    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问权限”并批准此设备。",
+  "Or run `t3 auth connect-device approve {code}` on {host}.":
+    "也可以在 {host} 上运行 `t3 auth connect-device approve {code}`。",
+  "Waiting for approval on the host": "等待主机批准",
+  "Waiting for approval on the host. Code: {code}": "等待主机批准，验证码：{code}",
+  "Retry sign-in": "重试登录",
+  "Devices that sign in to your T3 Connect account wait until someone already connected here approves them.":
+    "登录你的 T3 Connect 账号的新设备，需要由已连接到此处的设备批准后才能连接。",
+  "Require approval for new T3 Connect devices": "新 T3 Connect 设备连接需批准",
+  "Your session does not have permission to manage access.": "当前会话没有管理访问权限的权限。",
+  "Waiting for {environment} to approve this device": "等待 {environment} 批准此设备",
+  "Video unavailable. {detail}": "视频不可用。{detail}",
+  "This connection cannot read host files. Pair again with a new link to view it.":
+    "此连接没有读取主机文件的权限。请使用新的配对链接重新连接后查看。",
+  "Play {name}": "播放 {name}",
+  "Opening share sheet...": "正在打开分享面板...",
+  "Approve this device?": "批准此设备？",
+  "{device} wants to connect to {environment} through T3 Connect. It shows code {code}. Approve it only if that code matches.":
+    "{device} 希望通过 T3 Connect 连接到 {environment}。设备显示的验证码为 {code}。请仅在验证码一致时批准。",
+  "{browser} on {os}": "{os} 上的 {browser}",
+  "A new device": "新设备",
+  "Request no longer waiting": "请求已结束等待",
+  "It expired or was answered elsewhere.": "请求已过期或已在其他位置处理。",
+  "The request is still waiting. Try again.": "请求仍在等待处理，请重试。",
+  "Could not deny the device": "无法拒绝此设备",
+  "Could not approve the device": "无法批准此设备",
   "Search ignored files": "搜索忽略的文件",
   "No ignored files match.": "没有匹配的忽略文件。",
   " Search to find the rest.": " 可通过搜索查找其余文件。",

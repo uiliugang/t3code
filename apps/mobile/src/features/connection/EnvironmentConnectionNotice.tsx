@@ -2,6 +2,7 @@ import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import {
+  connectionStatusText,
   type EnvironmentConnectionPhase,
   type EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
@@ -14,8 +15,11 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 function noticeTitle(
   phase: EnvironmentConnectionPhase,
   environmentLabel: string,
+  awaitingApproval: boolean,
   t: ReturnType<typeof useUiTranslation>,
 ): string {
+  if (awaitingApproval)
+    return t("Waiting for {environment} to approve this device", { environment: environmentLabel });
   switch (phase) {
     case "offline":
       return t("You are offline");
@@ -35,11 +39,12 @@ function noticeTitle(
 }
 
 function noticeDetail(
-  phase: EnvironmentConnectionPhase,
+  connection: EnvironmentConnectionPresentation,
   resourceName: string,
-  error: string | null,
   t: ReturnType<typeof useUiTranslation>,
 ): string {
+  const { phase, error } = connection;
+  if (connection.awaitingApproval) return connectionStatusText(connection, t);
   if (error) {
     return phase === "reconnecting"
       ? t("The app will keep retrying automatically. {error}", { error: t(error) })
@@ -92,10 +97,15 @@ export function EnvironmentConnectionNotice(props: {
         )}
 
         <Text className="text-center text-lg font-t3-bold text-foreground">
-          {noticeTitle(props.connection.phase, props.environmentLabel, t)}
+          {noticeTitle(
+            props.connection.phase,
+            props.environmentLabel,
+            props.connection.awaitingApproval === true,
+            t,
+          )}
         </Text>
         <Text className="text-center text-sm leading-normal text-foreground-muted">
-          {noticeDetail(props.connection.phase, props.resourceName, props.connection.error, t)}
+          {noticeDetail(props.connection, props.resourceName, t)}
           {props.connection.traceId ? (
             <ConnectionTraceId traceId={props.connection.traceId} />
           ) : null}

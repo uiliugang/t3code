@@ -378,6 +378,7 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
       }).pipe(
         Effect.provide(
           Layer.mock(ProviderHost.ProviderHost)({
+            awaitServerReady: Effect.void,
             paths: {
               cwd: f.directory,
               baseDir: f.directory,

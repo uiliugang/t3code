@@ -8,7 +8,7 @@ import {
   StarIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   ProviderDriverKind,
   type ProviderInstanceId,
@@ -516,7 +516,7 @@ export function ProviderModelsSection({
   );
 }
 
-function ProviderModelRow({
+const ProviderModelRow = memo(function ProviderModelRow({
   model,
   isHidden,
   isFavorite,
@@ -707,4 +707,4 @@ function ProviderModelRow({
       </Tooltip>
     </div>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { translateUi } from "@t3tools/shared/uiLocale";
 import {
   RelayEnvironmentEndpointUnavailableError,
   type RelayProtectedError,
@@ -144,6 +145,29 @@ describe("presentConnectionDiagnosis", () => {
     expect(diagnose(backoff(failure), "direct")?.moreInfoUrl).toContain(
       "sign-in-account-or-link-problems",
     );
+  });
+
+  it("asks for approval on the host instead of reporting it unreachable", () => {
+    const state = backoff(
+      new ConnectionTransientError({
+        reason: "approval-pending",
+        detail: "Approve this device on Mac mini. It shows code K7QM-2XFD.",
+        verificationCode: "K7QM-2XFD",
+        hop: "server",
+        via: "relay",
+        failureCause: "approval_pending",
+      }),
+    );
+    const diagnosis = diagnose(state);
+    expect(diagnosis?.headline).toBe("Mac mini is waiting for someone to approve this device");
+    expect(diagnosis?.steps.join(" ")).toContain("t3 auth connect-device approve K7QM-2XFD");
+    const localized = presentConnectionDiagnosis(
+      { hostLabel: "Mac mini", state, via: "relay" },
+      translateUi.bind(null, "zh-CN"),
+    );
+    expect(localized?.headline).toBe("Mac mini 正在等待批准此设备");
+    expect(localized?.steps[0]).toContain("批准显示验证码 K7QM-2XFD 的设备");
+    expect(localized?.steps[1]).toContain("t3 auth connect-device approve K7QM-2XFD");
   });
 
   it("does not report hops as working when the failure names none", () => {
