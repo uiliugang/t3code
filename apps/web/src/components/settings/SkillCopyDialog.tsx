@@ -199,7 +199,9 @@ export function SkillCopyDialog({
                 <span className="text-sm font-medium">
                   {t("{count} skills", { count: items.length })}
                 </span>
-                <span className="text-xs text-muted-foreground">{t("Current version only")}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t("Current version and update source")}
+                </span>
               </div>
               {items.map((item) => {
                 const entry = preview?.entries.find((entry) => entry.name === item.name);

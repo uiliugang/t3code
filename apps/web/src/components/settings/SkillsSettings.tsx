@@ -1670,6 +1670,12 @@ function EnvironmentSkills({
 }) {
   const t = useUiTranslation();
   const tabsId = useId();
+  const { environments } = useEnvironments();
+  const showCopy =
+    connected &&
+    environments.some(
+      (env) => env.environmentId !== environmentId && env.connection.phase === "connected",
+    );
   const locale = useClientSettings((settings) => settings.uiLanguage);
   const query = useEnvironmentQuery(serverEnvironment.skills({ environmentId, input: {} }));
   const permitted = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
@@ -1678,6 +1684,7 @@ function EnvironmentSkills({
   const [tab, setTab] = useState<"skills" | "sources" | "targets">("skills");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
   const [showExternal, setShowExternal] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [install, setInstall] = useState(false);
@@ -1718,7 +1725,21 @@ function EnvironmentSkills({
         )}
       </p>
     );
-  const { rows, counts, hiddenExternal } = skillRows(data, search, filter, showExternal);
+  const { rows, counts, sourceCounts, hiddenExternal } = skillRows(
+    data,
+    search,
+    filter,
+    showExternal,
+    sourceFilter,
+  );
+  const sourceOptions = [
+    { value: "all", label: `${t("All sources")} ${counts.all}` },
+    ...data.sources.map((source) => ({
+      value: `source:${source.id}`,
+      label: `${skillSourceName(source, t)} ${sourceCounts[source.id] ?? 0}`,
+    })),
+    { value: "source:", label: `${t("Unknown source")} ${sourceCounts[""] ?? 0}` },
+  ];
   const failedSource = skillSourceFailure(data);
   const selectableRows = rows.filter((row) => row.kind === "managed" || !row.skill.external);
   const selectedManaged = data.skills.filter((skill) => selected.includes(skill.id));
@@ -1734,7 +1755,7 @@ function EnvironmentSkills({
   };
   return (
     <div className="min-w-0 space-y-4">
-      {copying && (
+      {copying && showCopy && (
         <SkillCopyDialog
           environmentId={environmentId}
           items={[
@@ -1928,14 +1949,16 @@ function EnvironmentSkills({
                     {t("Adopt selected ({count})", { count: selectedDiscovered.length })}
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!canManage}
-                  onClick={() => setCopying(true)}
-                >
-                  {t("Copy to environment...")}
-                </Button>
+                {showCopy && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!canManage}
+                    onClick={() => setCopying(true)}
+                  >
+                    {t("Copy to environment...")}
+                  </Button>
+                )}
                 {selectedManaged.length > 0 && (
                   <>
                     <Button
@@ -2023,7 +2046,11 @@ function EnvironmentSkills({
                 <PopoverTrigger
                   render={
                     <Button
-                      variant={filter !== "all" || showExternal ? "secondary" : "ghost"}
+                      variant={
+                        filter !== "all" || sourceFilter !== null || showExternal
+                          ? "secondary"
+                          : "ghost"
+                      }
                       size="icon-sm"
                       aria-label={t("Filter skills")}
                     />
@@ -2049,6 +2076,33 @@ function EnvironmentSkills({
                           {t(label)} {counts[key as SkillFilter]}
                         </Button>
                       ))}
+                    </div>
+                    <div className="space-y-2 border-t border-border pt-3">
+                      <label className="text-xs font-medium" htmlFor={`${tabsId}-source-filter`}>
+                        {t("Skill source")}
+                      </label>
+                      <Select
+                        items={sourceOptions}
+                        value={sourceFilter === null ? "all" : `source:${sourceFilter}`}
+                        onValueChange={(value) => {
+                          setSourceFilter(!value || value === "all" ? null : value.slice(7));
+                          setSelected([]);
+                        }}
+                      >
+                        <SelectTrigger
+                          id={`${tabsId}-source-filter`}
+                          aria-label={t("Skill source")}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {sourceOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
                     </div>
                     <label className="flex items-center gap-2 border-t border-border pt-3 text-xs">
                       <Checkbox
@@ -2085,6 +2139,7 @@ function EnvironmentSkills({
                     onClick={() => {
                       setSearch("");
                       setFilter("all");
+                      setSourceFilter(null);
                     }}
                   >
                     {t("Clear filters")}

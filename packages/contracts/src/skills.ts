@@ -122,9 +122,21 @@ export const SkillCopySource = Schema.Union([
   Schema.Struct({ path: Schema.String }),
 ]);
 export type SkillCopySource = typeof SkillCopySource.Type;
+const SkillCopyOrigin = Schema.Struct({
+  source: Schema.Struct({
+    id: SkillSource.fields.id,
+    label: SkillSource.fields.label,
+    kind: SkillSource.fields.kind,
+    enabled: SkillSource.fields.enabled,
+    registry: SkillSource.fields.registry,
+  }),
+  locator: Schema.String,
+  skill: Schema.String,
+});
 export const SkillCopyPackage = Schema.Struct({
   name: SkillKey,
   digest: SkillKey,
+  origin: Schema.optionalKey(SkillCopyOrigin),
   files: Schema.Array(
     Schema.Struct({
       path: Schema.String,
@@ -158,6 +170,7 @@ export const SkillAction = Schema.Union([
     directory: Schema.String,
     digest: SkillKey,
     workKey: SkillKey,
+    origin: Schema.optionalKey(SkillCopyOrigin),
   }),
   Schema.Struct({ type: Schema.Literal("refresh") }),
   Schema.Struct({
@@ -250,6 +263,9 @@ export const SkillCatalog = Schema.Struct({
   sources: Schema.Array(SkillSource),
   skills: Schema.Array(ManagedSkill),
   customTargets: Schema.Array(SkillTarget),
+  copiedOrigins: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ directory: Schema.String, origin: SkillOrigin })),
+  ),
   targetSettings: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
