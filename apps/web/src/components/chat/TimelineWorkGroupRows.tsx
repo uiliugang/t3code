@@ -577,7 +577,8 @@ export function LiveWorkEntryTimelineRow({
 }) {
   const ctx = use(TimelineRowCtx);
   const threadTarget = useThreadReadTarget(row.entry, ctx.activeThreadEnvironmentId);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
+  const t = useUiTranslation();
+  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active, t);
   const threadLabel = threadReadLabel(label, threadTarget);
 
   const item = row.entry.projectedItem?.item;
