@@ -5,6 +5,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
+  ServerSettingsError,
   type ProviderInstanceConfigMap,
 } from "@t3tools/contracts";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
@@ -35,6 +36,7 @@ const fixture = Effect.fn("ProviderInstanceService.test.fixture")(function* (inp
   readonly instances: (root: string) => ProviderInstanceConfigMap;
   readonly failRuntimeRemoval?: boolean;
   readonly failSessionClose?: boolean;
+  readonly rejectDeletion?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -53,7 +55,26 @@ const fixture = Effect.fn("ProviderInstanceService.test.fixture")(function* (inp
   const dependencies = Layer.mergeAll(
     Layer.succeed(Config.ServerConfig, config),
     Layer.succeed(HostProcess.HomeDirectory, home),
-    Settings.layerTest({ providerInstances: input.instances(directory) }),
+    Layer.effect(
+      Settings.ServerSettingsService,
+      Effect.gen(function* () {
+        const settings = yield* Settings.ServerSettingsService;
+        if (!input.rejectDeletion) return settings;
+        const reject = () =>
+          Effect.fail(
+            new ServerSettingsError({
+              operation: "write-managed-setting",
+              settingsPath: config.settingsPath,
+              managedSetting: `providerInstances.${id}`,
+            }),
+          );
+        return {
+          ...settings,
+          updateProviderInstance: reject,
+          validateProviderInstanceMutation: reject,
+        };
+      }),
+    ).pipe(Layer.provide(Settings.layerTest({ providerInstances: input.instances(directory) }))),
     Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
       withInstanceClosed: (_instanceId, effect) =>
         input.failSessionClose
@@ -141,6 +162,7 @@ const fixture = Effect.fn("ProviderInstanceService.test.fixture")(function* (inp
     store,
     registration,
     acpCalls,
+    sessionsClosed: Effect.sync(() => sessionsClosed),
     reconnect: Effect.service(ProviderInstanceService.ProviderInstanceService).pipe(
       Effect.provide(ProviderInstanceService.layer),
       Effect.provide(context),
@@ -200,6 +222,27 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("provider removal
         assert.isTrue(yield* f.fs.exists(f.directory));
         assert.isTrue(yield* f.fs.exists(f.runtime));
         assert.isTrue(Option.isSome(yield* f.store.get));
+      }),
+    ),
+  );
+
+  it.effect("rejects a locked deletion before closing sessions or writing cleanup records", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture({
+          instances: () => ({ [id]: { driver: codex } }),
+          rejectDeletion: true,
+        });
+        const result = yield* f.service
+          .update({ operation: "delete", instanceId: id })
+          .pipe(Effect.flip);
+        assert.equal(result.operation, "write-managed-setting");
+        assert.isFalse(yield* f.sessionsClosed);
+        assert.isTrue(yield* f.fs.exists(f.directory));
+        const config = yield* Config.ServerConfig;
+        assert.isFalse(
+          yield* f.fs.exists(f.path.join(config.stateDir, "provider-resource-cleanup.json")),
+        );
       }),
     ),
   );
@@ -323,6 +366,28 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("provider removal
         yield* f.fs.writeFileString(f.path.join(personal, "auth.json"), "personal");
         yield* f.service.update({ operation: "delete", instanceId: id });
         assert.equal(yield* f.fs.readFileString(f.path.join(personal, "auth.json")), "personal");
+      }),
+    ),
+  );
+
+  it.effect("keeps user-level homes that another environment can share", () =>
+    run(
+      Effect.gen(function* () {
+        for (const root of [".codex-t3", ".claude-t3"]) {
+          const f = yield* fixture({
+            instances: () => ({
+              [id]: { driver: codex, config: { homePath: `~/${root}/shared` } },
+            }),
+          });
+          const shared = f.path.join(f.home, root, "shared");
+          yield* f.fs.makeDirectory(shared, { recursive: true });
+          yield* f.fs.writeFileString(f.path.join(shared, "auth.json"), "other-environment");
+          yield* f.service.update({ operation: "delete", instanceId: id });
+          assert.equal(
+            yield* f.fs.readFileString(f.path.join(shared, "auth.json")),
+            "other-environment",
+          );
+        }
       }),
     ),
   );

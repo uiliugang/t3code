@@ -1972,30 +1972,69 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
               .realPath(agentRoot)
               .pipe(Effect.orElseSucceed(() => agentRoot));
             const home = yield* HostProcess.HomeDirectory;
+            const pathVariables = new Set([
+              "HOME",
+              "USERPROFILE",
+              "PATH",
+              "CODEX_HOME",
+              "CLAUDE_CONFIG_DIR",
+              "CURSOR_CONFIG_DIR",
+              "XDG_CONFIG_HOME",
+              "XDG_DATA_HOME",
+              "XDG_STATE_HOME",
+              "XDG_CACHE_HOME",
+            ]);
             const pathReferences = yield* Effect.forEach(
               Object.values(settings.providerInstances),
               Effect.fnUntraced(function* (instance) {
-                if (instance.config === null || typeof instance.config !== "object") return false;
+                const environment = yield* mergeProviderInstanceEnvironment(instance.environment);
+                const candidates: string[] = [];
+                for (const variable of instance.environment ?? []) {
+                  const name = platform === "win32" ? variable.name.toUpperCase() : variable.name;
+                  if (!pathVariables.has(name)) continue;
+                  if (typeof variable.value !== "string") return true;
+                  const value = environment[name];
+                  if (value)
+                    candidates.push(
+                      ...(name === "PATH"
+                        ? value.split(platform === "win32" ? ";" : ":")
+                        : [value]),
+                    );
+                }
+                for (const name of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "CURSOR_CONFIG_DIR"]) {
+                  if (environment[name]) candidates.push(environment[name]);
+                }
                 for (const key of ["binaryPath", "commandPath", "homePath", "shadowHomePath"]) {
-                  const value: unknown = Reflect.get(instance.config, key);
+                  const value: unknown =
+                    instance.config !== null && typeof instance.config === "object"
+                      ? Reflect.get(instance.config, key)
+                      : undefined;
                   if (typeof value !== "string" || !value.trim()) continue;
                   const expanded = expandHomePath(value.trim(), home);
                   const resolved =
                     key === "binaryPath" || key === "commandPath"
                       ? yield* resolveCommandPath(expanded, {
-                          env: yield* mergeProviderInstanceEnvironment(instance.environment),
+                          env: environment,
                         })
                       : null;
-                  const candidate = resolved ?? path.resolve(expanded);
+                  candidates.push(resolved ?? path.resolve(expanded));
+                }
+                for (const candidate of candidates) {
                   const real = yield* fileSystem
-                    .realPath(candidate)
-                    .pipe(Effect.orElseSucceed(() => candidate));
+                    .realPath(path.resolve(expandHomePath(candidate, home)))
+                    .pipe(
+                      Effect.orElseSucceed(() => path.resolve(expandHomePath(candidate, home))),
+                    );
                   const relative = path.relative(realRoot, real);
+                  const parentRelative = path.relative(real, realRoot);
                   if (
                     relative === "" ||
                     (relative !== ".." &&
                       !relative.startsWith(`..${path.sep}`) &&
-                      !path.isAbsolute(relative))
+                      !path.isAbsolute(relative)) ||
+                    (parentRelative !== ".." &&
+                      !parentRelative.startsWith(`..${path.sep}`) &&
+                      !path.isAbsolute(parentRelative))
                   )
                     return true;
                 }

@@ -200,7 +200,8 @@ computer.
 To remove a provider, select it in **Settings → Providers** and choose **Remove**.
 T3 Code stops its active sessions and clears its saved settings and unused managed
 resources. Shared managed resources stay until their last provider is removed.
-Personal CLI installations and configuration stay in place.
+Personal CLI installations and configuration stay in place. Account folders outside
+the environment's data directory also stay, since other environments may use them.
 You can add the provider again later.
 
 | Provider    | Install and authenticate                                                                                                                                  |

@@ -5,6 +5,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  SecretProviderId,
 } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -1623,6 +1624,42 @@ describe("AcpRegistrySupport", () => {
         agentId: "example-agent",
         removed: false,
       });
+      for (const name of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "PATH"]) {
+        yield* hostSettings.set({
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [instanceId]: {
+              driver: ProviderDriverKind.make("codex"),
+              environment: [{ name, value: `${versionRoot}/npm`, sensitive: false }],
+            },
+          },
+        });
+        expect(
+          yield* resolver.uninstallManagedBinary({
+            agentId: "example-agent",
+            includePackages: true,
+          }),
+        ).toEqual({ agentId: "example-agent", removed: false });
+        expect(yield* fileSystem.exists(`${versionRoot}/npm/bin/agent`)).toBe(true);
+      }
+      yield* hostSettings.set({
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            environment: [
+              {
+                name: "CODEX_HOME",
+                value: { provider: SecretProviderId.make("vault"), reference: "account/home" },
+                sensitive: true,
+              },
+            ],
+          },
+        },
+      });
+      expect(
+        yield* resolver.uninstallManagedBinary({ agentId: "example-agent", includePackages: true }),
+      ).toEqual({ agentId: "example-agent", removed: false });
       yield* hostSettings.set(DEFAULT_SERVER_SETTINGS);
       expect(
         yield* resolver.uninstallManagedBinary({ agentId: "example-agent", includePackages: true }),

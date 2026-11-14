@@ -2771,6 +2771,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
     const policy: ManagedPolicyDocument = {
       schemaVersion: 1,
       organization: "Example Corp",
+      settings: { enableAgentDeviceAccess: { value: false, locked: true } },
       limits: {
         providers: {
           allowedDrivers: [claude, codex],
@@ -2923,6 +2924,24 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         assert.deepEqual(effective.providerInstances[codexId]?.config, {
           launchArgs: "-c model_provider=gateway",
         });
+
+        const beforeValidation = yield* fs.readFileString(config.settingsPath);
+        const rejectedDeletion = yield* service
+          .validateProviderInstanceMutation(
+            {
+              operation: "delete",
+              instanceId: claudeId,
+            },
+            { enableAgentDeviceAccess: true },
+          )
+          .pipe(Effect.flip);
+        assert.equal(rejectedDeletion.operation, "write-managed-setting");
+        yield* service.validateProviderInstanceMutation({
+          operation: "delete",
+          instanceId: codexId,
+        });
+        assert.equal(yield* fs.readFileString(config.settingsPath), beforeValidation);
+        assert.deepEqual(yield* service.getSettings, effective);
 
         const lockedBinary = yield* service
           .updateProviderInstance({

@@ -698,6 +698,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     ),
     updateSettings,
     updateProviderInstance: () => Effect.die("Unexpected provider mutation"),
+    validateProviderInstanceMutation: () => Effect.die("Unexpected provider validation"),
     withSettingsSnapshot: (use) => Ref.get(settings).pipe(Effect.flatMap(use)),
     streamChanges: Stream.fromPubSub(settingsChanges),
     subscribeChanges: PubSub.subscribe(settingsChanges).pipe(

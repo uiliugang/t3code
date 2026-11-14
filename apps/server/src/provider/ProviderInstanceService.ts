@@ -131,13 +131,8 @@ const make = Effect.gen(function* () {
   });
   const ownedRoots = Effect.gen(function* () {
     const state = yield* canonical(config.stateDir);
-    const realHome = yield* canonical(home);
-    return [
-      path.join(state, "providers"),
-      path.join(state, "provider-auth"),
-      path.join(realHome, ".codex-t3"),
-      path.join(realHome, ".claude-t3"),
-    ];
+    // User-level account homes may be shared by environments whose references are not visible here.
+    return [path.join(state, "providers"), path.join(state, "provider-auth")];
   });
   const directoriesFor = Effect.fn("ProviderInstanceService.directoriesFor")(function* (
     instanceId: ProviderInstanceId,
@@ -427,6 +422,7 @@ const make = Effect.gen(function* () {
   ) {
     if (mutation.operation !== "delete")
       return yield* settings.updateProviderInstance(mutation, patch);
+    yield* settings.validateProviderInstanceMutation(mutation, patch);
     return yield* sessions
       .withInstanceClosed(mutation.instanceId, remove(mutation.instanceId, patch))
       .pipe(
