@@ -250,7 +250,7 @@ const ThreadListTool = Tool.make("t3_thread_list", {
 
 const ThreadReadTool = Tool.make("t3_thread_read", {
   description:
-    "Read any thread by id. `messages` (default): user and assistant messages and plans. `activity`: all timeline items. Keep reads small: low `limit` and `maxCharsPerItem`. Page with `afterPosition=nextPosition`. Cut-off text: `itemId` with `textOffset=nextTextOffset`. Reading a child's final result marks it delivered. In your reply, name it as its `link` verbatim.",
+    "Read any thread by id. View `messages` (default) or `activity` (all items). Newest first; older: `beforePosition=earlierPosition`; from the start: `afterPosition=-1`, then `nextPosition`. Cut-off text: `itemId`, `textOffset=nextTextOffset`. Reading a child's final result marks it delivered. In your reply, name it as its `link` verbatim.",
   parameters: OrchestratorMcpThreadReadInput,
   success: OrchestratorMcpThreadReadResult,
   failure: OrchestratorMcpFailure,
@@ -386,7 +386,7 @@ const InspectSkillsTool = Tool.make("inspect_skill", {
 }).annotate(Tool.Readonly, true);
 const ManageSkillsTool = Tool.make("manage_skills", {
   description:
-    "Queue skill installations, adoption, updates, rollback, removal, batch operations or source/target configuration in this environment. New managed skills default to automatic daily updates when idle. Policy automatic checks and applies daily; notify checks daily for manual application; pinned disables updates. The legacy manual value also disables scheduled checks. Requires full access. Use list_managed_skills for IDs and durable job results; queued is not completed. Preview adoption with inspect_skill and pass its digest. Copy keeps originals; takeover backs up only selected locations. External plugin skills cannot be adopted. Local changes block updates until explicitly resolved. Unmanage keeps files or restores adoption backups; remove uninstalls the managed copy. A rollback pins the version; change policy to resume automatic updates.",
+    "Manage skills, sources and targets here. Full access required. New skills default to automatic daily updates when idle: automatic checks/applies; notify checks only; pinned blocks updates; legacy manual disables scheduling. Get IDs/job results with list_managed_skills; queued is not completed. Preview adoption with inspect_skill and pass its digest. Copy keeps originals; takeover backs up selected locations. External plugin skills cannot be adopted. Local changes block updates until resolved. Unmanage keeps files or restores adoption backups; remove uninstalls. Rollback pins; change policy to resume automatic updates.",
   parameters: Schema.Struct({ operation: SkillMutation }),
   success: Schema.Struct({ queued: Schema.Boolean }),
   failure: OrchestratorMcpFailure,

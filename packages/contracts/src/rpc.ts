@@ -42,6 +42,11 @@ import {
   SkillManagerError,
   SkillInspect,
   SkillInspection,
+  SkillCopySource,
+  SkillCopyPackage,
+  SkillCopyPreviewInput,
+  SkillCopyPreview,
+  SkillCopyInput,
 } from "./skills.ts";
 import {
   McpAppCallToolInput,
@@ -111,6 +116,8 @@ import {
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { SecretSourceCheckResult } from "./settingsSecretValue.ts";
+import { SecretReference } from "./secretReference.ts";
 import {
   ProviderAuthCancelInput,
   ProviderAuthCompleteInput,
@@ -620,6 +627,9 @@ export const WS_METHODS = {
   skillsSubscribe: "skills.subscribe",
   skillsMutate: "skills.mutate",
   skillsInspect: "skills.inspect",
+  skillsExport: "skills.export",
+  skillsPreviewCopy: "skills.previewCopy",
+  skillsCopy: "skills.copy",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
   serverReclaimDatabaseSpace: "server.reclaimDatabaseSpace",
@@ -629,6 +639,7 @@ export const WS_METHODS = {
   peerLinksAnswerRequest: "peerLinks.answerRequest",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
+  serverCheckSecretSource: "server.checkSecretSource",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
   serverPrepareAcpRegistryAgent: "server.prepareAcpRegistryAgent",
   serverUninstallAcpRegistryManagedBinary: "server.uninstallAcpRegistryManagedBinary",
@@ -968,6 +979,21 @@ const WsSkillsMutateRpc = Rpc.make(WS_METHODS.skillsMutate, {
   success: Schema.Void,
   error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
 });
+const WsSkillsExportRpc = Rpc.make(WS_METHODS.skillsExport, {
+  payload: SkillCopySource,
+  success: SkillCopyPackage,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsPreviewCopyRpc = Rpc.make(WS_METHODS.skillsPreviewCopy, {
+  payload: SkillCopyPreviewInput,
+  success: SkillCopyPreview,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsCopyRpc = Rpc.make(WS_METHODS.skillsCopy, {
+  payload: SkillCopyInput,
+  success: Schema.Void,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
 const WsServerGetStorageCleanupReportRpc = Rpc.make(WS_METHODS.serverGetStorageCleanupReport, {
   payload: Schema.Struct({}),
   success: Schema.NullOr(StorageCleanupReport),
@@ -1022,6 +1048,12 @@ const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
 const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
   payload: Schema.Struct({}),
   success: SourceControlDiscoveryResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerCheckSecretSourceRpc = Rpc.make(WS_METHODS.serverCheckSecretSource, {
+  payload: Schema.Struct({ source: SecretReference }),
+  success: SecretSourceCheckResult,
   error: EnvironmentAuthorizationError,
 });
 
@@ -2444,6 +2476,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsSubscribeRpc,
   WsSkillsMutateRpc,
   WsSkillsInspectRpc,
+  WsSkillsExportRpc,
+  WsSkillsPreviewCopyRpc,
+  WsSkillsCopyRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
   WsServerReclaimDatabaseSpaceRpc,
@@ -2453,6 +2488,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPeerLinksUnlinkRpc,
   WsPeerLinksAnswerRequestRpc,
   WsServerDiscoverSourceControlRpc,
+  WsServerCheckSecretSourceRpc,
   WsServerSearchAcpRegistryRpc,
   WsServerPrepareAcpRegistryAgentRpc,
   WsServerUninstallAcpRegistryManagedBinaryRpc,

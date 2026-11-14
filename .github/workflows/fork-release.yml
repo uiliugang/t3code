@@ -368,6 +368,7 @@ jobs:
           name: fork-linux-${{ matrix.arch }}
           path: |
             release/*.AppImage
+            release/*.deb
             release/latest-linux*.yml
             release/t3-*.tar.gz
           if-no-files-found: error
@@ -395,6 +396,7 @@ jobs:
           test "$(find . -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.apk' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 2
+          test "$(find . -maxdepth 1 -name '*.deb' | wc -l)" -eq 2
           test -f latest-linux.yml
           test -f latest-linux-arm64.yml
           test -f "t3-${RELEASE_TAG#v}-darwin-arm64.tar.gz"
@@ -413,14 +415,14 @@ jobs:
             sha256: createHash('sha256').update(readFileSync(apk)).digest('hex'),
           }, null, 2) + '\n');
           NODE
-          sha256sum *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz android-update.json > SHA256SUMS
+          sha256sum *.dmg *.apk *.AppImage *.deb latest-linux*.yml t3-*.tar.gz android-update.json > SHA256SUMS
           previous_tag=$(gh release list --exclude-drafts --exclude-pre-releases --limit 100 \
             --json tagName --jq 'map(select(.tagName != env.RELEASE_TAG))[0].tagName // empty')
           notes_args=(--generate-notes)
           if [[ -n "$previous_tag" ]]; then
             notes_args+=(--notes-start-tag "$previous_tag")
           fi
-          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage latest-linux*.yml t3-*.tar.gz android-update.json SHA256SUMS --verify-tag \
+          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage *.deb latest-linux*.yml t3-*.tar.gz android-update.json SHA256SUMS --verify-tag \
             --title "T3 Code $RELEASE_TAG (fork)" \
             "${notes_args[@]}" \
-            --notes 'Apple Silicon macOS DMG and CLI runtime, Linux x64/arm64 AppImages with automatic updates and CLI runtimes, and standalone ARM64 Android APK. The macOS app is ad hoc signed and not notarized; download its installer from Settings → About to update it. Android downloads APK updates from this repository and asks for installation confirmation. Upstream Android OTA updates are disabled.'
+            --notes '本版本提供 Apple Silicon macOS DMG 与 CLI、支持自动更新的 Linux x64/arm64 AppImage、DEB 与 CLI，以及独立签名的 ARM64 Android APK。macOS 应用采用临时签名，未经 Apple 公证，可从“设置 → 关于”下载安装包更新。Android 从本仓库下载 APK 更新，并在安装前请求确认。此 fork 已关闭上游 Android OTA 更新。'

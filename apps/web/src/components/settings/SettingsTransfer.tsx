@@ -7,7 +7,7 @@ import {
 } from "@t3tools/client-runtime/settings-transfer";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { DownloadIcon, UploadIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { randomUUID } from "../../lib/utils";
@@ -24,6 +24,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export function SettingsTransfer({
   title,
+  titleControl,
   description,
   scope,
   canImport,
@@ -33,6 +34,7 @@ export function SettingsTransfer({
   supportsProjectImport = false,
 }: {
   title: string;
+  titleControl?: ReactNode;
   description: string;
   scope: SettingsFile["scope"];
   canImport: boolean;
@@ -154,7 +156,7 @@ export function SettingsTransfer({
   return (
     <>
       <SettingsRow
-        title={title}
+        title={titleControl ?? title}
         description={description}
         control={
           <div className="flex items-center gap-2">

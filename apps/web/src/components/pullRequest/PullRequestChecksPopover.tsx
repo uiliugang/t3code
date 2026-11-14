@@ -189,14 +189,17 @@ export function PullRequestChecksPopover({
         {variant === "count" ? (
           <>
             {checks !== undefined && incompleteCount > 0 ? (
-              <span className="tabular-nums">
-                {t("{count}/{total} checks", {
-                  count: checks.length - incompleteCount,
-                  total: checks.length,
-                })}
+              // Clip the second line so "checks" disappears whole when the count must shrink.
+              <span className="h-lh min-w-0 overflow-hidden text-left whitespace-normal tabular-nums">
+                <span className="whitespace-nowrap">
+                  {checks.length - incompleteCount}/{checks.length}
+                </span>{" "}
+                {t("checks")}
               </span>
             ) : failedCount > 0 ? (
-              <span className="tabular-nums">{t("{count} failed", { count: failedCount })}</span>
+              <span className="min-w-0 truncate tabular-nums">
+                {t("{count} failed", { count: failedCount })}
+              </span>
             ) : null}
           </>
         ) : null}

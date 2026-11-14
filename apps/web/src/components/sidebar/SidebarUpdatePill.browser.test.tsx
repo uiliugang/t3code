@@ -5,6 +5,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import { act, render } from "../../../test/render";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { __setClientSettingsForTests, persistClientSettingsPatch } from "../../hooks/useSettings";
 
 const mocks = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -70,6 +72,7 @@ const RELEASE_NOTES: DesktopUpdateState["releaseNotes"] = [
 ];
 
 function setup(update: DesktopUpdateState | null, { hasUpdates = false } = {}) {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   mocks.update = update;
   mocks.hasUpdates = hasUpdates;
 }
@@ -114,6 +117,7 @@ describe("SidebarUpdatePill release notes", () => {
 
   it("opens when release notes arrive while the trigger has keyboard focus", async () => {
     setup(nightlyUpdate([]));
+    using _now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-14T12:00:00Z"));
     await using _screen = await render(<SidebarUpdatePill />);
     await userEvent.tab();
     expect(releaseNotes()).toBeNull();
@@ -122,6 +126,7 @@ describe("SidebarUpdatePill release notes", () => {
       nightlyUpdate([
         {
           version: "0.0.50-nightly.2",
+          releasedAt: "2026-11-14T10:00:00Z",
           items: ["**One-time tasks.** Pick a date."],
           totalItems: 1,
           stats: "3 changes from 2 contributors",
@@ -131,6 +136,9 @@ describe("SidebarUpdatePill release notes", () => {
     );
     await expect.element(page.getByText("One-time tasks.", { exact: true })).toBeVisible();
     await expect.element(page.getByText("Plus 2 more bug fixes.")).toBeVisible();
+    await expect.element(page.getByText("0.0.50-nightly.2 · 2h ago")).toBeVisible();
+    await act(() => persistClientSettingsPatch({ uiLanguage: "zh-CN" }, async () => {}));
+    await expect.element(page.getByText("0.0.50-nightly.2 · 2小时前")).toBeVisible();
   });
 });
 

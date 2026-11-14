@@ -1298,7 +1298,7 @@ export function PullRequestsPage() {
     <PullRequestCompactFilterMenu
       label={t("Sort pull requests")}
       triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
-      triggerLabel="Sort"
+      triggerLabel={t("Sort")}
       outlined
       value={sort}
       options={SORT_OPTIONS.map((option) => ({ ...option, label: t(option.label) }))}

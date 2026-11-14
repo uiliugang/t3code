@@ -204,6 +204,7 @@ function setup(
         Effect.succeedSome({
           projectId: id,
           title: "Project",
+          hasCustomTitle: false,
           workspaceRoot: "/repo",
           defaultModelSelection: modelSelection,
           defaultThreadEnvMode: null,

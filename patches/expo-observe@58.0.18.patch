@@ -1,0 +1,23 @@
+diff --git a/ios/ObserveModule.swift b/ios/ObserveModule.swift
+index 35a0766c3d2c4bded57ce0e154ffa86f8e3e05eb..43386c4e607bb8e37996c9ddc366982540ed256c 100644
+--- a/ios/ObserveModule.swift
++++ b/ios/ObserveModule.swift
+@@ -64,7 +64,17 @@ public final class ObserveModule: Module {
+ 
+       // Broadcast the integrations config so integration libraries (e.g. expo-image) can activate.
+       self.lastIntegrations = config.integrations ?? [:]
+-      self.emit(event: "configure", payload: ["integrations": self.lastIntegrations])
++      guard let appContext = self.appContext else { return }
++      do {
++        // Synchronous Function bodies run on the JS thread, before event dispatch is scheduled.
++        let payload = ["integrations": self.lastIntegrations]
++        let jsPayload = try type(of: payload).getDynamicType().castToJS(
++          payload, appContext: appContext, in: appContext.runtime
++        )
++        self.emit(event: "configure", payload: jsPayload)
++      } catch {
++        observeLogger.warn("Failed to convert configure event payload: \(error)")
++      }
+     }
+ 
+     Function("getIntegrations") {

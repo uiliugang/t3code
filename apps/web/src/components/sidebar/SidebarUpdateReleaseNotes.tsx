@@ -1,3 +1,5 @@
+import { useClientSettings } from "../../hooks/useSettings";
+import type { UiLocale } from "@t3tools/shared/uiLocale";
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { ExternalLinkIcon } from "lucide-react";
 
@@ -20,15 +22,16 @@ function keyReleaseNoteItems(items: ReadonlyArray<string>) {
 }
 
 /** Feed times read "3h ago"; build days from a prerelease version read "today" or "2d ago". */
-function formatReleaseAge(releasedAt: string): string {
+function formatReleaseAge(releasedAt: string, language: UiLocale): string {
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(releasedAt);
-  if (!day) return formatRelativeTimeLabel(releasedAt);
+  if (!day) return formatRelativeTimeLabel(releasedAt, undefined, language);
   const now = new Date();
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const days = Math.round(
     (today - Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]))) / 86_400_000,
   );
-  return days <= 0 ? "today" : `${days}d ago`;
+  if (days <= 0) return language === "zh-CN" ? "今天" : "today";
+  return formatRelativeTimeLabel(releasedAt, today, language);
 }
 
 function ReleaseLink({
@@ -64,6 +67,7 @@ export function SidebarUpdateReleaseNotes({
   readonly state: DesktopUpdateState;
   readonly tooltip: string;
 }) {
+  const language = useClientSettings((settings) => settings.uiLanguage);
   if (state.releaseNotes.length === 0) {
     return <>{tooltip}</>;
   }
@@ -82,7 +86,7 @@ export function SidebarUpdateReleaseNotes({
             {state.availableVersion ? (
               <div className="mt-0.5 text-xs leading-4 text-muted-foreground">
                 {releasedAt
-                  ? `${state.availableVersion} · ${formatReleaseAge(releasedAt)}`
+                  ? `${state.availableVersion} · ${formatReleaseAge(releasedAt, language)}`
                   : state.availableVersion}
               </div>
             ) : null}
@@ -108,7 +112,7 @@ export function SidebarUpdateReleaseNotes({
                 releaseNote.version !== state.availableVersion && (
                   <h3 className="mb-1 text-xs leading-4 font-medium text-muted-foreground">
                     {releaseNote.releasedAt
-                      ? `${releaseNote.version} · ${formatReleaseAge(releaseNote.releasedAt)}`
+                      ? `${releaseNote.version} · ${formatReleaseAge(releaseNote.releasedAt, language)}`
                       : releaseNote.version}
                   </h3>
                 )

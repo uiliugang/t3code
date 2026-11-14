@@ -22,7 +22,11 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import type * as ServerConfig from "../config.ts";
 import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
-import { withWorkspaceLease, withWorkspaceLeases } from "../workspace/workspaceLease.ts";
+import {
+  withCheckpointRestoreReservation,
+  withWorkspaceLease,
+  withWorkspaceLeases,
+} from "../workspace/workspaceLease.ts";
 import {
   isCheckpointRestoreIsolated,
   SHARED_WORKSPACE_RESTORE_MESSAGE,
@@ -446,17 +450,24 @@ export const layer: Layer.Layer<
         function* (input) {
           // Storage cleanup removes worktrees under the same lease.
           const thread = yield* projections.getThread(input.threadId);
-          yield* thread.workspace !== undefined
-            ? withWorkspaceLeases(
-                thread.workspace.resources.map((resource) => `checkout:${resource.checkoutRoot}`),
-                withWorkspaceLeases(
-                  thread.workspace.resources.map((resource) => resource.checkoutRoot),
-                  execute(input),
-                ),
-              )
-            : thread.worktreePath === null
-              ? execute(input)
-              : withWorkspaceLease(path.resolve(thread.worktreePath), execute(input));
+          const rollback =
+            thread.workspace !== undefined
+              ? withWorkspaceLeases(
+                  thread.workspace.resources.map((resource) => `checkout:${resource.checkoutRoot}`),
+                  withWorkspaceLeases(
+                    thread.workspace.resources.map((resource) => resource.checkoutRoot),
+                    execute(input),
+                  ),
+                )
+              : thread.worktreePath === null
+                ? execute(input)
+                : withWorkspaceLease(path.resolve(thread.worktreePath), execute(input));
+          const roots =
+            thread.workspace?.resources.map((resource) => resource.checkoutRoot) ??
+            (thread.worktreePath === null ? [] : [path.resolve(thread.worktreePath)]);
+          yield* input.restoreFiles === false || roots.length === 0
+            ? rollback
+            : withCheckpointRestoreReservation(fileSystem, path, roots, rollback);
         },
         (effect, input) =>
           effect.pipe(

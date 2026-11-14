@@ -83,6 +83,157 @@ const encodeCatalog = Schema.encodeEffect(Schema.fromJsonString(SkillCatalog));
 
 describe("SkillManager", () => {
   it.effect(
+    "copies complete skill packages, replaces directories and links, and records durable results",
+    () =>
+      Effect.gen(function* () {
+        const { fs, source, manager, install, restart, restartWithFileSystem, busy } =
+          yield* harness;
+        const destination = yield* fs.makeTempDirectoryScoped({ prefix: "t3-copy-destination-" });
+        yield* fs.writeFile(`${source}/asset.bin`, new Uint8Array([0, 255, 42]));
+        yield* fs.chmod(`${source}/script.sh`, 0o744);
+        yield* install;
+        const skill = (yield* manager.snapshot).skills[0]!;
+        const pkg = yield* manager.exportSkill({ id: skill.id });
+        expect(pkg.files.find((file) => file.path === "script.sh")?.mode).toBe(0o744);
+        expect(
+          (yield* manager.previewCopy({ directory: destination, names: [pkg.name] })).entries[0]
+            ?.status,
+        ).toBe("new");
+        yield* fs.makeDirectory(`${destination}/review`);
+        yield* fs.writeFileString(`${destination}/review/old.txt`, "remove me");
+        expect(
+          (yield* manager.previewCopy({ directory: destination, names: [pkg.name] })).entries[0]
+            ?.status,
+        ).toBe("directory");
+        yield* Ref.set(busy, true);
+        yield* manager.copy({ directory: destination, package: pkg });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).jobs?.at(-1)?.status).toBe("waiting");
+        expect(yield* fs.exists(`${destination}/review/old.txt`)).toBe(true);
+        yield* Ref.set(busy, false);
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.exists(`${destination}/review/old.txt`)).toBe(false);
+        expect(Array.from(yield* fs.readFile(`${destination}/review/asset.bin`))).toEqual([
+          0, 255, 42,
+        ]);
+        expect((yield* fs.stat(`${destination}/review/script.sh`)).mode & 0o777).toBe(0o744);
+        expect(
+          (yield* manager.previewCopy({ directory: destination, names: [pkg.name] })).entries[0]
+            ?.status,
+        ).toBe("skill");
+        const recovered = yield* restart;
+        expect((yield* recovered.snapshot).jobs?.at(-1)).toMatchObject({
+          status: "completed",
+          input: { type: "copy", name: "review" },
+        });
+        const original = `${destination}/original`;
+        yield* fs.rename(`${destination}/review`, original);
+        yield* fs.symlink(original, `${destination}/review`);
+        yield* fs.writeFileString(`${original}/keep.txt`, "untouched");
+        yield* recovered.copy({ directory: destination, package: pkg });
+        yield* recovered.drain;
+        expect((yield* fs.lstat(`${destination}/review`)).type).toBe("Directory");
+        expect(yield* fs.readFileString(`${original}/keep.txt`)).toBe("untouched");
+        expect(yield* fs.exists(`${destination}/review/keep.txt`)).toBe(false);
+        yield* fs.writeFileString(`${destination}/review/restore.txt`, "restore on failure");
+        const failing = yield* restartWithFileSystem({
+          ...fs,
+          rename: (from, to) =>
+            from.endsWith("/prepared")
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "rename",
+                  }),
+                )
+              : fs.rename(from, to),
+        });
+        yield* failing.copy({ directory: destination, package: pkg });
+        yield* failing.drain;
+        expect((yield* failing.snapshot).jobs?.at(-1)?.status).toBe("failed");
+        expect(yield* fs.readFileString(`${destination}/review/restore.txt`)).toBe(
+          "restore on failure",
+        );
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+  it.effect("persists managed location detachment before replacing its link", () =>
+    Effect.gen(function* () {
+      const { fs, manager, install, sql, restart } = yield* harness;
+      const destination = yield* fs.makeTempDirectoryScoped({ prefix: "t3-copy-managed-" });
+      yield* install;
+      const skill = (yield* manager.snapshot).skills[0]!;
+      const pkg = yield* manager.exportSkill({ id: skill.id });
+      yield* manager.mutate({
+        type: "target.save",
+        target: { id: "copy-target", label: "Copy target", directory: destination },
+      });
+      yield* manager.mutate({
+        type: "configure",
+        id: skill.id,
+        policy: "pinned",
+        targetIds: ["copy-target"],
+      });
+      yield* manager.drain;
+      expect((yield* fs.lstat(`${destination}/review`)).type).toBe("SymbolicLink");
+      yield* sql`CREATE TRIGGER reject_copy_detachment BEFORE UPDATE ON skill_catalog WHEN json_array_length(json_extract(NEW.payload, '$.skills[0].bindings')) = 0 BEGIN SELECT RAISE(ABORT, 'fixture'); END`;
+      yield* manager.copy({ directory: destination, package: pkg });
+      yield* manager.drain;
+      expect((yield* manager.snapshot).jobs?.at(-1)?.status).toBe("failed");
+      expect((yield* fs.lstat(`${destination}/review`)).type).toBe("SymbolicLink");
+      yield* sql`DROP TRIGGER reject_copy_detachment`;
+      yield* manager.copy({ directory: destination, package: pkg });
+      yield* manager.drain;
+      const recovered = yield* restart;
+      expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
+      expect((yield* fs.lstat(`${destination}/review`)).type).toBe("Directory");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+  it.effect("rejects corrupt or escaping copies before replacing destination files", () =>
+    Effect.gen(function* () {
+      const { fs, source, manager, directory } = yield* harness;
+      const destination = yield* fs.makeTempDirectoryScoped({ prefix: "t3-copy-validation-" });
+      const pkg = yield* manager.exportSkill({ path: `${source}/SKILL.md` });
+      for (const filePath of [
+        "../escape",
+        "/absolute",
+        "nested/../../escape",
+        "C:\\escape",
+        "nested\\escape",
+      ]) {
+        const result = yield* manager
+          .copy({
+            directory: destination,
+            package: {
+              ...pkg,
+              files: [...pkg.files, { path: filePath, contents: "eA==", mode: 0o644 }],
+            },
+          })
+          .pipe(Effect.result);
+        expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "invalid-package" } });
+      }
+      const corrupt = yield* manager
+        .copy({ directory: destination, package: { ...pkg, digest: "different" } })
+        .pipe(Effect.result);
+      expect(corrupt).toMatchObject({ _tag: "Failure", failure: { reason: "invalid-package" } });
+      for (const location of ["/", "relative", directory]) {
+        expect(
+          yield* manager.copy({ directory: location, package: pkg }).pipe(Effect.result),
+        ).toMatchObject({ _tag: "Failure", failure: { reason: "invalid-package" } });
+      }
+      yield* fs.symlink("/", `${destination}/root-alias`);
+      expect(
+        yield* manager
+          .previewCopy({ directory: `${destination}/root-alias`, names: [pkg.name] })
+          .pipe(Effect.result),
+      ).toMatchObject({ _tag: "Failure", failure: { reason: "invalid-package" } });
+      const staging = `${directory}/userdata/skills/copies`;
+      expect(yield* fs.readDirectory(staging)).toEqual([]);
+      expect(yield* fs.exists(`${destination}/review`)).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+  it.effect(
     "removes empty physical locations across aliases and preserves shared or populated locations",
     () =>
       Effect.gen(function* () {

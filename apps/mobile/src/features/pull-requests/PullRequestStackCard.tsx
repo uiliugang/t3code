@@ -1,7 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { View } from "react-native";
-import { useOpenWorkspaceDetail } from "../layout/useOpenWorkspaceDetail";
 import { AppText as Text } from "../../components/ui/AppText";
 import { PullRequestCardGroup, PullRequestCardRow } from "./PullRequestControls";
 import { pullRequestLayerParams } from "./pullRequestStack";
@@ -16,7 +16,7 @@ export function PullRequestStackCard(props: {
   readonly state: PullRequestStackState;
 }) {
   const t = useUiTranslation();
-  const openDetail = useOpenWorkspaceDetail();
+  const navigation = useNavigation();
   const [expanded, setExpanded] = useState(false);
   const stack = props.state.stack;
   if (!stack) {
@@ -30,7 +30,7 @@ export function PullRequestStackCard(props: {
         <PullRequestCardRow
           title={t("Stack")}
           icon={PullRequestGlyph.stack}
-          value={`${summary.position} of ${summary.size}`}
+          value={t("{position} of {count}", { position: summary.position, count: summary.size })}
           last
         />
       </PullRequestCardGroup>
@@ -42,7 +42,7 @@ export function PullRequestStackCard(props: {
       <PullRequestCardRow
         title={t("Stack")}
         icon={PullRequestGlyph.stack}
-        value={`${position} of ${stack.layers.length}`}
+        value={t("{position} of {count}", { position, count: stack.layers.length })}
         accessibilityLabel={t("Stack, {position} of {count}{status}", {
           position,
           count: stack.layers.length,
@@ -66,7 +66,7 @@ export function PullRequestStackCard(props: {
                   title={layer.title ?? layer.headBranch}
                   icon={status.icon}
                   tint={status.tint}
-                  value={selected ? "Current" : status.label}
+                  value={t(selected ? "Current" : status.label)}
                   detail={t("#{number} · {value} of {count}", {
                     number: String(layer.number),
                     value: String(index + 1),
@@ -76,12 +76,14 @@ export function PullRequestStackCard(props: {
                     selected
                       ? undefined
                       : () =>
-                          openDetail({
-                            name: "PullRequest",
-                            params: withKnownPullRequestSummary(
-                              pullRequestLayerParams(props.params, layer.number),
+                          navigation.dispatch(
+                            StackActions.push(
+                              "PullRequest",
+                              withKnownPullRequestSummary(
+                                pullRequestLayerParams(props.params, layer.number),
+                              ),
                             ),
-                          })
+                          )
                   }
                   last={index === stack.layers.length - 1}
                 />

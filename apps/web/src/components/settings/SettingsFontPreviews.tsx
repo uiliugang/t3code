@@ -30,24 +30,25 @@ const PROMPT_PREVIEW_TEXT =
 function noop() {}
 
 export function PromptFontPreview() {
+  const t = useUiTranslation();
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
-  const [prompt, setPrompt] = useState(PROMPT_PREVIEW_TEXT);
-  const [cursor, setCursor] = useState(PROMPT_PREVIEW_TEXT.length);
-  const onChange = (nextValue: string, nextCursor: number) => {
-    setPrompt(nextValue);
-    setCursor(nextCursor);
+  const [draft, setDraft] = useState<{ value: string; cursor: number } | null>(null);
+  const prompt = draft?.value ?? t(PROMPT_PREVIEW_TEXT);
+  const cursor = draft?.cursor ?? prompt.length;
+  const onChange = (value: string, cursor: number) => {
+    setDraft({ value, cursor });
   };
   return (
     <div className="mt-1 mb-2 rounded-lg border border-border bg-background px-3 py-2">
       <ComposerPromptEditor
-        ariaLabel="Prompt font preview"
+        ariaLabel={t("Prompt font preview")}
         editorRef={editorRef}
         value={prompt}
         cursor={cursor}
         contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
         skills={PREVIEW_SKILLS}
         disabled={false}
-        placeholder={DEFAULT_COMPOSER_PLACEHOLDER}
+        placeholder={t(DEFAULT_COMPOSER_PLACEHOLDER)}
         className="max-h-42"
         onChange={onChange}
         onPaste={noop}

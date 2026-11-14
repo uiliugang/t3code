@@ -254,7 +254,7 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
       );
       yield* enrich;
       expect(requests).toHaveLength(1);
-    }).pipe(Effect.scoped),
+    }),
   );
 
   it.effect.each([
@@ -312,7 +312,7 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
         );
         yield* check;
         expect(requests).toHaveLength(3);
-      }).pipe(Effect.scoped),
+      }),
   );
 
   it.effect.each([
@@ -332,7 +332,7 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
         ),
       );
       expect((yield* resolve()).update?.lockKey).toBe(row.lockKey);
-    }).pipe(Effect.scoped),
+    }),
   );
 
   it.effect("automatic refresh rereads the native channel while preserving both caches", () =>
@@ -418,7 +418,7 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
         ]);
         expect(f.installationReads()).toBe(1);
       }
-    }).pipe(Effect.scoped),
+    }),
   );
 
   it.effect("bounds stalled feed bodies and skips disabled update checks", () =>
@@ -448,6 +448,6 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
       yield* TestClock.adjust("4 seconds");
       expect((yield* Fiber.join(pending)).versionAdvisory?.status).toBe("unknown");
       expect(requests).toBe(1);
-    }).pipe(Effect.scoped),
+    }),
   );
 });

@@ -117,7 +117,48 @@ export const ManagedSkill = Schema.Struct({
   ),
 });
 export type ManagedSkill = typeof ManagedSkill.Type;
+export const SkillCopySource = Schema.Union([
+  Schema.Struct({ id: SkillKey }),
+  Schema.Struct({ path: Schema.String }),
+]);
+export type SkillCopySource = typeof SkillCopySource.Type;
+export const SkillCopyPackage = Schema.Struct({
+  name: SkillKey,
+  digest: SkillKey,
+  files: Schema.Array(
+    Schema.Struct({
+      path: Schema.String,
+      contents: Schema.String.check(Schema.isMaxLength(36 * 1024 * 1024)),
+      mode: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 0o777 })),
+    }),
+  ).check(Schema.isMaxLength(1000)),
+});
+export type SkillCopyPackage = typeof SkillCopyPackage.Type;
+export const SkillCopyPreviewInput = Schema.Struct({
+  directory: Schema.String,
+  names: Schema.Array(SkillKey).check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+});
+export type SkillCopyPreviewInput = typeof SkillCopyPreviewInput.Type;
+export const SkillCopyPreview = Schema.Struct({
+  directory: Schema.String,
+  entries: Schema.Array(
+    Schema.Struct({ name: SkillKey, status: Schema.Literals(["new", "skill", "directory"]) }),
+  ),
+});
+export type SkillCopyPreview = typeof SkillCopyPreview.Type;
+export const SkillCopyInput = Schema.Struct({
+  directory: Schema.String,
+  package: SkillCopyPackage,
+});
+export type SkillCopyInput = typeof SkillCopyInput.Type;
 export const SkillAction = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("copy"),
+    name: SkillKey,
+    directory: Schema.String,
+    digest: SkillKey,
+    workKey: SkillKey,
+  }),
   Schema.Struct({ type: Schema.Literal("refresh") }),
   Schema.Struct({
     type: Schema.Literal("install"),

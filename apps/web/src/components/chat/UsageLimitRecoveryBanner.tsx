@@ -1,3 +1,5 @@
+import { getClientSettings } from "../../hooks/useSettings";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import {
   type OrchestrationV2LimitRecovery,
   type OrchestrationV2LimitRecoveryUpdate,
@@ -35,6 +37,8 @@ type RecoveryProps = {
 };
 
 export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBannerStackItem {
+  const language = getClientSettings().uiLanguage;
+  const t = translateUi.bind(null, language);
   const {
     runId,
     errorCode,
@@ -61,15 +65,17 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
       ? snoozedUntil
       : resetAt;
   const resetDescription = displayAt
-    ? `${resumes ? "Resumes" : "Resets"} ${formatUpcomingTimestamp(displayAt, timestampFormat)}`
-    : "Reset time unavailable; retry manually";
+    ? t(resumes ? "Resumes {time}" : "Resets {time}", {
+        time: formatUpcomingTimestamp(displayAt, timestampFormat, undefined, undefined, language),
+      })
+    : t("Reset time unavailable; retry manually");
   if (!chatGptLimit) {
     return {
       id: `usage-limit-recovery:${runId}`,
       variant: "warning",
       group: "environment",
       icon: <GaugeIcon />,
-      title: "Usage limit reached",
+      title: t("Usage limit reached"),
       description: resetDescription,
       actions: recoveryActions,
     };
