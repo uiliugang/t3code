@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/ai";
 import * as WorkItems from "../../../work-items/WorkItemService.ts";
+import * as DeliveryAutomation from "../../../work-items/DeliveryAutomationService.ts";
 import * as Threads from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as Invocation from "../../McpInvocationContext.ts";
@@ -55,6 +56,7 @@ it.effect("refuses a task participant whose runtime exceeds the calling agent", 
           }),
         ),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(Layer.mock(DeliveryAutomation.DeliveryAutomationService)({})),
       ),
     ),
     Effect.provideService(Invocation.McpInvocationContext, {

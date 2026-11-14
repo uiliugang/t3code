@@ -38,6 +38,7 @@ import { PullRequestReviewGuideService } from "../pullRequest/PullRequestReviewG
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
 import { WorkItemService } from "../work-items/WorkItemService.ts";
+import { DeliveryAutomationService } from "../work-items/DeliveryAutomationService.ts";
 import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { SkillManager } from "../skills/SkillManager.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -78,6 +79,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(RemoteDelegation)({}),
   Layer.mock(ScheduledTaskService)({}),
   Layer.mock(WorkItemService)({}),
+  Layer.mock(DeliveryAutomationService)({}),
   Layer.mock(SecretRequests)({}),
   Layer.mock(SkillManager)({}),
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-agent-context-budget-" }),

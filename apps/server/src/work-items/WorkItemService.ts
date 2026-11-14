@@ -28,7 +28,10 @@ import {
 } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { delegatedTaskProgress } from "@t3tools/provider-core/server/subagentProjection";
-import { latestRootProviderFailure } from "@t3tools/shared/orchestrationV2ThreadError";
+import {
+  latestRootProviderFailure,
+  orchestrationV2WorktreePending,
+} from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Digest from "effect/crypto/Digest";
@@ -553,6 +556,19 @@ const make = Effect.gen(function* () {
                   return;
                 }
                 if (!execution.stopRequested) {
+                  if (execution.sideChatOf !== undefined) {
+                    const source = yield* Effect.result(
+                      threads.getThreadRecords(execution.sideChatOf, ["runs"]),
+                    );
+                    if (
+                      source._tag === "Success" &&
+                      orchestrationV2WorktreePending(
+                        source.success.thread.worktreePath,
+                        source.success.runs,
+                      )
+                    )
+                      return;
+                  }
                   const caller =
                     row.caller_thread_id === null
                       ? null

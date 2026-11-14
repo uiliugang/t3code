@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   CommandId,
   type EnvironmentId,
@@ -42,7 +43,7 @@ export function ThreadIssueCreationButton({
   const [choosing, setChoosing] = useState(false);
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const [itemId, setItemId] = useState<WorkItemId | null>(null);
   const task = useEnvironmentQuery(
     itemId ? serverEnvironment.workItemsLive({ environmentId, input: { id: itemId } }) : null,
@@ -60,7 +61,7 @@ export function ThreadIssueCreationButton({
   };
   const run = async (source: IssueSource) => {
     setBusy(true);
-    setFailed(false);
+    setFailed(null);
     const result = await create({
       environmentId,
       input: { commandId: commandId.current, threadId, source },
@@ -71,7 +72,10 @@ export function ThreadIssueCreationButton({
       setChoosing(false);
       const execution = result.value.item.executions.at(-1);
       if (execution?.sideChatOf !== undefined) await openSideChat(execution.threadId);
-    } else setFailed(true);
+    } else {
+      const error = squashAtomCommandFailure(result);
+      setFailed(error instanceof Error ? error.message : "Could not create issue.");
+    }
   };
   if (config?.workItemDelivery !== true) return null;
   if (!itemId && linked.data?.items.some((item) => item.issue)) return null;
@@ -143,7 +147,7 @@ export function ThreadIssueCreationButton({
       ) : null}
       {failed ? (
         <p role="alert" className="text-xs text-destructive">
-          {t("Could not create issue.")}
+          {t(failed)}
         </p>
       ) : null}
     </div>

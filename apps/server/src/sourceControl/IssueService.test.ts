@@ -215,6 +215,17 @@ describe("IssueService", () => {
           ).toBe("456");
           expect(
             (yield* service
+              .read({
+                provider: "meituan",
+                projectId: projects[0]!.id,
+                scope: "456",
+                host: "changed.example",
+                id: "1",
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-target");
+          expect(
+            (yield* service
               .read({ provider: "meituan", projectId: projects[0]!.id, id: "1" })
               .pipe(Effect.flip)).reason,
           ).toBe("invalid-target");

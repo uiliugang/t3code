@@ -16,6 +16,7 @@ export const IssueTarget = Schema.Struct({
   projectId: ProjectId,
   provider: IssueProvider,
   scope: Schema.optionalKey(TrimmedNonEmptyString),
+  host: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(253))),
 });
 export const IssueSourcesInput = Schema.Struct({
   projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(500)),
