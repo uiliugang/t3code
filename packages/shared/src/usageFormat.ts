@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 
 import type { UsageContractMismatch } from "./usageMerge.ts";
+import { translateUi, type UiLocale } from "./uiLocale.ts";
 
 const CURRENCY = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -99,9 +100,14 @@ export function formatUsageContractMismatch(
     : `This client is older than the server on ${environmentLabel}; its usage is excluded from totals.`;
 }
 
-export function formatDayShort(day: string): string {
+export function formatDayShort(day: string, language: UiLocale = "en"): string {
   const [year, month, dayOfMonth] = day.split("-").map((part) => Number(part));
   if (year === undefined || month === undefined || dayOfMonth === undefined) return day;
+  if (language !== "en") {
+    return dateTimeFormatter(language, { month: "short", day: "numeric", timeZone: "UTC" }).format(
+      new Date(Date.UTC(year, month - 1, dayOfMonth)),
+    );
+  }
   const MONTHS = [
     "Jan",
     "Feb",
@@ -163,7 +169,9 @@ export function enumerateHourStarts(sinceTime: string, untilTime: string): reado
 }
 
 function hourOptions(hour12: boolean): Intl.DateTimeFormatOptions {
-  return hour12 ? { hour: "numeric" } : { hour: "2-digit", hourCycle: "h23" };
+  return hour12
+    ? { hour: "numeric", hourCycle: "h12" }
+    : { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 }
 
 function formatHour(formatter: Intl.DateTimeFormat, date: Date, hour12: boolean): string {
@@ -171,7 +179,7 @@ function formatHour(formatter: Intl.DateTimeFormat, date: Date, hour12: boolean)
   // Rolling buckets can start between whole hours, but their labels always name the hour.
   return formatter
     .formatToParts(date)
-    .map((part) => (part.type === "hour" ? `${part.value}:00` : part.value))
+    .map((part) => (part.type === "minute" ? "00" : part.value))
     .join("");
 }
 
@@ -179,11 +187,16 @@ function formatHour(formatter: Intl.DateTimeFormat, date: Date, hour12: boolean)
  * Repeated wall-clock hours during a fall-back transition include their short zone name so the
  * two distinct buckets remain distinguishable.
  */
-export function formatHourShort(hourStart: string, timeZone?: string, hour12 = true): string {
+export function formatHourShort(
+  hourStart: string,
+  timeZone?: string,
+  hour12 = true,
+  language: UiLocale = "en",
+): string {
   const instant = new Date(hourStart);
   if (Number.isNaN(instant.getTime())) return hourStart;
   const options = timeZone === undefined ? {} : { timeZone };
-  const hourFormat = dateTimeFormatter("en-US", {
+  const hourFormat = dateTimeFormatter(language === "en" ? "en-US" : language, {
     ...options,
     ...hourOptions(hour12),
   });
@@ -201,7 +214,7 @@ export function formatHourShort(hourStart: string, timeZone?: string, hour12 = t
   );
 
   if (!isRepeatedHour) return formatHour(hourFormat, instant, hour12);
-  const zonedHourFormat = dateTimeFormatter("en-US", {
+  const zonedHourFormat = dateTimeFormatter(language === "en" ? "en-US" : language, {
     ...options,
     ...hourOptions(hour12),
     timeZoneName: "short",
@@ -209,10 +222,15 @@ export function formatHourShort(hourStart: string, timeZone?: string, hour12 = t
   return formatHour(zonedHourFormat, instant, hour12);
 }
 
-export function formatDateTimeShort(instant: string, timeZone?: string, hour12 = true): string {
+export function formatDateTimeShort(
+  instant: string,
+  timeZone?: string,
+  hour12 = true,
+  language: UiLocale = "en",
+): string {
   const date = new Date(instant);
   if (Number.isNaN(date.getTime())) return instant;
-  const dateHourFormat = dateTimeFormatter("en-US", {
+  const dateHourFormat = dateTimeFormatter(language === "en" ? "en-US" : language, {
     ...(timeZone === undefined ? {} : { timeZone }),
     month: "short",
     day: "numeric",
@@ -226,11 +244,12 @@ export function formatRelativeHourShort(
   relativeTo: string,
   timeZone?: string,
   hour12 = true,
+  language: UiLocale = "en",
 ): string {
   const instant = new Date(hourStart);
   const reference = new Date(relativeTo);
   if (Number.isNaN(instant.getTime()) || Number.isNaN(reference.getTime())) {
-    return formatDateTimeShort(hourStart, timeZone, hour12);
+    return formatDateTimeShort(hourStart, timeZone, hour12, language);
   }
 
   const dayFormat = dateTimeFormatter("en-CA", {
@@ -242,11 +261,11 @@ export function formatRelativeHourShort(
   const instantDay = Date.parse(`${dayFormat.format(instant)}T00:00:00Z`);
   const referenceDay = Date.parse(`${dayFormat.format(reference)}T00:00:00Z`);
   const calendarDaysAgo = Math.round((referenceDay - instantDay) / (24 * HOUR_MS));
-  const hour = formatHourShort(hourStart, timeZone, hour12);
+  const hour = formatHourShort(hourStart, timeZone, hour12, language);
 
-  if (calendarDaysAgo === 0) return `${hour} today`;
-  if (calendarDaysAgo === 1) return `${hour} yesterday`;
-  return formatDateTimeShort(hourStart, timeZone, hour12);
+  if (calendarDaysAgo === 0) return translateUi(language, "{time} today", { time: hour });
+  if (calendarDaysAgo === 1) return translateUi(language, "{time} yesterday", { time: hour });
+  return formatDateTimeShort(hourStart, timeZone, hour12, language);
 }
 
 export function makeWindow(

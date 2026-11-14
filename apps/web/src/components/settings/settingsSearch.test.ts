@@ -397,6 +397,7 @@ describe("movedSettingsPath", () => {
   });
 
   it("leaves current pages alone", () => {
+    expect(movedSettingsPath("/settings/appearance", "language")).toBe("/settings/general");
     expect(movedSettingsPath("/settings/general", "time-format")).toBeNull();
     expect(movedSettingsPath("/settings/projects", "project-defaults")).toBeNull();
     expect(movedSettingsPath("/settings/connections", "remote-environments")).toBeNull();
@@ -408,7 +409,7 @@ describe("localized settings search", () => {
   it("finds translated settings without changing their navigation targets", () => {
     for (const query of ["语言", "简体中文", "language"]) {
       expect(searchSettings(query).find((item) => item.id === "language")?.to).toBe(
-        "/settings/appearance",
+        "/settings/general",
       );
     }
     expect(searchSettings("字体").some((item) => item.id === "interface-font")).toBe(true);

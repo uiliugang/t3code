@@ -1,3 +1,4 @@
+import { getClientSettings } from "../hooks/useSettings";
 import {
   foldSearchQuery,
   PALETTE_SECONDARY_LIMIT,
@@ -213,6 +214,8 @@ export interface CommandPaletteActionItem extends CommandPaletteItem {
   readonly run: () => Promise<void>;
   /** A pin toggle on the row, also reached with the pin shortcut while the row is highlighted. */
   readonly pin?: CommandPaletteItemPin;
+  /** Set on toggle rows; exposed to assistive technology as `aria-checked`. */
+  readonly checked?: boolean;
 }
 
 export interface CommandPaletteItemPin {
@@ -486,6 +489,8 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         description,
         timestamp: formatRelativeTimeLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+          undefined,
+          getClientSettings().uiLanguage,
         ),
         icon: input.icon,
       },

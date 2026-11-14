@@ -25,6 +25,9 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.providerAuthRemoveMethod]: AuthProvidersManageScope,
   [WS_METHODS.skillsMutate]: AuthProvidersManageScope,
   [WS_METHODS.skillsInspect]: AuthProvidersManageScope,
+  [WS_METHODS.skillsExport]: AuthProvidersManageScope,
+  [WS_METHODS.skillsPreviewCopy]: AuthProvidersManageScope,
+  [WS_METHODS.skillsCopy]: AuthProvidersManageScope,
   [WS_METHODS.projectsImportFolders]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsExportConfiguration]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsImportConfiguration]: AuthSourceControlWriteScope,
@@ -86,7 +89,10 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   // Starts an agent session on this environment that can read its logs and database.
   [WS_METHODS.serverPrepareTriage]: AuthOrchestrationOperateScope,
   [WS_METHODS.workItemsDiscover]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workItemsGenerateDraft]: AuthOrchestrationOperateScope,
   [WS_METHODS.workItemsMutate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workItemsCreateIssue]: AuthSourceControlWriteScope,
+  [WS_METHODS.workItemsRefreshDelivery]: AuthSourceControlWriteScope,
   [WS_METHODS.scheduledTasksUpsert]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksSetEnabled]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksDelete]: AuthOrchestrationOperateScope,
@@ -111,6 +117,16 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  if (method === WS_METHODS.workItemsCreateIssue || method === WS_METHODS.workItemsRefreshDelivery)
+    return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
+  if (
+    method === WS_METHODS.workItemsMutate &&
+    typeof input === "object" &&
+    input !== null &&
+    "type" in input &&
+    ["confirm_scope", "completion_state", "reopen_delivery"].includes(String(input.type))
+  )
+    return [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
   if (method === WS_METHODS.wechatMutate)
     return [AuthAccessWriteScope, AuthOrchestrationOperateScope];
   if (

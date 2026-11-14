@@ -342,9 +342,9 @@ export function CommandPalette(props: {
       {
         key: "workItems",
         kind: "action",
-        title: t("Task board"),
+        title: t("Requirements board"),
         searchTerms: ["kanban", "tasks", "agents", "任务", "看板"],
-        run: () => navigation.navigate("WorkItems"),
+        run: () => navigation.navigate("Requirements"),
       },
       {
         key: "scheduledTasks",

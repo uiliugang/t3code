@@ -4,8 +4,12 @@ import {
   WorkItemCommandInput,
   WorkItemMutationResult,
   WorkItemDiscoverInput,
+  WorkItemDraftInput,
+  WorkItemDraft,
   WorkItemDiscoverResult,
   WorkItemError,
+  WorkItemCreateIssueInput,
+  WorkItemRefreshDeliveryInput,
 } from "./workItem.ts";
 import { WechatError, WechatMutation, WechatSendInput, WechatState } from "./wechat.ts";
 import {
@@ -38,6 +42,11 @@ import {
   SkillManagerError,
   SkillInspect,
   SkillInspection,
+  SkillCopySource,
+  SkillCopyPackage,
+  SkillCopyPreviewInput,
+  SkillCopyPreview,
+  SkillCopyInput,
 } from "./skills.ts";
 import {
   McpAppCallToolInput,
@@ -618,6 +627,9 @@ export const WS_METHODS = {
   skillsSubscribe: "skills.subscribe",
   skillsMutate: "skills.mutate",
   skillsInspect: "skills.inspect",
+  skillsExport: "skills.export",
+  skillsPreviewCopy: "skills.previewCopy",
+  skillsCopy: "skills.copy",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
   serverReclaimDatabaseSpace: "server.reclaimDatabaseSpace",
@@ -656,6 +668,9 @@ export const WS_METHODS = {
   workItemsSubscribe: "workItems.subscribe",
   workItemsMutate: "workItems.mutate",
   workItemsDiscover: "workItems.discover",
+  workItemsGenerateDraft: "workItems.generateDraft",
+  workItemsCreateIssue: "workItems.createIssue",
+  workItemsRefreshDelivery: "workItems.refreshDelivery",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
   scheduledTasksSetEnabled: "scheduledTasks.setEnabled",
@@ -701,6 +716,7 @@ export const WS_METHODS = {
   pullRequestsInvalidate: "pullRequests.invalidate",
   pullRequestsReportState: "pullRequests.reportState",
   pullRequestsSubscribeRefreshes: "pullRequests.subscribeRefreshes",
+  pullRequestsSubscribeLinkedThreadRefreshes: "pullRequests.subscribeLinkedThreadRefreshes",
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
   pullRequestsSendReviewLink: "pullRequests.sendReviewLink",
@@ -961,6 +977,21 @@ const WsSkillsInspectRpc = Rpc.make(WS_METHODS.skillsInspect, {
 });
 const WsSkillsMutateRpc = Rpc.make(WS_METHODS.skillsMutate, {
   payload: SkillMutation,
+  success: Schema.Void,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsExportRpc = Rpc.make(WS_METHODS.skillsExport, {
+  payload: SkillCopySource,
+  success: SkillCopyPackage,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsPreviewCopyRpc = Rpc.make(WS_METHODS.skillsPreviewCopy, {
+  payload: SkillCopyPreviewInput,
+  success: SkillCopyPreview,
+  error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
+});
+const WsSkillsCopyRpc = Rpc.make(WS_METHODS.skillsCopy, {
+  payload: SkillCopyInput,
   success: Schema.Void,
   error: Schema.Union([SkillManagerError, EnvironmentAuthorizationError]),
 });
@@ -1386,6 +1417,17 @@ const WsPullRequestsSubscribeRefreshesRpc = Rpc.make(WS_METHODS.pullRequestsSubs
   error: EnvironmentAuthorizationError,
   stream: true,
 });
+
+// Separate from the refreshes above so linked-thread changes don't refetch forge-backed reads.
+const WsPullRequestsSubscribeLinkedThreadRefreshesRpc = Rpc.make(
+  WS_METHODS.pullRequestsSubscribeLinkedThreadRefreshes,
+  {
+    payload: Schema.Struct({}),
+    success: NonNegativeInt,
+    error: EnvironmentAuthorizationError,
+    stream: true,
+  },
+);
 
 // Fetch reviewer candidates only when the menu opens to avoid unused host requests.
 const WsPullRequestsReviewerCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsReviewerCandidates, {
@@ -2310,6 +2352,21 @@ const WsWorkItemsDiscoverRpc = Rpc.make(WS_METHODS.workItemsDiscover, {
   success: WorkItemDiscoverResult,
   error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
 });
+const WsWorkItemsGenerateDraftRpc = Rpc.make(WS_METHODS.workItemsGenerateDraft, {
+  payload: WorkItemDraftInput,
+  success: WorkItemDraft,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsCreateIssueRpc = Rpc.make(WS_METHODS.workItemsCreateIssue, {
+  payload: WorkItemCreateIssueInput,
+  success: WorkItemMutationResult,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsRefreshDeliveryRpc = Rpc.make(WS_METHODS.workItemsRefreshDelivery, {
+  payload: WorkItemRefreshDeliveryInput,
+  success: WorkItemMutationResult,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
 
 const WsScheduledTasksSubscribeRpc = Rpc.make(WS_METHODS.scheduledTasksSubscribe, {
   payload: ScheduledTaskListInput,
@@ -2431,6 +2488,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsSubscribeRpc,
   WsSkillsMutateRpc,
   WsSkillsInspectRpc,
+  WsSkillsExportRpc,
+  WsSkillsPreviewCopyRpc,
+  WsSkillsCopyRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
   WsServerReclaimDatabaseSpaceRpc,
@@ -2467,6 +2527,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkItemsSubscribeRpc,
   WsWorkItemsMutateRpc,
   WsWorkItemsDiscoverRpc,
+  WsWorkItemsGenerateDraftRpc,
+  WsWorkItemsCreateIssueRpc,
+  WsWorkItemsRefreshDeliveryRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,
   WsScheduledTasksSetEnabledRpc,
@@ -2510,6 +2573,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsInvalidateRpc,
   WsPullRequestsReportStateRpc,
   WsPullRequestsSubscribeRefreshesRpc,
+  WsPullRequestsSubscribeLinkedThreadRefreshesRpc,
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
   WsPullRequestsSendReviewLinkRpc,

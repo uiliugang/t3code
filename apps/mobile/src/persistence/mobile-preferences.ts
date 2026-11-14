@@ -89,6 +89,7 @@ const ThreadProject = Schema.Struct({
 const isThreadProject = Schema.is(ThreadProject);
 
 export interface Preferences {
+  readonly requirementCollapsedGroups?: readonly string[];
   readonly branchIssuesVisible?: boolean;
   readonly branchIssuesExpanded?: boolean;
   readonly branchIssuesShowEmpty?: boolean;
@@ -188,6 +189,7 @@ const isPullRequestMergeMethod = Schema.is(PullRequestMergeMethod);
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    requirementCollapsedGroups?: readonly string[];
     branchIssuesVisible?: boolean;
     branchIssuesExpanded?: boolean;
     branchIssuesShowEmpty?: boolean;
@@ -246,6 +248,11 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (Array.isArray(parsed.navigationTabOrder)) {
     preferences.navigationTabOrder = parsed.navigationTabOrder.filter(
       (tab): tab is string => typeof tab === "string",
+    );
+  }
+  if (Array.isArray(parsed.requirementCollapsedGroups)) {
+    preferences.requirementCollapsedGroups = parsed.requirementCollapsedGroups.filter(
+      (value): value is string => typeof value === "string",
     );
   }
 

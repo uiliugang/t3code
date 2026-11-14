@@ -1,5 +1,5 @@
 import { type TimestampFormat } from "@t3tools/contracts/settings";
-import { translateUi } from "@t3tools/shared/uiLocale";
+import { translateUi, type UiLocale } from "@t3tools/shared/uiLocale";
 
 function getTimestampFormatOptions(
   timestampFormat: TimestampFormat,
@@ -122,14 +122,25 @@ function ordinalSuffix(day: number): string {
 export function formatChatTimestampTooltip(
   isoDate: string,
   timestampFormat: TimestampFormat,
+  language: UiLocale = "en",
 ): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
   const time = formatShortTimestamp(isoDate, timestampFormat);
+  if (language === "zh-CN") {
+    return `${new Intl.DateTimeFormat(language, { year: "numeric", month: "long", day: "numeric" }).format(date)} ${time}`;
+  }
   const day = date.getDate();
   const month = monthNameFormatter.format(date);
   const year = date.getFullYear();
   return `${time}, ${day}${ordinalSuffix(day)} ${month} ${year}`;
+}
+
+export function formatFullTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {
+  return new Date(isoDate).toLocaleString(
+    undefined,
+    timestampFormat === "locale" ? undefined : { hour12: timestampFormat === "12-hour" },
+  );
 }
 
 export function formatShortTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {
@@ -187,6 +198,7 @@ export function formatDayAwareTimestamp(
   timestampFormat: TimestampFormat,
   nowMs: number = Date.now(),
   timeZone?: string,
+  language: UiLocale = "en",
 ): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
@@ -197,7 +209,7 @@ export function formatDayAwareTimestamp(
   const dayDiff = today.index - messageDay.index;
 
   if (dayDiff <= 0) return time;
-  if (dayDiff === 1) return `yesterday at ${time}`;
+  if (dayDiff === 1) return translateUi(language, "yesterday at {time}", { time });
   return `${formatNumericDate(date, messageDay.year === today.year, timeZone)} ${time}`;
 }
 
@@ -207,6 +219,7 @@ export function formatUpcomingTimestamp(
   timestampFormat: TimestampFormat,
   nowMs: number = Date.now(),
   timeZone?: string,
+  language: UiLocale = "en",
 ): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
@@ -216,9 +229,10 @@ export function formatUpcomingTimestamp(
   const targetDay = calendarDay(date, timeZone);
   const dayDiff = targetDay.index - today.index;
 
-  if (dayDiff < 0) return formatDayAwareTimestamp(isoDate, timestampFormat, nowMs, timeZone);
+  if (dayDiff < 0)
+    return formatDayAwareTimestamp(isoDate, timestampFormat, nowMs, timeZone, language);
   if (dayDiff === 0) return time;
-  if (dayDiff === 1) return `tomorrow at ${time}`;
+  if (dayDiff === 1) return translateUi(language, "tomorrow at {time}", { time });
   return `${formatNumericDate(date, targetDay.year === today.year, timeZone)} ${time}`;
 }
 
@@ -282,10 +296,18 @@ export function formatRelativeTime(
   return elapsedMs === null ? null : formatRelativeElapsed(elapsedMs);
 }
 
-export function formatRelativeTimeLabel(isoDate: string, nowMs: number = Date.now()) {
-  const relative = formatRelativeTime(isoDate, nowMs);
-  if (!relative) return "";
-  return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
+export function formatRelativeTimeLabel(
+  isoDate: string,
+  nowMs: number = Date.now(),
+  language: UiLocale = "en",
+) {
+  const elapsed = relativeTimeElapsedMs(isoDate, nowMs);
+  if (elapsed === null) return "";
+  const t = translateUi.bind(null, language);
+  const relative = formatRelativeElapsed(elapsed, t);
+  return relative.suffix
+    ? t("{value} {suffix}", { value: relative.value, suffix: relative.suffix })
+    : relative.value;
 }
 
 export function formatElapsedDurationLabel(isoDate: string, nowMs: number = Date.now()): string {
@@ -309,10 +331,29 @@ export function formatElapsedDurationLabel(isoDate: string, nowMs: number = Date
 }
 
 /** Pass nowMs to match a parent-driven render tick. */
-export function formatExpiresInLabel(isoDate: string, nowMs: number = Date.now()): string {
+export function formatExpiresInLabel(
+  isoDate: string,
+  nowMs: number = Date.now(),
+  language: UiLocale = "en",
+): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
   const diffMs = date.getTime() - nowMs;
+  if (language === "zh-CN") {
+    if (diffMs <= 0) return "已过期";
+    if (diffMs < 5000) return "即将过期";
+    const seconds = Math.floor(diffMs / 1000);
+    const units = [
+      [Math.floor(seconds / 86400), "天"],
+      [Math.floor(seconds / 3600) % 24, "小时"],
+      [Math.floor(seconds / 60) % 60, "分钟"],
+      [seconds % 60, "秒"],
+    ] as const;
+    return `${units
+      .filter(([count]) => count > 0)
+      .map(([count, unit]) => `${count}${unit}`)
+      .join(" ")}后过期`;
+  }
   if (diffMs <= 0) return "Expired";
 
   const totalSeconds = Math.floor(diffMs / 1000);

@@ -1,3 +1,4 @@
+import { useClientSettings } from "../../hooks/useSettings";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
 import {
@@ -32,6 +33,8 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
+import type { ExpandedImagePreview } from "./ExpandedImagePreview";
+import { workGroupImageGallery } from "./markdownImageGallery";
 import { ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
 import { useAssetUrls } from "../../assets/assetUrls";
@@ -206,6 +209,7 @@ export function ViewedImagesTimelineRow({
 }
 
 function WorkEntryLogRow(props: WorkEntryRowProps) {
+  const uiLanguage = useClientSettings((settings) => settings.uiLanguage);
   const { workEntry, workspaceRoot, displayLabel } = props;
   const ctx = use(TimelineRowCtx);
   const { threadRef, onImageExpand, timestampFormat } = ctx;
@@ -251,7 +255,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     // unambiguous. Both read the zone now, since the device's can change.
     const timeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
     const resetTime = resetAt
-      ? `${formatUpcomingTimestamp(resetAt, timestampFormat, undefined, timeZone)} (${timeZone})`
+      ? `${formatUpcomingTimestamp(resetAt, timestampFormat, undefined, timeZone, uiLanguage)} (${timeZone})`
       : null;
     const label = warning
       ? `Usage limit reached.${resetTime ? ` Retry after ${resetTime}.` : ""}`
@@ -355,6 +359,13 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           workspaceRoot,
         })
       : null;
+  const groupViewedImages = groupView?.viewedImages;
+  // Images in this entry's expanded body page through the group's viewed images, like its strip.
+  const expandImage =
+    viewedImage && groupViewedImages
+      ? (preview: ExpandedImagePreview) =>
+          onImageExpand(workGroupImageGallery(groupViewedImages, viewedImagePath, preview))
+      : onImageExpand;
   const canExpand =
     previewText.trim().length > 0 ||
     (workEntry.itemType === "dynamic_tool" && workEntry.toolData !== undefined) ||
@@ -558,7 +569,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             srcFragment={viewedImage.srcFragment}
             workspaceRoot={workspaceRoot}
             maxHeightRem={16}
-            onImageExpand={onImageExpand}
+            onImageExpand={expandImage}
           />
         </WorkLogDetails>
       ) : null}
@@ -582,7 +593,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               cwd={ctx.markdownCwd}
               workspaceRoot={workspaceRoot}
               onOpenToolDiff={ctx.onOpenToolDiff}
-              onImageExpand={ctx.onImageExpand}
+              onImageExpand={expandImage}
               source={ctx.turnItemSource}
             />
           ) : (
@@ -595,7 +606,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   onInitialOutputReady={onInitialOutputReady}
                   projectedItem={workEntry.projectedItem}
                   environmentId={ctx.activeThreadEnvironmentId}
-                  onImageExpand={onImageExpand}
+                  onImageExpand={expandImage}
                   source={ctx.turnItemSource}
                 />
               ) : null}

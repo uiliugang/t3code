@@ -76,6 +76,9 @@ describe("command permissions", () => {
     WS_METHODS.projectsImportFolders,
     WS_METHODS.skillsMutate,
     WS_METHODS.skillsInspect,
+    WS_METHODS.skillsExport,
+    WS_METHODS.skillsPreviewCopy,
+    WS_METHODS.skillsCopy,
     WS_METHODS.providerEndpointValidate,
     WS_METHODS.issuesCreate,
     WS_METHODS.issuesSetState,
@@ -91,7 +94,7 @@ describe("command permissions", () => {
             ? [AuthProvidersManageScope, AuthOrchestrationOperateScope]
             : method === WS_METHODS.issuesCreate || method === WS_METHODS.issuesSetState
               ? [AuthSourceControlWriteScope]
-              : method === WS_METHODS.skillsMutate || method === WS_METHODS.skillsInspect
+              : method.startsWith("skills.")
                 ? [AuthProvidersManageScope]
                 : method === WS_METHODS.projectsImportFolders
                   ? [AuthOrchestrationOperateScope, AuthFilesystemReadScope]
@@ -297,6 +300,7 @@ describe("command permissions", () => {
     WS_METHODS.scheduledTasksDelete,
     WS_METHODS.workItemsMutate,
     WS_METHODS.workItemsDiscover,
+    WS_METHODS.workItemsGenerateDraft,
     WS_METHODS.threadPredictMessage,
     ORCHESTRATION_V2_WS_METHODS.stopWorkflow,
   ])("uses the target grant for both availability and execution of %s", (method) =>

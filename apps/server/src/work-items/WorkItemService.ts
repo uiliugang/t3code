@@ -13,6 +13,9 @@ import {
   WorkItemCandidate,
   WorkItemExecutionId,
   WorkItemId,
+  parseBranchIssueUrl,
+  type BranchIssueRef,
+  type WorkItemDelivery,
   type WorkItemCommandInput,
   type WorkItemDiscoverInput,
   type WorkItemDiscoverResult,
@@ -20,6 +23,8 @@ import {
   type WorkItemListInput,
   type WorkItemListResult,
   type WorkItemMutationResult,
+  type WorkItemDraft,
+  type WorkItemDraftInput,
 } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { delegatedTaskProgress } from "@t3tools/provider-core/server/subagentProjection";
@@ -47,11 +52,18 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { buildWorkItemPrompt, decideWorkItem, executionIsActive } from "./decide.ts";
 import { workItemExecutionScope, WORK_ITEM_UNRELATED_WORK } from "./executionScope.ts";
 import { workItemCodeEvidence } from "./codeEvidence.ts";
+import { decideDelivery } from "./deliveryDecision.ts";
+import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
 export class WorkItemService extends Context.Service<
   WorkItemService,
   {
     readonly get: (id: WorkItemId) => Effect.Effect<WorkItem, WorkItemError>;
+    readonly generateDraft: (
+      input: WorkItemDraftInput,
+    ) => Effect.Effect<WorkItemDraft, WorkItemError>;
     readonly list: (input: WorkItemListInput) => Effect.Effect<WorkItemListResult, WorkItemError>;
     readonly subscribeList: (
       input: WorkItemListInput,
@@ -65,6 +77,18 @@ export class WorkItemService extends Context.Service<
       input: WorkItemDiscoverInput,
     ) => Effect.Effect<WorkItemDiscoverResult, WorkItemError>;
     readonly drain: () => Effect.Effect<void, WorkItemError>;
+    readonly associateIssue: (input: {
+      projectId: ProjectId;
+      threadId: ThreadId;
+      issue: BranchIssueRef;
+      title: string;
+      automatic?: boolean;
+    }) => Effect.Effect<WorkItem, WorkItemError>;
+    readonly recordDelivery: (
+      id: WorkItemId,
+      expectedVersion: number,
+      delivery: WorkItemDelivery,
+    ) => Effect.Effect<WorkItem, WorkItemError>;
   }
 >()("t3/work-items/WorkItemService") {}
 
@@ -112,6 +136,8 @@ const make = Effect.gen(function* () {
   const launches = yield* ThreadLaunchService.ThreadLaunchService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const projects = yield* ProjectStore.ProjectStoreV2;
+  const textGeneration = yield* TextGeneration.TextGeneration;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const scope = yield* Effect.scope;
   const writes = yield* Semaphore.make(1);
   const effects = yield* Semaphore.make(1);
@@ -155,20 +181,31 @@ const make = Effect.gen(function* () {
   const readItems = Effect.fn("WorkItemService.readItems")(function* (input: WorkItemListInput) {
     const limit = (input.limit ?? 50) + 1;
     const projectFilter =
-      input.projectId === undefined ? sql`1 = 1` : sql`project_id = ${input.projectId}`;
+      input.projectId === undefined
+        ? sql`1 = 1`
+        : sql`(project_id = ${input.projectId} OR id IN (SELECT work_item_id FROM work_item_issue_projects WHERE project_id = ${input.projectId}))`;
+    const issueFilter =
+      input.issueUrls !== undefined
+        ? sql`json_extract(item_json, '$.delivery.issue.url') IN ${sql.in(input.issueUrls)}`
+        : input.issueUrl === undefined
+          ? sql`1 = 1`
+          : sql`json_extract(item_json, '$.delivery.issue.url') = ${input.issueUrl}`;
+    const attentionFilter = input.attentionOnly
+      ? sql`(json_extract(item_json, '$.delivery.evidence.anomaly') IS NOT NULL OR json_extract(item_json, '$.delivery.syncError') IS NOT NULL)`
+      : sql`1 = 1`;
     const cursorFilter =
       input.cursor === undefined
         ? sql`1 = 1`
         : sql`(updated_at < ${input.cursor.updatedAt} OR (updated_at = ${input.cursor.updatedAt} AND id < ${input.cursor.id}))`;
     const rows = yield* sql<{
       item_json: string;
-    }>`SELECT item_json FROM work_items WHERE ${projectFilter} AND ${cursorFilter} AND ${input.id === undefined ? sql`1 = 1` : sql`id = ${input.id}`} ORDER BY updated_at DESC, id DESC LIMIT ${limit}`;
+    }>`SELECT item_json FROM work_items WHERE ${projectFilter} AND ${issueFilter} AND ${attentionFilter} AND ${cursorFilter} AND ${input.id === undefined ? sql`1 = 1` : sql`id = ${input.id}`} AND ${input.threadId === undefined ? sql`1 = 1` : sql`EXISTS (SELECT 1 FROM json_each(item_json, '$.sources') WHERE json_extract(value, '$.threadId') = ${input.threadId})`} ORDER BY updated_at DESC, id DESC LIMIT ${limit}`;
     return yield* Effect.forEach(rows, (row) => decodeItem(row.item_json));
   }, Effect.mapError(persistenceError));
   const list = Effect.fn("WorkItemService.list")(function* (input: WorkItemListInput) {
     const items = yield* readItems(input);
     const rows =
-      input.id !== undefined
+      input.id !== undefined || input.issueUrl !== undefined || input.issueUrls !== undefined
         ? []
         : input.projectId === undefined
           ? yield* sql<{
@@ -196,8 +233,39 @@ const make = Effect.gen(function* () {
         updatedAt: item.updatedAt,
         executionCount: item.executions.length,
         activeExecutionCount: item.executions.filter(executionIsActive).length,
+        ...(item.delivery === undefined
+          ? {}
+          : {
+              issue: item.delivery.issue,
+              deliverySummary: {
+                revision: item.delivery.scope.revision,
+                progress: decideDelivery(
+                  item.delivery.issue.provider,
+                  item.delivery.scope,
+                  item.delivery.evidence,
+                ).progress,
+                mergedPullRequests: item.delivery.scope.requiredPullRequests.filter((url) =>
+                  item.delivery?.evidence.pullRequests.some((pr) => pr.url === url && pr.merged),
+                ).length,
+                requiredPullRequests: item.delivery.scope.requiredPullRequests.length,
+                releasedServices: item.delivery.scope.changedServices.filter((service) =>
+                  item.delivery?.evidence.releases.some(
+                    (release) =>
+                      release.completed &&
+                      release.appkey === service.appkey &&
+                      release.target === service.target &&
+                      release.revision === service.revision,
+                  ),
+                ).length,
+                changedServices: item.delivery.scope.changedServices.length,
+                synced: item.delivery.syncedRevision === item.delivery.scope.revision,
+                error: item.delivery.syncError ?? item.delivery.evidence.anomaly ?? null,
+              },
+            }),
       })),
-      ...(input.id === undefined || page[0] === undefined ? {} : { item: page[0] }),
+      ...((input.id === undefined && input.issueUrl === undefined) || page[0] === undefined
+        ? {}
+        : { item: page[0] }),
       candidates,
       nextCursor: items.length > limit && last ? { updatedAt: last.updatedAt, id: last.id } : null,
     };
@@ -425,6 +493,18 @@ const make = Effect.gen(function* () {
                   ? undefined
                   : yield* decodeCallerLimits(row.caller_limits_json);
               if (row.effect_type === "launch") {
+                if (
+                  execution.deliveryRevision !== undefined &&
+                  (item.delivery?.scope.revision !== execution.deliveryRevision ||
+                    item.delivery.scope.confirmedRevision !== execution.deliveryRevision)
+                ) {
+                  yield* updateExecution(item.id, execution.id, {
+                    status: "cancelled",
+                    error: "The delivery scope changed before this automatic action started.",
+                  });
+                  yield* sql`DELETE FROM work_item_outbox WHERE execution_id = ${execution.id} AND effect_type = 'launch'`;
+                  return;
+                }
                 if (!execution.stopRequested) {
                   const caller =
                     row.caller_thread_id === null
@@ -771,7 +851,16 @@ const make = Effect.gen(function* () {
             }
             if (
               callerThreadId !== undefined &&
-              ["submit", "review", "reopen", "archive", "move"].includes(input.type)
+              [
+                "submit",
+                "review",
+                "reopen",
+                "archive",
+                "move",
+                "completion_state",
+                "reopen_delivery",
+                "unlink_issue_thread",
+              ].includes(input.type)
             ) {
               return yield* new WorkItemError({
                 code: "invalid_request",
@@ -834,6 +923,9 @@ const make = Effect.gen(function* () {
                     ...participant,
                     prompt: "",
                     specRevision: item.specRevision,
+                    ...(input.deliveryRevision === undefined
+                      ? {}
+                      : { deliveryRevision: input.deliveryRevision }),
                     specSnapshot: {
                       description: item.description,
                       constraints: item.constraints,
@@ -862,20 +954,53 @@ const make = Effect.gen(function* () {
                 for (const execution of executions) {
                   yield* sql`INSERT INTO work_item_outbox (execution_id, work_item_id, effect_type, command_id, caller_thread_id, caller_limits_json) VALUES (${execution.id}, ${item.id}, 'launch', ${`work-item:${execution.id}:launch`}, ${callerThreadId ?? null}, ${savedLimitsJson})`;
                 }
-              if (input.type === "stop")
+              if (input.type === "stop" || input.type === "delivery_scope")
                 for (const execution of next.executions.filter(
                   (entry) =>
                     entry.stopRequested &&
                     executionIsActive(entry) &&
-                    (input.executionId === undefined || input.executionId === entry.id),
+                    (input.type !== "stop" ||
+                      input.executionId === undefined ||
+                      input.executionId === entry.id),
                 )) {
                   yield* sql`INSERT INTO work_item_outbox (execution_id, work_item_id, effect_type, command_id, caller_thread_id, caller_limits_json) VALUES (${execution.id}, ${item.id}, 'stop', ${`work-item:${input.commandId}:${execution.id}:stop`}, ${callerThreadId ?? null}, ${savedLimitsJson}) ON CONFLICT(execution_id, effect_type) DO UPDATE SET command_id = excluded.command_id, caller_thread_id = excluded.caller_thread_id, caller_limits_json = excluded.caller_limits_json`;
                 }
             }
+            if (input.type === "link_issue") {
+              const normalized = parseBranchIssueUrl(input.issue.url);
+              if (
+                normalized === null ||
+                normalized.provider !== input.issue.provider ||
+                normalized.repository !== input.issue.repository ||
+                normalized.id !== input.issue.id ||
+                normalized.url !== input.issue.url
+              )
+                return yield* new WorkItemError({
+                  code: "invalid_request",
+                  message: "Use a canonical issue identity.",
+                });
+              const duplicates = yield* sql<{
+                id: string;
+              }>`SELECT id FROM work_items WHERE json_extract(item_json, '$.delivery.issue.url') = ${input.issue.url} AND id <> ${next.id}`;
+              if (duplicates.length > 0)
+                return yield* new WorkItemError({
+                  code: "conflict",
+                  message: "This issue already has a work item. Use its existing record.",
+                });
+            }
             if (input.type === "create" || input.type === "update")
               for (const source of input.sources) {
                 const sourceThread = yield* threads.getThreadShell(source.threadId);
-                if (sourceThread === null || sourceThread.projectId !== next.projectId)
+                const linked =
+                  sourceThread && next.delivery
+                    ? yield* sql<{
+                        project_id: string;
+                      }>`SELECT project_id FROM work_item_issue_projects WHERE work_item_id = ${next.id} AND project_id = ${sourceThread.projectId}`
+                    : [];
+                if (
+                  sourceThread === null ||
+                  (sourceThread.projectId !== next.projectId && linked.length === 0)
+                )
                   return yield* new WorkItemError({
                     code: "invalid_request",
                     message: "Task sources must belong to the same project.",
@@ -886,6 +1011,23 @@ const make = Effect.gen(function* () {
               item: next,
               actor: callerThreadId === undefined ? "user" : "agent",
             });
+            if (
+              (input.type === "update" || input.type === "unlink_issue_thread") &&
+              next.delivery
+            ) {
+              const sourceThreads = yield* Effect.forEach(next.sources, (source) =>
+                threads.getThreadShell(source.threadId),
+              );
+              const projectIds = [
+                ...new Set([
+                  next.projectId,
+                  ...sourceThreads.flatMap((thread) => (thread ? [thread.projectId] : [])),
+                ]),
+              ];
+              yield* sql`DELETE FROM work_item_issue_projects WHERE work_item_id = ${next.id}`;
+              for (const projectId of projectIds)
+                yield* sql`INSERT INTO work_item_issue_projects (work_item_id, project_id) VALUES (${next.id}, ${projectId})`;
+            }
             yield* sql`INSERT INTO work_item_commands (command_id, input_json, result_json) VALUES (${input.commandId}, ${inputJson}, ${yield* encodeItem(next)})`;
             if (next.sources.length > 0)
               yield* sql`DELETE FROM work_item_candidates WHERE project_id = ${next.projectId} AND thread_id IN ${sql.in(next.sources.map((source) => source.threadId))}`;
@@ -896,6 +1038,134 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError(persistenceError));
     yield* notify;
     yield* Queue.offer(pending, undefined);
+    return result;
+  });
+
+  const associateIssue = Effect.fn("WorkItemService.associateIssue")(function* (input: {
+    projectId: ProjectId;
+    threadId: ThreadId;
+    issue: BranchIssueRef;
+    title: string;
+    automatic?: boolean;
+  }) {
+    const result = yield* writes
+      .withPermits(1)(
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const thread = yield* threads.getThreadShell(input.threadId);
+            if (thread === null || thread.projectId !== input.projectId)
+              return yield* new WorkItemError({
+                code: "invalid_request",
+                message: "The issue source must match its conversation project.",
+              });
+            const normalized = parseBranchIssueUrl(input.issue.url);
+            if (normalized === null)
+              return yield* new WorkItemError({
+                code: "invalid_request",
+                message: "Unsupported issue link.",
+              });
+            const rows = yield* sql<{
+              item_json: string;
+            }>`SELECT item_json FROM work_items WHERE json_extract(item_json, '$.delivery.issue.url') = ${normalized.url}`;
+            const existing = rows[0] ? yield* decodeItem(rows[0].item_json) : undefined;
+            if (input.automatic && existing?.delivery?.dismissedThreadIds?.includes(input.threadId))
+              return existing;
+            if (existing?.sources.some((source) => source.threadId === input.threadId))
+              return existing;
+            if (existing !== undefined && existing.sources.length >= 32)
+              return yield* new WorkItemError({
+                code: "invalid_request",
+                message: "This issue already has 32 linked conversations.",
+              });
+            const now = yield* nowIso;
+            const next: WorkItem = existing
+              ? {
+                  ...existing,
+                  ...(existing.delivery
+                    ? {
+                        delivery: {
+                          ...existing.delivery,
+                          dismissedThreadIds: existing.delivery.dismissedThreadIds?.filter(
+                            (id) => id !== input.threadId,
+                          ),
+                        },
+                      }
+                    : {}),
+                  sources: [...existing.sources, { threadId: input.threadId, title: input.title }],
+                  version: existing.version + 1,
+                  updatedAt: now,
+                }
+              : {
+                  id: WorkItemId.make(yield* randomUuidV4),
+                  projectId: input.projectId,
+                  title: input.title.slice(0, 300) || `#${normalized.id}`,
+                  description: "",
+                  constraints: [],
+                  acceptanceCriteria: [],
+                  priority: "P2",
+                  specRevision: 1,
+                  version: 1,
+                  status: "todo",
+                  archived: false,
+                  sources: [{ threadId: input.threadId, title: input.title.slice(0, 300) }],
+                  executions: [],
+                  submission: null,
+                  acceptedAt: null,
+                  createdAt: now,
+                  updatedAt: now,
+                  delivery: {
+                    issue: normalized,
+                    scope: {
+                      revision: 1,
+                      confirmedRevision: null,
+                      requiredPullRequests: [],
+                      changedServices: [],
+                    },
+                    evidence: { pullRequests: [], releases: [], planIds: [], anomaly: null },
+                  },
+                };
+            yield* save(next, "issue.associated", { threadId: input.threadId, issue: normalized });
+            yield* sql`INSERT OR IGNORE INTO work_item_issue_projects (work_item_id, project_id) VALUES (${next.id}, ${input.projectId})`;
+            return next;
+          }),
+        ),
+      )
+      .pipe(Effect.mapError(persistenceError));
+    yield* notify;
+    return result;
+  });
+
+  const recordDelivery = Effect.fn("WorkItemService.recordDelivery")(function* (
+    id: WorkItemId,
+    expectedVersion: number,
+    delivery: WorkItemDelivery,
+  ) {
+    const result = yield* writes
+      .withPermits(1)(
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const current = yield* get(id);
+            if (
+              current.version !== expectedVersion ||
+              current.delivery?.scope.revision !== delivery.scope.revision
+            )
+              return yield* new WorkItemError({
+                code: "conflict",
+                message: "The delivery scope changed during synchronization.",
+              });
+            const next = {
+              ...current,
+              delivery,
+              version: current.version + 1,
+              updatedAt: yield* nowIso,
+            };
+            yield* save(next, "delivery.updated", { delivery });
+            return next;
+          }),
+        ),
+      )
+      .pipe(Effect.mapError(persistenceError));
+    yield* notify;
     return result;
   });
 
@@ -914,20 +1184,16 @@ const make = Effect.gen(function* () {
     Effect.forkIn(scope),
   );
   yield* threads.streamDomainEvents.pipe(
-    Stream.filter(
-      (event) =>
-        [
-          "run.created",
-          "run.updated",
-          "subagent.updated",
-          "runtime-request.updated",
-          "provider-thread.updated",
-          "checkpoint.captured",
-          "thread.deleted",
-        ].includes(event.type) ||
-        (event.type === "message.updated" &&
-          event.payload.role === "user" &&
-          !event.payload.streaming),
+    Stream.filter((event) =>
+      [
+        "run.created",
+        "run.updated",
+        "subagent.updated",
+        "runtime-request.updated",
+        "provider-thread.updated",
+        "checkpoint.captured",
+        "thread.deleted",
+      ].includes(event.type),
     ),
     Stream.runForEach((event) =>
       Ref.update(changedThreads, (ids) => new Set([...ids, event.threadId])).pipe(
@@ -943,7 +1209,40 @@ const make = Effect.gen(function* () {
     Effect.forkIn(scope),
   );
   yield* Queue.offer(pending, undefined);
-  return WorkItemService.of({ get, list, subscribeList, mutate, discover, drain: runPending });
+  return WorkItemService.of({
+    generateDraft: Effect.fn("WorkItemService.generateDraft")(
+      function* (input) {
+        const project = yield* requireProject(input.projectId);
+        const resolved = resolveProjectSettings(
+          yield* settings.getSettings,
+          input.projectId,
+        ).settings;
+        return yield* textGeneration.generateWorkItemDraft({
+          ...input,
+          cwd: project.workspaceRoot,
+          projectTitle: project.title,
+          modelSelection: resolved.textGenerationModelSelection,
+        });
+      },
+      Effect.mapError((cause) =>
+        isWorkItemError(cause)
+          ? cause
+          : new WorkItemError({
+              code: "execution",
+              message: "Could not generate a draft. Try again or fill in the fields manually.",
+              cause,
+            }),
+      ),
+    ),
+    get,
+    list,
+    subscribeList,
+    mutate,
+    discover,
+    drain: runPending,
+    associateIssue,
+    recordDelivery,
+  });
 });
 
 export const layer = Layer.effect(WorkItemService, make);

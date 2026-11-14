@@ -1,3 +1,4 @@
+import { getClientSettings } from "../../hooks/useSettings";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { Dispatch } from "react";
@@ -640,17 +641,23 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   ) : activeThreadSettled ? (
     <ThreadStatusLine
       icon={<CheckCircle2Icon />}
-      label={settledAt ? `Settled ${formatRelativeTimeLabel(settledAt)}` : "Settled"}
+      label={
+        settledAt
+          ? t("Settled {time}", {
+              time: formatRelativeTimeLabel(settledAt, undefined, getClientSettings().uiLanguage),
+            })
+          : t("Settled")
+      }
       clockMinute={nowMinute}
-      actionLabel={isUnsettling ? "Un-settling..." : "Un-settle"}
+      actionLabel={t(isUnsettling ? "Un-settling..." : "Un-settle")}
       actionDisabled={!canOperateThread || isUnsettling}
       onAction={() => void handleUnsettleActiveThreadStable()}
     />
   ) : activeThreadWokeVisible ? (
     <ThreadStatusLine
       icon={<AlarmClockIcon />}
-      label="Woke from snooze"
-      actionLabel="Dismiss"
+      label={t("Woke from snooze")}
+      actionLabel={t("Dismiss")}
       onAction={acknowledgeActiveThreadWokeStable}
     />
   ) : null;

@@ -70,6 +70,8 @@ export const ServerProviderAuth = Schema.Struct({
   subscriptionSharing: Schema.optional(Schema.Boolean),
   profileId: Schema.optional(TrimmedNonEmptyString),
   workspaceId: Schema.optional(TrimmedNonEmptyString),
+  /** Origin of the custom endpoint the instance sends its requests to. */
+  endpoint: Schema.optional(TrimmedNonEmptyString),
 });
 export type ServerProviderAuth = typeof ServerProviderAuth.Type;
 
@@ -711,7 +713,9 @@ export const ServerConfig = Schema.Struct({
   threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
   threadFind: Schema.optionalKey(Schema.Boolean),
   workItems: Schema.optionalKey(Schema.Boolean),
+  workItemDelivery: Schema.optionalKey(Schema.Boolean),
   workItemDiscovery: Schema.optionalKey(Schema.Boolean),
+  workItemDraftGeneration: Schema.optionalKey(Schema.Boolean),
   workItemAnalysis: Schema.optionalKey(Schema.Boolean),
   threadPredictions: Schema.optionalKey(Schema.Boolean),
   threadFindProgressive: Schema.optionalKey(Schema.Boolean),

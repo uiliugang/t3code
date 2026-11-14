@@ -1,3 +1,5 @@
+import { getClientSettings } from "../../hooks/useSettings";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { limitsNotice } from "@t3tools/shared/usageLimits";
@@ -86,18 +88,25 @@ export function modelFallbackBannerItem({
   readonly onUseDefault: () => void;
   readonly onDismiss: () => void;
 }): ComposerBannerStackItem {
+  const language = getClientSettings().uiLanguage;
+  const t = translateUi.bind(null, language);
   return {
     id: "fallback-model",
     variant: "info",
     icon: <GaugeIcon />,
-    title: `Using ${fallbackModelName}`,
-    description: `${defaultProviderName} is out of usage${resetsAt ? ` · resets ${formatUpcomingTimestamp(resetsAt, timestampFormat)}` : ""}`,
+    title: t("Using {model}", { model: fallbackModelName }),
+    description: resetsAt
+      ? t("{provider} is out of usage · resets {time}", {
+          provider: defaultProviderName,
+          time: formatUpcomingTimestamp(resetsAt, timestampFormat, undefined, undefined, language),
+        })
+      : t("{provider} is out of usage", { provider: defaultProviderName }),
     actions: (
       <Button size="xs" variant="ghost" onClick={onUseDefault}>
-        Use {defaultModelName}
+        {t("Use {model}", { model: defaultModelName })}
       </Button>
     ),
-    dismissLabel: "Dismiss fallback model notice",
+    dismissLabel: t("Dismiss fallback model notice"),
     onDismiss,
   };
 }

@@ -13,6 +13,7 @@ const Search = Schema.Struct({
   issueId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
   issueProjectId: Schema.optionalKey(ProjectId),
   issueScope: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  local: Schema.optionalKey(Schema.Boolean),
 });
 export type RequirementsSearch = typeof Search.Type;
 const decodeSearch = Schema.decodeSync(Search);

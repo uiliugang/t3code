@@ -289,7 +289,7 @@ function LinkRequestSheet(props: {
 
   return (
     <Sheet
-      title={pickMachine ? "Link a machine" : `Link ${targetName}`}
+      title={pickMachine ? t("Link a machine") : t("Link {name}", { name: targetName })}
       onClose={props.onClose}
       // An answer that lands after a close would still link, and would close a reopened sheet.
       dismissDisabled={busy}
@@ -305,7 +305,7 @@ function LinkRequestSheet(props: {
         <View className="gap-1">
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
             {t(
-              "Agents here can then launch, message and wait on threads there. It appears in that machine's Connections, where it can be revoked.",
+              "Agents here can then launch, message and wait on threads there. It appears under Authorized clients in that machine's Sharing & access, where it can be revoked.",
             )}
           </Text>
           {item.url !== undefined && target.kind === "machine" ? (
@@ -319,10 +319,13 @@ function LinkRequestSheet(props: {
             accessibilityRole="alert"
             className="gap-1 rounded-xl border border-warning-border bg-warning p-3"
           >
-            <Text className="font-t3-bold text-sm text-warning-foreground">Check this address</Text>
+            <Text className="font-t3-bold text-sm text-warning-foreground">
+              {t("Check this address")}
+            </Text>
             <Text className="font-sans text-xs leading-snug text-warning-foreground">
-              This app cannot confirm it is one of your machines. The pairing code you paste is sent
-              there.
+              {t(
+                "This app cannot confirm it is one of your machines. The pairing code you paste is sent there.",
+              )}
             </Text>
             <Text selectable className="font-sans text-xs leading-snug text-warning-foreground">
               {linkDestination(address)}
@@ -385,7 +388,7 @@ function LinkRequestSheet(props: {
         {useExisting ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
             {t(
-              "This environment is already linked to {machine}. The agent can use that link; change its access in Settings → Connections.",
+              "This environment is already linked to {machine}. The agent can use that link as it is; change its access in Settings → Environments.",
               { machine: targetName },
             )}
           </Text>
@@ -407,7 +410,7 @@ function LinkRequestSheet(props: {
                 />
                 <Text className="font-sans text-xs text-foreground-muted">
                   {t(
-                    "Create a link on {machine}: Settings → Connections → Create link, then paste its code here.",
+                    "Create a link on {machine}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.",
                     { machine: targetName },
                   )}
                 </Text>

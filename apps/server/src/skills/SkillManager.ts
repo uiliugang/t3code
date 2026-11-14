@@ -16,6 +16,11 @@ import {
   type SkillMutation,
   type SkillSnapshot,
   type SkillTarget,
+  type SkillCopySource,
+  type SkillCopyPackage,
+  type SkillCopyInput,
+  type SkillCopyPreviewInput,
+  type SkillCopyPreview,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Clock from "effect/Clock";
@@ -35,6 +40,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
 import * as SkillPackages from "./SkillPackages.ts";
 import * as SkillHost from "./SkillHost.ts";
+import { makeSkillCopy } from "./SkillCopy.ts";
 
 const actionKey = Schema.encodeSync(Schema.fromJsonString(SkillAction));
 const codec = Schema.fromJsonString(SkillCatalog);
@@ -77,6 +83,13 @@ export class SkillManager extends Context.Service<
   {
     readonly mutate: (input: SkillMutation) => Effect.Effect<void, SkillManagerError>;
     readonly inspect: (input: SkillInspect) => Effect.Effect<SkillInspection, SkillManagerError>;
+    readonly exportSkill: (
+      input: SkillCopySource,
+    ) => Effect.Effect<SkillCopyPackage, SkillManagerError>;
+    readonly previewCopy: (
+      input: SkillCopyPreviewInput,
+    ) => Effect.Effect<SkillCopyPreview, SkillManagerError>;
+    readonly copy: (input: SkillCopyInput) => Effect.Effect<void, SkillManagerError>;
     readonly tick: Effect.Effect<void>;
     readonly snapshot: Effect.Effect<SkillSnapshot, SkillManagerError>;
     readonly changes: Stream.Stream<SkillSnapshot, SkillManagerError>;
@@ -92,6 +105,7 @@ const make = Effect.gen(function* () {
   const packages = yield* SkillPackages.SkillPackages;
   const host = yield* SkillHost.SkillHost;
   const discovery = yield* makeSkillDiscovery;
+  const copies = yield* makeSkillCopy;
   const random = yield* SecureRandom.SecureRandom;
   const platform = yield* HostProcess.Platform;
   const directoryLink = Effect.fn("SkillManager.directoryLink")(function* (
@@ -152,6 +166,11 @@ const make = Effect.gen(function* () {
             ...pending,
           ],
         });
+        const retained = (yield* Ref.get(state)).jobs ?? [];
+        for (const job of current.jobs ?? []) {
+          if (job.input.type === "copy" && !retained.some((entry) => entry.id === job.id))
+            yield* copies.discard(job.input.workKey).pipe(Effect.ignore);
+        }
       }),
     );
   });
@@ -879,6 +898,32 @@ const make = Effect.gen(function* () {
       lastFailureDiagnostics: null,
     });
     switch (input.type) {
+      case "copy": {
+        if (yield* host.busy)
+          return yield* new SkillManagerError({ operation: "copy", reason: "busy" });
+        const { directory } = yield* copies.preview({
+          directory: input.directory,
+          names: [input.name],
+        });
+        const beforeCopy = yield* Ref.get(state);
+        yield* save({
+          ...beforeCopy,
+          skills: beforeCopy.skills.map((skill) => ({
+            ...skill,
+            bindings: skill.bindings.filter(
+              (binding) =>
+                !(
+                  path.resolve(binding.directory) === directory &&
+                  (binding.entryName ?? skill.name) === input.name
+                ),
+            ),
+          })),
+        });
+        yield* copies.apply(input).pipe(Effect.tapError(() => save(beforeCopy)));
+        yield* refreshDiscovery;
+        yield* host.refresh(yield* allTargets);
+        return;
+      }
       case "refresh":
         yield* refreshDiscovery;
         return;
@@ -1258,7 +1303,10 @@ const make = Effect.gen(function* () {
           const error = isSkillManagerError(cause)
             ? cause
             : new SkillManagerError({ operation: input.type, reason: "io", cause });
-          if (input.type === "adopt" && input.mode === "takeover" && error.reason === "busy") {
+          if (
+            (input.type === "copy" || (input.type === "adopt" && input.mode === "takeover")) &&
+            error.reason === "busy"
+          ) {
             yield* saveJobs((jobs) =>
               jobs.map((entry) =>
                 entry.id === id
@@ -1415,7 +1463,8 @@ const make = Effect.gen(function* () {
                 (job) =>
                   (job.status === "queued" ||
                     job.status === "running" ||
-                    (job.status === "waiting" && job.input.type === "adopt")) &&
+                    (job.status === "waiting" &&
+                      (job.input.type === "adopt" || job.input.type === "copy"))) &&
                   actionKey(job.input) === key,
               )
             )
@@ -1540,8 +1589,8 @@ const make = Effect.gen(function* () {
           const waiting = (catalog.jobs ?? []).filter(
             (job) =>
               job.status === "waiting" &&
-              job.input.type === "adopt" &&
-              job.input.mode === "takeover" &&
+              (job.input.type === "copy" ||
+                (job.input.type === "adopt" && job.input.mode === "takeover")) &&
               !catalog.skills.some((skill) => skill.id === job.skillId),
           );
           if (waiting.length) {
@@ -1623,6 +1672,57 @@ const make = Effect.gen(function* () {
     ),
   );
   return SkillManager.of({
+    exportSkill: Effect.fn("SkillManager.exportSkill")(
+      function* (input: SkillCopySource) {
+        const directory =
+          "id" in input
+            ? activePath((yield* get(input.id)).id)
+            : path.basename(input.path) === "SKILL.md"
+              ? path.dirname(input.path)
+              : input.path;
+        if ("path" in input) {
+          const description = yield* discovery.describe(input.path);
+          if (description.external)
+            return yield* new SkillManagerError({ operation: "copy", reason: "external" });
+        }
+        return yield* copies.exportPackage(directory);
+      },
+      Effect.mapError((cause) =>
+        isSkillManagerError(cause)
+          ? cause
+          : new SkillManagerError({ operation: "copy", reason: "io", cause }),
+      ),
+    ),
+    previewCopy: Effect.fn("SkillManager.previewCopy")(
+      copies.preview,
+      Effect.mapError((cause) =>
+        isSkillManagerError(cause)
+          ? cause
+          : new SkillManagerError({ operation: "copy", reason: "io", cause }),
+      ),
+    ),
+    copy: Effect.fn("SkillManager.copy")(
+      function* (input: SkillCopyInput) {
+        const preview = yield* copies.preview({
+          directory: input.directory,
+          names: [input.package.name],
+        });
+        const workKey = yield* random.uuidV4().pipe(Effect.orDie);
+        yield* copies.stage(input.package, workKey);
+        yield* enqueue({
+          type: "copy",
+          name: input.package.name,
+          directory: preview.directory,
+          digest: input.package.digest,
+          workKey,
+        }).pipe(Effect.onError(() => copies.discard(workKey).pipe(Effect.ignore)));
+      },
+      Effect.mapError((cause) =>
+        isSkillManagerError(cause)
+          ? cause
+          : new SkillManagerError({ operation: "copy", reason: "io", cause }),
+      ),
+    ),
     mutate: enqueue,
     inspect,
     tick,

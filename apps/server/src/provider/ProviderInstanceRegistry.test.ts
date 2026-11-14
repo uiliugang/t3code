@@ -443,6 +443,49 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.live.each(["anthropic", "openai"] as const)(
+    "keeps the real %s BYOK gateway origin in Claude authentication metadata",
+    (protocol) =>
+      Effect.gen(function* () {
+        if (yield* HostProcess.isWindows) return;
+        const fixtures = yield* makeTildeProviderFixtures();
+        const instanceId = ProviderInstanceId.make(`claude_gateway_${protocol}`);
+        const { registry } = yield* makeProviderInstanceRegistry<ClaudeDriverEnv>({
+          drivers: [ClaudeDriver],
+          configMap: {
+            [instanceId]: {
+              driver: ClaudeDriver.driverKind,
+              enabled: true,
+              environment: [
+                {
+                  name: "ANTHROPIC_BASE_URL",
+                  value: "https://gateway.example/prefix/v1",
+                  sensitive: false,
+                },
+                { name: "ANTHROPIC_AUTH_TOKEN", value: "fake-gateway-token", sensitive: true },
+                { name: "T3_CLAUDE_API_FORMAT", value: protocol, sensitive: false },
+              ],
+              config: makeClaudeConfig({
+                enabled: true,
+                binaryPath: fixtures.claudeBinaryPath,
+                homePath: fixtures.claudeHomePath,
+                customModelsOnly: true,
+                customModels: ["custom-model"],
+              }),
+            },
+          },
+        });
+        const instance = yield* registry.getInstance(instanceId);
+        expect(instance).toBeDefined();
+        const snapshot = yield* instance!.snapshot.refresh;
+        expect(snapshot.auth).toMatchObject({
+          type: "customEndpoint",
+          endpoint: "https://gateway.example",
+        });
+        expect(JSON.stringify(snapshot.auth)).not.toContain("fake-gateway-token");
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.live("runs Claude instance probes in the server state dir, not the server cwd", () =>
     Effect.gen(function* () {
       if (yield* HostProcess.isWindows) return;

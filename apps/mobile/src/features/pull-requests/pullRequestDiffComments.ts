@@ -1,4 +1,5 @@
 import type { PullRequestReviewPosition, PullRequestReviewThread } from "@t3tools/contracts";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import type { NativeReviewDiffRow } from "../diffs/nativeReviewDiffSurface";
 import type { NativeReviewDiffData } from "../review/nativeReviewDiffAdapter";
 import type { PendingReviewComment } from "./pullRequestReviewDrafts";
@@ -18,8 +19,11 @@ export function reviewPosition(row: NativeReviewDiffRow): PullRequestReviewPosit
     };
   return null;
 }
-export function discussionCommentCountLabel(count: number) {
-  return `${count} ${count === 1 ? "comment" : "comments"}`;
+export function discussionCommentCountLabel(
+  count: number,
+  t: UiTranslator = translateUi.bind(null, "en"),
+) {
+  return t(count === 1 ? "{count} comment" : "{count} comments", { count });
 }
 export function reviewPositionLabel(position: PullRequestReviewPosition) {
   const oldSide =

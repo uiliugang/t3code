@@ -201,6 +201,11 @@ function selectOpenCodeRuntimeTextGeneration(
   v2: ProviderTextGeneration,
 ): ProviderTextGeneration {
   return {
+    generateWorkItemDraft: (input) =>
+      byOpenCodeRuntime(resolve, {
+        v1: v1.generateWorkItemDraft(input),
+        v2: v2.generateWorkItemDraft(input),
+      }),
     generateCommitMessage: (input) =>
       byOpenCodeRuntime(resolve, {
         v1: v1.generateCommitMessage(input),

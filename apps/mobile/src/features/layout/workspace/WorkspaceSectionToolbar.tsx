@@ -47,12 +47,6 @@ export function WorkspaceTabToolbarButtons() {
         />
       ))}
       <Toolbar.Button
-        identifier="workspace-work-items"
-        accessibilityLabel={t("Task board")}
-        icon="checkmark.circle"
-        onPress={() => navigation.navigate("WorkItems")}
-      />
-      <Toolbar.Button
         identifier="workspace-requirements"
         accessibilityLabel={t("Requirements board")}
         icon="ticket"

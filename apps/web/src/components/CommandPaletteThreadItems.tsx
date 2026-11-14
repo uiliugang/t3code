@@ -1,3 +1,4 @@
+import { getClientSettings } from "../hooks/useSettings";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
@@ -209,7 +210,13 @@ export function useCommandPaletteThreadItems(input: {
         ...rest,
         // When the matching message was written, not when the thread last moved.
         ...(match.messageCreatedAt
-          ? { timestamp: formatRelativeTimeLabel(match.messageCreatedAt) }
+          ? {
+              timestamp: formatRelativeTimeLabel(
+                match.messageCreatedAt,
+                undefined,
+                getClientSettings().uiLanguage,
+              ),
+            }
           : {}),
         threadContentMatch: {
           source: match.source,

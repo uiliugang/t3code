@@ -9,6 +9,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { render } from "../../../test/render";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const checkedAt = "2026-10-25T16:00:00.000Z";
 
@@ -37,6 +39,7 @@ function managedChatGpt(instanceId: string, displayName: string): ServerProvider
 
 describe("UsageLimitsPooled ChatGPT usage card", () => {
   it("names the managed connections it covers", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     const presentations = new Map([
       [
         EnvironmentId.make("desk"),

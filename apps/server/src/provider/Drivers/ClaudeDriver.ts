@@ -215,8 +215,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       accentColor,
       continuationGroupKey,
     });
+    const proxySourceEndpoint = proxy
+      ? URL.parse(sourceEnvironment.ANTHROPIC_BASE_URL ?? "")?.origin
+      : undefined;
     const stampIdentity = (snapshot: Parameters<typeof stampBaseIdentity>[0]) => ({
       ...stampBaseIdentity(snapshot),
+      ...(proxySourceEndpoint && snapshot.auth.type === "customEndpoint"
+        ? { auth: { ...snapshot.auth, endpoint: proxySourceEndpoint } }
+        : {}),
       ...(config.setupMode === "managed"
         ? { setup: { canAuthenticate: false, canInstall: true } }
         : {}),

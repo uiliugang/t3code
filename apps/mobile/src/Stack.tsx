@@ -172,7 +172,7 @@ const SETTINGS_SCREENS = {
   WorkItems: createNativeStackScreen({
     screen: WorkItemsScreen,
     linking: "tasks",
-    options: settingsPage("Task board"),
+    options: settingsPage("Local work items"),
   }),
   SettingsRequirements: createNativeStackScreen({
     screen: RequirementsSettingsScreen,

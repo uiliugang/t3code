@@ -577,7 +577,7 @@ function surfaceTitle(
 ): string {
   switch (surface.kind) {
     case "tasks":
-      return "Task board";
+      return "Requirements board";
     case "diff":
       return "Diff";
     case "files":
