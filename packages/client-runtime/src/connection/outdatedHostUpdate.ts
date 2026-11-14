@@ -38,13 +38,13 @@ import {
 const OUTDATED_HOST_RESTART_TIMEOUT = Duration.minutes(4);
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
-export class OutdatedHostUpdateError extends Schema.TaggedError<OutdatedHostUpdateError>()(
-  "OutdatedHostUpdateError",
-  {
-    environmentId: Schema.String,
-    message: Schema.String,
-  },
-) {}
+export class OutdatedHostUpdateError extends Schema.TaggedError<
+  OutdatedHostUpdateError,
+  { readonly brand: unique symbol }
+>()("OutdatedHostUpdateError", {
+  environmentId: Schema.String,
+  message: Schema.String,
+}) {}
 
 export type OutdatedHostUpdateStage = "downloading" | "installing" | "resuming";
 

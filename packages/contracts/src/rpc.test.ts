@@ -4,8 +4,20 @@ import * as Schema from "effect/Schema";
 
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
+import { clientRpcRequiredScopes } from "./clientRpcPermissions.ts";
+import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "./auth.ts";
 
 describe("WebSocket RPC contracts", () => {
+  it("requires both permissions for delivery writes without blocking local task updates", () => {
+    const both = [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
+    expect(clientRpcRequiredScopes(WS_METHODS.workItemsCreateIssue, undefined)).toEqual(both);
+    expect(clientRpcRequiredScopes(WS_METHODS.workItemsRefreshDelivery, undefined)).toEqual(both);
+    for (const type of ["confirm_scope", "completion_state", "reopen_delivery"])
+      expect(clientRpcRequiredScopes(WS_METHODS.workItemsMutate, { type })).toEqual(both);
+    expect(clientRpcRequiredScopes(WS_METHODS.workItemsMutate, { type: "move" })).toEqual([
+      AuthOrchestrationOperateScope,
+    ]);
+  });
   it("rejects server-internal commands sent to dispatchCommand", () => {
     const dispatchCommand = WsRpcGroup.requests.get(ORCHESTRATION_V2_WS_METHODS.dispatchCommand);
     if (dispatchCommand === undefined) throw new Error("dispatchCommand is not registered");

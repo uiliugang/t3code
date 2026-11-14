@@ -20,23 +20,26 @@ import {
 
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 
-export class PiRpcError extends Schema.TaggedError<PiRpcError>()("PiRpcError", {
-  operation: Schema.String,
-  detail: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Defect()),
-}) {
+export class PiRpcError extends Schema.TaggedError<PiRpcError, { readonly brand: unique symbol }>()(
+  "PiRpcError",
+  {
+    operation: Schema.String,
+    detail: Schema.optional(Schema.String),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
   override get message(): string {
     return `Pi RPC ${this.operation} failed${this.detail === undefined ? "" : `: ${this.detail}`}.`;
   }
 }
 
-export class PiRpcTimeoutError extends Schema.TaggedError<PiRpcTimeoutError>()(
-  "PiRpcTimeoutError",
-  {
-    operation: Schema.String,
-    timeoutMs: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
-  },
-) {
+export class PiRpcTimeoutError extends Schema.TaggedError<
+  PiRpcTimeoutError,
+  { readonly brand: unique symbol }
+>()("PiRpcTimeoutError", {
+  operation: Schema.String,
+  timeoutMs: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+}) {
   override get message(): string {
     return `Pi RPC ${this.operation} failed: timed out after ${this.timeoutMs}ms.`;
   }

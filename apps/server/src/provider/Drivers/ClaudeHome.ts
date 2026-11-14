@@ -28,10 +28,10 @@ export const CLAUDE_BYOK_ENVIRONMENT_OVERRIDES = {
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
 };
 
-export class ClaudeEnvironmentError extends Schema.TaggedError<ClaudeEnvironmentError>()(
-  "ClaudeEnvironmentError",
-  { reason: Schema.Literals(["auth", "endpoint", "models", "home"]) },
-) {
+export class ClaudeEnvironmentError extends Schema.TaggedError<
+  ClaudeEnvironmentError,
+  { readonly brand: unique symbol }
+>()("ClaudeEnvironmentError", { reason: Schema.Literals(["auth", "endpoint", "models", "home"]) }) {
   override get message() {
     return {
       auth: "Configure exactly one Claude BYOK credential.",

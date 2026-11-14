@@ -70,10 +70,10 @@ export const ManagedWorktreeResult = Schema.Struct({
   detail: Schema.String,
 });
 export type ManagedWorktreeResult = typeof ManagedWorktreeResult.Type;
-export class ManagedWorktreeError extends Schema.TaggedError<ManagedWorktreeError>()(
-  "ManagedWorktreeError",
-  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class ManagedWorktreeError extends Schema.TaggedError<
+  ManagedWorktreeError,
+  { readonly brand: unique symbol }
+>()("ManagedWorktreeError", { detail: Schema.String, cause: Schema.optional(Schema.Defect()) }) {
   override get message() {
     return this.detail;
   }

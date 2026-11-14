@@ -1,4 +1,6 @@
 import * as WorkItems from "./work-items/WorkItemService.ts";
+import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
+import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
 import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
@@ -71,6 +73,7 @@ import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
+import * as ProviderInstanceService from "./provider/ProviderInstanceService.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as NativeChildWorkQuery from "./orchestration-v2/NativeChildWorkQuery.ts";
@@ -895,6 +898,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProjectStore.ProjectStoreV2)({}),
   Layer.mock(ProviderAuthService.ProviderAuthService)({}),
   Layer.mock(ProviderInstallation.ProviderInstallation)({}),
+  Layer.mock(ProviderInstanceService.ProviderInstanceService)({}),
   Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
   Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
   Layer.mock(ProviderMaintenanceRunner.ProviderMaintenanceRunner)({}),
@@ -908,6 +912,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(WorkItems.WorkItemService)({}),
+  Layer.mock(DeliveryAutomation.DeliveryAutomationService)({}),
+  Layer.mock(DeliverySync.DeliverySyncReactor)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(SecretResolver.SecretResolver)({}),
   Layer.mock(GuestShareService.GuestShareService)({}),

@@ -1441,12 +1441,12 @@ export const layerServerApi = HttpApiBuilder.group(
   }),
 );
 
-class ClerkTokenVerificationFailed extends Schema.TaggedError<ClerkTokenVerificationFailed>()(
-  "ClerkTokenVerificationFailed",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+class ClerkTokenVerificationFailed extends Schema.TaggedError<
+  ClerkTokenVerificationFailed,
+  { readonly brand: unique symbol }
+>()("ClerkTokenVerificationFailed", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Clerk token verification failed";
   }

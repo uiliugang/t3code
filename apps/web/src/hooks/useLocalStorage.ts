@@ -2,14 +2,14 @@ import * as Schema from "effect/Schema";
 import * as Record from "effect/Record";
 import { useSyncExternalStore } from "react";
 
-export class LocalStorageOperationError extends Schema.TaggedError<LocalStorageOperationError>()(
-  "LocalStorageOperationError",
-  {
-    operation: Schema.Literals(["read", "decode", "encode", "update", "write", "remove", "notify"]),
-    storageKey: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class LocalStorageOperationError extends Schema.TaggedError<
+  LocalStorageOperationError,
+  { readonly brand: unique symbol }
+>()("LocalStorageOperationError", {
+  operation: Schema.Literals(["read", "decode", "encode", "update", "write", "remove", "notify"]),
+  storageKey: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} local storage item ${this.storageKey}.`;
   }

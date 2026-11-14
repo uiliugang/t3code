@@ -21,6 +21,7 @@ import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { RepositoryDetails } from "./RepositoryDetails";
 import { BranchIssuesPanel } from "./BranchIssuesPanel";
 import { GroupedBranchIssuesPanel } from "./GroupedBranchIssuesPanel";
+import { ThreadIssueCreationButton } from "../requirements/ThreadIssueCreationButton";
 import { BranchIssueAssociationProvider } from "./branchIssueAssociation";
 
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
@@ -199,6 +200,14 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                   : []
             }
             currentCwd={props.gitCwd}
+            creationControl={
+              <ThreadIssueCreationButton
+                environmentId={props.environmentId}
+                projectId={props.projectId}
+                threadId={props.threadId}
+              />
+            }
+            threadId={props.threadId}
           />
         ) : null
       }
@@ -399,7 +408,14 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
               ) : null}
 
               {!workspace && props.gitCwd && showIssues && issuesPlacement === "inline" ? (
-                <BranchIssuesPanel environmentId={props.environmentId} cwd={props.gitCwd} />
+                <div className="space-y-2">
+                  <BranchIssuesPanel environmentId={props.environmentId} cwd={props.gitCwd} />
+                  <ThreadIssueCreationButton
+                    environmentId={props.environmentId}
+                    projectId={props.projectId}
+                    threadId={props.threadId}
+                  />
+                </div>
               ) : null}
 
               {density === "full" && !props.draftId && visible.servers ? (

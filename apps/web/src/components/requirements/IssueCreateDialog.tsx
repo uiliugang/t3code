@@ -27,10 +27,11 @@ import {
 import { IssueSelect } from "./IssueSelect";
 import { Checkbox } from "../ui/checkbox";
 import { SearchIcon } from "lucide-react";
+import { DraftFillButton } from "./DraftFillButton";
 
 export function IssueCreateDialog({
   environmentId,
-  provider,
+  provider: initialProvider,
   projects,
   initialProjectId,
   close,
@@ -51,6 +52,17 @@ export function IssueCreateDialog({
       ? sourceControlEnvironment.issueSources({ environmentId, input: { projectIds: [projectId] } })
       : null,
   );
+  const [selectedProvider, setProvider] = useState<IssueProvider | null>(null);
+  const availableProviders = [
+    ...new Set(sourceQuery.data?.[0]?.sources.map((source) => source.provider) ?? []),
+  ];
+  const platformSelected =
+    availableProviders.length === 1 ||
+    (selectedProvider !== null && availableProviders.includes(selectedProvider));
+  const provider =
+    availableProviders.length === 1
+      ? availableProviders[0]!
+      : (selectedProvider ?? initialProvider);
   const scopes =
     sourceQuery.data?.[0]?.sources
       .filter((source) => source.provider === provider)
@@ -65,6 +77,7 @@ export function IssueCreateDialog({
   const [personQuery, setPersonQuery] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<
     ReadonlyArray<{ variable: string; message: string }>
@@ -75,7 +88,7 @@ export function IssueCreateDialog({
   );
   const command = useAtomCommand(sourceControlEnvironment.createIssue, { reportFailure: false });
   const metadata = useEnvironmentQuery(
-    projectId && scope
+    projectId && scope && platformSelected
       ? sourceControlEnvironment.issueMetadata({
           environmentId,
           input: { projectId, provider, type, subtype, query: personQuery, scope },
@@ -83,7 +96,7 @@ export function IssueCreateDialog({
       : null,
   );
   const people = useEnvironmentQuery(
-    projectId && scope
+    projectId && scope && platformSelected
       ? sourceControlEnvironment.issuePeople({
           environmentId,
           input: { projectId, provider, query: personQuery, scope },
@@ -91,7 +104,7 @@ export function IssueCreateDialog({
       : null,
   );
   const submit = async () => {
-    if (!projectId || !scope || !title.trim()) return;
+    if (!projectId || !scope || !title.trim() || generating || !platformSelected) return;
     setBusy(true);
     setError(null);
     setFieldErrors([]);
@@ -136,7 +149,7 @@ export function IssueCreateDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) close();
+        if (!open && !busy && !generating) close();
       }}
     >
       <DialogPopup>
@@ -154,209 +167,279 @@ export function IssueCreateDialog({
             </div>
           </DialogHeader>
           <DialogPanel>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>{t("Project")}</Label>
+            <div className="flex justify-end">
+              <DraftFillButton
+                environmentId={environmentId}
+                projectId={projectId}
+                disabled={busy || uncertain}
+                context={[title, body].filter(Boolean).join("\n\n")}
+                onBusyChange={setGenerating}
+                onDraft={(draft) => {
+                  setTitle(draft.title);
+                  setBody(
+                    [
+                      draft.description,
+                      draft.constraints.length
+                        ? t("Constraints") +
+                          "\n" +
+                          draft.constraints.map((line) => "- " + line).join("\n")
+                        : "",
+                      draft.acceptanceCriteria.length
+                        ? t("Acceptance criteria") +
+                          "\n" +
+                          draft.acceptanceCriteria.map((line) => "- " + line).join("\n")
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join("\n\n"),
+                  );
+                }}
+              />
+            </div>
+            <fieldset disabled={generating} className="contents">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>{t("Project")}</Label>
+                  <IssueSelect
+                    label={t("Project")}
+                    value={projectId ?? ""}
+                    options={projects.map((project) => ({
+                      value: project.id,
+                      label: project.title,
+                    }))}
+                    onChange={(value) => {
+                      setProjectId(value as ProjectId);
+                      setProvider(null);
+                      setSelectedScope("");
+                      setAssignee("");
+                      setPersonSearch("");
+                      setPersonQuery("");
+                      setSubtype("");
+                      setFields({});
+                    }}
+                    disabled={busy}
+                  />
+                </div>
+                {availableProviders.length > 1 ? (
+                  <div className="space-y-1.5">
+                    <Label>{t("Issue source")}</Label>
+                    <IssueSelect
+                      label={t("Issue source")}
+                      value={selectedProvider ?? ""}
+                      options={[
+                        { value: "", label: t("Choose platform") },
+                        ...availableProviders.map((value) => ({
+                          value,
+                          label: value === "github" ? "GitHub Issues" : "MEP ONES",
+                        })),
+                      ]}
+                      onChange={(value) => {
+                        setProvider(value === "github" || value === "meituan" ? value : null);
+                        setAssignee("");
+                        setPersonSearch("");
+                        setPersonQuery("");
+                        setSelectedScope("");
+                        setSubtype("");
+                        setFields({});
+                      }}
+                      disabled={busy || generating}
+                    />
+                  </div>
+                ) : null}
+                {scopes.length > 1 ? (
+                  <div className="space-y-1.5">
+                    <Label>{t("MEP space ID")}</Label>
+                    <IssueSelect
+                      label={t("MEP space ID")}
+                      value={scope ?? ""}
+                      options={scopes.map((value) => ({ value, label: value }))}
+                      onChange={(value) => {
+                        setSelectedScope(value);
+                        setAssignee("");
+                        setPersonSearch("");
+                        setPersonQuery("");
+                        setSubtype("");
+                        setFields({});
+                      }}
+                      disabled={busy}
+                    />
+                  </div>
+                ) : null}
+                {provider === "meituan" ? (
+                  <div className="space-y-1.5">
+                    <Label>{t("Work item type")}</Label>
+                    <IssueSelect
+                      label={t("Work item type")}
+                      value={type}
+                      options={[
+                        { value: "REQUIREMENT", label: t("Requirement") },
+                        { value: "DEVTASK", label: t("Task") },
+                        { value: "DEFECT", label: t("Defect") },
+                      ]}
+                      onChange={(value) => {
+                        setType(value as typeof type);
+                        setSubtype("");
+                        setFields({});
+                      }}
+                      disabled={busy}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {provider === "meituan" ? (
                 <IssueSelect
-                  label={t("Project")}
-                  value={projectId ?? ""}
-                  options={projects.map((project) => ({ value: project.id, label: project.title }))}
+                  label={t("Subtype")}
+                  value={subtype}
+                  options={[
+                    { value: "", label: t("Select subtype") },
+                    ...(metadata.data?.subtypes ?? []),
+                  ]}
                   onChange={(value) => {
-                    setProjectId(value as ProjectId);
-                    setSubtype("");
+                    setSubtype(value);
                     setFields({});
                   }}
                   disabled={busy}
                 />
+              ) : null}
+              <div className="space-y-1.5">
+                <Label htmlFor="issue-title">{t("Title")} *</Label>
+                <Input
+                  id="issue-title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  required
+                  maxLength={256}
+                  disabled={busy}
+                />
               </div>
-              {scopes.length > 1 ? (
-                <div className="space-y-1.5">
-                  <Label>{t("MEP space ID")}</Label>
-                  <IssueSelect
-                    label={t("MEP space ID")}
-                    value={scope ?? ""}
-                    options={scopes.map((value) => ({ value, label: value }))}
-                    onChange={(value) => {
-                      setSelectedScope(value);
-                      setSubtype("");
-                      setFields({});
-                    }}
-                    disabled={busy}
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="issue-body">{t("Description")}</Label>
+                <Textarea
+                  id="issue-body"
+                  value={body}
+                  onChange={(event) => setBody(event.target.value)}
+                  rows={5}
+                  disabled={busy}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label={t("Search people")}
+                  placeholder={t("Search people")}
+                  value={personSearch}
+                  onChange={(event) => setPersonSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      setPersonQuery(personSearch);
+                    }
+                  }}
+                  disabled={busy}
+                />
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label={t("Search people")}
+                  onClick={() => setPersonQuery(personSearch)}
+                  disabled={busy}
+                >
+                  <SearchIcon />
+                </Button>
+              </div>
+              {!metadata.data?.fields.some((field) => field.variable === "assigned") ? (
+                <IssueSelect
+                  label={t("Assignee")}
+                  value={assignee}
+                  options={[{ value: "", label: t("Unassigned") }, ...(people.data ?? [])]}
+                  onChange={setAssignee}
+                  disabled={busy}
+                />
               ) : null}
-              {provider === "meituan" ? (
-                <div className="space-y-1.5">
-                  <Label>{t("Work item type")}</Label>
-                  <IssueSelect
-                    label={t("Work item type")}
-                    value={type}
-                    options={[
-                      { value: "REQUIREMENT", label: t("Requirement") },
-                      { value: "DEVTASK", label: t("Task") },
-                      { value: "DEFECT", label: t("Defect") },
-                    ]}
-                    onChange={(value) => {
-                      setType(value as typeof type);
-                      setSubtype("");
-                      setFields({});
-                    }}
-                    disabled={busy}
-                  />
-                </div>
-              ) : null}
-            </div>
-            {provider === "meituan" ? (
-              <IssueSelect
-                label={t("Subtype")}
-                value={subtype}
-                options={[
-                  { value: "", label: t("Select subtype") },
-                  ...(metadata.data?.subtypes ?? []),
-                ]}
-                onChange={(value) => {
-                  setSubtype(value);
-                  setFields({});
-                }}
-                disabled={busy}
-              />
-            ) : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="issue-title">{t("Title")} *</Label>
-              <Input
-                id="issue-title"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                required
-                maxLength={256}
-                disabled={busy}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="issue-body">{t("Description")}</Label>
-              <Textarea
-                id="issue-body"
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
-                rows={5}
-                disabled={busy}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Input
-                aria-label={t("Search people")}
-                placeholder={t("Search people")}
-                value={personSearch}
-                onChange={(event) => setPersonSearch(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    setPersonQuery(personSearch);
-                  }
-                }}
-                disabled={busy}
-              />
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="outline"
-                aria-label={t("Search people")}
-                onClick={() => setPersonQuery(personSearch)}
-                disabled={busy}
-              >
-                <SearchIcon />
-              </Button>
-            </div>
-            {!metadata.data?.fields.some((field) => field.variable === "assigned") ? (
-              <IssueSelect
-                label={t("Assignee")}
-                value={assignee}
-                options={[{ value: "", label: t("Unassigned") }, ...(people.data ?? [])]}
-                onChange={setAssignee}
-                disabled={busy}
-              />
-            ) : null}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {metadata.data?.fields.map((field) => (
-                <div key={field.variable} className="space-y-1.5">
-                  <Label htmlFor={`issue-field-${field.variable}`}>
-                    {field.label}
-                    {field.required ? " *" : ""}
-                  </Label>
-                  {field.options.length ? (
-                    field.multiple ? (
-                      <div className="max-h-36 space-y-2 overflow-auto">
-                        {field.options.map((option) => (
-                          <label key={option.value} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              disabled={busy}
-                              checked={(fields[field.variable] ?? "")
-                                .split(",")
-                                .includes(option.value)}
-                              onCheckedChange={(checked) => {
-                                const selected = (fields[field.variable] ?? "")
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {metadata.data?.fields.map((field) => (
+                  <div key={field.variable} className="space-y-1.5">
+                    <Label htmlFor={`issue-field-${field.variable}`}>
+                      {field.label}
+                      {field.required ? " *" : ""}
+                    </Label>
+                    {field.options.length ? (
+                      field.multiple ? (
+                        <div className="max-h-36 space-y-2 overflow-auto">
+                          {field.options.map((option) => (
+                            <label key={option.value} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                disabled={busy}
+                                checked={(fields[field.variable] ?? "")
                                   .split(",")
-                                  .filter(Boolean)
-                                  .filter((value) => value !== option.value);
-                                setFields({
-                                  ...fields,
-                                  [field.variable]: [
-                                    ...selected,
-                                    ...(checked ? [option.value] : []),
-                                  ].join(","),
-                                });
-                              }}
-                            />
-                            {option.label}
-                          </label>
-                        ))}
-                      </div>
+                                  .includes(option.value)}
+                                onCheckedChange={(checked) => {
+                                  const selected = (fields[field.variable] ?? "")
+                                    .split(",")
+                                    .filter(Boolean)
+                                    .filter((value) => value !== option.value);
+                                  setFields({
+                                    ...fields,
+                                    [field.variable]: [
+                                      ...selected,
+                                      ...(checked ? [option.value] : []),
+                                    ].join(","),
+                                  });
+                                }}
+                              />
+                              {option.label}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <IssueSelect
+                          label={field.label}
+                          value={fields[field.variable] ?? ""}
+                          options={[{ value: "", label: t("Select...") }, ...field.options]}
+                          onChange={(value) => setFields({ ...fields, [field.variable]: value })}
+                          disabled={busy}
+                        />
+                      )
                     ) : (
-                      <IssueSelect
-                        label={field.label}
+                      <Input
+                        id={`issue-field-${field.variable}`}
                         value={fields[field.variable] ?? ""}
-                        options={[{ value: "", label: t("Select...") }, ...field.options]}
-                        onChange={(value) => setFields({ ...fields, [field.variable]: value })}
+                        onChange={(event) =>
+                          setFields({ ...fields, [field.variable]: event.target.value })
+                        }
+                        type={field.type === "date" ? "date" : "text"}
+                        required={field.required}
+                        placeholder={field.type === "person" ? t("MIS ID") : undefined}
                         disabled={busy}
                       />
-                    )
-                  ) : (
-                    <Input
-                      id={`issue-field-${field.variable}`}
-                      value={fields[field.variable] ?? ""}
-                      onChange={(event) =>
-                        setFields({ ...fields, [field.variable]: event.target.value })
-                      }
-                      type={field.type === "date" ? "date" : "text"}
-                      required={field.required}
-                      placeholder={field.type === "person" ? t("MIS ID") : undefined}
-                      disabled={busy}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-            {metadata.error || error ? (
-              <p role="alert" className="text-sm text-destructive">
-                {error ?? metadata.error}
-              </p>
-            ) : null}
-            {fieldErrors.length ? (
-              <ul className="text-sm text-destructive">
-                {fieldErrors.map((field) => (
-                  <li key={field.variable}>{field.message}</li>
+                    )}
+                  </div>
                 ))}
-              </ul>
-            ) : null}
+              </div>
+              {metadata.error || error ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {error ?? metadata.error}
+                </p>
+              ) : null}
+              {fieldErrors.length ? (
+                <ul className="text-sm text-destructive">
+                  {fieldErrors.map((field) => (
+                    <li key={field.variable}>{field.message}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </fieldset>
           </DialogPanel>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={close} disabled={busy}>
+            <Button type="button" variant="outline" onClick={close} disabled={busy || generating}>
               {t("Cancel")}
             </Button>
             <Button
               type="submit"
               disabled={
                 !canCreate ||
+                generating ||
+                !platformSelected ||
                 busy ||
                 uncertain ||
                 !title.trim() ||

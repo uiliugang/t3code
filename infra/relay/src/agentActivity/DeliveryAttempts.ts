@@ -11,19 +11,19 @@ import * as Schema from "effect/Schema";
 import * as RelayDb from "../db.ts";
 import { relayDeliveryAttempts } from "../persistence/schema.ts";
 
-export class DeliveryAttemptRecordPersistenceError extends Schema.TaggedError<DeliveryAttemptRecordPersistenceError>()(
-  "DeliveryAttemptRecordPersistenceError",
-  {
-    operation: Schema.Literals(["claim-source-job", "complete-source-job", "prune-expired"]),
-    sourceJobId: Schema.NullOr(Schema.String),
-    userId: Schema.NullOr(Schema.String),
-    environmentId: Schema.NullOr(Schema.String),
-    threadId: Schema.NullOr(Schema.String),
-    deviceId: Schema.NullOr(Schema.String),
-    kind: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class DeliveryAttemptRecordPersistenceError extends Schema.TaggedError<
+  DeliveryAttemptRecordPersistenceError,
+  { readonly brand: unique symbol }
+>()("DeliveryAttemptRecordPersistenceError", {
+  operation: Schema.Literals(["claim-source-job", "complete-source-job", "prune-expired"]),
+  sourceJobId: Schema.NullOr(Schema.String),
+  userId: Schema.NullOr(Schema.String),
+  environmentId: Schema.NullOr(Schema.String),
+  threadId: Schema.NullOr(Schema.String),
+  deviceId: Schema.NullOr(Schema.String),
+  kind: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist APNs delivery attempt during ${this.operation}.`;
   }

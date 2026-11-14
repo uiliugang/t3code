@@ -12,52 +12,52 @@ import * as Schema from "effect/Schema";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-export class BootstrapFdStatError extends Schema.TaggedError<BootstrapFdStatError>()(
-  "BootstrapFdStatError",
-  {
-    fd: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class BootstrapFdStatError extends Schema.TaggedError<
+  BootstrapFdStatError,
+  { readonly brand: unique symbol }
+>()("BootstrapFdStatError", {
+  fd: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to stat bootstrap file descriptor ${this.fd}.`;
   }
 }
 
-export class BootstrapInputStreamOpenError extends Schema.TaggedError<BootstrapInputStreamOpenError>()(
-  "BootstrapInputStreamOpenError",
-  {
-    fd: Schema.Number,
-    platform: Schema.String,
-    fdPath: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class BootstrapInputStreamOpenError extends Schema.TaggedError<
+  BootstrapInputStreamOpenError,
+  { readonly brand: unique symbol }
+>()("BootstrapInputStreamOpenError", {
+  fd: Schema.Number,
+  platform: Schema.String,
+  fdPath: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const path = this.fdPath === undefined ? "" : ` via '${this.fdPath}'`;
     return `Failed to open bootstrap input stream for file descriptor ${this.fd}${path} on '${this.platform}'.`;
   }
 }
 
-export class BootstrapEnvelopeReadError extends Schema.TaggedError<BootstrapEnvelopeReadError>()(
-  "BootstrapEnvelopeReadError",
-  {
-    fd: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class BootstrapEnvelopeReadError extends Schema.TaggedError<
+  BootstrapEnvelopeReadError,
+  { readonly brand: unique symbol }
+>()("BootstrapEnvelopeReadError", {
+  fd: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read bootstrap envelope from file descriptor ${this.fd}.`;
   }
 }
 
-export class BootstrapEnvelopeDecodeError extends Schema.TaggedError<BootstrapEnvelopeDecodeError>()(
-  "BootstrapEnvelopeDecodeError",
-  {
-    fd: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class BootstrapEnvelopeDecodeError extends Schema.TaggedError<
+  BootstrapEnvelopeDecodeError,
+  { readonly brand: unique symbol }
+>()("BootstrapEnvelopeDecodeError", {
+  fd: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode bootstrap envelope from file descriptor ${this.fd}.`;
   }

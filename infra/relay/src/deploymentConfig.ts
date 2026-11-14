@@ -6,14 +6,14 @@ const MANAGED_ENDPOINT_HASH_LENGTH = 16;
 const MANAGED_ENDPOINT_TUNNEL_PREFIX = "t3coderelay-managedendpoint";
 export const MANAGED_ENDPOINT_ZONE_OWNER_STAGE = "prod";
 
-export class RelayPublicDomainLabelTooLongError extends Schema.TaggedError<RelayPublicDomainLabelTooLongError>()(
-  "RelayPublicDomainLabelTooLongError",
-  {
-    stage: Schema.String,
-    label: Schema.String,
-    maxLength: Schema.Number,
-  },
-) {
+export class RelayPublicDomainLabelTooLongError extends Schema.TaggedError<
+  RelayPublicDomainLabelTooLongError,
+  { readonly brand: unique symbol }
+>()("RelayPublicDomainLabelTooLongError", {
+  stage: Schema.String,
+  label: Schema.String,
+  maxLength: Schema.Number,
+}) {
   override get message(): string {
     return `Relay stage '${this.stage}' produces custom domain label '${this.label}' (${this.label.length} characters), exceeding the DNS label limit of ${this.maxLength}.`;
   }

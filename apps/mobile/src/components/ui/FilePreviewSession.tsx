@@ -27,10 +27,10 @@ interface FilePreviewSessionOptions {
   readonly Viewer: ComponentType<FilePreviewViewerProps>;
 }
 
-class PreviewResolutionError extends Schema.TaggedError<PreviewResolutionError>()(
-  "PreviewResolutionError",
-  { cause: Schema.Defect(), fallbackMessage: Schema.String },
-) {
+class PreviewResolutionError extends Schema.TaggedError<
+  PreviewResolutionError,
+  { readonly brand: unique symbol }
+>()("PreviewResolutionError", { cause: Schema.Defect(), fallbackMessage: Schema.String }) {
   override get message(): string {
     return this.fallbackMessage;
   }

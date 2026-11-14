@@ -7,13 +7,13 @@ import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-class ReplayFixtureGitCommandError extends Schema.TaggedError<ReplayFixtureGitCommandError>()(
-  "ReplayFixtureGitCommandError",
-  {
-    command: Schema.String,
-    exitCode: Schema.Number,
-  },
-) {
+class ReplayFixtureGitCommandError extends Schema.TaggedError<
+  ReplayFixtureGitCommandError,
+  { readonly brand: unique symbol }
+>()("ReplayFixtureGitCommandError", {
+  command: Schema.String,
+  exitCode: Schema.Number,
+}) {
   override get message(): string {
     return `${this.command} failed with exit ${this.exitCode}.`;
   }

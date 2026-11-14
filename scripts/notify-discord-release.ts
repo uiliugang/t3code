@@ -61,10 +61,10 @@ const DiscordWebhookUrl = Config.Redacted("DISCORD_WEBHOOK_URL").pipe(
   ),
 );
 
-export class DiscordReleaseWebhookConfigurationError extends Schema.TaggedError<DiscordReleaseWebhookConfigurationError>()(
-  "DiscordReleaseWebhookConfigurationError",
-  {},
-) {
+export class DiscordReleaseWebhookConfigurationError extends Schema.TaggedError<
+  DiscordReleaseWebhookConfigurationError,
+  { readonly brand: unique symbol }
+>()("DiscordReleaseWebhookConfigurationError", {}) {
   override get message(): string {
     return "DISCORD_WEBHOOK_URL must be a valid URL.";
   }
@@ -84,25 +84,25 @@ const discordReleaseErrorContext = {
   hasRoleMentionSyntax: Schema.Boolean,
 };
 
-export class DiscordReleaseWebhookRequestError extends Schema.TaggedError<DiscordReleaseWebhookRequestError>()(
-  "DiscordReleaseWebhookRequestError",
-  {
-    ...discordReleaseErrorContext,
-    reason: Schema.String,
-  },
-) {
+export class DiscordReleaseWebhookRequestError extends Schema.TaggedError<
+  DiscordReleaseWebhookRequestError,
+  { readonly brand: unique symbol }
+>()("DiscordReleaseWebhookRequestError", {
+  ...discordReleaseErrorContext,
+  reason: Schema.String,
+}) {
   override get message(): string {
     return `Failed to post Discord ${this.target} release announcement for "${this.tag}" to ${this.webhookOrigin}.`;
   }
 }
 
-export class DiscordReleaseWebhookResponseError extends Schema.TaggedError<DiscordReleaseWebhookResponseError>()(
-  "DiscordReleaseWebhookResponseError",
-  {
-    ...discordReleaseErrorContext,
-    status: Schema.Number,
-  },
-) {
+export class DiscordReleaseWebhookResponseError extends Schema.TaggedError<
+  DiscordReleaseWebhookResponseError,
+  { readonly brand: unique symbol }
+>()("DiscordReleaseWebhookResponseError", {
+  ...discordReleaseErrorContext,
+  status: Schema.Number,
+}) {
   override get message(): string {
     return `Discord ${this.target} release webhook for "${this.tag}" returned status ${this.status}.`;
   }

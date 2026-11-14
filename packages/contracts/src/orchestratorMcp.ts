@@ -199,8 +199,9 @@ export type OrchestratorMcpDelegateTaskInput = typeof OrchestratorMcpDelegateTas
 
 // Set only on results for still-running tasks whose completion will wake the parent.
 export const ORCHESTRATOR_MCP_RUNNING_TASK_NEXT =
-  "Completion wakes this thread, so end your turn. Do not wait on it or poll it.";
-const OrchestratorMcpRunningTaskNext = Schema.Literal(ORCHESTRATOR_MCP_RUNNING_TASK_NEXT);
+  "Completion wakes this thread. Do not wait on it or poll it. Continue other work, and end your turn when none is left.";
+// A string, not a literal: linked environments on other versions send their own wording.
+const OrchestratorMcpRunningTaskNext = Schema.String;
 
 // Optional: linked environments on older versions omit it.
 const OrchestratorMcpExecutedModel = Schema.NullOr(Schema.String).annotate({
@@ -387,9 +388,10 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   linkedPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
-  /** Linked pull requests not yet merged or closed; list_thread_pull_requests has all of them. */
+  /** Up to 5 open linked pull requests, watched first; list_thread_pull_requests pages all of them. */
   pullRequests: Schema.optional(Schema.Array(OrchestratorMcpThreadPullRequest)),
   pullRequestCount: Schema.optional(NonNegativeInt),
+  openPullRequestCount: Schema.optional(NonNegativeInt),
   settled: Schema.Boolean,
   settledAt: Schema.NullOr(IsoDateTime),
   snoozed: Schema.Boolean,
@@ -461,9 +463,10 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   linkedPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
-  /** Open linked pull requests, on the first page only; list_thread_pull_requests has all of them. */
+  /** Up to 5 open linked pull requests, watched first, on the first page only; list_thread_pull_requests pages all of them. */
   pullRequests: Schema.optional(Schema.Array(OrchestratorMcpThreadPullRequest)),
   pullRequestCount: Schema.optional(NonNegativeInt),
+  openPullRequestCount: Schema.optional(NonNegativeInt),
   titleRegeneration: Schema.NullOr(ThreadTitleRegeneration),
   lastTitleRegeneration: Schema.optional(Schema.NullOr(LastThreadTitleRegeneration)),
   branch: Schema.NullOr(Schema.String),
@@ -921,27 +924,27 @@ export const OrchestratorMcpDeleteScheduledTaskResult = Schema.Struct({
 export type OrchestratorMcpDeleteScheduledTaskResult =
   typeof OrchestratorMcpDeleteScheduledTaskResult.Type;
 
-export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFailure>()(
-  "OrchestratorMcpFailure",
-  {
-    code: Schema.Literals([
-      "capability_denied",
-      "parent_not_active",
-      "provider_unavailable",
-      "model_unavailable",
-      "runtime_mode_escalation_denied",
-      "interaction_mode_escalation_denied",
-      "task_not_found",
-      "task_not_cancellable",
-      "thread_not_found",
-      "run_not_found",
-      "thread_not_sendable",
-      "thread_not_interruptible",
-      "invalid_request",
-      "orchestration_error",
-      "thread_credential_required",
-      "target_required",
-    ]),
-    message: Schema.String,
-  },
-) {}
+export class OrchestratorMcpFailure extends Schema.TaggedError<
+  OrchestratorMcpFailure,
+  { readonly brand: unique symbol }
+>()("OrchestratorMcpFailure", {
+  code: Schema.Literals([
+    "capability_denied",
+    "parent_not_active",
+    "provider_unavailable",
+    "model_unavailable",
+    "runtime_mode_escalation_denied",
+    "interaction_mode_escalation_denied",
+    "task_not_found",
+    "task_not_cancellable",
+    "thread_not_found",
+    "run_not_found",
+    "thread_not_sendable",
+    "thread_not_interruptible",
+    "invalid_request",
+    "orchestration_error",
+    "thread_credential_required",
+    "target_required",
+  ]),
+  message: Schema.String,
+}) {}

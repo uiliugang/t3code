@@ -45,13 +45,13 @@ import {
 } from "./bitbucketPullRequestJson.ts";
 import type { ProviderListCursor } from "@t3tools/source-control-core/server/PullRequestProvider";
 
-export class BitbucketPullRequestReadError extends Schema.TaggedError<BitbucketPullRequestReadError>()(
-  "BitbucketPullRequestReadError",
-  {
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketPullRequestReadError extends Schema.TaggedError<
+  BitbucketPullRequestReadError,
+  { readonly brand: unique symbol }
+>()("BitbucketPullRequestReadError", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return `Bitbucket returned an unreadable ${this.operation} response.`;
   }
@@ -61,10 +61,10 @@ export class BitbucketPullRequestReadError extends Schema.TaggedError<BitbucketP
   }
 }
 
-export class BitbucketViewerUnavailableError extends Schema.TaggedError<BitbucketViewerUnavailableError>()(
-  "BitbucketViewerUnavailableError",
-  {},
-) {
+export class BitbucketViewerUnavailableError extends Schema.TaggedError<
+  BitbucketViewerUnavailableError,
+  { readonly brand: unique symbol }
+>()("BitbucketViewerUnavailableError", {}) {
   get detail(): string {
     return "Bitbucket returned no account name for the configured credentials.";
   }
@@ -74,12 +74,12 @@ export class BitbucketViewerUnavailableError extends Schema.TaggedError<Bitbucke
   }
 }
 
-export class BitbucketRepositoryUnsupportedError extends Schema.TaggedError<BitbucketRepositoryUnsupportedError>()(
-  "BitbucketRepositoryUnsupportedError",
-  {
-    repository: Schema.String,
-  },
-) {
+export class BitbucketRepositoryUnsupportedError extends Schema.TaggedError<
+  BitbucketRepositoryUnsupportedError,
+  { readonly brand: unique symbol }
+>()("BitbucketRepositoryUnsupportedError", {
+  repository: Schema.String,
+}) {
   get detail(): string {
     return "A Bitbucket repository is addressed as workspace/repository.";
   }
@@ -89,10 +89,10 @@ export class BitbucketRepositoryUnsupportedError extends Schema.TaggedError<Bitb
   }
 }
 
-export class BitbucketDiffCommitError extends Schema.TaggedError<BitbucketDiffCommitError>()(
-  "BitbucketDiffCommitError",
-  {},
-) {
+export class BitbucketDiffCommitError extends Schema.TaggedError<
+  BitbucketDiffCommitError,
+  { readonly brand: unique symbol }
+>()("BitbucketDiffCommitError", {}) {
   get detail(): string {
     return "The named commit was not a commit sha.";
   }

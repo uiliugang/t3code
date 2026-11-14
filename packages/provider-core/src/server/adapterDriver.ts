@@ -7,15 +7,15 @@ import type * as Scope from "effect/Scope";
 
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
-export class ProviderAdapterDriverCreateError extends Schema.TaggedError<ProviderAdapterDriverCreateError>()(
-  "ProviderAdapterDriverCreateError",
-  {
-    driver: ProviderDriverKind,
-    instanceId: ProviderInstanceId,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterDriverCreateError extends Schema.TaggedError<
+  ProviderAdapterDriverCreateError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterDriverCreateError", {
+  driver: ProviderDriverKind,
+  instanceId: ProviderInstanceId,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to create orchestration-v2 provider adapter ${this.instanceId} (${this.driver}): ${this.detail}`;
   }

@@ -24,77 +24,77 @@ export interface AgentAwarenessDeliveryUserRecord {
   readonly liveActivitiesEnabled: boolean;
 }
 
-export class EnvironmentLinkUpsertPersistenceError extends Schema.TaggedError<EnvironmentLinkUpsertPersistenceError>()(
-  "EnvironmentLinkUpsertPersistenceError",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    deviceId: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentLinkUpsertPersistenceError extends Schema.TaggedError<
+  EnvironmentLinkUpsertPersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkUpsertPersistenceError", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  deviceId: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist environment link for user '${this.userId}', environment '${this.environmentId}'`;
   }
 }
 
-export class EnvironmentLinkUserListPersistenceError extends Schema.TaggedError<EnvironmentLinkUserListPersistenceError>()(
-  "EnvironmentLinkUserListPersistenceError",
-  {
-    environmentId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentLinkUserListPersistenceError extends Schema.TaggedError<
+  EnvironmentLinkUserListPersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkUserListPersistenceError", {
+  environmentId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Environment link user query 'list-delivery-users' failed for environment '${this.environmentId}'`;
   }
 }
 
-export class EnvironmentLinkListPersistenceError extends Schema.TaggedError<EnvironmentLinkListPersistenceError>()(
-  "EnvironmentLinkListPersistenceError",
-  {
-    userId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentLinkListPersistenceError extends Schema.TaggedError<
+  EnvironmentLinkListPersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkListPersistenceError", {
+  userId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to list environment links for user '${this.userId}'`;
   }
 }
 
-export class EnvironmentLinkLookupPersistenceError extends Schema.TaggedError<EnvironmentLinkLookupPersistenceError>()(
-  "EnvironmentLinkLookupPersistenceError",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentLinkLookupPersistenceError extends Schema.TaggedError<
+  EnvironmentLinkLookupPersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkLookupPersistenceError", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to look up environment link for user '${this.userId}', environment '${this.environmentId}'`;
   }
 }
 
-export class EnvironmentLinkEnvironmentLookupPersistenceError extends Schema.TaggedError<EnvironmentLinkEnvironmentLookupPersistenceError>()(
-  "EnvironmentLinkEnvironmentLookupPersistenceError",
-  {
-    environmentId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentLinkEnvironmentLookupPersistenceError extends Schema.TaggedError<
+  EnvironmentLinkEnvironmentLookupPersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkEnvironmentLookupPersistenceError", {
+  environmentId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to look up active managed links for environment '${this.environmentId}'`;
   }
 }
 
-export class EnvironmentLinkRevokePersistenceError extends Schema.TaggedError<EnvironmentLinkRevokePersistenceError>()(
-  "EnvironmentLinkRevokePersistenceError",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentLinkRevokePersistenceError extends Schema.TaggedError<
+  EnvironmentLinkRevokePersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkRevokePersistenceError", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to revoke environment link for user '${this.userId}', environment '${this.environmentId}'`;
   }

@@ -90,10 +90,10 @@ export const IsExecutable = Context.Reference<boolean>("@t3tools/shared/HostProc
   defaultValue: () => NodeSea.isSea(),
 });
 
-export class HostnameLookupError extends Schema.TaggedError<HostnameLookupError>()(
-  "HostnameLookupError",
-  { hostname: Schema.String, cause: Schema.Defect() },
-) {
+export class HostnameLookupError extends Schema.TaggedError<
+  HostnameLookupError,
+  { readonly brand: unique symbol }
+>()("HostnameLookupError", { hostname: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not resolve ${this.hostname}.`;
   }

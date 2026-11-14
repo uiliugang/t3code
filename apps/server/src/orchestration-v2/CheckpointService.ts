@@ -34,66 +34,66 @@ const ROOT_CHECKPOINT_SCOPE_NAME = "root";
 // It bounds only the snapshot: waiting on the lock lets an in-flight capture finish the same ref.
 const BASELINE_CAPTURE_BUDGET = "5 seconds";
 
-export class CheckpointRootScopePrepareError extends Schema.TaggedError<CheckpointRootScopePrepareError>()(
-  "CheckpointRootScopePrepareError",
-  {
-    threadId: ThreadId,
-    runId: RunId,
-    cause: Schema.Defect(),
-  },
-) {
+export class CheckpointRootScopePrepareError extends Schema.TaggedError<
+  CheckpointRootScopePrepareError,
+  { readonly brand: unique symbol }
+>()("CheckpointRootScopePrepareError", {
+  threadId: ThreadId,
+  runId: RunId,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to prepare root checkpoint scope for run ${this.runId}.`;
   }
 }
 
-export class CheckpointBaselineCaptureError extends Schema.TaggedError<CheckpointBaselineCaptureError>()(
-  "CheckpointBaselineCaptureError",
-  {
-    scopeId: CheckpointScopeId,
-    ordinalWithinScope: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class CheckpointBaselineCaptureError extends Schema.TaggedError<
+  CheckpointBaselineCaptureError,
+  { readonly brand: unique symbol }
+>()("CheckpointBaselineCaptureError", {
+  scopeId: CheckpointScopeId,
+  ordinalWithinScope: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to capture checkpoint baseline ${this.ordinalWithinScope} for scope ${this.scopeId}.`;
   }
 }
 
-export class CheckpointCaptureError extends Schema.TaggedError<CheckpointCaptureError>()(
-  "CheckpointCaptureError",
-  {
-    scopeId: CheckpointScopeId,
-    parentCheckpointId: Schema.optional(CheckpointId),
-    cause: Schema.Defect(),
-  },
-) {
+export class CheckpointCaptureError extends Schema.TaggedError<
+  CheckpointCaptureError,
+  { readonly brand: unique symbol }
+>()("CheckpointCaptureError", {
+  scopeId: CheckpointScopeId,
+  parentCheckpointId: Schema.optional(CheckpointId),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to capture checkpoint for scope ${this.scopeId}.`;
   }
 }
 
-export class CheckpointRestoreError extends Schema.TaggedError<CheckpointRestoreError>()(
-  "CheckpointRestoreError",
-  {
-    scopeId: CheckpointScopeId,
-    checkpointId: CheckpointId,
-    cause: Schema.Defect(),
-  },
-) {
+export class CheckpointRestoreError extends Schema.TaggedError<
+  CheckpointRestoreError,
+  { readonly brand: unique symbol }
+>()("CheckpointRestoreError", {
+  scopeId: CheckpointScopeId,
+  checkpointId: CheckpointId,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to restore checkpoint ${this.checkpointId} for scope ${this.scopeId}.`;
   }
 }
 
-export class CheckpointDeleteStaleRefsError extends Schema.TaggedError<CheckpointDeleteStaleRefsError>()(
-  "CheckpointDeleteStaleRefsError",
-  {
-    scopeId: CheckpointScopeId,
-    checkpointIds: Schema.Array(CheckpointId),
-    cause: Schema.Defect(),
-  },
-) {
+export class CheckpointDeleteStaleRefsError extends Schema.TaggedError<
+  CheckpointDeleteStaleRefsError,
+  { readonly brand: unique symbol }
+>()("CheckpointDeleteStaleRefsError", {
+  scopeId: CheckpointScopeId,
+  checkpointIds: Schema.Array(CheckpointId),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to delete stale checkpoint refs for scope ${this.scopeId}.`;
   }
@@ -427,6 +427,7 @@ export const layer: Layer.Layer<
             .captureCheckpoint({
               cwd: input.scope.cwd,
               checkpointRef,
+              ...(input.ordinalWithinScope > 0 ? { previousCheckpointRef } : {}),
             })
             .pipe(
               Effect.as("ready" as const),

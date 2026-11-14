@@ -1,4 +1,6 @@
 import * as WorkItems from "./work-items/WorkItemService.ts";
+import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
+import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
 import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as PullRequestNotifications from "./communication/PullRequestNotificationService.ts";
@@ -191,6 +193,7 @@ import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/s
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
+import * as ProviderInstanceService from "./provider/ProviderInstanceService.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as NpmRelease from "./cloud/npmRelease.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -615,6 +618,7 @@ export function projectMutationFailureMessage(
     return error.cause.message;
   }
   return error._tag === "ProjectNotEmptyError" ||
+    error._tag === "ProjectInvalidError" ||
     error._tag === "ProjectWorkspaceRootChangeBlockedError"
     ? error.message
     : "Failed to mutate project.";
@@ -1501,6 +1505,8 @@ export const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const workItems = yield* WorkItems.WorkItemService;
+      const deliveryAutomation = yield* DeliveryAutomation.DeliveryAutomationService;
+      const deliverySync = yield* DeliverySync.DeliverySyncReactor;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
@@ -1572,6 +1578,7 @@ export const layerWsRpc = (
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const providerAuth = yield* ProviderAuthService.ProviderAuthService;
       const providerInstallation = yield* ProviderInstallation.ProviderInstallation;
+      const providerInstanceService = yield* ProviderInstanceService.ProviderInstanceService;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const npmRelease = yield* NpmRelease.NpmRelease;
       const config = yield* ServerConfig.ServerConfig;
@@ -1922,7 +1929,9 @@ export const layerWsRpc = (
           threadSnapshotPagination: true,
           threadFind: true,
           workItems: true,
+          workItemDelivery: true,
           workItemDiscovery: true,
+          workItemDraftGeneration: true,
           workItemAnalysis: false,
           threadPredictions: true,
           threadFindProgressive: true,
@@ -2330,6 +2339,9 @@ export const layerWsRpc = (
         [WS_METHODS.workItemsSubscribe]: (input) => workItems.subscribeList(input),
         [WS_METHODS.workItemsMutate]: (input) => workItems.mutate(input),
         [WS_METHODS.workItemsDiscover]: (input) => workItems.discover(input),
+        [WS_METHODS.workItemsGenerateDraft]: (input) => workItems.generateDraft(input),
+        [WS_METHODS.workItemsCreateIssue]: (input) => deliveryAutomation.createIssue(input),
+        [WS_METHODS.workItemsRefreshDelivery]: (input) => deliverySync.refresh(input.id),
         [ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion]: (input) =>
           providerSessionManager.subscribePromptSuggestion(input.threadId),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
@@ -2726,7 +2738,7 @@ export const layerWsRpc = (
             const nextPatch = { ...patch, ...(deviceHosts ? { deviceHosts } : {}) };
             const settings = yield* providerInstanceMutation === undefined
               ? serverSettings.updateSettings(nextPatch)
-              : serverSettings.updateProviderInstance(providerInstanceMutation, nextPatch);
+              : providerInstanceService.update(providerInstanceMutation, nextPatch);
             return ServerSettings.redactServerSettingsForClient(settings, settingsClient);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
@@ -2870,6 +2882,8 @@ export const layerWsRpc = (
               ),
             ),
         [WS_METHODS.pullRequestsSubscribeRefreshes]: () => pullRequests.subscribeRefreshes,
+        [WS_METHODS.pullRequestsSubscribeLinkedThreadRefreshes]: () =>
+          pullRequests.subscribeLinkedThreadRefreshes,
         [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
           withPullRequestViewer(input, pullRequests.reviewerCandidates(input)),
         [WS_METHODS.pullRequestsRequestReviewers]: (input) =>
@@ -3253,6 +3267,11 @@ export const layerWsRpc = (
           workspaceAccess.validate({ cwd: input.path }).pipe(
             Effect.andThen(workspaceAccess.run(input, gitWorkflow.removeWorktree(input))),
             Effect.tap(() => refreshGitStatus(input.cwd)),
+            Effect.tap(() =>
+              vcsStatusBroadcaster
+                .refreshLocalStatus(input.path)
+                .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
+            ),
           ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           workspaceAccess

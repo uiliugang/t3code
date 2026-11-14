@@ -23,41 +23,41 @@ import * as EnvironmentLinks from "./EnvironmentLinks.ts";
 import * as ManagedEndpointProvider from "./ManagedEndpointProvider.ts";
 import * as RelayConfiguration from "../Config.ts";
 
-export class EnvironmentLinkProofExpired extends Schema.TaggedError<EnvironmentLinkProofExpired>()(
-  "EnvironmentLinkProofExpired",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    expiresAt: Schema.String,
-  },
-) {
+export class EnvironmentLinkProofExpired extends Schema.TaggedError<
+  EnvironmentLinkProofExpired,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkProofExpired", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  expiresAt: Schema.String,
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' link proof expired at ${this.expiresAt}`;
   }
 }
 
-export class EnvironmentLinkProofInvalid extends Schema.TaggedError<EnvironmentLinkProofInvalid>()(
-  "EnvironmentLinkProofInvalid",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    reason: RelayEnvironmentLinkProofInvalidReason,
-    stage: Schema.Literals([
-      "decode_token",
-      "decode_payload",
-      "verify_proof",
-      "authorize_capabilities",
-      "validate_descriptor",
-      "verify_challenge",
-      "validate_expiration",
-      "consume_proof_nonce",
-      "consume_challenge_nonce",
-      "validate_origin",
-      "validate_endpoint",
-    ]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class EnvironmentLinkProofInvalid extends Schema.TaggedError<
+  EnvironmentLinkProofInvalid,
+  { readonly brand: unique symbol }
+>()("EnvironmentLinkProofInvalid", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  reason: RelayEnvironmentLinkProofInvalidReason,
+  stage: Schema.Literals([
+    "decode_token",
+    "decode_payload",
+    "verify_proof",
+    "authorize_capabilities",
+    "validate_descriptor",
+    "verify_challenge",
+    "validate_expiration",
+    "consume_proof_nonce",
+    "consume_challenge_nonce",
+    "validate_origin",
+    "validate_endpoint",
+  ]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' link proof is invalid during ${this.stage}: ${this.reason}`;
   }

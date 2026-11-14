@@ -8,23 +8,23 @@ export type NotificationPermissionResult =
   | { readonly type: "granted" }
   | { readonly type: "denied"; readonly canAskAgain: boolean };
 
-export class NotificationPermissionReadError extends Schema.TaggedError<NotificationPermissionReadError>()(
-  "NotificationPermissionReadError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class NotificationPermissionReadError extends Schema.TaggedError<
+  NotificationPermissionReadError,
+  { readonly brand: unique symbol }
+>()("NotificationPermissionReadError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to read notification permissions.";
   }
 }
 
-export class NotificationPermissionRequestError extends Schema.TaggedError<NotificationPermissionRequestError>()(
-  "NotificationPermissionRequestError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class NotificationPermissionRequestError extends Schema.TaggedError<
+  NotificationPermissionRequestError,
+  { readonly brand: unique symbol }
+>()("NotificationPermissionRequestError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to request notification permissions.";
   }

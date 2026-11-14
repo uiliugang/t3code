@@ -23,10 +23,10 @@ export function settingsSecretLiteral(value: SettingsSecretValue | undefined): s
   return typeof value === "string" ? value : "";
 }
 
-export class SettingsSecretUnresolvedError extends Schema.TaggedError<SettingsSecretUnresolvedError>()(
-  "SettingsSecretUnresolvedError",
-  { provider: Schema.String },
-) {
+export class SettingsSecretUnresolvedError extends Schema.TaggedError<
+  SettingsSecretUnresolvedError,
+  { readonly brand: unique symbol }
+>()("SettingsSecretUnresolvedError", { provider: Schema.String }) {
   override get message(): string {
     return `Could not read the credential from the secret provider "${this.provider}". Unlock or fix it in Settings, then try again.`;
   }

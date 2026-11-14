@@ -12,51 +12,51 @@ import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import * as RelayDb from "../db.ts";
 import { relayAgentActivityRows, relayEnvironmentLinks } from "../persistence/schema.ts";
 
-export class AgentActivityRowUpsertPersistenceError extends Schema.TaggedError<AgentActivityRowUpsertPersistenceError>()(
-  "AgentActivityRowUpsertPersistenceError",
-  {
-    environmentId: Schema.String,
-    threadId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class AgentActivityRowUpsertPersistenceError extends Schema.TaggedError<
+  AgentActivityRowUpsertPersistenceError,
+  { readonly brand: unique symbol }
+>()("AgentActivityRowUpsertPersistenceError", {
+  environmentId: Schema.String,
+  threadId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist agent activity state for environment ${this.environmentId}, thread ${this.threadId}.`;
   }
 }
 
-export class AgentActivityRowDeletePersistenceError extends Schema.TaggedError<AgentActivityRowDeletePersistenceError>()(
-  "AgentActivityRowDeletePersistenceError",
-  {
-    environmentId: Schema.String,
-    threadId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class AgentActivityRowDeletePersistenceError extends Schema.TaggedError<
+  AgentActivityRowDeletePersistenceError,
+  { readonly brand: unique symbol }
+>()("AgentActivityRowDeletePersistenceError", {
+  environmentId: Schema.String,
+  threadId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to delete agent activity state for environment ${this.environmentId}, thread ${this.threadId}.`;
   }
 }
 
-export class AgentActivityRowPruneTerminalPersistenceError extends Schema.TaggedError<AgentActivityRowPruneTerminalPersistenceError>()(
-  "AgentActivityRowPruneTerminalPersistenceError",
-  {
-    updatedBefore: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class AgentActivityRowPruneTerminalPersistenceError extends Schema.TaggedError<
+  AgentActivityRowPruneTerminalPersistenceError,
+  { readonly brand: unique symbol }
+>()("AgentActivityRowPruneTerminalPersistenceError", {
+  updatedBefore: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to prune terminal agent activity rows updated before ${this.updatedBefore}.`;
   }
 }
 
-export class AgentActivityRowListPersistenceError extends Schema.TaggedError<AgentActivityRowListPersistenceError>()(
-  "AgentActivityRowListPersistenceError",
-  {
-    userId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class AgentActivityRowListPersistenceError extends Schema.TaggedError<
+  AgentActivityRowListPersistenceError,
+  { readonly brand: unique symbol }
+>()("AgentActivityRowListPersistenceError", {
+  userId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to list agent activity state for user ${this.userId}.`;
   }

@@ -19,6 +19,9 @@ import "~/index.css";
 import { act, render } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
+  config: null as unknown as Atom.Writable<{
+    environment: { capabilities: { providerInstanceDeletion: boolean } };
+  }>,
   providers: null as unknown as Atom.Writable<ReadonlyArray<ServerProvider>>,
   providerAuthQuery: null as unknown,
   providerAuth: null as ProviderAuthState | null,
@@ -45,7 +48,10 @@ vi.mock(import("../../state/server"), async (original) => {
   const { Atom } = await import("effect/reactivity");
   const providers = Atom.make<ReadonlyArray<ServerProvider>>([]).pipe(Atom.keepAlive);
   state.providers = providers;
-  const config = Atom.make(null);
+  const config = Atom.make({
+    environment: { capabilities: { providerInstanceDeletion: true } },
+  }).pipe(Atom.keepAlive);
+  state.config = config;
   const providerAuth = Atom.make(null);
   state.providerAuthQuery = providerAuth;
   const commandLabels = {
@@ -248,10 +254,29 @@ async function setup() {
   state.updateProvider.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.uninstall.mockReset().mockResolvedValue(AsyncResult.success({}));
   state.acceptUrlAuth.mockReset().mockResolvedValue(AsyncResult.success({ accepted: true }));
+  await act(async () =>
+    appAtomRegistry.set(state.config, {
+      environment: { capabilities: { providerInstanceDeletion: true } },
+    }),
+  );
   await setProviders([]);
 }
 
 describe("EnvironmentProviderSettings routing", () => {
+  it("keeps custom instances visible after their driver's default is removed", async () => {
+    await setup();
+    state.settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      removedProviderInstances: [codexId],
+      providerInstances: {
+        [customId]: { driver: ProviderDriverKind.make("codex"), displayName: "Extra account" },
+      },
+    };
+    await using screen = await render(panel({ targetInstanceId: customId }));
+    await expect
+      .element(screen.getByRole("button", { name: `Delete instance ${customId}` }))
+      .toBeVisible();
+  });
   it("does not substitute another account when the requested instance was removed", async () => {
     await setup();
     await setProviders([provider()]);
@@ -372,7 +397,35 @@ describe("EnvironmentProviderSettings routing", () => {
   });
 });
 
+describe("EnvironmentProviderSettings provider list", () => {
+  it("selects a provider when its row is clicked near the edge", async () => {
+    await setup();
+    await setProviders([provider()]);
+    await using _screen = await render(panel());
+    const select = page.getByRole("button", { name: "Select Claude" });
+    await expect.element(select).toHaveAttribute("aria-pressed", "false");
+    const row = page.elementLocator(select.element().closest('[data-slot="settings-row"]')!);
+
+    await userEvent.click(row, { position: { x: 3, y: 3 } });
+
+    await expect.element(select).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("EnvironmentProviderSettings instance removal", () => {
+  it("does not send deletion requests to older servers", async () => {
+    await setup();
+    await act(async () =>
+      appAtomRegistry.set(state.config, {
+        environment: { capabilities: { providerInstanceDeletion: false } },
+      }),
+    );
+    await using _screen = await render(panel({ targetInstanceId: codexId }));
+    await userEvent.click(page.getByRole("button", { name: `Delete instance ${codexId}` }));
+    expect(state.mutateProviderInstance).not.toHaveBeenCalled();
+    expect(state.confirm).not.toHaveBeenCalled();
+  });
+
   it("resets a configured default instance only once the user confirms", async () => {
     await setup();
     state.settings = {
@@ -398,6 +451,13 @@ describe("EnvironmentProviderSettings instance removal", () => {
     await vi.waitFor(() =>
       expect(state.mutateProviderInstance).toHaveBeenCalledWith({
         operation: "remove",
+        instanceId: codexId,
+      }),
+    );
+    await userEvent.click(page.getByRole("button", { name: `Delete instance ${codexId}` }));
+    await vi.waitFor(() =>
+      expect(state.mutateProviderInstance).toHaveBeenLastCalledWith({
+        operation: "delete",
         instanceId: codexId,
       }),
     );
@@ -449,7 +509,7 @@ describe("EnvironmentProviderSettings instance removal", () => {
     await userEvent.click(remove);
     await vi.waitFor(() =>
       expect(state.mutateProviderInstance).toHaveBeenCalledWith({
-        operation: "remove",
+        operation: "delete",
         instanceId: customId,
       }),
     );

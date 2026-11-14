@@ -10,6 +10,7 @@ import {
   type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateResult,
   type ServerSelfUpdateError,
+  type WorkItemSummary,
   shouldRecommendDatabaseCompaction,
   type UsageSummary,
   WS_METHODS,
@@ -102,37 +103,37 @@ export const serverUpdateStateAtom = Atom.family((environmentId: EnvironmentId) 
   ),
 );
 
-export class ServerUpdateResumeTimeoutError extends Schema.TaggedError<ServerUpdateResumeTimeoutError>()(
-  "ServerUpdateResumeTimeoutError",
-  {
-    environmentId: Schema.String,
-    targetVersion: Schema.String,
-  },
-) {
+export class ServerUpdateResumeTimeoutError extends Schema.TaggedError<
+  ServerUpdateResumeTimeoutError,
+  { readonly brand: unique symbol }
+>()("ServerUpdateResumeTimeoutError", {
+  environmentId: Schema.String,
+  targetVersion: Schema.String,
+}) {
   override get message(): string {
     return `Could not confirm that the server resumed on t3@${this.targetVersion}. Reconnect to check the update outcome.`;
   }
 }
 
-export class ServerUpdateProgressIncompleteError extends Schema.TaggedError<ServerUpdateProgressIncompleteError>()(
-  "ServerUpdateProgressIncompleteError",
-  {
-    targetVersion: Schema.String,
-  },
-) {
+export class ServerUpdateProgressIncompleteError extends Schema.TaggedError<
+  ServerUpdateProgressIncompleteError,
+  { readonly brand: unique symbol }
+>()("ServerUpdateProgressIncompleteError", {
+  targetVersion: Schema.String,
+}) {
   override get message(): string {
     return `The t3@${this.targetVersion} update ended before the server accepted the restart.`;
   }
 }
 
-export class ServerUpdateTerminalError extends Schema.TaggedError<ServerUpdateTerminalError>()(
-  "ServerUpdateTerminalError",
-  {
-    targetVersion: Schema.String,
-    status: Schema.Literals(["committed", "rolled-back", "failed"]),
-    reason: Schema.optional(Schema.String),
-  },
-) {
+export class ServerUpdateTerminalError extends Schema.TaggedError<
+  ServerUpdateTerminalError,
+  { readonly brand: unique symbol }
+>()("ServerUpdateTerminalError", {
+  targetVersion: Schema.String,
+  status: Schema.Literals(["committed", "rolled-back", "failed"]),
+  reason: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return this.reason ?? `The t3@${this.targetVersion} update ${this.status}.`;
   }
@@ -1399,8 +1400,33 @@ export function createServerEnvironmentAtoms<R, E>(
     scheduler: configScheduler,
     concurrency: configConcurrency,
   });
+  const workItemsLive = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "environment-data:server:work-items:live",
+    tag: WS_METHODS.workItemsSubscribe,
+  });
+  const issueWorkItemsFamily = Atom.family((key: string) => {
+    const [environmentId, urls] = JSON.parse(key) as [EnvironmentId | null, string[]];
+    return Atom.make((get) => {
+      const tracked = new Map<string, WorkItemSummary>();
+      if (!environmentId || get(configValueAtom(environmentId))?.workItemDelivery !== true)
+        return tracked;
+      for (let offset = 0; offset < urls.length; offset += 100) {
+        const result = get(
+          workItemsLive({
+            environmentId,
+            input: { issueUrls: urls.slice(offset, offset + 100), limit: 100 },
+          }),
+        );
+        for (const item of AsyncResult.getOrElse(result, () => null)?.items ?? [])
+          if (item.issue) tracked.set(item.issue.url, item);
+      }
+      return tracked;
+    });
+  });
 
   return {
+    issueWorkItems: (environmentId: EnvironmentId | null, urls: ReadonlyArray<string>) =>
+      issueWorkItemsFamily(JSON.stringify([environmentId, [...new Set(urls)].sort()])),
     configValueAtom,
     wechat: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:wechat",
@@ -1613,10 +1639,7 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-task:webhook-delivery",
       tag: WS_METHODS.scheduledTasksGetWebhookDelivery,
     }),
-    workItemsLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "environment-data:server:work-items:live",
-      tag: WS_METHODS.workItemsSubscribe,
-    }),
+    workItemsLive,
     scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
@@ -1883,6 +1906,18 @@ export function createServerEnvironmentAtoms<R, E>(
     discoverWorkItems: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:work-items:discover",
       tag: WS_METHODS.workItemsDiscover,
+    }),
+    generateWorkItemDraft: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:work-items:generate-draft",
+      tag: WS_METHODS.workItemsGenerateDraft,
+    }),
+    createWorkItemIssue: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:work-items:create-issue",
+      tag: WS_METHODS.workItemsCreateIssue,
+    }),
+    refreshWorkItemDelivery: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:work-items:refresh-delivery",
+      tag: WS_METHODS.workItemsRefreshDelivery,
     }),
     upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:upsert",

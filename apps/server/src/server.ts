@@ -34,6 +34,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
+import * as NonBlockingSpawner from "./process/NonBlockingSpawner.ts";
 import * as KeepAwake from "./background/KeepAwake.ts";
 import * as ServerConfig from "./config.ts";
 import { withUntracedRequests } from "./http.ts";
@@ -120,6 +121,7 @@ import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
+import * as ProviderInstanceService from "./provider/ProviderInstanceService.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
 import * as ClaudeInstallation from "./provider/ClaudeInstallation.ts";
 import * as ProviderInstallationGate from "./provider/ProviderInstallationGate.ts";
@@ -151,6 +153,9 @@ import * as SourceControlRateLimit from "@t3tools/source-control-core/server/Sou
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as BranchIssueService from "./sourceControl/BranchIssueService.ts";
 import * as IssueService from "./sourceControl/IssueService.ts";
+import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
+import * as McmRelease from "./work-items/McmReleaseService.ts";
+import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as Observability from "./observability/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
@@ -392,9 +397,14 @@ const layerHttpServer = Layer.unwrap(
       },
     );
   }),
-).pipe(Layer.provide(ManagedPolicy.layer));
+).pipe(
+  Layer.provide(ManagedPolicy.layer),
+  // NodeHttpServer.layer also outputs NodeServices, whose spawner would shadow the wrapped one.
+  (layer) => NonBlockingSpawner.layer.pipe(Layer.provideMerge(layer)),
+);
 
 const layerPlatformServices = DocumentText.layer.pipe(
+  Layer.provideMerge(NonBlockingSpawner.layer),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
@@ -594,6 +604,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(UsageLimitSources.layerResetFallback),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(layerCheckpointStore),
@@ -685,6 +696,11 @@ const layerServerRestart = Layer.effect(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  DeliveryAutomation.layer.pipe(Layer.provide(layerSourceControlRepositoryService)),
+  DeliverySync.layer.pipe(
+    Layer.provide(layerSourceControlRepositoryService),
+    Layer.provide(McmRelease.layer.pipe(Layer.provide(ProcessRunner.layer))),
+  ),
   WechatBridge.layer.pipe(
     Layer.provide(RuntimeLayer.layerEventSink),
     Layer.provide(WechatClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
@@ -741,6 +757,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
   ProviderInstallation.layer,
+  ProviderInstanceService.layer,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
@@ -1359,4 +1376,7 @@ const layerMakeServer = Layer.unwrap(
   }),
 ).pipe(Layer.provide(ProcessRunner.layer));
 
-export const runServer = Layer.launch(layerMakeServer);
+export const runServer = Layer.launch(
+  // For the layers above whose spawner requirement is met by the caller's runtime.
+  layerMakeServer.pipe(Layer.provide(NonBlockingSpawner.layer)),
+);

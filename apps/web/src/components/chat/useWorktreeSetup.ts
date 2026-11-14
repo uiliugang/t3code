@@ -65,6 +65,7 @@ export function useWorktreeSetup(input: {
       (activeThread?.id === routeThreadRef.threadId &&
         (localPreparing ||
           runPreparing ||
+          (heldSnapshot?.threadId === target.threadId && heldSnapshot.phase === "running") ||
           activeThread.worktreePath !== null ||
           activeThread.workspace?.mode === "isolated"))
       ? vcsEnvironment.worktreeSetup({

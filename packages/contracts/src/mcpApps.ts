@@ -67,14 +67,14 @@ export const McpAppRequestErrorReason = Schema.Literals([
 ]);
 export type McpAppRequestErrorReason = typeof McpAppRequestErrorReason.Type;
 
-export class McpAppRequestError extends Schema.TaggedError<McpAppRequestError>()(
-  "McpAppRequestError",
-  {
-    threadId: ThreadId,
-    reason: McpAppRequestErrorReason,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class McpAppRequestError extends Schema.TaggedError<
+  McpAppRequestError,
+  { readonly brand: unique symbol }
+>()("McpAppRequestError", {
+  threadId: ThreadId,
+  reason: McpAppRequestErrorReason,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "not-an-app":

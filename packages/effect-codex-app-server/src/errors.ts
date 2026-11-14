@@ -120,13 +120,13 @@ export interface CodexAppServerProtocolErrorShape {
   readonly data?: unknown;
 }
 
-export class CodexAppServerSpawnError extends Schema.TaggedError<CodexAppServerSpawnError>()(
-  "CodexAppServerSpawnError",
-  {
-    command: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class CodexAppServerSpawnError extends Schema.TaggedError<
+  CodexAppServerSpawnError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerSpawnError", {
+  command: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message() {
     return this.command
       ? `Failed to spawn Codex App Server process for command: ${this.command}`
@@ -134,15 +134,15 @@ export class CodexAppServerSpawnError extends Schema.TaggedError<CodexAppServerS
   }
 }
 
-export class CodexAppServerProcessExitedError extends Schema.TaggedError<CodexAppServerProcessExitedError>()(
-  "CodexAppServerProcessExitedError",
-  {
-    code: Schema.optional(Schema.Number),
-    pid: Schema.optionalKey(Schema.Int),
-    stderr: Schema.optionalKey(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CodexAppServerProcessExitedError extends Schema.TaggedError<
+  CodexAppServerProcessExitedError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerProcessExitedError", {
+  code: Schema.optional(Schema.Number),
+  pid: Schema.optionalKey(Schema.Int),
+  stderr: Schema.optionalKey(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     const base =
       this.code === undefined
@@ -152,20 +152,20 @@ export class CodexAppServerProcessExitedError extends Schema.TaggedError<CodexAp
   }
 }
 
-export class CodexAppServerProtocolParseError extends Schema.TaggedError<CodexAppServerProtocolParseError>()(
-  "CodexAppServerProtocolParseError",
-  {
-    operation: CodexAppServerProtocolParseOperation,
-    method: Schema.optionalKey(Schema.String),
-    requestId: Schema.optionalKey(Schema.String),
-    payloadKind: Schema.optionalKey(CodexAppServerPayloadKind),
-    presentFields: Schema.optionalKey(Schema.Array(CodexAppServerProtocolMessageField)),
-    issueCount: Schema.optionalKey(Schema.Number),
-    issueKinds: Schema.optionalKey(Schema.Array(CodexAppServerSchemaIssueKind)),
-    maximumPathDepth: Schema.optionalKey(Schema.Number),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CodexAppServerProtocolParseError extends Schema.TaggedError<
+  CodexAppServerProtocolParseError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerProtocolParseError", {
+  operation: CodexAppServerProtocolParseOperation,
+  method: Schema.optionalKey(Schema.String),
+  requestId: Schema.optionalKey(Schema.String),
+  payloadKind: Schema.optionalKey(CodexAppServerPayloadKind),
+  presentFields: Schema.optionalKey(Schema.Array(CodexAppServerProtocolMessageField)),
+  issueCount: Schema.optionalKey(Schema.Number),
+  issueKinds: Schema.optionalKey(Schema.Array(CodexAppServerSchemaIssueKind)),
+  maximumPathDepth: Schema.optionalKey(Schema.Number),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     const method = this.method === undefined ? "" : ` for method '${this.method}'`;
     return `Codex App Server protocol operation '${this.operation}' failed${method}.`;
@@ -225,44 +225,44 @@ export class CodexAppServerProtocolParseError extends Schema.TaggedError<CodexAp
   }
 }
 
-export class CodexAppServerTransportError extends Schema.TaggedError<CodexAppServerTransportError>()(
-  "CodexAppServerTransportError",
-  {
-    operation: CodexAppServerTransportOperation,
-    pid: Schema.optionalKey(Schema.Int),
-    cause: Schema.Defect(),
-  },
-) {
+export class CodexAppServerTransportError extends Schema.TaggedError<
+  CodexAppServerTransportError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerTransportError", {
+  operation: CodexAppServerTransportOperation,
+  pid: Schema.optionalKey(Schema.Int),
+  cause: Schema.Defect(),
+}) {
   override get message() {
     return `Codex App Server transport operation '${this.operation}' failed.`;
   }
 }
 
-export class CodexAppServerInputStreamEndedError extends Schema.TaggedError<CodexAppServerInputStreamEndedError>()(
-  "CodexAppServerInputStreamEndedError",
-  {},
-) {
+export class CodexAppServerInputStreamEndedError extends Schema.TaggedError<
+  CodexAppServerInputStreamEndedError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerInputStreamEndedError", {}) {
   override get message() {
     return "Codex App Server input stream ended.";
   }
 }
 
-export class CodexAppServerRequestError extends Schema.TaggedError<CodexAppServerRequestError>()(
-  "CodexAppServerRequestError",
-  {
-    code: Schema.Number,
-    errorMessage: Schema.String,
-    data: Schema.optional(Schema.Unknown),
-    method: Schema.optionalKey(Schema.String),
-    requestId: Schema.optionalKey(Schema.String),
-    operation: Schema.optionalKey(CodexAppServerRequestOperation),
-    issueCount: Schema.optionalKey(Schema.Number),
-    issueKinds: Schema.optionalKey(Schema.Array(CodexAppServerSchemaIssueKind)),
-    maximumPathDepth: Schema.optionalKey(Schema.Number),
-    payloadKind: Schema.optionalKey(CodexAppServerPayloadKind),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class CodexAppServerRequestError extends Schema.TaggedError<
+  CodexAppServerRequestError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerRequestError", {
+  code: Schema.Number,
+  errorMessage: Schema.String,
+  data: Schema.optional(Schema.Unknown),
+  method: Schema.optionalKey(Schema.String),
+  requestId: Schema.optionalKey(Schema.String),
+  operation: Schema.optionalKey(CodexAppServerRequestOperation),
+  issueCount: Schema.optionalKey(Schema.Number),
+  issueKinds: Schema.optionalKey(Schema.Array(CodexAppServerSchemaIssueKind)),
+  maximumPathDepth: Schema.optionalKey(Schema.Number),
+  payloadKind: Schema.optionalKey(CodexAppServerPayloadKind),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message() {
     return this.errorMessage;
   }

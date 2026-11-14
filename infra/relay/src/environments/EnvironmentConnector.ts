@@ -72,53 +72,53 @@ function environmentConnectNotAuthorizedReasonMessage(
   }
 }
 
-export class EnvironmentConnectNotAuthorized extends Schema.TaggedError<EnvironmentConnectNotAuthorized>()(
-  "EnvironmentConnectNotAuthorized",
-  {
-    environmentId: Schema.String,
-    operation: Schema.Literals(["connect", "status"]),
-    reason: RelayEnvironmentConnectNotAuthorizedReason,
-  },
-) {
+export class EnvironmentConnectNotAuthorized extends Schema.TaggedError<
+  EnvironmentConnectNotAuthorized,
+  { readonly brand: unique symbol }
+>()("EnvironmentConnectNotAuthorized", {
+  environmentId: Schema.String,
+  operation: Schema.Literals(["connect", "status"]),
+  reason: RelayEnvironmentConnectNotAuthorizedReason,
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' is not authorized for ${this.operation}: ${environmentConnectNotAuthorizedReasonMessage(this.reason)}`;
   }
 }
 
-export class EnvironmentMintRequestFailed extends Schema.TaggedError<EnvironmentMintRequestFailed>()(
-  "EnvironmentMintRequestFailed",
-  {
-    environmentId: Schema.String,
-    operation: Schema.Literals(["connect", "status"]),
-    cause: Schema.Defect(),
-    endpointFailure: Schema.optionalKey(RelayEnvironmentEndpointFailure),
-    endpointStatus: Schema.optionalKey(Schema.Number),
-  },
-) {
+export class EnvironmentMintRequestFailed extends Schema.TaggedError<
+  EnvironmentMintRequestFailed,
+  { readonly brand: unique symbol }
+>()("EnvironmentMintRequestFailed", {
+  environmentId: Schema.String,
+  operation: Schema.Literals(["connect", "status"]),
+  cause: Schema.Defect(),
+  endpointFailure: Schema.optionalKey(RelayEnvironmentEndpointFailure),
+  endpointStatus: Schema.optionalKey(Schema.Number),
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' ${this.operation} request failed`;
   }
 }
 
-export class EnvironmentMintRequestTimedOut extends Schema.TaggedError<EnvironmentMintRequestTimedOut>()(
-  "EnvironmentMintRequestTimedOut",
-  {
-    environmentId: Schema.String,
-    timeoutMs: Schema.Number,
-  },
-) {
+export class EnvironmentMintRequestTimedOut extends Schema.TaggedError<
+  EnvironmentMintRequestTimedOut,
+  { readonly brand: unique symbol }
+>()("EnvironmentMintRequestTimedOut", {
+  environmentId: Schema.String,
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' mint request timed out after ${this.timeoutMs}ms`;
   }
 }
 
-export class EnvironmentMintResponseInvalid extends Schema.TaggedError<EnvironmentMintResponseInvalid>()(
-  "EnvironmentMintResponseInvalid",
-  {
-    environmentId: Schema.String,
-    operation: Schema.Literals(["connect", "status"]),
-  },
-) {
+export class EnvironmentMintResponseInvalid extends Schema.TaggedError<
+  EnvironmentMintResponseInvalid,
+  { readonly brand: unique symbol }
+>()("EnvironmentMintResponseInvalid", {
+  environmentId: Schema.String,
+  operation: Schema.Literals(["connect", "status"]),
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' returned an invalid ${this.operation} response`;
   }

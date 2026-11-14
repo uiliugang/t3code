@@ -75,69 +75,69 @@ interface CommandResult {
   readonly exitCode: number;
 }
 
-export class IconExportFileSystemError extends Schema.TaggedError<IconExportFileSystemError>()(
-  "IconExportFileSystemError",
-  {
-    operation: Schema.Literals([
-      "resolve-repository-root",
-      "check-path",
-      "read-directory",
-      "read-file",
-      "make-directory",
-      "make-temp-directory",
-      "make-temp-file",
-      "write-file",
-      "rename-file",
-    ]),
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class IconExportFileSystemError extends Schema.TaggedError<
+  IconExportFileSystemError,
+  { readonly brand: unique symbol }
+>()("IconExportFileSystemError", {
+  operation: Schema.Literals([
+    "resolve-repository-root",
+    "check-path",
+    "read-directory",
+    "read-file",
+    "make-directory",
+    "make-temp-directory",
+    "make-temp-file",
+    "write-file",
+    "rename-file",
+  ]),
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Icon export file-system operation '${this.operation}' failed for ${this.path}.`;
   }
 }
 
-export class IconExportProcessError extends Schema.TaggedError<IconExportProcessError>()(
-  "IconExportProcessError",
-  {
-    operation: Schema.Literals(["spawn", "collect-stdout", "collect-stderr", "wait-for-exit"]),
-    command: Schema.String,
-    argumentCount: NonNegativeInt,
-    cause: Schema.Defect(),
-  },
-) {
+export class IconExportProcessError extends Schema.TaggedError<
+  IconExportProcessError,
+  { readonly brand: unique symbol }
+>()("IconExportProcessError", {
+  operation: Schema.Literals(["spawn", "collect-stdout", "collect-stderr", "wait-for-exit"]),
+  command: Schema.String,
+  argumentCount: NonNegativeInt,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Icon export process operation '${this.operation}' failed for ${this.command}.`;
   }
 }
 
-export class IconExportCommandFailedError extends Schema.TaggedError<IconExportCommandFailedError>()(
-  "IconExportCommandFailedError",
-  {
-    command: Schema.String,
-    argumentCount: NonNegativeInt,
-    exitCode: Schema.Int,
-    sourcePath: Schema.String,
-    size: Schema.Int,
-    stdout: Schema.optional(Schema.String),
-    stderr: Schema.optional(Schema.String),
-  },
-) {
+export class IconExportCommandFailedError extends Schema.TaggedError<
+  IconExportCommandFailedError,
+  { readonly brand: unique symbol }
+>()("IconExportCommandFailedError", {
+  command: Schema.String,
+  argumentCount: NonNegativeInt,
+  exitCode: Schema.Int,
+  sourcePath: Schema.String,
+  size: Schema.Int,
+  stdout: Schema.optional(Schema.String),
+  stderr: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return `Icon Composer failed to export ${this.sourcePath} at ${this.size}x${this.size}.`;
   }
 }
 
-export class IconExportToolResolutionError extends Schema.TaggedError<IconExportToolResolutionError>()(
-  "IconExportToolResolutionError",
-  {
-    reason: Schema.Literals(["configured-invalid", "configured-outdated", "not-found"]),
-    designGeneration: Schema.Int,
-    toolPath: Schema.optional(Schema.String),
-    version: Schema.optional(Schema.String),
-  },
-) {
+export class IconExportToolResolutionError extends Schema.TaggedError<
+  IconExportToolResolutionError,
+  { readonly brand: unique symbol }
+>()("IconExportToolResolutionError", {
+  reason: Schema.Literals(["configured-invalid", "configured-outdated", "not-found"]),
+  designGeneration: Schema.Int,
+  toolPath: Schema.optional(Schema.String),
+  version: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "configured-invalid":
@@ -150,28 +150,28 @@ export class IconExportToolResolutionError extends Schema.TaggedError<IconExport
   }
 }
 
-export class IconExportSourceMissingError extends Schema.TaggedError<IconExportSourceMissingError>()(
-  "IconExportSourceMissingError",
-  {
-    sourcePath: Schema.String,
-  },
-) {
+export class IconExportSourceMissingError extends Schema.TaggedError<
+  IconExportSourceMissingError,
+  { readonly brand: unique symbol }
+>()("IconExportSourceMissingError", {
+  sourcePath: Schema.String,
+}) {
   override get message(): string {
     return `Missing Icon Composer source project: ${this.sourcePath}`;
   }
 }
 
-export class IconExportRenditionError extends Schema.TaggedError<IconExportRenditionError>()(
-  "IconExportRenditionError",
-  {
-    sourcePath: Schema.String,
-    outputPath: Schema.String,
-    expectedSize: Schema.Int,
-    actualWidth: Schema.optional(Schema.Int),
-    actualHeight: Schema.optional(Schema.Int),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class IconExportRenditionError extends Schema.TaggedError<
+  IconExportRenditionError,
+  { readonly brand: unique symbol }
+>()("IconExportRenditionError", {
+  sourcePath: Schema.String,
+  outputPath: Schema.String,
+  expectedSize: Schema.Int,
+  actualWidth: Schema.optional(Schema.Int),
+  actualHeight: Schema.optional(Schema.Int),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     const actual =
       this.actualWidth === undefined || this.actualHeight === undefined
@@ -181,24 +181,24 @@ export class IconExportRenditionError extends Schema.TaggedError<IconExportRendi
   }
 }
 
-export class IconExportEncodingError extends Schema.TaggedError<IconExportEncodingError>()(
-  "IconExportEncodingError",
-  {
-    variant: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class IconExportEncodingError extends Schema.TaggedError<
+  IconExportEncodingError,
+  { readonly brand: unique symbol }
+>()("IconExportEncodingError", {
+  variant: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to encode ICO renditions for the ${this.variant} icon.`;
   }
 }
 
-export class IconExportAssetsStaleError extends Schema.TaggedError<IconExportAssetsStaleError>()(
-  "IconExportAssetsStaleError",
-  {
-    paths: Schema.Array(Schema.String),
-  },
-) {
+export class IconExportAssetsStaleError extends Schema.TaggedError<
+  IconExportAssetsStaleError,
+  { readonly brand: unique symbol }
+>()("IconExportAssetsStaleError", {
+  paths: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     return `Generated icon assets are stale:\n${this.paths.map((path) => `- ${path}`).join("\n")}`;
   }

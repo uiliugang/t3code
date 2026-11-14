@@ -9,23 +9,23 @@ import {
 } from "./thread-outbox-model";
 import type { ThreadOutboxStorage } from "./thread-outbox-storage";
 
-export class ThreadOutboxManagerError extends Schema.TaggedError<ThreadOutboxManagerError>()(
-  "ThreadOutboxManagerError",
-  {
-    operation: Schema.Literals([
-      "load",
-      "enqueue",
-      "update",
-      "remove",
-      "clear-environment-load",
-      "clear-environment-remove",
-    ]),
-    environmentId: Schema.NullOr(EnvironmentId),
-    threadId: Schema.NullOr(ThreadId),
-    messageId: Schema.NullOr(MessageId),
-    cause: Schema.Defect(),
-  },
-) {
+export class ThreadOutboxManagerError extends Schema.TaggedError<
+  ThreadOutboxManagerError,
+  { readonly brand: unique symbol }
+>()("ThreadOutboxManagerError", {
+  operation: Schema.Literals([
+    "load",
+    "enqueue",
+    "update",
+    "remove",
+    "clear-environment-load",
+    "clear-environment-remove",
+  ]),
+  environmentId: Schema.NullOr(EnvironmentId),
+  threadId: Schema.NullOr(ThreadId),
+  messageId: Schema.NullOr(MessageId),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Thread outbox operation ${this.operation} failed for environment ${this.environmentId ?? "unknown"}, thread ${this.threadId ?? "unknown"}, message ${this.messageId ?? "unknown"}.`;
   }

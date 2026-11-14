@@ -27,14 +27,14 @@ import { isSpeechPlatformSupported } from "../speech/platform.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
 
-export class ServerEnvironmentIdPersistenceError extends Schema.TaggedError<ServerEnvironmentIdPersistenceError>()(
-  "ServerEnvironmentIdPersistenceError",
-  {
-    operation: Schema.Literals(["check", "read", "write", "initialize"]),
-    environmentIdPath: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerEnvironmentIdPersistenceError extends Schema.TaggedError<
+  ServerEnvironmentIdPersistenceError,
+  { readonly brand: unique symbol }
+>()("ServerEnvironmentIdPersistenceError", {
+  operation: Schema.Literals(["check", "read", "write", "initialize"]),
+  environmentIdPath: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     if (this.operation === "initialize") {
       return `Server environment ID file is missing or empty after initialization at '${this.environmentIdPath}'.`;
@@ -230,6 +230,7 @@ export const make = Effect.gen(function* () {
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
       pullRequestChecks: true,
+      linkedThreadRefreshes: true,
       sideChats: true,
       vcsBranchStatus: true,
       inlineMessageContext: true,
@@ -249,6 +250,7 @@ export const make = Effect.gen(function* () {
       threadRestartContinuation: true,
       projectSettingsOverrides: true,
       projectProviderInstanceOverrides: true,
+      providerInstanceDeletion: true,
       threadSnooze: true,
       threadForceStop: true,
       environmentThemes: true,
@@ -273,12 +275,14 @@ export const make = Effect.gen(function* () {
       threadPullRequestLinking: true,
       serverResolvedCommandContext: true,
       threadStop: true,
+      threadTerminalCleanup: true,
       ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
       environmentIcon: true,
       environmentName: true,
       projectCloneTracking: true,
       projectOrganization: true,
       ignoredFileListing: true,
+      ignoredFileSearch: true,
       triage: true,
       oneTimeSchedules: true,
       freshContext: true,

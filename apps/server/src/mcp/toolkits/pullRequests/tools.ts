@@ -69,55 +69,58 @@ export const PullRequestTargetInput = Schema.Struct({
 });
 export type PullRequestTargetInput = typeof PullRequestTargetInput.Type;
 
-export class PullRequestThreadRequiredError extends Schema.TaggedError<PullRequestThreadRequiredError>()(
-  "PullRequestThreadRequiredError",
-  {},
-) {
+export class PullRequestThreadRequiredError extends Schema.TaggedError<
+  PullRequestThreadRequiredError,
+  { readonly brand: unique symbol }
+>()("PullRequestThreadRequiredError", {}) {
   override get message(): string {
     return "Pass threadId: this MCP client is not running inside a T3 thread.";
   }
 }
 
-export class PullRequestLinkFailedError extends Schema.TaggedError<PullRequestLinkFailedError>()(
-  "PullRequestLinkFailedError",
-  { cause: Schema.Defect() },
-) {
+export class PullRequestLinkFailedError extends Schema.TaggedError<
+  PullRequestLinkFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestLinkFailedError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not link the pull request.";
   }
 }
 
-export class PullRequestUnlinkFailedError extends Schema.TaggedError<PullRequestUnlinkFailedError>()(
-  "PullRequestUnlinkFailedError",
-  { cause: Schema.Defect() },
-) {
+export class PullRequestUnlinkFailedError extends Schema.TaggedError<
+  PullRequestUnlinkFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestUnlinkFailedError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not unlink the pull request.";
   }
 }
 
-export class PullRequestListFailedError extends Schema.TaggedError<PullRequestListFailedError>()(
-  "PullRequestListFailedError",
-  { cause: Schema.Defect() },
-) {
+export class PullRequestListFailedError extends Schema.TaggedError<
+  PullRequestListFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestListFailedError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not list the pull request.";
   }
 }
 
-export class PullRequestProjectNotFoundError extends Schema.TaggedError<PullRequestProjectNotFoundError>()(
-  "PullRequestProjectNotFoundError",
-  { repository: Schema.String },
-) {
+export class PullRequestProjectNotFoundError extends Schema.TaggedError<
+  PullRequestProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("PullRequestProjectNotFoundError", { repository: Schema.String }) {
   override get message(): string {
     return `No project in this environment is a checkout of ${this.repository}, so its pull requests cannot be read here. Add one with t3_project_create.`;
   }
 }
 
-export class PullRequestGuideFailedError extends Schema.TaggedError<PullRequestGuideFailedError>()(
-  "PullRequestGuideFailedError",
-  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class PullRequestGuideFailedError extends Schema.TaggedError<
+  PullRequestGuideFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestGuideFailedError", {
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.detail;
   }
@@ -236,6 +239,8 @@ export const ListThreadPullRequestsResult = Schema.Struct({
       numbers: Schema.Array(Schema.Int),
     }),
   ),
+  /** Pass as `cursor` for the next page; null on the last page. */
+  nextCursor: Schema.NullOr(Schema.String),
 });
 export type ListThreadPullRequestsResult = typeof ListThreadPullRequestsResult.Type;
 
@@ -255,7 +260,7 @@ const LinkPullRequestTool = Tool.make("link_pull_request", {
 
 const LinkPullRequestsTool = Tool.make("link_pull_requests", {
   description:
-    "Link several PRs to a thread in one call. Use it instead of one `link_pull_request` per PR. URLs that are not PRs come back in `invalidUrls`.",
+    "Link several PRs to a thread. Use it instead of one `link_pull_request` per PR. URLs that are not PRs come back in `invalidUrls`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId.annotate({ description: "Thread. Default: this thread." })),
@@ -287,7 +292,7 @@ const UnlinkPullRequestTool = Tool.make("unlink_pull_request", {
 
 const UnlinkPullRequestsTool = Tool.make("unlink_pull_requests", {
   description:
-    "Unlink every PR on a thread whose last known state (as `list_thread_pull_requests` shows) is in `states`, in one call. Use it instead of one `unlink_pull_request` per PR. PRs with no known state stay linked.",
+    "Unlink a thread's PRs whose last known state is in `states`. Use it instead of one `unlink_pull_request` per PR. PRs with no known state stay linked.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId.annotate({ description: "Thread. Default: this thread." })),
@@ -305,10 +310,12 @@ const UnlinkPullRequestsTool = Tool.make("unlink_pull_requests", {
 
 const ListThreadPullRequestsTool = Tool.make("list_thread_pull_requests", {
   description:
-    "List PRs linked to a thread, with last known state and stack order (bottom to top). Call only when you need that list. Never as an end-of-work check.",
+    "List a thread's PRs, with last known state and stack order (bottom to top). Not an end-of-work check.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId.annotate({ description: "Thread. Default: this thread." })),
+    states: Schema.optional(Schema.Array(PullRequestState)),
+    cursor: Schema.optional(Schema.String),
   }),
   success: ListThreadPullRequestsResult,
   failure: PullRequestToolError,

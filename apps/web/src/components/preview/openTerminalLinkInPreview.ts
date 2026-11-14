@@ -17,10 +17,10 @@ const terminalLinkErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class TerminalLinkPreviewOpenError extends Schema.TaggedError<TerminalLinkPreviewOpenError>()(
-  "TerminalLinkPreviewOpenError",
-  terminalLinkErrorContext,
-) {
+export class TerminalLinkPreviewOpenError extends Schema.TaggedError<
+  TerminalLinkPreviewOpenError,
+  { readonly brand: unique symbol }
+>()("TerminalLinkPreviewOpenError", terminalLinkErrorContext) {
   override get message(): string {
     return `Failed to open terminal link ${this.targetOrigin} in preview for thread ${this.threadId}.`;
   }
@@ -64,7 +64,9 @@ export async function openTerminalLinkInPreview<E>(
       url: input.url,
       viewport: defaults.viewport,
       profileId: defaults.profileId,
-      ...(runtime === undefined ? {} : { runtime }),
+      ...(runtime === undefined
+        ? {}
+        : { runtime, zoomFactor: defaults.zoomFactor, colorScheme: defaults.appearance }),
     },
   });
   if (result._tag === "Failure") {

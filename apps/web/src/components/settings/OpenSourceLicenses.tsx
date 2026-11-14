@@ -23,10 +23,10 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
-class LicenseManifestLoadError extends Schema.TaggedError<LicenseManifestLoadError>()(
-  "LicenseManifestLoadError",
-  { message: Schema.String },
-) {}
+class LicenseManifestLoadError extends Schema.TaggedError<
+  LicenseManifestLoadError,
+  { readonly brand: unique symbol }
+>()("LicenseManifestLoadError", { message: Schema.String }) {}
 
 // Not keepAlive: a failed load must not stick for the session, so each visit to the page loads
 // the manifest again (a static asset the HTTP cache serves).

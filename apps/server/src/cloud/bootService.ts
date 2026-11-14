@@ -314,6 +314,13 @@ function systemdManager(input: {
   readonly unitDir: string;
 }): BootServiceManager {
   const unitPath = input.path.join(input.unitDir, BOOT_SERVICE_UNIT_FILE);
+  // Once StartLimitBurst trips, systemd refuses every start until the failed state is cleared.
+  const resetFailed = {
+    step: "clearing the service's failed state",
+    optional: true,
+    command: "systemctl",
+    args: ["--user", "reset-failed", BOOT_SERVICE_UNIT_FILE],
+  };
   const prepareActivation = [
     {
       step: "reloading systemd user units",
@@ -325,6 +332,7 @@ function systemdManager(input: {
       command: "systemctl",
       args: ["--user", "enable", BOOT_SERVICE_UNIT_FILE],
     },
+    resetFailed,
   ];
   return {
     kind: "systemd",
@@ -347,6 +355,7 @@ function systemdManager(input: {
       },
     ],
     restart: [
+      resetFailed,
       {
         step: "restarting the service after a failed update",
         command: "systemctl",
@@ -598,25 +607,25 @@ export const bootServiceUnitPath = Effect.fn("cloud.boot_service.unit_path")(fun
   return path.join(unitDir, BOOT_SERVICE_UNIT_FILE);
 });
 
-export class BootServiceUnsupportedError extends Schema.TaggedError<BootServiceUnsupportedError>()(
-  "BootServiceUnsupportedError",
-  { platform: Schema.String },
-) {
+export class BootServiceUnsupportedError extends Schema.TaggedError<
+  BootServiceUnsupportedError,
+  { readonly brand: unique symbol }
+>()("BootServiceUnsupportedError", { platform: Schema.String }) {
   override get message(): string {
     return `Background setup supports Linux with systemd, macOS with launchd, and Windows with Task Scheduler; this machine reports '${this.platform}'.`;
   }
 }
 
-export class BootServiceCommandError extends Schema.TaggedError<BootServiceCommandError>()(
-  "BootServiceCommandError",
-  {
-    step: Schema.String,
-    exitCode: Schema.optional(Schema.Number),
-    stdoutLength: Schema.optional(Schema.Number),
-    stderrLength: Schema.optional(Schema.Number),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class BootServiceCommandError extends Schema.TaggedError<
+  BootServiceCommandError,
+  { readonly brand: unique symbol }
+>()("BootServiceCommandError", {
+  step: Schema.String,
+  exitCode: Schema.optional(Schema.Number),
+  stdoutLength: Schema.optional(Schema.Number),
+  stderrLength: Schema.optional(Schema.Number),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.exitCode === undefined
       ? `Background setup failed while ${this.step}.`
@@ -624,10 +633,10 @@ export class BootServiceCommandError extends Schema.TaggedError<BootServiceComma
   }
 }
 
-export class BootServiceInstallError extends Schema.TaggedError<BootServiceInstallError>()(
-  "BootServiceInstallError",
-  { cause: Schema.Defect() },
-) {
+export class BootServiceInstallError extends Schema.TaggedError<
+  BootServiceInstallError,
+  { readonly brand: unique symbol }
+>()("BootServiceInstallError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not set up the T3 Code background service.";
   }
@@ -660,19 +669,22 @@ export function formatBootServiceProblem(problem: BootServiceProblem): string {
   }
 }
 
-export class BootServicePrerequisiteError extends Schema.TaggedError<BootServicePrerequisiteError>()(
-  "BootServicePrerequisiteError",
-  { problem: BootServiceProblem, cause: Schema.optional(Schema.Defect()) },
-) {
+export class BootServicePrerequisiteError extends Schema.TaggedError<
+  BootServicePrerequisiteError,
+  { readonly brand: unique symbol }
+>()("BootServicePrerequisiteError", {
+  problem: BootServiceProblem,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `[${this.problem}] ${formatBootServiceProblem(this.problem)}`;
   }
 }
 
-export class BootServiceUpdatePendingError extends Schema.TaggedError<BootServiceUpdatePendingError>()(
-  "BootServiceUpdatePendingError",
-  { recoveryCommand: Schema.optional(Schema.String) },
-) {
+export class BootServiceUpdatePendingError extends Schema.TaggedError<
+  BootServiceUpdatePendingError,
+  { readonly brand: unique symbol }
+>()("BootServiceUpdatePendingError", { recoveryCommand: Schema.optional(Schema.String) }) {
   override get message(): string {
     if (this.recoveryCommand !== undefined) {
       return `A remote server update is still pending, but its service definition is missing. With the service stopped, run this on the server machine: ${this.recoveryCommand}\nWait for the update to finish or roll back, stop the foreground launcher with Ctrl-C, then retry the install.`;
@@ -681,13 +693,13 @@ export class BootServiceUpdatePendingError extends Schema.TaggedError<BootServic
   }
 }
 
-export class BootServiceDowngradeRefusedError extends Schema.TaggedError<BootServiceDowngradeRefusedError>()(
-  "BootServiceDowngradeRefusedError",
-  {
-    installedVersion: Schema.String,
-    targetVersion: Schema.String,
-  },
-) {
+export class BootServiceDowngradeRefusedError extends Schema.TaggedError<
+  BootServiceDowngradeRefusedError,
+  { readonly brand: unique symbol }
+>()("BootServiceDowngradeRefusedError", {
+  installedVersion: Schema.String,
+  targetVersion: Schema.String,
+}) {
   override get message(): string {
     return `Refusing to replace t3@${this.installedVersion} with older t3@${this.targetVersion}. Run the command again with --allow-downgrade to continue.`;
   }
@@ -696,13 +708,13 @@ export class BootServiceDowngradeRefusedError extends Schema.TaggedError<BootSer
 export const formatBootServiceBaseDirOption = (baseDir: string) =>
   `--base-dir '${baseDir.replaceAll("'", `'"'"'`)}'`;
 
-export class BootServiceOtherBaseDirError extends Schema.TaggedError<BootServiceOtherBaseDirError>()(
-  "BootServiceOtherBaseDirError",
-  {
-    installedBaseDir: Schema.String,
-    baseDir: Schema.String,
-  },
-) {
+export class BootServiceOtherBaseDirError extends Schema.TaggedError<
+  BootServiceOtherBaseDirError,
+  { readonly brand: unique symbol }
+>()("BootServiceOtherBaseDirError", {
+  installedBaseDir: Schema.String,
+  baseDir: Schema.String,
+}) {
   override get message(): string {
     return `The T3 Code service on this machine serves ${this.installedBaseDir}, not ${this.baseDir}. Pass ${formatBootServiceBaseDirOption(this.installedBaseDir)} to manage it, or run \`t3 service uninstall ${formatBootServiceBaseDirOption(this.installedBaseDir)}\` first to move it; both data directories are kept.`;
   }
@@ -713,10 +725,10 @@ export class BootServiceOtherBaseDirError extends Schema.TaggedError<BootService
   }
 }
 
-export class BootServiceBaseDirUnsupportedError extends Schema.TaggedError<BootServiceBaseDirUnsupportedError>()(
-  "BootServiceBaseDirUnsupportedError",
-  { baseDir: Schema.String },
-) {
+export class BootServiceBaseDirUnsupportedError extends Schema.TaggedError<
+  BootServiceBaseDirUnsupportedError,
+  { readonly brand: unique symbol }
+>()("BootServiceBaseDirUnsupportedError", { baseDir: Schema.String }) {
   override get message(): string {
     return `systemd cannot run T3 Code from ${JSON.stringify(this.baseDir)}: the path contains a quote, backslash or control character. Choose another T3 home with --base-dir.`;
   }

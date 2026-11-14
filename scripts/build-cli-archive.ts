@@ -63,28 +63,28 @@ const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
 );
 
-export class CliArchiveLinuxArm64PageError extends Schema.TaggedError<CliArchiveLinuxArm64PageError>()(
-  "CliArchiveLinuxArm64PageError",
-  { executablePath: Schema.String, cause: Schema.Defect() },
-) {
+export class CliArchiveLinuxArm64PageError extends Schema.TaggedError<
+  CliArchiveLinuxArm64PageError,
+  { readonly brand: unique symbol }
+>()("CliArchiveLinuxArm64PageError", { executablePath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `${this.executablePath} is not page-compatible with Linux arm64.`;
   }
 }
 
-export class CliArchiveCommandFailedError extends Schema.TaggedError<CliArchiveCommandFailedError>()(
-  "CliArchiveCommandFailedError",
-  { command: Schema.String, exitCode: Schema.Int },
-) {
+export class CliArchiveCommandFailedError extends Schema.TaggedError<
+  CliArchiveCommandFailedError,
+  { readonly brand: unique symbol }
+>()("CliArchiveCommandFailedError", { command: Schema.String, exitCode: Schema.Int }) {
   override get message(): string {
     return `${this.command} exited with code ${this.exitCode}.`;
   }
 }
 
-export class CliArchiveInputMissingError extends Schema.TaggedError<CliArchiveInputMissingError>()(
-  "CliArchiveInputMissingError",
-  { inputPath: Schema.String, hint: Schema.String },
-) {
+export class CliArchiveInputMissingError extends Schema.TaggedError<
+  CliArchiveInputMissingError,
+  { readonly brand: unique symbol }
+>()("CliArchiveInputMissingError", { inputPath: Schema.String, hint: Schema.String }) {
   override get message(): string {
     return `Missing ${this.inputPath}. ${this.hint}`;
   }
@@ -331,10 +331,10 @@ const MacSigningConfig = Config.all({
   appleApiIssuer: Config.String("APPLE_API_ISSUER").pipe(Config.option),
 });
 
-export class CliArchiveNotarizationRejectedError extends Schema.TaggedError<CliArchiveNotarizationRejectedError>()(
-  "CliArchiveNotarizationRejectedError",
-  { submissionId: Schema.String, status: Schema.String },
-) {
+export class CliArchiveNotarizationRejectedError extends Schema.TaggedError<
+  CliArchiveNotarizationRejectedError,
+  { readonly brand: unique symbol }
+>()("CliArchiveNotarizationRejectedError", { submissionId: Schema.String, status: Schema.String }) {
   override get message(): string {
     return `Apple notarization ${this.submissionId} is ${this.status}, not Accepted.`;
   }

@@ -2,26 +2,26 @@ import * as Schema from "effect/Schema";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 
-export class CopyTextClipboardWriteError extends Schema.TaggedError<CopyTextClipboardWriteError>()(
-  "CopyTextClipboardWriteError",
-  {
-    target: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class CopyTextClipboardWriteError extends Schema.TaggedError<
+  CopyTextClipboardWriteError,
+  { readonly brand: unique symbol }
+>()("CopyTextClipboardWriteError", {
+  target: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to copy ${this.target} to the clipboard.`;
   }
 }
 
-export class CopyTextHapticFeedbackError extends Schema.TaggedError<CopyTextHapticFeedbackError>()(
-  "CopyTextHapticFeedbackError",
-  {
-    target: Schema.String,
-    feedback: Schema.Literals(["light-impact", "selection"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class CopyTextHapticFeedbackError extends Schema.TaggedError<
+  CopyTextHapticFeedbackError,
+  { readonly brand: unique symbol }
+>()("CopyTextHapticFeedbackError", {
+  target: Schema.String,
+  feedback: Schema.Literals(["light-impact", "selection"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to trigger ${this.feedback} haptic feedback after copying ${this.target}.`;
   }

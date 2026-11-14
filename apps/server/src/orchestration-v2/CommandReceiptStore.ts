@@ -7,25 +7,25 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as OrchestrationCommandReceipts from "../persistence/OrchestrationCommandReceipts.ts";
 
-export class CommandReceiptStoreWriteError extends Schema.TaggedError<CommandReceiptStoreWriteError>()(
-  "CommandReceiptStoreWriteError",
-  {
-    commandId: CommandId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CommandReceiptStoreWriteError extends Schema.TaggedError<
+  CommandReceiptStoreWriteError,
+  { readonly brand: unique symbol }
+>()("CommandReceiptStoreWriteError", {
+  commandId: CommandId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to write orchestration V2 command receipt ${this.commandId}.`;
   }
 }
 
-export class CommandReceiptStoreReadError extends Schema.TaggedError<CommandReceiptStoreReadError>()(
-  "CommandReceiptStoreReadError",
-  {
-    commandId: CommandId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CommandReceiptStoreReadError extends Schema.TaggedError<
+  CommandReceiptStoreReadError,
+  { readonly brand: unique symbol }
+>()("CommandReceiptStoreReadError", {
+  commandId: CommandId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to read orchestration V2 command receipt ${this.commandId}.`;
   }

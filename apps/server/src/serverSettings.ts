@@ -188,12 +188,30 @@ export function applyProviderInstanceMutation(
   mutation: ProviderInstanceMutation,
 ): ServerSettings {
   const providerInstances = { ...settings.providerInstances };
+  const removedIds = new Set(settings.removedProviderInstances);
   if (mutation.operation === "upsert" || mutation.operation === "create") {
     providerInstances[mutation.instanceId] = mutation.instance;
+    removedIds.delete(mutation.instanceId);
   } else {
     delete providerInstances[mutation.instanceId];
+    if (mutation.operation === "delete") removedIds.add(mutation.instanceId);
+    else removedIds.delete(mutation.instanceId);
   }
-  return { ...settings, providerInstances };
+  const projectSettingsOverrides = Object.fromEntries(
+    Object.entries(settings.projectSettingsOverrides).map(([projectId, override]) => {
+      if (mutation.operation !== "delete" || !override?.providerInstances) {
+        return [projectId, override];
+      }
+      const { [mutation.instanceId]: _removed, ...remaining } = override.providerInstances;
+      return [projectId, { ...override, providerInstances: remaining }];
+    }),
+  );
+  return {
+    ...settings,
+    providerInstances,
+    projectSettingsOverrides,
+    removedProviderInstances: [...removedIds],
+  };
 }
 
 const secretProviderConfigGuards = new Map(
@@ -270,6 +288,10 @@ export class ServerSettingsService extends Context.Service<
       mutation: ProviderInstanceMutation,
       patch?: ServerSettingsPatch,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
+    readonly validateProviderInstanceMutation: (
+      mutation: ProviderInstanceMutation,
+      patch?: ServerSettingsPatch,
+    ) => Effect.Effect<void, ServerSettingsError>;
 
     readonly withSettingsSnapshot: <A, E, R>(
       use: (settings: ServerSettings) => Effect.Effect<A, E, R>,
@@ -335,6 +357,21 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
           const patched = applyServerSettingsPatch(currentSettings, patch);
           return applyProviderInstanceMutation(patched, mutation);
         }),
+      ),
+    validateProviderInstanceMutation: (mutation, patch = {}) =>
+      writeSemaphore.withPermits(1)(
+        Ref.get(currentSettingsRef).pipe(
+          Effect.flatMap((current) =>
+            ensureProviderInstanceMutationAllowed(current, mutation, "test settings").pipe(
+              Effect.andThen(
+                normalizeServerSettings(
+                  applyProviderInstanceMutation(applyServerSettingsPatch(current, patch), mutation),
+                ),
+              ),
+            ),
+          ),
+          Effect.asVoid,
+        ),
       ),
     withSettingsSnapshot: (use) =>
       writeSemaphore.withPermits(1)(getSettings.pipe(Effect.flatMap(use))),
@@ -1187,6 +1224,7 @@ const make = Effect.gen(function* () {
   const updateAndPersistSettings = (
     patch: ServerSettingsPatch,
     update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
+    validateOnly = false,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
     writeSemaphore.withPermits(1)(
       Effect.gen(function* () {
@@ -1229,6 +1267,7 @@ const make = Effect.gen(function* () {
             managedBy: managedPolicy?.organization,
           });
         }
+        if (validateOnly) return toEffective(vettedProviders.settings);
         // After vetting, which can keep stored variables a policy hides from clients.
         const persisted = yield* persistSettingsSecrets(
           current,
@@ -1363,6 +1402,23 @@ const make = Effect.gen(function* () {
     yield* Deferred.succeed(startedDeferred, undefined).pipe(Effect.orDie);
   });
 
+  const updateProviderInstance = (
+    mutation: ProviderInstanceMutation,
+    patch: ServerSettingsPatch = {},
+    validateOnly = false,
+  ) =>
+    updateAndPersistSettings(
+      patch,
+      (current) =>
+        Effect.gen(function* () {
+          yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
+          yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
+          const patched = applyServerSettingsPatch(current, patch);
+          return applyProviderInstanceMutation(patched, mutation);
+        }),
+      validateOnly,
+    );
+
   return {
     managedPolicy,
     start,
@@ -1374,15 +1430,9 @@ const make = Effect.gen(function* () {
           Effect.as(applyServerSettingsPatch(current, patch)),
         ),
       ),
-    updateProviderInstance: (mutation, patch = {}) =>
-      updateAndPersistSettings(patch, (current) =>
-        Effect.gen(function* () {
-          yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
-          yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
-          const patched = applyServerSettingsPatch(current, patch);
-          return applyProviderInstanceMutation(patched, mutation);
-        }),
-      ),
+    updateProviderInstance,
+    validateProviderInstanceMutation: (mutation, patch) =>
+      updateProviderInstance(mutation, patch, true).pipe(Effect.asVoid),
     withSettingsSnapshot,
     get streamChanges() {
       return materializeChanges(Stream.fromPubSub(changesPubSub));

@@ -44,70 +44,70 @@ export const CodexAppServerReplayTranscript = Schema.Struct({
 export type CodexAppServerReplayTranscript = typeof CodexAppServerReplayTranscript.Type;
 const decodeOutboundJsonFrame = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
-export class CodexAppServerReplayJsonParseError extends Schema.TaggedError<CodexAppServerReplayJsonParseError>()(
-  "CodexAppServerReplayJsonParseError",
-  {
-    scenario: Schema.String,
-    line: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class CodexAppServerReplayJsonParseError extends Schema.TaggedError<
+  CodexAppServerReplayJsonParseError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerReplayJsonParseError", {
+  scenario: Schema.String,
+  line: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to parse outbound Codex app-server replay frame for scenario ${this.scenario}.`;
   }
 }
 
-export class CodexAppServerReplayExhaustedError extends Schema.TaggedError<CodexAppServerReplayExhaustedError>()(
-  "CodexAppServerReplayExhaustedError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    actual: Schema.Unknown,
-  },
-) {
+export class CodexAppServerReplayExhaustedError extends Schema.TaggedError<
+  CodexAppServerReplayExhaustedError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerReplayExhaustedError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Codex app-server replay transcript exhausted before outbound frame ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class CodexAppServerReplayUnexpectedOutboundError extends Schema.TaggedError<CodexAppServerReplayUnexpectedOutboundError>()(
-  "CodexAppServerReplayUnexpectedOutboundError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    expectedType: Schema.String,
-    actual: Schema.Unknown,
-  },
-) {
+export class CodexAppServerReplayUnexpectedOutboundError extends Schema.TaggedError<
+  CodexAppServerReplayUnexpectedOutboundError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerReplayUnexpectedOutboundError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  expectedType: Schema.String,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Unexpected outbound Codex app-server frame at replay cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class CodexAppServerReplayFrameMismatchError extends Schema.TaggedError<CodexAppServerReplayFrameMismatchError>()(
-  "CodexAppServerReplayFrameMismatchError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    label: Schema.optional(Schema.String),
-    expected: Schema.Unknown,
-    actual: Schema.Unknown,
-  },
-) {
+export class CodexAppServerReplayFrameMismatchError extends Schema.TaggedError<
+  CodexAppServerReplayFrameMismatchError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerReplayFrameMismatchError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  label: Schema.optional(Schema.String),
+  expected: Schema.Unknown,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Outbound Codex app-server frame did not match replay cursor ${this.cursor} in scenario ${this.scenario}. Expected ${JSON.stringify(this.expected)}, received ${JSON.stringify(this.actual)}.`;
   }
 }
 
-export class CodexAppServerReplayRuntimeExitError extends Schema.TaggedError<CodexAppServerReplayRuntimeExitError>()(
-  "CodexAppServerReplayRuntimeExitError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    status: Schema.Literals(["error", "cancelled"]),
-    error: Schema.optional(Schema.Unknown),
-  },
-) {
+export class CodexAppServerReplayRuntimeExitError extends Schema.TaggedError<
+  CodexAppServerReplayRuntimeExitError,
+  { readonly brand: unique symbol }
+>()("CodexAppServerReplayRuntimeExitError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  status: Schema.Literals(["error", "cancelled"]),
+  error: Schema.optional(Schema.Unknown),
+}) {
   override get message(): string {
     return `Codex app-server replay exited with status ${this.status} at cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
@@ -260,7 +260,8 @@ function normalizeThreadRequest(frame: unknown, ignoredConfigKeys: ReadonlySet<s
       ([key]) =>
         key !== "mcp_servers" &&
         !key.startsWith("mcp_servers.") &&
-        key !== "shell_environment_policy.set.T3CODE_THREAD_ID",
+        key !== "shell_environment_policy.set.T3CODE_THREAD_ID" &&
+        key !== "shell_environment_policy.set.T3CODE_RESOURCE_OWNER",
     ),
   );
   for (const key of ignoredConfigKeys) delete owned[key];

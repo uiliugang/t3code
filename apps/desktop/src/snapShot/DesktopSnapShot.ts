@@ -135,14 +135,14 @@ const DesktopSnapShotOperation = Schema.Literals([
   "capture",
 ]);
 
-export class DesktopSnapShotError extends Schema.TaggedError<DesktopSnapShotError>()(
-  "DesktopSnapShotError",
-  {
-    operation: DesktopSnapShotOperation,
-    captureId: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class DesktopSnapShotError extends Schema.TaggedError<
+  DesktopSnapShotError,
+  { readonly brand: unique symbol }
+>()("DesktopSnapShotError", {
+  operation: DesktopSnapShotOperation,
+  captureId: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.operation) {
       case "list-pending":
@@ -169,10 +169,10 @@ export class DesktopSnapShotError extends Schema.TaggedError<DesktopSnapShotErro
 
 const isDesktopSnapShotError = Schema.is(DesktopSnapShotError);
 
-class SnapShotShortcutError extends Schema.TaggedError<SnapShotShortcutError>()(
-  "SnapShotShortcutError",
-  { cause: Schema.Defect() },
-) {
+class SnapShotShortcutError extends Schema.TaggedError<
+  SnapShotShortcutError,
+  { readonly brand: unique symbol }
+>()("SnapShotShortcutError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not register the SnapShot shortcut.";
   }
@@ -222,22 +222,22 @@ export class DesktopSnapShot extends Context.Service<
   }
 >()("@t3tools/desktop/snapShot/DesktopSnapShot") {}
 
-export class DesktopSnapShotSetupError extends Schema.TaggedError<DesktopSnapShotSetupError>()(
-  "DesktopSnapShotSetupError",
-  {
-    action: Schema.Union([
-      DesktopSnapShotSetupAction,
-      Schema.Literals(["preview-config", "apply-config"]),
-    ]),
-    reason: Schema.Literals(["unsupported-session", "setup-failed", "shortcut-permissions"]),
-    step: Schema.optional(Schema.Literals(["find-window", "capture-window"])),
-    status: Schema.optional(Schema.Literals(["missing", "timed-out", "exited", "failed"])),
-    exitCode: Schema.optional(Schema.Number),
-    /** The running app, as macOS lists it under Privacy & Security. */
-    appName: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class DesktopSnapShotSetupError extends Schema.TaggedError<
+  DesktopSnapShotSetupError,
+  { readonly brand: unique symbol }
+>()("DesktopSnapShotSetupError", {
+  action: Schema.Union([
+    DesktopSnapShotSetupAction,
+    Schema.Literals(["preview-config", "apply-config"]),
+  ]),
+  reason: Schema.Literals(["unsupported-session", "setup-failed", "shortcut-permissions"]),
+  step: Schema.optional(Schema.Literals(["find-window", "capture-window"])),
+  status: Schema.optional(Schema.Literals(["missing", "timed-out", "exited", "failed"])),
+  exitCode: Schema.optional(Schema.Number),
+  /** The running app, as macOS lists it under Privacy & Security. */
+  appName: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     if (this.action === "test-mac-capture") {
       if (this.reason === "unsupported-session") return "Test capture requires macOS.";

@@ -47,6 +47,8 @@ export type ServerProviderResetCredits = typeof ServerProviderResetCredits.Type;
 export const ServerProviderUsageLimits = Schema.Struct({
   checkedAt: IsoDateTime,
   windows: ForwardCompatibleArray(ServerProviderUsageWindow),
+  /** A $0 monthly spend cap has no percentage, so it cannot be a window. */
+  zeroSpendCap: Schema.optional(Schema.Boolean),
   credentialFingerprint: Schema.optional(TrimmedNonEmptyString),
   resetCredits: Schema.optional(ServerProviderResetCredits),
   externalUsage: Schema.optional(
@@ -84,6 +86,8 @@ export const UsageLimitSourceSnapshot = Schema.Struct({
   id: UsageLimitSourceId,
   kind: Schema.Literal("cliproxy"),
   label: TrimmedNonEmptyString,
+  /** Origin of the hub, which also serves the agents sent through it. */
+  origin: Schema.optional(TrimmedNonEmptyString),
   checkedAt: IsoDateTime,
   accounts: ForwardCompatibleArray(UsageLimitSourceAccount),
   error: Schema.optional(TrimmedNonEmptyString),
@@ -110,10 +114,10 @@ export const ProviderConsumeResetCreditInput = Schema.Union([
 ]);
 export type ProviderConsumeResetCreditInput = typeof ProviderConsumeResetCreditInput.Type;
 
-export class UsageLimitSourceError extends Schema.TaggedError<UsageLimitSourceError>()(
-  "UsageLimitSourceError",
-  { detail: Schema.String },
-) {
+export class UsageLimitSourceError extends Schema.TaggedError<
+  UsageLimitSourceError,
+  { readonly brand: unique symbol }
+>()("UsageLimitSourceError", { detail: Schema.String }) {
   override get message(): string {
     return this.detail;
   }

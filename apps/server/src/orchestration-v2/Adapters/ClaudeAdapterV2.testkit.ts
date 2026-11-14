@@ -63,96 +63,96 @@ const ClaudeAgentSdkReplayTranscript = Schema.Struct({
 });
 type ClaudeAgentSdkReplayTranscript = typeof ClaudeAgentSdkReplayTranscript.Type;
 
-export class ClaudeReplayTranscriptDecodeError extends Schema.TaggedError<ClaudeReplayTranscriptDecodeError>()(
-  "ClaudeReplayTranscriptDecodeError",
-  {
-    driver: Schema.optional(Schema.String),
-    protocol: Schema.optional(Schema.String),
-    scenario: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ClaudeReplayTranscriptDecodeError extends Schema.TaggedError<
+  ClaudeReplayTranscriptDecodeError,
+  { readonly brand: unique symbol }
+>()("ClaudeReplayTranscriptDecodeError", {
+  driver: Schema.optional(Schema.String),
+  protocol: Schema.optional(Schema.String),
+  scenario: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode Claude Agent SDK replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
   }
 }
 
-export class ClaudeReplayExhaustedError extends Schema.TaggedError<ClaudeReplayExhaustedError>()(
-  "ClaudeReplayExhaustedError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    actual: Schema.Unknown,
-  },
-) {
+export class ClaudeReplayExhaustedError extends Schema.TaggedError<
+  ClaudeReplayExhaustedError,
+  { readonly brand: unique symbol }
+>()("ClaudeReplayExhaustedError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Claude Agent SDK replay transcript exhausted before outbound frame ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class ClaudeReplayUnexpectedOutboundError extends Schema.TaggedError<ClaudeReplayUnexpectedOutboundError>()(
-  "ClaudeReplayUnexpectedOutboundError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    expectedType: Schema.String,
-    actual: Schema.Unknown,
-  },
-) {
+export class ClaudeReplayUnexpectedOutboundError extends Schema.TaggedError<
+  ClaudeReplayUnexpectedOutboundError,
+  { readonly brand: unique symbol }
+>()("ClaudeReplayUnexpectedOutboundError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  expectedType: Schema.String,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Unexpected outbound Claude Agent SDK frame at replay cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class ClaudeReplayFrameMismatchError extends Schema.TaggedError<ClaudeReplayFrameMismatchError>()(
-  "ClaudeReplayFrameMismatchError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    label: Schema.optional(Schema.String),
-    expected: Schema.Unknown,
-    actual: Schema.Unknown,
-  },
-) {
+export class ClaudeReplayFrameMismatchError extends Schema.TaggedError<
+  ClaudeReplayFrameMismatchError,
+  { readonly brand: unique symbol }
+>()("ClaudeReplayFrameMismatchError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  label: Schema.optional(Schema.String),
+  expected: Schema.Unknown,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Outbound Claude Agent SDK frame did not match replay cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class ClaudeReplayRuntimeExitError extends Schema.TaggedError<ClaudeReplayRuntimeExitError>()(
-  "ClaudeReplayRuntimeExitError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    status: Schema.Literals(["error", "cancelled"]),
-    error: Schema.optional(Schema.Unknown),
-  },
-) {
+export class ClaudeReplayRuntimeExitError extends Schema.TaggedError<
+  ClaudeReplayRuntimeExitError,
+  { readonly brand: unique symbol }
+>()("ClaudeReplayRuntimeExitError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  status: Schema.Literals(["error", "cancelled"]),
+  error: Schema.optional(Schema.Unknown),
+}) {
   override get message(): string {
     return `Claude Agent SDK replay exited with status ${this.status} at cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class ClaudeReplayIncompleteError extends Schema.TaggedError<ClaudeReplayIncompleteError>()(
-  "ClaudeReplayIncompleteError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    remaining: Schema.Number,
-  },
-) {
+export class ClaudeReplayIncompleteError extends Schema.TaggedError<
+  ClaudeReplayIncompleteError,
+  { readonly brand: unique symbol }
+>()("ClaudeReplayIncompleteError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  remaining: Schema.Number,
+}) {
   override get message(): string {
     return `Claude Agent SDK replay ended with ${this.remaining} unconsumed entries in scenario ${this.scenario}.`;
   }
 }
 
-export class ClaudeReplayDriverError extends Schema.TaggedError<ClaudeReplayDriverError>()(
-  "ClaudeReplayDriverError",
-  {
-    scenario: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ClaudeReplayDriverError extends Schema.TaggedError<
+  ClaudeReplayDriverError,
+  { readonly brand: unique symbol }
+>()("ClaudeReplayDriverError", {
+  scenario: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Claude Agent SDK replay driver failed in scenario ${this.scenario}.`;
   }

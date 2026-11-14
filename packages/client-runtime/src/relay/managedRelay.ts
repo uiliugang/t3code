@@ -55,26 +55,26 @@ export interface ManagedRelayDpopProofInput {
   readonly accessToken?: string;
 }
 
-export class ManagedRelayDpopKeyLoadError extends Schema.TaggedError<ManagedRelayDpopKeyLoadError>()(
-  "ManagedRelayDpopKeyLoadError",
-  {
-    keyStore: Schema.Literals(["expo-secure-store", "indexed-db"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedRelayDpopKeyLoadError extends Schema.TaggedError<
+  ManagedRelayDpopKeyLoadError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayDpopKeyLoadError", {
+  keyStore: Schema.Literals(["expo-secure-store", "indexed-db"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Could not load relay DPoP proof key.";
   }
 }
 
-export class ManagedRelayDpopProofCreationError extends Schema.TaggedError<ManagedRelayDpopProofCreationError>()(
-  "ManagedRelayDpopProofCreationError",
-  {
-    method: Schema.String,
-    url: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedRelayDpopProofCreationError extends Schema.TaggedError<
+  ManagedRelayDpopProofCreationError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayDpopProofCreationError", {
+  method: Schema.String,
+  url: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not create the relay DPoP proof for ${this.method} ${this.url}.`;
   }
@@ -124,41 +124,41 @@ export const ManagedRelayRequestActivity = Schema.Literals([
 ]);
 export type ManagedRelayRequestActivity = typeof ManagedRelayRequestActivity.Type;
 
-export class ManagedRelayRequestTimeoutError extends Schema.TaggedError<ManagedRelayRequestTimeoutError>()(
-  "ManagedRelayRequestTimeoutError",
-  {
-    activity: ManagedRelayRequestActivity,
-    timeoutMs: Schema.Number,
-    traceId: Schema.NullOr(Schema.String),
-  },
-) {
+export class ManagedRelayRequestTimeoutError extends Schema.TaggedError<
+  ManagedRelayRequestTimeoutError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayRequestTimeoutError", {
+  activity: ManagedRelayRequestActivity,
+  timeoutMs: Schema.Number,
+  traceId: Schema.NullOr(Schema.String),
+}) {
   override get message(): string {
     return `${this.activity} timed out. ${NETWORK_BLOCKING_HINT}`;
   }
 }
 
-export class ManagedRelayUrlInvalidError extends Schema.TaggedError<ManagedRelayUrlInvalidError>()(
-  "ManagedRelayUrlInvalidError",
-  {
-    relayUrl: Schema.String,
-  },
-) {
+export class ManagedRelayUrlInvalidError extends Schema.TaggedError<
+  ManagedRelayUrlInvalidError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayUrlInvalidError", {
+  relayUrl: Schema.String,
+}) {
   override get message(): string {
     return "Relay URL must be a secure absolute HTTPS origin.";
   }
 }
 
-export class ManagedRelayRequestFailedError extends Schema.TaggedError<ManagedRelayRequestFailedError>()(
-  "ManagedRelayRequestFailedError",
-  {
-    action: ManagedRelayRequestAction,
-    transportFailed: Schema.optionalKey(Schema.Boolean),
-    cause: Schema.Defect(),
-    relayError: Schema.optional(RelayProtectedError),
-    status: Schema.optional(Schema.Number),
-    traceId: Schema.optional(Schema.String),
-  },
-) {
+export class ManagedRelayRequestFailedError extends Schema.TaggedError<
+  ManagedRelayRequestFailedError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayRequestFailedError", {
+  action: ManagedRelayRequestAction,
+  transportFailed: Schema.optionalKey(Schema.Boolean),
+  cause: Schema.Defect(),
+  relayError: Schema.optional(RelayProtectedError),
+  status: Schema.optional(Schema.Number),
+  traceId: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     if (this.transportFailed) return `Could not ${this.action}. ${NETWORK_BLOCKING_HINT}`;
     const detail = relayRequestFailureDetail(this);
@@ -166,39 +166,39 @@ export class ManagedRelayRequestFailedError extends Schema.TaggedError<ManagedRe
   }
 }
 
-export class ManagedRelayAccessTokenScopesUnexpectedError extends Schema.TaggedError<ManagedRelayAccessTokenScopesUnexpectedError>()(
-  "ManagedRelayAccessTokenScopesUnexpectedError",
-  {
-    requestedScopes: Schema.Array(RelayDpopAccessTokenScope),
-    grantedScope: Schema.String,
-  },
-) {
+export class ManagedRelayAccessTokenScopesUnexpectedError extends Schema.TaggedError<
+  ManagedRelayAccessTokenScopesUnexpectedError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayAccessTokenScopesUnexpectedError", {
+  requestedScopes: Schema.Array(RelayDpopAccessTokenScope),
+  grantedScope: Schema.String,
+}) {
   override get message(): string {
     return "Relay granted unexpected DPoP access token scopes.";
   }
 }
 
-export class ManagedRelayTokenProofCreationError extends Schema.TaggedError<ManagedRelayTokenProofCreationError>()(
-  "ManagedRelayTokenProofCreationError",
-  {
-    method: Schema.String,
-    url: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedRelayTokenProofCreationError extends Schema.TaggedError<
+  ManagedRelayTokenProofCreationError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayTokenProofCreationError", {
+  method: Schema.String,
+  url: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Could not create relay token DPoP proof.";
   }
 }
 
-export class ManagedRelayRequestProofCreationError extends Schema.TaggedError<ManagedRelayRequestProofCreationError>()(
-  "ManagedRelayRequestProofCreationError",
-  {
-    method: Schema.String,
-    url: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedRelayRequestProofCreationError extends Schema.TaggedError<
+  ManagedRelayRequestProofCreationError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayRequestProofCreationError", {
+  method: Schema.String,
+  url: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Could not create relay request DPoP proof.";
   }

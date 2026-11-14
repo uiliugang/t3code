@@ -199,11 +199,10 @@ export function AddProviderInstanceDialog({
   const [byokModelIds, setByokModelIds] = useState("");
   const [createdInstanceId, setCreatedInstanceId] = useState<ProviderInstanceId | null>(null);
 
-  // Reserve Codex/Claude default ids because they run before configuration; other unconfigured slots are
-  // available.
   const existingIds = new Set([
-    "codex",
-    "claudeAgent",
+    ...["codex", "claudeAgent"].filter(
+      (id) => !settings.removedProviderInstances?.some((removed) => removed === id),
+    ),
     ...Object.keys(settings.providerInstances ?? {}),
   ]);
 

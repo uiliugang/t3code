@@ -36,7 +36,10 @@ type CrashLogState =
   | { readonly status: "unavailable" }
   | { readonly status: "ready"; readonly records: ReadonlyArray<StartupCrashRecord> };
 
-class CrashLogReadError extends Schema.TaggedError<CrashLogReadError>()("CrashLogReadError", {
+class CrashLogReadError extends Schema.TaggedError<
+  CrashLogReadError,
+  { readonly brand: unique symbol }
+>()("CrashLogReadError", {
   cause: Schema.Defect(),
 }) {
   override get message(): string {

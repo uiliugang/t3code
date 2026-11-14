@@ -9,19 +9,19 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Equal from "effect/Equal";
 
-export class WorkspaceBindingError extends Schema.TaggedError<WorkspaceBindingError>()(
-  "WorkspaceBindingError",
-  {
-    threadId: ThreadId,
-    reason: Schema.Literals([
-      "stale-revision",
-      "wrong-project",
-      "busy",
-      "invalid-primary",
-      "invalid-preparing-run",
-    ]),
-  },
-) {
+export class WorkspaceBindingError extends Schema.TaggedError<
+  WorkspaceBindingError,
+  { readonly brand: unique symbol }
+>()("WorkspaceBindingError", {
+  threadId: ThreadId,
+  reason: Schema.Literals([
+    "stale-revision",
+    "wrong-project",
+    "busy",
+    "invalid-primary",
+    "invalid-preparing-run",
+  ]),
+}) {
   override get message(): string {
     return `Cannot bind the thread workspace (${this.reason}).`;
   }

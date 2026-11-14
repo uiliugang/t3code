@@ -20,7 +20,10 @@ import { Atom } from "effect/reactivity";
 import type { TurnItemSource } from "../chat/timelineRowContext";
 
 /** What an expanded guest row says when it cannot read the item. */
-class GuestItemReadError extends Schema.TaggedError<GuestItemReadError>()("GuestItemReadError", {
+class GuestItemReadError extends Schema.TaggedError<
+  GuestItemReadError,
+  { readonly brand: unique symbol }
+>()("GuestItemReadError", {
   message: Schema.String,
 }) {}
 

@@ -17,24 +17,24 @@ import { isSqlError } from "effect/sql/SqlError";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import { rebuildMessageSearch } from "../orchestration-v2/messageSearchIndex.ts";
 
-export class DatabaseMissingError extends Schema.TaggedError<DatabaseMissingError>()(
-  "DatabaseMissingError",
-  { path: Schema.String },
-) {
+export class DatabaseMissingError extends Schema.TaggedError<
+  DatabaseMissingError,
+  { readonly brand: unique symbol }
+>()("DatabaseMissingError", { path: Schema.String }) {
   override get message() {
     return "No existing T3 Code database was found in this data directory.";
   }
 }
 
-export class DatabaseInUseError extends Schema.TaggedError<DatabaseInUseError>()(
-  "DatabaseInUseError",
-  {
-    path: Schema.String,
-    cause: Schema.Defect(),
-    pid: Schema.optional(Schema.Int),
-    serviceManaged: Schema.optional(Schema.Boolean),
-  },
-) {
+export class DatabaseInUseError extends Schema.TaggedError<
+  DatabaseInUseError,
+  { readonly brand: unique symbol }
+>()("DatabaseInUseError", {
+  path: Schema.String,
+  cause: Schema.Defect(),
+  pid: Schema.optional(Schema.Int),
+  serviceManaged: Schema.optional(Schema.Boolean),
+}) {
   override get message() {
     if (this.pid !== undefined) {
       return `Stop T3 Code server process ${this.pid}${this.serviceManaged ? "" : ", which the background service did not start,"} before repairing the database.`;
@@ -43,37 +43,37 @@ export class DatabaseInUseError extends Schema.TaggedError<DatabaseInUseError>()
   }
 }
 
-export class DatabaseInspectError extends Schema.TaggedError<DatabaseInspectError>()(
-  "DatabaseInspectError",
-  { path: Schema.String, cause: Schema.Defect() },
-) {
+export class DatabaseInspectError extends Schema.TaggedError<
+  DatabaseInspectError,
+  { readonly brand: unique symbol }
+>()("DatabaseInspectError", { path: Schema.String, cause: Schema.Defect() }) {
   override get message() {
     return "Could not read the database. Check that this user can open it.";
   }
 }
 
-export class DatabaseCompactError extends Schema.TaggedError<DatabaseCompactError>()(
-  "DatabaseCompactError",
-  { path: Schema.String, cause: Schema.Defect() },
-) {
+export class DatabaseCompactError extends Schema.TaggedError<
+  DatabaseCompactError,
+  { readonly brand: unique symbol }
+>()("DatabaseCompactError", { path: Schema.String, cause: Schema.Defect() }) {
   override get message() {
     return "Database compaction failed. Check that no other process has the database open and enough disk space is available.";
   }
 }
 
-export class LegacyDatabaseRemoveError extends Schema.TaggedError<LegacyDatabaseRemoveError>()(
-  "LegacyDatabaseRemoveError",
-  { path: Schema.String, cause: Schema.Defect() },
-) {
+export class LegacyDatabaseRemoveError extends Schema.TaggedError<
+  LegacyDatabaseRemoveError,
+  { readonly brand: unique symbol }
+>()("LegacyDatabaseRemoveError", { path: Schema.String, cause: Schema.Defect() }) {
   override get message() {
     return "Could not delete the database from before 0.1.0. Check that this user can write to the data directory.";
   }
 }
 
-export class DiskSpaceCheckError extends Schema.TaggedError<DiskSpaceCheckError>()(
-  "DiskSpaceCheckError",
-  { path: Schema.String, cause: Schema.Defect() },
-) {
+export class DiskSpaceCheckError extends Schema.TaggedError<
+  DiskSpaceCheckError,
+  { readonly brand: unique symbol }
+>()("DiskSpaceCheckError", { path: Schema.String, cause: Schema.Defect() }) {
   override get message() {
     return "Could not check free disk space.";
   }

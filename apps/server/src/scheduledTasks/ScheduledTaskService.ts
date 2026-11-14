@@ -124,10 +124,10 @@ export class ScheduledTaskWebhookOrigin extends Context.Reference<Effect.Effect<
   },
 ) {}
 
-class WebhookDeliverySkipped extends Schema.TaggedError<WebhookDeliverySkipped>()(
-  "WebhookDeliverySkipped",
-  { reason: Schema.String },
-) {}
+class WebhookDeliverySkipped extends Schema.TaggedError<
+  WebhookDeliverySkipped,
+  { readonly brand: unique symbol }
+>()("WebhookDeliverySkipped", { reason: Schema.String }) {}
 
 interface RateWindow {
   readonly accepted: ReadonlyArray<{ readonly at: number }>;

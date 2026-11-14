@@ -206,12 +206,12 @@ const getDefaultArch = Effect.fn("getDefaultArch")(function* (platform: typeof B
   return yield* getDefaultBuildArch(platform, config);
 });
 
-export class MacPasskeySigningConfigurationResolutionError extends Schema.TaggedError<MacPasskeySigningConfigurationResolutionError>()(
-  "MacPasskeySigningConfigurationResolutionError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class MacPasskeySigningConfigurationResolutionError extends Schema.TaggedError<
+  MacPasskeySigningConfigurationResolutionError,
+  { readonly brand: unique symbol }
+>()("MacPasskeySigningConfigurationResolutionError", {
+  cause: Schema.Defect(),
+}) {
   static fromCause(
     cause: unknown,
   ): MacPasskeySigningConfigurationError | MacPasskeySigningConfigurationResolutionError {
@@ -225,57 +225,57 @@ export class MacPasskeySigningConfigurationResolutionError extends Schema.Tagged
   }
 }
 
-export class KeyringNativePackageMissingError extends Schema.TaggedError<KeyringNativePackageMissingError>()(
-  "KeyringNativePackageMissingError",
-  {
-    packageName: Schema.String,
-    binaryFileName: Schema.String,
-    packageEntryPath: Schema.String,
-    platform: BuildPlatform,
-    arch: BuildArch,
-    cause: Schema.Defect(),
-  },
-) {
+export class KeyringNativePackageMissingError extends Schema.TaggedError<
+  KeyringNativePackageMissingError,
+  { readonly brand: unique symbol }
+>()("KeyringNativePackageMissingError", {
+  packageName: Schema.String,
+  binaryFileName: Schema.String,
+  packageEntryPath: Schema.String,
+  platform: BuildPlatform,
+  arch: BuildArch,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Keyring native package is missing: ${this.packageName}`;
   }
 }
 
-export class ClerkPasskeyNativePackageMissingError extends Schema.TaggedError<ClerkPasskeyNativePackageMissingError>()(
-  "ClerkPasskeyNativePackageMissingError",
-  {
-    packageName: Schema.String,
-    binaryFileName: Schema.String,
-    packageEntryPath: Schema.String,
-    platform: BuildPlatform,
-    arch: BuildArch,
-    cause: Schema.Defect(),
-  },
-) {
+export class ClerkPasskeyNativePackageMissingError extends Schema.TaggedError<
+  ClerkPasskeyNativePackageMissingError,
+  { readonly brand: unique symbol }
+>()("ClerkPasskeyNativePackageMissingError", {
+  packageName: Schema.String,
+  binaryFileName: Schema.String,
+  packageEntryPath: Schema.String,
+  platform: BuildPlatform,
+  arch: BuildArch,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Clerk passkey native package is missing: ${this.packageName}`;
   }
 }
 
-export class UnsupportedHostBuildPlatformError extends Schema.TaggedError<UnsupportedHostBuildPlatformError>()(
-  "UnsupportedHostBuildPlatformError",
-  {
-    hostPlatform: Schema.String,
-  },
-) {
+export class UnsupportedHostBuildPlatformError extends Schema.TaggedError<
+  UnsupportedHostBuildPlatformError,
+  { readonly brand: unique symbol }
+>()("UnsupportedHostBuildPlatformError", {
+  hostPlatform: Schema.String,
+}) {
   override get message(): string {
     return `Unsupported host platform '${this.hostPlatform}'.`;
   }
 }
 
-export class UnsupportedDesktopBuildArchitectureError extends Schema.TaggedError<UnsupportedDesktopBuildArchitectureError>()(
-  "UnsupportedDesktopBuildArchitectureError",
-  {
-    platform: BuildPlatform,
-    arch: BuildArch,
-    supportedArchitectures: Schema.Array(BuildArch),
-  },
-) {
+export class UnsupportedDesktopBuildArchitectureError extends Schema.TaggedError<
+  UnsupportedDesktopBuildArchitectureError,
+  { readonly brand: unique symbol }
+>()("UnsupportedDesktopBuildArchitectureError", {
+  platform: BuildPlatform,
+  arch: BuildArch,
+  supportedArchitectures: Schema.Array(BuildArch),
+}) {
   override get message(): string {
     return `Unsupported architecture '${this.arch}' for ${this.platform}.`;
   }
@@ -287,14 +287,14 @@ const InvalidMockUpdateServerPortReason = Schema.Literals([
   "out-of-range",
 ]);
 
-export class InvalidMockUpdateServerPortError extends Schema.TaggedError<InvalidMockUpdateServerPortError>()(
-  "InvalidMockUpdateServerPortError",
-  {
-    reason: InvalidMockUpdateServerPortReason,
-    inputLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-    cause: Schema.Defect(),
-  },
-) {
+export class InvalidMockUpdateServerPortError extends Schema.TaggedError<
+  InvalidMockUpdateServerPortError,
+  { readonly brand: unique symbol }
+>()("InvalidMockUpdateServerPortError", {
+  reason: InvalidMockUpdateServerPortReason,
+  inputLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Invalid mock update server port.";
   }
@@ -308,24 +308,24 @@ export class InvalidMockUpdateServerPortError extends Schema.TaggedError<Invalid
   }
 }
 
-export class DesktopBuildManifestRestoreError extends Schema.TaggedError<DesktopBuildManifestRestoreError>()(
-  "DesktopBuildManifestRestoreError",
-  { failures: Schema.Array(ReleasePackageManifestError) },
-) {
+export class DesktopBuildManifestRestoreError extends Schema.TaggedError<
+  DesktopBuildManifestRestoreError,
+  { readonly brand: unique symbol }
+>()("DesktopBuildManifestRestoreError", { failures: Schema.Array(ReleasePackageManifestError) }) {
   override get message(): string {
     return `Failed to restore release manifests: ${this.failures.map((failure) => failure.filePath).join(", ")}`;
   }
 }
 
-export class BuildCommandFailedError extends Schema.TaggedError<BuildCommandFailedError>()(
-  "BuildCommandFailedError",
-  {
-    command: Schema.String,
-    exitCode: Schema.Int,
-    stdoutTail: Schema.optionalKey(Schema.String),
-    stderrTail: Schema.optionalKey(Schema.String),
-  },
-) {
+export class BuildCommandFailedError extends Schema.TaggedError<
+  BuildCommandFailedError,
+  { readonly brand: unique symbol }
+>()("BuildCommandFailedError", {
+  command: Schema.String,
+  exitCode: Schema.Int,
+  stdoutTail: Schema.optionalKey(Schema.String),
+  stderrTail: Schema.optionalKey(Schema.String),
+}) {
   override get message(): string {
     const outputSections = [
       `Command: ${this.command}`,
@@ -350,13 +350,13 @@ export const LINUX_DESKTOP_BUILD_PREREQUISITES = [
   { id: "imagemagick", description: "ImageMagick", packages: ["imagemagick"] },
 ] as const;
 
-export class LinuxDesktopBuildPrerequisitesMissingError extends Schema.TaggedError<LinuxDesktopBuildPrerequisitesMissingError>()(
-  "LinuxDesktopBuildPrerequisitesMissingError",
-  {
-    missing: Schema.Array(Schema.String),
-    rustTarget: Schema.String,
-  },
-) {
+export class LinuxDesktopBuildPrerequisitesMissingError extends Schema.TaggedError<
+  LinuxDesktopBuildPrerequisitesMissingError,
+  { readonly brand: unique symbol }
+>()("LinuxDesktopBuildPrerequisitesMissingError", {
+  missing: Schema.Array(Schema.String),
+  rustTarget: Schema.String,
+}) {
   override get message(): string {
     const missingRequirements = LINUX_DESKTOP_BUILD_PREREQUISITES.filter((requirement) =>
       this.missing.includes(requirement.id),
@@ -397,13 +397,13 @@ const MAC_DESKTOP_BUILD_PREREQUISITES = [
   { id: "lipo", description: "Xcode universal-binary tool (lipo)" },
 ] as const;
 
-export class MacDesktopBuildPrerequisitesMissingError extends Schema.TaggedError<MacDesktopBuildPrerequisitesMissingError>()(
-  "MacDesktopBuildPrerequisitesMissingError",
-  {
-    missing: Schema.Array(Schema.String),
-    rustTargets: Schema.Array(Schema.String),
-  },
-) {
+export class MacDesktopBuildPrerequisitesMissingError extends Schema.TaggedError<
+  MacDesktopBuildPrerequisitesMissingError,
+  { readonly brand: unique symbol }
+>()("MacDesktopBuildPrerequisitesMissingError", {
+  missing: Schema.Array(Schema.String),
+  rustTargets: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     const details = MAC_DESKTOP_BUILD_PREREQUISITES.filter((requirement) =>
       this.missing.includes(requirement.id),
@@ -434,13 +434,13 @@ const WINDOWS_DESKTOP_BUILD_PREREQUISITES = [
   { id: "tar", description: "tar to inspect the bundled WSL runtime archive" },
 ] as const;
 
-export class WindowsDesktopBuildPrerequisitesMissingError extends Schema.TaggedError<WindowsDesktopBuildPrerequisitesMissingError>()(
-  "WindowsDesktopBuildPrerequisitesMissingError",
-  {
-    missing: Schema.Array(Schema.String),
-    rustTarget: Schema.String,
-  },
-) {
+export class WindowsDesktopBuildPrerequisitesMissingError extends Schema.TaggedError<
+  WindowsDesktopBuildPrerequisitesMissingError,
+  { readonly brand: unique symbol }
+>()("WindowsDesktopBuildPrerequisitesMissingError", {
+  missing: Schema.Array(Schema.String),
+  rustTarget: Schema.String,
+}) {
   override get message(): string {
     const details = WINDOWS_DESKTOP_BUILD_PREREQUISITES.filter((requirement) =>
       this.missing.includes(requirement.id),
@@ -461,15 +461,15 @@ export class WindowsDesktopBuildPrerequisitesMissingError extends Schema.TaggedE
   }
 }
 
-export class ResourceMonitorBuildOutputMissingError extends Schema.TaggedError<ResourceMonitorBuildOutputMissingError>()(
-  "ResourceMonitorBuildOutputMissingError",
-  {
-    binaryPath: Schema.String,
-    rustTarget: Schema.String,
-    platform: BuildPlatform,
-    arch: BuildArch,
-  },
-) {
+export class ResourceMonitorBuildOutputMissingError extends Schema.TaggedError<
+  ResourceMonitorBuildOutputMissingError,
+  { readonly brand: unique symbol }
+>()("ResourceMonitorBuildOutputMissingError", {
+  binaryPath: Schema.String,
+  rustTarget: Schema.String,
+  platform: BuildPlatform,
+  arch: BuildArch,
+}) {
   override get message(): string {
     return `Resource monitor build for ${this.rustTarget} did not produce ${this.binaryPath}.`;
   }
@@ -481,46 +481,46 @@ const desktopIconPlatformNames = {
   win: "Windows",
 } satisfies Record<typeof BuildPlatform.Type, string>;
 
-export class LinuxBrowserSecretHostError extends Schema.TaggedError<LinuxBrowserSecretHostError>()(
-  "LinuxBrowserSecretHostError",
-  { hostPlatform: Schema.String },
-) {
+export class LinuxBrowserSecretHostError extends Schema.TaggedError<
+  LinuxBrowserSecretHostError,
+  { readonly brand: unique symbol }
+>()("LinuxBrowserSecretHostError", { hostPlatform: Schema.String }) {
   override get message(): string {
     return `Linux desktop builds must run on a Linux host: the browser secret helper links against libsecret and cannot be built on '${this.hostPlatform}'.`;
   }
 }
 
-export class DesktopIconSourceMissingError extends Schema.TaggedError<DesktopIconSourceMissingError>()(
-  "DesktopIconSourceMissingError",
-  {
-    platform: BuildPlatform,
-    sourcePath: Schema.String,
-  },
-) {
+export class DesktopIconSourceMissingError extends Schema.TaggedError<
+  DesktopIconSourceMissingError,
+  { readonly brand: unique symbol }
+>()("DesktopIconSourceMissingError", {
+  platform: BuildPlatform,
+  sourcePath: Schema.String,
+}) {
   override get message(): string {
     return `Desktop ${desktopIconPlatformNames[this.platform]} icon source is missing at ${this.sourcePath}`;
   }
 }
 
-export class DesktopDmgBackgroundSourceMissingError extends Schema.TaggedError<DesktopDmgBackgroundSourceMissingError>()(
-  "DesktopDmgBackgroundSourceMissingError",
-  {
-    channel: Schema.Literals(["latest", "nightly"]),
-    sourcePath: Schema.String,
-  },
-) {
+export class DesktopDmgBackgroundSourceMissingError extends Schema.TaggedError<
+  DesktopDmgBackgroundSourceMissingError,
+  { readonly brand: unique symbol }
+>()("DesktopDmgBackgroundSourceMissingError", {
+  channel: Schema.Literals(["latest", "nightly"]),
+  sourcePath: Schema.String,
+}) {
   override get message(): string {
     return `Desktop ${this.channel} DMG background source is missing at ${this.sourcePath}`;
   }
 }
 
-export class BundledClientAssetsMissingError extends Schema.TaggedError<BundledClientAssetsMissingError>()(
-  "BundledClientAssetsMissingError",
-  {
-    indexPath: Schema.String,
-    missingFiles: Schema.Array(Schema.String),
-  },
-) {
+export class BundledClientAssetsMissingError extends Schema.TaggedError<
+  BundledClientAssetsMissingError,
+  { readonly brand: unique symbol }
+>()("BundledClientAssetsMissingError", {
+  indexPath: Schema.String,
+  missingFiles: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     const preview = this.missingFiles.slice(0, 6).join(", ");
     const suffix = this.missingFiles.length > 6 ? ` (+${this.missingFiles.length - 6} more)` : "";
@@ -528,12 +528,12 @@ export class BundledClientAssetsMissingError extends Schema.TaggedError<BundledC
   }
 }
 
-export class UnsupportedDesktopBuildPlatformError extends Schema.TaggedError<UnsupportedDesktopBuildPlatformError>()(
-  "UnsupportedDesktopBuildPlatformError",
-  {
-    platform: Schema.String,
-  },
-) {
+export class UnsupportedDesktopBuildPlatformError extends Schema.TaggedError<
+  UnsupportedDesktopBuildPlatformError,
+  { readonly brand: unique symbol }
+>()("UnsupportedDesktopBuildPlatformError", {
+  platform: Schema.String,
+}) {
   override get message(): string {
     return `Unsupported platform '${this.platform}'.`;
   }
@@ -550,25 +550,25 @@ const DependencyResolutionKind = Schema.Literals([
   "desktop-runtime",
 ]);
 
-export class DesktopBuildDependencyResolutionError extends Schema.TaggedError<DesktopBuildDependencyResolutionError>()(
-  "DesktopBuildDependencyResolutionError",
-  {
-    kind: DependencyResolutionKind,
-    manifestPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopBuildDependencyResolutionError extends Schema.TaggedError<
+  DesktopBuildDependencyResolutionError,
+  { readonly brand: unique symbol }
+>()("DesktopBuildDependencyResolutionError", {
+  kind: DependencyResolutionKind,
+  manifestPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not resolve ${dependencyResolutionDescriptions[this.kind]} from ${this.manifestPath}.`;
   }
 }
 
-export class MissingServerProductionDependenciesError extends Schema.TaggedError<MissingServerProductionDependenciesError>()(
-  "MissingServerProductionDependenciesError",
-  {
-    manifestPath: Schema.String,
-  },
-) {
+export class MissingServerProductionDependenciesError extends Schema.TaggedError<
+  MissingServerProductionDependenciesError,
+  { readonly brand: unique symbol }
+>()("MissingServerProductionDependenciesError", {
+  manifestPath: Schema.String,
+}) {
   override get message(): string {
     return `Could not resolve production dependencies from ${this.manifestPath}.`;
   }
@@ -611,133 +611,137 @@ if (!result.ok) throw new Error(result.error);
 result.value.destroy();
 `;
 
-export class ExternalizedBundleError extends Schema.TaggedError<ExternalizedBundleError>()(
-  "ExternalizedBundleError",
-  { sentinel: Schema.String, inlinedPackageCount: Schema.Number },
-) {
+export class ExternalizedBundleError extends Schema.TaggedError<
+  ExternalizedBundleError,
+  { readonly brand: unique symbol }
+>()("ExternalizedBundleError", { sentinel: Schema.String, inlinedPackageCount: Schema.Number }) {
   override get message(): string {
     return `The server bundle did not inline "${this.sentinel}" (${this.inlinedPackageCount} packages inlined). The bundle is meant to be self-contained apart from the runtime externals; if its dependencies are external again they will be absent from the sidecar, and the backend will fail with ERR_MODULE_NOT_FOUND. Check the deps.alwaysBundle wiring in apps/server/vite.config.ts.`;
   }
 }
 
-export class BundleNotSelfContainedError extends Schema.TaggedError<BundleNotSelfContainedError>()(
-  "BundleNotSelfContainedError",
-  { exitCode: Schema.Number, output: Schema.String },
-) {
+export class BundleNotSelfContainedError extends Schema.TaggedError<
+  BundleNotSelfContainedError,
+  { readonly brand: unique symbol }
+>()("BundleNotSelfContainedError", { exitCode: Schema.Number, output: Schema.String }) {
   override get message(): string {
     return `The packaged server bundle could not load from the isolated, extracted sidecar (exit ${this.exitCode}). Anything it imports that is neither a Node built-in nor in the selected runtime-external closure is unavailable to both backends. Output:
 ${this.output}`;
   }
 }
 
-export class InlinedNativePackageError extends Schema.TaggedError<InlinedNativePackageError>()(
-  "InlinedNativePackageError",
-  { packages: Schema.Array(Schema.String) },
-) {
+export class InlinedNativePackageError extends Schema.TaggedError<
+  InlinedNativePackageError,
+  { readonly brand: unique symbol }
+>()("InlinedNativePackageError", { packages: Schema.Array(Schema.String) }) {
   override get message(): string {
     return `The server bundle inlined packages that load native binaries: ${this.packages.join(", ")}. A node-gyp-build style loader resolves prebuilds relative to its own file, so inlined into a chunk it finds none and the importer quietly falls back to a slower JS path. Add them to CLI_RUNTIME_EXTERNAL_PREFIXES in scripts/lib/cli-external-packages.ts so they stay external and are staged in the sidecar.`;
   }
 }
 
-export class InlinedExternalPackageError extends Schema.TaggedError<InlinedExternalPackageError>()(
-  "InlinedExternalPackageError",
-  { packages: Schema.Array(Schema.String) },
-) {
+export class InlinedExternalPackageError extends Schema.TaggedError<
+  InlinedExternalPackageError,
+  { readonly brand: unique symbol }
+>()("InlinedExternalPackageError", { packages: Schema.Array(Schema.String) }) {
   override get message(): string {
     return `The server bundle inlined packages that must stay external: ${this.packages.join(", ")}. These are native addons or their loaders; inlined, they resolve prebuilds relative to the bundle and silently lose native acceleration. Check the deps.neverBundle wiring in apps/server/vite.config.ts.`;
   }
 }
 
-export class MissingDesktopBuildInputError extends Schema.TaggedError<MissingDesktopBuildInputError>()(
-  "MissingDesktopBuildInputError",
-  {
-    artifact: DesktopBuildInputArtifact,
-    artifactPath: Schema.String,
-    buildCommand: Schema.Literal("vp run build:desktop"),
-  },
-) {
+export class MissingDesktopBuildInputError extends Schema.TaggedError<
+  MissingDesktopBuildInputError,
+  { readonly brand: unique symbol }
+>()("MissingDesktopBuildInputError", {
+  artifact: DesktopBuildInputArtifact,
+  artifactPath: Schema.String,
+  buildCommand: Schema.Literal("vp run build:desktop"),
+}) {
   override get message(): string {
     return `Missing ${desktopBuildInputArtifactNames[this.artifact]} at ${this.artifactPath}. Run '${this.buildCommand}' first.`;
   }
 }
 
-export class MacProvisioningProfileNotFoundError extends Schema.TaggedError<MacProvisioningProfileNotFoundError>()(
-  "MacProvisioningProfileNotFoundError",
-  {
-    provisioningProfilePath: Schema.String,
-  },
-) {
+export class MacProvisioningProfileNotFoundError extends Schema.TaggedError<
+  MacProvisioningProfileNotFoundError,
+  { readonly brand: unique symbol }
+>()("MacProvisioningProfileNotFoundError", {
+  provisioningProfilePath: Schema.String,
+}) {
   override get message(): string {
     return `macOS provisioning profile not found: ${this.provisioningProfilePath}`;
   }
 }
 
-export class DesktopBuildDistDirectoryMissingError extends Schema.TaggedError<DesktopBuildDistDirectoryMissingError>()(
-  "DesktopBuildDistDirectoryMissingError",
-  {
-    distPath: Schema.String,
-    platform: BuildPlatform,
-    arch: BuildArch,
-  },
-) {
+export class DesktopBuildDistDirectoryMissingError extends Schema.TaggedError<
+  DesktopBuildDistDirectoryMissingError,
+  { readonly brand: unique symbol }
+>()("DesktopBuildDistDirectoryMissingError", {
+  distPath: Schema.String,
+  platform: BuildPlatform,
+  arch: BuildArch,
+}) {
   override get message(): string {
     return `Build completed but dist directory was not found at ${this.distPath}`;
   }
 }
 
-export class DesktopBuildArtifactCopyError extends Schema.TaggedError<DesktopBuildArtifactCopyError>()(
-  "DesktopBuildArtifactCopyError",
-  { from: Schema.String, to: Schema.String, cause: Schema.Defect() },
-) {
+export class DesktopBuildArtifactCopyError extends Schema.TaggedError<
+  DesktopBuildArtifactCopyError,
+  { readonly brand: unique symbol }
+>()("DesktopBuildArtifactCopyError", {
+  from: Schema.String,
+  to: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to copy build artifact ${this.from} to ${this.to}.`;
   }
 }
 
-export class DesktopBuildNoArtifactsProducedError extends Schema.TaggedError<DesktopBuildNoArtifactsProducedError>()(
-  "DesktopBuildNoArtifactsProducedError",
-  {
-    distPath: Schema.String,
-    platform: BuildPlatform,
-    arch: BuildArch,
-  },
-) {
+export class DesktopBuildNoArtifactsProducedError extends Schema.TaggedError<
+  DesktopBuildNoArtifactsProducedError,
+  { readonly brand: unique symbol }
+>()("DesktopBuildNoArtifactsProducedError", {
+  distPath: Schema.String,
+  platform: BuildPlatform,
+  arch: BuildArch,
+}) {
   override get message(): string {
     return `Build completed but no files were produced in ${this.distPath}`;
   }
 }
 
-export class WslRuntimeArchiveMissingError extends Schema.TaggedError<WslRuntimeArchiveMissingError>()(
-  "WslRuntimeArchiveMissingError",
-  {
-    archivePath: Schema.String,
-  },
-) {
+export class WslRuntimeArchiveMissingError extends Schema.TaggedError<
+  WslRuntimeArchiveMissingError,
+  { readonly brand: unique symbol }
+>()("WslRuntimeArchiveMissingError", {
+  archivePath: Schema.String,
+}) {
   override get message(): string {
     return `WSL runtime archive not found at ${this.archivePath}.`;
   }
 }
 
-export class WindowsServerSidecarPackError extends Schema.TaggedError<WindowsServerSidecarPackError>()(
-  "WindowsServerSidecarPackError",
-  {
-    asarPath: Schema.String,
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class WindowsServerSidecarPackError extends Schema.TaggedError<
+  WindowsServerSidecarPackError,
+  { readonly brand: unique symbol }
+>()("WindowsServerSidecarPackError", {
+  asarPath: Schema.String,
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to pack the Windows server sidecar at ${this.asarPath}.`;
   }
 }
 
-export class WindowsPrimaryNativeProbeError extends Schema.TaggedError<WindowsPrimaryNativeProbeError>()(
-  "WindowsPrimaryNativeProbeError",
-  {
-    executablePath: Schema.String,
-    exitCode: Schema.Number,
-    output: Schema.String,
-  },
-) {
+export class WindowsPrimaryNativeProbeError extends Schema.TaggedError<
+  WindowsPrimaryNativeProbeError,
+  { readonly brand: unique symbol }
+>()("WindowsPrimaryNativeProbeError", {
+  executablePath: Schema.String,
+  exitCode: Schema.Number,
+  output: Schema.String,
+}) {
   override get message(): string {
     return `The packaged Windows primary could not load fff from server.asar (exit ${this.exitCode}). Output:\n${this.output}`;
   }
@@ -754,17 +758,17 @@ const WindowsPackagedPayloadValidationReason = Schema.Literals([
   "file-limit-exceeded",
 ]);
 
-export class WindowsPackagedPayloadValidationError extends Schema.TaggedError<WindowsPackagedPayloadValidationError>()(
-  "WindowsPackagedPayloadValidationError",
-  {
-    reason: WindowsPackagedPayloadValidationReason,
-    packagedAppDir: Schema.String,
-    missingFiles: Schema.optionalKey(Schema.Array(Schema.String)),
-    fileCount: Schema.optionalKey(Schema.Int),
-    fileLimit: Schema.optionalKey(Schema.Int),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class WindowsPackagedPayloadValidationError extends Schema.TaggedError<
+  WindowsPackagedPayloadValidationError,
+  { readonly brand: unique symbol }
+>()("WindowsPackagedPayloadValidationError", {
+  reason: WindowsPackagedPayloadValidationReason,
+  packagedAppDir: Schema.String,
+  missingFiles: Schema.optionalKey(Schema.Array(Schema.String)),
+  fileCount: Schema.optionalKey(Schema.Int),
+  fileLimit: Schema.optionalKey(Schema.Int),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     if (this.reason === "file-limit-exceeded") {
       return `Windows packaged payload contains ${String(this.fileCount)} files; expected at most ${String(this.fileLimit)}.`;
@@ -791,16 +795,16 @@ export class WindowsPackagedPayloadValidationError extends Schema.TaggedError<Wi
   }
 }
 
-export class LinuxIconResizeError extends Schema.TaggedError<LinuxIconResizeError>()(
-  "LinuxIconResizeError",
-  {
-    operation: Schema.Literal("resize"),
-    iconSize: Schema.Int,
-    primaryTool: Schema.Literal("magick"),
-    fallbackTool: Schema.Literal("convert"),
-    cause: Schema.Defect(),
-  },
-) {
+export class LinuxIconResizeError extends Schema.TaggedError<
+  LinuxIconResizeError,
+  { readonly brand: unique symbol }
+>()("LinuxIconResizeError", {
+  operation: Schema.Literal("resize"),
+  iconSize: Schema.Int,
+  primaryTool: Schema.Literal("magick"),
+  fallbackTool: Schema.Literal("convert"),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} the Linux desktop icon to ${this.iconSize}x${this.iconSize} with \`${this.primaryTool}\` or \`${this.fallbackTool}\`. Install ImageMagick so either tool is available.`;
   }
@@ -1155,63 +1159,63 @@ export const InvalidMacPasskeyRpDomainReason = Schema.Literals([
 ]);
 export type InvalidMacPasskeyRpDomainReason = typeof InvalidMacPasskeyRpDomainReason.Type;
 
-export class InvalidMacPasskeyRpDomainError extends Schema.TaggedError<InvalidMacPasskeyRpDomainError>()(
-  "InvalidMacPasskeyRpDomainError",
-  {
-    reason: InvalidMacPasskeyRpDomainReason,
-    inputLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class InvalidMacPasskeyRpDomainError extends Schema.TaggedError<
+  InvalidMacPasskeyRpDomainError,
+  { readonly brand: unique symbol }
+>()("InvalidMacPasskeyRpDomainError", {
+  reason: InvalidMacPasskeyRpDomainReason,
+  inputLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     return `Invalid passkey RP domain (${this.reason}).`;
   }
 }
 
-export class InvalidAppleTeamIdError extends Schema.TaggedError<InvalidAppleTeamIdError>()(
-  "InvalidAppleTeamIdError",
-  {
-    teamId: Schema.String,
-  },
-) {
+export class InvalidAppleTeamIdError extends Schema.TaggedError<
+  InvalidAppleTeamIdError,
+  { readonly brand: unique symbol }
+>()("InvalidAppleTeamIdError", {
+  teamId: Schema.String,
+}) {
   override get message(): string {
     return `T3CODE_APPLE_TEAM_ID '${this.teamId}' must be a 10-character Apple Developer Team ID.`;
   }
 }
 
-export class MissingMacPasskeyProvisioningProfileError extends Schema.TaggedError<MissingMacPasskeyProvisioningProfileError>()(
-  "MissingMacPasskeyProvisioningProfileError",
-  {},
-) {
+export class MissingMacPasskeyProvisioningProfileError extends Schema.TaggedError<
+  MissingMacPasskeyProvisioningProfileError,
+  { readonly brand: unique symbol }
+>()("MissingMacPasskeyProvisioningProfileError", {}) {
   override get message(): string {
     return "T3CODE_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.";
   }
 }
 
-export class MissingMacPasskeyDomainConfigurationError extends Schema.TaggedError<MissingMacPasskeyDomainConfigurationError>()(
-  "MissingMacPasskeyDomainConfigurationError",
-  {},
-) {
+export class MissingMacPasskeyDomainConfigurationError extends Schema.TaggedError<
+  MissingMacPasskeyDomainConfigurationError,
+  { readonly brand: unique symbol }
+>()("MissingMacPasskeyDomainConfigurationError", {}) {
   override get message(): string {
     return "T3CODE_CLERK_PUBLISHABLE_KEY or T3CODE_CLERK_PASSKEY_RP_DOMAINS is required for signed macOS passkey builds.";
   }
 }
 
-export class InvalidMacPasskeyPublishableKeyError extends Schema.TaggedError<InvalidMacPasskeyPublishableKeyError>()(
-  "InvalidMacPasskeyPublishableKeyError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class InvalidMacPasskeyPublishableKeyError extends Schema.TaggedError<
+  InvalidMacPasskeyPublishableKeyError,
+  { readonly brand: unique symbol }
+>()("InvalidMacPasskeyPublishableKeyError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "T3CODE_CLERK_PUBLISHABLE_KEY is invalid.";
   }
 }
 
-export class MissingMacPasskeyRpDomainError extends Schema.TaggedError<MissingMacPasskeyRpDomainError>()(
-  "MissingMacPasskeyRpDomainError",
-  {},
-) {
+export class MissingMacPasskeyRpDomainError extends Schema.TaggedError<
+  MissingMacPasskeyRpDomainError,
+  { readonly brand: unique symbol }
+>()("MissingMacPasskeyRpDomainError", {}) {
   override get message(): string {
     return "At least one Clerk passkey RP domain is required.";
   }
@@ -1806,10 +1810,10 @@ const runCommand = Effect.fn("runCommand")(function* (
   }
 });
 
-export class DesktopBuildAlreadyRunningError extends Schema.TaggedError<DesktopBuildAlreadyRunningError>()(
-  "DesktopBuildAlreadyRunningError",
-  { lockPath: Schema.String },
-) {
+export class DesktopBuildAlreadyRunningError extends Schema.TaggedError<
+  DesktopBuildAlreadyRunningError,
+  { readonly brand: unique symbol }
+>()("DesktopBuildAlreadyRunningError", { lockPath: Schema.String }) {
   override get message(): string {
     return `Another desktop build owns '${this.lockPath}'. Wait for it to finish. If a build was killed, confirm no desktop build is running, inspect and restore any changed release manifests, then remove this lock.`;
   }
@@ -2972,6 +2976,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         },
       },
     };
+    // electron-updater replaces an installed AppImage in place only when its name has no x.y.z version.
+    if (buildConfig.publish) {
+      buildConfig.appImage = {
+        artifactName:
+          updateChannel === "nightly" ? "T3-Code-Nightly-${arch}.${ext}" : "T3-Code-${arch}.${ext}",
+      };
+    }
     buildConfig.deb = {
       // FPM runs outside the staged app directory, so source paths must be absolute.
       fpm: [
@@ -3585,10 +3596,10 @@ export const validateWindowsPackagedPayload = Effect.fn(
   return { packagedAppDir, fileCount, unpackedFiles } as const;
 });
 
-export class MacPackagedAppMissingError extends Schema.TaggedError<MacPackagedAppMissingError>()(
-  "MacPackagedAppMissingError",
-  { stageDistDir: Schema.String },
-) {
+export class MacPackagedAppMissingError extends Schema.TaggedError<
+  MacPackagedAppMissingError,
+  { readonly brand: unique symbol }
+>()("MacPackagedAppMissingError", { stageDistDir: Schema.String }) {
   override get message(): string {
     return `Expected electron-builder to leave a packaged .app with Contents/Resources/app.asar under ${this.stageDistDir}/mac*.`;
   }
@@ -3621,10 +3632,10 @@ export const validateMacPackagedPayload = Effect.fn("desktopArtifact.validateMac
   },
 );
 
-export class LinuxPackagedAppMissingError extends Schema.TaggedError<LinuxPackagedAppMissingError>()(
-  "LinuxPackagedAppMissingError",
-  { stageDistDir: Schema.String },
-) {
+export class LinuxPackagedAppMissingError extends Schema.TaggedError<
+  LinuxPackagedAppMissingError,
+  { readonly brand: unique symbol }
+>()("LinuxPackagedAppMissingError", { stageDistDir: Schema.String }) {
   override get message(): string {
     return `Expected electron-builder to leave resources/app.asar under ${this.stageDistDir}/linux*-unpacked.`;
   }

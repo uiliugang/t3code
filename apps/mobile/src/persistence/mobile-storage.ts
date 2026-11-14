@@ -13,34 +13,34 @@ const AGENT_AWARENESS_REGISTRATION_KEY = "t3code.agent-awareness.registration";
 const RECENT_THREAD_SHORTCUTS_KEY = "t3code.recent-thread-shortcuts";
 const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
-export class MobileStorageDecodeError extends Schema.TaggedError<MobileStorageDecodeError>()(
-  "MobileStorageDecodeError",
-  {
-    key: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class MobileStorageDecodeError extends Schema.TaggedError<
+  MobileStorageDecodeError,
+  { readonly brand: unique symbol }
+>()("MobileStorageDecodeError", {
+  key: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode mobile storage value for key ${this.key}.`;
   }
 }
 
-export class MobileStorageEncodeError extends Schema.TaggedError<MobileStorageEncodeError>()(
-  "MobileStorageEncodeError",
-  {
-    key: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class MobileStorageEncodeError extends Schema.TaggedError<
+  MobileStorageEncodeError,
+  { readonly brand: unique symbol }
+>()("MobileStorageEncodeError", {
+  key: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to encode mobile storage value for key ${this.key}.`;
   }
 }
 
-export class MobileDeviceIdGenerationError extends Schema.TaggedError<MobileDeviceIdGenerationError>()(
-  "MobileDeviceIdGenerationError",
-  { cause: Schema.Defect() },
-) {
+export class MobileDeviceIdGenerationError extends Schema.TaggedError<
+  MobileDeviceIdGenerationError,
+  { readonly brand: unique symbol }
+>()("MobileDeviceIdGenerationError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to generate the mobile agent-awareness device id.";
   }

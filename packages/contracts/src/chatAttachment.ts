@@ -239,10 +239,10 @@ export const PersistChatAttachmentsResult = Schema.Struct({
 });
 export type PersistChatAttachmentsResult = typeof PersistChatAttachmentsResult.Type;
 
-export class PersistChatAttachmentsError extends Schema.TaggedError<PersistChatAttachmentsError>()(
-  "PersistChatAttachmentsError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class PersistChatAttachmentsError extends Schema.TaggedError<
+  PersistChatAttachmentsError,
+  { readonly brand: unique symbol }
+>()("PersistChatAttachmentsError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}

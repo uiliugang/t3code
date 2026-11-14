@@ -10,13 +10,13 @@ import * as Electron from "electron";
 
 import { watchLinuxColorScheme, type LinuxColorScheme } from "./LinuxColorScheme.ts";
 
-export class ElectronThemeSetSourceError extends Schema.TaggedError<ElectronThemeSetSourceError>()(
-  "ElectronThemeSetSourceError",
-  {
-    source: DesktopThemeSchema,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronThemeSetSourceError extends Schema.TaggedError<
+  ElectronThemeSetSourceError,
+  { readonly brand: unique symbol }
+>()("ElectronThemeSetSourceError", {
+  source: DesktopThemeSchema,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to set the Electron theme source to ${this.source}.`;
   }

@@ -25,7 +25,10 @@ const InspectorTargets = Schema.Array(
   }),
 );
 
-export class DeviceError extends Schema.TaggedError<DeviceError>()("DeviceError", {
+export class DeviceError extends Schema.TaggedError<
+  DeviceError,
+  { readonly brand: unique symbol }
+>()("DeviceError", {
   message: Schema.String,
 }) {}
 

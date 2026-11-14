@@ -33,42 +33,42 @@ const OpenCodeSdkReplayTranscript = Schema.Struct({
 export type OpenCodeSdkReplayTranscript = typeof OpenCodeSdkReplayTranscript.Type;
 const decodeOpenCodeSdkReplayTranscript = Schema.decodeUnknownEffect(OpenCodeSdkReplayTranscript);
 
-export class OpenCodeReplayTranscriptDecodeError extends Schema.TaggedError<OpenCodeReplayTranscriptDecodeError>()(
-  "OpenCodeReplayTranscriptDecodeError",
-  {
-    driver: Schema.optional(Schema.String),
-    protocol: Schema.optional(Schema.String),
-    scenario: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class OpenCodeReplayTranscriptDecodeError extends Schema.TaggedError<
+  OpenCodeReplayTranscriptDecodeError,
+  { readonly brand: unique symbol }
+>()("OpenCodeReplayTranscriptDecodeError", {
+  driver: Schema.optional(Schema.String),
+  protocol: Schema.optional(Schema.String),
+  scenario: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode OpenCode replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
   }
 }
 
-export class OpenCodeReplayMismatchError extends Schema.TaggedError<OpenCodeReplayMismatchError>()(
-  "OpenCodeReplayMismatchError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    expected: Schema.Unknown,
-    actual: Schema.Unknown,
-  },
-) {
+export class OpenCodeReplayMismatchError extends Schema.TaggedError<
+  OpenCodeReplayMismatchError,
+  { readonly brand: unique symbol }
+>()("OpenCodeReplayMismatchError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  expected: Schema.Unknown,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `OpenCode replay frame mismatch at cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class OpenCodeReplayIncompleteError extends Schema.TaggedError<OpenCodeReplayIncompleteError>()(
-  "OpenCodeReplayIncompleteError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    remaining: Schema.Number,
-  },
-) {
+export class OpenCodeReplayIncompleteError extends Schema.TaggedError<
+  OpenCodeReplayIncompleteError,
+  { readonly brand: unique symbol }
+>()("OpenCodeReplayIncompleteError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  remaining: Schema.Number,
+}) {
   override get message(): string {
     return `OpenCode replay ended with ${this.remaining} unconsumed entries in scenario ${this.scenario}.`;
   }

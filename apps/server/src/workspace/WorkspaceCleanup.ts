@@ -10,14 +10,14 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLeases } from "./workspaceLease.ts";
 
-export class WorkspaceCleanupError extends Schema.TaggedError<WorkspaceCleanupError>()(
-  "WorkspaceCleanupError",
-  {
-    revisionId: WorkspaceRevisionId,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class WorkspaceCleanupError extends Schema.TaggedError<
+  WorkspaceCleanupError,
+  { readonly brand: unique symbol }
+>()("WorkspaceCleanupError", {
+  revisionId: WorkspaceRevisionId,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     return this.detail;
   }

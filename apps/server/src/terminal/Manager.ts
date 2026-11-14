@@ -65,7 +65,12 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import {
+  mergeProviderInstanceEnvironment,
+  RESOURCE_OWNER_ENV,
+  RESOURCE_ROLE_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 import type { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
@@ -132,16 +137,16 @@ const MAX_TERMINAL_LABEL_LENGTH = 128;
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
 const decodeCodexSettings = Schema.decodeUnknownOption(CodexSettings);
 
-class TerminalSubprocessCheckError extends Schema.TaggedError<TerminalSubprocessCheckError>()(
-  "TerminalSubprocessCheckError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-    command: Schema.Literals(["powershell", "ps", "resource-monitor"]),
-    exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
-    timedOut: Schema.optional(Schema.Boolean),
-    stdoutTruncated: Schema.optional(Schema.Boolean),
-  },
-) {
+class TerminalSubprocessCheckError extends Schema.TaggedError<
+  TerminalSubprocessCheckError,
+  { readonly brand: unique symbol }
+>()("TerminalSubprocessCheckError", {
+  cause: Schema.optional(Schema.Defect()),
+  command: Schema.Literals(["powershell", "ps", "resource-monitor"]),
+  exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
+  timedOut: Schema.optional(Schema.Boolean),
+  stdoutTruncated: Schema.optional(Schema.Boolean),
+}) {
   override get message(): string {
     const details = [
       this.exitCode !== undefined && this.exitCode !== null ? `exit code ${this.exitCode}` : null,
@@ -154,14 +159,14 @@ class TerminalSubprocessCheckError extends Schema.TaggedError<TerminalSubprocess
   }
 }
 
-class TerminalProcessSignalError extends Schema.TaggedError<TerminalProcessSignalError>()(
-  "TerminalProcessSignalError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-    signal: Schema.Literals(["SIGTERM", "SIGKILL"]),
-    terminalPid: Schema.Number,
-  },
-) {
+class TerminalProcessSignalError extends Schema.TaggedError<
+  TerminalProcessSignalError,
+  { readonly brand: unique symbol }
+>()("TerminalProcessSignalError", {
+  cause: Schema.optional(Schema.Defect()),
+  signal: Schema.Literals(["SIGTERM", "SIGKILL"]),
+  terminalPid: Schema.Number,
+}) {
   override get message(): string {
     return `Failed to send ${this.signal} to terminal process ${this.terminalPid}`;
   }
@@ -175,7 +180,7 @@ export class TerminalManager extends Context.Service<
   TerminalManager,
   {
     readonly open: (
-      input: TerminalOpenInput,
+      input: TerminalOpenInput & { readonly keepOnSettle?: boolean },
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     readonly getShell: (input: TerminalObserveInput) => Effect.Effect<string, TerminalError>;
@@ -225,7 +230,11 @@ export class TerminalManager extends Context.Service<
     /** Omit terminalId to close all sessions for the thread. */
     readonly close: (input: TerminalCloseInput) => Effect.Effect<void, TerminalError>;
 
-    readonly closeOnSettle: (input: { readonly threadId: string }) => Effect.Effect<void>;
+    readonly closeOnSettle: (input: {
+      readonly shouldClose: Effect.Effect<boolean>;
+      readonly deleteHistory?: boolean;
+      readonly threadId: string;
+    }) => Effect.Effect<void, TerminalError>;
 
     readonly closeIdle: (input: {
       readonly threadId: string;
@@ -287,6 +296,8 @@ interface TerminalStartInput {
 }
 
 interface TerminalSessionState {
+  processGeneration: number;
+  keepOnSettle: boolean;
   threadId: string;
   terminalId: string;
   cwd: string;
@@ -312,7 +323,6 @@ interface TerminalSessionState {
   hasRunningSubprocess: boolean;
   childCommandLabel: string | null;
   runtimeEnv: Record<string, string> | null;
-  stopOnSettle: boolean;
 }
 
 interface TerminalGrid {
@@ -1194,18 +1204,70 @@ function stripStringTerminator(value: string): string {
   return value;
 }
 
-// BEL ends only OSC; inside DCS, PM and APC it is payload. A decoded U+009C is the
-// reverse: libghostty keeps it inside OSC but ends the other strings there.
-function findStringTerminatorIndex(input: string, start: number, isOsc: boolean): number | null {
+interface C1Effect {
+  /** ESC form of the sequence the code point starts, or "" when it returns to ground. */
+  readonly next: string;
+  /** Its 0x9A byte ran DECID, which replies with device attributes. */
+  readonly query: boolean;
+  /** What replays its visible effect from ground. */
+  readonly safe: string;
+}
+
+// Outside ground and OSC, libghostty parses a code point's UTF-8 bytes one at a time: 0x80-0x9F
+// act as C1 controls, the rest are dropped. Bytes left over after a return to ground print U+FFFD.
+function c1Effect(codePoint: number): C1Effect | undefined {
+  // A lone surrogate is encoded as U+FFFD, whose bytes are all dropped.
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return undefined;
+  let next: string | undefined;
+  let query = false;
+  let safe = "";
+  for (let shift = codePoint > 0xffff ? 12 : codePoint > 0x7ff ? 6 : 0; shift >= 0; shift -= 6) {
+    const byte = 0x80 | ((codePoint >> shift) & 0x3f);
+    if (next === "") {
+      safe += "\ufffd";
+    } else if (next?.startsWith("\u001b]")) {
+      next += "\ufffd";
+    } else if (byte === 0x9b) {
+      next = "\u001b[";
+    } else if (byte === 0x9d) {
+      next = "\u001b]";
+    } else if (byte === 0x90) {
+      next = "\u001bP";
+    } else if (byte === 0x98 || byte === 0x9e || byte === 0x9f) {
+      next = "\u001b_";
+    } else if (byte < 0xa0) {
+      next = "";
+      query = byte === 0x9a;
+      // Any other C1 control but ST runs as ESC plus the byte less 0x40.
+      safe = query || byte === 0x9c ? "" : `\u001b${String.fromCharCode(byte - 0x40)}`;
+    }
+  }
+  return next === undefined ? undefined : { next, query, safe };
+}
+
+// BEL ends only OSC; inside DCS, PM and APC it is payload. Non-ASCII is the reverse: libghostty
+// keeps it inside OSC, while a C1 byte in it ends the other strings.
+function findStringEnd(
+  input: string,
+  start: number,
+  isOsc: boolean,
+): { end: number; c1?: { effect: C1Effect; index: number } } | null {
   for (let index = start; index < input.length; index += 1) {
     const codePoint = input.charCodeAt(index);
-    if ((isOsc ? codePoint === 0x07 : codePoint === 0x9c) || isControlSequenceCancel(codePoint)) {
-      return index + 1;
+    if ((isOsc && codePoint === 0x07) || isControlSequenceCancel(codePoint)) {
+      return { end: index + 1 };
     }
     // Like xterm.js, an ESC that does not start ST ends the string and begins the next sequence.
     if (codePoint === 0x1b) {
       if (index + 1 >= input.length) return null;
-      return input.charCodeAt(index + 1) === 0x5c ? index + 2 : index;
+      return { end: input.charCodeAt(index + 1) === 0x5c ? index + 2 : index };
+    }
+    if (codePoint >= 0x80 && !isOsc) {
+      const fullCodePoint = input.codePointAt(index) ?? codePoint;
+      const end = index + (fullCodePoint > 0xffff ? 2 : 1);
+      const effect = c1Effect(fullCodePoint);
+      if (effect) return { end, c1: { effect, index } };
+      index = end - 1;
     }
   }
   return null;
@@ -1251,6 +1313,8 @@ function sanitizeTerminalHistoryChunk(
   const pendingScanStart = Math.max(0, pendingControlSequence.length - 1);
   let visibleText = "";
   let index = 0;
+  // Set when a C1 code point began the sequence at `index`: the ESC form that stands in for it.
+  let c1Introducer = "";
 
   const append = (value: string) => {
     visibleText += value;
@@ -1259,14 +1323,18 @@ function sanitizeTerminalHistoryChunk(
   while (index < input.length) {
     const codePoint = input.charCodeAt(index);
 
-    if (codePoint === 0x1b) {
-      const nextCodePoint = input.charCodeAt(index + 1);
+    if (c1Introducer.length > 0 || codePoint === 0x1b) {
+      // Empty for a sequence the input introduces itself, which starts with ESC at `index`.
+      const prefix = c1Introducer;
+      c1Introducer = "";
+      const contentStart = prefix.length > 0 ? index : index + 2;
+      const nextCodePoint = (prefix || input).charCodeAt(prefix.length > 0 ? 1 : index + 1);
       if (Number.isNaN(nextCodePoint)) {
         return { visibleText, pendingControlSequence: input.slice(index) };
       }
 
       if (nextCodePoint === 0x5b) {
-        let cursor = index + 2;
+        let cursor = contentStart;
         // Inside a CSI Ghostty executes 0x00-0x0F and ignores DEL and 0x10-0x1F, which it would
         // print in ground state. None join the parameters; only executed ones survive a strip.
         let body = "";
@@ -1276,25 +1344,47 @@ function sanitizeTerminalHistoryChunk(
           const cancelled = isControlSequenceCancel(cursorCodePoint);
           if (cancelled || isCsiFinalByte(cursorCodePoint)) {
             if (cancelled || !shouldStripCsiSequence(body, input[cursor] ?? "")) {
-              append(input.slice(index, cursor + 1));
+              append(prefix + input.slice(index, cursor + 1));
             } else {
               append(executedControls);
             }
             index = cursor + 1;
             break;
           }
+          if (cursorCodePoint >= 0x80) {
+            const fullCodePoint = input.codePointAt(cursor) ?? cursorCodePoint;
+            const end = cursor + (fullCodePoint > 0xffff ? 2 : 1);
+            const c1 = c1Effect(fullCodePoint);
+            if (c1) {
+              // The CSI ends here undispatched, so it is kept only when the terminal is back in
+              // ground with nothing to answer.
+              if (c1.next.length === 0 && !c1.query) {
+                append(prefix + input.slice(index, end));
+              } else {
+                append(executedControls + c1.safe);
+              }
+              c1Introducer = c1.next;
+              index = end;
+              break;
+            }
+            cursor = end;
+            continue;
+          }
+          // An ESC abandons the CSI and starts the next sequence, which may be stripped.
+          if (cursorCodePoint === 0x1b) {
+            append(executedControls);
+            index = cursor;
+            break;
+          }
           if (cursorCodePoint < 0x10) {
             executedControls += input[cursor];
-          } else if (
-            (cursorCodePoint >= 0x20 || cursorCodePoint === 0x1b) &&
-            cursorCodePoint !== 0x7f
-          ) {
+          } else if (cursorCodePoint >= 0x20 && cursorCodePoint !== 0x7f) {
             body += input[cursor];
           }
           cursor += 1;
         }
         if (cursor >= input.length) {
-          return { visibleText, pendingControlSequence: input.slice(index) };
+          return { visibleText, pendingControlSequence: prefix + input.slice(index) };
         }
         continue;
       }
@@ -1305,23 +1395,32 @@ function sanitizeTerminalHistoryChunk(
         nextCodePoint === 0x5e ||
         nextCodePoint === 0x5f
       ) {
-        const terminatorIndex = findStringTerminatorIndex(
+        const stringEnd = findStringEnd(
           input,
-          Math.max(index + 2, pendingScanStart),
+          Math.max(contentStart, pendingScanStart),
           nextCodePoint === 0x5d,
         );
-        if (terminatorIndex === null) {
-          return { visibleText, pendingControlSequence: input.slice(index) };
+        if (stringEnd === null) {
+          return { visibleText, pendingControlSequence: prefix + input.slice(index) };
         }
-        const sequence = input.slice(index, terminatorIndex);
-        const content = stripStringTerminator(input.slice(index + 2, terminatorIndex));
+        const { end, c1 } = stringEnd;
+        const content = stripStringTerminator(
+          prefix.slice(2) + input.slice(contentStart, c1?.index ?? end),
+        );
         const strip =
           (nextCodePoint === 0x5d && shouldStripOscSequence(content)) ||
           (nextCodePoint === 0x50 && shouldStripDcsSequence(content));
-        if (!strip) {
-          append(sequence);
+        if (c1 === undefined || (!strip && c1.effect.next.length === 0 && !c1.effect.query)) {
+          if (!strip) {
+            append(prefix + input.slice(index, end));
+          }
+        } else {
+          // ST stands in for a code point that cannot be replayed as it came.
+          const closed = strip ? "" : `${prefix}${input.slice(index, c1.index)}\u009c`;
+          append(closed + c1.effect.safe);
+          c1Introducer = c1.effect.next;
         }
-        index = terminatorIndex;
+        index = end;
         continue;
       }
 
@@ -1344,7 +1443,7 @@ function sanitizeTerminalHistoryChunk(
     index = nextSequenceStart;
   }
 
-  return { visibleText, pendingControlSequence: "" };
+  return { visibleText, pendingControlSequence: c1Introducer };
 }
 
 function legacySafeThreadId(threadId: string): string {
@@ -1483,6 +1582,7 @@ function normalizedRuntimeEnv(
 }
 
 interface TerminalManagerOptions {
+  stateDir?: string;
   logsDir: string;
   historyLineLimit?: number;
   historyByteLimit?: number;
@@ -1503,6 +1603,7 @@ interface TerminalManagerOptions {
     readonly threadId: string;
     readonly terminalId: string;
     readonly processIds: ReadonlyArray<number>;
+    readonly keepOnSettle?: boolean;
   }) => Effect.Effect<void>;
   unregisterTerminal?: (input: {
     readonly threadId: string;
@@ -1566,7 +1667,8 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
 export const make = Effect.fn("TerminalManager.make")(function* (
   deriveConfigMap: typeof deriveProviderInstanceConfigMap,
 ) {
-  const { terminalLogsDir, providerStatusCacheDir, baseDir } = yield* ServerConfig.ServerConfig;
+  const { terminalLogsDir, providerStatusCacheDir, baseDir, stateDir } =
+    yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
   const portDiscovery = yield* PortScanner.PortDiscovery;
   const nativeTelemetry = yield* NativeTelemetryClient.NativeTelemetryClient;
@@ -1585,6 +1687,7 @@ export const make = Effect.fn("TerminalManager.make")(function* (
   );
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
+    stateDir,
     ptyAdapter,
     processTable: nativeTelemetry.processTable.pipe(
       Effect.mapError(
@@ -2535,6 +2638,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     const startingAt = yield* nowIso;
     yield* modifyManagerState((state) => {
+      session.processGeneration += 1;
       session.status = "starting";
       session.shell = null;
       session.cwd = input.cwd;
@@ -2566,6 +2670,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               platform,
               yield* HostProcess.HomeDirectory,
             );
+            terminalEnv[PortScanner.AGENT_THREAD_ENV] = session.threadId;
+            if (session.keepOnSettle)
+              terminalEnv[RESOURCE_ROLE_ENV] = `settlement:${session.terminalId}`;
+            if (options.stateDir) terminalEnv[RESOURCE_OWNER_ENV] = resourceOwner(options.stateDir);
             // Append managed install directories so agent commands resolve without shadowing user/system tools.
             if (
               options.managedBinaryCacheDir !== undefined &&
@@ -2820,6 +2928,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         threadId: session.threadId,
         terminalId: session.terminalId,
         processIds: next.processIds,
+        keepOnSettle: session.keepOnSettle,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
       const event = yield* modifyManagerState((state) => {
@@ -2946,7 +3055,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   );
 
   const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
-    requestedInput: TerminalOpenInput,
+    requestedInput: TerminalOpenInput & { readonly keepOnSettle?: boolean },
   ) {
     const terminalId = requestedInput.terminalId;
     yield* assertValidCwd(requestedInput.cwd);
@@ -2985,6 +3094,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         updatedAt: yield* nowIso,
         eventSequence: 0,
         inputCount: 0,
+        processGeneration: 0,
+        keepOnSettle: input.keepOnSettle === true,
         cols,
         rows,
         process: null,
@@ -2994,9 +3105,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         hasRunningSubprocess: false,
         childCommandLabel: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
-        stopOnSettle: input.stopOnSettle ?? false,
       };
 
+      if (session.keepOnSettle)
+        yield* registerTerminalProcesses({
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+          processIds: [],
+          keepOnSettle: true,
+        });
       const createdSession = session;
       yield* modifyManagerState((state) => {
         const sessions = new Map(state.sessions);
@@ -3020,7 +3137,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }
 
     const liveSession = existing.value;
-    if (input.stopOnSettle !== undefined) liveSession.stopOnSettle = input.stopOnSettle;
     const nextRuntimeEnv = normalizedRuntimeEnv(input.env);
     const currentRuntimeEnv = liveSession.runtimeEnv;
     const targetCols = input.cols ?? liveSession.cols;
@@ -3076,7 +3192,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return snapshot(liveSession);
   });
 
-  const openLocked = (input: TerminalOpenInput) =>
+  const openLocked = (input: TerminalOpenInput & { readonly keepOnSettle?: boolean }) =>
     withWorkspaceLease(
       path.resolve(input.worktreePath ?? input.cwd),
       openWithWorkspaceLease(input),
@@ -3599,21 +3715,31 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       ),
     );
 
-  const closeOnSettle = Effect.fn("terminal.closeOnSettle")(function* (input: {
-    readonly threadId: string;
-  }) {
+  const closeOnSettle: TerminalManager["Service"]["closeOnSettle"] = Effect.fn(
+    "terminal.closeOnSettle",
+  )(function* (input) {
+    const expected = new Map(
+      (yield* sessionsForThread(input.threadId)).map((session) => [
+        session,
+        session.processGeneration,
+      ]),
+    );
     yield* withThreadLock(
       input.threadId,
       Effect.gen(function* () {
-        const sessions = yield* sessionsForThread(input.threadId);
-        yield* Effect.forEach(
-          sessions.filter((session) => session.stopOnSettle),
-          (session) => closeSession(input.threadId, session.terminalId, false),
-          { discard: true },
-        );
+        for (const session of yield* sessionsForThread(input.threadId)) {
+          if (
+            (!input.deleteHistory && session.keepOnSettle) ||
+            expected.get(session) !== session.processGeneration
+          )
+            continue;
+          if (!(yield* input.shouldClose)) return;
+          yield* closeSession(input.threadId, session.terminalId, false);
+        }
+        if (input.deleteHistory && (yield* input.shouldClose))
+          yield* deleteAllHistoryForThread(input.threadId);
       }),
     );
-    yield* closeIdle(input);
   });
 
   return TerminalManager.of({

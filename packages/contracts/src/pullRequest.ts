@@ -979,7 +979,10 @@ export function resolvePullRequestAuthorFilter(
   return viewer === null || viewer === undefined || viewer.trim().length === 0 ? trimmed : viewer;
 }
 
-export class PullRequestUnavailableError extends Schema.TaggedError<PullRequestUnavailableError>()(
+export class PullRequestUnavailableError extends Schema.TaggedError<
+  PullRequestUnavailableError,
+  { readonly brand: unique symbol }
+>()(
   "PullRequestUnavailableError",
   {
     reason: PullRequestUnavailableReason,
@@ -1010,7 +1013,10 @@ export class PullRequestUnavailableError extends Schema.TaggedError<PullRequestU
   }
 }
 
-export class PullRequestOperationError extends Schema.TaggedError<PullRequestOperationError>()(
+export class PullRequestOperationError extends Schema.TaggedError<
+  PullRequestOperationError,
+  { readonly brand: unique symbol }
+>()(
   "PullRequestOperationError",
   {
     operation: Schema.String,

@@ -53,102 +53,102 @@ const MAX_RESTART_DELAY = Duration.seconds(10);
 const FAILURE_WINDOW_MS = 60_000;
 const MAX_FAILURES_PER_WINDOW = 5;
 
-export class NativeTelemetrySpawnFailed extends Schema.TaggedError<NativeTelemetrySpawnFailed>()(
-  "NativeTelemetrySpawnFailed",
-  {
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NativeTelemetrySpawnFailed extends Schema.TaggedError<
+  NativeTelemetrySpawnFailed,
+  { readonly brand: unique symbol }
+>()("NativeTelemetrySpawnFailed", {
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to start resource monitor '${this.path}'.`;
   }
 }
 
-export class NativeTelemetryHandshakeTimedOut extends Schema.TaggedError<NativeTelemetryHandshakeTimedOut>()(
-  "NativeTelemetryHandshakeTimedOut",
-  {
-    timeoutMs: Schema.Number,
-  },
-) {
+export class NativeTelemetryHandshakeTimedOut extends Schema.TaggedError<
+  NativeTelemetryHandshakeTimedOut,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryHandshakeTimedOut", {
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `Resource monitor handshake timed out after ${this.timeoutMs}ms.`;
   }
 }
 
-class NativeTelemetryRequestTimedOut extends Schema.TaggedError<NativeTelemetryRequestTimedOut>()(
-  "NativeTelemetryRequestTimedOut",
-  {
-    operation: Schema.Literals(["processTable", "readHistory", "sampleNow"]),
-    timeoutMs: Schema.Number,
-  },
-) {
+class NativeTelemetryRequestTimedOut extends Schema.TaggedError<
+  NativeTelemetryRequestTimedOut,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryRequestTimedOut", {
+  operation: Schema.Literals(["processTable", "readHistory", "sampleNow"]),
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `Resource monitor '${this.operation}' request timed out after ${this.timeoutMs}ms.`;
   }
 }
 
-export class NativeTelemetryProtocolMismatch extends Schema.TaggedError<NativeTelemetryProtocolMismatch>()(
-  "NativeTelemetryProtocolMismatch",
-  {
-    expectedVersion: Schema.Number,
-    receivedVersion: Schema.Number,
-  },
-) {
+export class NativeTelemetryProtocolMismatch extends Schema.TaggedError<
+  NativeTelemetryProtocolMismatch,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryProtocolMismatch", {
+  expectedVersion: Schema.Number,
+  receivedVersion: Schema.Number,
+}) {
   override get message(): string {
     return `Resource monitor protocol ${this.receivedVersion} is incompatible with expected protocol ${this.expectedVersion}.`;
   }
 }
 
-export class NativeTelemetryDecodeFailed extends Schema.TaggedError<NativeTelemetryDecodeFailed>()(
-  "NativeTelemetryDecodeFailed",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class NativeTelemetryDecodeFailed extends Schema.TaggedError<
+  NativeTelemetryDecodeFailed,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryDecodeFailed", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to decode resource monitor output.";
   }
 }
 
-export class NativeTelemetryCommandFailed extends Schema.TaggedError<NativeTelemetryCommandFailed>()(
-  "NativeTelemetryCommandFailed",
-  {
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NativeTelemetryCommandFailed extends Schema.TaggedError<
+  NativeTelemetryCommandFailed,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryCommandFailed", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Resource monitor command '${this.operation}' failed.`;
   }
 }
 
-export class NativeTelemetryExited extends Schema.TaggedError<NativeTelemetryExited>()(
-  "NativeTelemetryExited",
-  {
-    exitCode: Schema.Number,
-  },
-) {
+export class NativeTelemetryExited extends Schema.TaggedError<
+  NativeTelemetryExited,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryExited", {
+  exitCode: Schema.Number,
+}) {
   override get message(): string {
     return `Resource monitor exited with code ${this.exitCode}.`;
   }
 }
 
-class NativeTelemetryStreamClosed extends Schema.TaggedError<NativeTelemetryStreamClosed>()(
-  "NativeTelemetryStreamClosed",
-  {},
-) {
+class NativeTelemetryStreamClosed extends Schema.TaggedError<
+  NativeTelemetryStreamClosed,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryStreamClosed", {}) {
   override get message(): string {
     return "Resource monitor event stream closed unexpectedly.";
   }
 }
 
-export class NativeTelemetryUnavailable extends Schema.TaggedError<NativeTelemetryUnavailable>()(
-  "NativeTelemetryUnavailable",
-  {
-    reason: Schema.String,
-  },
-) {
+export class NativeTelemetryUnavailable extends Schema.TaggedError<
+  NativeTelemetryUnavailable,
+  { readonly brand: unique symbol }
+>()("NativeTelemetryUnavailable", {
+  reason: Schema.String,
+}) {
   override get message(): string {
     return `Resource monitor is unavailable: ${this.reason}`;
   }

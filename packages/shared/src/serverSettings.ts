@@ -51,6 +51,7 @@ export function isModelSelectionProviderEnabled(
 ): boolean {
   const generator = textGeneratorForSelection(settings, selection.instanceId);
   if (generator !== undefined) return generator.enabled;
+  if (settings.removedProviderInstances?.includes(selection.instanceId)) return false;
   const instanceConfig = Object.hasOwn(settings.providerInstances, selection.instanceId)
     ? settings.providerInstances[selection.instanceId]
     : undefined;

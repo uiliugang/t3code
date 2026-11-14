@@ -156,7 +156,10 @@ export const UsageSummary = Schema.Struct({
 });
 export type UsageSummary = typeof UsageSummary.Type;
 
-export class UsageReadError extends Schema.TaggedError<UsageReadError>()("UsageReadError", {
+export class UsageReadError extends Schema.TaggedError<
+  UsageReadError,
+  { readonly brand: unique symbol }
+>()("UsageReadError", {
   reason: Schema.Literals(["scanFailed", "invalidWindow"]),
   detail: TrimmedNonEmptyString,
   cause: Schema.optional(Schema.Defect()),

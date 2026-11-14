@@ -64,9 +64,12 @@ vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => monitor.retr
 
 import { ResourceTelemetryDiagnostics } from "../components/settings/ResourceTelemetryDiagnostics";
 
-class MonitorError extends Schema.TaggedError<MonitorError>()("MonitorError", {
-  message: Schema.String,
-}) {}
+class MonitorError extends Schema.TaggedError<MonitorError, { readonly brand: unique symbol }>()(
+  "MonitorError",
+  {
+    message: Schema.String,
+  },
+) {}
 
 const environmentId = EnvironmentId.make("remote");
 const startError = "The resource monitor is not available.";

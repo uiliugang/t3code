@@ -12,7 +12,42 @@ import {
   mergeWorkItemPages,
   prepareWorkItemCommandRetry,
   selectWorkItemResultIds,
+  deliveryStages,
+  requirementGroup,
 } from "./workItem.ts";
+
+it("keeps testing unverified after merge and only completes after a successful platform sync", () => {
+  const summary = {
+    revision: 1,
+    progress: "delivery_complete" as const,
+    mergedPullRequests: 2,
+    requiredPullRequests: 2,
+    releasedServices: 1,
+    changedServices: 1,
+    synced: false,
+    error: null,
+  };
+  expect(deliveryStages("github", summary).map((stage) => stage.state)).toEqual([
+    "complete",
+    "unknown",
+    "complete",
+    "skipped",
+    "pending",
+  ]);
+  expect(requirementGroup("done", summary)).toBe("release");
+  expect(requirementGroup("done", { ...summary, synced: true })).toBe("done");
+  expect(requirementGroup("done", { ...summary, synced: true, error: "Sync failed" })).toBe(
+    "attention",
+  );
+  expect(
+    deliveryStages("meituan", { ...summary, progress: "needs_confirmation" }).find(
+      (stage) => stage.key === "merge",
+    )?.state,
+  ).toBe("pending");
+  expect(
+    requirementGroup("done", { ...summary, progress: "delivery_exception", synced: true }),
+  ).toBe("attention");
+});
 
 const task = (patch: Partial<WorkItem> = {}): WorkItem => ({
   id: WorkItemId.make("task"),

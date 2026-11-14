@@ -11,24 +11,27 @@ import {
 } from "@t3tools/source-control-core/server/discovery";
 import { definition } from "../shared/definition.ts";
 
-export class MCodeError extends Schema.TaggedError<MCodeError>()("MCodeError", {
-  operation: Schema.String,
-  reason: Schema.Literals([
-    "missing-tool",
-    "unauthenticated",
-    "rate-limited",
-    "not-found",
-    "failed",
-    "invalid-json",
-    "invalid-response",
-    "invalid-repository",
-    "unsupported",
-    "same-branch",
-    "issue-required",
-    "self-review",
-  ]),
-  cause: Schema.optional(Schema.Defect()),
-}) {
+export class MCodeError extends Schema.TaggedError<MCodeError, { readonly brand: unique symbol }>()(
+  "MCodeError",
+  {
+    operation: Schema.String,
+    reason: Schema.Literals([
+      "missing-tool",
+      "unauthenticated",
+      "rate-limited",
+      "not-found",
+      "failed",
+      "invalid-json",
+      "invalid-response",
+      "invalid-repository",
+      "unsupported",
+      "same-branch",
+      "issue-required",
+      "self-review",
+    ]),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
   override get message(): string {
     switch (this.reason) {
       case "missing-tool":

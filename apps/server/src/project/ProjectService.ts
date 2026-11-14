@@ -41,7 +41,9 @@ import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecuto
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
+import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
+import { makeIsWorktreeContainer } from "./worktreeContainer.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
@@ -62,71 +64,71 @@ export interface ProjectDeleteInput {
   readonly force?: boolean;
 }
 
-export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundError>()(
-  "ProjectNotFoundError",
-  { projectId: ProjectId },
-) {
+export class ProjectNotFoundError extends Schema.TaggedError<
+  ProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("ProjectNotFoundError", { projectId: ProjectId }) {
   override get message(): string {
     return `Project ${this.projectId} was not found.`;
   }
 }
 
-export class ProjectConflictError extends Schema.TaggedError<ProjectConflictError>()(
-  "ProjectConflictError",
-  {
-    projectId: ProjectId,
-    workspaceRoot: Schema.String,
-    conflictingProjectId: ProjectId,
-  },
-) {
+export class ProjectConflictError extends Schema.TaggedError<
+  ProjectConflictError,
+  { readonly brand: unique symbol }
+>()("ProjectConflictError", {
+  projectId: ProjectId,
+  workspaceRoot: Schema.String,
+  conflictingProjectId: ProjectId,
+}) {
   override get message(): string {
     return `Workspace ${this.workspaceRoot} already belongs to project ${this.conflictingProjectId}.`;
   }
 }
 
-export class ProjectNotEmptyError extends Schema.TaggedError<ProjectNotEmptyError>()(
-  "ProjectNotEmptyError",
-  { projectId: ProjectId },
-) {
+export class ProjectNotEmptyError extends Schema.TaggedError<
+  ProjectNotEmptyError,
+  { readonly brand: unique symbol }
+>()("ProjectNotEmptyError", { projectId: ProjectId }) {
   override get message(): string {
     return `Project ${this.projectId} is not empty.`;
   }
 }
 
-export class ProjectInvalidError extends Schema.TaggedError<ProjectInvalidError>()(
-  "ProjectInvalidError",
-  { projectId: ProjectId, detail: Schema.String },
-) {
+export class ProjectInvalidError extends Schema.TaggedError<
+  ProjectInvalidError,
+  { readonly brand: unique symbol }
+>()("ProjectInvalidError", { projectId: ProjectId, detail: Schema.String }) {
   override get message(): string {
     return this.detail;
   }
 }
 
-export class ProjectWorkspaceRootChangeBlockedError extends Schema.TaggedError<ProjectWorkspaceRootChangeBlockedError>()(
-  "ProjectWorkspaceRootChangeBlockedError",
-  { projectId: ProjectId },
-) {
+export class ProjectWorkspaceRootChangeBlockedError extends Schema.TaggedError<
+  ProjectWorkspaceRootChangeBlockedError,
+  { readonly brand: unique symbol }
+>()("ProjectWorkspaceRootChangeBlockedError", { projectId: ProjectId }) {
   override get message(): string {
     return "Cannot change the primary repository directory while this project has legacy tasks without a pinned directory (including archived tasks). Create a new project to use a different directory.";
   }
 }
 
-export class ProjectOperationError extends Schema.TaggedError<ProjectOperationError>()(
-  "ProjectOperationError",
-  {
-    operation: Schema.Literals([
-      "normalize-workspace",
-      "read-project",
-      "list-projects",
-      "list-threads",
-      "delete-thread",
-      "dispatch-project-command",
-    ]),
-    projectId: Schema.optional(ProjectId),
-    workspaceRoot: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectOperationError extends Schema.TaggedError<
+  ProjectOperationError,
+  { readonly brand: unique symbol }
+>()("ProjectOperationError", {
+  operation: Schema.Literals([
+    "normalize-workspace",
+    "read-project",
+    "list-projects",
+    "list-threads",
+    "delete-thread",
+    "dispatch-project-command",
+  ]),
+  projectId: Schema.optional(ProjectId),
+  workspaceRoot: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Project operation '${this.operation}' failed${this.projectId === undefined ? "" : ` for ${this.projectId}`}.`;
   }
@@ -205,6 +207,9 @@ export const make = Effect.gen(function* () {
   const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
+  const isWorktreeContainer = yield* makeIsWorktreeContainer.pipe(
+    Effect.provide(ProcessRunner.layer),
+  );
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
   const importLocks = yield* KeyedLock.make<string>();
@@ -303,6 +308,17 @@ export const make = Effect.gen(function* () {
       ),
     );
     return { ...config, roots };
+  });
+
+  const rejectWorktreeContainer = Effect.fn("ProjectService.rejectWorktreeContainer")(function* (
+    projectId: ProjectId,
+    workspaceRoot: string,
+  ) {
+    if (!(yield* isWorktreeContainer(workspaceRoot))) return;
+    return yield* new ProjectInvalidError({
+      projectId,
+      detail: `${workspaceRoot} holds a repository's worktrees but is not a checkout itself. Add one of its worktrees as the project instead.`,
+    });
   });
 
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
@@ -454,6 +470,7 @@ export const make = Effect.gen(function* () {
             ?.sourcePath ?? input.workspaceRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
+      yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       yield* commit({
         type: "project.create",
         commandId: input.commandId,
@@ -512,6 +529,7 @@ export const make = Effect.gen(function* () {
           return yield* new ProjectWorkspaceRootChangeBlockedError({
             projectId: input.projectId,
           });
+        yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       }
       yield* commit({
         type: "project.meta.update",

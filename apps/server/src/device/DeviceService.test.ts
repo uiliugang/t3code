@@ -8,6 +8,7 @@ import {
   LOCAL_DEVICE_HOST_ID,
   ThreadId,
   type DeviceSummary,
+  type DeviceSession,
   type ServerSettings as Settings,
   type SshDeviceHostConfig,
 } from "@t3tools/contracts";
@@ -95,6 +96,7 @@ const fixture = Effect.fn("fixture")(function* (
   inspectError = false,
   installTool?: Parameters<typeof DeviceService.makeWithHosts>[3],
   options: {
+    readonly persistence?: Parameters<typeof DeviceService.makeWithHosts>[5];
     readonly endsDevices?: boolean;
     readonly routesStreams?: boolean;
     readonly onClose?: Effect.Effect<"ok" | "missing" | "reject" | "http_error" | "malformed">;
@@ -275,6 +277,16 @@ const fixture = Effect.fn("fixture")(function* (
           agentDevice: { baseUrl: "http://agent.test", token: "test", entryPath: "/agent" },
         };
       }),
+    releaseAgentSession: (session) =>
+      connection.kind === "ssh" && !connection.online
+        ? Effect.fail(
+            new DeviceOperationError({
+              operation: "close",
+              reason: "request_failed",
+              cause: new Error("offline fixture"),
+            }),
+          )
+        : releaseAgentDeviceSession(http, { baseUrl: "http://agent.test", token: "test" })(session),
     current: Effect.sync(() =>
       connection.online
         ? {
@@ -302,6 +314,8 @@ const fixture = Effect.fn("fixture")(function* (
     undefined,
     () => Effect.succeed("/host.json"),
     installTool,
+    undefined,
+    options.persistence,
   ).pipe(
     Effect.provide(NodeCrypto.layer),
     Effect.provideService(DeviceHost.DeviceHost, host),
@@ -309,6 +323,7 @@ const fixture = Effect.fn("fixture")(function* (
       ServerSettings.ServerSettingsService,
       ServerSettings.ServerSettingsService.of({
         updateProviderInstance: () => Effect.die("Unexpected provider mutation"),
+        validateProviderInstanceMutation: () => Effect.die("Unexpected provider validation"),
         withSettingsSnapshot: (use) => Effect.flatMap(Ref.get(settings), use),
         start: Effect.void,
         ready: Effect.void,
@@ -1134,6 +1149,7 @@ it.effect.each(["shutdown", "close"] as const)(
         ensureReady: () => Effect.succeed(ready),
         ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
         current: Effect.succeed(ready),
+        releaseAgentSession: () => Effect.void,
         stopAgent: Effect.void,
         stop: Effect.void,
       };
@@ -1305,6 +1321,7 @@ it.effect("leaves a session its host leases to every thread open when one thread
       ensureReady: () => Effect.succeed(ready),
       ensureAgentReady: () => Effect.succeed(ready),
       current: Effect.succeed(ready),
+      releaseAgentSession: () => Effect.void,
       stopAgent: Effect.void,
       stop: Effect.void,
     };
@@ -1417,6 +1434,7 @@ it.effect.each([
         ensureReady: () => Effect.succeed(ready),
         ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
         current: Effect.succeed(ready),
+        releaseAgentSession: () => Effect.void,
         stopAgent: Effect.void,
         stop: Effect.void,
       };
@@ -1489,6 +1507,7 @@ it.effect.each([LOCAL_DEVICE_HOST_ID, "ssh-fixture"])(
         ensureReady: () => Effect.succeed(ready),
         ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
         current: Effect.succeed(ready),
+        releaseAgentSession: () => Effect.void,
         stop: Effect.void,
         stopAgent: Effect.void,
       };
@@ -1643,6 +1662,7 @@ it.effect("reconciles SSH host settings without publishing no-op changes", () =>
       current: Effect.succeed(null),
       ensureReady: () => Effect.die("Unexpected device launch"),
       ensureAgentReady: () => Effect.die("Unexpected agent launch"),
+      releaseAgentSession: () => Effect.die("Unexpected session release"),
       stop: Effect.void,
       stopAgent: Effect.void,
     };
@@ -1752,6 +1772,7 @@ it.effect("a failed tool update reports npm's exit code but not its output", () 
       platformAvailability: (platform) => Effect.succeed({ platform, available: false }),
       ensureReady: () => Effect.die("Updating a tool does not start the hub"),
       ensureAgentReady: () => Effect.die("Updating a tool does not start the agent"),
+      releaseAgentSession: () => Effect.die("Updating a tool does not release sessions"),
       current: Effect.succeed(null),
       stopAgent: Effect.void,
       stop: Effect.void,
@@ -1800,6 +1821,31 @@ it.effect("a failed tool update reports npm's exit code but not its output", () 
 );
 
 describe("agent session release on close", () => {
+  it.effect("restores persisted device ownership and clears it after releasing the daemon", () =>
+    Effect.gen(function* () {
+      const persisted = yield* Ref.make<ReadonlyArray<DeviceSession>>([]);
+      const first = yield* fixture(Effect.void, undefined, false, undefined, false, undefined, {
+        persistence: { initial: [], save: (sessions) => Ref.set(persisted, sessions) },
+      });
+      yield* first.service.configure({ enabled: true, agentAccessEnabled: true });
+      const threadId = ThreadId.make("restart-owner");
+      yield* first.service.open({ threadId, deviceId: "Pixel_API_35", platform: "android" });
+      const recorded = yield* Ref.get(persisted);
+      expect(recorded).toHaveLength(1);
+      const restarted = yield* fixture(Effect.void, undefined, false, undefined, false, undefined, {
+        persistence: { initial: recorded, save: (sessions) => Ref.set(persisted, sessions) },
+      });
+      expect((yield* restarted.service.state).sessions).toEqual(recorded);
+      yield* restarted.service.closeRetired(recorded[0]!, Effect.succeed(false));
+      expect(restarted.closedSessions).toHaveLength(0);
+      expect((yield* restarted.service.state).sessions).toEqual(recorded);
+      yield* restarted.service.close({ threadId });
+      expect(restarted.closedSessions).toHaveLength(1);
+      expect(yield* Ref.get(persisted)).toEqual([]);
+      expect((yield* restarted.service.state).sessions).toEqual([]);
+    }),
+  );
+
   const openClaim = (
     service: DeviceService.DeviceService["Service"],
     threadId: ThreadId,
@@ -2009,9 +2055,16 @@ describe("agent session release on close", () => {
       yield* Deferred.await(releasing);
       const opening = yield* openClaim(service, threadId, session.deviceId).pipe(Effect.forkChild);
       yield* Queue.take(entered);
+      const retired = yield* Ref.make(true);
+      const staleCleanup = yield* service
+        .closeRetired(session, Ref.get(retired))
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Ref.set(retired, false);
       yield* Deferred.succeed(finish, undefined);
       yield* Fiber.join(closing);
       const reopened = yield* Fiber.join(opening);
+      yield* Fiber.join(staleCleanup);
+      expect((yield* service.state).sessions).toEqual([reopened]);
       const published = (yield* PubSub.takeAll(publications))
         .map(({ sessions }) =>
           sessions.includes(session) ? "old" : sessions.includes(reopened) ? "reopened" : "none",
@@ -2068,6 +2121,7 @@ describe("locating a device id across hosts", () => {
       ensureReady: () => Effect.succeed(ready),
       ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
       current: Effect.succeed(ready),
+      releaseAgentSession: () => Effect.void,
       stopAgent: Effect.void,
       stop: Effect.void,
     };

@@ -5,14 +5,14 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/http";
 
-class CodexApiCatalogError extends Schema.TaggedError<CodexApiCatalogError>()(
-  "CodexApiCatalogError",
-  {
-    reason: Schema.Literals(["config", "credentials", "request", "response"]),
-    status: Schema.optional(Schema.Int),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+class CodexApiCatalogError extends Schema.TaggedError<
+  CodexApiCatalogError,
+  { readonly brand: unique symbol }
+>()("CodexApiCatalogError", {
+  reason: Schema.Literals(["config", "credentials", "request", "response"]),
+  status: Schema.optional(Schema.Int),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "config":

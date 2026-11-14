@@ -23,14 +23,14 @@ export interface ThreadForkPlanV2 {
   readonly transfer: OrchestrationV2ContextTransfer;
 }
 
-export class ThreadForkPlanError extends Schema.TaggedError<ThreadForkPlanError>()(
-  "ThreadForkPlanError",
-  {
-    sourceThreadId: ThreadId,
-    targetThreadId: ThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ThreadForkPlanError extends Schema.TaggedError<
+  ThreadForkPlanError,
+  { readonly brand: unique symbol }
+>()("ThreadForkPlanError", {
+  sourceThreadId: ThreadId,
+  targetThreadId: ThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 /** waiting means provider-finished with checkpoint capture pending. */
 export function isForkableSourceRunStatus(status: OrchestrationV2Run["status"]): boolean {

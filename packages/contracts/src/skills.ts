@@ -292,16 +292,16 @@ export const SkillInspection = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type SkillInspection = typeof SkillInspection.Type;
-export class SkillManagerError extends Schema.TaggedError<SkillManagerError>()(
-  "SkillManagerError",
-  {
-    operation: Schema.String,
-    reason: SkillFailureReason,
-    choices: Schema.optionalKey(Schema.Array(Schema.String)),
-    diagnostics: Schema.optionalKey(Schema.String),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class SkillManagerError extends Schema.TaggedError<
+  SkillManagerError,
+  { readonly brand: unique symbol }
+>()("SkillManagerError", {
+  operation: Schema.String,
+  reason: SkillFailureReason,
+  choices: Schema.optionalKey(Schema.Array(Schema.String)),
+  diagnostics: Schema.optionalKey(Schema.String),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     return skillFailureMessage(this.reason);
   }

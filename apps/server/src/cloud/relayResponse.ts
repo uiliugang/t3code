@@ -7,15 +7,15 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { isHttpClientError } from "effect/http/HttpClientError";
 
 /** Only unavailable is retryable. Descriptions expose relay explanations and trace IDs, never request details. */
-export class RelayRequestError extends Schema.TaggedError<RelayRequestError>()(
-  "RelayRequestError",
-  {
-    rejection: Schema.Literals(["unauthorized", "forbidden", "rejected", "unavailable"]),
-    description: Schema.String,
-    /** How long the relay asked callers to wait (`Retry-After`) before retrying. */
-    retryAfterMillis: Schema.optionalKey(Schema.Number),
-  },
-) {
+export class RelayRequestError extends Schema.TaggedError<
+  RelayRequestError,
+  { readonly brand: unique symbol }
+>()("RelayRequestError", {
+  rejection: Schema.Literals(["unauthorized", "forbidden", "rejected", "unavailable"]),
+  description: Schema.String,
+  /** How long the relay asked callers to wait (`Retry-After`) before retrying. */
+  retryAfterMillis: Schema.optionalKey(Schema.Number),
+}) {
   override get message(): string {
     return this.description;
   }

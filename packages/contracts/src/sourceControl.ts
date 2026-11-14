@@ -172,19 +172,19 @@ export const SourceControlDiscoveryResult = Schema.Struct({
 });
 export type SourceControlDiscoveryResult = typeof SourceControlDiscoveryResult.Type;
 
-export class SourceControlProviderError extends Schema.TaggedError<SourceControlProviderError>()(
-  "SourceControlProviderError",
-  {
-    provider: SourceControlProviderKind,
-    operation: Schema.String,
-    cwd: Schema.String,
-    command: Schema.optional(Schema.String),
-    repository: Schema.optional(Schema.String),
-    reference: Schema.optional(Schema.String),
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class SourceControlProviderError extends Schema.TaggedError<
+  SourceControlProviderError,
+  { readonly brand: unique symbol }
+>()("SourceControlProviderError", {
+  provider: SourceControlProviderKind,
+  operation: Schema.String,
+  cwd: Schema.String,
+  command: Schema.optional(Schema.String),
+  repository: Schema.optional(Schema.String),
+  reference: Schema.optional(Schema.String),
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Source control provider ${this.provider} failed in ${this.operation}: ${this.detail}`;
   }
@@ -245,30 +245,30 @@ export const SourceControlStarredInput = Schema.Struct({
 });
 export type SourceControlStarredInput = typeof SourceControlStarredInput.Type;
 
-export class SourceControlSignInError extends Schema.TaggedError<SourceControlSignInError>()(
-  "SourceControlSignInError",
-  {
-    provider: SourceControlProviderKind,
-    host: Schema.String,
-    reason: SourceControlSignInFailure,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class SourceControlSignInError extends Schema.TaggedError<
+  SourceControlSignInError,
+  { readonly brand: unique symbol }
+>()("SourceControlSignInError", {
+  provider: SourceControlProviderKind,
+  host: Schema.String,
+  reason: SourceControlSignInFailure,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.detail;
   }
 }
 
-export class SourceControlRepositoryError extends Schema.TaggedError<SourceControlRepositoryError>()(
-  "SourceControlRepositoryError",
-  {
-    provider: SourceControlProviderKind,
-    operation: Schema.String,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class SourceControlRepositoryError extends Schema.TaggedError<
+  SourceControlRepositoryError,
+  { readonly brand: unique symbol }
+>()("SourceControlRepositoryError", {
+  provider: SourceControlProviderKind,
+  operation: Schema.String,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Source control repository operation ${this.operation} failed for ${this.provider}: ${this.detail}`;
   }

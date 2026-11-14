@@ -36,14 +36,14 @@ function relayUrl(): string | null {
   return resolveCloudPublicConfig().relayUrl;
 }
 
-export class CloudEnvironmentLinkError extends Schema.TaggedError<CloudEnvironmentLinkError>()(
-  "CloudEnvironmentLinkError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-    traceId: Schema.optional(Schema.String),
-  },
-) {}
+export class CloudEnvironmentLinkError extends Schema.TaggedError<
+  CloudEnvironmentLinkError,
+  { readonly brand: unique symbol }
+>()("CloudEnvironmentLinkError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+  traceId: Schema.optional(Schema.String),
+}) {}
 
 export const isCloudEnvironmentLinkError = Schema.is(CloudEnvironmentLinkError);
 

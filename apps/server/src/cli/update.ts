@@ -44,7 +44,10 @@ import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { createUpdateProgress } from "./updateProgress.ts";
 import * as CliService from "./service.ts";
 
-export class CliUpdateError extends Schema.TaggedError<CliUpdateError>()("CliUpdateError", {
+export class CliUpdateError extends Schema.TaggedError<
+  CliUpdateError,
+  { readonly brand: unique symbol }
+>()("CliUpdateError", {
   reason: Schema.String,
 }) {
   override get message(): string {

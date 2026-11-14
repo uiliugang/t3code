@@ -14,27 +14,27 @@ export interface RotatingFileSinkOptions {
   readonly throwOnError?: boolean;
 }
 
-export class RotatingFileSinkConfigurationError extends Schema.TaggedError<RotatingFileSinkConfigurationError>()(
-  "RotatingFileSinkConfigurationError",
-  {
-    option: Schema.Literals(["maxBytes", "maxFiles"]),
-    received: Schema.Number,
-    minimum: Schema.Number,
-  },
-) {
+export class RotatingFileSinkConfigurationError extends Schema.TaggedError<
+  RotatingFileSinkConfigurationError,
+  { readonly brand: unique symbol }
+>()("RotatingFileSinkConfigurationError", {
+  option: Schema.Literals(["maxBytes", "maxFiles"]),
+  received: Schema.Number,
+  minimum: Schema.Number,
+}) {
   override get message(): string {
     return `${this.option} must be >= ${this.minimum} (received ${this.received})`;
   }
 }
 
-export class RotatingFileSinkError extends Schema.TaggedError<RotatingFileSinkError>()(
-  "RotatingFileSinkError",
-  {
-    operation: Schema.Literals(["initialize", "read", "write", "rotate", "prune"]),
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class RotatingFileSinkError extends Schema.TaggedError<
+  RotatingFileSinkError,
+  { readonly brand: unique symbol }
+>()("RotatingFileSinkError", {
+  operation: Schema.Literals(["initialize", "read", "write", "rotate", "prune"]),
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} rotating log file ${this.filePath}`;
   }

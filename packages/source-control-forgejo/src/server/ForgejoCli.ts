@@ -20,7 +20,10 @@ import type { SourceControlProviderContext } from "@t3tools/source-control-core/
 
 const encodeApiBody = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
-export class ForgejoCliError extends Schema.TaggedError<ForgejoCliError>()("ForgejoCliError", {
+export class ForgejoCliError extends Schema.TaggedError<
+  ForgejoCliError,
+  { readonly brand: unique symbol }
+>()("ForgejoCliError", {
   command: Schema.Literals(["fj", "tea"]),
   cwd: Schema.String,
   detail: Schema.String,
@@ -727,7 +730,8 @@ export const make = Effect.gen(function* () {
     });
     // tea reports HTTP failures with exit code zero; use its response status.
     const status = Number(/^HTTP\/\S+ (\d{3})/m.exec(result.stderr)?.[1]);
-    if (!status || status >= 400)
+    if (!status || status >= 400) {
+      const body = result.stdout.trim();
       return yield* new ForgejoCliError({
         command: "tea",
         cwd: input.cwd,
@@ -748,8 +752,13 @@ export const make = Effect.gen(function* () {
               ? "Forgejo repository or pull request was not found."
               : status === 429
                 ? "Forgejo API rate limit exceeded."
-                : `Forgejo API request failed${status ? ` (HTTP ${status})` : " without an HTTP status"}.`,
+                : !status
+                  ? "Forgejo API request failed without an HTTP status."
+                  : body
+                    ? `Forgejo API request failed (HTTP ${status}): ${body}`
+                    : `Forgejo API request failed (HTTP ${status}).`,
       });
+    }
     return result;
   });
   return ForgejoCli.of({ execute, listLogins, getAccount, resolveRepository, api });

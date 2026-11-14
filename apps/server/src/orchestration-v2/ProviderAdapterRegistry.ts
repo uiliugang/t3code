@@ -15,21 +15,24 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 
 const isProviderSetupError = Schema.is(ProviderSetupError);
 
-export class ProviderAdapterRegistryLookupError extends Schema.TaggedError<ProviderAdapterRegistryLookupError>()(
-  "ProviderAdapterRegistryLookupError",
-  {
-    instanceId: ProviderInstanceId,
-  },
-) {
+export class ProviderAdapterRegistryLookupError extends Schema.TaggedError<
+  ProviderAdapterRegistryLookupError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterRegistryLookupError", {
+  instanceId: ProviderInstanceId,
+}) {
   override get message(): string {
     return `No orchestration provider adapter is registered for ${this.instanceId}.`;
   }
 }
 
-export class ProviderAdapterRegistryMetadataError extends Schema.TaggedError<ProviderAdapterRegistryMetadataError>()(
-  "ProviderAdapterRegistryMetadataError",
-  { instanceId: ProviderInstanceId, cause: Schema.Defect() },
-) {}
+export class ProviderAdapterRegistryMetadataError extends Schema.TaggedError<
+  ProviderAdapterRegistryMetadataError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterRegistryMetadataError", {
+  instanceId: ProviderInstanceId,
+  cause: Schema.Defect(),
+}) {}
 
 export const ProviderAdapterRegistryV2Error = Schema.Union([
   ProviderAdapterRegistryLookupError,

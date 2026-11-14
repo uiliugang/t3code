@@ -56,7 +56,10 @@ export const IssueBranchesResult = Schema.Array(
   Schema.Struct({ name: Schema.String, linked: Schema.Boolean }),
 );
 
-export class BranchIssueError extends Schema.TaggedError<BranchIssueError>()("BranchIssueError", {
+export class BranchIssueError extends Schema.TaggedError<
+  BranchIssueError,
+  { readonly brand: unique symbol }
+>()("BranchIssueError", {
   operation: Schema.String,
   reason: Schema.Literals([
     "unsupported",

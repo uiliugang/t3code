@@ -33,19 +33,19 @@ const yieldToRuntime = Effect.yieldNow.pipe(
   ),
 );
 
-export class ProviderTurnControlError extends Schema.TaggedError<ProviderTurnControlError>()(
-  "ProviderTurnControlError",
-  {
-    threadId: ThreadId,
-    operation: Schema.Literals(["interrupt", "restart", "steer"]),
-    providerTurnId: ProviderTurnId,
-    turnCompleted: Schema.optional(Schema.Boolean),
-    steerDeclined: Schema.optional(Schema.Boolean),
-    /** The provider never confirmed the stop; Force stop is the way out. */
-    unresponsive: Schema.optional(Schema.Boolean),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ProviderTurnControlError extends Schema.TaggedError<
+  ProviderTurnControlError,
+  { readonly brand: unique symbol }
+>()("ProviderTurnControlError", {
+  threadId: ThreadId,
+  operation: Schema.Literals(["interrupt", "restart", "steer"]),
+  providerTurnId: ProviderTurnId,
+  turnCompleted: Schema.optional(Schema.Boolean),
+  steerDeclined: Schema.optional(Schema.Boolean),
+  /** The provider never confirmed the stop; Force stop is the way out. */
+  unresponsive: Schema.optional(Schema.Boolean),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isProviderTurnControlError = Schema.is(ProviderTurnControlError);
 

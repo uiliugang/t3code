@@ -342,10 +342,13 @@ export const makeDiscovery = Effect.gen(function* () {
   } satisfies SourceControlManagedCliDiscoverySpec;
 });
 
-class GitHubFailure extends Schema.TaggedError<GitHubFailure>()("GitHubFailure", {
-  detail: Schema.String,
-  cause: Schema.Defect(),
-}) {}
+class GitHubFailure extends Schema.TaggedError<GitHubFailure, { readonly brand: unique symbol }>()(
+  "GitHubFailure",
+  {
+    detail: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {}
 
 const failure = (detail: string, cause?: unknown) => new GitHubFailure({ detail, cause });
 

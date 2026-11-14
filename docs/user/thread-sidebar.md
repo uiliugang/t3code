@@ -13,10 +13,11 @@ Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.
 
 On mobile, **New thread** starts in the current thread's project, or else in the
-last project you opened or chose on that device. If neither is available, the
-project picker opens. Turn off **Settings → General → Use last project** to
-choose a project every time. When you pick a project that is on more than one
-machine, the thread starts on a connected one if any is connected.
+project the thread list is filtered to, or else in the last project you opened
+or chose on that device. If none is available, the project picker opens. Turn
+off **Settings → General → Use last project** to choose a project every time.
+When you pick a project that is on more than one machine, the thread starts on
+a connected one if any is connected.
 
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
@@ -165,13 +166,10 @@ Choose **Settle thread** from its menu to move finished work out of the active l
 without deleting the conversation. **Un-settle thread** restores it to active work
 and prevents automatic settlement until new activity resumes the usual rules.
 Manually settling an idle thread dismisses unanswered async questions without
-sending an answer or restarting the agent. Settling also closes the thread's
-terminals that wait at an idle prompt, and keeps their output. A terminal that
-runs a command, such as a dev server, stays open unless its action has **Stop this action
-when the thread settles** enabled in Settings > Projects > Actions. You can also set
-`"stopOnSettle": true` on a `t3.json` action and import it there. Start the command through
-that action so T3 can stop its terminal and child processes. Commands started through an
-agent's own shell tools are managed by the provider.
+sending an answer or restarting the agent. Settling closes the thread's terminals
+and their child processes, stops local servers attributed to that thread, and releases
+its device automation sessions. Terminal output stays available, and devices remain
+booted for other work.
 
 To reclaim disk space from settled work, turn on **Run in the thread's worktree when the
 thread settles** for one of the project's actions, or set `"runOnSettle": true` on a

@@ -5,6 +5,9 @@ import * as Struct from "effect/Struct";
 
 import { NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
+/** Ends a checkpoint diff the server cut off at its output size limit. */
+export const CHECKPOINT_DIFF_TRUNCATED_MARKER = "\n\n[truncated]";
+
 export const TurnCountRange = Schema.Struct({
   fromTurnCount: NonNegativeInt,
   toTurnCount: NonNegativeInt,
@@ -51,18 +54,18 @@ export type OrchestrationGetFullThreadDiffInput = typeof OrchestrationGetFullThr
 export const OrchestrationGetFullThreadDiffResult = ThreadTurnDiff;
 export type OrchestrationGetFullThreadDiffResult = typeof OrchestrationGetFullThreadDiffResult.Type;
 
-export class OrchestrationGetTurnDiffError extends Schema.TaggedError<OrchestrationGetTurnDiffError>()(
-  "OrchestrationGetTurnDiffError",
-  {
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationGetTurnDiffError extends Schema.TaggedError<
+  OrchestrationGetTurnDiffError,
+  { readonly brand: unique symbol }
+>()("OrchestrationGetTurnDiffError", {
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
-export class OrchestrationGetFullThreadDiffError extends Schema.TaggedError<OrchestrationGetFullThreadDiffError>()(
-  "OrchestrationGetFullThreadDiffError",
-  {
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationGetFullThreadDiffError extends Schema.TaggedError<
+  OrchestrationGetFullThreadDiffError,
+  { readonly brand: unique symbol }
+>()("OrchestrationGetFullThreadDiffError", {
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {}

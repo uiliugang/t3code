@@ -11,10 +11,10 @@ import { discardResponseBody, responsePayloads } from "@t3tools/shared/mcpRespon
 
 /** ACP mandates stdio MCP support; HTTP/SSE support varies. */
 
-export class AcpMcpBridgeError extends Schema.TaggedError<AcpMcpBridgeError>()(
-  "AcpMcpBridgeError",
-  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {}
+export class AcpMcpBridgeError extends Schema.TaggedError<
+  AcpMcpBridgeError,
+  { readonly brand: unique symbol }
+>()("AcpMcpBridgeError", { message: Schema.String, cause: Schema.optional(Schema.Defect()) }) {}
 
 const isAcpMcpBridgeError = Schema.is(AcpMcpBridgeError);
 

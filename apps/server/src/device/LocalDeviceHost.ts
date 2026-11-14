@@ -3,6 +3,7 @@ import { deviceToolInstallMessage } from "@t3tools/contracts";
 // The hub runs at origin root; T3 strips its prefix and the Device panel derives stream URLs from it.
 import {
   type DeviceHostSummary,
+  DeviceOperationError,
   type DevicePlatform,
   type DevicePlatformAvailability,
   LOCAL_DEVICE_HOST_ID,
@@ -858,6 +859,23 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     Effect.map((running) => (running ? toReady(running) : null)),
   );
 
+  const releaseAgentSession = Effect.fn("LocalDeviceHost.releaseAgentSession")(
+    function* (session: string, deviceId: string) {
+      const ready = yield* current;
+      if (ready?.releaseAgentSession) return yield* ready.releaseAgentSession(session, deviceId);
+      if (!(yield* fs.exists(daemonFilePath()))) return;
+      const daemon = yield* readDaemonFile();
+      if (daemon.pid && !(yield* isProcessAlive(daemon.pid))) return;
+      yield* releaseAgentDeviceSession(httpClient, {
+        baseUrl: `http://127.0.0.1:${daemon.httpPort}`,
+        token: daemon.token,
+      })(session);
+    },
+    Effect.mapError(
+      (cause) => new DeviceOperationError({ operation: "close", reason: "request_failed", cause }),
+    ),
+  );
+
   const stopAgent: DeviceHost.DeviceHost["Service"]["stopAgent"] = startLock.withPermits(1)(
     Effect.gen(function* () {
       yield* stopAgentDeviceDaemon;
@@ -870,9 +888,16 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
   const stop: DeviceHost.DeviceHost["Service"]["stop"] = startLock.withPermits(1)(
     Effect.gen(function* () {
       const running = yield* Ref.getAndSet(runningRef, null);
-      yield* stopHub(running?.hub);
-      yield* fs.remove(hubStatePath(), { force: true }).pipe(Effect.ignore);
-      yield* stopAgentDeviceDaemon;
+      // Hub cleanup waits for its exit unbounded; it must not strand the detached agent daemon.
+      yield* Effect.all(
+        [
+          stopHub(running?.hub).pipe(
+            Effect.andThen(fs.remove(hubStatePath(), { force: true }).pipe(Effect.ignore)),
+          ),
+          stopAgentDeviceDaemon,
+        ],
+        { concurrency: "unbounded", discard: true },
+      );
     }),
   );
 
@@ -886,6 +911,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     ensureReady,
     ensureAgentReady,
     current,
+    releaseAgentSession,
     stopAgent,
     stop,
   };

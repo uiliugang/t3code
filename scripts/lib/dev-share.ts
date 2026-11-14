@@ -32,10 +32,10 @@ const explainCommandFailure = (
       ? (DIAGNOSTIC_EXPLANATIONS[error.stderrDiagnostic] ?? "run the command by hand to see why")
       : undefined;
 
-export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnavailableError>()(
-  "TailscaleUnavailableError",
-  { cause: Schema.Defect() },
-) {
+export class TailscaleUnavailableError extends Schema.TaggedError<
+  TailscaleUnavailableError,
+  { readonly brand: unique symbol }
+>()("TailscaleUnavailableError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "could not talk to tailscale";
   }
@@ -45,10 +45,10 @@ export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnava
   }
 }
 
-export class TailnetNameMissingError extends Schema.TaggedError<TailnetNameMissingError>()(
-  "TailnetNameMissingError",
-  {},
-) {
+export class TailnetNameMissingError extends Schema.TaggedError<
+  TailnetNameMissingError,
+  { readonly brand: unique symbol }
+>()("TailnetNameMissingError", {}) {
   override get message(): string {
     return "this machine has no tailnet DNS name";
   }
@@ -58,15 +58,15 @@ export class TailnetNameMissingError extends Schema.TaggedError<TailnetNameMissi
   }
 }
 
-export class DevServeFailedError extends Schema.TaggedError<DevServeFailedError>()(
-  "DevServeFailedError",
-  {
-    stage: Schema.Literals(["clear-existing", "serve"]),
-    webPort: Schema.Number,
-    explanation: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class DevServeFailedError extends Schema.TaggedError<
+  DevServeFailedError,
+  { readonly brand: unique symbol }
+>()("DevServeFailedError", {
+  stage: Schema.Literals(["clear-existing", "serve"]),
+  webPort: Schema.Number,
+  explanation: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     const port = String(this.webPort);
     const base =

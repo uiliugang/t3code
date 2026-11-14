@@ -7,37 +7,37 @@ const ConnectionTargetBase = {
   label: Schema.String,
 };
 
-export class PrimaryConnectionTarget extends Schema.TaggedClass<PrimaryConnectionTarget>()(
-  "PrimaryConnectionTarget",
-  {
-    ...ConnectionTargetBase,
-    httpBaseUrl: Schema.String,
-    wsBaseUrl: Schema.String,
-  },
-) {}
+export class PrimaryConnectionTarget extends Schema.TaggedClass<
+  PrimaryConnectionTarget,
+  { readonly brand: unique symbol }
+>()("PrimaryConnectionTarget", {
+  ...ConnectionTargetBase,
+  httpBaseUrl: Schema.String,
+  wsBaseUrl: Schema.String,
+}) {}
 
-export class BearerConnectionTarget extends Schema.TaggedClass<BearerConnectionTarget>()(
-  "BearerConnectionTarget",
-  {
-    ...ConnectionTargetBase,
-    connectionId: Schema.String,
-  },
-) {}
+export class BearerConnectionTarget extends Schema.TaggedClass<
+  BearerConnectionTarget,
+  { readonly brand: unique symbol }
+>()("BearerConnectionTarget", {
+  ...ConnectionTargetBase,
+  connectionId: Schema.String,
+}) {}
 
-export class RelayConnectionTarget extends Schema.TaggedClass<RelayConnectionTarget>()(
-  "RelayConnectionTarget",
-  {
-    ...ConnectionTargetBase,
-  },
-) {}
+export class RelayConnectionTarget extends Schema.TaggedClass<
+  RelayConnectionTarget,
+  { readonly brand: unique symbol }
+>()("RelayConnectionTarget", {
+  ...ConnectionTargetBase,
+}) {}
 
-export class SshConnectionTarget extends Schema.TaggedClass<SshConnectionTarget>()(
-  "SshConnectionTarget",
-  {
-    ...ConnectionTargetBase,
-    connectionId: Schema.String,
-  },
-) {}
+export class SshConnectionTarget extends Schema.TaggedClass<
+  SshConnectionTarget,
+  { readonly brand: unique symbol }
+>()("SshConnectionTarget", {
+  ...ConnectionTargetBase,
+  connectionId: Schema.String,
+}) {}
 
 export const ConnectionTarget = Schema.Union([
   PrimaryConnectionTarget,
@@ -102,31 +102,31 @@ const ConnectionFailureFields = {
   httpStatus: Schema.optionalKey(Schema.Number),
 };
 
-export class ConnectionTransientError extends Schema.TaggedError<ConnectionTransientError>()(
-  "ConnectionTransientError",
-  {
-    reason: ConnectionTransientReason,
-    detail: Schema.String,
-    traceId: Schema.optionalKey(Schema.String),
-    ...ConnectionFailureFields,
-  },
-) {
+export class ConnectionTransientError extends Schema.TaggedError<
+  ConnectionTransientError,
+  { readonly brand: unique symbol }
+>()("ConnectionTransientError", {
+  reason: ConnectionTransientReason,
+  detail: Schema.String,
+  traceId: Schema.optionalKey(Schema.String),
+  ...ConnectionFailureFields,
+}) {
   override get message(): string {
     return this.detail;
   }
 }
 
-export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlockedError>()(
-  "ConnectionBlockedError",
-  {
-    reason: ConnectionBlockedReason,
-    detail: Schema.String,
-    traceId: Schema.optionalKey(Schema.String),
-    ...ConnectionFailureFields,
+export class ConnectionBlockedError extends Schema.TaggedError<
+  ConnectionBlockedError,
+  { readonly brand: unique symbol }
+>()("ConnectionBlockedError", {
+  reason: ConnectionBlockedReason,
+  detail: Schema.String,
+  traceId: Schema.optionalKey(Schema.String),
+  ...ConnectionFailureFields,
 
-    serverUpdateRequired: Schema.optionalKey(Schema.Boolean),
-  },
-) {
+  serverUpdateRequired: Schema.optionalKey(Schema.Boolean),
+}) {
   override get message(): string {
     return this.detail;
   }

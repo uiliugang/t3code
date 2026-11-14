@@ -15,6 +15,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Option from "effect/Option";
 import {
   CheckpointRef,
+  GitCommandError,
   T3_PROJECT_FILE_NAME,
   WorktreeSubmodules,
   ProjectId,
@@ -74,10 +75,14 @@ export const Preparation = Schema.Struct({
 });
 const json = Schema.fromJsonString(Preparation);
 
-export class WorkspacePreparationError extends Schema.TaggedError<WorkspacePreparationError>()(
-  "WorkspacePreparationError",
-  { threadId: ThreadId, detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class WorkspacePreparationError extends Schema.TaggedError<
+  WorkspacePreparationError,
+  { readonly brand: unique symbol }
+>()("WorkspacePreparationError", {
+  threadId: ThreadId,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     return this.detail;
   }
@@ -99,12 +104,13 @@ export class WorkspaceProvisioner extends Context.Service<
         readonly completion: Effect.Effect<void, WorkspacePreparationError>;
         readonly cancel: Effect.Effect<void>;
       },
-      WorkspacePreparationError
+      WorkspacePreparationError | GitCommandError
     >;
   }
 >()("t3/workspace/WorkspaceProvisioner") {}
 
 const isWorkspacePreparationError = Schema.is(WorkspacePreparationError);
+const isGitCommandError = Schema.is(GitCommandError);
 
 export const layer = Layer.effect(
   WorkspaceProvisioner,
@@ -251,10 +257,16 @@ export const layer = Layer.effect(
                       projectSettings?.newWorktreesStartFromOrigin ??
                       true)
                   ) {
-                    const remote = yield* git.fetchWorktreeBaseCommit({
-                      cwd: root.sourcePath,
-                      refName: baseRef,
-                    });
+                    const remote = yield* git
+                      .fetchWorktreeBaseCommit({
+                        cwd: root.sourcePath,
+                        refName: baseRef,
+                      })
+                      .pipe(
+                        Effect.tapError((error) =>
+                          tracker.stageStatus(input.threadId, "fetch", "failed", error.detail),
+                        ),
+                      );
                     if (remote !== null) {
                       baseRef = remote.commitSha;
                       recordedBaseRef = `refs/remotes/${remote.remoteRefName}`;
@@ -735,7 +747,7 @@ export const layer = Layer.effect(
         (effect, input) =>
           effect.pipe(
             Effect.mapError((cause) =>
-              isWorkspacePreparationError(cause)
+              isWorkspacePreparationError(cause) || isGitCommandError(cause)
                 ? cause
                 : new WorkspacePreparationError({
                     threadId: input.threadId,

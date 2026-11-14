@@ -92,14 +92,14 @@ export interface LegacyV1ImportSummary {
   readonly importedMessageCount: number;
 }
 
-export class LegacyV1ThreadImportError extends Schema.TaggedError<LegacyV1ThreadImportError>()(
-  "LegacyV1ThreadImportError",
-  {
-    operation: Schema.String,
-    threadId: Schema.optional(ThreadId),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class LegacyV1ThreadImportError extends Schema.TaggedError<
+  LegacyV1ThreadImportError,
+  { readonly brand: unique symbol }
+>()("LegacyV1ThreadImportError", {
+  operation: Schema.String,
+  threadId: Schema.optional(ThreadId),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.threadId === undefined
       ? `Failed to ${this.operation} legacy v1 threads.`

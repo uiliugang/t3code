@@ -11,20 +11,23 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 
-export class NodePtyModuleLoadError extends Schema.TaggedError<NodePtyModuleLoadError>()(
-  "NodePtyModuleLoadError",
-  {
-    platform: Schema.String,
-    architecture: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NodePtyModuleLoadError extends Schema.TaggedError<
+  NodePtyModuleLoadError,
+  { readonly brand: unique symbol }
+>()("NodePtyModuleLoadError", {
+  platform: Schema.String,
+  architecture: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to load node-pty for ${this.platform}-${this.architecture}.`;
   }
 }
 
-class NodePtyCancelError extends Schema.TaggedError<NodePtyCancelError>()("NodePtyCancelError", {
+class NodePtyCancelError extends Schema.TaggedError<
+  NodePtyCancelError,
+  { readonly brand: unique symbol }
+>()("NodePtyCancelError", {
   terminalPid: Schema.Number,
   cause: Schema.Defect(),
 }) {

@@ -19,28 +19,28 @@ import * as T3ChatAccounts from "../t3chat/T3ChatAccounts.ts";
 // Reserve-to-tunnel takes two Cloudflare calls capped at 8 seconds each; a reservation older than this was abandoned.
 const MANAGED_TUNNEL_PENDING_WINDOW_MINUTES = 15;
 
-export class ManagedTunnelLimitPersistenceError extends Schema.TaggedError<ManagedTunnelLimitPersistenceError>()(
-  "ManagedTunnelLimitPersistenceError",
-  {
-    operation: Schema.Literals(["transaction", "lock-user", "load-limit", "count-tunnels"]),
-    userId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedTunnelLimitPersistenceError extends Schema.TaggedError<
+  ManagedTunnelLimitPersistenceError,
+  { readonly brand: unique symbol }
+>()("ManagedTunnelLimitPersistenceError", {
+  operation: Schema.Literals(["transaction", "lock-user", "load-limit", "count-tunnels"]),
+  userId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Managed tunnel limit '${this.operation}' failed for user '${this.userId}'`;
   }
 }
 
-export class ManagedTunnelLimitExceeded extends Schema.TaggedError<ManagedTunnelLimitExceeded>()(
-  "ManagedTunnelLimitExceeded",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    maxTunnels: Schema.Number,
-    activeTunnels: Schema.Number,
-  },
-) {
+export class ManagedTunnelLimitExceeded extends Schema.TaggedError<
+  ManagedTunnelLimitExceeded,
+  { readonly brand: unique symbol }
+>()("ManagedTunnelLimitExceeded", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  maxTunnels: Schema.Number,
+  activeTunnels: Schema.Number,
+}) {
   override get message(): string {
     return `Managed tunnel limit reached for user '${this.userId}': ${this.activeTunnels} of ${this.maxTunnels} tunnels in use`;
   }

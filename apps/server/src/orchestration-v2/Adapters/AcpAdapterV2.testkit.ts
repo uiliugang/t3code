@@ -41,16 +41,16 @@ export type AcpReplayTranscript = typeof AcpReplayTranscript.Type;
 const decodeAcpReplayTranscriptSchema = Schema.decodeUnknownEffect(AcpReplayTranscript);
 const encodeReplayTranscriptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-export class AcpReplayTranscriptDecodeError extends Schema.TaggedError<AcpReplayTranscriptDecodeError>()(
-  "AcpReplayTranscriptDecodeError",
-  {
-    expectedProvider: ProviderDriverKind,
-    driver: Schema.optional(Schema.String),
-    protocol: Schema.optional(Schema.String),
-    scenario: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class AcpReplayTranscriptDecodeError extends Schema.TaggedError<
+  AcpReplayTranscriptDecodeError,
+  { readonly brand: unique symbol }
+>()("AcpReplayTranscriptDecodeError", {
+  expectedProvider: ProviderDriverKind,
+  driver: Schema.optional(Schema.String),
+  protocol: Schema.optional(Schema.String),
+  scenario: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode ${this.expectedProvider} ACP replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
   }

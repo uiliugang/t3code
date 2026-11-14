@@ -35,14 +35,14 @@ const VoiceTranscriptionErrorCode = Schema.Literals([
 ]);
 export type VoiceTranscriptionErrorCode = typeof VoiceTranscriptionErrorCode.Type;
 
-export class VoiceTranscriptionError extends Schema.TaggedError<VoiceTranscriptionError>()(
-  "VoiceTranscriptionError",
-  {
-    code: VoiceTranscriptionErrorCode,
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class VoiceTranscriptionError extends Schema.TaggedError<
+  VoiceTranscriptionError,
+  { readonly brand: unique symbol }
+>()("VoiceTranscriptionError", {
+  code: VoiceTranscriptionErrorCode,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export function throwIfVoiceTranscriptionAborted(signal: AbortSignal): void {
   if (signal.aborted) {

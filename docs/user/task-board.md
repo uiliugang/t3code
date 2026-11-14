@@ -1,11 +1,13 @@
-# Manage work on the task board
+# Manage local work items
 
-Open **Task board** from the sidebar or command palette, then choose an environment and project. Create a task with a goal, constraints, and acceptance criteria. **Discover** finds recent conversations you can turn into tasks. Discovery uses local rules and does not start an agent or change the conversation.
+Open **Requirements board**, choose **Local work items**, then choose an environment and project.
+Existing tasks keep their conversations, execution history, review results, and archive state.
+Create a local task when there is no external issue to track. **Discover** finds recent
+conversations you can turn into local tasks without starting an agent or changing the conversation.
 
-The task board tracks T3 tasks through To do, In progress, In review, and Done. Search within the
-selected project and show archived tasks when needed. Use the
-[requirements board](source-control.md#manage-requirements) to manage MEP ONES or GitHub Issues;
-those external work items are separate from T3 tasks.
+Local work items track To do, In progress, In review, and Done. Search within the selected project
+and show archived tasks when needed. For MEP ONES and GitHub Issues, use
+[automatic delivery tracking](source-control.md#manage-requirements).
 
 ## Assign agents
 
@@ -21,4 +23,6 @@ An agent finishing a turn does not complete the task. Wait for the participants 
 
 Use **Continue in conversation** to place the task's goal, constraints, acceptance criteria, and previous results in a draft. Existing input is preserved. Send the draft when you are ready. Generating this draft does not call a model.
 
-Web and desktop also offer the board in the conversation's right panel. Mobile provides the same task actions in a list and detail view. Task data stays on its owning environment; remote clients read it through their connection. Background AI analysis is not enabled by this feature.
+Web and desktop also offer work items in the conversation's right panel. Mobile provides the same
+local task actions in a list and detail view. Data stays on its owning environment; remote clients
+read it through their connection.

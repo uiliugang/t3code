@@ -86,59 +86,59 @@ export interface RunVcsStackedActionInput {
   readonly onProgress?: (event: GitActionProgressEvent) => void;
 }
 
-export class VcsActionUnavailableError extends Schema.TaggedError<VcsActionUnavailableError>()(
-  "VcsActionUnavailableError",
-  {
-    operation: VcsActionOperation,
-    environmentId: Schema.NullOr(EnvironmentId),
-    cwd: Schema.NullOr(Schema.String),
-  },
-) {
+export class VcsActionUnavailableError extends Schema.TaggedError<
+  VcsActionUnavailableError,
+  { readonly brand: unique symbol }
+>()("VcsActionUnavailableError", {
+  operation: VcsActionOperation,
+  environmentId: Schema.NullOr(EnvironmentId),
+  cwd: Schema.NullOr(Schema.String),
+}) {
   override get message(): string {
     return `Source control operation '${this.operation.replaceAll("_", " ")}' is unavailable.`;
   }
 }
 
-export class VcsActionRemoteFailureError extends Schema.TaggedError<VcsActionRemoteFailureError>()(
-  "VcsActionRemoteFailureError",
-  {
-    actionId: Schema.String,
-    transportActionId: Schema.String,
-    action: GitStackedAction,
-    environmentId: EnvironmentId,
-    cwd: Schema.String,
-    phase: Schema.NullOr(GitActionProgressPhase),
-    remoteMessageLength: Schema.Number,
-  },
-) {
+export class VcsActionRemoteFailureError extends Schema.TaggedError<
+  VcsActionRemoteFailureError,
+  { readonly brand: unique symbol }
+>()("VcsActionRemoteFailureError", {
+  actionId: Schema.String,
+  transportActionId: Schema.String,
+  action: GitStackedAction,
+  environmentId: EnvironmentId,
+  cwd: Schema.String,
+  phase: Schema.NullOr(GitActionProgressPhase),
+  remoteMessageLength: Schema.Number,
+}) {
   override get message(): string {
     const phase = this.phase === null ? "execution" : this.phase;
     return `Source control action '${this.action}' failed during ${phase}.`;
   }
 }
 
-export class VcsActionMissingTerminalEventError extends Schema.TaggedError<VcsActionMissingTerminalEventError>()(
-  "VcsActionMissingTerminalEventError",
-  {
-    actionId: Schema.String,
-    transportActionId: Schema.String,
-    action: GitStackedAction,
-    environmentId: EnvironmentId,
-    cwd: Schema.String,
-  },
-) {
+export class VcsActionMissingTerminalEventError extends Schema.TaggedError<
+  VcsActionMissingTerminalEventError,
+  { readonly brand: unique symbol }
+>()("VcsActionMissingTerminalEventError", {
+  actionId: Schema.String,
+  transportActionId: Schema.String,
+  action: GitStackedAction,
+  environmentId: EnvironmentId,
+  cwd: Schema.String,
+}) {
   override get message(): string {
     return `Source control action '${this.action}' ended without a terminal result.`;
   }
 }
 
-export class VcsActionTargetKeyParseError extends Schema.TaggedError<VcsActionTargetKeyParseError>()(
-  "VcsActionTargetKeyParseError",
-  {
-    keyLength: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class VcsActionTargetKeyParseError extends Schema.TaggedError<
+  VcsActionTargetKeyParseError,
+  { readonly brand: unique symbol }
+>()("VcsActionTargetKeyParseError", {
+  keyLength: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Invalid source control action target key (${this.keyLength} characters).`;
   }

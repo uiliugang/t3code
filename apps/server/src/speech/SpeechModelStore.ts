@@ -22,14 +22,14 @@ import type { SpeechModel } from "./model.ts";
 
 type ModelFile = Pick<SpeechModel, "id" | "filename" | "revision" | "size" | "sha256">;
 
-class SpeechModelDownloadError extends Schema.TaggedError<SpeechModelDownloadError>()(
-  "SpeechModelDownloadError",
-  {
-    modelId: Schema.String,
-    reason: Schema.Literals(["status", "range", "size", "verification"]),
-    status: Schema.optional(Schema.Number),
-  },
-) {
+class SpeechModelDownloadError extends Schema.TaggedError<
+  SpeechModelDownloadError,
+  { readonly brand: unique symbol }
+>()("SpeechModelDownloadError", {
+  modelId: Schema.String,
+  reason: Schema.Literals(["status", "range", "size", "verification"]),
+  status: Schema.optional(Schema.Number),
+}) {
   override get message(): string {
     return `Speech model download failed: ${this.reason}${this.status === undefined ? "" : ` ${this.status}`}.`;
   }

@@ -9,6 +9,7 @@ import type {
   SteerAckOutcome,
 } from "@cursor/sdk";
 import {
+  NonNegativeInt,
   type OrchestrationV2ProviderSession,
   ProviderDriverKind,
   type ThreadId,
@@ -17,6 +18,7 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
@@ -26,13 +28,13 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 export const CURSOR_AGENT_SDK_PROTOCOL = "cursor-agent-sdk.local" as const;
 export const CURSOR_PROVIDER = ProviderDriverKind.make("cursor");
 
-export class CursorAgentSdkRunnerError extends Schema.TaggedError<CursorAgentSdkRunnerError>()(
-  "CursorAgentSdkRunnerError",
-  {
-    method: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class CursorAgentSdkRunnerError extends Schema.TaggedError<
+  CursorAgentSdkRunnerError,
+  { readonly brand: unique symbol }
+>()("CursorAgentSdkRunnerError", {
+  method: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Cursor Agent SDK ${this.method} failed.`;
   }
@@ -105,12 +107,28 @@ export interface CursorAgentSdkRun {
   readonly steer?: (text: string) => Effect.Effect<SteerAckOutcome, CursorAgentSdkRunnerError>;
 }
 
+export interface CursorContextUsage {
+  readonly usedTokens: number;
+  readonly maxTokens: number;
+}
+
+// The SDK types a checkpoint as `unknown`; Cursor keeps the conversation's context fill on it.
+const CursorCheckpoint = Schema.Struct({
+  tokenDetails: Schema.Struct({ usedTokens: NonNegativeInt, maxTokens: NonNegativeInt }),
+});
+const decodeCursorCheckpoint = Schema.decodeUnknownOption(CursorCheckpoint);
+
 export interface CursorAgentSdkSession {
   readonly agentId: string;
   readonly send: <Error>(
     input: CursorAgentSdkSendInput<Error>,
   ) => Effect.Effect<CursorAgentSdkRun, CursorAgentSdkRunnerError>;
   readonly listMessages: Effect.Effect<ReadonlyArray<AgentMessage>, CursorAgentSdkRunnerError>;
+  /** Context fill at the latest checkpoint, if Cursor saved one. Absent on test doubles. */
+  readonly readContextUsage?: Effect.Effect<
+    CursorContextUsage | undefined,
+    CursorAgentSdkRunnerError
+  >;
   readonly close: Effect.Effect<void, CursorAgentSdkRunnerError>;
 }
 
@@ -747,6 +765,26 @@ export const makeCursorAgentSdkRunner = Effect.fn("makeCursorAgentSdkRunner")(fu
               },
             }),
           ),
+        ),
+        readContextUsage: Effect.tryPromise({
+          try: async () => {
+            const platform =
+              storePlatform ??
+              (await createAgentPlatform({
+                ...(cwd === undefined ? {} : { workspaceRef: cwd }),
+                ...(input.options.local?.store === undefined
+                  ? {}
+                  : { localStore: input.options.local.store }),
+              }));
+            return platform.checkpointStore.loadLatest(agent.agentId);
+          },
+          catch: (cause) => runnerError(cause, "agent.checkpoint.load"),
+        }).pipe(
+          Effect.map((checkpoint) => {
+            const usage = Option.getOrUndefined(decodeCursorCheckpoint(checkpoint))?.tokenDetails;
+            // An unset protobuf message reads as zeros.
+            return usage === undefined || usage.maxTokens === 0 ? undefined : usage;
+          }),
         ),
         close: log({
           direction: "outgoing",

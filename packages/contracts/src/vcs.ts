@@ -87,16 +87,16 @@ export interface VcsProcessExitFailure {
   readonly stderrTruncated: boolean;
 }
 
-export class VcsProcessSpawnError extends Schema.TaggedError<VcsProcessSpawnError>()(
-  "VcsProcessSpawnError",
-  {
-    operation: Schema.String,
-    command: Schema.String,
-    cwd: Schema.String,
-    argumentCount: Schema.optional(NonNegativeInt),
-    cause: Schema.Defect(),
-  },
-) {
+export class VcsProcessSpawnError extends Schema.TaggedError<
+  VcsProcessSpawnError,
+  { readonly brand: unique symbol }
+>()("VcsProcessSpawnError", {
+  operation: Schema.String,
+  command: Schema.String,
+  cwd: Schema.String,
+  argumentCount: Schema.optional(NonNegativeInt),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `VCS process failed to spawn in ${this.operation}: ${this.command} (${this.cwd})`;
   }
@@ -109,21 +109,21 @@ export class VcsProcessSpawnError extends Schema.TaggedError<VcsProcessSpawnErro
   }
 }
 
-export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>()(
-  "VcsProcessExitError",
-  {
-    operation: Schema.String,
-    command: Schema.String,
-    cwd: Schema.String,
-    argumentCount: Schema.optional(NonNegativeInt),
-    exitCode: Schema.Number,
-    detail: Schema.String,
-    failureKind: Schema.optional(VcsProcessExitFailureKind),
-    retryable: Schema.optional(Schema.Boolean),
-    stderrLength: Schema.optional(NonNegativeInt),
-    stderrTruncated: Schema.optional(Schema.Boolean),
-  },
-) {
+export class VcsProcessExitError extends Schema.TaggedError<
+  VcsProcessExitError,
+  { readonly brand: unique symbol }
+>()("VcsProcessExitError", {
+  operation: Schema.String,
+  command: Schema.String,
+  cwd: Schema.String,
+  argumentCount: Schema.optional(NonNegativeInt),
+  exitCode: Schema.Number,
+  detail: Schema.String,
+  failureKind: Schema.optional(VcsProcessExitFailureKind),
+  retryable: Schema.optional(Schema.Boolean),
+  stderrLength: Schema.optional(NonNegativeInt),
+  stderrTruncated: Schema.optional(Schema.Boolean),
+}) {
   override get message(): string {
     return `VCS process failed in ${this.operation}: ${this.command} (${this.cwd}) exited with ${this.exitCode} - ${this.detail}`;
   }
@@ -155,16 +155,16 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
   }
 }
 
-export class VcsProcessTimeoutError extends Schema.TaggedError<VcsProcessTimeoutError>()(
-  "VcsProcessTimeoutError",
-  {
-    operation: Schema.String,
-    command: Schema.String,
-    cwd: Schema.String,
-    argumentCount: Schema.optional(NonNegativeInt),
-    timeoutMs: Schema.Number,
-  },
-) {
+export class VcsProcessTimeoutError extends Schema.TaggedError<
+  VcsProcessTimeoutError,
+  { readonly brand: unique symbol }
+>()("VcsProcessTimeoutError", {
+  operation: Schema.String,
+  command: Schema.String,
+  cwd: Schema.String,
+  argumentCount: Schema.optional(NonNegativeInt),
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `VCS process timed out in ${this.operation}: ${this.command} (${this.cwd}) after ${this.timeoutMs}ms`;
   }
@@ -184,77 +184,77 @@ const VcsProcessBoundaryErrorFields = {
   argumentCount: Schema.optional(NonNegativeInt),
 };
 
-export class VcsProcessStdinWriteError extends Schema.TaggedError<VcsProcessStdinWriteError>()(
-  "VcsProcessStdinWriteError",
-  {
-    ...VcsProcessBoundaryErrorFields,
-    stdinBytes: NonNegativeInt,
-    cause: Schema.Defect(),
-  },
-) {
+export class VcsProcessStdinWriteError extends Schema.TaggedError<
+  VcsProcessStdinWriteError,
+  { readonly brand: unique symbol }
+>()("VcsProcessStdinWriteError", {
+  ...VcsProcessBoundaryErrorFields,
+  stdinBytes: NonNegativeInt,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `VCS process failed to write ${this.stdinBytes} bytes to stdin in ${this.operation}: ${this.command} (${this.cwd})`;
   }
 }
 
-export class VcsProcessOutputReadError extends Schema.TaggedError<VcsProcessOutputReadError>()(
-  "VcsProcessOutputReadError",
-  {
-    ...VcsProcessBoundaryErrorFields,
-    stream: Schema.Literals(["stdout", "stderr", "exitCode"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class VcsProcessOutputReadError extends Schema.TaggedError<
+  VcsProcessOutputReadError,
+  { readonly brand: unique symbol }
+>()("VcsProcessOutputReadError", {
+  ...VcsProcessBoundaryErrorFields,
+  stream: Schema.Literals(["stdout", "stderr", "exitCode"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `VCS process failed to read ${this.stream} in ${this.operation}: ${this.command} (${this.cwd})`;
   }
 }
 
-export class VcsProcessOutputLimitError extends Schema.TaggedError<VcsProcessOutputLimitError>()(
-  "VcsProcessOutputLimitError",
-  {
-    ...VcsProcessBoundaryErrorFields,
-    stream: Schema.Literals(["stdout", "stderr"]),
-    maxBytes: NonNegativeInt,
-    observedBytes: NonNegativeInt,
-  },
-) {
+export class VcsProcessOutputLimitError extends Schema.TaggedError<
+  VcsProcessOutputLimitError,
+  { readonly brand: unique symbol }
+>()("VcsProcessOutputLimitError", {
+  ...VcsProcessBoundaryErrorFields,
+  stream: Schema.Literals(["stdout", "stderr"]),
+  maxBytes: NonNegativeInt,
+  observedBytes: NonNegativeInt,
+}) {
   override get message(): string {
     return `VCS process ${this.stream} produced ${this.observedBytes} bytes in ${this.operation}: ${this.command} (${this.cwd}), exceeding the ${this.maxBytes} byte limit`;
   }
 }
 
-export class VcsProcessMissingExitCodeError extends Schema.TaggedError<VcsProcessMissingExitCodeError>()(
-  "VcsProcessMissingExitCodeError",
-  VcsProcessBoundaryErrorFields,
-) {
+export class VcsProcessMissingExitCodeError extends Schema.TaggedError<
+  VcsProcessMissingExitCodeError,
+  { readonly brand: unique symbol }
+>()("VcsProcessMissingExitCodeError", VcsProcessBoundaryErrorFields) {
   override get message(): string {
     return `VCS process completed without an exit code in ${this.operation}: ${this.command} (${this.cwd})`;
   }
 }
 
-export class VcsRepositoryDetectionError extends Schema.TaggedError<VcsRepositoryDetectionError>()(
-  "VcsRepositoryDetectionError",
-  {
-    operation: Schema.String,
-    cwd: Schema.String,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class VcsRepositoryDetectionError extends Schema.TaggedError<
+  VcsRepositoryDetectionError,
+  { readonly brand: unique symbol }
+>()("VcsRepositoryDetectionError", {
+  operation: Schema.String,
+  cwd: Schema.String,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `VCS repository detection failed in ${this.operation}: ${this.cwd} - ${this.detail}`;
   }
 }
 
-export class VcsUnsupportedOperationError extends Schema.TaggedError<VcsUnsupportedOperationError>()(
-  "VcsUnsupportedOperationError",
-  {
-    operation: Schema.String,
-    kind: VcsDriverKind,
-    detail: Schema.String,
-  },
-) {
+export class VcsUnsupportedOperationError extends Schema.TaggedError<
+  VcsUnsupportedOperationError,
+  { readonly brand: unique symbol }
+>()("VcsUnsupportedOperationError", {
+  operation: Schema.String,
+  kind: VcsDriverKind,
+  detail: Schema.String,
+}) {
   override get message(): string {
     return `VCS operation is unsupported for ${this.kind} in ${this.operation}: ${this.detail}`;
   }

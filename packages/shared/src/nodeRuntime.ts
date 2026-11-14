@@ -19,10 +19,13 @@ const NodeRuntimeFeature = Schema.Literals([
 export const nodeRuntimeUnavailableMessage = (feature: typeof NodeRuntimeFeature.Type): string =>
   `${feature} requires Node.js. Install Node.js and make sure node is on PATH, then retry.`;
 
-export class NodeRuntimeUnavailableError extends Schema.TaggedError<NodeRuntimeUnavailableError>()(
-  "NodeRuntimeUnavailableError",
-  { feature: NodeRuntimeFeature, cause: Schema.optional(Schema.Defect()) },
-) {
+export class NodeRuntimeUnavailableError extends Schema.TaggedError<
+  NodeRuntimeUnavailableError,
+  { readonly brand: unique symbol }
+>()("NodeRuntimeUnavailableError", {
+  feature: NodeRuntimeFeature,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return nodeRuntimeUnavailableMessage(this.feature);
   }

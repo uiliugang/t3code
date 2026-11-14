@@ -13,14 +13,14 @@ export interface DesktopIconPaths {
   readonly png: Option.Option<string>;
 }
 
-export class DesktopAssetProbeError extends Schema.TaggedError<DesktopAssetProbeError>()(
-  "DesktopAssetProbeError",
-  {
-    fileName: Schema.String,
-    candidatePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopAssetProbeError extends Schema.TaggedError<
+  DesktopAssetProbeError,
+  { readonly brand: unique symbol }
+>()("DesktopAssetProbeError", {
+  fileName: Schema.String,
+  candidatePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to probe desktop asset "${this.fileName}" at ${this.candidatePath}.`;
   }

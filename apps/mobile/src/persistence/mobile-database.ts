@@ -56,13 +56,13 @@ const MobileDatabaseOperation = Schema.Literals([
   "save-preferences",
 ]);
 
-export class MobileDatabaseError extends Schema.TaggedError<MobileDatabaseError>()(
-  "MobileDatabaseError",
-  {
-    operation: MobileDatabaseOperation,
-    cause: Schema.Defect(),
-  },
-) {
+export class MobileDatabaseError extends Schema.TaggedError<
+  MobileDatabaseError,
+  { readonly brand: unique symbol }
+>()("MobileDatabaseError", {
+  operation: MobileDatabaseOperation,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Mobile database operation failed: ${this.operation}.`;
   }

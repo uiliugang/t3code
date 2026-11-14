@@ -14,26 +14,26 @@ import * as Stream from "effect/Stream";
 import type * as SqlClient from "effect/sql/SqlClient";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 
-export class EventStoreAppendEventsError extends Schema.TaggedError<EventStoreAppendEventsError>()(
-  "EventStoreAppendEventsError",
-  {
-    eventCount: Schema.Number,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class EventStoreAppendEventsError extends Schema.TaggedError<
+  EventStoreAppendEventsError,
+  { readonly brand: unique symbol }
+>()("EventStoreAppendEventsError", {
+  eventCount: Schema.Number,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to append ${this.eventCount} agent orchestration event(s).`;
   }
 }
 
-export class EventStoreReadEventsError extends Schema.TaggedError<EventStoreReadEventsError>()(
-  "EventStoreReadEventsError",
-  {
-    afterSequence: Schema.optional(Schema.Number),
-    threadId: Schema.optional(ThreadId),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class EventStoreReadEventsError extends Schema.TaggedError<
+  EventStoreReadEventsError,
+  { readonly brand: unique symbol }
+>()("EventStoreReadEventsError", {
+  afterSequence: Schema.optional(Schema.Number),
+  threadId: Schema.optional(ThreadId),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.threadId === undefined
       ? "Failed to read agent orchestration events."

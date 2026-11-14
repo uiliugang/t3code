@@ -16,10 +16,10 @@ export interface BrowserViewportTarget {
 
 const BROWSER_VIEWPORT_COMMIT_TIMEOUT_MS = 15_000;
 
-class BrowserViewportCommitTimeoutError extends Schema.TaggedError<BrowserViewportCommitTimeoutError>()(
-  "BrowserViewportCommitTimeoutError",
-  { tabId: Schema.String },
-) {
+class BrowserViewportCommitTimeoutError extends Schema.TaggedError<
+  BrowserViewportCommitTimeoutError,
+  { readonly brand: unique symbol }
+>()("BrowserViewportCommitTimeoutError", { tabId: Schema.String }) {
   override get message(): string {
     return `Timed out committing the browser viewport for tab ${this.tabId}`;
   }

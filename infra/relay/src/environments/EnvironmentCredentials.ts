@@ -13,44 +13,44 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import * as RelayDb from "../db.ts";
 import { relayEnvironmentCredentials, relayEnvironmentLinks } from "../persistence/schema.ts";
 
-export class EnvironmentCredentialCreatePersistenceError extends Schema.TaggedError<EnvironmentCredentialCreatePersistenceError>()(
-  "EnvironmentCredentialCreatePersistenceError",
-  {
-    stage: Schema.Literals([
-      "generate-credential",
-      "hash-token",
-      "insert-credential",
-      "revoke-previous-credentials",
-    ]),
-    environmentId: Schema.String,
-    credentialId: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentCredentialCreatePersistenceError extends Schema.TaggedError<
+  EnvironmentCredentialCreatePersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentCredentialCreatePersistenceError", {
+  stage: Schema.Literals([
+    "generate-credential",
+    "hash-token",
+    "insert-credential",
+    "revoke-previous-credentials",
+  ]),
+  environmentId: Schema.String,
+  credentialId: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Environment credential creation failed during '${this.stage}' for environment '${this.environmentId}'${this.credentialId === undefined ? "" : `, credential '${this.credentialId}'`}`;
   }
 }
 
-export class EnvironmentCredentialAuthenticatePersistenceError extends Schema.TaggedError<EnvironmentCredentialAuthenticatePersistenceError>()(
-  "EnvironmentCredentialAuthenticatePersistenceError",
-  {
-    stage: Schema.Literals(["hash-token", "lookup-credential"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentCredentialAuthenticatePersistenceError extends Schema.TaggedError<
+  EnvironmentCredentialAuthenticatePersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentCredentialAuthenticatePersistenceError", {
+  stage: Schema.Literals(["hash-token", "lookup-credential"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Environment credential authentication failed during '${this.stage}'`;
   }
 }
 
-export class EnvironmentCredentialRevokePersistenceError extends Schema.TaggedError<EnvironmentCredentialRevokePersistenceError>()(
-  "EnvironmentCredentialRevokePersistenceError",
-  {
-    environmentId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class EnvironmentCredentialRevokePersistenceError extends Schema.TaggedError<
+  EnvironmentCredentialRevokePersistenceError,
+  { readonly brand: unique symbol }
+>()("EnvironmentCredentialRevokePersistenceError", {
+  environmentId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to revoke credentials for environment '${this.environmentId}'`;
   }

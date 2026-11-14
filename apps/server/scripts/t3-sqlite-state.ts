@@ -19,73 +19,73 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 export const SqliteStateOperation = Schema.Literals(["query", "exec"]);
 export type SqliteStateOperation = typeof SqliteStateOperation.Type;
 
-export class SqliteStateMultipleSqlSourcesError extends Schema.TaggedError<SqliteStateMultipleSqlSourcesError>()(
-  "SqliteStateMultipleSqlSourcesError",
-  {},
-) {
+export class SqliteStateMultipleSqlSourcesError extends Schema.TaggedError<
+  SqliteStateMultipleSqlSourcesError,
+  { readonly brand: unique symbol }
+>()("SqliteStateMultipleSqlSourcesError", {}) {
   override get message(): string {
     return "Provide only one of --sql or --file.";
   }
 }
 
-export class SqliteStateMissingSqlSourceError extends Schema.TaggedError<SqliteStateMissingSqlSourceError>()(
-  "SqliteStateMissingSqlSourceError",
-  {},
-) {
+export class SqliteStateMissingSqlSourceError extends Schema.TaggedError<
+  SqliteStateMissingSqlSourceError,
+  { readonly brand: unique symbol }
+>()("SqliteStateMissingSqlSourceError", {}) {
   override get message(): string {
     return "Provide one of --sql or --file.";
   }
 }
 
-export class SqliteStateEmptySqlError extends Schema.TaggedError<SqliteStateEmptySqlError>()(
-  "SqliteStateEmptySqlError",
-  {},
-) {
+export class SqliteStateEmptySqlError extends Schema.TaggedError<
+  SqliteStateEmptySqlError,
+  { readonly brand: unique symbol }
+>()("SqliteStateEmptySqlError", {}) {
   override get message(): string {
     return "SQL input is empty.";
   }
 }
 
-export class SqliteStateDatabaseMissingError extends Schema.TaggedError<SqliteStateDatabaseMissingError>()(
-  "SqliteStateDatabaseMissingError",
-  {
-    databasePath: Schema.String,
-  },
-) {
+export class SqliteStateDatabaseMissingError extends Schema.TaggedError<
+  SqliteStateDatabaseMissingError,
+  { readonly brand: unique symbol }
+>()("SqliteStateDatabaseMissingError", {
+  databasePath: Schema.String,
+}) {
   override get message(): string {
     return `Database does not exist at '${this.databasePath}'. Start T3 once to run migrations.`;
   }
 }
 
-export class SqliteStateSharedHomeMutationError extends Schema.TaggedError<SqliteStateSharedHomeMutationError>()(
-  "SqliteStateSharedHomeMutationError",
-  {},
-) {
+export class SqliteStateSharedHomeMutationError extends Schema.TaggedError<
+  SqliteStateSharedHomeMutationError,
+  { readonly brand: unique symbol }
+>()("SqliteStateSharedHomeMutationError", {}) {
   override get message(): string {
     return "Refusing to mutate the shared ~/.t3 database. Use an isolated --base-dir.";
   }
 }
 
-export class SqliteStateSqlFileError extends Schema.TaggedError<SqliteStateSqlFileError>()(
-  "SqliteStateSqlFileError",
-  {
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class SqliteStateSqlFileError extends Schema.TaggedError<
+  SqliteStateSqlFileError,
+  { readonly brand: unique symbol }
+>()("SqliteStateSqlFileError", {
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read SQL from '${this.filePath}'.`;
   }
 }
 
-export class SqliteStateDatabaseError extends Schema.TaggedError<SqliteStateDatabaseError>()(
-  "SqliteStateDatabaseError",
-  {
-    operation: SqliteStateOperation,
-    databasePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class SqliteStateDatabaseError extends Schema.TaggedError<
+  SqliteStateDatabaseError,
+  { readonly brand: unique symbol }
+>()("SqliteStateDatabaseError", {
+  operation: SqliteStateOperation,
+  databasePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} SQLite database at '${this.databasePath}'.`;
   }

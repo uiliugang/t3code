@@ -10,10 +10,10 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
-export class LiveStreamBufferError extends Schema.TaggedError<LiveStreamBufferError>()(
-  "LiveStreamBufferError",
-  { message: Schema.String },
-) {}
+export class LiveStreamBufferError extends Schema.TaggedError<
+  LiveStreamBufferError,
+  { readonly brand: unique symbol }
+>()("LiveStreamBufferError", { message: Schema.String }) {}
 
 export const LIVE_STREAM_MAX_ITEMS = 1_000;
 const LIVE_STREAM_MAX_SERIALIZED_BYTES = 8 * 1024 * 1024;

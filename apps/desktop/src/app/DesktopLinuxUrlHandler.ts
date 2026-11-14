@@ -15,16 +15,16 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 // AppImage integrators choose the .desktop filename, so setDesktopName cannot identify it for protocol registration.
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
-export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<DesktopLinuxUrlHandlerRegistrationError>()(
-  "DesktopLinuxUrlHandlerRegistrationError",
-  {
-    step: Schema.Literals(["write-desktop-entry", "set-default-handler"]),
-    scheme: Schema.String,
-    desktopEntryPath: Schema.optionalKey(Schema.String),
-    exitCode: Schema.optionalKey(Schema.Number),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<
+  DesktopLinuxUrlHandlerRegistrationError,
+  { readonly brand: unique symbol }
+>()("DesktopLinuxUrlHandlerRegistrationError", {
+  step: Schema.Literals(["write-desktop-entry", "set-default-handler"]),
+  scheme: Schema.String,
+  desktopEntryPath: Schema.optionalKey(Schema.String),
+  exitCode: Schema.optionalKey(Schema.Number),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     const exitCode = this.exitCode === undefined ? "" : `, xdg-mime exit code ${this.exitCode}`;
     return `Failed to register the ${this.scheme}:// URL handler (step: ${this.step}${exitCode}).`;
@@ -33,14 +33,14 @@ export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<
 
 const isRegistrationError = Schema.is(DesktopLinuxUrlHandlerRegistrationError);
 
-export class DesktopLinuxUrlHandlerCacheRefreshError extends Schema.TaggedError<DesktopLinuxUrlHandlerCacheRefreshError>()(
-  "DesktopLinuxUrlHandlerCacheRefreshError",
-  {
-    applicationsDir: Schema.String,
-    exitCode: Schema.optionalKey(Schema.Number),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class DesktopLinuxUrlHandlerCacheRefreshError extends Schema.TaggedError<
+  DesktopLinuxUrlHandlerCacheRefreshError,
+  { readonly brand: unique symbol }
+>()("DesktopLinuxUrlHandlerCacheRefreshError", {
+  applicationsDir: Schema.String,
+  exitCode: Schema.optionalKey(Schema.Number),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     const exitCode =
       this.exitCode === undefined ? "" : `, update-desktop-database exit code ${this.exitCode}`;
@@ -94,6 +94,38 @@ export function renderUrlHandlerDesktopEntry(input: {
     `MimeType=x-scheme-handler/${input.scheme};`,
     "",
   ].join("\n");
+}
+
+function parseUrlHandlerExecTarget(entry: string): string | null {
+  const exec = /^Exec=(.*) %U$/mu.exec(entry)?.[1];
+  if (exec === undefined) return null;
+  const unescaped = exec.replace(/\\([\\nrt])/gu, (_, char: string) =>
+    char === "n" ? "\n" : char === "r" ? "\r" : char === "t" ? "\t" : char,
+  );
+  const quoted = /^"(.*)"$/su.exec(unescaped)?.[1];
+  return (
+    quoted === undefined ? unescaped : quoted.replace(/\\([\\`$"])/gu, (_, char: string) => char)
+  ).replaceAll("%%", "%");
+}
+
+const APPIMAGE_NAME_VERSION = /\d+\.\d+\.\d+/u;
+
+// An updater from before version-free AppImage names deletes its own file and installs the update
+// beside it under the new name. The previous launch's entry still names the path launchers use.
+export function replacedVersionedAppImagePath(input: {
+  readonly previousEntry: string;
+  readonly appImagePath: string;
+}): string | null {
+  const previous = parseUrlHandlerExecTarget(input.previousEntry);
+  if (previous === null) return null;
+  const previousName = previous.slice(previous.lastIndexOf("/") + 1);
+  const currentName = input.appImagePath.slice(input.appImagePath.lastIndexOf("/") + 1);
+  return previous.startsWith("/") &&
+    previous.slice(0, -previousName.length) === input.appImagePath.slice(0, -currentName.length) &&
+    APPIMAGE_NAME_VERSION.test(previousName) &&
+    !APPIMAGE_NAME_VERSION.test(currentName)
+    ? previous
+    : null;
 }
 
 // Docks may look up the Wayland app id without a desktop entry; icon theme lookups are case-sensitive.

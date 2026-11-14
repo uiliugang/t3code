@@ -1,14 +1,14 @@
 import * as Schema from "effect/Schema";
 
-class CatalogDependencyResolutionError extends Schema.TaggedError<CatalogDependencyResolutionError>()(
-  "CatalogDependencyResolutionError",
-  {
-    workspacePackage: Schema.String,
-    dependencyName: Schema.String,
-    catalogSpec: Schema.String,
-    catalogKey: Schema.String,
-  },
-) {
+class CatalogDependencyResolutionError extends Schema.TaggedError<
+  CatalogDependencyResolutionError,
+  { readonly brand: unique symbol }
+>()("CatalogDependencyResolutionError", {
+  workspacePackage: Schema.String,
+  dependencyName: Schema.String,
+  catalogSpec: Schema.String,
+  catalogKey: Schema.String,
+}) {
   override get message(): string {
     return `Unable to resolve '${this.catalogSpec}' for ${this.workspacePackage} dependency '${this.dependencyName}'. Expected key '${this.catalogKey}' in root workspace catalog.`;
   }

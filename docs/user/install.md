@@ -197,6 +197,13 @@ and enable the provider you want. Installation, login, and configuration belong
 to that environment's machine, even when you connect from a phone or another
 computer.
 
+To remove a provider, select it in **Settings → Providers** and choose **Remove**.
+T3 Code stops its active sessions and clears its saved settings and unused managed
+resources. Shared managed resources stay until their last provider is removed.
+Personal CLI installations and configuration stay in place. Account folders outside
+the environment's data directory also stay, since other environments may use them.
+You can add the provider again later.
+
 | Provider    | Install and authenticate                                                                                                                                  |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Codex       | [Connect with ChatGPT](./providers-codex.md#connect-with-chatgpt), or install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`. |

@@ -30,10 +30,10 @@ Each bullet has a short feature name and one sentence of at most 20 words. Say w
 
 Return JSON with a "highlights" array. For each highlight, give "label" (plain text, no final period), "detail" (one sentence), and "commits" (the bracketed input numbers of all commits it covers). Use the subjects and PR descriptions as source material. The release script adds the formatting, count of remaining fixes and performance improvements, and contributor credit.`;
 
-class EmptyReleaseRangeError extends Schema.TaggedError<EmptyReleaseRangeError>()(
-  "EmptyReleaseRangeError",
-  { range: Schema.String },
-) {}
+class EmptyReleaseRangeError extends Schema.TaggedError<
+  EmptyReleaseRangeError,
+  { readonly brand: unique symbol }
+>()("EmptyReleaseRangeError", { range: Schema.String }) {}
 
 interface ReleaseCommit {
   readonly subject: string;

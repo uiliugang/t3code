@@ -115,14 +115,17 @@ const PRICES = {
 };
 type PricedModel = keyof typeof PRICES;
 /** GPT models that can play the shell through CLIProxyAPI, when no Anthropic key is at hand. */
-const PROXY_SHELL_MODELS = ["gpt-6-luna", "gpt-6.1-terra"] as const;
+const PROXY_SHELL_MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"] as const;
 type ShellModel = PricedModel | (typeof PROXY_SHELL_MODELS)[number];
 const isPricedModel = (model: ShellModel): model is PricedModel => model in PRICES;
 const T3_PREFIX = "mcp__t3-code__";
 const RUNTIME_MARKER = "<runtime_info>";
 const TOOL_LOADED = "Tool loaded.";
 
-class EvalToolCallError extends Schema.TaggedError<EvalToolCallError>()("EvalToolCallError", {
+class EvalToolCallError extends Schema.TaggedError<
+  EvalToolCallError,
+  { readonly brand: unique symbol }
+>()("EvalToolCallError", {
   tool: Schema.String,
   cause: Schema.Defect(),
 }) {
@@ -1313,15 +1316,19 @@ export const t3Default = (
       return { ...pr(), watching: true, wasWatching: false };
     case "unwatch_pull_request":
       return { ...pr(), watching: false, wasWatching: true };
-    case "list_thread_pull_requests":
+    case "list_thread_pull_requests": {
+      const states = Array.isArray(input.states) ? input.states : undefined;
+      const matching = [...sample.linked]
+        .map((url) => ({ ...linkedEntry(sample, url), source: "agent", watching: false }))
+        .filter((entry) => states === undefined || states.includes(entry.state));
+      const start = Number(valueText(input.cursor)) || 0;
+      const end = start + 50;
       return {
-        pullRequests: [...sample.linked].map((url) => ({
-          ...linkedEntry(sample, url),
-          source: "agent",
-          watching: false,
-        })),
+        pullRequests: matching.slice(start, end),
         chains: [],
+        nextCursor: end < matching.length ? String(end) : null,
       };
+    }
     case "t3_thread_read": {
       const threadId = valueText(input.threadId);
       const launched = sample.threads.get(threadId);
@@ -2407,7 +2414,7 @@ export const summarize = (
     `- Pass: ${percent(passRate(rows))} of ${finished} samples.`,
     ...(errors.length > 0 ? [errorNote] : []),
     codex
-      ? "- Cost: the agent is not priced. `vibeproxy` in `~/.codex/config.toml` may use a subscription or bill an API key per token; agent tokens are below."
+      ? "- Cost: the agent is not priced. The active Codex provider may use a subscription or bill an API key per token; agent tokens are below."
       : `- Estimated cost $${cost.toFixed(2)}, $${(cost / rows.length).toFixed(3)} per sample.`,
     `- Agent tokens: ${agent.tokens}${codex ? "." : ` ($${agent.cost.toFixed(2)}).`}`,
     `- Shell simulator (${options.shellModel}) tokens: ${shell.tokens} (API-price estimate $${shell.cost.toFixed(2)}).`,

@@ -73,13 +73,13 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 
-export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
-  "ProviderTurnStartError",
-  {
-    runId: RunId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ProviderTurnStartError extends Schema.TaggedError<
+  ProviderTurnStartError,
+  { readonly brand: unique symbol }
+>()("ProviderTurnStartError", {
+  runId: RunId,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 const isProviderAdapterProtocolError = Schema.is(ProviderAdapter.ProviderAdapterProtocolError);
@@ -1648,12 +1648,11 @@ export const layer: Layer.Layer<
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
+          const text = goalCommand ? userText : withInlineContext(context, userText);
           yield* start({
             ...(noteContinuation ? promptedInput : turnInput),
-            message: {
-              ...turnInput.message,
-              text: goalCommand ? userText : withInlineContext(context, userText),
-            },
+            message: { ...turnInput.message, text },
+            ...(text === userText ? {} : { inlineContextLength: text.length - userText.length }),
           }).pipe(
             // Clear pending handoff markers for refused prompts so the next turn retains the native session.
             Effect.tapError((error) =>

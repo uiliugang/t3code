@@ -12,6 +12,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
+import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -31,7 +32,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
-import * as TerminalManager from "../terminal/Manager.ts";
+import * as ResourceCleanupService from "./ResourceCleanupService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
@@ -314,8 +315,70 @@ export const make = Effect.gen(function* () {
   // A shell merge or close sends no event, and the branch lookup caches an open pull request for
   // a minute, so these threads' next lookup reads the host fresh.
   const shellClosedThreads = new Set<ThreadId>();
-  const terminals = yield* TerminalManager.TerminalManager;
+  const resourceCleanup = yield* ResourceCleanupService.ResourceCleanupService;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+  const pendingResourceCleanup = new Set<ThreadId>();
+  const cleanupLock = yield* KeyedLock.make<ThreadId>();
+  const readThread = Effect.fn("ThreadSettlementServiceV2.readCleanupThread")(function* (
+    threadId: ThreadId,
+  ) {
+    return yield* projections
+      .getThread(threadId)
+      .pipe(
+        Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+        Effect.orDie,
+      );
+  });
+  const cleanUpRuntime = Effect.fn("ThreadSettlementServiceV2.cleanUpRuntime")(function* (
+    threadId: ThreadId,
+  ) {
+    const thread = yield* readThread(threadId);
+    if (thread === null) return false;
+    const result = yield* Effect.result(
+      resourceCleanup.cleanupRuntime({
+        threadId,
+        mode: thread.archivedAt !== null || thread.deletedAt !== null ? "removed" : "settled",
+      }),
+    );
+    if (result._tag === "Success") {
+      pendingResourceCleanup.delete(threadId);
+      return result.success;
+    }
+    pendingResourceCleanup.add(threadId);
+    yield* Effect.logWarning("thread resource cleanup failed", { threadId, cause: result.failure });
+    return false;
+  });
+  const cleanUpRetiredResources = Effect.fn("ThreadSettlementServiceV2.cleanUpRetiredResources")(
+    function* () {
+      // Surviving processes and persisted device claims recover missed events without an in-memory queue.
+      const ids = new Set([
+        ...pendingResourceCleanup,
+        ...(yield* resourceCleanup.runtimeThreadIds),
+      ]);
+      yield* Effect.forEach(
+        ids,
+        (threadId) =>
+          readThread(threadId).pipe(
+            Effect.flatMap((thread) =>
+              thread?.settledOverride === "settled" &&
+              thread.archivedAt === null &&
+              thread.deletedAt === null
+                ? cleanUpSettledThread(threadId)
+                : cleanupLock.withLock(threadId, cleanUpRuntime(threadId)),
+            ),
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterruptsOnly(cause),
+              (cause) =>
+                Effect.logWarning("thread resource recovery failed", {
+                  threadId,
+                  cause: Cause.pretty(cause),
+                }),
+            ),
+          ),
+        { discard: true },
+      );
+    },
+  );
   // Repeated thread.settled retains settledAt; run the action only once per settlement.
   const settleActionRunAt = new Map<string, number>();
 
@@ -599,7 +662,7 @@ export const make = Effect.gen(function* () {
   const fullSweeps = yield* makeDrainableWorker(() => {
     // Clear at the start so events during this sweep can request one follow-up.
     fullSweepPending = false;
-    return runSweep(null);
+    return cleanUpRetiredResources().pipe(Effect.andThen(runSweep(null)));
   });
   const enqueueFullSweep = () =>
     Effect.suspend(() => {
@@ -639,12 +702,16 @@ export const make = Effect.gen(function* () {
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
       if (settled.settledOverride !== "settled") return;
-      yield* terminals.closeOnSettle({ threadId });
+      if (!(yield* cleanUpRuntime(threadId))) return;
       const worktreePath = settled.worktreePath;
       if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return;
       // Recheck after closing and worktree I/O; re-engaged threads must not be cleaned up.
       const thread = yield* projections.getThread(threadId);
-      if (thread.settledOverride !== "settled") return;
+      if (
+        thread.settledOverride !== "settled" ||
+        toMillis(thread.settledAt) !== toMillis(settled.settledAt)
+      )
+        return;
       const settledAtMs = toMillis(thread.settledAt);
       if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
       if (
@@ -688,7 +755,7 @@ export const make = Effect.gen(function* () {
       settleActionRunAt.set(threadId, settledAtMs);
     },
     (effect, threadId) =>
-      effect.pipe(
+      cleanupLock.withLock(threadId, effect).pipe(
         Effect.catchCauseIf(
           (cause) => !Cause.hasInterruptsOnly(cause),
           (cause) =>

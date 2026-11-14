@@ -28,25 +28,25 @@ export function getDesktopUrl(isDevelopment: boolean): string {
   return `${getDesktopOrigin(isDevelopment)}/`;
 }
 
-export class ElectronProtocolRegistrationError extends Schema.TaggedError<ElectronProtocolRegistrationError>()(
-  "ElectronProtocolRegistrationError",
-  {
-    scheme: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronProtocolRegistrationError extends Schema.TaggedError<
+  ElectronProtocolRegistrationError,
+  { readonly brand: unique symbol }
+>()("ElectronProtocolRegistrationError", {
+  scheme: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to register Electron protocol scheme "${this.scheme}".`;
   }
 }
 
-export class ElectronProtocolUnregistrationError extends Schema.TaggedError<ElectronProtocolUnregistrationError>()(
-  "ElectronProtocolUnregistrationError",
-  {
-    scheme: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronProtocolUnregistrationError extends Schema.TaggedError<
+  ElectronProtocolUnregistrationError,
+  { readonly brand: unique symbol }
+>()("ElectronProtocolUnregistrationError", {
+  scheme: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to unregister Electron protocol scheme "${this.scheme}".`;
   }
@@ -141,10 +141,10 @@ const registerDesktopSchemePrivileges = Effect.sync(registerDesktopSchemePrivile
 
 export const layerSchemePrivileges = Layer.effectDiscard(registerDesktopSchemePrivileges);
 
-class ElectronProtocolFetchError extends Schema.TaggedError<ElectronProtocolFetchError>()(
-  "ElectronProtocolFetchError",
-  { cause: Schema.Defect() },
-) {}
+class ElectronProtocolFetchError extends Schema.TaggedError<
+  ElectronProtocolFetchError,
+  { readonly brand: unique symbol }
+>()("ElectronProtocolFetchError", { cause: Schema.Defect() }) {}
 
 const netFetch = (url: string, init: RequestInit) =>
   Effect.tryPromise({

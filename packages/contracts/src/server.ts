@@ -70,6 +70,8 @@ export const ServerProviderAuth = Schema.Struct({
   subscriptionSharing: Schema.optional(Schema.Boolean),
   profileId: Schema.optional(TrimmedNonEmptyString),
   workspaceId: Schema.optional(TrimmedNonEmptyString),
+  /** Origin of the custom endpoint the instance sends its requests to. */
+  endpoint: Schema.optional(TrimmedNonEmptyString),
 });
 export type ServerProviderAuth = typeof ServerProviderAuth.Type;
 
@@ -402,10 +404,10 @@ export type ServerPrepareTriageResult = typeof ServerPrepareTriageResult.Type;
  */
 export const TRIAGE_PROMPT_FILE_NAME = "triage-playbook.md";
 
-export class ServerPrepareTriageError extends Schema.TaggedError<ServerPrepareTriageError>()(
-  "ServerPrepareTriageError",
-  { cause: Schema.optional(Schema.Defect()) },
-) {
+export class ServerPrepareTriageError extends Schema.TaggedError<
+  ServerPrepareTriageError,
+  { readonly brand: unique symbol }
+>()("ServerPrepareTriageError", { cause: Schema.optional(Schema.Defect()) }) {
   override get message(): string {
     return "Could not write the triage session files.";
   }
@@ -711,7 +713,9 @@ export const ServerConfig = Schema.Struct({
   threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
   threadFind: Schema.optionalKey(Schema.Boolean),
   workItems: Schema.optionalKey(Schema.Boolean),
+  workItemDelivery: Schema.optionalKey(Schema.Boolean),
   workItemDiscovery: Schema.optionalKey(Schema.Boolean),
+  workItemDraftGeneration: Schema.optionalKey(Schema.Boolean),
   workItemAnalysis: Schema.optionalKey(Schema.Boolean),
   threadPredictions: Schema.optionalKey(Schema.Boolean),
   threadFindProgressive: Schema.optionalKey(Schema.Boolean),
@@ -963,14 +967,14 @@ export const ServerProviderUpdateInput = Schema.Struct({
 });
 export type ServerProviderUpdateInput = typeof ServerProviderUpdateInput.Type;
 
-export class ServerProviderUpdateError extends Schema.TaggedError<ServerProviderUpdateError>()(
-  "ServerProviderUpdateError",
-  {
-    provider: ProviderDriverKind,
-    reason: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerProviderUpdateError extends Schema.TaggedError<
+  ServerProviderUpdateError,
+  { readonly brand: unique symbol }
+>()("ServerProviderUpdateError", {
+  provider: ProviderDriverKind,
+  reason: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Provider update failed for ${this.provider}: ${this.reason}`;
   }
@@ -991,10 +995,10 @@ export const ServerNpmRelease = Schema.Struct({
 });
 export type ServerNpmRelease = typeof ServerNpmRelease.Type;
 
-export class ServerNpmReleaseError extends Schema.TaggedError<ServerNpmReleaseError>()(
-  "ServerNpmReleaseError",
-  { reason: Schema.String },
-) {
+export class ServerNpmReleaseError extends Schema.TaggedError<
+  ServerNpmReleaseError,
+  { readonly brand: unique symbol }
+>()("ServerNpmReleaseError", { reason: Schema.String }) {
   override get message(): string {
     return `Could not check releases: ${this.reason}`;
   }
@@ -1038,13 +1042,13 @@ export const ServerSelfUpdateProgressEvent = Schema.Union([
 ]);
 export type ServerSelfUpdateProgressEvent = typeof ServerSelfUpdateProgressEvent.Type;
 
-export class ServerSelfUpdateError extends Schema.TaggedError<ServerSelfUpdateError>()(
-  "ServerSelfUpdateError",
-  {
-    reason: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerSelfUpdateError extends Schema.TaggedError<
+  ServerSelfUpdateError,
+  { readonly brand: unique symbol }
+>()("ServerSelfUpdateError", {
+  reason: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Server update failed: ${this.reason}`;
   }

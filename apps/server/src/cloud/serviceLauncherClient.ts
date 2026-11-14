@@ -20,20 +20,20 @@ import {
   type SupportedLauncherProtocol,
 } from "./serviceProtocol.ts";
 
-export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLauncherClientError>()(
-  "ServiceLauncherClientError",
-  {
-    operation: Schema.Literals([
-      "decode-context",
-      "version-mismatch",
-      "unmanaged",
-      "send",
-      "disconnect",
-      "timeout",
-    ]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServiceLauncherClientError extends Schema.TaggedError<
+  ServiceLauncherClientError,
+  { readonly brand: unique symbol }
+>()("ServiceLauncherClientError", {
+  operation: Schema.Literals([
+    "decode-context",
+    "version-mismatch",
+    "unmanaged",
+    "send",
+    "disconnect",
+    "timeout",
+  ]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.operation) {
       case "decode-context":
@@ -52,13 +52,13 @@ export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLaunch
   }
 }
 
-export class ServiceLauncherRejectedError extends Schema.TaggedError<ServiceLauncherRejectedError>()(
-  "ServiceLauncherRejectedError",
-  {
-    targetVersion: Schema.String,
-    reason: Schema.String,
-  },
-) {
+export class ServiceLauncherRejectedError extends Schema.TaggedError<
+  ServiceLauncherRejectedError,
+  { readonly brand: unique symbol }
+>()("ServiceLauncherRejectedError", {
+  targetVersion: Schema.String,
+  reason: Schema.String,
+}) {
   override get message(): string {
     return this.reason;
   }

@@ -137,50 +137,50 @@ interface CertificateTrust {
   revocations: number;
 }
 
-export class BrowserSessionPartitionDerivationError extends Schema.TaggedError<BrowserSessionPartitionDerivationError>()(
-  "BrowserSessionPartitionDerivationError",
-  {
-    scope: Schema.String,
-    cause: Schema.instanceOf(PlatformError.PlatformError),
-  },
-) {
+export class BrowserSessionPartitionDerivationError extends Schema.TaggedError<
+  BrowserSessionPartitionDerivationError,
+  { readonly brand: unique symbol }
+>()("BrowserSessionPartitionDerivationError", {
+  scope: Schema.String,
+  cause: Schema.instanceOf(PlatformError.PlatformError),
+}) {
   override get message(): string {
     return `Failed to derive a desktop preview browser partition for scope ${this.scope}.`;
   }
 }
 
-export class BrowserSessionCreationError extends Schema.TaggedError<BrowserSessionCreationError>()(
-  "BrowserSessionCreationError",
-  {
-    scope: Schema.String,
-    partition: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BrowserSessionCreationError extends Schema.TaggedError<
+  BrowserSessionCreationError,
+  { readonly brand: unique symbol }
+>()("BrowserSessionCreationError", {
+  scope: Schema.String,
+  partition: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to create a desktop preview browser session for scope ${this.scope} (partition ${this.partition}).`;
   }
 }
 
-export class BrowserSessionStorageClearError extends Schema.TaggedError<BrowserSessionStorageClearError>()(
-  "BrowserSessionStorageClearError",
-  {
-    partition: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BrowserSessionStorageClearError extends Schema.TaggedError<
+  BrowserSessionStorageClearError,
+  { readonly brand: unique symbol }
+>()("BrowserSessionStorageClearError", {
+  partition: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to clear desktop preview browser storage for partition ${this.partition}.`;
   }
 }
 
-export class BrowserSessionCacheClearError extends Schema.TaggedError<BrowserSessionCacheClearError>()(
-  "BrowserSessionCacheClearError",
-  {
-    partition: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BrowserSessionCacheClearError extends Schema.TaggedError<
+  BrowserSessionCacheClearError,
+  { readonly brand: unique symbol }
+>()("BrowserSessionCacheClearError", {
+  partition: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to clear the desktop preview browser cache for partition ${this.partition}.`;
   }

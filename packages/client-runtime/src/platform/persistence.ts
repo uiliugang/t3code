@@ -22,32 +22,32 @@ export interface CachedShellSnapshot extends DeferredShellSnapshot {
   readonly origin?: ShellCacheOrigin;
 }
 
-export class ConnectionPersistenceError extends Schema.TaggedError<ConnectionPersistenceError>()(
-  "ConnectionPersistenceError",
-  {
-    operation: Schema.Literals([
-      "list-targets",
-      "list-disabled-targets",
-      "register-connection",
-      "set-connection-routes",
-      "remove-connection",
-      "set-connection-enabled",
-      "load-shell",
-      "save-shell",
-      "load-thread",
-      "save-thread",
-      "remove-thread",
-      "load-server-config",
-      "save-server-config",
-      "load-vcs-refs",
-      "save-vcs-refs",
-      "remove-vcs-refs",
-      "clear-vcs-refs",
-      "clear-environment",
-    ]),
-    message: Schema.String,
-  },
-) {}
+export class ConnectionPersistenceError extends Schema.TaggedError<
+  ConnectionPersistenceError,
+  { readonly brand: unique symbol }
+>()("ConnectionPersistenceError", {
+  operation: Schema.Literals([
+    "list-targets",
+    "list-disabled-targets",
+    "register-connection",
+    "set-connection-routes",
+    "remove-connection",
+    "set-connection-enabled",
+    "load-shell",
+    "save-shell",
+    "load-thread",
+    "save-thread",
+    "remove-thread",
+    "load-server-config",
+    "save-server-config",
+    "load-vcs-refs",
+    "save-vcs-refs",
+    "remove-vcs-refs",
+    "clear-vcs-refs",
+    "clear-environment",
+  ]),
+  message: Schema.String,
+}) {}
 
 export class ConnectionTargetStore extends Context.Service<
   ConnectionTargetStore,

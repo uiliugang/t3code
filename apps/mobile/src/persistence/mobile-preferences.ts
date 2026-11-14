@@ -89,6 +89,7 @@ const ThreadProject = Schema.Struct({
 const isThreadProject = Schema.is(ThreadProject);
 
 export interface Preferences {
+  readonly requirementCollapsedGroups?: readonly string[];
   readonly branchIssuesVisible?: boolean;
   readonly branchIssuesExpanded?: boolean;
   readonly branchIssuesShowEmpty?: boolean;
@@ -144,19 +145,19 @@ export interface Preferences {
   readonly workspaceSelections?: WorkspaceSelections;
 }
 
-export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
-  "MobilePreferencesLoadError",
-  { cause: Schema.Defect() },
-) {
+export class MobilePreferencesLoadError extends Schema.TaggedError<
+  MobilePreferencesLoadError,
+  { readonly brand: unique symbol }
+>()("MobilePreferencesLoadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to load mobile preferences.";
   }
 }
 
-export class MobilePreferencesSaveError extends Schema.TaggedError<MobilePreferencesSaveError>()(
-  "MobilePreferencesSaveError",
-  { cause: Schema.Defect() },
-) {
+export class MobilePreferencesSaveError extends Schema.TaggedError<
+  MobilePreferencesSaveError,
+  { readonly brand: unique symbol }
+>()("MobilePreferencesSaveError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to save mobile preferences.";
   }
@@ -188,6 +189,7 @@ const isPullRequestMergeMethod = Schema.is(PullRequestMergeMethod);
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    requirementCollapsedGroups?: readonly string[];
     branchIssuesVisible?: boolean;
     branchIssuesExpanded?: boolean;
     branchIssuesShowEmpty?: boolean;
@@ -246,6 +248,11 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (Array.isArray(parsed.navigationTabOrder)) {
     preferences.navigationTabOrder = parsed.navigationTabOrder.filter(
       (tab): tab is string => typeof tab === "string",
+    );
+  }
+  if (Array.isArray(parsed.requirementCollapsedGroups)) {
+    preferences.requirementCollapsedGroups = parsed.requirementCollapsedGroups.filter(
+      (value): value is string => typeof value === "string",
     );
   }
 

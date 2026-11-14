@@ -146,7 +146,10 @@ const frameMetrics = (recording: { js: ReadonlyArray<number>; ui: ReadonlyArray<
 };
 
 /** Every scenario fails with this one error, so the table has a single function type. */
-export class ScenarioFailure extends Schema.TaggedError<ScenarioFailure>()("ScenarioFailure", {
+export class ScenarioFailure extends Schema.TaggedError<
+  ScenarioFailure,
+  { readonly brand: unique symbol }
+>()("ScenarioFailure", {
   message: Schema.String,
 }) {}
 

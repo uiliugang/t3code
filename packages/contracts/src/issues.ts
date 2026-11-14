@@ -30,7 +30,11 @@ export const IssueProjectSource = Schema.Struct({
 });
 export const IssueSourcesResult = Schema.Array(IssueProjectSource);
 export type IssueTarget = typeof IssueTarget.Type;
-export const IssueOption = Schema.Struct({ value: Text, label: Text });
+export const IssueOption = Schema.Struct({
+  value: Text,
+  label: Text,
+  category: Schema.optional(Schema.String),
+});
 export type IssueOption = typeof IssueOption.Type;
 export const Issue = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -98,19 +102,22 @@ export const IssueCreateInput = Schema.Struct({
   fields: Schema.Record(Text, Schema.String.check(Schema.isMaxLength(4000))),
 });
 export const IssueSetStateInput = Schema.Struct({ ...IssueReadInput.fields, state: Text });
-export class IssueError extends Schema.TaggedError<IssueError>()("IssueError", {
-  operation: Schema.String,
-  reason: Schema.Literals([
-    "unavailable",
-    "unsupported",
-    "invalid-target",
-    "invalid-state",
-    "validation",
-    "outcome-unknown",
-  ]),
-  fields: Schema.optional(Schema.Array(Schema.Struct({ variable: Text, message: Text }))),
-  cause: Schema.optional(Schema.Defect()),
-}) {
+export class IssueError extends Schema.TaggedError<IssueError, { readonly brand: unique symbol }>()(
+  "IssueError",
+  {
+    operation: Schema.String,
+    reason: Schema.Literals([
+      "unavailable",
+      "unsupported",
+      "invalid-target",
+      "invalid-state",
+      "validation",
+      "outcome-unknown",
+    ]),
+    fields: Schema.optional(Schema.Array(Schema.Struct({ variable: Text, message: Text }))),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
   override get message() {
     switch (this.reason) {
       case "unsupported":

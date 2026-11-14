@@ -1,3 +1,4 @@
+import noRuntimeCleanupBypass from "./rules/no-runtime-cleanup-bypass.ts";
 import { definePlugin } from "@oxlint/plugins";
 
 import maxSettingsDescriptionLength from "./rules/max-settings-description-length.ts";
@@ -40,6 +41,7 @@ export default definePlugin({
     name: "t3code",
   },
   rules: {
+    "no-runtime-cleanup-bypass": noRuntimeCleanupBypass,
     "max-settings-description-length": maxSettingsDescriptionLength,
     "namespace-node-imports": namespaceNodeImports,
     "no-dom-test-environment": noDomTestEnvironment,

@@ -62,15 +62,15 @@ export const SecretRequestFailureReason = Schema.Literals(
 );
 export type SecretRequestFailureReason = typeof SecretRequestFailureReason.Type;
 
-export class SecretRequestError extends Schema.TaggedError<SecretRequestError>()(
-  "SecretRequestError",
-  {
-    reason: SecretRequestFailureReason,
-    /** The secret provider a `reference_unreadable` answer named. */
-    provider: Schema.optionalKey(Schema.String),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class SecretRequestError extends Schema.TaggedError<
+  SecretRequestError,
+  { readonly brand: unique symbol }
+>()("SecretRequestError", {
+  reason: SecretRequestFailureReason,
+  /** The secret provider a `reference_unreadable` answer named. */
+  provider: Schema.optionalKey(Schema.String),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     if (this.reason === "reference_unreadable" && this.provider !== undefined) {
       return `Could not read the secret from the secret provider "${this.provider}". Unlock it and try again, or enter the value.`;

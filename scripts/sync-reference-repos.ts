@@ -29,72 +29,72 @@ export interface ReferenceRepoSyncPlan {
   readonly cloneArgs: ReadonlyArray<string>;
 }
 
-export class ReferenceRepoSelectionError extends Schema.TaggedError<ReferenceRepoSelectionError>()(
-  "ReferenceRepoSelectionError",
-  {
-    repoId: Schema.String,
-    expectedRepoIds: Schema.Array(Schema.String),
-  },
-) {
+export class ReferenceRepoSelectionError extends Schema.TaggedError<
+  ReferenceRepoSelectionError,
+  { readonly brand: unique symbol }
+>()("ReferenceRepoSelectionError", {
+  repoId: Schema.String,
+  expectedRepoIds: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     return `Unknown reference repo "${this.repoId}". Expected one of: ${this.expectedRepoIds.join(", ")}.`;
   }
 }
 
-export class ReferenceRepoVersionSourceError extends Schema.TaggedError<ReferenceRepoVersionSourceError>()(
-  "ReferenceRepoVersionSourceError",
-  {
-    operation: Schema.Literals(["read", "parse"]),
-    repoId: Schema.String,
-    sourcePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ReferenceRepoVersionSourceError extends Schema.TaggedError<
+  ReferenceRepoVersionSourceError,
+  { readonly brand: unique symbol }
+>()("ReferenceRepoVersionSourceError", {
+  operation: Schema.Literals(["read", "parse"]),
+  repoId: Schema.String,
+  sourcePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Reference repo "${this.repoId}" version source operation "${this.operation}" failed for ${this.sourcePath}.`;
   }
 }
 
-export class ReferenceRepoVersionResolutionError extends Schema.TaggedError<ReferenceRepoVersionResolutionError>()(
-  "ReferenceRepoVersionResolutionError",
-  {
-    repoId: Schema.String,
-    sourcePath: Schema.String,
-    packageVersionPath: Schema.Array(Schema.String),
-  },
-) {
+export class ReferenceRepoVersionResolutionError extends Schema.TaggedError<
+  ReferenceRepoVersionResolutionError,
+  { readonly brand: unique symbol }
+>()("ReferenceRepoVersionResolutionError", {
+  repoId: Schema.String,
+  sourcePath: Schema.String,
+  packageVersionPath: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     return `No version was found for reference repo "${this.repoId}" at ${this.sourcePath}:${this.packageVersionPath.join(".")}.`;
   }
 }
 
-export class ReferenceRepoGitError extends Schema.TaggedError<ReferenceRepoGitError>()(
-  "ReferenceRepoGitError",
-  {
-    operation: Schema.Literals(["spawn", "communicate", "exit"]),
-    repoId: Schema.String,
-    command: Schema.String,
-    ref: Schema.String,
-    cwd: Schema.String,
-    exitCode: Schema.optional(Schema.Number),
-    stderr: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ReferenceRepoGitError extends Schema.TaggedError<
+  ReferenceRepoGitError,
+  { readonly brand: unique symbol }
+>()("ReferenceRepoGitError", {
+  operation: Schema.Literals(["spawn", "communicate", "exit"]),
+  repoId: Schema.String,
+  command: Schema.String,
+  ref: Schema.String,
+  cwd: Schema.String,
+  exitCode: Schema.optional(Schema.Number),
+  stderr: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     const detail = this.stderr ? `: ${this.stderr.trim()}` : "";
     return `git ${this.command} for reference repo "${this.repoId}" at ${this.ref} failed during "${this.operation}"${detail}`;
   }
 }
 
-export class ReferenceRepoFileSystemError extends Schema.TaggedError<ReferenceRepoFileSystemError>()(
-  "ReferenceRepoFileSystemError",
-  {
-    repoId: Schema.String,
-    prefix: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ReferenceRepoFileSystemError extends Schema.TaggedError<
+  ReferenceRepoFileSystemError,
+  { readonly brand: unique symbol }
+>()("ReferenceRepoFileSystemError", {
+  repoId: Schema.String,
+  prefix: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Replacing ${this.prefix} for reference repo "${this.repoId}" failed.`;
   }

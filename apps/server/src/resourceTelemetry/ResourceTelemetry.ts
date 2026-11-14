@@ -37,13 +37,13 @@ import {
 } from "./ResourceTelemetryHistory.ts";
 import { subscribeBeforeSnapshot } from "../utils/subscribeBeforeSnapshot.ts";
 
-export class ResourceTelemetryRefreshFailed extends Schema.TaggedError<ResourceTelemetryRefreshFailed>()(
-  "ResourceTelemetryRefreshFailed",
-  {
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ResourceTelemetryRefreshFailed extends Schema.TaggedError<
+  ResourceTelemetryRefreshFailed,
+  { readonly brand: unique symbol }
+>()("ResourceTelemetryRefreshFailed", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Resource telemetry operation '${this.operation}' failed.`;
   }

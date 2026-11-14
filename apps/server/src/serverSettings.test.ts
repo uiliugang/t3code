@@ -45,6 +45,34 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 
+it.effect("removes a default provider across reloads and restores it on upsert", () =>
+  Effect.gen(function* () {
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+    const instanceId = ProviderInstanceId.make("codex");
+    yield* service.updateProviderInstance({ operation: "delete", instanceId });
+    const removed = yield* service.getSettings;
+    assert.isUndefined(deriveProviderInstanceConfigMap(removed)[instanceId]);
+    const config = yield* ServerConfig.ServerConfig;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const reloaded = yield* decodeServerSettingsJson(
+      yield* fileSystem.readFileString(config.settingsPath),
+    );
+    assert.isUndefined(deriveProviderInstanceConfigMap(reloaded)[instanceId]);
+    yield* service.updateProviderInstance({
+      operation: "upsert",
+      instanceId,
+      instance: { driver: ProviderDriverKind.make("codex") },
+    });
+    assert.isDefined(deriveProviderInstanceConfigMap(yield* service.getSettings)[instanceId]);
+  }).pipe(
+    Effect.provide(
+      layerServerSettings().pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
 const layerServerSettings = (policy?: ManagedPolicyDocument) =>
   ServerSettingsModule.layer.pipe(
     Layer.provide(ServerSecretStore.layer),
@@ -2743,6 +2771,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
     const policy: ManagedPolicyDocument = {
       schemaVersion: 1,
       organization: "Example Corp",
+      settings: { enableAgentDeviceAccess: { value: false, locked: true } },
       limits: {
         providers: {
           allowedDrivers: [claude, codex],
@@ -2895,6 +2924,24 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         assert.deepEqual(effective.providerInstances[codexId]?.config, {
           launchArgs: "-c model_provider=gateway",
         });
+
+        const beforeValidation = yield* fs.readFileString(config.settingsPath);
+        const rejectedDeletion = yield* service
+          .validateProviderInstanceMutation(
+            {
+              operation: "delete",
+              instanceId: claudeId,
+            },
+            { enableAgentDeviceAccess: true },
+          )
+          .pipe(Effect.flip);
+        assert.equal(rejectedDeletion.operation, "write-managed-setting");
+        yield* service.validateProviderInstanceMutation({
+          operation: "delete",
+          instanceId: codexId,
+        });
+        assert.equal(yield* fs.readFileString(config.settingsPath), beforeValidation);
+        assert.deepEqual(yield* service.getSettings, effective);
 
         const lockedBinary = yield* service
           .updateProviderInstance({

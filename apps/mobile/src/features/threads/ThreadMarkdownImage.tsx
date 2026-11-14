@@ -35,9 +35,12 @@ export const MarkdownImageAvailableWidthContext = createContext(0);
 
 type ImageSize = { readonly width: number; readonly height: number };
 
-class SvgLoadError extends Schema.TaggedError<SvgLoadError>()("SvgLoadError", {
-  cause: Schema.Defect(),
-}) {}
+class SvgLoadError extends Schema.TaggedError<SvgLoadError, { readonly brand: unique symbol }>()(
+  "SvgLoadError",
+  {
+    cause: Schema.Defect(),
+  },
+) {}
 
 async function readSvgXml(uri: string, signal: AbortSignal): Promise<string> {
   if (uri.startsWith("data:image/svg+xml")) {

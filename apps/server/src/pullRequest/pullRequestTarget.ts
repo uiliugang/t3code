@@ -13,37 +13,37 @@ export interface PullRequestTarget {
   readonly host?: string | undefined;
 }
 
-export class PullRequestUrlInvalidError extends Schema.TaggedError<PullRequestUrlInvalidError>()(
-  "PullRequestUrlInvalidError",
-  {},
-) {
+export class PullRequestUrlInvalidError extends Schema.TaggedError<
+  PullRequestUrlInvalidError,
+  { readonly brand: unique symbol }
+>()("PullRequestUrlInvalidError", {}) {
   override get message(): string {
     return "This is not a recognised pull request URL. Pass repository and number instead.";
   }
 }
 
-export class PullRequestTargetIncompleteError extends Schema.TaggedError<PullRequestTargetIncompleteError>()(
-  "PullRequestTargetIncompleteError",
-  {},
-) {
+export class PullRequestTargetIncompleteError extends Schema.TaggedError<
+  PullRequestTargetIncompleteError,
+  { readonly brand: unique symbol }
+>()("PullRequestTargetIncompleteError", {}) {
   override get message(): string {
     return "Pass either url, or both repository and number.";
   }
 }
 
-export class PullRequestHostRequiredError extends Schema.TaggedError<PullRequestHostRequiredError>()(
-  "PullRequestHostRequiredError",
-  {},
-) {
+export class PullRequestHostRequiredError extends Schema.TaggedError<
+  PullRequestHostRequiredError,
+  { readonly brand: unique symbol }
+>()("PullRequestHostRequiredError", {}) {
   override get message(): string {
     return "This thread's project has no recognised remote. Pass host or url.";
   }
 }
 
-export class PullRequestUrlUnavailableError extends Schema.TaggedError<PullRequestUrlUnavailableError>()(
-  "PullRequestUrlUnavailableError",
-  {},
-) {
+export class PullRequestUrlUnavailableError extends Schema.TaggedError<
+  PullRequestUrlUnavailableError,
+  { readonly brand: unique symbol }
+>()("PullRequestUrlUnavailableError", {}) {
   override get message(): string {
     return "This thread's project is on a host with no known pull request URL shape. Pass url.";
   }

@@ -14,7 +14,7 @@ import {
   type DevicePlatform,
   DevicePlatformUnavailableError,
   type DeviceServiceState,
-  type DeviceSession,
+  DeviceSession,
   type DeviceShutdownInput,
   type DeviceSummary,
   type DeviceEasAccount,
@@ -48,6 +48,7 @@ import {
   pruneAgentDeviceLaunchers,
 } from "./AgentDeviceShim.ts";
 import * as ServerConfig from "../config.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import {
   agentDeviceConfigPath,
   agentDeviceSession,
@@ -85,6 +86,9 @@ import * as Exit from "effect/Exit";
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 
 export const DEVICE_HUB_ROUTE_PREFIX = "/api/device-hub";
+const StoredSessions = Schema.fromJsonString(Schema.Array(DeviceSession));
+const decodeStoredSessions = Schema.decodeUnknownEffect(StoredSessions);
+const encodeStoredSessions = Schema.encodeEffect(StoredSessions);
 
 const isSshCommandError = Schema.is(SshCommandError);
 
@@ -138,19 +142,23 @@ export interface DeviceAgentReadiness extends DeviceReadiness {
 const DeviceHostName = Schema.Struct({ id: DeviceHostId, label: Schema.optional(Schema.String) });
 const hostName = (host: typeof DeviceHostName.Type) => host.label ?? `host ${host.id}`;
 
-export class DeviceHostAmbiguousError extends Schema.TaggedError<DeviceHostAmbiguousError>()(
-  "DeviceHostAmbiguousError",
-  { deviceId: DeviceId, hosts: Schema.Array(DeviceHostName) },
-) {
+export class DeviceHostAmbiguousError extends Schema.TaggedError<
+  DeviceHostAmbiguousError,
+  { readonly brand: unique symbol }
+>()("DeviceHostAmbiguousError", { deviceId: DeviceId, hosts: Schema.Array(DeviceHostName) }) {
   override get message(): string {
     return `Device ${this.deviceId} is on more than one host: ${this.hosts.map(hostName).join(", ")}.`;
   }
 }
 
-export class DeviceOnOtherHostError extends Schema.TaggedError<DeviceOnOtherHostError>()(
-  "DeviceOnOtherHostError",
-  { deviceId: DeviceId, host: DeviceHostName, hosts: Schema.Array(DeviceHostName) },
-) {
+export class DeviceOnOtherHostError extends Schema.TaggedError<
+  DeviceOnOtherHostError,
+  { readonly brand: unique symbol }
+>()("DeviceOnOtherHostError", {
+  deviceId: DeviceId,
+  host: DeviceHostName,
+  hosts: Schema.Array(DeviceHostName),
+}) {
   override get message(): string {
     return `Device ${this.deviceId} is not on ${hostName(this.host)}. It is on ${this.hosts.map(hostName).join(", ")}.`;
   }
@@ -211,6 +219,10 @@ export class DeviceService extends Context.Service<
       context?: DeviceHost.DeviceOpenContext,
     ) => Effect.Effect<DeviceSession, DeviceError>;
     readonly close: (input: DeviceCloseInput) => Effect.Effect<void, DeviceError>;
+    readonly closeRetired: (
+      session: DeviceSession,
+      shouldClose: Effect.Effect<boolean>,
+    ) => Effect.Effect<void, DeviceError>;
     readonly shutdown: (input: DeviceShutdownInput) => Effect.Effect<void, DeviceError>;
     readonly detail: (input: DeviceDetailInput) => Effect.Effect<DeviceDetail, DeviceError>;
     readonly action: (input: DeviceActionInput) => Effect.Effect<DeviceDetail, DeviceError>;
@@ -289,6 +301,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     ),
   installTool?: (tool: "hub" | "agent") => Effect.Effect<unknown, DeviceError>,
   launchers?: AgentDeviceLaunchers,
+  persistence?: {
+    readonly initial: ReadonlyArray<DeviceSession>;
+    readonly save: (sessions: ReadonlyArray<DeviceSession>) => Effect.Effect<void>;
+  },
 ) {
   const settings = yield* ServerSettings.ServerSettingsService;
   const digest = yield* Digest.Digest;
@@ -320,7 +336,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       hostStatus: initialSettings.enabled ? "idle" : "disabled",
       hostStatuses: {},
       devices: [],
-      sessions: [],
+      sessions: persistence?.initial ?? [],
       onboardingCompleted: initialSettings.onboardingCompleted,
       agentAccessEnabled: initialSettings.agentAccessEnabled,
       hubBasePath: DEVICE_HUB_ROUTE_PREFIX,
@@ -383,7 +399,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     SynchronizedRef.modifyEffect(stateRef, ({ state }) => {
       const next = { ...update(state), revision: state.revision + 1 };
       const retired = state.sessions.some((session) => !next.sessions.includes(session));
-      return PubSub.publish(statePubSub, next).pipe(
+      const changed =
+        state.sessions.length !== next.sessions.length ||
+        state.sessions.some((session, index) => session !== next.sessions[index]);
+      return (changed && persistence ? persistence.save(next.sessions) : Effect.void).pipe(
+        Effect.andThen(PubSub.publish(statePubSub, next)),
         Effect.as([{ next, retired }, { state: next }] as const),
       );
     }).pipe(
@@ -903,74 +923,81 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     }));
   });
 
-  const close: DeviceService["Service"]["close"] = Effect.fn("DeviceService.close")(
-    function* (input) {
-      // Open publishes under the same lock; an old close must not release a reopened claim.
-      const closing = yield* lifecycleLock.withPermit(
-        Effect.gen(function* () {
-          const { state } = yield* SynchronizedRef.get(stateRef);
-          const closing = state.sessions.filter(
-            (session) =>
-              session.threadId === input.threadId &&
-              (input.hostId === undefined || session.hostId === input.hostId) &&
-              (input.deviceId === undefined || session.deviceId === input.deviceId),
-          );
-          const ending = input.shutdown
-            ? state.sessions.filter((session) =>
-                closing.some(
-                  (closed) =>
-                    closed.hostId === session.hostId && closed.deviceId === session.deviceId,
-                ),
-              )
-            : closing;
-          for (const session of ending) {
-            const host = yield* resolveHost(session.hostId);
-            const ready = yield* host.current;
-            // A lost SSH tunnel does not establish that the remote daemon stopped.
-            if (!ready && (yield* host.summary).kind === "ssh")
+  const closeSession = Effect.fn("DeviceService.closeSession")(function* (
+    input: DeviceCloseInput,
+    shouldClose?: Effect.Effect<boolean>,
+    expectedSession?: DeviceSession,
+  ) {
+    const expected = expectedSession ? [expectedSession] : undefined;
+    // Open publishes under the same lock; an old close must not release a reopened claim.
+    const closing = yield* lifecycleLock.withPermit(
+      Effect.gen(function* () {
+        const { state } = yield* SynchronizedRef.get(stateRef);
+        const closing = state.sessions.filter(
+          (session) =>
+            session.threadId === input.threadId &&
+            (expected === undefined || expected.includes(session)) &&
+            (input.hostId === undefined || session.hostId === input.hostId) &&
+            (input.deviceId === undefined || session.deviceId === input.deviceId),
+        );
+        const ending = input.shutdown
+          ? state.sessions.filter((session) =>
+              closing.some(
+                (closed) =>
+                  closed.hostId === session.hostId && closed.deviceId === session.deviceId,
+              ),
+            )
+          : closing;
+        const released: DeviceSession[] = [];
+        for (const session of ending) {
+          const host = yield* resolveHost(session.hostId);
+          const name = yield* agentDeviceSession(
+            session.threadId,
+            session.hostId,
+            session.deviceId,
+          ).pipe(Effect.provideService(Digest.Digest, digest));
+          if (shouldClose && !(yield* shouldClose)) break;
+          yield* host.releaseAgentSession(name, session.deviceId);
+          released.push(session);
+        }
+        if (input.shutdown) yield* releaseLaunchers(ending);
+        if (input.shutdown) {
+          for (const session of closing) {
+            const ready = yield* currentReadiness(session.hostId);
+            if (!ready)
               return yield* new DeviceHostUnavailableError({
                 hostId: session.hostId,
-                hostLabel: host.label,
-                reason: "Device host is reconnecting. Retry close after it reconnects.",
+                reason: "Device host is not running. Reconnect before retrying close.",
               });
-            if (ready?.releaseAgentSession) {
-              const name = yield* agentDeviceSession(
-                session.threadId,
-                session.hostId,
-                session.deviceId,
-              ).pipe(Effect.provideService(Digest.Digest, digest));
-              yield* ready.releaseAgentSession(name, session.deviceId);
-            }
+            yield* shutdownDevice(ready, session.deviceId, session.platform);
           }
-          if (input.shutdown) yield* releaseLaunchers(ending);
-          if (input.shutdown) {
-            for (const session of closing) {
-              const ready = yield* currentReadiness(session.hostId);
-              if (!ready)
-                return yield* new DeviceHostUnavailableError({
-                  hostId: session.hostId,
-                  reason: "Device host is not running. Reconnect before retrying close.",
-                });
-              yield* shutdownDevice(ready, session.deviceId, session.platform);
-            }
-          }
-          yield* publish((current) => ({
-            ...current,
-            sessions: current.sessions.filter((session) => !ending.includes(session)),
-          }));
-          return closing;
-        }),
+        }
+        yield* publish((current) => ({
+          ...current,
+          sessions: current.sessions.filter((session) => !released.includes(session)),
+        }));
+        return closing;
+      }),
+    );
+    if (input.shutdown)
+      yield* Effect.forEach(
+        closing,
+        (session) =>
+          currentReadiness(session.hostId).pipe(
+            Effect.flatMap((ready) => (ready ? refreshAfterShutdown(ready) : Effect.void)),
+          ),
+        { discard: true },
       );
-      if (input.shutdown)
-        yield* Effect.forEach(
-          closing,
-          (session) =>
-            currentReadiness(session.hostId).pipe(
-              Effect.flatMap((ready) => (ready ? refreshAfterShutdown(ready) : Effect.void)),
-            ),
-          { discard: true },
-        );
-    },
+  });
+
+  const close = Effect.fn("DeviceService.close")((input: DeviceCloseInput) => closeSession(input));
+  const closeRetired = Effect.fn("DeviceService.closeRetired")(
+    (session: DeviceSession, shouldClose: Effect.Effect<boolean>) =>
+      closeSession(
+        { threadId: session.threadId, hostId: session.hostId, deviceId: session.deviceId },
+        shouldClose,
+        session,
+      ),
   );
 
   // Sessions retire before the power-off, while their agent-device sessions can still close the app;
@@ -1222,6 +1249,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       list,
       open,
       close,
+      closeRetired,
       shutdown,
       detail,
       action,
@@ -1239,7 +1267,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     refreshHosts: Effect.gen(function* () {
       const summaries = yield* Effect.forEach(hosts.values(), (host) => host.summary);
       const unchanged = (id: DeviceHostId) =>
-        hosts.has(id) && hosts.get(id) === publishedHosts.get(id);
+        hosts.has(id) && (!publishedHosts.has(id) || hosts.get(id) === publishedHosts.get(id));
       yield* publish((state) => ({
         ...state,
         hosts: summaries,
@@ -1386,6 +1414,27 @@ export const make = Effect.gen(function* () {
     yield* Effect.context<Effect.Services<ReturnType<typeof SshDeviceHost.probe>>>();
   const localTargetContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof isLocalSshDeviceHost>>>();
+  const sessionsPath = path.join(config.stateDir, "device", "sessions.json");
+  const initialSessions = yield* fs.readFileString(sessionsPath).pipe(
+    Effect.catchTags({
+      PlatformError: (error) =>
+        error.reason._tag === "NotFound" ? Effect.succeed("[]") : Effect.fail(error),
+    }),
+    Effect.flatMap(decodeStoredSessions),
+    Effect.orDie,
+  );
+  const saveSessions = Effect.fn("DeviceService.saveSessions")(function* (
+    sessions: ReadonlyArray<DeviceSession>,
+  ) {
+    yield* fs.makeDirectory(path.dirname(sessionsPath), { recursive: true });
+    yield* writeFileStringAtomically({
+      filePath: sessionsPath,
+      contents: yield* encodeStoredSessions(sessions),
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+    );
+  }, Effect.orDie);
   const service = yield* makeWithHosts(
     hosts,
     (host) =>
@@ -1428,6 +1477,7 @@ export const make = Effect.gen(function* () {
         ),
       ),
     launchers,
+    { initial: initialSessions, save: saveSessions },
   );
   const hostContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof SshDeviceHost.make>>>();

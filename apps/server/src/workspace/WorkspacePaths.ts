@@ -8,64 +8,64 @@ import * as Schema from "effect/Schema";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-export class WorkspaceRootNotExistsError extends Schema.TaggedError<WorkspaceRootNotExistsError>()(
-  "WorkspaceRootNotExistsError",
-  {
-    workspaceRoot: Schema.String,
-    normalizedWorkspaceRoot: Schema.String,
-  },
-) {
+export class WorkspaceRootNotExistsError extends Schema.TaggedError<
+  WorkspaceRootNotExistsError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRootNotExistsError", {
+  workspaceRoot: Schema.String,
+  normalizedWorkspaceRoot: Schema.String,
+}) {
   override get message(): string {
     return `Workspace root does not exist: ${this.normalizedWorkspaceRoot}`;
   }
 }
 
-export class WorkspaceRootCreateFailedError extends Schema.TaggedError<WorkspaceRootCreateFailedError>()(
-  "WorkspaceRootCreateFailedError",
-  {
-    workspaceRoot: Schema.String,
-    normalizedWorkspaceRoot: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class WorkspaceRootCreateFailedError extends Schema.TaggedError<
+  WorkspaceRootCreateFailedError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRootCreateFailedError", {
+  workspaceRoot: Schema.String,
+  normalizedWorkspaceRoot: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to create workspace root: ${this.normalizedWorkspaceRoot}`;
   }
 }
 
-export class WorkspaceRootStatFailedError extends Schema.TaggedError<WorkspaceRootStatFailedError>()(
-  "WorkspaceRootStatFailedError",
-  {
-    workspaceRoot: Schema.String,
-    normalizedWorkspaceRoot: Schema.String,
-    phase: Schema.Literals(["validate-existing", "verify-created"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class WorkspaceRootStatFailedError extends Schema.TaggedError<
+  WorkspaceRootStatFailedError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRootStatFailedError", {
+  workspaceRoot: Schema.String,
+  normalizedWorkspaceRoot: Schema.String,
+  phase: Schema.Literals(["validate-existing", "verify-created"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to stat workspace root '${this.normalizedWorkspaceRoot}' during '${this.phase}'.`;
   }
 }
 
-export class WorkspaceRootNotDirectoryError extends Schema.TaggedError<WorkspaceRootNotDirectoryError>()(
-  "WorkspaceRootNotDirectoryError",
-  {
-    workspaceRoot: Schema.String,
-    normalizedWorkspaceRoot: Schema.String,
-  },
-) {
+export class WorkspaceRootNotDirectoryError extends Schema.TaggedError<
+  WorkspaceRootNotDirectoryError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRootNotDirectoryError", {
+  workspaceRoot: Schema.String,
+  normalizedWorkspaceRoot: Schema.String,
+}) {
   override get message(): string {
     return `Workspace root is not a directory: ${this.normalizedWorkspaceRoot}`;
   }
 }
 
-export class WorkspacePathOutsideRootError extends Schema.TaggedError<WorkspacePathOutsideRootError>()(
-  "WorkspacePathOutsideRootError",
-  {
-    workspaceRoot: Schema.String,
-    relativePath: Schema.String,
-  },
-) {
+export class WorkspacePathOutsideRootError extends Schema.TaggedError<
+  WorkspacePathOutsideRootError,
+  { readonly brand: unique symbol }
+>()("WorkspacePathOutsideRootError", {
+  workspaceRoot: Schema.String,
+  relativePath: Schema.String,
+}) {
   override get message(): string {
     return `Workspace file path must be relative to the project root: ${this.relativePath}`;
   }

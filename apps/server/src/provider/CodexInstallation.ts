@@ -112,14 +112,14 @@ const RELEASES: Readonly<Record<string, CodexReleaseAsset>> = {
 };
 const resolveCodexReleaseAsset = (platform: NodeJS.Platform, arch: string) =>
   RELEASES[`${platform}-${arch}`] ?? null;
-export class CodexInstallationError extends Schema.TaggedError<CodexInstallationError>()(
-  "CodexInstallationError",
-  {
-    operation: Schema.String,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CodexInstallationError extends Schema.TaggedError<
+  CodexInstallationError,
+  { readonly brand: unique symbol }
+>()("CodexInstallationError", {
+  operation: Schema.String,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     return this.detail;
   }

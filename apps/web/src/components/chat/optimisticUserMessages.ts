@@ -120,7 +120,10 @@ export function createOptimisticBlobPreviews(): OptimisticBlobPreviews {
 }
 
 // Server asset URLs carry a signed token, so the error keeps only where the image was loaded from.
-class ImagePreloadError extends Schema.TaggedError<ImagePreloadError>()("ImagePreloadError", {
+class ImagePreloadError extends Schema.TaggedError<
+  ImagePreloadError,
+  { readonly brand: unique symbol }
+>()("ImagePreloadError", {
   protocol: Schema.String,
   host: Schema.String,
 }) {

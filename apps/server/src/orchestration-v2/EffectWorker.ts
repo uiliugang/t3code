@@ -32,14 +32,14 @@ import { continueRestartedRun } from "./RestartContinuation.ts";
 
 const isProviderTurnControlError = Schema.is(ProviderTurnControlService.ProviderTurnControlError);
 
-export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
-  "OrchestrationEffectExecutionError",
-  {
-    effectId: Schema.String,
-    effectType: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationEffectExecutionError extends Schema.TaggedError<
+  OrchestrationEffectExecutionError,
+  { readonly brand: unique symbol }
+>()("OrchestrationEffectExecutionError", {
+  effectId: Schema.String,
+  effectType: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 /**
  * Do not apply this to `provider-turn.restart`: that compound effect also runs
@@ -552,25 +552,19 @@ export const layerExecutor: Layer.Layer<
           // Archive and delete queue this one per-thread teardown, so it also releases the
           // thread's device claims; the devices stay booted for other threads.
           case "terminal.cleanup":
-            return Effect.partition(
-              [
-                resourceCleanup.cleanupTerminals(effect.threadId),
-                resourceCleanup.cleanupDevices(effect.threadId),
-              ],
-              (cleanup) => cleanup,
-            ).pipe(
-              Effect.flatMap(([, [failure]]) =>
-                failure === undefined ? Effect.void : Effect.fail(failure),
-              ),
-              Effect.mapError(
-                (cause) =>
-                  new OrchestrationEffectExecutionError({
-                    effectId: effect.id,
-                    effectType: effect.request.type,
-                    cause,
-                  }),
-              ),
-            );
+            return resourceCleanup
+              .cleanupRuntime({ threadId: effect.threadId, mode: "removed" })
+              .pipe(
+                Effect.asVoid,
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationEffectExecutionError({
+                      effectId: effect.id,
+                      effectType: effect.request.type,
+                      cause,
+                    }),
+                ),
+              );
           case "preview.cleanup":
             return resourceCleanup.cleanupPreviews(effect.threadId).pipe(
               Effect.mapError(
@@ -656,14 +650,14 @@ const boundExecution =
         )
       : execution;
 
-export class OrchestrationEffectWorkerError extends Schema.TaggedError<OrchestrationEffectWorkerError>()(
-  "OrchestrationEffectWorkerError",
-  {
-    operation: Schema.String,
-    effectId: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationEffectWorkerError extends Schema.TaggedError<
+  OrchestrationEffectWorkerError,
+  { readonly brand: unique symbol }
+>()("OrchestrationEffectWorkerError", {
+  operation: Schema.String,
+  effectId: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isOrchestrationEffectWorkerError = Schema.is(OrchestrationEffectWorkerError);
 

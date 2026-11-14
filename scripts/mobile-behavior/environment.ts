@@ -36,7 +36,10 @@ export const EVAL_MODEL = "eval/scripted";
 
 export const uuid = Effect.flatMap(SecureRandom.SecureRandom, (random) => random.uuidV4());
 
-export class EnvironmentError extends Schema.TaggedError<EnvironmentError>()("EnvironmentError", {
+export class EnvironmentError extends Schema.TaggedError<
+  EnvironmentError,
+  { readonly brand: unique symbol }
+>()("EnvironmentError", {
   message: Schema.String,
 }) {}
 

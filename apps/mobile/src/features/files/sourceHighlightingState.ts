@@ -16,10 +16,10 @@ export interface SourceHighlightInput {
 
 class SourceHighlightCacheKey extends Data.Class<SourceHighlightInput> {}
 
-class SourceHighlightError extends Schema.TaggedError<SourceHighlightError>()(
-  "SourceHighlightError",
-  { cause: Schema.Defect() },
-) {}
+class SourceHighlightError extends Schema.TaggedError<
+  SourceHighlightError,
+  { readonly brand: unique symbol }
+>()("SourceHighlightError", { cause: Schema.Defect() }) {}
 
 // Highlighting is synchronous, so a cold atom resolves on its first read. The
 // family keeps results for files the user moves between.

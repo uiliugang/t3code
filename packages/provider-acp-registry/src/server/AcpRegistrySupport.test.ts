@@ -5,6 +5,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  SecretProviderId,
 } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -1572,6 +1573,22 @@ describe("AcpRegistrySupport", () => {
       yield* fileSystem.writeFileString(`${versionRoot}/linux-x86_64/agent`, "binary");
       yield* fileSystem.makeDirectory(`${versionRoot}/npm/bin`, { recursive: true });
       yield* fileSystem.writeFileString(`${versionRoot}/npm/bin/agent`, "package command");
+      const receipts = `${cacheDir}/acp-registry/package-installs`;
+      yield* fileSystem.makeDirectory(receipts, { recursive: true });
+      const receipt = {
+        agentId: "example-agent",
+        agentVersion: "1.2.3",
+        distribution: "npx",
+        packageSpec: "example@1.2.3",
+        managerPath: "/usr/bin/npm",
+        binDirectory: `${versionRoot}/npm/bin`,
+        executablePath: `${versionRoot}/npm/bin/agent`,
+      };
+      yield* fileSystem.writeFileString(`${receipts}/example.json`, encodeUnknownJson(receipt));
+      yield* fileSystem.writeFileString(
+        `${receipts}/other.json`,
+        encodeUnknownJson({ ...receipt, agentId: "other-agent" }),
+      );
       const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
         cacheDir,
         toolsDir: `${cacheDir}/tools`,
@@ -1589,6 +1606,70 @@ describe("AcpRegistrySupport", () => {
         agentId: "example-agent",
         removed: false,
       });
+      const hostSettings = yield* TestProviderHost.TestProviderHostSettings;
+      const instanceId = ProviderInstanceId.make("local-reference");
+      yield* hostSettings.set({
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            enabled: false,
+            config: { binaryPath: `${versionRoot}/npm/bin/agent` },
+          },
+        },
+      });
+      expect(
+        yield* resolver.uninstallManagedBinary({ agentId: "example-agent", includePackages: true }),
+      ).toEqual({
+        agentId: "example-agent",
+        removed: false,
+      });
+      for (const name of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "PATH"]) {
+        yield* hostSettings.set({
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [instanceId]: {
+              driver: ProviderDriverKind.make("codex"),
+              environment: [{ name, value: `${versionRoot}/npm`, sensitive: false }],
+            },
+          },
+        });
+        expect(
+          yield* resolver.uninstallManagedBinary({
+            agentId: "example-agent",
+            includePackages: true,
+          }),
+        ).toEqual({ agentId: "example-agent", removed: false });
+        expect(yield* fileSystem.exists(`${versionRoot}/npm/bin/agent`)).toBe(true);
+      }
+      yield* hostSettings.set({
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            environment: [
+              {
+                name: "CODEX_HOME",
+                value: { provider: SecretProviderId.make("vault"), reference: "account/home" },
+                sensitive: true,
+              },
+            ],
+          },
+        },
+      });
+      expect(
+        yield* resolver.uninstallManagedBinary({ agentId: "example-agent", includePackages: true }),
+      ).toEqual({ agentId: "example-agent", removed: false });
+      yield* hostSettings.set(DEFAULT_SERVER_SETTINGS);
+      expect(
+        yield* resolver.uninstallManagedBinary({ agentId: "example-agent", includePackages: true }),
+      ).toEqual({
+        agentId: "example-agent",
+        removed: true,
+      });
+      expect(yield* fileSystem.exists(versionRoot)).toBe(false);
+      expect(yield* fileSystem.exists(`${receipts}/example.json`)).toBe(false);
+      expect(yield* fileSystem.exists(`${receipts}/other.json`)).toBe(true);
     }).pipe(
       Effect.scoped,
       Effect.provide(layerResolver(() => Effect.die("unexpected HTTP request"))),

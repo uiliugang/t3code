@@ -13,22 +13,22 @@ import { previewBridge } from "~/components/preview/previewBridge";
 const PREVIEW_CONFIG_STALE_TIME_MS = 5 * 60_000;
 const PREVIEW_CONFIG_IDLE_TTL_MS = 10 * 60_000;
 
-export class PreviewWebviewBridgeUnavailableError extends Schema.TaggedError<PreviewWebviewBridgeUnavailableError>()(
-  "PreviewWebviewBridgeUnavailableError",
-  { environmentId: Schema.String },
-) {
+export class PreviewWebviewBridgeUnavailableError extends Schema.TaggedError<
+  PreviewWebviewBridgeUnavailableError,
+  { readonly brand: unique symbol }
+>()("PreviewWebviewBridgeUnavailableError", { environmentId: Schema.String }) {
   override get message(): string {
     return `Desktop preview configuration is unavailable for environment "${this.environmentId}".`;
   }
 }
 
-export class PreviewWebviewConfigLoadError extends Schema.TaggedError<PreviewWebviewConfigLoadError>()(
-  "PreviewWebviewConfigLoadError",
-  {
-    environmentId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class PreviewWebviewConfigLoadError extends Schema.TaggedError<
+  PreviewWebviewConfigLoadError,
+  { readonly brand: unique symbol }
+>()("PreviewWebviewConfigLoadError", {
+  environmentId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to load desktop preview configuration for environment "${this.environmentId}".`;
   }

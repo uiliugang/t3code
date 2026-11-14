@@ -19,7 +19,10 @@ const stateDirectory = Config.String("HOME").pipe(
 const Credential = Schema.fromJsonString(
   Schema.Struct({ endpoint: Schema.String, name: Schema.String, token: Schema.String }),
 );
-class ManagementError extends Schema.TaggedError<ManagementError>()("ManagementError", {
+class ManagementError extends Schema.TaggedError<
+  ManagementError,
+  { readonly brand: unique symbol }
+>()("ManagementError", {
   message: Schema.String,
 }) {}
 export const isWriterName = (name: string) =>

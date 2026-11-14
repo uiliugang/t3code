@@ -1,3 +1,7 @@
+import {
+  RESOURCE_OWNER_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 import type { ThreadWorkspaceRevision } from "@t3tools/contracts";
 import { workspaceContext } from "@t3tools/provider-core/server/workspacePolicy";
 import * as DocumentText from "../../provider/DocumentText.ts";
@@ -84,6 +88,7 @@ import {
   mcpAppToolResourceUri,
 } from "@t3tools/shared/mcpApp";
 import { AgentScope } from "@t3tools/shared/AgentScope";
+import * as ProviderProcesses from "../../process/providerProcesses.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -377,41 +382,73 @@ const CLAUDE_DESCENDANT_POLL = "1 second";
 const CLAUDE_ROOT_REFUSAL =
   "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons";
 
+// fd 4 gates the launch until the server has recorded the process it is about to become.
+// The shell enters the cwd itself: as a native cwd, a mount that hangs chdir freezes the server.
 const CLAUDE_GROUP_WATCH_SCRIPT = [
+  "read -r _ <&4 || exit 1",
+  "exec 4<&-",
   "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
+  'cd -P -- "$1" || exit 125',
+  "shift",
   'exec "$@" 3<&-',
 ].join("\n");
 
 /**
  * Kill the CLI's group on exit to stop MCP grandchildren; `onExit` stops its agent scope for
  * setsid daemons. The CLI keeps working after its pipes close, so a watcher stops the group on
- * EOF from a pipe only this server holds, including when the server crashes.
+ * EOF from a pipe only this server holds, including when the server crashes. `register` records
+ * the CLI before it may run, so a restarted server can reap it if the watcher did not.
  */
 export function spawnClaudeProcessGroup(
   options: ClaudeSpawnOptions,
   onExit?: () => void,
   onStderr: (text: string) => void = () => {},
   onStderrClose: () => void = () => {},
+  register?: (pid: number) => () => void,
 ): ClaudeSpawnedProcess & Pick<NodeChildProcess.ChildProcess, "pid"> {
+  // Relative to the server's cwd, as a native cwd is; the `./` keeps CDPATH out of it.
+  const cwd = options.cwd ?? ".";
   const child = NodeChildProcess.spawn(
     "/bin/sh",
-    ["-c", CLAUDE_GROUP_WATCH_SCRIPT, "t3-claude", options.command, ...options.args],
+    [
+      "-c",
+      CLAUDE_GROUP_WATCH_SCRIPT,
+      "t3-claude",
+      cwd.startsWith("/") ? cwd : `./${cwd}`,
+      options.command,
+      ...options.args,
+    ],
     {
-      cwd: options.cwd,
       env: options.env,
       signal: options.signal,
-      stdio: ["pipe", "pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
       detached: true,
     },
   );
+  let forget: (() => void) | undefined;
   // Always drained, so a chatty CLI never blocks on a full stderr pipe.
   child.stderr?.setEncoding("utf8").on("data", onStderr).once("close", onStderrClose);
   child.once("exit", () => {
     try {
       signalProcessGroup(child.pid ?? 0, "SIGKILL");
     } catch {}
+    try {
+      forget?.();
+    } catch {}
     onExit?.();
   });
+  const gate = child.stdio[4];
+  if (child.pid !== undefined && gate !== null && gate !== undefined && "end" in gate) {
+    try {
+      forget = register?.(child.pid);
+      gate.on("error", () => child.kill("SIGKILL"));
+      gate.end("ready\n");
+    } catch (cause) {
+      child.kill("SIGKILL");
+      gate.destroy();
+      throw cause;
+    }
+  }
   // Node's typings make stdin and stdout nullable once stdio has a fourth entry; both are pipes.
   return child as ClaudeSpawnedProcess & Pick<NodeChildProcess.ChildProcess, "pid">;
 }
@@ -663,33 +700,35 @@ export interface ClaudeAgentSdkQuerySession {
 
 type ClaudeQueryStreamExit = Exit.Exit<void, ClaudeAgentSdkQueryRunnerError>;
 
-export class ClaudeAgentSdkQueryRunnerError extends Schema.TaggedError<ClaudeAgentSdkQueryRunnerError>()(
-  "ClaudeAgentSdkQueryRunnerError",
-  {
-    method: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ClaudeAgentSdkQueryRunnerError extends Schema.TaggedError<
+  ClaudeAgentSdkQueryRunnerError,
+  { readonly brand: unique symbol }
+>()("ClaudeAgentSdkQueryRunnerError", {
+  method: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Claude Agent SDK query failed.";
   }
 }
 
-export class ClaudeCodeRootRefusalError extends Schema.TaggedError<ClaudeCodeRootRefusalError>()(
-  "ClaudeCodeRootRefusalError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class ClaudeCodeRootRefusalError extends Schema.TaggedError<
+  ClaudeCodeRootRefusalError,
+  { readonly brand: unique symbol }
+>()("ClaudeCodeRootRefusalError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Claude Code exited before it started: ${CLAUDE_ROOT_REFUSAL}`;
   }
 }
 
-class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegistrationTimeoutError>()(
-  "ClaudeMcpRegistrationTimeoutError",
-  { phase: Schema.Literals(["initialize", "setMcpServers"]) },
-) {
+class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<
+  ClaudeMcpRegistrationTimeoutError,
+  { readonly brand: unique symbol }
+>()("ClaudeMcpRegistrationTimeoutError", {
+  phase: Schema.Literals(["initialize", "setMcpServers"]),
+}) {
   override get message(): string {
     return this.phase === "initialize"
       ? "Claude timed out while starting up. Retry the turn; if it keeps failing, check Claude and the server logs."
@@ -697,43 +736,45 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
   }
 }
 
-export class ClaudeBackgroundWorkBlocksQueryReplacementError extends Schema.TaggedError<ClaudeBackgroundWorkBlocksQueryReplacementError>()(
-  "ClaudeBackgroundWorkBlocksQueryReplacementError",
-  {},
-) {
+export class ClaudeBackgroundWorkBlocksQueryReplacementError extends Schema.TaggedError<
+  ClaudeBackgroundWorkBlocksQueryReplacementError,
+  { readonly brand: unique symbol }
+>()("ClaudeBackgroundWorkBlocksQueryReplacementError", {}) {
   override get message(): string {
     return "Claude is still running background agents or commands, and this model or setting change would end them. Wait for them to finish, or press Stop, then send the message again.";
   }
 }
 
-export class ClaudeAppendSystemPromptFileError extends Schema.TaggedError<ClaudeAppendSystemPromptFileError>()(
-  "ClaudeAppendSystemPromptFileError",
-  {
-    path: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ClaudeAppendSystemPromptFileError extends Schema.TaggedError<
+  ClaudeAppendSystemPromptFileError,
+  { readonly brand: unique symbol }
+>()("ClaudeAppendSystemPromptFileError", {
+  path: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Claude could not read the --append-system-prompt-file launch argument at ${this.path}. Fix the path in the Claude launch arguments, then send the message again.`;
   }
 }
 
-export class ClaudeAppendSystemPromptMissingValueError extends Schema.TaggedError<ClaudeAppendSystemPromptMissingValueError>()(
-  "ClaudeAppendSystemPromptMissingValueError",
-  { flag: Schema.Literals(["--append-system-prompt", "--append-system-prompt-file"]) },
-) {
+export class ClaudeAppendSystemPromptMissingValueError extends Schema.TaggedError<
+  ClaudeAppendSystemPromptMissingValueError,
+  { readonly brand: unique symbol }
+>()("ClaudeAppendSystemPromptMissingValueError", {
+  flag: Schema.Literals(["--append-system-prompt", "--append-system-prompt-file"]),
+}) {
   override get message(): string {
     return `The ${this.flag} launch argument has no ${this.flag === "--append-system-prompt" ? "text" : "file path"}. Add it after the flag in the Claude launch arguments, then send the message again.`;
   }
 }
 
-export class ClaudeSettingsLaunchArgError extends Schema.TaggedError<ClaudeSettingsLaunchArgError>()(
-  "ClaudeSettingsLaunchArgError",
-  {
-    path: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ClaudeSettingsLaunchArgError extends Schema.TaggedError<
+  ClaudeSettingsLaunchArgError,
+  { readonly brand: unique symbol }
+>()("ClaudeSettingsLaunchArgError", {
+  path: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Claude could not read the --settings launch argument${this.path === undefined ? "" : ` at ${this.path}`} as a JSON object. Fix it in the Claude launch arguments, then send the message again.`;
   }
@@ -1263,6 +1304,7 @@ export const layerQueryRunner: Layer.Layer<
     const path = yield* Path.Path;
     const { native: nativeEventLogger } = yield* ProviderEventLoggers.ProviderEventLoggers;
     const agentScope = yield* AgentScope;
+    const providerProcesses = yield* ProviderProcesses.ProviderProcesses;
     const platform = yield* HostProcess.Platform;
     const runFork = Effect.runForkWith(yield* Effect.context<never>());
     const hostEnvironment = yield* HostProcess.Environment;
@@ -1379,6 +1421,7 @@ export const layerQueryRunner: Layer.Layer<
                   stopScope,
                   appendStderr,
                   stderrDone,
+                  providerProcesses.register,
                 );
                 if (unit === undefined && child.pid !== undefined) {
                   const tracker = trackDescendants(child.pid);
@@ -2663,12 +2706,15 @@ export function makeClaudeUserMessage(input: {
   readonly text: string;
   readonly priority?: SDKUserMessage["priority"];
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
+  readonly skillMentionsFrom?: number;
   readonly uuid?: SDKUserMessage["uuid"];
 }): SDKUserMessage {
   // Claude expands a skill only when `/name` starts the last text block.
   // Keep the whole request before that block; see ClaudeSkillDispatch.
   const dispatch =
-    input.skills === undefined ? undefined : planClaudeSkillDispatch(input.text, input.skills);
+    input.skills === undefined
+      ? undefined
+      : planClaudeSkillDispatch(input.text, input.skills, input.skillMentionsFrom);
   // Claude runs `/goal` only when it opens the prompt, so a goal stays one block.
   const isGoalCommand = parseGoalCommand({ text: input.text }) !== null;
   return {
@@ -2834,6 +2880,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   readonly fileSystem: FileSystem.FileSystem;
   readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
+  readonly skillMentionsFrom?: number;
 }) {
   const text =
     input.workspace === undefined
@@ -2843,6 +2890,9 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
     const message = makeClaudeUserMessage({
       text,
       ...(input.skills === undefined ? {} : { skills: input.skills }),
+      ...(input.skillMentionsFrom === undefined
+        ? {}
+        : { skillMentionsFrom: input.skillMentionsFrom }),
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.uuid === undefined ? {} : { uuid: input.uuid }),
     });
@@ -2866,7 +2916,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   const dispatch =
     input.skills === undefined
       ? undefined
-      : planClaudeSkillDispatch(textWithAttachmentPaths, input.skills);
+      : planClaudeSkillDispatch(textWithAttachmentPaths, input.skills, input.skillMentionsFrom);
   const content: Array<ClaudeUserContentBlock> = [];
   // Base64 adds a third to the payload. Leave room below Anthropic's 32 MB
   // request limit for text, instructions, and SDK framing. The SDK does not
@@ -12497,6 +12547,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               pdfBudgets.get(nativeThreadId)!,
               persistAttachmentBudget(nativeThreadId),
             );
+            const promptText = applyClaudePromptEffortPrefix(
+              turnInput.message.text,
+              compileClaudeModelSelection(turnInput.modelSelection, modelCatalog).promptEffort,
+            );
             const userMessage =
               promptUuid === null
                 ? null
@@ -12504,11 +12558,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     ...(turnInput.runtimePolicy.workspace === undefined
                       ? {}
                       : { workspace: turnInput.runtimePolicy.workspace }),
-                    text: applyClaudePromptEffortPrefix(
-                      turnInput.message.text,
-                      compileClaudeModelSelection(turnInput.modelSelection, modelCatalog)
-                        .promptEffort,
-                    ),
+                    text: promptText,
+                    // Mentions in inline handoff history are history, not this turn's skill.
+                    ...(turnInput.inlineContextLength === undefined
+                      ? {}
+                      : {
+                          skillMentionsFrom:
+                            promptText.length -
+                            turnInput.message.text.slice(turnInput.inlineContextLength).trimEnd()
+                              .length,
+                        }),
                     attachments: turnInput.message.attachments,
                     attachmentsDir,
                     fileSystem,
@@ -13824,7 +13883,10 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     return yield* makeClaudeAdapterV2({
       instanceId,
       settings: { ...config, enabled, binaryPath },
-      environment: claudeEnvironment,
+      environment: {
+        ...claudeEnvironment,
+        [RESOURCE_OWNER_ENV]: resourceOwner(serverConfig.stateDir),
+      },
       attachmentsDir: serverConfig.attachmentsDir,
       fileSystem,
       path,

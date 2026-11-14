@@ -199,10 +199,10 @@ const DEFAULT_TERMINAL_ROWS = 24;
 const TERMINAL_ACCESSORY_HEIGHT = 52;
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
-class TerminalClipboardReadError extends Schema.TaggedError<TerminalClipboardReadError>()(
-  "TerminalClipboardReadError",
-  { terminalId: Schema.String, cause: Schema.Defect() },
-) {
+class TerminalClipboardReadError extends Schema.TaggedError<
+  TerminalClipboardReadError,
+  { readonly brand: unique symbol }
+>()("TerminalClipboardReadError", { terminalId: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Failed to read the clipboard for a paste into terminal ${this.terminalId}.`;
   }

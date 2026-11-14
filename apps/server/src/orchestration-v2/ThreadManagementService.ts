@@ -70,6 +70,7 @@ import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ManagedWorktrees from "../workspace/ManagedWorktrees.ts";
+import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -210,94 +211,94 @@ export type ThreadManagementInterruptResult =
       readonly run: OrchestrationV2Run & { readonly status: ThreadManagementTerminalRunStatus };
     };
 
-export class ThreadManagementThreadNotFoundError extends Schema.TaggedError<ThreadManagementThreadNotFoundError>()(
-  "ThreadManagementThreadNotFoundError",
-  {
-    projectId: ProjectId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadManagementThreadNotFoundError extends Schema.TaggedError<
+  ThreadManagementThreadNotFoundError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementThreadNotFoundError", {
+  projectId: ProjectId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return `Thread ${this.threadId} was not found in project ${this.projectId}.`;
   }
 }
 
-export class ThreadTranscriptTooLargeError extends Schema.TaggedError<ThreadTranscriptTooLargeError>()(
-  "ThreadTranscriptTooLargeError",
-  { threadId: ThreadId },
-) {
+export class ThreadTranscriptTooLargeError extends Schema.TaggedError<
+  ThreadTranscriptTooLargeError,
+  { readonly brand: unique symbol }
+>()("ThreadTranscriptTooLargeError", { threadId: ThreadId }) {
   override get message(): string {
     return "The thread transcript exceeds the file attachment limit.";
   }
 }
 
-export class ThreadManagementRunNotFoundError extends Schema.TaggedError<ThreadManagementRunNotFoundError>()(
-  "ThreadManagementRunNotFoundError",
-  {
-    threadId: ThreadId,
-    runId: RunId,
-  },
-) {
+export class ThreadManagementRunNotFoundError extends Schema.TaggedError<
+  ThreadManagementRunNotFoundError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementRunNotFoundError", {
+  threadId: ThreadId,
+  runId: RunId,
+}) {
   override get message(): string {
     return `Run ${this.runId} does not belong to thread ${this.threadId}.`;
   }
 }
 
-export class ThreadManagementThreadArchivedError extends Schema.TaggedError<ThreadManagementThreadArchivedError>()(
-  "ThreadManagementThreadArchivedError",
-  {
-    threadId: ThreadId,
-  },
-) {
+export class ThreadManagementThreadArchivedError extends Schema.TaggedError<
+  ThreadManagementThreadArchivedError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementThreadArchivedError", {
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return `Thread ${this.threadId} is archived and cannot receive messages.`;
   }
 }
 
-export class ThreadManagementNoSteerableRunError extends Schema.TaggedError<ThreadManagementNoSteerableRunError>()(
-  "ThreadManagementNoSteerableRunError",
-  {
-    threadId: ThreadId,
-    mode: Schema.Literals(["steer", "restart"]),
-  },
-) {
+export class ThreadManagementNoSteerableRunError extends Schema.TaggedError<
+  ThreadManagementNoSteerableRunError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementNoSteerableRunError", {
+  threadId: ThreadId,
+  mode: Schema.Literals(["steer", "restart"]),
+}) {
   override get message(): string {
     return `Thread ${this.threadId} has no running turn that can be ${this.mode === "steer" ? "steered" : "restarted"}.`;
   }
 }
 
-export class ThreadManagementThreadNotInterruptibleError extends Schema.TaggedError<ThreadManagementThreadNotInterruptibleError>()(
-  "ThreadManagementThreadNotInterruptibleError",
-  {
-    threadId: ThreadId,
-    runId: RunId,
-  },
-) {
+export class ThreadManagementThreadNotInterruptibleError extends Schema.TaggedError<
+  ThreadManagementThreadNotInterruptibleError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementThreadNotInterruptibleError", {
+  threadId: ThreadId,
+  runId: RunId,
+}) {
   override get message(): string {
     return `Run ${this.runId} is not currently interruptible.`;
   }
 }
 
-export class ThreadManagementProjectionLoadError extends Schema.TaggedError<ThreadManagementProjectionLoadError>()(
-  "ThreadManagementProjectionLoadError",
-  {
-    projectId: ProjectId,
-    threadId: ThreadId,
-    cause: Schema.Defect(),
-  },
-) {
+export class ThreadManagementProjectionLoadError extends Schema.TaggedError<
+  ThreadManagementProjectionLoadError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementProjectionLoadError", {
+  projectId: ProjectId,
+  threadId: ThreadId,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Unable to load thread ${this.threadId} in project ${this.projectId}.`;
   }
 }
 
-export class ThreadManagementProjectThreadsListError extends Schema.TaggedError<ThreadManagementProjectThreadsListError>()(
-  "ThreadManagementProjectThreadsListError",
-  {
-    projectId: Schema.optional(ProjectId),
-    cause: Schema.Defect(),
-  },
-) {
+export class ThreadManagementProjectThreadsListError extends Schema.TaggedError<
+  ThreadManagementProjectThreadsListError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementProjectThreadsListError", {
+  projectId: Schema.optional(ProjectId),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return this.projectId === undefined
       ? "Unable to list threads."
@@ -305,38 +306,51 @@ export class ThreadManagementProjectThreadsListError extends Schema.TaggedError<
   }
 }
 
-export class ThreadManagementDurableRunProjectionError extends Schema.TaggedError<ThreadManagementDurableRunProjectionError>()(
-  "ThreadManagementDurableRunProjectionError",
-  {
-    threadId: ThreadId,
-    messageId: MessageId,
-  },
-) {
+export class ThreadManagementDurableRunProjectionError extends Schema.TaggedError<
+  ThreadManagementDurableRunProjectionError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementDurableRunProjectionError", {
+  threadId: ThreadId,
+  messageId: MessageId,
+}) {
   override get message(): string {
     return `Message ${this.messageId} was accepted on thread ${this.threadId} without a durable run projection.`;
   }
 }
 
-export class ThreadManagementProviderInstanceDisabledError extends Schema.TaggedError<ThreadManagementProviderInstanceDisabledError>()(
-  "ThreadManagementProviderInstanceDisabledError",
-  {
-    projectId: ProjectId,
-    instanceId: ProviderInstanceId,
-  },
-) {
+export class ThreadManagementWorktreeRestoreError extends Schema.TaggedError<
+  ThreadManagementWorktreeRestoreError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementWorktreeRestoreError", {
+  threadId: ThreadId,
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    const detail = this.cause instanceof Error ? ` ${this.cause.message}` : "";
+    return `Couldn't recreate the missing workspace of thread ${this.threadId}, so the message was not sent.${detail}`;
+  }
+}
+
+export class ThreadManagementProviderInstanceDisabledError extends Schema.TaggedError<
+  ThreadManagementProviderInstanceDisabledError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementProviderInstanceDisabledError", {
+  projectId: ProjectId,
+  instanceId: ProviderInstanceId,
+}) {
   override get message(): string {
     return `Provider instance "${this.instanceId}" is disabled for project ${this.projectId}.`;
   }
 }
 
-export class ThreadManagementBackgroundWaitError extends Schema.TaggedError<ThreadManagementBackgroundWaitError>()(
-  "ThreadManagementBackgroundWaitError",
-  {
-    threadId: ThreadId,
-    reason: Schema.Literals(["unsupported", "unavailable", "failed", "unmatched"]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ThreadManagementBackgroundWaitError extends Schema.TaggedError<
+  ThreadManagementBackgroundWaitError,
+  { readonly brand: unique symbol }
+>()("ThreadManagementBackgroundWaitError", {
+  threadId: ThreadId,
+  reason: Schema.Literals(["unsupported", "unavailable", "failed", "unmatched"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "unsupported":
@@ -361,6 +375,7 @@ export const ThreadManagementError = Schema.Union([
   ThreadManagementProjectThreadsListError,
   ThreadManagementDurableRunProjectionError,
   ThreadManagementProviderInstanceDisabledError,
+  ThreadManagementWorktreeRestoreError,
 ]);
 export type ThreadManagementError = typeof ThreadManagementError.Type;
 
@@ -385,6 +400,7 @@ export interface ThreadManagementServiceShape {
   readonly getThreadHistoryPage: Orchestrator.OrchestratorV2["Service"]["getThreadHistoryPage"];
   readonly getTimelinePage: Orchestrator.OrchestratorV2["Service"]["getTimelinePage"];
   readonly getMessageCount: Orchestrator.OrchestratorV2["Service"]["getMessageCount"];
+  readonly getMessagesById: Orchestrator.OrchestratorV2["Service"]["getMessagesById"];
   readonly getTurnItem: (input: {
     readonly threadId: ThreadId;
     readonly itemId: TurnItemId;
@@ -594,6 +610,7 @@ const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+  const worktreeRestore = yield* ThreadWorktreeRestore;
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -735,6 +752,18 @@ const make = Effect.gen(function* () {
 
   const assertDispatchTargetEnabled = (command: OrchestrationV2ServerCommand) => {
     switch (command.type) {
+      case "thread.metadata.update":
+        return command.continuation === undefined
+          ? Effect.void
+          : orchestrator.getThreadRecords(command.threadId, []).pipe(
+              Effect.flatMap((projection) =>
+                assertProviderInstanceEnabled({
+                  projectId: projection.thread.projectId,
+                  commandId: command.commandId,
+                  instanceId: projection.thread.modelSelection.instanceId,
+                }),
+              ),
+            );
       case "message.dispatch":
         return orchestrator.getThreadRecords(command.threadId, []).pipe(
           Effect.flatMap((projection) =>
@@ -887,6 +916,26 @@ const make = Effect.gen(function* () {
       dispatchMode = {
         type: mode === "queue" ? "queue_after_active" : "start_immediately",
       };
+    }
+
+    // Turn start would fail on its own after the send reported success; a replay keeps its answer.
+    // A live steer starts no turn, so it needs no workspace.
+    if (dispatchMode.type !== "steer_active") {
+      yield* worktreeRestore
+        .restore(target.thread)
+        .pipe(
+          Effect.catch((cause) =>
+            hasReceipt(input.commandId).pipe(
+              Effect.flatMap((replay) =>
+                replay
+                  ? Effect.void
+                  : Effect.fail(
+                      new ThreadManagementWorktreeRestoreError({ threadId: input.threadId, cause }),
+                    ),
+              ),
+            ),
+          ),
+        );
     }
 
     const dispatched = yield* dispatch({
@@ -1672,6 +1721,13 @@ const make = Effect.gen(function* () {
         Effect.andThen(orchestrator.getMessageCount(threadId)),
       );
     }),
+    getMessagesById: Effect.fn("ThreadManagementService.getMessagesById")(
+      function (threadId, messageIds) {
+        return ensureProjectionTranscript(threadId).pipe(
+          Effect.andThen(orchestrator.getMessagesById(threadId, messageIds)),
+        );
+      },
+    ),
     getTurnItem: Effect.fn("ThreadManagementService.getTurnItem")(function (input) {
       return ensureProjectionTranscript(input.threadId).pipe(
         Effect.andThen(orchestrator.getTurnItem(input)),
@@ -1731,6 +1787,12 @@ const make = Effect.gen(function* () {
   });
 });
 
+const layerThreadWorktreeRestoreNoop = Layer.succeed(ThreadWorktreeRestore, {
+  restore: Effect.fn("ThreadWorktreeRestore.restore")(function () {
+    return Effect.void;
+  }),
+});
+
 const layerLegacyV1ThreadImporterNoop = Layer.succeed(
   LegacyV1ThreadImporter.LegacyV1ThreadImporter,
   LegacyV1ThreadImporter.LegacyV1ThreadImporter.of({
@@ -1752,6 +1814,7 @@ export const layer: Layer.Layer<
   | CommandReceiptStore.CommandReceiptStoreV2
 > = Layer.effect(ThreadManagementService, make).pipe(
   Layer.provide(layerLegacyV1ThreadImporterNoop),
+  Layer.provide(layerThreadWorktreeRestoreNoop),
   Layer.provide(ThreadCommandExecutor.layer),
 );
 
@@ -1759,6 +1822,7 @@ export const layerWithLegacyImporter: Layer.Layer<
   ThreadManagementService,
   never,
   | LegacyV1ThreadImporter.LegacyV1ThreadImporter
+  | ThreadWorktreeRestore
   | Orchestrator.OrchestratorV2
   | ProviderSessionManager.ProviderSessionManagerV2
   | ServerSettings.ServerSettingsService

@@ -41,14 +41,14 @@ interface RateLimitEntry {
   readonly retryAt: number;
 }
 
-export class SourceControlRateLimitPausedError extends Schema.TaggedError<SourceControlRateLimitPausedError>()(
-  "SourceControlRateLimitPausedError",
-  {
-    provider: SourceControlProviderKindSchema,
-    host: Schema.String,
-    retryAt: Schema.Number,
-  },
-) {
+export class SourceControlRateLimitPausedError extends Schema.TaggedError<
+  SourceControlRateLimitPausedError,
+  { readonly brand: unique symbol }
+>()("SourceControlRateLimitPausedError", {
+  provider: SourceControlProviderKindSchema,
+  host: Schema.String,
+  retryAt: Schema.Number,
+}) {
   get detail(): string {
     return `${this.provider} requests to ${this.host} are paused until the rate limit resets.`;
   }

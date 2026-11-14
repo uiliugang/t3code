@@ -38,46 +38,46 @@ export interface BootstrapGrant {
   readonly expiresAt: DateTime.DateTime;
 }
 
-export class UnknownBootstrapCredentialError extends Schema.TaggedError<UnknownBootstrapCredentialError>()(
-  "UnknownBootstrapCredentialError",
-  {},
-) {
+export class UnknownBootstrapCredentialError extends Schema.TaggedError<
+  UnknownBootstrapCredentialError,
+  { readonly brand: unique symbol }
+>()("UnknownBootstrapCredentialError", {}) {
   override get message(): string {
     return "Unknown bootstrap credential.";
   }
 }
 
-export class ExpiredBootstrapCredentialError extends Schema.TaggedError<ExpiredBootstrapCredentialError>()(
-  "ExpiredBootstrapCredentialError",
-  {},
-) {
+export class ExpiredBootstrapCredentialError extends Schema.TaggedError<
+  ExpiredBootstrapCredentialError,
+  { readonly brand: unique symbol }
+>()("ExpiredBootstrapCredentialError", {}) {
   override get message(): string {
     return "Bootstrap credential expired.";
   }
 }
 
-export class BootstrapCredentialProofKeyMismatchError extends Schema.TaggedError<BootstrapCredentialProofKeyMismatchError>()(
-  "BootstrapCredentialProofKeyMismatchError",
-  {},
-) {
+export class BootstrapCredentialProofKeyMismatchError extends Schema.TaggedError<
+  BootstrapCredentialProofKeyMismatchError,
+  { readonly brand: unique symbol }
+>()("BootstrapCredentialProofKeyMismatchError", {}) {
   override get message(): string {
     return "Bootstrap credential proof key mismatch.";
   }
 }
 
-export class UnavailableBootstrapCredentialError extends Schema.TaggedError<UnavailableBootstrapCredentialError>()(
-  "UnavailableBootstrapCredentialError",
-  {},
-) {
+export class UnavailableBootstrapCredentialError extends Schema.TaggedError<
+  UnavailableBootstrapCredentialError,
+  { readonly brand: unique symbol }
+>()("UnavailableBootstrapCredentialError", {}) {
   override get message(): string {
     return "Bootstrap credential is no longer available.";
   }
 }
 
-export class BootstrapCredentialScopeNotGrantedError extends Schema.TaggedError<BootstrapCredentialScopeNotGrantedError>()(
-  "BootstrapCredentialScopeNotGrantedError",
-  {},
-) {
+export class BootstrapCredentialScopeNotGrantedError extends Schema.TaggedError<
+  BootstrapCredentialScopeNotGrantedError,
+  { readonly brand: unique symbol }
+>()("BootstrapCredentialScopeNotGrantedError", {}) {
   override get message(): string {
     return "The requested authentication scope was not granted.";
   }
@@ -91,83 +91,83 @@ export const BootstrapCredentialInvalidError = Schema.Union([
 ]);
 export type BootstrapCredentialInvalidError = typeof BootstrapCredentialInvalidError.Type;
 
-export class ActivePairingLinksLoadError extends Schema.TaggedError<ActivePairingLinksLoadError>()(
-  "ActivePairingLinksLoadError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class ActivePairingLinksLoadError extends Schema.TaggedError<
+  ActivePairingLinksLoadError,
+  { readonly brand: unique symbol }
+>()("ActivePairingLinksLoadError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to load active pairing links.";
   }
 }
 
-export class PairingLinkRevokeError extends Schema.TaggedError<PairingLinkRevokeError>()(
-  "PairingLinkRevokeError",
-  {
-    pairingLinkId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class PairingLinkRevokeError extends Schema.TaggedError<
+  PairingLinkRevokeError,
+  { readonly brand: unique symbol }
+>()("PairingLinkRevokeError", {
+  pairingLinkId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to revoke pairing link '${this.pairingLinkId}'.`;
   }
 }
 
-export class PairingCredentialIssueError extends Schema.TaggedError<PairingCredentialIssueError>()(
-  "PairingCredentialIssueError",
-  {
-    pairingLinkId: Schema.String,
-    subject: Schema.String,
-    label: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class PairingCredentialIssueError extends Schema.TaggedError<
+  PairingCredentialIssueError,
+  { readonly brand: unique symbol }
+>()("PairingCredentialIssueError", {
+  pairingLinkId: Schema.String,
+  subject: Schema.String,
+  label: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to issue pairing credential '${this.pairingLinkId}' for '${this.subject}'.`;
   }
 }
 
-export class PairingCredentialRandomGenerationError extends Schema.TaggedError<PairingCredentialRandomGenerationError>()(
-  "PairingCredentialRandomGenerationError",
-  {
-    operation: Schema.Literals(["generate-id", "generate-token"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class PairingCredentialRandomGenerationError extends Schema.TaggedError<
+  PairingCredentialRandomGenerationError,
+  { readonly brand: unique symbol }
+>()("PairingCredentialRandomGenerationError", {
+  operation: Schema.Literals(["generate-id", "generate-token"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to generate pairing credential data during '${this.operation}'.`;
   }
 }
 
-export class BootstrapCredentialConsumeError extends Schema.TaggedError<BootstrapCredentialConsumeError>()(
-  "BootstrapCredentialConsumeError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class BootstrapCredentialConsumeError extends Schema.TaggedError<
+  BootstrapCredentialConsumeError,
+  { readonly brand: unique symbol }
+>()("BootstrapCredentialConsumeError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to consume bootstrap credential.";
   }
 }
 
-export class BootstrapCredentialConsumeAvailableError extends Schema.TaggedError<BootstrapCredentialConsumeAvailableError>()(
-  "BootstrapCredentialConsumeAvailableError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class BootstrapCredentialConsumeAvailableError extends Schema.TaggedError<
+  BootstrapCredentialConsumeAvailableError,
+  { readonly brand: unique symbol }
+>()("BootstrapCredentialConsumeAvailableError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to atomically consume an available bootstrap credential.";
   }
 }
 
-export class BootstrapCredentialLookupError extends Schema.TaggedError<BootstrapCredentialLookupError>()(
-  "BootstrapCredentialLookupError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class BootstrapCredentialLookupError extends Schema.TaggedError<
+  BootstrapCredentialLookupError,
+  { readonly brand: unique symbol }
+>()("BootstrapCredentialLookupError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to look up bootstrap credential state.";
   }

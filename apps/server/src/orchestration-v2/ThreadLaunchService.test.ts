@@ -129,6 +129,7 @@ const claudeAdapter = {
 
 interface HarnessOptions {
   readonly workspace?: ThreadWorkspaceRevision;
+  readonly prepareWorkspace?: WorkspaceProvisioner.WorkspaceProvisioner["Service"]["prepare"];
   readonly closeTerminal?: TerminalManager.TerminalManager["Service"]["close"];
   readonly adapters?: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]>;
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
@@ -194,12 +195,14 @@ function makeHarness(options: HarnessOptions = {}) {
     options.workspace === undefined
       ? Layer.empty
       : Layer.mock(WorkspaceProvisioner.WorkspaceProvisioner)({
-          prepare: () =>
-            Effect.succeed({
-              workspace: options.workspace!,
-              completion: Effect.void,
-              cancel: Effect.void,
-            }),
+          prepare:
+            options.prepareWorkspace ??
+            (() =>
+              Effect.succeed({
+                workspace: options.workspace!,
+                completion: Effect.void,
+                cancel: Effect.void,
+              })),
         }),
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
@@ -1839,7 +1842,7 @@ it.effect.each(["fails", "is interrupted"] as const)(
 );
 
 it.effect.each(["failed", "interrupted"] as const)(
-  "holds a message queued during setup that arrives after the setup %s",
+  "holds every message that arrives after the setup %s without a worktree",
   (ending) => {
     let fetchEntered: Deferred.Deferred<void> | null = null;
     const harness = makeHarness({
@@ -1901,9 +1904,9 @@ it.effect.each(["failed", "interrupted"] as const)(
       assert.equal(held.status, "queued");
       assert.equal(held.queueHeld, true);
 
-      // A message the user starts does not release it: the held message would
-      // run after it in the project checkout.
-      yield* threads.sendToThread({
+      // A message sent fresh after the setup ended waits behind it too, rather
+      // than starting in the project checkout with no worktree.
+      const sentAfter = yield* threads.sendToThread({
         projectId,
         commandId: CommandId.make(`command:launch:late-queued-follow-up-${ending}:start`),
         threadId: launched.threadId,
@@ -1914,6 +1917,7 @@ it.effect.each(["failed", "interrupted"] as const)(
         createdBy: "user",
         creationSource: "web",
       });
+      assert.equal(sentAfter.delivery, "queued");
       yield* threads.dispatch({
         type: "message.dispatch",
         commandId: CommandId.make(`command:launch:late-queued-follow-up-${ending}:wake`),
@@ -1929,9 +1933,7 @@ it.effect.each(["failed", "interrupted"] as const)(
       assert.equal(wake.status, "queued");
       assert.isTrue(wake.queueHeld);
 
-      // Nor does the next one, though the run that message started is now the
-      // latest and carries no workspace preparation.
-      yield* threads.sendToThread({
+      const sentAgain = yield* threads.sendToThread({
         projectId,
         commandId: CommandId.make(`command:launch:late-queued-follow-up-${ending}:again`),
         threadId: launched.threadId,
@@ -1942,8 +1944,19 @@ it.effect.each(["failed", "interrupted"] as const)(
         createdBy: "user",
         creationSource: "web",
       });
+      assert.equal(sentAgain.delivery, "queued");
       const after = yield* threads.getThreadProjection(launched.threadId);
       assert.isTrue(after.runs.find((run) => run.id === held.id)?.queueHeld);
+      assert.deepStrictEqual(
+        after.runs.slice(1).map((run) => [run.status, run.queueHeld === true]),
+        [
+          ["queued", true],
+          ["queued", true],
+          ["queued", true],
+          ["queued", true],
+        ],
+      );
+      assert.equal(after.thread.worktreePath, null);
     }).pipe(Effect.provide(harness.layer));
   },
 );
@@ -2719,6 +2732,8 @@ it.effect.each([false, true])(
     Effect.gen(function* () {
       const branchNameStarted = yield* Deferred.make<void>();
       const allowBranchName = yield* Deferred.make<void>();
+      const preparationStarted = yield* Deferred.make<void>();
+      const allowPreparation = yield* Deferred.make<void>();
       const workspace = workspaceFixture({ projectId });
       const temporaryWorkspace = {
         ...workspace,
@@ -2729,7 +2744,20 @@ it.effect.each([false, true])(
       };
       const harness = makeHarness({
         serverSettings: { branchNamePrefix: "t3" },
-        ...(group ? { workspace: temporaryWorkspace } : {}),
+        ...(group
+          ? {
+              workspace: temporaryWorkspace,
+              prepareWorkspace: () =>
+                Deferred.succeed(preparationStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(allowPreparation)),
+                  Effect.as({
+                    workspace: temporaryWorkspace,
+                    completion: Effect.void,
+                    cancel: Effect.void,
+                  }),
+                ),
+            }
+          : {}),
         generateBranchName: () =>
           Deferred.succeed(branchNameStarted, undefined).pipe(
             Effect.andThen(Deferred.await(allowBranchName)),
@@ -2783,8 +2811,23 @@ it.effect.each([false, true])(
             workspace: { type: "worktree", baseRef: "main" },
           }),
         );
-        yield* Deferred.await(branchNameStarted);
         const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+        if (group) {
+          yield* Deferred.await(preparationStarted);
+          assert.equal(
+            (yield* tracker.get(launched.threadId))?.stages.find((stage) => stage.id === "naming")
+              ?.status,
+            "pending",
+          );
+          assert.equal(harness.generateBranchName.mock.calls.length, 0);
+          yield* Deferred.succeed(allowPreparation, undefined);
+        }
+        yield* Deferred.await(branchNameStarted);
+        assert.equal(
+          (yield* tracker.get(launched.threadId))?.stages.find((stage) => stage.id === "naming")
+            ?.status,
+          "running",
+        );
         if (!group) {
           yield* tracker.stream(launched.threadId).pipe(
             Stream.filter(
@@ -3265,6 +3308,12 @@ it.effect.each([
     origin: false,
   },
   {
+    name: "was deleted on its remote",
+    baseRef: "origin/development",
+    startFromOrigin: true,
+    origin: true,
+  },
+  {
     name: "is a previous checkout there never was",
     baseRef: "-",
     startFromOrigin: false,
@@ -3274,6 +3323,7 @@ it.effect.each([
   Effect.gen(function* () {
     const harness = makeHarness({
       hasCommit: ({ refName }) => Effect.succeed(refName === "HEAD"),
+      fetchWorktreeBaseCommit: () => Effect.succeed(null),
       git: {
         resolveWorktreeBaseRemote: () =>
           Effect.succeed(testCase.origin ? { remoteName: "origin", branchName: "main" } : null),

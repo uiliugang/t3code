@@ -24,34 +24,37 @@ const decodeDevice = Schema.decodeUnknownEffect(Schema.fromJsonString(Device));
 const Phase = Schema.Literals(["running", "approval", "input", "completed", "failed", "end"]);
 const decodePhase = Schema.decodeUnknownEffect(Phase);
 
-class SmokeUsageError extends Schema.TaggedError<SmokeUsageError>()("SmokeUsageError", {}) {
+class SmokeUsageError extends Schema.TaggedError<
+  SmokeUsageError,
+  { readonly brand: unique symbol }
+>()("SmokeUsageError", {}) {
   override get message() {
     return "Usage: node scripts/android-push-smoke.ts <service-account.json> <device.json> <running|approval|input|completed|failed|end>";
   }
 }
 
-class SmokeCredentialReadError extends Schema.TaggedError<SmokeCredentialReadError>()(
-  "SmokeCredentialReadError",
-  { cause: Schema.Defect() },
-) {
+class SmokeCredentialReadError extends Schema.TaggedError<
+  SmokeCredentialReadError,
+  { readonly brand: unique symbol }
+>()("SmokeCredentialReadError", { cause: Schema.Defect() }) {
   override get message() {
     return "Could not read service-account file.";
   }
 }
 
-class SmokeDeviceReadError extends Schema.TaggedError<SmokeDeviceReadError>()(
-  "SmokeDeviceReadError",
-  { cause: Schema.Defect() },
-) {
+class SmokeDeviceReadError extends Schema.TaggedError<
+  SmokeDeviceReadError,
+  { readonly brand: unique symbol }
+>()("SmokeDeviceReadError", { cause: Schema.Defect() }) {
   override get message() {
     return "Could not read device file.";
   }
 }
 
-class SmokeUnregisteredDeviceError extends Schema.TaggedError<SmokeUnregisteredDeviceError>()(
-  "SmokeUnregisteredDeviceError",
-  {},
-) {
+class SmokeUnregisteredDeviceError extends Schema.TaggedError<
+  SmokeUnregisteredDeviceError,
+  { readonly brand: unique symbol }
+>()("SmokeUnregisteredDeviceError", {}) {
   override get message() {
     return "This device token is no longer registered with Firebase.";
   }

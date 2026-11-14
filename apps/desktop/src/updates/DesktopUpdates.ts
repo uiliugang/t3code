@@ -98,85 +98,85 @@ const decodeDownloadProgressInfo = Schema.decodeUnknownEffect(DownloadProgressIn
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
-export class DesktopUpdateActionInProgressError extends Schema.TaggedError<DesktopUpdateActionInProgressError>()(
-  "DesktopUpdateActionInProgressError",
-  {
-    action: Schema.Literals(["check", "download", "install", "channel"]),
-    requestedChannel: DesktopUpdateChannelSchema,
-  },
-) {
+export class DesktopUpdateActionInProgressError extends Schema.TaggedError<
+  DesktopUpdateActionInProgressError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdateActionInProgressError", {
+  action: Schema.Literals(["check", "download", "install", "channel"]),
+  requestedChannel: DesktopUpdateChannelSchema,
+}) {
   override get message(): string {
     return `Cannot change the desktop update channel to ${this.requestedChannel} while an update ${this.action} action is in progress.`;
   }
 }
 
-export class DesktopUpdateChannelPersistenceError extends Schema.TaggedError<DesktopUpdateChannelPersistenceError>()(
-  "DesktopUpdateChannelPersistenceError",
-  {
-    channel: DesktopUpdateChannelSchema,
-    cause: Schema.instanceOf(DesktopAppSettings.DesktopSettingsWriteError),
-  },
-) {
+export class DesktopUpdateChannelPersistenceError extends Schema.TaggedError<
+  DesktopUpdateChannelPersistenceError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdateChannelPersistenceError", {
+  channel: DesktopUpdateChannelSchema,
+  cause: Schema.instanceOf(DesktopAppSettings.DesktopSettingsWriteError),
+}) {
   override get message(): string {
     return `Failed to persist the ${this.channel} desktop update channel.`;
   }
 }
 
-export class DesktopUpdatePollerError extends Schema.TaggedError<DesktopUpdatePollerError>()(
-  "DesktopUpdatePollerError",
-  {
-    poller: Schema.Literals(["startup", "poll"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopUpdatePollerError extends Schema.TaggedError<
+  DesktopUpdatePollerError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdatePollerError", {
+  poller: Schema.Literals(["startup", "poll"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop update ${this.poller} poller failed.`;
   }
 }
 
-export class DesktopUpdateEventHandlingError extends Schema.TaggedError<DesktopUpdateEventHandlingError>()(
-  "DesktopUpdateEventHandlingError",
-  {
-    event: Schema.Literals(["update-available", "download-progress", "update-downloaded"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopUpdateEventHandlingError extends Schema.TaggedError<
+  DesktopUpdateEventHandlingError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdateEventHandlingError", {
+  event: Schema.Literals(["update-available", "download-progress", "update-downloaded"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to handle desktop update ${this.event} event.`;
   }
 }
 
-export class DesktopUpdaterReportedError extends Schema.TaggedError<DesktopUpdaterReportedError>()(
-  "DesktopUpdaterReportedError",
-  {
-    operation: Schema.Literals(["check", "download", "install", "channel", "background"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopUpdaterReportedError extends Schema.TaggedError<
+  DesktopUpdaterReportedError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdaterReportedError", {
+  operation: Schema.Literals(["check", "download", "install", "channel", "background"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop updater ${this.operation} operation reported an error.`;
   }
 }
 
-export class DesktopUpdateUnexpectedActionError extends Schema.TaggedError<DesktopUpdateUnexpectedActionError>()(
-  "DesktopUpdateUnexpectedActionError",
-  {
-    action: Schema.Literals(["download", "install"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopUpdateUnexpectedActionError extends Schema.TaggedError<
+  DesktopUpdateUnexpectedActionError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdateUnexpectedActionError", {
+  action: Schema.Literals(["download", "install"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop update ${this.action} action failed unexpectedly.`;
   }
 }
 
-export class DesktopUpdateChannelManagedError extends Schema.TaggedError<DesktopUpdateChannelManagedError>()(
-  "DesktopUpdateChannelManagedError",
-  {
-    channel: DesktopUpdateChannelSchema,
-    policyMessage: Schema.String,
-  },
-) {
+export class DesktopUpdateChannelManagedError extends Schema.TaggedError<
+  DesktopUpdateChannelManagedError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdateChannelManagedError", {
+  channel: DesktopUpdateChannelSchema,
+  policyMessage: Schema.String,
+}) {
   override get message(): string {
     return `${this.policyMessage} The ${this.channel} channel is not available.`;
   }

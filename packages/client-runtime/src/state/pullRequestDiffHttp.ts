@@ -18,15 +18,15 @@ import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAut
 
 const DEFAULT_PULL_REQUEST_DIFF_TIMEOUT_MS = 60_000;
 
-export class PullRequestDiffCredentialRejectedError extends Schema.TaggedError<PullRequestDiffCredentialRejectedError>()(
-  "PullRequestDiffCredentialRejectedError",
-  {
-    repository: Schema.String,
-    number: Schema.Number,
-    traceId: Schema.String,
-    cause: EnvironmentAuthInvalidError,
-  },
-) {
+export class PullRequestDiffCredentialRejectedError extends Schema.TaggedError<
+  PullRequestDiffCredentialRejectedError,
+  { readonly brand: unique symbol }
+>()("PullRequestDiffCredentialRejectedError", {
+  repository: Schema.String,
+  number: Schema.Number,
+  traceId: Schema.String,
+  cause: EnvironmentAuthInvalidError,
+}) {
   override get message(): string {
     return "This environment session is no longer valid (invalid_credential). Refresh the page or quit and reopen T3 Code.";
   }

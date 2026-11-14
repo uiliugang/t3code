@@ -42,10 +42,10 @@ const MAX_SPEECH_DURATION_SECONDS = 5 * 60;
 export const MAX_SPEECH_BYTES =
   SAMPLE_RATE * Float32Array.BYTES_PER_ELEMENT * MAX_SPEECH_DURATION_SECONDS;
 
-export class SpeechInvalidAudioError extends Schema.TaggedError<SpeechInvalidAudioError>()(
-  "SpeechInvalidAudioError",
-  { byteLength: Schema.Number, message: Schema.String },
-) {}
+export class SpeechInvalidAudioError extends Schema.TaggedError<
+  SpeechInvalidAudioError,
+  { readonly brand: unique symbol }
+>()("SpeechInvalidAudioError", { byteLength: Schema.Number, message: Schema.String }) {}
 
 export function decodeSpeechPcm(pcmBytes: Uint8Array): Float32Array {
   if (
@@ -72,33 +72,36 @@ export function decodeSpeechPcm(pcmBytes: Uint8Array): Float32Array {
   return pcm;
 }
 
-export class SpeechOperationError extends Schema.TaggedError<SpeechOperationError>()(
-  "SpeechOperationError",
-  { operation: Schema.String, cause: Schema.Defect() },
-) {
+export class SpeechOperationError extends Schema.TaggedError<
+  SpeechOperationError,
+  { readonly brand: unique symbol }
+>()("SpeechOperationError", { operation: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Environment speech ${this.operation} failed.`;
   }
 }
 
-export class SpeechUnsupportedPlatformError extends Schema.TaggedError<SpeechUnsupportedPlatformError>()(
-  "SpeechUnsupportedPlatformError",
-  { platform: Schema.String, architecture: Schema.String },
-) {}
+export class SpeechUnsupportedPlatformError extends Schema.TaggedError<
+  SpeechUnsupportedPlatformError,
+  { readonly brand: unique symbol }
+>()("SpeechUnsupportedPlatformError", { platform: Schema.String, architecture: Schema.String }) {}
 
-export class SpeechBusyError extends Schema.TaggedError<SpeechBusyError>()("SpeechBusyError", {
+export class SpeechBusyError extends Schema.TaggedError<
+  SpeechBusyError,
+  { readonly brand: unique symbol }
+>()("SpeechBusyError", {
   operation: Schema.String,
 }) {}
 
-export class SpeechModelNotFoundError extends Schema.TaggedError<SpeechModelNotFoundError>()(
-  "SpeechModelNotFoundError",
-  { modelId: Schema.String },
-) {}
+export class SpeechModelNotFoundError extends Schema.TaggedError<
+  SpeechModelNotFoundError,
+  { readonly brand: unique symbol }
+>()("SpeechModelNotFoundError", { modelId: Schema.String }) {}
 
-export class SpeechDownloadCancelledError extends Schema.TaggedError<SpeechDownloadCancelledError>()(
-  "SpeechDownloadCancelledError",
-  { modelId: Schema.String },
-) {}
+export class SpeechDownloadCancelledError extends Schema.TaggedError<
+  SpeechDownloadCancelledError,
+  { readonly brand: unique symbol }
+>()("SpeechDownloadCancelledError", { modelId: Schema.String }) {}
 
 export type SpeechError =
   | SpeechOperationError

@@ -25,13 +25,13 @@ const decodePasskeyPackageMetadata = Schema.decodeEffect(
   Schema.fromJsonString(PasskeyPackageMetadata),
 );
 
-export class PreviewPasskeysConfigureError extends Schema.TaggedError<PreviewPasskeysConfigureError>()(
-  "PreviewPasskeysConfigureError",
-  {
-    keychainAccessGroup: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class PreviewPasskeysConfigureError extends Schema.TaggedError<
+  PreviewPasskeysConfigureError,
+  { readonly brand: unique symbol }
+>()("PreviewPasskeysConfigureError", {
+  keychainAccessGroup: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to enable Touch ID passkeys for the in-app browser (keychain group ${this.keychainAccessGroup}).`;
   }

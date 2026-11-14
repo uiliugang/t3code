@@ -81,13 +81,13 @@ import {
   CANCEL_PICK_CHANNEL,
   ELEMENT_PICKED_CHANNEL,
   HUMAN_INPUT_CHANNEL,
-  MOUSE_NAVIGATE_CHANNEL,
   PAGE_UNHANDLED_SHORTCUT_CHANNEL,
   RECORDING_CURSOR_CHANNEL,
   RECORDING_INPUT_CHANNEL,
   RECORDING_CONTROLLER_CHANNEL,
   RECORDING_POINTER_CHANNEL,
   START_PICK_CHANNEL,
+  THUMB_PRESS_CHANNEL,
 } from "./GuestProtocol.ts";
 import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 import { captureFavicon, safeHttpOrigin, selectFaviconCandidates } from "./FaviconCapture.ts";
@@ -1490,15 +1490,27 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const humanInput = (_event: unknown, rawSignal?: unknown): void => {
       runFork(handleHumanInput(rawSignal));
     };
-    const mouseNavigate = (_event: unknown, payload?: unknown): void => {
-      const direction =
-        typeof payload === "object" && payload !== null && "direction" in payload
-          ? (payload as { direction?: unknown }).direction
-          : undefined;
-      if (direction !== "back" && direction !== "forward") return;
+    // Chromium navigates the outermost WebContents (the host app) on thumb buttons, even from guest iframes.
+    const beforeMouse = (event: Electron.Event, mouse: Electron.MouseInputEvent): void => {
+      // Electron reports thumb buttons as "back" and "forward", which its typings omit.
+      const button: string | undefined = mouse.button;
+      if (button !== "back" && button !== "forward") return;
+      if (mouse.type !== "mouseDown" && mouse.type !== "mouseUp") return;
+      event.preventDefault();
+      // The page never sees the press, so the guest replays it; these coordinates are DIPs, not CSS px.
+      const zoom = wc.getZoomFactor();
+      const phase = mouse.type === "mouseDown" ? "down" : "up";
+      wc.send(
+        THUMB_PRESS_CHANNEL,
+        phase,
+        mouse.x / zoom,
+        mouse.y / zoom,
+        button === "back" ? 3 : 4,
+      );
+      if (phase !== "up") return;
       runFork(
         attempt({ operation: "mouseNavigate", tabId, webContentsId: wc.id }, () => {
-          if (direction === "back") {
+          if (button === "back") {
             if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
           } else if (wc.navigationHistory.canGoForward()) {
             wc.navigationHistory.goForward();
@@ -1608,9 +1620,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("found-in-page", foundInPage as never);
         wc.off("did-create-window", windowCreated);
         wc.off("before-input-event", beforeInput);
+        wc.off("before-mouse-event", beforeMouse);
         wc.ipc.off(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.off(RECORDING_INPUT_CHANNEL, recordingInput);
-        wc.ipc.off(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
         wc.ipc.off(PAGE_UNHANDLED_SHORTCUT_CHANNEL, pageUnhandledShortcut);
         detachPasskeys();
       }).pipe(Effect.ignore),
@@ -1631,7 +1643,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.on("found-in-page", foundInPage as never);
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.on(RECORDING_INPUT_CHANNEL, recordingInput);
-        wc.ipc.on(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
         wc.ipc.on(PAGE_UNHANDLED_SHORTCUT_CHANNEL, pageUnhandledShortcut);
         detachPasskeys = passkeys.attachGuest(wc);
         wc.setWindowOpenHandler((details) => {
@@ -1645,7 +1656,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               emitOpenLink({
                 tabId,
                 url: details.url,
-                background: details.disposition === "background-tab",
+                // A person's own click or key leaves the guest a focused frame; GuestInput hands
+                // focus back after the agent's press, so a foreground tab would take it again.
+                background:
+                  details.disposition === "background-tab" ||
+                  (wc.focusedFrame === null && browserHost.agentLedPage(wc)),
               }),
             );
             return { action: "deny" };
@@ -1659,6 +1674,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         });
         wc.on("did-create-window", windowCreated);
         wc.on("before-input-event", beforeInput);
+        wc.on("before-mouse-event", beforeMouse);
       });
       yield* Ref.update(attachedRef, (attached) =>
         replaceMap(attached, (copy) => {
@@ -2111,22 +2127,39 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       return;
     }
     let unloadPrevented = false;
+    let failedLoadCode: number | undefined;
     const onPreventUnload = () => {
       unloadPrevented = true;
     };
+    const onFailedLoad = (
+      _event: Electron.Event,
+      code: number,
+      _description: string,
+      _validatedUrl: string,
+      isMainFrame: boolean,
+    ) => {
+      if (isMainFrame && code !== -3) failedLoadCode = code;
+    };
     yield* attemptPromise({ operation: "navigate.loadURL", tabId, webContentsId: wc.id }, () => {
       wc.on("will-prevent-unload", onPreventUnload);
+      wc.on("did-fail-load", onFailedLoad);
       return wc.loadURL(url);
     }).pipe(
-      // Blocked unloads and superseding navigations both reject with ERR_ABORTED.
+      // Page failures already reach the tab through did-fail-load; blocked unloads still reject.
       Effect.catchIf(
         (error) =>
           !unloadPrevented &&
           Predicate.hasProperty(error.cause, "errno") &&
-          error.cause.errno === -3,
+          (error.cause.errno === -3 ||
+            (failedLoadCode !== undefined && error.cause.errno === failedLoadCode)),
         () => Effect.void,
       ),
-      Effect.ensuring(Effect.sync(() => wc.off("will-prevent-unload", onPreventUnload))),
+      Effect.ensuring(
+        Effect.sync(() => {
+          wc.off("will-prevent-unload", onPreventUnload);
+          wc.off("did-fail-load", onFailedLoad);
+        }),
+      ),
     );
   });
 
@@ -2148,6 +2181,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
     });
   const refresh = (tabId: string) => withWebContents("refresh", tabId, (wc) => wc.reload());
+  const stopLoading = (tabId: string) => withWebContents("stopLoading", tabId, (wc) => wc.stop());
   const hardReload = (tabId: string) =>
     withWebContents("hardReload", tabId, (wc) => wc.reloadIgnoringCache());
   const findInPage = (
@@ -3531,6 +3565,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     prepareWebview,
     reapplyZoom,
     refresh,
+    stopLoading,
     registerWebview,
     resetZoom: (tabId: string) => applyZoom(tabId, () => DEFAULT_ZOOM_FACTOR),
     setZoomFactor: (tabId: string, zoomFactor: number) =>
@@ -3564,77 +3599,77 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   };
 });
 
-export class PreviewTabNotFoundError extends Schema.TaggedError<PreviewTabNotFoundError>()(
-  "PreviewTabNotFoundError",
-  { tabId: Schema.String },
-) {
+export class PreviewTabNotFoundError extends Schema.TaggedError<
+  PreviewTabNotFoundError,
+  { readonly brand: unique symbol }
+>()("PreviewTabNotFoundError", { tabId: Schema.String }) {
   override get message(): string {
     return `Preview tab not found: ${this.tabId}`;
   }
 }
 
-export class PreviewWebContentsNotFoundError extends Schema.TaggedError<PreviewWebContentsNotFoundError>()(
-  "PreviewWebContentsNotFoundError",
-  { tabId: Schema.String, webContentsId: Schema.Number },
-) {
+export class PreviewWebContentsNotFoundError extends Schema.TaggedError<
+  PreviewWebContentsNotFoundError,
+  { readonly brand: unique symbol }
+>()("PreviewWebContentsNotFoundError", { tabId: Schema.String, webContentsId: Schema.Number }) {
   override get message(): string {
     return `WebContents ${this.webContentsId} not found for preview tab ${this.tabId}`;
   }
 }
 
-export class PreviewWebviewNotInitializedError extends Schema.TaggedError<PreviewWebviewNotInitializedError>()(
-  "PreviewWebviewNotInitializedError",
-  { tabId: Schema.String },
-) {
+export class PreviewWebviewNotInitializedError extends Schema.TaggedError<
+  PreviewWebviewNotInitializedError,
+  { readonly brand: unique symbol }
+>()("PreviewWebviewNotInitializedError", { tabId: Schema.String }) {
   override get message(): string {
     return `Preview tab "${this.tabId}" has no webview registered`;
   }
 }
 
-export class PreviewMainWindowClosedError extends Schema.TaggedError<PreviewMainWindowClosedError>()(
-  "PreviewMainWindowClosedError",
-  { tabId: Schema.String },
-) {
+export class PreviewMainWindowClosedError extends Schema.TaggedError<
+  PreviewMainWindowClosedError,
+  { readonly brand: unique symbol }
+>()("PreviewMainWindowClosedError", { tabId: Schema.String }) {
   override get message(): string {
     return `Cannot start preview frame capture while the main window is closed: ${this.tabId}`;
   }
 }
 
-export class PreviewRecordingArmConflictError extends Schema.TaggedError<PreviewRecordingArmConflictError>()(
-  "PreviewRecordingArmConflictError",
-  {
-    tabId: Schema.String,
-    webContentsId: Schema.Number,
-    armedTabId: Schema.String,
-  },
-) {
+export class PreviewRecordingArmConflictError extends Schema.TaggedError<
+  PreviewRecordingArmConflictError,
+  { readonly brand: unique symbol }
+>()("PreviewRecordingArmConflictError", {
+  tabId: Schema.String,
+  webContentsId: Schema.Number,
+  armedTabId: Schema.String,
+}) {
   override get message(): string {
     return `Preview tab ${this.armedTabId} is still claiming the capture stream, so recording could not start for tab ${this.tabId}`;
   }
 }
 
-export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedError<PreviewRecordingCaptureUnavailableError>()(
-  "PreviewRecordingCaptureUnavailableError",
-  {
-    tabId: Schema.String,
-    webContentsId: Schema.Number,
-  },
-) {
+export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedError<
+  PreviewRecordingCaptureUnavailableError,
+  { readonly brand: unique symbol }
+>()("PreviewRecordingCaptureUnavailableError", {
+  tabId: Schema.String,
+  webContentsId: Schema.Number,
+}) {
   override get message(): string {
     return `Preview recording capture is unavailable for tab ${this.tabId} in WebContents ${this.webContentsId}`;
   }
 }
 
-export class PreviewOperationError extends Schema.TaggedError<PreviewOperationError>()(
-  "PreviewOperationError",
-  {
-    operation: Schema.String,
-    tabId: Schema.optional(Schema.String),
-    webContentsId: Schema.optional(Schema.Number),
-    artifactPath: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class PreviewOperationError extends Schema.TaggedError<
+  PreviewOperationError,
+  { readonly brand: unique symbol }
+>()("PreviewOperationError", {
+  operation: Schema.String,
+  tabId: Schema.optional(Schema.String),
+  webContentsId: Schema.optional(Schema.Number),
+  artifactPath: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   static toTimelineMessage(error: PreviewOperationError): string {
     return error.cause instanceof Error ? error.cause.message : String(error.cause);
   }
@@ -3651,40 +3686,40 @@ export class PreviewOperationError extends Schema.TaggedError<PreviewOperationEr
 
 const isPreviewOperationError = Schema.is(PreviewOperationError);
 
-export class PreviewArtifactPathOutsideDirectoryError extends Schema.TaggedError<PreviewArtifactPathOutsideDirectoryError>()(
-  "PreviewArtifactPathOutsideDirectoryError",
-  {
-    artifactPath: Schema.String,
-    artifactDirectory: Schema.String,
-  },
-) {
+export class PreviewArtifactPathOutsideDirectoryError extends Schema.TaggedError<
+  PreviewArtifactPathOutsideDirectoryError,
+  { readonly brand: unique symbol }
+>()("PreviewArtifactPathOutsideDirectoryError", {
+  artifactPath: Schema.String,
+  artifactDirectory: Schema.String,
+}) {
   override get message(): string {
     return `Preview artifact path ${this.artifactPath} is outside ${this.artifactDirectory}`;
   }
 }
 
-export class PreviewArtifactImageLoadError extends Schema.TaggedError<PreviewArtifactImageLoadError>()(
-  "PreviewArtifactImageLoadError",
-  { artifactPath: Schema.String },
-) {
+export class PreviewArtifactImageLoadError extends Schema.TaggedError<
+  PreviewArtifactImageLoadError,
+  { readonly brand: unique symbol }
+>()("PreviewArtifactImageLoadError", { artifactPath: Schema.String }) {
   override get message(): string {
     return `Preview artifact could not be loaded as an image: ${this.artifactPath}`;
   }
 }
 
-export class PreviewAutomationDevToolsOpenError extends Schema.TaggedError<PreviewAutomationDevToolsOpenError>()(
-  "PreviewAutomationDevToolsOpenError",
-  { webContentsId: Schema.Number },
-) {
+export class PreviewAutomationDevToolsOpenError extends Schema.TaggedError<
+  PreviewAutomationDevToolsOpenError,
+  { readonly brand: unique symbol }
+>()("PreviewAutomationDevToolsOpenError", { webContentsId: Schema.Number }) {
   override get message(): string {
     return `Close preview DevTools before using agent browser control for WebContents ${this.webContentsId}`;
   }
 }
 
-export class PreviewAutomationDebuggerAttachedError extends Schema.TaggedError<PreviewAutomationDebuggerAttachedError>()(
-  "PreviewAutomationDebuggerAttachedError",
-  { webContentsId: Schema.Number },
-) {
+export class PreviewAutomationDebuggerAttachedError extends Schema.TaggedError<
+  PreviewAutomationDebuggerAttachedError,
+  { readonly brand: unique symbol }
+>()("PreviewAutomationDebuggerAttachedError", { webContentsId: Schema.Number }) {
   override get message(): string {
     return `Preview control cannot attach to WebContents ${this.webContentsId} because another debugger owns it`;
   }
@@ -3732,6 +3767,7 @@ export class PreviewManager extends Context.Service<
     readonly goBack: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly goForward: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly refresh: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly stopLoading: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly zoomIn: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly zoomOut: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly resetZoom: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
@@ -3906,6 +3942,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     goBack: operations.goBack,
     goForward: operations.goForward,
     refresh: operations.refresh,
+    stopLoading: operations.stopLoading,
     zoomIn: operations.zoomIn,
     zoomOut: operations.zoomOut,
     resetZoom: operations.resetZoom,

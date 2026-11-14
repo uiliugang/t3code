@@ -98,7 +98,10 @@ export function resolveMuseReasoningEffort(
   return descriptor.options.find((option) => option.id === descriptor.currentValue)?.id;
 }
 
-class MuseCatalogError extends Schema.TaggedError<MuseCatalogError>()("MuseCatalogError", {
+class MuseCatalogError extends Schema.TaggedError<
+  MuseCatalogError,
+  { readonly brand: unique symbol }
+>()("MuseCatalogError", {
   detail: Schema.String,
 }) {}
 

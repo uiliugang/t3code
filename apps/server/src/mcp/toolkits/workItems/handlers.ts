@@ -24,11 +24,15 @@ const mutate = Effect.fn("WorkItemMcp.mutate")(function* (input: WorkItemCommand
     }
   }
   if (context.caller !== undefined) {
-    const projectId =
+    const target =
       input.type === "create"
-        ? input.projectId
-        : (yield* service.get(input.id).pipe(Effect.mapError(unavailable))).projectId;
-    if (projectId !== context.caller.projectId)
+        ? undefined
+        : yield* service.get(input.id).pipe(Effect.mapError(unavailable));
+    const projectId = input.type === "create" ? input.projectId : target?.projectId;
+    if (
+      projectId !== context.caller.projectId &&
+      !target?.sources.some((source) => source.threadId === context.scope.thread?.threadId)
+    )
       return yield* new OrchestratorMcpFailure({
         code: "invalid_request",
         message: "This task must belong to the calling thread's project.",
@@ -46,6 +50,52 @@ const mutate = Effect.fn("WorkItemMcp.mutate")(function* (input: WorkItemCommand
 });
 
 export const layer = McpToolAccess.toLayer(WorkItemToolkit, {
+  work_item_link_issue: McpToolAccess.writes((input) => mutate({ ...input, type: "link_issue" })),
+  work_item_associate_issue: McpToolAccess.writes((input) =>
+    Effect.gen(function* () {
+      const context = yield* readCaller();
+      const threadId = context.scope.thread?.threadId ?? input.threadId;
+      if (
+        threadId === undefined ||
+        (context.scope.thread !== undefined &&
+          input.threadId !== undefined &&
+          input.threadId !== threadId)
+      )
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "Associate the calling conversation only.",
+        });
+      const thread = yield* context.threads
+        .getThreadShell(threadId)
+        .pipe(Effect.mapError(unavailable));
+      if (thread === null)
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "Conversation unavailable.",
+        });
+      const service = yield* WorkItems.WorkItemService;
+      return yield* service
+        .associateIssue({
+          projectId: thread.projectId,
+          threadId,
+          issue: input.issue,
+          title: input.title,
+        })
+        .pipe(Effect.mapError(unavailable));
+    }),
+  ),
+  work_item_update_delivery_scope: McpToolAccess.writes((input) =>
+    mutate({ ...input, type: "delivery_scope" }),
+  ),
+  work_item_confirm_delivery_scope: McpToolAccess.writes((input) =>
+    mutate({ ...input, type: "confirm_scope" }),
+  ),
+  work_item_report_release: McpToolAccess.writes((input) =>
+    mutate({ ...input, type: "release_plans" }),
+  ),
+  work_item_report_delivery_exception: McpToolAccess.writes((input) =>
+    mutate({ ...input, type: "delivery_exception" }),
+  ),
   work_item_list: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const context = yield* readCaller();
@@ -61,7 +111,11 @@ export const layer = McpToolAccess.toLayer(WorkItemToolkit, {
       const service = yield* WorkItems.WorkItemService;
       const item = yield* service.get(input.id).pipe(Effect.mapError(unavailable));
       const projectId = input.projectId ?? context.caller?.projectId;
-      if (projectId !== undefined && item.projectId !== projectId)
+      if (
+        projectId !== undefined &&
+        item.projectId !== projectId &&
+        !item.sources.some((source) => source.threadId === context.scope.thread?.threadId)
+      )
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
           message: "The task does not belong to this project.",

@@ -110,6 +110,8 @@ import * as ClaudeAdapterV2 from "./ClaudeAdapterV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderInstallationGate from "../../provider/ProviderInstallationGate.ts";
 import { ClaudeOrchestratorReplayHarness } from "./ClaudeAdapterV2.testkit.ts";
+import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import { withInlineContext } from "../ContextHandoffDelivery.ts";
 import { provideDeterministicTestRuntime } from "../testkit/DeterministicRuntime.ts";
 import { runOrchestratorV2Scenario } from "../testkit/OrchestratorScenario.ts";
 import { layerProviderReplay } from "../testkit/ProviderReplayHarness.ts";
@@ -5590,6 +5592,55 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  // regression: #34393 a provider switch replayed a $skill from the handoff history
+  it.effect("dispatches only skills from the user's text, not from inline handoff history", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homePath = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skill-handoff-" });
+      const directory = path.join(homePath, "skills", "review");
+      yield* fs.makeDirectory(directory, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(directory, "SKILL.md"),
+        "---\nname: review\n---\nFollow the review instructions.\n",
+      );
+      const harness = yield* makeWakeHarnessWithOptions({
+        settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath },
+      });
+      const history = "Context handoff:\n[Historical user; user_message]\n$review the diff";
+      const text = withInlineContext(history, "continue");
+      yield* harness.runtime.startTurn({
+        ...makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("skill-handoff"),
+          text,
+          attachments: [],
+          runtimePolicy: { ...CLAUDE_TEST_RUNTIME_POLICY, cwd: homePath },
+        }),
+        inlineContextLength: text.length - "continue".length,
+      });
+
+      const content = harness.offeredMessages[0]?.message.content;
+      const blocks =
+        typeof content === "string"
+          ? [content]
+          : (content ?? []).map((block) => (block.type === "text" ? block.text : ""));
+      assert.isFalse(blocks.some((text) => text.startsWith("/review")));
+      assert.include(blocks.join("\n"), "$review the diff");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   // regression: #15475 MCP title arriving after the tool starts must survive to completion
   it.effect.each([
     { isError: false, title: "Check weather" },
@@ -10538,7 +10589,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         driver: ProviderDriverKind.make("claudeAgent"),
         modelSelection: CLAUDE_MODEL_SELECTION,
       }).pipe(Effect.provide(IdAllocator.layer), provideDeterministicTestRuntime);
-      const scenario = { name: transcript.scenario, transcript, ...materialized };
+      const workspace = yield* checkpointWorkspace(transcript.scenario);
+      const scenario = {
+        name: transcript.scenario,
+        transcript,
+        ...materialized,
+        runtimePolicyOverride: { cwd: workspace },
+      };
       yield* Effect.gen(function* () {
         const result = yield* runOrchestratorV2Scenario(scenario);
         assertBaseProjection({ result, transcript, runCount: 1, runStatuses: ["completed"] });
@@ -10559,7 +10616,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         provideDeterministicTestRuntime,
         Effect.scoped,
       );
-    }),
+    }).pipe(Effect.scoped),
   );
 
   it.effect(

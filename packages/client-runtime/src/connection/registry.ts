@@ -69,23 +69,23 @@ function unsupportedState(
   };
 }
 
-export class EnvironmentNotRegisteredError extends Schema.TaggedError<EnvironmentNotRegisteredError>()(
-  "EnvironmentNotRegisteredError",
-  {
-    environmentId: EnvironmentId,
-  },
-) {
+export class EnvironmentNotRegisteredError extends Schema.TaggedError<
+  EnvironmentNotRegisteredError,
+  { readonly brand: unique symbol }
+>()("EnvironmentNotRegisteredError", {
+  environmentId: EnvironmentId,
+}) {
   override get message(): string {
     return `Environment ${this.environmentId} is not registered.`;
   }
 }
 
-export class PlatformEnvironmentRemovalError extends Schema.TaggedError<PlatformEnvironmentRemovalError>()(
-  "PlatformEnvironmentRemovalError",
-  {
-    environmentId: EnvironmentId,
-  },
-) {
+export class PlatformEnvironmentRemovalError extends Schema.TaggedError<
+  PlatformEnvironmentRemovalError,
+  { readonly brand: unique symbol }
+>()("PlatformEnvironmentRemovalError", {
+  environmentId: EnvironmentId,
+}) {
   override get message(): string {
     return `Platform-managed environment ${this.environmentId} cannot be removed.`;
   }

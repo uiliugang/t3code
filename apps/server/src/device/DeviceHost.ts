@@ -13,7 +13,10 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
 
-export class DeviceHostError extends Schema.TaggedError<DeviceHostError>()("DeviceHostError", {
+export class DeviceHostError extends Schema.TaggedError<
+  DeviceHostError,
+  { readonly brand: unique symbol }
+>()("DeviceHostError", {
   hostId: Schema.String,
   step: Schema.String,
   cause: Schema.Defect(),
@@ -23,30 +26,30 @@ export class DeviceHostError extends Schema.TaggedError<DeviceHostError>()("Devi
   }
 }
 
-export class DeviceHostTimeoutError extends Schema.TaggedError<DeviceHostTimeoutError>()(
-  "DeviceHostTimeoutError",
-  { hostId: Schema.String, timeoutMs: Schema.Number },
-) {
+export class DeviceHostTimeoutError extends Schema.TaggedError<
+  DeviceHostTimeoutError,
+  { readonly brand: unique symbol }
+>()("DeviceHostTimeoutError", { hostId: Schema.String, timeoutMs: Schema.Number }) {
   override get message(): string {
     return `Device host ${this.hostId} did not start agent tools within ${this.timeoutMs} ms.`;
   }
 }
 
-export class AgentDeviceStartError extends Schema.TaggedError<AgentDeviceStartError>()(
-  "AgentDeviceStartError",
-  {
-    hostId: Schema.String,
-    stateDir: Schema.String,
-    exitCode: Schema.NullOr(Schema.Int),
-    reason: Schema.Literals([
-      "daemon_lock_not_directory",
-      "daemon_registration_unproven",
-      "daemon_retirement_unconfirmed",
-      "command_failed",
-    ]),
-    cause: Schema.Defect(),
-  },
-) {
+export class AgentDeviceStartError extends Schema.TaggedError<
+  AgentDeviceStartError,
+  { readonly brand: unique symbol }
+>()("AgentDeviceStartError", {
+  hostId: Schema.String,
+  stateDir: Schema.String,
+  exitCode: Schema.NullOr(Schema.Int),
+  reason: Schema.Literals([
+    "daemon_lock_not_directory",
+    "daemon_registration_unproven",
+    "daemon_retirement_unconfirmed",
+    "command_failed",
+  ]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const exit = this.exitCode === null ? "" : ` (exit code ${this.exitCode})`;
     const detail =
@@ -206,6 +209,7 @@ export class DeviceHost extends Context.Service<
       DeviceHostError | DeviceHostTimeoutError | AgentDeviceStartError | NodeRuntimeUnavailableError
     >;
     readonly current: Effect.Effect<DeviceHostReady | null>;
+    readonly releaseAgentSession: NonNullable<DeviceHostReady["releaseAgentSession"]>;
     readonly stopAgent: Effect.Effect<void>;
     /** Stops helpers. Devices themselves keep running; the user owns those. */
     readonly stop: Effect.Effect<void>;

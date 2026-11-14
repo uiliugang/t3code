@@ -42,10 +42,10 @@ interface LastStep {
   readonly payload: Uint8Array | null;
 }
 
-class AntigravitySessionLogError extends Schema.TaggedError<AntigravitySessionLogError>()(
-  "AntigravitySessionLogError",
-  { cause: Schema.Defect() },
-) {
+class AntigravitySessionLogError extends Schema.TaggedError<
+  AntigravitySessionLogError,
+  { readonly brand: unique symbol }
+>()("AntigravitySessionLogError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not read the Antigravity session log.";
   }

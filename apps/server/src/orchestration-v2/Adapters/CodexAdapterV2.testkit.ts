@@ -23,15 +23,15 @@ import * as CodexAdapterV2 from "./CodexAdapterV2.ts";
 
 const DEFAULT_CODEX_SETTINGS = Schema.decodeSync(CodexSettings)({});
 
-export class CodexReplayTranscriptDecodeError extends Schema.TaggedError<CodexReplayTranscriptDecodeError>()(
-  "CodexReplayTranscriptDecodeError",
-  {
-    driver: Schema.optional(Schema.String),
-    protocol: Schema.optional(Schema.String),
-    scenario: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class CodexReplayTranscriptDecodeError extends Schema.TaggedError<
+  CodexReplayTranscriptDecodeError,
+  { readonly brand: unique symbol }
+>()("CodexReplayTranscriptDecodeError", {
+  driver: Schema.optional(Schema.String),
+  protocol: Schema.optional(Schema.String),
+  scenario: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode Codex app-server replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
   }

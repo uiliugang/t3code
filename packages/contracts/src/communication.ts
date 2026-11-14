@@ -30,6 +30,9 @@ export const PullRequestSendReviewLinkInput = Schema.Struct({
   reviewerMis: DaxiangRecipients,
 });
 export type PullRequestSendReviewLinkInput = typeof PullRequestSendReviewLinkInput.Type;
-export class DaxiangSendError extends Schema.TaggedError<DaxiangSendError>()("DaxiangSendError", {
+export class DaxiangSendError extends Schema.TaggedError<
+  DaxiangSendError,
+  { readonly brand: unique symbol }
+>()("DaxiangSendError", {
   message: Schema.String,
 }) {}

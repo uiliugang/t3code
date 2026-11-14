@@ -11,10 +11,10 @@ import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 
-class HeapSnapshotWriteError extends Schema.TaggedError<HeapSnapshotWriteError>()(
-  "HeapSnapshotWriteError",
-  { path: Schema.String, cause: Schema.Defect() },
-) {
+class HeapSnapshotWriteError extends Schema.TaggedError<
+  HeapSnapshotWriteError,
+  { readonly brand: unique symbol }
+>()("HeapSnapshotWriteError", { path: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not write a heap snapshot to ${this.path}.`;
   }

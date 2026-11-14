@@ -154,24 +154,24 @@ export interface McpOAuthClient {
   readonly peerLink: boolean;
 }
 
-export class McpOAuthPageError extends Schema.TaggedError<McpOAuthPageError>()(
-  "McpOAuthPageError",
-  { description: Schema.String },
-) {
+export class McpOAuthPageError extends Schema.TaggedError<
+  McpOAuthPageError,
+  { readonly brand: unique symbol }
+>()("McpOAuthPageError", { description: Schema.String }) {
   override get message(): string {
     return this.description;
   }
 }
 
-export class McpOAuthRedirectError extends Schema.TaggedError<McpOAuthRedirectError>()(
-  "McpOAuthRedirectError",
-  {
-    error: Schema.Literals(["invalid_request", "unsupported_response_type", "invalid_target"]),
-    description: Schema.String,
-    redirectUri: Schema.String,
-    state: Schema.optional(Schema.RedactedFromValue(Schema.String)),
-  },
-) {}
+export class McpOAuthRedirectError extends Schema.TaggedError<
+  McpOAuthRedirectError,
+  { readonly brand: unique symbol }
+>()("McpOAuthRedirectError", {
+  error: Schema.Literals(["invalid_request", "unsupported_response_type", "invalid_target"]),
+  description: Schema.String,
+  redirectUri: Schema.String,
+  state: Schema.optional(Schema.RedactedFromValue(Schema.String)),
+}) {}
 
 export interface AuthorizationRequest {
   readonly client: McpOAuthClient;

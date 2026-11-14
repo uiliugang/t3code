@@ -137,70 +137,70 @@ export const AttachmentDeleteInput = Schema.Struct({
 });
 export type AttachmentDeleteInput = typeof AttachmentDeleteInput.Type;
 
-export class AttachmentUploadSigningKeyError extends Schema.TaggedError<AttachmentUploadSigningKeyError>()(
-  "AttachmentUploadSigningKeyError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class AttachmentUploadSigningKeyError extends Schema.TaggedError<
+  AttachmentUploadSigningKeyError,
+  { readonly brand: unique symbol }
+>()("AttachmentUploadSigningKeyError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to load the attachment upload signing key.";
   }
 }
 
-export class AssetWorkspaceContextNotFoundError extends Schema.TaggedError<AssetWorkspaceContextNotFoundError>()(
-  "AssetWorkspaceContextNotFoundError",
-  {
-    resource: AssetResource,
-  },
-) {
+export class AssetWorkspaceContextNotFoundError extends Schema.TaggedError<
+  AssetWorkspaceContextNotFoundError,
+  { readonly brand: unique symbol }
+>()("AssetWorkspaceContextNotFoundError", {
+  resource: AssetResource,
+}) {
   override get message(): string {
     return "Workspace context was not found.";
   }
 }
 
-export class AssetWorkspaceContextResolutionError extends Schema.TaggedError<AssetWorkspaceContextResolutionError>()(
-  "AssetWorkspaceContextResolutionError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetWorkspaceContextResolutionError extends Schema.TaggedError<
+  AssetWorkspaceContextResolutionError,
+  { readonly brand: unique symbol }
+>()("AssetWorkspaceContextResolutionError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to resolve workspace context.";
   }
 }
 
-export class AssetWorkspaceRootNormalizationError extends Schema.TaggedError<AssetWorkspaceRootNormalizationError>()(
-  "AssetWorkspaceRootNormalizationError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetWorkspaceRootNormalizationError extends Schema.TaggedError<
+  AssetWorkspaceRootNormalizationError,
+  { readonly brand: unique symbol }
+>()("AssetWorkspaceRootNormalizationError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to normalize the workspace root.";
   }
 }
 
-export class AssetWorkspacePathValidationError extends Schema.TaggedError<AssetWorkspacePathValidationError>()(
-  "AssetWorkspacePathValidationError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetWorkspacePathValidationError extends Schema.TaggedError<
+  AssetWorkspacePathValidationError,
+  { readonly brand: unique symbol }
+>()("AssetWorkspacePathValidationError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Workspace file path must be relative to the project root.";
   }
 }
 
-export class AssetPreviewTypeValidationError extends Schema.TaggedError<AssetPreviewTypeValidationError>()(
-  "AssetPreviewTypeValidationError",
-  {
-    resource: AssetResource,
-  },
-) {
+export class AssetPreviewTypeValidationError extends Schema.TaggedError<
+  AssetPreviewTypeValidationError,
+  { readonly brand: unique symbol }
+>()("AssetPreviewTypeValidationError", {
+  resource: AssetResource,
+}) {
   override get message(): string {
     return this.resource._tag === "media-file" || this.resource._tag === "draft-workspace-file"
       ? "Only images, videos, audio, HTML, and PDF files can be previewed."
@@ -208,13 +208,13 @@ export class AssetPreviewTypeValidationError extends Schema.TaggedError<AssetPre
   }
 }
 
-export class AssetWorkspaceAssetInspectionError extends Schema.TaggedError<AssetWorkspaceAssetInspectionError>()(
-  "AssetWorkspaceAssetInspectionError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetWorkspaceAssetInspectionError extends Schema.TaggedError<
+  AssetWorkspaceAssetInspectionError,
+  { readonly brand: unique symbol }
+>()("AssetWorkspaceAssetInspectionError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return this.resource._tag === "media-file"
       ? "Failed to inspect the media file."
@@ -222,14 +222,14 @@ export class AssetWorkspaceAssetInspectionError extends Schema.TaggedError<Asset
   }
 }
 
-export class AssetWorkspaceAssetNotFoundError extends Schema.TaggedError<AssetWorkspaceAssetNotFoundError>()(
-  "AssetWorkspaceAssetNotFoundError",
-  {
-    resource: AssetResource,
-    // Absolute path after home/workspace resolution; absent on older servers.
-    checkedPath: Schema.optionalKey(Schema.String),
-  },
-) {
+export class AssetWorkspaceAssetNotFoundError extends Schema.TaggedError<
+  AssetWorkspaceAssetNotFoundError,
+  { readonly brand: unique symbol }
+>()("AssetWorkspaceAssetNotFoundError", {
+  resource: AssetResource,
+  // Absolute path after home/workspace resolution; absent on older servers.
+  checkedPath: Schema.optionalKey(Schema.String),
+}) {
   override get message(): string {
     return this.resource._tag === "media-file"
       ? "Media file was not found."
@@ -239,81 +239,81 @@ export class AssetWorkspaceAssetNotFoundError extends Schema.TaggedError<AssetWo
   }
 }
 
-export class AssetWorkspaceResolutionError extends Schema.TaggedError<AssetWorkspaceResolutionError>()(
-  "AssetWorkspaceResolutionError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetWorkspaceResolutionError extends Schema.TaggedError<
+  AssetWorkspaceResolutionError,
+  { readonly brand: unique symbol }
+>()("AssetWorkspaceResolutionError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to resolve workspace.";
   }
 }
 
-export class AssetAttachmentNotFoundError extends Schema.TaggedError<AssetAttachmentNotFoundError>()(
-  "AssetAttachmentNotFoundError",
-  {
-    resource: AssetResource,
-  },
-) {
+export class AssetAttachmentNotFoundError extends Schema.TaggedError<
+  AssetAttachmentNotFoundError,
+  { readonly brand: unique symbol }
+>()("AssetAttachmentNotFoundError", {
+  resource: AssetResource,
+}) {
   override get message(): string {
     return "Attachment was not found.";
   }
 }
 
-export class AssetProjectFaviconResolutionError extends Schema.TaggedError<AssetProjectFaviconResolutionError>()(
-  "AssetProjectFaviconResolutionError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetProjectFaviconResolutionError extends Schema.TaggedError<
+  AssetProjectFaviconResolutionError,
+  { readonly brand: unique symbol }
+>()("AssetProjectFaviconResolutionError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to resolve project favicon.";
   }
 }
 
-export class AssetProjectFaviconInspectionError extends Schema.TaggedError<AssetProjectFaviconInspectionError>()(
-  "AssetProjectFaviconInspectionError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetProjectFaviconInspectionError extends Schema.TaggedError<
+  AssetProjectFaviconInspectionError,
+  { readonly brand: unique symbol }
+>()("AssetProjectFaviconInspectionError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to inspect the project favicon.";
   }
 }
 
-export class AssetProjectFaviconNotFoundError extends Schema.TaggedError<AssetProjectFaviconNotFoundError>()(
-  "AssetProjectFaviconNotFoundError",
-  {
-    resource: AssetResource,
-  },
-) {
+export class AssetProjectFaviconNotFoundError extends Schema.TaggedError<
+  AssetProjectFaviconNotFoundError,
+  { readonly brand: unique symbol }
+>()("AssetProjectFaviconNotFoundError", {
+  resource: AssetResource,
+}) {
   override get message(): string {
     return "Project favicon was not found.";
   }
 }
 
-export class AssetSigningKeyLoadError extends Schema.TaggedError<AssetSigningKeyLoadError>()(
-  "AssetSigningKeyLoadError",
-  {
-    resource: AssetResource,
-    cause: Schema.Defect(),
-  },
-) {
+export class AssetSigningKeyLoadError extends Schema.TaggedError<
+  AssetSigningKeyLoadError,
+  { readonly brand: unique symbol }
+>()("AssetSigningKeyLoadError", {
+  resource: AssetResource,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to load the asset signing key.";
   }
 }
 
 // The tag predates the rename and stays: clients on either side of an update decode it.
-export class AssetSourceControlMediaUrlValidationError extends Schema.TaggedError<AssetSourceControlMediaUrlValidationError>()(
-  "AssetGitHubMediaUrlValidationError",
-  {},
-) {
+export class AssetSourceControlMediaUrlValidationError extends Schema.TaggedError<
+  AssetSourceControlMediaUrlValidationError,
+  { readonly brand: unique symbol }
+>()("AssetGitHubMediaUrlValidationError", {}) {
   override get message(): string {
     return "Only media a source control host keeps behind a credential can be fetched with one.";
   }

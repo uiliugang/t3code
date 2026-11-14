@@ -6,15 +6,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-export class CheckoutCloneError extends Schema.TaggedError<CheckoutCloneError>()(
-  "CheckoutCloneError",
-  {
-    source: Schema.String,
-    destination: Schema.String,
-    errno: Schema.optional(Schema.Number),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CheckoutCloneError extends Schema.TaggedError<
+  CheckoutCloneError,
+  { readonly brand: unique symbol }
+>()("CheckoutCloneError", {
+  source: Schema.String,
+  destination: Schema.String,
+  errno: Schema.optional(Schema.Number),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Could not clone ${this.source} to ${this.destination}${this.errno === undefined ? "" : ` (errno ${this.errno})`}.`;
   }

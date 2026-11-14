@@ -27,16 +27,16 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { createOrchestrationV2TurnItemVisibility } from "@t3tools/shared/orchestrationV2Timeline";
 import type { ProjectionStoreV2Shape } from "./ProjectionStore.ts";
 
-export class ContextHandoffPrepareError extends Schema.TaggedError<ContextHandoffPrepareError>()(
-  "ContextHandoffPrepareError",
-  {
-    threadId: ThreadId,
-    targetRunId: RunId,
-    fromProviderThreadIds: Schema.Array(ProviderThreadId),
-    toProviderThreadId: ProviderThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ContextHandoffPrepareError extends Schema.TaggedError<
+  ContextHandoffPrepareError,
+  { readonly brand: unique symbol }
+>()("ContextHandoffPrepareError", {
+  threadId: ThreadId,
+  targetRunId: RunId,
+  fromProviderThreadIds: Schema.Array(ProviderThreadId),
+  toProviderThreadId: ProviderThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to prepare context handoff for run ${this.targetRunId} in thread ${this.threadId}.`;
   }

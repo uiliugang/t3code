@@ -9,6 +9,12 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Search ignored files": "搜索忽略的文件",
+  "No ignored files match.": "没有匹配的忽略文件。",
+  " Search to find the rest.": " 可通过搜索查找其余文件。",
+  "Workspace panel": "工作区面板",
+  "Agents here can then launch, message and wait on threads there. Revoke it in that machine's Sharing & access.":
+    "连接后，此处的智能体可在目标机器启动会话、发送消息并等待结果。可在目标机器的“共享与访问权限”中撤销连接。",
   "Commit {sha}": "提交 {sha}",
   "{share} of cost": "占总费用 {share}",
   "{tokens} tokens have no known price": "{tokens} Token 暂无已知价格",
@@ -522,6 +528,40 @@ const zhCN: Readonly<Record<string, string>> = {
   "Pair WeChat and send an activation message first.": "请先配对微信，再向机器人发送激活消息。",
   "Another WeChat operation is running. Try again shortly.": "有其他微信操作正在进行，请稍后重试。",
   "Requirements board": "需求看板",
+  "Development stage": "开发",
+  Testing: "测试",
+  Release: "发布",
+  Complete: "完成",
+  Unverified: "待验证",
+  "Not required": "无需发布",
+  "Fill with agent": "Agent 智能填写",
+  View: "视图",
+  "Choose platform": "选择平台",
+  "Generating draft...": "正在生成草稿…",
+  "Could not generate a draft. Try again or fill in the fields manually.":
+    "草稿生成失败，请重试或手动填写。",
+  "Local work items": "本地工作项",
+  "Local work item": "本地工作项",
+  "Delivery progress": "交付进度",
+  "Needs confirmation": "待确认",
+  "Awaiting merge": "待合并",
+  "Awaiting release plan": "待创建发布计划",
+  "Awaiting release": "待发布",
+  "Partially released": "部分已发布",
+  "Delivery complete": "交付完成",
+  "Delivery exception": "交付异常",
+  "Necessary pull requests": "必要 PR",
+  "No pull requests linked yet.": "暂无关联 PR",
+  "MCM releases": "MCM 发布",
+  Released: "已发布",
+  "Linked conversations": "执行会话",
+  "Refresh delivery": "刷新交付进度",
+  "Confirm delivery scope": "确认交付范围",
+  "Completed workflow state": "完成状态映射",
+  "Choose completed state": "选择完成状态",
+  "Choose reopened state": "选择重新打开状态",
+  "Confirm reopen": "确认重新打开",
+  "Last synced": "最近同步",
   "Issue management": "需求管理",
   "Issue details": "需求详情",
   "New issue": "新建需求",
@@ -1121,7 +1161,14 @@ const zhCN: Readonly<Record<string, string>> = {
   "Unsupported provider ({kind})": "不支持的提供商（{kind}）",
   "Toggle account visibility": "切换账户可见性",
   "Remove provider": "移除提供商",
+  "Update this environment's server to remove providers.": "请升级此环境的服务器以移除提供商。",
   "Remove {name}?": "移除 {name}？",
+  "Active sessions will be stopped. Saved settings and unused T3-managed resources will be removed. Personal CLI installations and configuration will be kept.":
+    "将停止活动会话、移除保存的设置，并清理未被其他提供方使用的 T3 托管资源。个人 CLI 安装和配置会保留。",
+  "Reset the {name} provider to its defaults?": "将 {name} 提供方重置为默认设置？",
+  "Its saved settings, including any custom binary path, will be removed.":
+    "将移除保存的设置，包括自定义可执行文件路径。",
+  "It will also be turned off.": "同时会停用此提供方。",
   "Provider variables that read from {name} stop resolving until a provider with the same name is added again. The secrets themselves are untouched.":
     "引用 {name} 的提供商变量将无法解析，直到重新添加同名提供商。密钥本身不受影响。",
   "Edit {name}": "编辑 {name}",
@@ -5046,23 +5093,23 @@ const zhCN: Readonly<Record<string, string>> = {
   "Use local SSH config, agent, and tunnels for the backend.":
     "使用本地 SSH 配置、代理和隧道连接环境。",
   "unlink environment": "解除环境关联",
-  "Forget {environment}? Agents here stop working there. Revoke “T3 Code · …” in that environment’s Connections to end the session there too.":
-    "忘记 {environment}？此处的智能体将停止在该环境中工作。若还要结束目标环境中的连接，请在其“连接”设置中撤销“T3 Code · …”。",
+  "Forget {environment}? Agents here stop working there. Revoke “T3 Code · …” in that environment’s Sharing & access to end the session there too.":
+    "忘记 {environment}？此处的智能体将停止在该环境中工作。若还要结束目标环境中的连接，请在其“共享与访问权限”设置中撤销“T3 Code · …”。",
   "Could not forget the link": "无法移除此关联",
   "Forgetting…": "正在移除关联…",
   "Could not link the environment": "无法关联环境",
   "Linked {environment}": "已关联 {environment}",
   "Link an environment": "关联环境",
-  "Agents here can then launch, message and wait on threads there. It appears in that environment's Connections, where it can be revoked.":
-    "关联后，此处的智能体可在目标环境中启动会话、发送消息并等待结果。该连接会显示在目标环境的“连接”设置中，可随时撤销。",
+  "Agents here can then launch, message and wait on threads there. It appears under Authorized clients in that environment's Sharing & access, where it can be revoked.":
+    "关联后，此处的智能体可在目标环境中启动会话、发送消息并等待结果。该连接会显示在目标环境的“共享与访问权限 → 已授权客户端”中，可随时撤销。",
   "Already linked. Linking again renews it with the access you pick.":
     "已关联。再次关联会续期，并应用所选权限。",
   "This app has no address for {environment} that another machine can reach. Enter its https or Tailscale address.":
     "应用没有其他机器可访问的 {environment} 地址，请输入其 HTTPS 或 Tailscale 地址。",
-  "From that environment’s Connections, or t3 pair there":
-    "从目标环境的“连接”设置获取，或在该环境运行 t3 pair",
-  "Create a link on {environment}: Settings → Connections → Create link, then paste its code here.":
-    "在 {environment} 中打开“设置 → 连接 → 创建链接”，然后将配对码粘贴到此处。",
+  "From Sharing & access there, or t3 pair":
+    "从目标环境的“共享与访问权限”获取，或在该环境运行 t3 pair",
+  "Create a link on {environment}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.":
+    "在 {environment} 中打开“设置 → 共享与访问权限 → 已授权客户端 → 创建链接”，然后将配对码粘贴到此处。",
   "Linking…": "正在关联…",
   "Expires in {count} day. Link it again to renew.": "将在 {count} 天后过期，重新关联可续期。",
   "Expires in {count} days. Link it again to renew.": "将在 {count} 天后过期，重新关联可续期。",

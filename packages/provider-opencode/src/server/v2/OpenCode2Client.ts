@@ -41,10 +41,10 @@ const EXECUTION_ENDS = [
 const isExecutionEnd = (type: string): type is (typeof EXECUTION_ENDS)[number] =>
   (EXECUTION_ENDS as ReadonlyArray<string>).includes(type);
 
-export class OpenCode2SilentStreamError extends Schema.TaggedError<OpenCode2SilentStreamError>()(
-  "OpenCode2SilentStreamError",
-  {},
-) {
+export class OpenCode2SilentStreamError extends Schema.TaggedError<
+  OpenCode2SilentStreamError,
+  { readonly brand: unique symbol }
+>()("OpenCode2SilentStreamError", {}) {
   override get message(): string {
     return "The OpenCode server stopped sending events.";
   }
@@ -66,10 +66,10 @@ const ShellJobs = Schema.Struct({
     }),
   ),
 });
-export class OpenCode2ImageError extends Schema.TaggedError<OpenCode2ImageError>()(
-  "OpenCode2ImageError",
-  { cause: Schema.Defect() },
-) {}
+export class OpenCode2ImageError extends Schema.TaggedError<
+  OpenCode2ImageError,
+  { readonly brand: unique symbol }
+>()("OpenCode2ImageError", { cause: Schema.Defect() }) {}
 
 const IMAGE_MIME: Readonly<Record<string, string>> = {
   ".png": "image/png",

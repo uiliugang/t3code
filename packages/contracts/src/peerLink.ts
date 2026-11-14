@@ -57,7 +57,10 @@ export const PeerLinkRemoveResult = Schema.Struct({ removed: Schema.Boolean });
 export type PeerLinkRemoveResult = typeof PeerLinkRemoveResult.Type;
 
 /** Why linking or calling a peer failed, in words a user can act on. */
-export class PeerLinkError extends Schema.TaggedError<PeerLinkError>()("PeerLinkError", {
+export class PeerLinkError extends Schema.TaggedError<
+  PeerLinkError,
+  { readonly brand: unique symbol }
+>()("PeerLinkError", {
   reason: Schema.Literals([
     "unreachable",
     "not_a_t3_environment",
@@ -118,13 +121,13 @@ export type PeerLinkRequestFailureReason = typeof PeerLinkRequestFailureReason.T
  * Answering a link request failed before anything was linked. A link the
  * other environment refused is not this error: the card records it as failed.
  */
-export class PeerLinkRequestError extends Schema.TaggedError<PeerLinkRequestError>()(
-  "PeerLinkRequestError",
-  {
-    reason: PeerLinkRequestFailureReason,
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class PeerLinkRequestError extends Schema.TaggedError<
+  PeerLinkRequestError,
+  { readonly brand: unique symbol }
+>()("PeerLinkRequestError", {
+  reason: PeerLinkRequestFailureReason,
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     return PEER_LINK_REQUEST_FAILURE_MESSAGES[this.reason];
   }

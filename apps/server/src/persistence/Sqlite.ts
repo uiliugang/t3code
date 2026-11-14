@@ -15,10 +15,10 @@ import * as ServerOwnership from "../serverOwnership.ts";
 
 const WAL_SIZE_LIMIT_BYTES = 128 * 1024 * 1024;
 
-export class ServerOwnsDatabaseError extends Schema.TaggedError<ServerOwnsDatabaseError>()(
-  "ServerOwnsDatabaseError",
-  { stateDir: Schema.String },
-) {
+export class ServerOwnsDatabaseError extends Schema.TaggedError<
+  ServerOwnsDatabaseError,
+  { readonly brand: unique symbol }
+>()("ServerOwnsDatabaseError", { stateDir: Schema.String }) {
   override get message(): string {
     return `Another T3 Code process, usually a running server, owns ${this.stateDir}, and this CLI would change its database schema. Use the \`t3\` that matches the running server, or stop that server, then retry. The database was not changed.`;
   }

@@ -1,14 +1,14 @@
 import type { NotificationResponse } from "expo-notifications";
 import * as Schema from "effect/Schema";
 
-export class NotificationNavigationError extends Schema.TaggedError<NotificationNavigationError>()(
-  "NotificationNavigationError",
-  {
-    operation: Schema.Literals(["read", "route", "clear"]),
-    notificationId: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class NotificationNavigationError extends Schema.TaggedError<
+  NotificationNavigationError,
+  { readonly brand: unique symbol }
+>()("NotificationNavigationError", {
+  operation: Schema.Literals(["read", "route", "clear"]),
+  notificationId: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} the last notification response.`;
   }

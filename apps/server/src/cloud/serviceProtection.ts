@@ -141,14 +141,14 @@ export function renderPrivilegedScript(plan: ProtectionPlan, mode: "apply" | "un
   return lines.join("\n");
 }
 
-export class ServiceProtectionError extends Schema.TaggedError<ServiceProtectionError>()(
-  "ServiceProtectionError",
-  {
-    step: Schema.String,
-    exitCode: Schema.optional(Schema.Number),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServiceProtectionError extends Schema.TaggedError<
+  ServiceProtectionError,
+  { readonly brand: unique symbol }
+>()("ServiceProtectionError", {
+  step: Schema.String,
+  exitCode: Schema.optional(Schema.Number),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.exitCode === undefined
       ? `Could not ${this.step}.`

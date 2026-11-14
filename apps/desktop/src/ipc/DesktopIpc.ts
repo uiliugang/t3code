@@ -32,36 +32,36 @@ export interface DesktopIpcMain {
   on(channel: string, listener: DesktopIpcSyncListener): void;
 }
 
-export class DesktopIpcRegistrationError extends Schema.TaggedError<DesktopIpcRegistrationError>()(
-  "DesktopIpcRegistrationError",
-  {
-    handlerKind: Schema.Literals(["invoke", "sync"]),
-    channel: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopIpcRegistrationError extends Schema.TaggedError<
+  DesktopIpcRegistrationError,
+  { readonly brand: unique symbol }
+>()("DesktopIpcRegistrationError", {
+  handlerKind: Schema.Literals(["invoke", "sync"]),
+  channel: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to register the ${this.handlerKind} IPC handler for ${this.channel}.`;
   }
 }
 
-export class DesktopIpcUnregistrationError extends Schema.TaggedError<DesktopIpcUnregistrationError>()(
-  "DesktopIpcUnregistrationError",
-  {
-    handlerKind: Schema.Literals(["invoke", "sync"]),
-    channel: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopIpcUnregistrationError extends Schema.TaggedError<
+  DesktopIpcUnregistrationError,
+  { readonly brand: unique symbol }
+>()("DesktopIpcUnregistrationError", {
+  handlerKind: Schema.Literals(["invoke", "sync"]),
+  channel: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to unregister the ${this.handlerKind} IPC handler for ${this.channel}.`;
   }
 }
 
-export class DesktopIpcUntrustedSenderError extends Schema.TaggedError<DesktopIpcUntrustedSenderError>()(
-  "DesktopIpcUntrustedSenderError",
-  { channel: Schema.String },
-) {
+export class DesktopIpcUntrustedSenderError extends Schema.TaggedError<
+  DesktopIpcUntrustedSenderError,
+  { readonly brand: unique symbol }
+>()("DesktopIpcUntrustedSenderError", { channel: Schema.String }) {
   override get message(): string {
     return `Rejected ${this.channel} from a sender that is not the app window.`;
   }

@@ -55,104 +55,104 @@ type ProjectCliDispatchCommand = ProjectMutation;
 
 const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 
-export class ProjectCommandIdGenerationError extends Schema.TaggedError<ProjectCommandIdGenerationError>()(
-  "ProjectCommandIdGenerationError",
-  {
-    operation: Schema.Literal("generateProjectCommandId"),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectCommandIdGenerationError extends Schema.TaggedError<
+  ProjectCommandIdGenerationError,
+  { readonly brand: unique symbol }
+>()("ProjectCommandIdGenerationError", {
+  operation: Schema.Literal("generateProjectCommandId"),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to generate a project command identifier.";
   }
 }
 
-export class ProjectLiveServerDeclaredResponseError extends Schema.TaggedError<ProjectLiveServerDeclaredResponseError>()(
-  "ProjectLiveServerDeclaredResponseError",
-  {
-    operation: Schema.Literal("callLiveServer"),
-    code: Schema.String,
-    traceId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectLiveServerDeclaredResponseError extends Schema.TaggedError<
+  ProjectLiveServerDeclaredResponseError,
+  { readonly brand: unique symbol }
+>()("ProjectLiveServerDeclaredResponseError", {
+  operation: Schema.Literal("callLiveServer"),
+  code: Schema.String,
+  traceId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Server request failed (${this.code}, trace ${this.traceId}).`;
   }
 }
 
-export class ProjectLiveServerUndeclaredStatusError extends Schema.TaggedError<ProjectLiveServerUndeclaredStatusError>()(
-  "ProjectLiveServerUndeclaredStatusError",
-  {
-    operation: Schema.Literal("callLiveServer"),
-    status: Schema.Int,
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectLiveServerUndeclaredStatusError extends Schema.TaggedError<
+  ProjectLiveServerUndeclaredStatusError,
+  { readonly brand: unique symbol }
+>()("ProjectLiveServerUndeclaredStatusError", {
+  operation: Schema.Literal("callLiveServer"),
+  status: Schema.Int,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Server request failed with undeclared status ${this.status}.`;
   }
 }
 
-export class ProjectLiveServerRequestError extends Schema.TaggedError<ProjectLiveServerRequestError>()(
-  "ProjectLiveServerRequestError",
-  {
-    operation: Schema.Literal("callLiveServer"),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectLiveServerRequestError extends Schema.TaggedError<
+  ProjectLiveServerRequestError,
+  { readonly brand: unique symbol }
+>()("ProjectLiveServerRequestError", {
+  operation: Schema.Literal("callLiveServer"),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to call the running server.";
   }
 }
 
-export class ProjectTitleEmptyError extends Schema.TaggedError<ProjectTitleEmptyError>()(
-  "ProjectTitleEmptyError",
-  {
-    operation: Schema.Literal("validateProjectTitle"),
-    title: Schema.String,
-  },
-) {
+export class ProjectTitleEmptyError extends Schema.TaggedError<
+  ProjectTitleEmptyError,
+  { readonly brand: unique symbol }
+>()("ProjectTitleEmptyError", {
+  operation: Schema.Literal("validateProjectTitle"),
+  title: Schema.String,
+}) {
   override get message(): string {
     return "Project title cannot be empty.";
   }
 }
 
-export class ProjectIdentifierEmptyError extends Schema.TaggedError<ProjectIdentifierEmptyError>()(
-  "ProjectIdentifierEmptyError",
-  {
-    operation: Schema.Literal("resolveProjectTarget"),
-    identifier: Schema.String,
-  },
-) {
+export class ProjectIdentifierEmptyError extends Schema.TaggedError<
+  ProjectIdentifierEmptyError,
+  { readonly brand: unique symbol }
+>()("ProjectIdentifierEmptyError", {
+  operation: Schema.Literal("resolveProjectTarget"),
+  identifier: Schema.String,
+}) {
   override get message(): string {
     return "Project identifier cannot be empty.";
   }
 }
 
-export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundError>()(
-  "ProjectNotFoundError",
-  {
-    operation: Schema.Literal("resolveProjectTarget"),
-    identifier: Schema.String,
-    normalizedWorkspaceRoot: Schema.optional(Schema.String),
-    activeProjectCount: Schema.Number,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectNotFoundError extends Schema.TaggedError<
+  ProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("ProjectNotFoundError", {
+  operation: Schema.Literal("resolveProjectTarget"),
+  identifier: Schema.String,
+  normalizedWorkspaceRoot: Schema.optional(Schema.String),
+  activeProjectCount: Schema.Number,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `No active project found for '${this.identifier}'.`;
   }
 }
 
-export class ProjectAlreadyExistsError extends Schema.TaggedError<ProjectAlreadyExistsError>()(
-  "ProjectAlreadyExistsError",
-  {
-    operation: Schema.Literal("addProject"),
-    projectId: ProjectId,
-    workspaceRoot: Schema.String,
-  },
-) {
+export class ProjectAlreadyExistsError extends Schema.TaggedError<
+  ProjectAlreadyExistsError,
+  { readonly brand: unique symbol }
+>()("ProjectAlreadyExistsError", {
+  operation: Schema.Literal("addProject"),
+  projectId: ProjectId,
+  workspaceRoot: Schema.String,
+}) {
   override get message(): string {
     return `An active project already exists for '${this.workspaceRoot}'.`;
   }

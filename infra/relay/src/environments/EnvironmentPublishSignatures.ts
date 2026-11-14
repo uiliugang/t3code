@@ -22,36 +22,36 @@ import * as Schema from "effect/Schema";
 import * as DpopProofs from "../auth/DpopProofs.ts";
 import * as RelayConfiguration from "../Config.ts";
 
-export class EnvironmentPublishSignatureExpired extends Schema.TaggedError<EnvironmentPublishSignatureExpired>()(
-  "EnvironmentPublishSignatureExpired",
-  {
-    environmentId: Schema.String,
-    threadId: Schema.String,
-    expiresAt: Schema.String,
-  },
-) {
+export class EnvironmentPublishSignatureExpired extends Schema.TaggedError<
+  EnvironmentPublishSignatureExpired,
+  { readonly brand: unique symbol }
+>()("EnvironmentPublishSignatureExpired", {
+  environmentId: Schema.String,
+  threadId: Schema.String,
+  expiresAt: Schema.String,
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' publish signature for thread '${this.threadId}' expired at ${this.expiresAt}`;
   }
 }
 
-export class EnvironmentPublishSignatureInvalid extends Schema.TaggedError<EnvironmentPublishSignatureInvalid>()(
-  "EnvironmentPublishSignatureInvalid",
-  {
-    environmentId: Schema.String,
-    threadId: Schema.String,
-    reason: RelayAgentActivityPublishProofInvalidReason,
-    stage: Schema.Literals([
-      "decode_token",
-      "verify_proof",
-      "validate_claims",
-      "validate_expiration",
-      "generate_replay_thumbprint",
-      "consume_nonce",
-    ]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class EnvironmentPublishSignatureInvalid extends Schema.TaggedError<
+  EnvironmentPublishSignatureInvalid,
+  { readonly brand: unique symbol }
+>()("EnvironmentPublishSignatureInvalid", {
+  environmentId: Schema.String,
+  threadId: Schema.String,
+  reason: RelayAgentActivityPublishProofInvalidReason,
+  stage: Schema.Literals([
+    "decode_token",
+    "verify_proof",
+    "validate_claims",
+    "validate_expiration",
+    "generate_replay_thumbprint",
+    "consume_nonce",
+  ]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Environment '${this.environmentId}' publish signature for thread '${this.threadId}' is invalid during ${this.stage}: ${this.reason}`;
   }

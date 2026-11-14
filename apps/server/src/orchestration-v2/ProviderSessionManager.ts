@@ -33,6 +33,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as RcMap from "effect/RcMap";
+import * as TxReentrantLock from "effect/TxReentrantLock";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -143,63 +145,63 @@ const activeTurnItemStatuses: ReadonlyArray<OrchestrationV2TurnItem["status"]> =
   "waiting",
 ];
 
-export class ProviderSessionOpenError extends Schema.TaggedError<ProviderSessionOpenError>()(
-  "ProviderSessionOpenError",
-  {
-    instanceId: ProviderInstanceId,
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionOpenError extends Schema.TaggedError<
+  ProviderSessionOpenError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionOpenError", {
+  instanceId: ProviderInstanceId,
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to open provider instance ${this.instanceId} session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionLookupError extends Schema.TaggedError<ProviderSessionLookupError>()(
-  "ProviderSessionLookupError",
-  {
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionLookupError extends Schema.TaggedError<
+  ProviderSessionLookupError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionLookupError", {
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to look up provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionCloseError extends Schema.TaggedError<ProviderSessionCloseError>()(
-  "ProviderSessionCloseError",
-  {
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionCloseError extends Schema.TaggedError<
+  ProviderSessionCloseError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionCloseError", {
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to close provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionReleaseError extends Schema.TaggedError<ProviderSessionReleaseError>()(
-  "ProviderSessionReleaseError",
-  {
-    providerSessionId: ProviderSessionId,
-    reason: ProviderSessionReleaseReason,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionReleaseError extends Schema.TaggedError<
+  ProviderSessionReleaseError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionReleaseError", {
+  providerSessionId: ProviderSessionId,
+  reason: ProviderSessionReleaseReason,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to release provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionActivityError extends Schema.TaggedError<ProviderSessionActivityError>()(
-  "ProviderSessionActivityError",
-  {
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionActivityError extends Schema.TaggedError<
+  ProviderSessionActivityError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionActivityError", {
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to update provider session activity for ${this.providerSessionId}.`;
   }
@@ -245,6 +247,10 @@ export interface ProviderSessionManagerV2Shape {
   readonly closeInstance: (
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<void, ProviderSessionManagerV2Error>;
+  readonly withInstanceClosed: <A, E, R>(
+    instanceId: ProviderInstanceId,
+    effect: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | ProviderSessionManagerV2Error, R>;
   readonly release: (input: {
     readonly providerSessionId: ProviderSessionId;
     readonly reason: ProviderSessionReleaseReason;
@@ -515,6 +521,19 @@ export const layerWithOptions = (
       const releaseRecordRetries = yield* FiberSet.make();
       const nextSubscriberId = yield* Ref.make(0);
       const sessionOpen = yield* KeyedLock.make<ProviderSessionId>();
+      const instanceLifecycle = yield* RcMap.make({
+        lookup: (_instanceId: ProviderInstanceId) => TxReentrantLock.make(),
+      });
+      const withInstanceLock = Effect.fn("ProviderSessionManager.withInstanceLock")(function* <
+        A,
+        E,
+        R,
+      >(instanceId: ProviderInstanceId, mode: "read" | "write", effect: Effect.Effect<A, E, R>) {
+        const lock = yield* RcMap.get(instanceLifecycle, instanceId);
+        return yield* mode === "read"
+          ? TxReentrantLock.withReadLock(lock, effect)
+          : TxReentrantLock.withWriteLock(lock, effect);
+      }, Effect.scoped);
       const threadAttachment = yield* KeyedLock.make<string>();
       const threadAttachmentKey = (input: {
         readonly providerSessionId: ProviderSessionId;
@@ -658,10 +677,12 @@ export const layerWithOptions = (
         detail: string,
         afterDrain: Effect.Effect<void>,
         cause?: Cause.Cause<ProviderAdapter.ProviderAdapterV2Error>,
+        detachedThreadId?: ThreadId,
       ) {
         const error = new ProviderAdapter.ProviderAdapterEventStreamError({
           driver: entry.runtime.driver,
           providerSessionId: entry.runtime.providerSessionId,
+          ...(detachedThreadId === undefined ? {} : { detachedThreadId }),
           cause: detail,
         });
         const subscribers = yield* Ref.getAndSet(entry.eventSubscribers, new Map());
@@ -1283,6 +1304,7 @@ export const layerWithOptions = (
                       input.detail ?? `Provider session released: ${input.reason}.`,
                       afterDrain,
                       input.eventStreamCause,
+                      input.detachedThreadId,
                     );
                   }
                   const closeExit = yield* closeScopeWithin(entry.scope, {
@@ -2841,6 +2863,40 @@ export const layerWithOptions = (
         ),
       );
 
+      const closeInstance = Effect.fn("ProviderSessionManager.closeInstance")(
+        function* (instanceId: ProviderInstanceId) {
+          const active = [...(yield* Ref.get(sessions)).values()].filter(
+            (entry) => entry.runtime.instanceId === instanceId,
+          );
+          const outcomes = yield* Effect.forEach(
+            active,
+            (entry) =>
+              releaseEntry({
+                providerSessionId: entry.runtime.providerSessionId,
+                reason: "manual_shutdown",
+                detail: `Provider instance ${instanceId} logged out.`,
+              }).pipe(Effect.exit),
+            { concurrency: "unbounded" },
+          );
+          const failure = outcomes.find(Exit.isFailure);
+          if (failure !== undefined && Exit.isFailure(failure)) {
+            return yield* Effect.failCause(failure.cause);
+          }
+        },
+        (effect, instanceId) =>
+          effect.pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProviderSessionCloseError({
+                  providerSessionId: ProviderSessionId.make(
+                    `provider-session:provider-instance:${instanceId}`,
+                  ),
+                  cause,
+                }),
+            ),
+          ),
+      );
+
       return ProviderSessionManagerV2.of({
         shutdown,
         open: (input) =>
@@ -3024,7 +3080,7 @@ export const layerWithOptions = (
               yield* startEventPump(entry);
               yield* scheduleIdleRelease(input.providerSessionId);
               return exposedRuntime;
-            }),
+            }).pipe((effect) => withInstanceLock(input.modelSelection.instanceId, "read", effect)),
           ),
         releaseIfIdle: Effect.fn("ProviderSessionManager.releaseIfIdle")(
           function* (providerSessionId) {
@@ -3100,39 +3156,14 @@ export const layerWithOptions = (
                 }),
             ),
           ),
-        closeInstance: Effect.fn("ProviderSessionManager.closeInstance")(
-          function* (instanceId) {
-            const active = [...(yield* Ref.get(sessions)).values()].filter(
-              (entry) => entry.runtime.instanceId === instanceId,
-            );
-            const outcomes = yield* Effect.forEach(
-              active,
-              (entry) =>
-                releaseEntry({
-                  providerSessionId: entry.runtime.providerSessionId,
-                  reason: "manual_shutdown",
-                  detail: `Provider instance ${instanceId} logged out.`,
-                }).pipe(Effect.exit),
-              { concurrency: "unbounded" },
-            );
-            const failure = outcomes.find(Exit.isFailure);
-            if (failure !== undefined && Exit.isFailure(failure)) {
-              return yield* Effect.failCause(failure.cause);
-            }
-          },
-          (effect, instanceId) =>
-            effect.pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ProviderSessionCloseError({
-                    providerSessionId: ProviderSessionId.make(
-                      `provider-session:provider-instance:${instanceId}`,
-                    ),
-                    cause,
-                  }),
-              ),
-            ),
-        ),
+        closeInstance: (instanceId) =>
+          withInstanceLock(instanceId, "write", closeInstance(instanceId)),
+        withInstanceClosed: (instanceId, effect) =>
+          withInstanceLock(
+            instanceId,
+            "write",
+            closeInstance(instanceId).pipe(Effect.andThen(effect)),
+          ),
         release: releaseEntry,
         releaseUnlessBusy: Effect.fn("ProviderSessionManager.releaseUnlessBusy")(function* (input) {
           const key = sessionKey(input.providerSessionId);

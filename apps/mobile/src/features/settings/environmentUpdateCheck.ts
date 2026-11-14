@@ -11,13 +11,13 @@ export interface EnvironmentReleaseCheck {
   readonly targetVersion: string | null;
 }
 
-export class EnvironmentUpdateCheckError extends Schema.TaggedError<EnvironmentUpdateCheckError>()(
-  "EnvironmentUpdateCheckError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class EnvironmentUpdateCheckError extends Schema.TaggedError<
+  EnvironmentUpdateCheckError,
+  { readonly brand: unique symbol }
+>()("EnvironmentUpdateCheckError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const asError = (cause: unknown) =>
   new EnvironmentUpdateCheckError({

@@ -296,6 +296,7 @@ it.effect(
           releaseIfIdle: () => Effect.succeed(false),
           close: () => Effect.void,
           closeInstance: () => Effect.void,
+          withInstanceClosed: (_instanceId, effect) => effect,
           release: () => Effect.void,
           detach: () => Effect.void,
           otherWorkingThreads: () => Effect.succeed([]),

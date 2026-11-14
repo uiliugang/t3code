@@ -62,7 +62,10 @@ export interface Pool {
   readonly env: NodeJS.ProcessEnv;
 }
 
-class AgentDeviceError extends Schema.TaggedError<AgentDeviceError>()("AgentDeviceError", {
+class AgentDeviceError extends Schema.TaggedError<
+  AgentDeviceError,
+  { readonly brand: unique symbol }
+>()("AgentDeviceError", {
   message: Schema.String,
 }) {}
 

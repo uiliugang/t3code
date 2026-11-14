@@ -387,7 +387,10 @@ export const GitCommandFailureReason = Schema.Literals([
 ]);
 export type GitCommandFailureReason = typeof GitCommandFailureReason.Type;
 
-export class GitCommandError extends Schema.TaggedError<GitCommandError>()("GitCommandError", {
+export class GitCommandError extends Schema.TaggedError<
+  GitCommandError,
+  { readonly brand: unique symbol }
+>()("GitCommandError", {
   operation: Schema.String,
   command: Schema.String,
   cwd: Schema.String,
@@ -406,20 +409,23 @@ export class GitCommandError extends Schema.TaggedError<GitCommandError>()("GitC
   }
 }
 
-export class TextGenerationError extends Schema.TaggedError<TextGenerationError>()(
-  "TextGenerationError",
-  {
-    operation: Schema.String,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class TextGenerationError extends Schema.TaggedError<
+  TextGenerationError,
+  { readonly brand: unique symbol }
+>()("TextGenerationError", {
+  operation: Schema.String,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Text generation failed in ${this.operation}: ${this.detail}`;
   }
 }
 
-export class GitManagerError extends Schema.TaggedError<GitManagerError>()("GitManagerError", {
+export class GitManagerError extends Schema.TaggedError<
+  GitManagerError,
+  { readonly brand: unique symbol }
+>()("GitManagerError", {
   operation: Schema.String,
   cwd: Schema.String,
   detail: Schema.String,
@@ -430,18 +436,18 @@ export class GitManagerError extends Schema.TaggedError<GitManagerError>()("GitM
   }
 }
 
-export class GitPullRequestMaterializationError extends Schema.TaggedError<GitPullRequestMaterializationError>()(
-  "GitPullRequestMaterializationError",
-  {
-    cwd: TrimmedNonEmptyStringSchema,
-    repositoryTarget: Schema.optional(ThreadRepositoryTarget),
-    pullRequestNumber: PositiveInt,
-    headRepository: Schema.NullOr(TrimmedNonEmptyStringSchema),
-    headBranch: TrimmedNonEmptyStringSchema,
-    localBranch: TrimmedNonEmptyStringSchema,
-    cause: Schema.Defect(),
-  },
-) {
+export class GitPullRequestMaterializationError extends Schema.TaggedError<
+  GitPullRequestMaterializationError,
+  { readonly brand: unique symbol }
+>()("GitPullRequestMaterializationError", {
+  cwd: TrimmedNonEmptyStringSchema,
+  repositoryTarget: Schema.optional(ThreadRepositoryTarget),
+  pullRequestNumber: PositiveInt,
+  headRepository: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  headBranch: TrimmedNonEmptyStringSchema,
+  localBranch: TrimmedNonEmptyStringSchema,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to materialize pull request #${this.pullRequestNumber} branch ${this.headBranch} as ${this.localBranch}.`;
   }

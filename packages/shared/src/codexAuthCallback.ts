@@ -3,10 +3,10 @@ import * as Schema from "effect/Schema";
 import * as NodeHttp from "node:http";
 import { codexAuthorizationRequest, codexCallbackUrl } from "@t3tools/shared/codexAuthHandoff";
 
-export class CodexAuthCallbackError extends Schema.TaggedError<CodexAuthCallbackError>()(
-  "CodexAuthCallbackError",
-  { detail: Schema.String },
-) {
+export class CodexAuthCallbackError extends Schema.TaggedError<
+  CodexAuthCallbackError,
+  { readonly brand: unique symbol }
+>()("CodexAuthCallbackError", { detail: Schema.String }) {
   override get message() {
     return this.detail;
   }

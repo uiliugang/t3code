@@ -98,9 +98,9 @@ const layerCleanup = Layer.effect(
     const fileSystem = yield* FileSystem.FileSystem;
     return {
       cleanupScheduledTasks: () => Effect.void,
-      cleanupTerminals: () => Effect.void,
+      runtimeThreadIds: Effect.succeed([]),
+      cleanupRuntime: () => Effect.succeed(true),
       cleanupPreviews: () => Effect.void,
-      cleanupDevices: () => Effect.void,
       cleanupAttachments: (attachmentIds) =>
         Effect.forEach(
           attachmentIds,

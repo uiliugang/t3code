@@ -5,15 +5,15 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-export class RelayClientInstallConfirmationConflictError extends Schema.TaggedError<RelayClientInstallConfirmationConflictError>()(
-  "RelayClientInstallConfirmationConflictError",
-  {
-    requestedVersion: Schema.String,
-    activeVersion: Schema.String,
-    activeDialogStatus: Schema.Literals(["confirming", "installing", "closing"]),
-    activeInstallStage: Schema.optional(RelayClientInstallProgressStageSchema),
-  },
-) {
+export class RelayClientInstallConfirmationConflictError extends Schema.TaggedError<
+  RelayClientInstallConfirmationConflictError,
+  { readonly brand: unique symbol }
+>()("RelayClientInstallConfirmationConflictError", {
+  requestedVersion: Schema.String,
+  activeVersion: Schema.String,
+  activeDialogStatus: Schema.Literals(["confirming", "installing", "closing"]),
+  activeInstallStage: Schema.optional(RelayClientInstallProgressStageSchema),
+}) {
   override get message(): string {
     return `Cannot confirm relay client installation ${this.requestedVersion}; installation ${this.activeVersion} has dialog status ${this.activeDialogStatus}.`;
   }

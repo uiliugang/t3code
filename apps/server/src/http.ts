@@ -326,10 +326,10 @@ export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
   }),
 );
 
-class DecodeOtlpTraceRecordsError extends Schema.TaggedError<DecodeOtlpTraceRecordsError>()(
-  "DecodeOtlpTraceRecordsError",
-  { cause: Schema.Defect() },
-) {}
+class DecodeOtlpTraceRecordsError extends Schema.TaggedError<
+  DecodeOtlpTraceRecordsError,
+  { readonly brand: unique symbol }
+>()("DecodeOtlpTraceRecordsError", { cause: Schema.Defect() }) {}
 
 // Tracing once-per-second renderer exports would create more spans than it forwards.
 export const layerOtlpTracesProxyRoute = HttpRouter.add(

@@ -133,68 +133,68 @@ export interface ThreadLaunchResult {
   readonly sequence?: number;
 }
 
-export class ThreadLaunchError extends Schema.TaggedError<ThreadLaunchError>()(
-  "ThreadLaunchError",
-  {
-    operation: Schema.Literals([
-      "resolve-project",
-      "read-receipt",
-      "generate-metadata",
-      "provision-worktree",
-      "run-setup-script",
-      "create-thread",
-      "update-thread",
-      "dispatch-message",
-      "release-run",
-      "fail-run",
-    ]),
-    commandId: CommandId,
-    projectId: ProjectId,
-    threadId: Schema.optional(ThreadId),
-    cause: Schema.Defect(),
-  },
-) {
+export class ThreadLaunchError extends Schema.TaggedError<
+  ThreadLaunchError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchError", {
+  operation: Schema.Literals([
+    "resolve-project",
+    "read-receipt",
+    "generate-metadata",
+    "provision-worktree",
+    "run-setup-script",
+    "create-thread",
+    "update-thread",
+    "dispatch-message",
+    "release-run",
+    "fail-run",
+  ]),
+  commandId: CommandId,
+  projectId: ProjectId,
+  threadId: Schema.optional(ThreadId),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Thread launch ${this.commandId} failed during ${this.operation}.`;
   }
 }
 
-export class ThreadLaunchBaseRefError extends Schema.TaggedError<ThreadLaunchBaseRefError>()(
-  "ThreadLaunchBaseRefError",
-  {
-    projectId: ProjectId,
-    projectTitle: Schema.String,
-    workspaceRoot: Schema.String,
-    baseRef: Schema.String,
-  },
-) {
+export class ThreadLaunchBaseRefError extends Schema.TaggedError<
+  ThreadLaunchBaseRefError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchBaseRefError", {
+  projectId: ProjectId,
+  projectTitle: Schema.String,
+  workspaceRoot: Schema.String,
+  baseRef: Schema.String,
+}) {
   override get message(): string {
     return `Base ref "${this.baseRef}" does not resolve to a commit in project "${this.projectTitle}" (${this.workspaceRoot}).`;
   }
 }
 
-export class ThreadLaunchBranchConflictError extends Schema.TaggedError<ThreadLaunchBranchConflictError>()(
-  "ThreadLaunchBranchConflictError",
-  {
-    projectId: ProjectId,
-    projectTitle: Schema.String,
-    branch: Schema.String,
-    conflictingBranch: Schema.String,
-  },
-) {
+export class ThreadLaunchBranchConflictError extends Schema.TaggedError<
+  ThreadLaunchBranchConflictError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchBranchConflictError", {
+  projectId: ProjectId,
+  projectTitle: Schema.String,
+  branch: Schema.String,
+  conflictingBranch: Schema.String,
+}) {
   override get message(): string {
     return `Branch "${this.branch}" cannot be created in project "${this.projectTitle}": branch "${this.conflictingBranch}" exists.`;
   }
 }
 
-export class ThreadLaunchNotRepositoryError extends Schema.TaggedError<ThreadLaunchNotRepositoryError>()(
-  "ThreadLaunchNotRepositoryError",
-  {
-    projectId: ProjectId,
-    projectTitle: Schema.String,
-    workspaceRoot: Schema.String,
-  },
-) {
+export class ThreadLaunchNotRepositoryError extends Schema.TaggedError<
+  ThreadLaunchNotRepositoryError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchNotRepositoryError", {
+  projectId: ProjectId,
+  projectTitle: Schema.String,
+  workspaceRoot: Schema.String,
+}) {
   override get message(): string {
     return `Project "${this.projectTitle}" (${this.workspaceRoot}) is not a Git repository.`;
   }
@@ -387,11 +387,15 @@ const make = Effect.gen(function* () {
         // `git worktree add` reads `-` as the previous checkout.
         if (yield* git.hasCommit({ cwd, refName: baseRef === "-" ? "@{-1}" : baseRef }))
           return true;
-        if (
-          (strategy.startFromOrigin ?? projectSettings.newWorktreesStartFromOrigin) &&
-          (yield* git.resolveWorktreeBaseRemote({ cwd, refName: baseRef })) !== null
-        )
-          return true;
+        if (strategy.startFromOrigin ?? projectSettings.newWorktreesStartFromOrigin) {
+          const remote = yield* git.resolveWorktreeBaseRemote({ cwd, refName: baseRef });
+          // The remote may have deleted the branch; ask it rather than trusting the name.
+          if (
+            remote !== null &&
+            (yield* git.fetchWorktreeBaseCommit({ cwd, refName: baseRef, remote })) !== null
+          )
+            return true;
+        }
         // git worktree add accepts remote-tracking branches; let Git decide when any matching ref exists.
         if (yield* git.hasRefNamed({ cwd, refName: baseRef })) return true;
         return !(yield* git.hasCommit({ cwd, refName: "HEAD" }));
@@ -593,7 +597,7 @@ const make = Effect.gen(function* () {
         yield* setupTracker.stageStatus(
           threadId,
           "naming",
-          shouldNameBranch ? "running" : "skipped",
+          shouldNameBranch ? "pending" : "skipped",
         );
         const prepared = yield* workspaceProvisioner.value
           .prepare({
@@ -605,8 +609,12 @@ const make = Effect.gen(function* () {
           })
           .pipe(
             Effect.mapError(mapError(input, "provision-worktree", threadId)),
-            Effect.tapError((error) =>
-              setupTracker.finish(threadId, "failed", failureDetail(error)),
+            Effect.onError((cause) =>
+              setupTracker.finish(
+                threadId,
+                Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
+                Cause.hasInterruptsOnly(cause) ? null : failureDetail(Cause.squash(cause)),
+              ),
             ),
           );
         let naming: Fiber.Fiber<unknown> | null = null;
@@ -622,6 +630,7 @@ const make = Effect.gen(function* () {
             })
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
           if (shouldNameBranch && initialMessage !== undefined) {
+            yield* setupTracker.stageStatus(threadId, "naming", "running");
             naming = yield* generateBranchNameFor(project.workspaceRoot, initialMessage).pipe(
               Effect.flatMap((name) =>
                 Effect.forEach(

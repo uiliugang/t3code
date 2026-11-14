@@ -11,7 +11,10 @@ import { DpopProof } from "@t3tools/client-runtime/relay";
 import { DpopPublicJwk } from "@t3tools/shared/dpopCommon";
 import * as Layer from "effect/Layer";
 
-export class CloudDpopError extends Schema.TaggedError<CloudDpopError>()("CloudDpopError", {
+export class CloudDpopError extends Schema.TaggedError<
+  CloudDpopError,
+  { readonly brand: unique symbol }
+>()("CloudDpopError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}

@@ -31,13 +31,13 @@ const ASSET_URL_REFRESH_INTERVAL_MS = 30 * 60_000;
 const ASSET_URL_IDLE_TTL_MS = 60 * 60_000;
 export const ASSET_URL_MAX_IN_FLIGHT = 6;
 
-export class InvalidAssetCollectionKeyError extends Schema.TaggedError<InvalidAssetCollectionKeyError>()(
-  "InvalidAssetCollectionKeyError",
-  {
-    key: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class InvalidAssetCollectionKeyError extends Schema.TaggedError<
+  InvalidAssetCollectionKeyError,
+  { readonly brand: unique symbol }
+>()("InvalidAssetCollectionKeyError", {
+  key: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Invalid asset collection atom key: ${JSON.stringify(this.key)}.`;
   }

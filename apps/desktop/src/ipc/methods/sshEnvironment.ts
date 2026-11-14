@@ -75,14 +75,14 @@ function readSshHttpStatus(cause: DesktopSshEnvironmentRequestCause): number | n
   return null;
 }
 
-export class DesktopSshEnvironmentRequestError extends Schema.TaggedError<DesktopSshEnvironmentRequestError>()(
-  "DesktopSshEnvironmentRequestError",
-  {
-    operation: DesktopSshEnvironmentRequestOperation,
-    cause: Schema.Defect(),
-    sshHttpStatus: Schema.NullOr(Schema.Number),
-  },
-) {
+export class DesktopSshEnvironmentRequestError extends Schema.TaggedError<
+  DesktopSshEnvironmentRequestError,
+  { readonly brand: unique symbol }
+>()("DesktopSshEnvironmentRequestError", {
+  operation: DesktopSshEnvironmentRequestOperation,
+  cause: Schema.Defect(),
+  sshHttpStatus: Schema.NullOr(Schema.Number),
+}) {
   // The web client matches "[ssh_http:500]" to explain version-skewed SSH pairing.
   override get message() {
     const prefix = this.sshHttpStatus === null ? "" : `[ssh_http:${this.sshHttpStatus}] `;

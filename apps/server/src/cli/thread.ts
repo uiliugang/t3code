@@ -53,20 +53,20 @@ const READ_PAGE_LIMIT = 100;
 const READ_ITEM_MAX_CHARS = 20_000;
 const TITLE_MAX_CHARS = 80;
 
-export class ThreadServerNotRunningError extends Schema.TaggedError<ThreadServerNotRunningError>()(
-  "ThreadServerNotRunningError",
-  { baseDir: Schema.String },
-) {
+export class ThreadServerNotRunningError extends Schema.TaggedError<
+  ThreadServerNotRunningError,
+  { readonly brand: unique symbol }
+>()("ThreadServerNotRunningError", { baseDir: Schema.String }) {
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
     return `No running T3 Code server uses ${this.baseDir}. Start T3 Code, then retry.`;
   }
 }
 
-export class ThreadServerUnreachableError extends Schema.TaggedError<ThreadServerUnreachableError>()(
-  "ThreadServerUnreachableError",
-  { origin: Schema.String, cause: Schema.Defect() },
-) {
+export class ThreadServerUnreachableError extends Schema.TaggedError<
+  ThreadServerUnreachableError,
+  { readonly brand: unique symbol }
+>()("ThreadServerUnreachableError", { origin: Schema.String, cause: Schema.Defect() }) {
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
     const reason = this.cause instanceof Error ? ` ${this.cause.message}` : "";
@@ -74,17 +74,20 @@ export class ThreadServerUnreachableError extends Schema.TaggedError<ThreadServe
   }
 }
 
-export class ThreadToolFailedError extends Schema.TaggedError<ThreadToolFailedError>()(
-  "ThreadToolFailedError",
-  { tool: Schema.String, detail: Schema.String },
-) {
+export class ThreadToolFailedError extends Schema.TaggedError<
+  ThreadToolFailedError,
+  { readonly brand: unique symbol }
+>()("ThreadToolFailedError", { tool: Schema.String, detail: Schema.String }) {
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
     return this.detail;
   }
 }
 
-export class ThreadUsageError extends Schema.TaggedError<ThreadUsageError>()("ThreadUsageError", {
+export class ThreadUsageError extends Schema.TaggedError<
+  ThreadUsageError,
+  { readonly brand: unique symbol }
+>()("ThreadUsageError", {
   detail: Schema.String,
 }) {
   override readonly [Runtime.errorReported] = false;
@@ -93,10 +96,10 @@ export class ThreadUsageError extends Schema.TaggedError<ThreadUsageError>()("Th
   }
 }
 
-export class ThreadProjectNotFoundError extends Schema.TaggedError<ThreadProjectNotFoundError>()(
-  "ThreadProjectNotFoundError",
-  { identifier: Schema.String },
-) {
+export class ThreadProjectNotFoundError extends Schema.TaggedError<
+  ThreadProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("ThreadProjectNotFoundError", { identifier: Schema.String }) {
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
     return `No T3 Code project matches '${this.identifier}'. Pass a project id or a path inside a project.`;
@@ -104,10 +107,10 @@ export class ThreadProjectNotFoundError extends Schema.TaggedError<ThreadProject
 }
 
 /** Exit code 2 lets a script tell "needs a human" apart from a failed run. */
-export class ThreadNeedsInputError extends Schema.TaggedError<ThreadNeedsInputError>()(
-  "ThreadNeedsInputError",
-  { threadId: ThreadId },
-) {
+export class ThreadNeedsInputError extends Schema.TaggedError<
+  ThreadNeedsInputError,
+  { readonly brand: unique symbol }
+>()("ThreadNeedsInputError", { threadId: ThreadId }) {
   override readonly [Runtime.errorReported] = false;
   override readonly [Runtime.errorExitCode] = 2;
 
@@ -116,10 +119,14 @@ export class ThreadNeedsInputError extends Schema.TaggedError<ThreadNeedsInputEr
   }
 }
 
-export class ThreadRunEndedError extends Schema.TaggedError<ThreadRunEndedError>()(
-  "ThreadRunEndedError",
-  { threadId: ThreadId, status: Schema.String, error: Schema.optional(Schema.String) },
-) {
+export class ThreadRunEndedError extends Schema.TaggedError<
+  ThreadRunEndedError,
+  { readonly brand: unique symbol }
+>()("ThreadRunEndedError", {
+  threadId: ThreadId,
+  status: Schema.String,
+  error: Schema.optional(Schema.String),
+}) {
   override readonly [Runtime.errorReported] = false;
   override get message(): string {
     const reason = this.error === undefined ? "." : `: ${this.error}`;

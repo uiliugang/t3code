@@ -53,9 +53,12 @@ const CdpReply = Schema.Struct({
 const decodeCdpReply = Schema.decodeUnknownOption(Schema.fromJsonString(CdpReply));
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-class MeasureError extends Schema.TaggedError<MeasureError>()("MeasureError", {
-  message: Schema.String,
-}) {}
+class MeasureError extends Schema.TaggedError<MeasureError, { readonly brand: unique symbol }>()(
+  "MeasureError",
+  {
+    message: Schema.String,
+  },
+) {}
 
 const STREAM_PROMPT =
   "Think it through step by step, then write a 3000-word essay on the history of typesetting in plain paragraphs with a few headings. Do not use any tools.";

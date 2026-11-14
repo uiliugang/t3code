@@ -32,6 +32,7 @@ import {
 } from "../telemetry/ProviderUsageAnalytics.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import { UsageLimitResetFallback } from "../usage/UsageLimitSources.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -41,28 +42,28 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
 
-export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
-  "ProviderEventNormalizeError",
-  {
-    providerSessionId: ProviderSessionId,
-    threadId: ThreadId,
-    providerEvent: ProviderAdapter.ProviderAdapterV2Event,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderEventNormalizeError extends Schema.TaggedError<
+  ProviderEventNormalizeError,
+  { readonly brand: unique symbol }
+>()("ProviderEventNormalizeError", {
+  providerSessionId: ProviderSessionId,
+  threadId: ThreadId,
+  providerEvent: ProviderAdapter.ProviderAdapterV2Event,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to normalize provider event ${this.providerEvent.type} for thread ${this.threadId}.`;
   }
 }
 
-export class ProviderEventPublishError extends Schema.TaggedError<ProviderEventPublishError>()(
-  "ProviderEventPublishError",
-  {
-    providerSessionId: ProviderSessionId,
-    eventCount: Schema.Number,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderEventPublishError extends Schema.TaggedError<
+  ProviderEventPublishError,
+  { readonly brand: unique symbol }
+>()("ProviderEventPublishError", {
+  providerSessionId: ProviderSessionId,
+  eventCount: Schema.Number,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to publish ${this.eventCount} normalized provider event(s).`;
   }
@@ -254,6 +255,7 @@ export const layer: Layer.Layer<
     const analytics = yield* ProviderTurnAnalytics;
     const agentScope = yield* AgentScope;
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const usageLimitResets = yield* UsageLimitResetFallback;
     const scope = yield* Effect.scope;
     const completedTurnAnalytics = new Set<string>();
 
@@ -656,9 +658,39 @@ export const layer: Layer.Layer<
                 return dismissed;
               }
               const occurredAt = yield* DateTime.now;
-              const failure = (yield* agentScope.oomKilled(input.threadId))
+              const reported = (yield* agentScope.oomKilled(input.threadId))
                 ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
                 : input.event.failure;
+              // A proxied CLI can drop the reset time; the hub still knows when its pool refills.
+              const endpoint =
+                reported.class === "usage_limit" && reported.resetAt == null
+                  ? (yield* Effect.flatMap(
+                      instances.getInstance(input.providerInstanceId),
+                      (instance) => instance?.snapshot.getSnapshot ?? Effect.undefined,
+                    ))?.auth.endpoint
+                  : undefined;
+              const hubResetAt =
+                endpoint === undefined
+                  ? null
+                  : yield* Effect.gen(function* () {
+                      // The failing run's model, which may differ from a selection changed mid-turn.
+                      const { runs } =
+                        input.runId === undefined
+                          ? { runs: [] }
+                          : yield* projections.getThreadRecords(input.threadId, ["runs"], {
+                              runIds: [input.runId],
+                            });
+                      return (
+                        runs[0]?.modelSelection ??
+                        (yield* projections.getThread(input.threadId)).modelSelection
+                      ).model;
+                    }).pipe(
+                      Effect.orElseSucceed(() => null),
+                      Effect.flatMap((model) =>
+                        usageLimitResets.resetAt(input.event.driver, endpoint, model),
+                      ),
+                    );
+              const failure = hubResetAt === null ? reported : { ...reported, resetAt: hubResetAt };
               return [
                 ...dismissed,
                 yield* makeDomainEvent(input, {

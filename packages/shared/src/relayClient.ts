@@ -57,42 +57,42 @@ export type RelayClientStatus =
 
 export type AvailableRelayClient = Extract<RelayClientStatus, { readonly status: "available" }>;
 
-class RelayClientLockRemoveError extends Schema.TaggedError<RelayClientLockRemoveError>()(
-  "RelayClientLockRemoveError",
-  { lockPath: Schema.String, cause: Schema.Defect() },
-) {
+class RelayClientLockRemoveError extends Schema.TaggedError<
+  RelayClientLockRemoveError,
+  { readonly brand: unique symbol }
+>()("RelayClientLockRemoveError", { lockPath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not remove the relay client lock ${this.lockPath}.`;
   }
 }
 
-export class RelayClientInstallError extends Schema.TaggedError<RelayClientInstallError>()(
-  "RelayClientInstallError",
-  {
-    reason: Schema.Literals([
-      "download_failed",
-      "invalid_checksum",
-      "install_locked",
-      "managed_by_policy",
-      "override_missing",
-      "unsupported_platform",
-      "validation_failed",
-      "write_failed",
-    ]),
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class RelayClientInstallError extends Schema.TaggedError<
+  RelayClientInstallError,
+  { readonly brand: unique symbol }
+>()("RelayClientInstallError", {
+  reason: Schema.Literals([
+    "download_failed",
+    "invalid_checksum",
+    "install_locked",
+    "managed_by_policy",
+    "override_missing",
+    "unsupported_platform",
+    "validation_failed",
+    "write_failed",
+  ]),
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isRelayClientInstallError = Schema.is(RelayClientInstallError);
 
-class CloudflaredCommandError extends Schema.TaggedError<CloudflaredCommandError>()(
-  "CloudflaredCommandError",
-  {
-    command: Schema.String,
-    exitCode: Schema.Number,
-  },
-) {}
+class CloudflaredCommandError extends Schema.TaggedError<
+  CloudflaredCommandError,
+  { readonly brand: unique symbol }
+>()("CloudflaredCommandError", {
+  command: Schema.String,
+  exitCode: Schema.Number,
+}) {}
 
 export interface CloudflaredReleaseAsset {
   readonly url: string;

@@ -19,13 +19,13 @@ import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts
 import * as ManagedProjectFolders from "./ManagedProjectFolders.ts";
 import * as ProjectService from "./ProjectService.ts";
 
-export class ScratchThreadPromotionError extends Schema.TaggedError<ScratchThreadPromotionError>()(
-  "ScratchThreadPromotionError",
-  {
-    reason: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ScratchThreadPromotionError extends Schema.TaggedError<
+  ScratchThreadPromotionError,
+  { readonly brand: unique symbol }
+>()("ScratchThreadPromotionError", {
+  reason: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.reason;
   }

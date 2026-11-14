@@ -389,21 +389,21 @@ export const AuthAccessStreamPairingLinkRemovedEvent = Schema.Struct({
 export type AuthAccessStreamPairingLinkRemovedEvent =
   typeof AuthAccessStreamPairingLinkRemovedEvent.Type;
 
-export class AuthAccessStreamError extends Schema.TaggedError<AuthAccessStreamError>()(
-  "AuthAccessStreamError",
-  {
-    message: Schema.String,
-  },
-) {}
+export class AuthAccessStreamError extends Schema.TaggedError<
+  AuthAccessStreamError,
+  { readonly brand: unique symbol }
+>()("AuthAccessStreamError", {
+  message: Schema.String,
+}) {}
 
-export class EnvironmentAuthorizationError extends Schema.TaggedError<EnvironmentAuthorizationError>()(
-  "EnvironmentAuthorizationError",
-  {
-    message: Schema.String,
-    requiredScope: AuthEnvironmentScope,
-    requiredPermission: Schema.optionalKey(Schema.String),
-  },
-) {}
+export class EnvironmentAuthorizationError extends Schema.TaggedError<
+  EnvironmentAuthorizationError,
+  { readonly brand: unique symbol }
+>()("EnvironmentAuthorizationError", {
+  message: Schema.String,
+  requiredScope: AuthEnvironmentScope,
+  requiredPermission: Schema.optionalKey(Schema.String),
+}) {}
 
 export const AuthAccessStreamClientUpsertedEvent = Schema.Struct({
   version: Schema.Literal(1),
@@ -508,9 +508,10 @@ export const AuthMcpRegisteredClient = Schema.Struct({
 }).pipe(HttpApiSchema.status(201));
 export type AuthMcpRegisteredClient = typeof AuthMcpRegisteredClient.Type;
 
-export class AuthMcpRegistrationError extends Schema.Error<AuthMcpRegistrationError>(
-  "AuthMcpRegistrationError",
-)(
+export class AuthMcpRegistrationError extends Schema.Error<
+  AuthMcpRegistrationError,
+  { readonly brand: unique symbol }
+>("AuthMcpRegistrationError")(
   {
     error: Schema.Literals(["invalid_client_metadata", "invalid_redirect_uri"]),
     error_description: Schema.String,
@@ -574,11 +575,10 @@ export const AuthMcpApprovalDecisionRequest = Schema.Struct({
 });
 export type AuthMcpApprovalDecisionRequest = typeof AuthMcpApprovalDecisionRequest.Type;
 
-export class AuthMcpApprovalError extends Schema.TaggedError<AuthMcpApprovalError>()(
-  "AuthMcpApprovalError",
-  { message: Schema.String },
-  { httpApiStatus: 400 },
-) {}
+export class AuthMcpApprovalError extends Schema.TaggedError<
+  AuthMcpApprovalError,
+  { readonly brand: unique symbol }
+>()("AuthMcpApprovalError", { message: Schema.String }, { httpApiStatus: 400 }) {}
 
 export const AuthMcpTokenRequest = Schema.Struct({
   grant_type: Schema.optionalKey(Schema.String),
@@ -598,7 +598,10 @@ export const AuthMcpTokenResult = Schema.Struct({
 });
 export type AuthMcpTokenResult = typeof AuthMcpTokenResult.Type;
 
-export class AuthMcpTokenError extends Schema.Error<AuthMcpTokenError>("AuthMcpTokenError")(
+export class AuthMcpTokenError extends Schema.Error<
+  AuthMcpTokenError,
+  { readonly brand: unique symbol }
+>("AuthMcpTokenError")(
   {
     error: Schema.Literals([
       "invalid_request",

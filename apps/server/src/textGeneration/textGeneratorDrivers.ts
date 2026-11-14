@@ -17,14 +17,14 @@ export interface TextGeneratorConnection {
 }
 
 /** Why a model API call failed, worded for the person who configured it. */
-export class TextGeneratorRequestError extends Schema.TaggedError<TextGeneratorRequestError>()(
-  "TextGeneratorRequestError",
-  {
-    detail: Schema.String,
-    unsupportedParameter: Schema.optional(Schema.Literal("max_tokens")),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class TextGeneratorRequestError extends Schema.TaggedError<
+  TextGeneratorRequestError,
+  { readonly brand: unique symbol }
+>()("TextGeneratorRequestError", {
+  detail: Schema.String,
+  unsupportedParameter: Schema.optional(Schema.Literal("max_tokens")),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export interface TextGeneratorDriver {
   readonly kind: TextGeneratorKind;

@@ -408,10 +408,10 @@ async function readChildTranscript(
   }
 }
 
-class AntigravityChildWorkReadError extends Schema.TaggedError<AntigravityChildWorkReadError>()(
-  "AntigravityChildWorkReadError",
-  { cause: Schema.Defect() },
-) {
+class AntigravityChildWorkReadError extends Schema.TaggedError<
+  AntigravityChildWorkReadError,
+  { readonly brand: unique symbol }
+>()("AntigravityChildWorkReadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not read Antigravity subagent records.";
   }

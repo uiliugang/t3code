@@ -36,10 +36,10 @@ const StoredCompactThreadSnapshot = StoredOrchestrationThreadSnapshot.mapFields(
   })),
 }));
 
-class InvalidThreadCache extends Schema.TaggedError<InvalidThreadCache>()(
-  "InvalidThreadCache",
-  {},
-) {}
+class InvalidThreadCache extends Schema.TaggedError<
+  InvalidThreadCache,
+  { readonly brand: unique symbol }
+>()("InvalidThreadCache", {}) {}
 
 const decodeCompatible = Schema.decodeUnknownEffect(
   Schema.fromJsonString(

@@ -30,40 +30,40 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
-export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedError<WorkspaceEntriesWindowsPathUnsupportedError>()(
-  "WorkspaceEntriesWindowsPathUnsupportedError",
-  {
-    cwd: Schema.optional(Schema.String),
-    partialPath: Schema.String,
-    platform: Schema.String,
-  },
-) {
+export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedError<
+  WorkspaceEntriesWindowsPathUnsupportedError,
+  { readonly brand: unique symbol }
+>()("WorkspaceEntriesWindowsPathUnsupportedError", {
+  cwd: Schema.optional(Schema.String),
+  partialPath: Schema.String,
+  platform: Schema.String,
+}) {
   override get message(): string {
     const cwd = this.cwd ? ` from '${this.cwd}'` : "";
     return `Windows-style workspace path '${this.partialPath}' is not supported on '${this.platform}'${cwd}.`;
   }
 }
 
-export class WorkspaceEntriesCurrentProjectRequiredError extends Schema.TaggedError<WorkspaceEntriesCurrentProjectRequiredError>()(
-  "WorkspaceEntriesCurrentProjectRequiredError",
-  {
-    partialPath: Schema.String,
-  },
-) {
+export class WorkspaceEntriesCurrentProjectRequiredError extends Schema.TaggedError<
+  WorkspaceEntriesCurrentProjectRequiredError,
+  { readonly brand: unique symbol }
+>()("WorkspaceEntriesCurrentProjectRequiredError", {
+  partialPath: Schema.String,
+}) {
   override get message(): string {
     return `A current project is required to browse relative workspace path '${this.partialPath}'.`;
   }
 }
 
-export class WorkspaceEntriesReadDirectoryError extends Schema.TaggedError<WorkspaceEntriesReadDirectoryError>()(
-  "WorkspaceEntriesReadDirectoryError",
-  {
-    cwd: Schema.optional(Schema.String),
-    partialPath: Schema.String,
-    parentPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class WorkspaceEntriesReadDirectoryError extends Schema.TaggedError<
+  WorkspaceEntriesReadDirectoryError,
+  { readonly brand: unique symbol }
+>()("WorkspaceEntriesReadDirectoryError", {
+  cwd: Schema.optional(Schema.String),
+  partialPath: Schema.String,
+  parentPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get pathMissing(): boolean {
     return (this.cause as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
   }
@@ -576,9 +576,13 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.orElseSucceed(() => undefined));
     if (!result || result.exitCode !== 0) return { files: [], truncated: false };
+    // Filter before the cap so files sorting past it stay reachable by search.
+    const query = input.query?.toLowerCase() ?? "";
     const paths = result.stdout
       .split("\0")
-      .filter((entry) => entry.length > 0 && !entry.endsWith("/"))
+      .filter(
+        (entry) => entry.length > 0 && !entry.endsWith("/") && entry.toLowerCase().includes(query),
+      )
       .toSorted();
     const files = yield* Effect.promise(() =>
       Promise.all(

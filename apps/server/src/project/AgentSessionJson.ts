@@ -41,10 +41,10 @@ export function createTranscriptJsonSelector(schema: { readonly ast: SchemaAST.A
   return (path: JsonPath) => includes(ast, path, 0);
 }
 
-export class TranscriptJsonLimitError extends Schema.TaggedError<TranscriptJsonLimitError>()(
-  "TranscriptJsonLimitError",
-  { message: Schema.String },
-) {}
+export class TranscriptJsonLimitError extends Schema.TaggedError<
+  TranscriptJsonLimitError,
+  { readonly brand: unique symbol }
+>()("TranscriptJsonLimitError", { message: Schema.String }) {}
 
 export function createTranscriptJsonReader(
   reserve: (bytes: number) => void,

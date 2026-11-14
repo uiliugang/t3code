@@ -2,21 +2,54 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
-import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthSourceControlWriteScope,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import { act, render } from "../../test/render";
 import { CommandPalette } from "./CommandPalette";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { sourceControlEnvironment } from "../state/sourceControl";
+import { projectFolderImportAtom } from "../projectFolderImport";
 
-const scopes = vi.hoisted(() => ({ denied: undefined as string | undefined }));
-const setup = (deniedScope?: string) => {
+const scopes = vi.hoisted(() => ({
+  denied: undefined as string | undefined,
+  sourceControl: undefined as unknown,
+}));
+const setup = (deniedScope?: string, sourceControl?: unknown) => {
   scopes.denied = deniedScope;
+  scopes.sourceControl = sourceControl;
+};
+const githubAvailable = {
+  versionControlSystems: [],
+  sourceControlProviders: [
+    {
+      kind: "github",
+      label: "GitHub",
+      status: "available",
+      version: { _tag: "None" },
+      installHint: "Install GitHub CLI",
+      detail: { _tag: "None" },
+      auth: {
+        status: "authenticated",
+        account: { _tag: "Some", value: "demo" },
+        host: { _tag: "None" },
+        detail: { _tag: "None" },
+      },
+    },
+  ],
 };
 
 vi.mock("@effect/atom-react", async (original) => ({
   ...(await original<typeof import("@effect/atom-react")>()),
   useAtomValue: (atom: unknown) =>
-    atom === primaryServerKeybindingsAtom ? DEFAULT_RESOLVED_KEYBINDINGS : [],
+    atom === primaryServerKeybindingsAtom
+      ? DEFAULT_RESOLVED_KEYBINDINGS
+      : atom === projectFolderImportAtom
+        ? null
+        : [],
 }));
 vi.mock("../hooks/useTheme", () => ({
   getRenderedAppearance: () => "light",
@@ -103,7 +136,14 @@ vi.mock("../state/filesystem", async (original) => ({
 }));
 vi.mock("../state/query", async (original) => ({
   ...(await original<typeof import("../state/query")>()),
-  useEnvironmentQuery: () => ({ data: undefined, isLoading: false }),
+  useEnvironmentQuery: (query: unknown) => ({
+    data:
+      query ===
+      sourceControlEnvironment.discovery({ environmentId: EnvironmentId.make("local"), input: {} })
+        ? scopes.sourceControl
+        : null,
+    isPending: false,
+  }),
 }));
 vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => [],
@@ -209,4 +249,16 @@ it.each([
   await expect.element(submit).toBeEnabled();
   await userEvent.keyboard("{Tab}");
   await expect.element(submit).toHaveFocus();
+});
+
+it("tells screen readers whether a new project will be published", async () => {
+  setup(undefined, githubAvailable);
+  await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+  await act(() => openCommandPalette({ open: "add-project" }));
+  await page.getByText("New project", { exact: true }).click();
+  await page.getByRole("combobox").fill("demo-project");
+  const option = page.getByRole("option", { name: /Create private repository/ });
+  await expect.element(option).toHaveAttribute("aria-checked", "false");
+  await option.click();
+  await expect.element(option).toHaveAttribute("aria-checked", "true");
 });

@@ -43,68 +43,68 @@ const decodeCursorAgentSdkReplayTranscript = Schema.decodeUnknownEffect(
   CursorAgentSdkReplayTranscript,
 );
 
-export class CursorReplayTranscriptDecodeError extends Schema.TaggedError<CursorReplayTranscriptDecodeError>()(
-  "CursorReplayTranscriptDecodeError",
-  {
-    driver: Schema.optional(Schema.String),
-    protocol: Schema.optional(Schema.String),
-    scenario: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class CursorReplayTranscriptDecodeError extends Schema.TaggedError<
+  CursorReplayTranscriptDecodeError,
+  { readonly brand: unique symbol }
+>()("CursorReplayTranscriptDecodeError", {
+  driver: Schema.optional(Schema.String),
+  protocol: Schema.optional(Schema.String),
+  scenario: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode Cursor Agent SDK replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
   }
 }
 
-export class CursorReplayExhaustedError extends Schema.TaggedError<CursorReplayExhaustedError>()(
-  "CursorReplayExhaustedError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    actual: Schema.Unknown,
-  },
-) {
+export class CursorReplayExhaustedError extends Schema.TaggedError<
+  CursorReplayExhaustedError,
+  { readonly brand: unique symbol }
+>()("CursorReplayExhaustedError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Cursor Agent SDK replay transcript exhausted at cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class CursorReplayFrameMismatchError extends Schema.TaggedError<CursorReplayFrameMismatchError>()(
-  "CursorReplayFrameMismatchError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    expected: Schema.Unknown,
-    actual: Schema.Unknown,
-  },
-) {
+export class CursorReplayFrameMismatchError extends Schema.TaggedError<
+  CursorReplayFrameMismatchError,
+  { readonly brand: unique symbol }
+>()("CursorReplayFrameMismatchError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  expected: Schema.Unknown,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Cursor Agent SDK replay frame mismatch at cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
 }
 
-export class CursorReplayIncompleteError extends Schema.TaggedError<CursorReplayIncompleteError>()(
-  "CursorReplayIncompleteError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    remaining: Schema.Number,
-  },
-) {
+export class CursorReplayIncompleteError extends Schema.TaggedError<
+  CursorReplayIncompleteError,
+  { readonly brand: unique symbol }
+>()("CursorReplayIncompleteError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  remaining: Schema.Number,
+}) {
   override get message(): string {
     return `Cursor Agent SDK replay ended with ${this.remaining} unconsumed entries in scenario ${this.scenario}.`;
   }
 }
 
-export class CursorReplayRuntimeError extends Schema.TaggedError<CursorReplayRuntimeError>()(
-  "CursorReplayRuntimeError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class CursorReplayRuntimeError extends Schema.TaggedError<
+  CursorReplayRuntimeError,
+  { readonly brand: unique symbol }
+>()("CursorReplayRuntimeError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Cursor Agent SDK replay failed at cursor ${this.cursor} in scenario ${this.scenario}.`;
   }
@@ -667,13 +667,13 @@ function recordingRuntimePolicy(input: {
   };
 }
 
-class CursorReplayRecordingError extends Schema.TaggedError<CursorReplayRecordingError>()(
-  "CursorReplayRecordingError",
-  {
-    scenario: Schema.String,
-    reason: Schema.String,
-  },
-) {
+class CursorReplayRecordingError extends Schema.TaggedError<
+  CursorReplayRecordingError,
+  { readonly brand: unique symbol }
+>()("CursorReplayRecordingError", {
+  scenario: Schema.String,
+  reason: Schema.String,
+}) {
   override get message(): string {
     return `Cursor Agent SDK replay recording failed in scenario ${this.scenario}: ${this.reason}`;
   }

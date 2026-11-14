@@ -431,7 +431,10 @@ const makeFaviconWebContents = (options?: {
   const loadURL = vi.fn(async (url: string) => {
     currentUrl = url;
   });
-  const off = vi.fn();
+  const listenerSets = new Map<string, Set<(...args: never[]) => void>>();
+  const off = vi.fn((event: string, listener: (...args: never[]) => void) => {
+    listenerSets.get(event)?.delete(listener);
+  });
   const debuggerOff = vi.fn();
   const webContents = {
     id: options?.id ?? 42,
@@ -449,7 +452,12 @@ const makeFaviconWebContents = (options?: {
     reloadIgnoringCache: vi.fn(),
     loadURL,
     on: vi.fn((event: string, listener: (...args: never[]) => void) => {
-      listeners.set(event, listener);
+      const registered = listenerSets.get(event) ?? new Set();
+      registered.add(listener);
+      listenerSets.set(event, registered);
+      listeners.set(event, (...args) => {
+        for (const current of registered) current(...args);
+      });
     }),
     off,
     ipc: { on: vi.fn(), off: vi.fn() },
@@ -619,6 +627,7 @@ describe("PreviewManager", () => {
                 setShown: () => {},
                 loadFailed: () => {},
                 humanStartedDownload: () => true,
+                agentLedPage: () => false,
                 placeDownload: () => true,
               }),
               Layer.mock(PreviewPasskeys.PreviewPasskeys)({
@@ -743,6 +752,69 @@ describe("PreviewManager", () => {
           }),
         platform,
       ),
+  );
+
+  effectIt.effect("keeps mouse back and forward buttons inside the preview tab", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        const goBack = vi.fn();
+        const goForward = vi.fn();
+        const send = vi.fn();
+        let canGoBack = false;
+        Object.assign(preview.webContents, {
+          navigationHistory: {
+            canGoBack: () => canGoBack,
+            canGoForward: () => true,
+            goBack,
+            goForward,
+          },
+          getZoomFactor: () => 2,
+          send,
+        });
+        fromId.mockReturnValue(preview.webContents);
+        yield* manager.createTab("tab_mouse_navigation");
+        yield* manager.registerWebview("tab_mouse_navigation", 42);
+
+        // Electron reports thumb buttons as "back"/"forward" for every frame of the guest, iframes included.
+        const beforeMouse = preview.listeners.get("before-mouse-event");
+        expect(beforeMouse, "guest has no before-mouse-event listener").toBeDefined();
+        const press = (type: "mouseDown" | "mouseUp", button: string) => {
+          const preventDefault = vi.fn();
+          beforeMouse!({ preventDefault } as never, { type, button, x: 10, y: 10 } as never);
+          return preventDefault;
+        };
+
+        // At the start of tab history the press is still swallowed, or the host app goes back instead.
+        expect(press("mouseDown", "back")).toHaveBeenCalledOnce();
+        expect(press("mouseUp", "back")).toHaveBeenCalledOnce();
+        expect(goBack).not.toHaveBeenCalled();
+
+        canGoBack = true;
+        expect(press("mouseDown", "back")).toHaveBeenCalledOnce();
+        expect(goBack).not.toHaveBeenCalled();
+        expect(press("mouseUp", "back")).toHaveBeenCalledOnce();
+        expect(goBack).toHaveBeenCalledOnce();
+        expect(press("mouseDown", "forward")).toHaveBeenCalledOnce();
+        expect(press("mouseUp", "forward")).toHaveBeenCalledOnce();
+        expect(goForward).toHaveBeenCalledOnce();
+        for (const button of ["left", "right"]) {
+          expect(press("mouseDown", button)).not.toHaveBeenCalled();
+          expect(press("mouseUp", button)).not.toHaveBeenCalled();
+        }
+        expect(goBack).toHaveBeenCalledOnce();
+        expect(goForward).toHaveBeenCalledOnce();
+        // The guest replays dropped presses for human input and recordings, in CSS px.
+        expect(send.mock.calls.filter(([channel]) => channel === "preview:thumb-press")).toEqual([
+          ["preview:thumb-press", "down", 5, 5, 3],
+          ["preview:thumb-press", "up", 5, 5, 3],
+          ["preview:thumb-press", "down", 5, 5, 3],
+          ["preview:thumb-press", "up", 5, 5, 3],
+          ["preview:thumb-press", "down", 5, 5, 4],
+          ["preview:thumb-press", "up", 5, 5, 4],
+        ]);
+      }),
+    ),
   );
 
   effectIt.effect("keeps editing and forwarded shortcuts in whichever tab holds focus", () =>
@@ -1114,6 +1186,49 @@ describe("PreviewManager", () => {
           operation: "navigate.loadURL",
           cause: { errno: -105 },
         });
+
+        const statuses = yield* Queue.unbounded<PreviewManager.PreviewNavStatus>();
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          state.navStatus.kind === "LoadFailed"
+            ? Queue.offer(statuses, state.navStatus).pipe(Effect.asVoid)
+            : Effect.void,
+        );
+        for (const [errno, code, isMainFrame] of [
+          [-102, "ERR_CONNECTION_REFUSED", true],
+          [-105, "ERR_NAME_NOT_RESOLVED", true],
+          [-202, "ERR_CERT_AUTHORITY_INVALID", true],
+          [-105, "ERR_NAME_NOT_RESOLVED", false],
+        ] as const) {
+          const url = `https://missing.invalid/${code}`;
+          preview.loadURL.mockImplementationOnce(async () => {
+            const failLoad = preview.listeners.get("did-fail-load") as
+              | ((
+                  event: object,
+                  code: number,
+                  description: string,
+                  url: string,
+                  main: boolean,
+                ) => void)
+              | undefined;
+            failLoad?.({}, errno, code, url, isMainFrame);
+            throw loadError(errno, code, url);
+          });
+          const navigated = yield* Effect.exit(manager.navigate("tab_redirect", url));
+          expect(Exit.isSuccess(navigated)).toBe(isMainFrame);
+          if (!isMainFrame) continue;
+          expect(yield* Queue.take(statuses)).toMatchObject({
+            kind: "LoadFailed",
+            url,
+            code: errno,
+            description: code,
+          });
+        }
+        preview.loadURL.mockRejectedValueOnce(new Error("Object has been destroyed"));
+        expect(
+          Exit.isFailure(
+            yield* Effect.exit(manager.navigate("tab_redirect", "https://example.com/destroyed")),
+          ),
+        ).toBe(true);
       }),
     ),
   );
@@ -2131,6 +2246,71 @@ describe("PreviewManager", () => {
         screenshot.resolve({ data: "" });
         expect(yield* Queue.take(capturing)).toBe(false);
       }).pipe(Effect.provide(managerLayer())),
+  );
+
+  effectIt.effect(
+    "opens a new-tab link in the background only when the agent's input led to it",
+    () =>
+      Effect.gen(function* () {
+        const host = yield* DesktopBrowserHost.DesktopBrowserHost;
+        const serverTab = { threadId: "thread-1", tabId: "server-tab-1" };
+        const contents = Object.assign(
+          makeTestPreviewWebContents(async () => {
+            throw new Error("unused");
+          }, 42),
+          {
+            isDevToolsOpened: () => false,
+            getUserAgent: () => "Electron",
+            focusedFrame: null,
+          },
+        );
+        fromId.mockReturnValue(contents);
+        const manager = yield* PreviewManager.PreviewManager;
+        const openLinks = yield* Queue.unbounded<boolean>();
+        yield* manager.subscribeOpenLinks(({ background }) =>
+          Queue.offer(openLinks, background).pipe(Effect.asVoid),
+        );
+        const attached = yield* Deferred.make<void>();
+        yield* host.events.pipe(
+          Stream.runForEach((line) =>
+            new TextDecoder().decode(line).includes('"type":"attached"')
+              ? Deferred.succeed(attached, undefined)
+              : Effect.void,
+          ),
+          Effect.forkScoped,
+        );
+        yield* manager.createTab("tab_1", { serverTab });
+        yield* manager.registerWebview("tab_1", 42);
+        yield* Deferred.await(attached);
+        const openWindow = vi.mocked(contents.setWindowOpenHandler).mock.calls[0]![0];
+        const openBlankLink = Effect.suspend(() => {
+          openWindow({
+            url: "https://example.com/next",
+            disposition: "foreground-tab",
+          } as Electron.HandlerDetails);
+          return Queue.take(openLinks);
+        });
+
+        expect(yield* openBlankLink).toBe(false);
+
+        yield* host.handleCommandLine(
+          JSON.stringify({
+            type: "cdp",
+            ...serverTab,
+            message: JSON.stringify({
+              id: 1,
+              method: "Runtime.evaluate",
+              params: { expression: "document.querySelector('a').click()" },
+              sessionId: "t3-preview-page",
+            }),
+          }),
+        );
+        expect(yield* openBlankLink).toBe(true);
+
+        // A person clicking in the guest itself gives it a focused frame.
+        Object.assign(contents, { focusedFrame: {} });
+        expect(yield* openBlankLink).toBe(false);
+      }).pipe(Effect.provide(managerLayer()), Effect.scoped),
   );
 
   effectIt.effect("reports early and subsequent load failures for the current guest", () =>

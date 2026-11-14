@@ -17,79 +17,79 @@ import { acquireBrowserSurfaceActivity } from "./browserSurfaceStore";
 
 const isPreviewCaptureFailure = Schema.is(PreviewCaptureFailure);
 
-export class BrowserRecordingUnavailableError extends Schema.TaggedError<BrowserRecordingUnavailableError>()(
-  "BrowserRecordingUnavailableError",
-  {
-    tabId: Schema.String,
-  },
-) {
+export class BrowserRecordingUnavailableError extends Schema.TaggedError<
+  BrowserRecordingUnavailableError,
+  { readonly brand: unique symbol }
+>()("BrowserRecordingUnavailableError", {
+  tabId: Schema.String,
+}) {
   override get message(): string {
     return `Browser recording is unavailable for tab ${this.tabId}.`;
   }
 }
 
-export class BrowserRecordingConflictError extends Schema.TaggedError<BrowserRecordingConflictError>()(
-  "BrowserRecordingConflictError",
-  {
-    requestedTabId: Schema.String,
-    activeTabId: Schema.String,
-  },
-) {
+export class BrowserRecordingConflictError extends Schema.TaggedError<
+  BrowserRecordingConflictError,
+  { readonly brand: unique symbol }
+>()("BrowserRecordingConflictError", {
+  requestedTabId: Schema.String,
+  activeTabId: Schema.String,
+}) {
   override get message(): string {
     return `Cannot record tab ${this.requestedTabId} while tab ${this.activeTabId} is already being recorded.`;
   }
 }
 
-export class BrowserRecordingStartCancelledError extends Schema.TaggedError<BrowserRecordingStartCancelledError>()(
-  "BrowserRecordingStartCancelledError",
-  {
-    tabId: Schema.String,
-  },
-) {
+export class BrowserRecordingStartCancelledError extends Schema.TaggedError<
+  BrowserRecordingStartCancelledError,
+  { readonly brand: unique symbol }
+>()("BrowserRecordingStartCancelledError", {
+  tabId: Schema.String,
+}) {
   override get message(): string {
     return `Browser recording start was cancelled for tab ${this.tabId}.`;
   }
 }
 
-export class BrowserRecordingFormatUnavailableError extends Schema.TaggedError<BrowserRecordingFormatUnavailableError>()(
-  "BrowserRecordingFormatUnavailableError",
-  { tabId: Schema.String },
-) {
+export class BrowserRecordingFormatUnavailableError extends Schema.TaggedError<
+  BrowserRecordingFormatUnavailableError,
+  { readonly brand: unique symbol }
+>()("BrowserRecordingFormatUnavailableError", { tabId: Schema.String }) {
   override get message(): string {
     return `MediaRecorder did not report an output format for tab ${this.tabId}.`;
   }
 }
 
-export class BrowserRecordingCaptureTimeoutError extends Schema.TaggedError<BrowserRecordingCaptureTimeoutError>()(
-  "BrowserRecordingCaptureTimeoutError",
-  {
-    tabId: Schema.String,
-    timeoutMs: Schema.Number,
-  },
-) {
+export class BrowserRecordingCaptureTimeoutError extends Schema.TaggedError<
+  BrowserRecordingCaptureTimeoutError,
+  { readonly brand: unique symbol }
+>()("BrowserRecordingCaptureTimeoutError", {
+  tabId: Schema.String,
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `Browser recording media capture for tab ${this.tabId} did not settle within ${this.timeoutMs}ms.`;
   }
 }
 
-export class BrowserRecordingOperationError extends Schema.TaggedError<BrowserRecordingOperationError>()(
-  "BrowserRecordingOperationError",
-  {
-    operation: Schema.Literals([
-      "initialize-media-recorder",
-      "capture-media-stream",
-      "start-media-recorder",
-      "start-screencast",
-      "stop-screencast",
-      "wait-startup",
-      "stop-media-recorder",
-      "save-artifact",
-      "cleanup",
-    ]),
-    tabId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BrowserRecordingOperationError extends Schema.TaggedError<
+  BrowserRecordingOperationError,
+  { readonly brand: unique symbol }
+>()("BrowserRecordingOperationError", {
+  operation: Schema.Literals([
+    "initialize-media-recorder",
+    "capture-media-stream",
+    "start-media-recorder",
+    "start-screencast",
+    "stop-screencast",
+    "wait-startup",
+    "stop-media-recorder",
+    "save-artifact",
+    "cleanup",
+  ]),
+  tabId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     if (isPreviewCaptureFailure(this.cause)) {
       return this.cause.message;

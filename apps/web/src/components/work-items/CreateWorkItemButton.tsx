@@ -60,6 +60,7 @@ export function CreateWorkItemButton({
       {open ? (
         <Suspense fallback={null}>
           <WorkItemEditor
+            environmentId={threadRef.environmentId}
             initialTitle={text.trim().split("\n")[0]?.slice(0, 300) ?? ""}
             initialDescription={text}
             initialSources={[{ threadId: threadRef.threadId, title: thread.title, messageId }]}
