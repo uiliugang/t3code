@@ -33,19 +33,19 @@ const isTransientBearerBootstrapError = (error: RemoteEnvironmentRequestError): 
   }
 };
 
-export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedError<DesktopLocalEnvironmentAuthBackendNotConfiguredError>()(
-  "DesktopLocalEnvironmentAuthBackendNotConfiguredError",
-  {},
-) {
+export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedError<
+  DesktopLocalEnvironmentAuthBackendNotConfiguredError,
+  { readonly brand: unique symbol }
+>()("DesktopLocalEnvironmentAuthBackendNotConfiguredError", {}) {
   override get message(): string {
     return "Local backend is not configured.";
   }
 }
 
-export class DesktopLocalEnvironmentAuthSessionBootstrapError extends Schema.TaggedError<DesktopLocalEnvironmentAuthSessionBootstrapError>()(
-  "DesktopLocalEnvironmentAuthSessionBootstrapError",
-  { cause: Schema.Defect() },
-) {
+export class DesktopLocalEnvironmentAuthSessionBootstrapError extends Schema.TaggedError<
+  DesktopLocalEnvironmentAuthSessionBootstrapError,
+  { readonly brand: unique symbol }
+>()("DesktopLocalEnvironmentAuthSessionBootstrapError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to create the local desktop bearer session.";
   }

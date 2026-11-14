@@ -21,15 +21,15 @@ import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
-export class CheckpointCaptureExecutionError extends Schema.TaggedError<CheckpointCaptureExecutionError>()(
-  "CheckpointCaptureExecutionError",
-  {
-    threadId: ThreadId,
-    runId: RunId,
-    scopeId: CheckpointScopeId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class CheckpointCaptureExecutionError extends Schema.TaggedError<
+  CheckpointCaptureExecutionError,
+  { readonly brand: unique symbol }
+>()("CheckpointCaptureExecutionError", {
+  threadId: ThreadId,
+  runId: RunId,
+  scopeId: CheckpointScopeId,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isCheckpointCaptureExecutionError = Schema.is(CheckpointCaptureExecutionError);
 

@@ -1155,21 +1155,30 @@ export const make = Effect.fn("PortDiscovery.make")(function* (stateDir: string)
           return;
         seen.add(pid);
         if (mode === "settled") {
-          const environment = yield* (
+          const readEnvironment =
             hostPlatform === "linux"
-              ? fileSystem.readFileString(`/proc/${pid}/environ`)
+              ? fileSystem
+                  .readFileString(`/proc/${pid}/environ`)
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new PreviewStopLocalServerError({ reason: "signal-failed", cause }),
+                    ),
+                  )
               : processRunner
                   .run({
                     command: "ps",
                     args: ["-E", "-ww", "-o", "command=", "-p", String(pid)],
                     timeout: "5 seconds",
                   })
-                  .pipe(Effect.map((result) => result.stdout))
-          ).pipe(
-            Effect.mapError(
-              (cause) => new PreviewStopLocalServerError({ reason: "signal-failed", cause }),
-            ),
-          );
+                  .pipe(
+                    Effect.map((result) => result.stdout),
+                    Effect.mapError(
+                      (cause) =>
+                        new PreviewStopLocalServerError({ reason: "signal-failed", cause }),
+                    ),
+                  );
+          const environment = yield* readEnvironment;
           const registrations = (yield* Ref.get(stateRef)).terminalProcesses.values();
           const protectedRoles = new Set(
             [...registrations]

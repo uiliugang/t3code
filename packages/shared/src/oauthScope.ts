@@ -2,14 +2,14 @@ import * as Schema from "effect/Schema";
 
 const OAUTH_SCOPE_TOKEN = /^[\u0021\u0023-\u005b\u005d-\u007e]+$/u;
 
-export class OAuthScopeEncodingError extends Schema.TaggedError<OAuthScopeEncodingError>()(
-  "OAuthScopeEncodingError",
-  {
-    scopes: Schema.Array(Schema.String),
-    invalidScopes: Schema.Array(Schema.String),
-    duplicateScopes: Schema.Array(Schema.String),
-  },
-) {
+export class OAuthScopeEncodingError extends Schema.TaggedError<
+  OAuthScopeEncodingError,
+  { readonly brand: unique symbol }
+>()("OAuthScopeEncodingError", {
+  scopes: Schema.Array(Schema.String),
+  invalidScopes: Schema.Array(Schema.String),
+  duplicateScopes: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     return "OAuth scopes must be non-empty, syntactically valid, and unique.";
   }

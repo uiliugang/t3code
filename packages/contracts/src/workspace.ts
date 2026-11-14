@@ -101,10 +101,10 @@ export const WorkspaceCheckoutResult = Schema.Struct({
 });
 export type WorkspaceCheckoutResult = typeof WorkspaceCheckoutResult.Type;
 
-export class WorkspaceCheckoutError extends Schema.TaggedError<WorkspaceCheckoutError>()(
-  "WorkspaceCheckoutError",
-  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class WorkspaceCheckoutError extends Schema.TaggedError<
+  WorkspaceCheckoutError,
+  { readonly brand: unique symbol }
+>()("WorkspaceCheckoutError", { detail: Schema.String, cause: Schema.optional(Schema.Defect()) }) {
   override get message() {
     return this.detail;
   }
@@ -126,10 +126,10 @@ export const WorkspaceRecoveryResult = Schema.Struct({
 });
 export type WorkspaceRecoveryResult = typeof WorkspaceRecoveryResult.Type;
 
-export class WorkspaceRecoveryError extends Schema.TaggedError<WorkspaceRecoveryError>()(
-  "WorkspaceRecoveryError",
-  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class WorkspaceRecoveryError extends Schema.TaggedError<
+  WorkspaceRecoveryError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRecoveryError", { detail: Schema.String, cause: Schema.optional(Schema.Defect()) }) {
   override get message() {
     return this.detail;
   }

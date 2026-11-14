@@ -16,28 +16,28 @@ const ServerEnvironmentLabelCommandProbe = Schema.Literals([
 ]);
 type ServerEnvironmentLabelCommandProbe = typeof ServerEnvironmentLabelCommandProbe.Type;
 
-export class ServerEnvironmentLabelFileError extends Schema.TaggedError<ServerEnvironmentLabelFileError>()(
-  "ServerEnvironmentLabelFileError",
-  {
-    operation: Schema.Literals(["inspect", "read"]),
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ServerEnvironmentLabelFileError extends Schema.TaggedError<
+  ServerEnvironmentLabelFileError,
+  { readonly brand: unique symbol }
+>()("ServerEnvironmentLabelFileError", {
+  operation: Schema.Literals(["inspect", "read"]),
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} environment-label file at ${this.path}.`;
   }
 }
 
-export class ServerEnvironmentLabelCommandError extends Schema.TaggedError<ServerEnvironmentLabelCommandError>()(
-  "ServerEnvironmentLabelCommandError",
-  {
-    probe: ServerEnvironmentLabelCommandProbe,
-    executable: Schema.String,
-    argumentCount: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ServerEnvironmentLabelCommandError extends Schema.TaggedError<
+  ServerEnvironmentLabelCommandError,
+  { readonly brand: unique symbol }
+>()("ServerEnvironmentLabelCommandError", {
+  probe: ServerEnvironmentLabelCommandProbe,
+  executable: Schema.String,
+  argumentCount: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to run environment-label probe '${this.probe}' with ${this.executable}.`;
   }

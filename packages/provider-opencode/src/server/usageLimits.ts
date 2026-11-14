@@ -43,10 +43,10 @@ const UsageResponse = Schema.Struct({
 
 // Select before decoding so an OAuth or self-hosted connection cannot fall
 // through to another stored account. NULL-active rows predate the selection flag.
-class OpenCodeCredentialReadError extends Schema.TaggedError<OpenCodeCredentialReadError>()(
-  "OpenCodeCredentialReadError",
-  { databasePath: Schema.String, cause: Schema.Defect() },
-) {
+class OpenCodeCredentialReadError extends Schema.TaggedError<
+  OpenCodeCredentialReadError,
+  { readonly brand: unique symbol }
+>()("OpenCodeCredentialReadError", { databasePath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not read OpenCode credentials from ${this.databasePath}.`;
   }

@@ -6,14 +6,14 @@ import * as Schema from "effect/Schema";
 
 import * as Electron from "electron";
 
-export class ElectronDialogPickFolderError extends Schema.TaggedError<ElectronDialogPickFolderError>()(
-  "ElectronDialogPickFolderError",
-  {
-    ownerWindowId: Schema.NullOr(Schema.Number),
-    defaultPath: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronDialogPickFolderError extends Schema.TaggedError<
+  ElectronDialogPickFolderError,
+  { readonly brand: unique symbol }
+>()("ElectronDialogPickFolderError", {
+  ownerWindowId: Schema.NullOr(Schema.Number),
+  defaultPath: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const owner = this.ownerWindowId === null ? "the application" : `window ${this.ownerWindowId}`;
     const defaultPath = this.defaultPath === null ? "no default path" : this.defaultPath;
@@ -21,14 +21,14 @@ export class ElectronDialogPickFolderError extends Schema.TaggedError<ElectronDi
   }
 }
 
-export class ElectronDialogPickFilesError extends Schema.TaggedError<ElectronDialogPickFilesError>()(
-  "ElectronDialogPickFilesError",
-  {
-    ownerWindowId: Schema.NullOr(Schema.Number),
-    defaultPath: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronDialogPickFilesError extends Schema.TaggedError<
+  ElectronDialogPickFilesError,
+  { readonly brand: unique symbol }
+>()("ElectronDialogPickFilesError", {
+  ownerWindowId: Schema.NullOr(Schema.Number),
+  defaultPath: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const owner = this.ownerWindowId === null ? "the application" : `window ${this.ownerWindowId}`;
     const defaultPath = this.defaultPath === null ? "no default path" : this.defaultPath;
@@ -36,31 +36,31 @@ export class ElectronDialogPickFilesError extends Schema.TaggedError<ElectronDia
   }
 }
 
-export class ElectronDialogShowMessageBoxError extends Schema.TaggedError<ElectronDialogShowMessageBoxError>()(
-  "ElectronDialogShowMessageBoxError",
-  {
-    type: Schema.NullOr(Schema.Literals(["none", "info", "error", "question", "warning"])),
-    titleLength: Schema.NullOr(Schema.Number),
-    messageLength: Schema.Number,
-    detailLength: Schema.NullOr(Schema.Number),
-    buttonCount: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronDialogShowMessageBoxError extends Schema.TaggedError<
+  ElectronDialogShowMessageBoxError,
+  { readonly brand: unique symbol }
+>()("ElectronDialogShowMessageBoxError", {
+  type: Schema.NullOr(Schema.Literals(["none", "info", "error", "question", "warning"])),
+  titleLength: Schema.NullOr(Schema.Number),
+  messageLength: Schema.Number,
+  detailLength: Schema.NullOr(Schema.Number),
+  buttonCount: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const type = this.type === null ? "untyped" : this.type;
     return `Failed to show the Electron ${type} message box with ${this.buttonCount} buttons.`;
   }
 }
 
-export class ElectronDialogShowErrorBoxError extends Schema.TaggedError<ElectronDialogShowErrorBoxError>()(
-  "ElectronDialogShowErrorBoxError",
-  {
-    titleLength: Schema.Number,
-    contentLength: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronDialogShowErrorBoxError extends Schema.TaggedError<
+  ElectronDialogShowErrorBoxError,
+  { readonly brand: unique symbol }
+>()("ElectronDialogShowErrorBoxError", {
+  titleLength: Schema.Number,
+  contentLength: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to show the Electron error box with a ${this.titleLength}-character title and ${this.contentLength}-character content.`;
   }

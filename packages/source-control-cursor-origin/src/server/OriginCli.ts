@@ -32,7 +32,10 @@ const API_BASE_URL = "https://api.cursor.com";
 
 export const ORIGIN_COMMAND = "origin";
 
-export class OriginCliError extends Schema.TaggedError<OriginCliError>()("OriginCliError", {
+export class OriginCliError extends Schema.TaggedError<
+  OriginCliError,
+  { readonly brand: unique symbol }
+>()("OriginCliError", {
   operation: Schema.String,
   cwd: Schema.String,
   detail: Schema.String,

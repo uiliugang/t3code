@@ -39,10 +39,10 @@ const decodeSimulators = Schema.decodeUnknownEffect(
 );
 export type NativeClientRecord = typeof NativeClientRecord.Type;
 export type NativeClientStatus = "compatible" | "missing" | "unknown" | "stale";
-export class NativeClientError extends Schema.TaggedError<NativeClientError>()(
-  "NativeClientError",
-  { message: Schema.String },
-) {}
+export class NativeClientError extends Schema.TaggedError<
+  NativeClientError,
+  { readonly brand: unique symbol }
+>()("NativeClientError", { message: Schema.String }) {}
 
 export function clientStatus(
   fingerprint: string,

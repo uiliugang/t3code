@@ -20,25 +20,25 @@ import { readEnvironmentScope } from "./state/session";
 
 const LAST_EDITOR_KEY = "t3code:last-editor";
 
-export class PreferredEditorEnvironmentRequiredError extends Schema.TaggedError<PreferredEditorEnvironmentRequiredError>()(
-  "PreferredEditorEnvironmentRequiredError",
-  {
-    targetPath: Schema.String,
-  },
-) {
+export class PreferredEditorEnvironmentRequiredError extends Schema.TaggedError<
+  PreferredEditorEnvironmentRequiredError,
+  { readonly brand: unique symbol }
+>()("PreferredEditorEnvironmentRequiredError", {
+  targetPath: Schema.String,
+}) {
   override get message(): string {
     return `Cannot open ${this.targetPath} because no environment is selected.`;
   }
 }
 
-export class PreferredEditorUnavailableError extends Schema.TaggedError<PreferredEditorUnavailableError>()(
-  "PreferredEditorUnavailableError",
-  {
-    environmentId: EnvironmentId,
-    targetPath: Schema.String,
-    availableEditorIds: Schema.Array(EditorId),
-  },
-) {
+export class PreferredEditorUnavailableError extends Schema.TaggedError<
+  PreferredEditorUnavailableError,
+  { readonly brand: unique symbol }
+>()("PreferredEditorUnavailableError", {
+  environmentId: EnvironmentId,
+  targetPath: Schema.String,
+  availableEditorIds: Schema.Array(EditorId),
+}) {
   override get message(): string {
     return `No available editor can open ${this.targetPath} in environment ${this.environmentId}.`;
   }

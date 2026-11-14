@@ -1470,7 +1470,10 @@ describe("relay routing fallback", () => {
 describe("relay CORS", () => {
   const origin = "https://app.t3.codes";
 
-  class HandlerFailed extends Schema.TaggedError<HandlerFailed>()("HandlerFailed", {}) {}
+  class HandlerFailed extends Schema.TaggedError<
+    HandlerFailed,
+    { readonly brand: unique symbol }
+  >()("HandlerFailed", {}) {}
 
   it.effect("adds CORS headers to handler failures and defects", () =>
     Effect.gen(function* () {

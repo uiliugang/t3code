@@ -9,10 +9,13 @@ import { nativeImage } from "electron";
 
 export const HYPRLAND_CAPTURE_ACTION = "capture-window";
 
-export class CaptureSetupRequiredError extends Schema.TaggedError<CaptureSetupRequiredError>()(
-  "CaptureSetupRequiredError",
-  { state: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class CaptureSetupRequiredError extends Schema.TaggedError<
+  CaptureSetupRequiredError,
+  { readonly brand: unique symbol }
+>()("CaptureSetupRequiredError", {
+  state: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `${this.state} Open Settings → SnapShots to continue setup.`;
   }

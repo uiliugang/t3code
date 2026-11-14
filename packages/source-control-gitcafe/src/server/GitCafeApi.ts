@@ -24,7 +24,10 @@ export const GitCafeApiFailure = Schema.Literals([
   "failed",
 ]);
 
-export class GitCafeApiError extends Schema.TaggedError<GitCafeApiError>()("GitCafeApiError", {
+export class GitCafeApiError extends Schema.TaggedError<
+  GitCafeApiError,
+  { readonly brand: unique symbol }
+>()("GitCafeApiError", {
   host: Schema.String,
   operation: Schema.String,
   status: Schema.NullOr(Schema.Int),

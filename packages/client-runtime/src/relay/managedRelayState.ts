@@ -55,13 +55,13 @@ export interface ManagedRelayQueryEvent {
   readonly traceId?: string | null;
 }
 
-export class ManagedRelaySessionError extends Schema.TaggedError<ManagedRelaySessionError>()(
-  "ManagedRelaySessionError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ManagedRelaySessionError extends Schema.TaggedError<
+  ManagedRelaySessionError,
+  { readonly brand: unique symbol }
+>()("ManagedRelaySessionError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export const managedRelaySessionAtom = Atom.make<ManagedRelaySession | null>(null).pipe(
   Atom.keepAlive,

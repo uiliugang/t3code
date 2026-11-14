@@ -110,10 +110,10 @@ export const ProviderConsumeResetCreditInput = Schema.Union([
 ]);
 export type ProviderConsumeResetCreditInput = typeof ProviderConsumeResetCreditInput.Type;
 
-export class UsageLimitSourceError extends Schema.TaggedError<UsageLimitSourceError>()(
-  "UsageLimitSourceError",
-  { detail: Schema.String },
-) {
+export class UsageLimitSourceError extends Schema.TaggedError<
+  UsageLimitSourceError,
+  { readonly brand: unique symbol }
+>()("UsageLimitSourceError", { detail: Schema.String }) {
   override get message(): string {
     return this.detail;
   }

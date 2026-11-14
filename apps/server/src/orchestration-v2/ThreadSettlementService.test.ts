@@ -2,6 +2,7 @@ import * as Cleanup from "./ResourceCleanupService.ts";
 import * as Previews from "../preview/Manager.ts";
 import * as Tasks from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerConfig from "../config.ts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Schema from "effect/Schema";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, describe, expect, it } from "@effect/vitest";
@@ -707,7 +708,9 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const layerDependencies = Layer.mergeAll(
     Layer.mock(Previews.PreviewManager)({}),
     Layer.mock(Tasks.ScheduledTaskService)({}),
-    Layer.mock(ServerConfig.ServerConfig)({}),
+    ServerConfig.layerTest("/test", { prefix: "t3-settlement-" }).pipe(
+      Layer.provide(NodeServices.layer),
+    ),
     Layer.mock(ProjectStore.ProjectStoreV2)({
       listShells: () => Ref.get(snapshots).pipe(Effect.map((snapshot) => snapshot.projects)),
     }),

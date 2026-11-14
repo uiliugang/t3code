@@ -7,35 +7,35 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-export class InvalidScopedProjectKeyError extends Schema.TaggedError<InvalidScopedProjectKeyError>()(
-  "InvalidScopedProjectKeyError",
-  {
-    key: Schema.String,
-  },
-) {
+export class InvalidScopedProjectKeyError extends Schema.TaggedError<
+  InvalidScopedProjectKeyError,
+  { readonly brand: unique symbol }
+>()("InvalidScopedProjectKeyError", {
+  key: Schema.String,
+}) {
   override get message(): string {
     return `Invalid scoped project atom key: ${JSON.stringify(this.key)}.`;
   }
 }
 
-export class InvalidScopedThreadKeyError extends Schema.TaggedError<InvalidScopedThreadKeyError>()(
-  "InvalidScopedThreadKeyError",
-  {
-    key: Schema.String,
-  },
-) {
+export class InvalidScopedThreadKeyError extends Schema.TaggedError<
+  InvalidScopedThreadKeyError,
+  { readonly brand: unique symbol }
+>()("InvalidScopedThreadKeyError", {
+  key: Schema.String,
+}) {
   override get message(): string {
     return `Invalid scoped thread atom key: ${JSON.stringify(this.key)}.`;
   }
 }
 
-export class InvalidScopedProjectRefCollectionKeyError extends Schema.TaggedError<InvalidScopedProjectRefCollectionKeyError>()(
-  "InvalidScopedProjectRefCollectionKeyError",
-  {
-    key: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class InvalidScopedProjectRefCollectionKeyError extends Schema.TaggedError<
+  InvalidScopedProjectRefCollectionKeyError,
+  { readonly brand: unique symbol }
+>()("InvalidScopedProjectRefCollectionKeyError", {
+  key: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Invalid scoped project reference collection atom key: ${JSON.stringify(this.key)}.`;
   }

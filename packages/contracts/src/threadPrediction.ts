@@ -13,10 +13,10 @@ export const ThreadPredictionResult = Schema.Struct({
 });
 export type ThreadPredictionResult = typeof ThreadPredictionResult.Type;
 
-export class ThreadPredictionError extends Schema.TaggedError<ThreadPredictionError>()(
-  "ThreadPredictionError",
-  { threadId: ThreadId, cause: Schema.Defect() },
-) {
+export class ThreadPredictionError extends Schema.TaggedError<
+  ThreadPredictionError,
+  { readonly brand: unique symbol }
+>()("ThreadPredictionError", { threadId: ThreadId, cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not predict the next message.";
   }

@@ -32,10 +32,10 @@ import { quoteRemoteArg, remoteDeviceEnvironment, remoteDeviceScript } from "./s
 const UNHEALTHY_PROBE_LIMIT = 3;
 
 /** The host bootstrap failed on a host identified as Windows. */
-export class SshWindowsHostError extends Schema.TaggedError<SshWindowsHostError>()(
-  "SshWindowsHostError",
-  { cause: Schema.Defect() },
-) {
+export class SshWindowsHostError extends Schema.TaggedError<
+  SshWindowsHostError,
+  { readonly brand: unique symbol }
+>()("SshWindowsHostError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.";
   }

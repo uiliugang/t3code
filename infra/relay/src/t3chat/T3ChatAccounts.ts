@@ -22,31 +22,31 @@ const decodeLinkResponse = Schema.decodeUnknownEffect(
   Schema.Struct({ link: Schema.NullOr(RelayT3ChatLink) }),
 );
 
-export class T3ChatNotConfigured extends Schema.TaggedError<T3ChatNotConfigured>()(
-  "T3ChatNotConfigured",
-  {},
-) {
+export class T3ChatNotConfigured extends Schema.TaggedError<
+  T3ChatNotConfigured,
+  { readonly brand: unique symbol }
+>()("T3ChatNotConfigured", {}) {
   override get message(): string {
     return "T3 Chat linking is not configured on this relay";
   }
 }
 
-export class ClerkUserLookupFailed extends Schema.TaggedError<ClerkUserLookupFailed>()(
-  "ClerkUserLookupFailed",
-  { cause: Schema.Defect() },
-) {
+export class ClerkUserLookupFailed extends Schema.TaggedError<
+  ClerkUserLookupFailed,
+  { readonly brand: unique symbol }
+>()("ClerkUserLookupFailed", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not read the Clerk user's primary email";
   }
 }
 
-export class T3ChatRequestFailed extends Schema.TaggedError<T3ChatRequestFailed>()(
-  "T3ChatRequestFailed",
-  {
-    operation: Schema.Literals(["get-link", "unlink"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class T3ChatRequestFailed extends Schema.TaggedError<
+  T3ChatRequestFailed,
+  { readonly brand: unique symbol }
+>()("T3ChatRequestFailed", {
+  operation: Schema.Literals(["get-link", "unlink"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `T3 Chat '${this.operation}' request failed`;
   }

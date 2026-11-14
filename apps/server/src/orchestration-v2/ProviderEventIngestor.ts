@@ -41,28 +41,28 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
 
-export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
-  "ProviderEventNormalizeError",
-  {
-    providerSessionId: ProviderSessionId,
-    threadId: ThreadId,
-    providerEvent: ProviderAdapter.ProviderAdapterV2Event,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderEventNormalizeError extends Schema.TaggedError<
+  ProviderEventNormalizeError,
+  { readonly brand: unique symbol }
+>()("ProviderEventNormalizeError", {
+  providerSessionId: ProviderSessionId,
+  threadId: ThreadId,
+  providerEvent: ProviderAdapter.ProviderAdapterV2Event,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to normalize provider event ${this.providerEvent.type} for thread ${this.threadId}.`;
   }
 }
 
-export class ProviderEventPublishError extends Schema.TaggedError<ProviderEventPublishError>()(
-  "ProviderEventPublishError",
-  {
-    providerSessionId: ProviderSessionId,
-    eventCount: Schema.Number,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderEventPublishError extends Schema.TaggedError<
+  ProviderEventPublishError,
+  { readonly brand: unique symbol }
+>()("ProviderEventPublishError", {
+  providerSessionId: ProviderSessionId,
+  eventCount: Schema.Number,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to publish ${this.eventCount} normalized provider event(s).`;
   }

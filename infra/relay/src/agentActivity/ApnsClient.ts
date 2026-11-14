@@ -51,19 +51,19 @@ export interface ApnsDeliveryResult {
   readonly apnsId: string | null;
 }
 
-export class ApnsHttpRequestError extends Schema.TaggedError<ApnsHttpRequestError>()(
-  "ApnsHttpRequestError",
-  {
-    requestKind: ApnsRequestKindSchema,
-    event: Schema.NullOr(ApnsLiveActivityEventSchema),
-    environment: ApnsEnvironment,
-    bundleId: Schema.String,
-    tokenSuffix: Schema.String,
-    stage: Schema.Literals(["send", "read-response"]),
-    status: Schema.NullOr(Schema.Number),
-    cause: Schema.Defect(),
-  },
-) {
+export class ApnsHttpRequestError extends Schema.TaggedError<
+  ApnsHttpRequestError,
+  { readonly brand: unique symbol }
+>()("ApnsHttpRequestError", {
+  requestKind: ApnsRequestKindSchema,
+  event: Schema.NullOr(ApnsLiveActivityEventSchema),
+  environment: ApnsEnvironment,
+  bundleId: Schema.String,
+  tokenSuffix: Schema.String,
+  stage: Schema.Literals(["send", "read-response"]),
+  status: Schema.NullOr(Schema.Number),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `APNs ${this.requestKind} request failed during ${this.stage} in ${this.environment}.`;
   }

@@ -5,12 +5,12 @@ import {
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Schema from "effect/Schema";
 
-export class CloudPublicConfigMissingError extends Schema.TaggedError<CloudPublicConfigMissingError>()(
-  "CloudPublicConfigMissingError",
-  {
-    key: Schema.Literal("T3CODE_CLERK_JWT_TEMPLATE"),
-  },
-) {
+export class CloudPublicConfigMissingError extends Schema.TaggedError<
+  CloudPublicConfigMissingError,
+  { readonly brand: unique symbol }
+>()("CloudPublicConfigMissingError", {
+  key: Schema.Literal("T3CODE_CLERK_JWT_TEMPLATE"),
+}) {
   override get message(): string {
     return `${this.key} is not configured.`;
   }

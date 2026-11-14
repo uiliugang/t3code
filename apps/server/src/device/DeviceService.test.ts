@@ -1661,6 +1661,7 @@ it.effect("reconciles SSH host settings without publishing no-op changes", () =>
       current: Effect.succeed(null),
       ensureReady: () => Effect.die("Unexpected device launch"),
       ensureAgentReady: () => Effect.die("Unexpected agent launch"),
+      releaseAgentSession: () => Effect.die("Unexpected session release"),
       stop: Effect.void,
       stopAgent: Effect.void,
     };
@@ -1770,6 +1771,7 @@ it.effect("a failed tool update reports npm's exit code but not its output", () 
       platformAvailability: (platform) => Effect.succeed({ platform, available: false }),
       ensureReady: () => Effect.die("Updating a tool does not start the hub"),
       ensureAgentReady: () => Effect.die("Updating a tool does not start the agent"),
+      releaseAgentSession: () => Effect.die("Updating a tool does not release sessions"),
       current: Effect.succeed(null),
       stopAgent: Effect.void,
       stop: Effect.void,

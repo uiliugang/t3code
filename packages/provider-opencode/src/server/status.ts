@@ -33,7 +33,10 @@ const OPENCODE_PRESENTATION = {
   showInteractionModeToggle: false,
 } as const;
 
-class OpenCodeProbeError extends Schema.TaggedError<OpenCodeProbeError>()("OpenCodeProbeError", {
+class OpenCodeProbeError extends Schema.TaggedError<
+  OpenCodeProbeError,
+  { readonly brand: unique symbol }
+>()("OpenCodeProbeError", {
   cause: Schema.optional(Schema.Defect()),
   detail: Schema.String,
 }) {}

@@ -981,10 +981,10 @@ const isTerminalProviderTurn = (turn: OrchestrationV2ProviderTurn): boolean =>
     turn.status === "failed" ||
     turn.status === "cancelled");
 
-class CodexGoalObjectiveTooLongError extends Schema.TaggedError<CodexGoalObjectiveTooLongError>()(
-  "CodexGoalObjectiveTooLongError",
-  { length: Schema.Number, limit: Schema.Number },
-) {
+class CodexGoalObjectiveTooLongError extends Schema.TaggedError<
+  CodexGoalObjectiveTooLongError,
+  { readonly brand: unique symbol }
+>()("CodexGoalObjectiveTooLongError", { length: Schema.Number, limit: Schema.Number }) {
   override get message() {
     return `The goal objective is ${this.length} characters; Codex supports at most ${this.limit}. Shorten it and send /goal again. The current goal was not changed.`;
   }

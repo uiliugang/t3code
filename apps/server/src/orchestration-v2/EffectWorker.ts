@@ -32,14 +32,14 @@ import { continueRestartedRun } from "./RestartContinuation.ts";
 
 const isProviderTurnControlError = Schema.is(ProviderTurnControlService.ProviderTurnControlError);
 
-export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
-  "OrchestrationEffectExecutionError",
-  {
-    effectId: Schema.String,
-    effectType: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationEffectExecutionError extends Schema.TaggedError<
+  OrchestrationEffectExecutionError,
+  { readonly brand: unique symbol }
+>()("OrchestrationEffectExecutionError", {
+  effectId: Schema.String,
+  effectType: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 /**
  * Do not apply this to `provider-turn.restart`: that compound effect also runs
@@ -650,14 +650,14 @@ const boundExecution =
         )
       : execution;
 
-export class OrchestrationEffectWorkerError extends Schema.TaggedError<OrchestrationEffectWorkerError>()(
-  "OrchestrationEffectWorkerError",
-  {
-    operation: Schema.String,
-    effectId: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationEffectWorkerError extends Schema.TaggedError<
+  OrchestrationEffectWorkerError,
+  { readonly brand: unique symbol }
+>()("OrchestrationEffectWorkerError", {
+  operation: Schema.String,
+  effectId: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isOrchestrationEffectWorkerError = Schema.is(OrchestrationEffectWorkerError);
 

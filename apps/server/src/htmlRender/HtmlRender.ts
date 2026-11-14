@@ -47,55 +47,55 @@ const HTML_FILE_EXTENSION = /\.html?$/i;
 const HTML_DOCUMENT_START = /^\s*<(?:!doctype\s+html|html)[\s>]/i;
 const formatMib = (bytes: number) => `${(bytes / MIB).toFixed(1)} MiB`;
 
-export class HtmlRenderFileError extends Schema.TaggedError<HtmlRenderFileError>()(
-  "HtmlRenderFileError",
-  { path: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class HtmlRenderFileError extends Schema.TaggedError<
+  HtmlRenderFileError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderFileError", { path: Schema.String, cause: Schema.optional(Schema.Defect()) }) {
   override get message(): string {
     return `${this.path} is not a readable HTML document. Pass an absolute path to a regular .html file that starts with <!doctype html> or <html>, or pass html instead.`;
   }
 }
 
-export class HtmlRenderFileTooLargeError extends Schema.TaggedError<HtmlRenderFileTooLargeError>()(
-  "HtmlRenderFileTooLargeError",
-  { path: Schema.String, sizeBytes: Schema.Number },
-) {
+export class HtmlRenderFileTooLargeError extends Schema.TaggedError<
+  HtmlRenderFileTooLargeError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderFileTooLargeError", { path: Schema.String, sizeBytes: Schema.Number }) {
   override get message(): string {
     return `${this.path} is ${formatMib(this.sizeBytes)}; a page must be at most ${formatMib(MAX_PAGE_BYTES)}.`;
   }
 }
 
-export class HtmlRenderImagesNotFoundError extends Schema.TaggedError<HtmlRenderImagesNotFoundError>()(
-  "HtmlRenderImagesNotFoundError",
-  { paths: Schema.Array(Schema.String) },
-) {
+export class HtmlRenderImagesNotFoundError extends Schema.TaggedError<
+  HtmlRenderImagesNotFoundError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderImagesNotFoundError", { paths: Schema.Array(Schema.String) }) {
   override get message(): string {
     return `These local images could not be read: ${this.paths.join(", ")}. Use absolute paths to existing image files, or remove them.`;
   }
 }
 
-export class HtmlRenderImageTooLargeError extends Schema.TaggedError<HtmlRenderImageTooLargeError>()(
-  "HtmlRenderImageTooLargeError",
-  { path: Schema.String, sizeBytes: Schema.Number },
-) {
+export class HtmlRenderImageTooLargeError extends Schema.TaggedError<
+  HtmlRenderImageTooLargeError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderImageTooLargeError", { path: Schema.String, sizeBytes: Schema.Number }) {
   override get message(): string {
     return `${this.path} is ${formatMib(this.sizeBytes)}; each local image must be at most ${formatMib(MAX_IMAGE_BYTES)}.`;
   }
 }
 
-export class HtmlRenderPageTooLargeError extends Schema.TaggedError<HtmlRenderPageTooLargeError>()(
-  "HtmlRenderPageTooLargeError",
-  { sizeBytes: Schema.Number },
-) {
+export class HtmlRenderPageTooLargeError extends Schema.TaggedError<
+  HtmlRenderPageTooLargeError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderPageTooLargeError", { sizeBytes: Schema.Number }) {
   override get message(): string {
     return `With its images inlined the page is ${formatMib(this.sizeBytes)}; the limit is ${formatMib(MAX_PAGE_BYTES)}. Use smaller images.`;
   }
 }
 
-export class HtmlRenderViewportHeightError extends Schema.TaggedError<HtmlRenderViewportHeightError>()(
-  "HtmlRenderViewportHeightError",
-  { found: Schema.String },
-) {
+export class HtmlRenderViewportHeightError extends Schema.TaggedError<
+  HtmlRenderViewportHeightError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderViewportHeightError", { found: Schema.String }) {
   override get message(): string {
     return `The page uses a viewport height unit (${this.found}). The frame grows to fit the page, so a size that follows the viewport makes it grow again and again. Let content set the height, or use fixed pixel heights.`;
   }
@@ -117,10 +117,10 @@ const rejectViewportHeight = (html: string) => {
   return Effect.void;
 };
 
-export class HtmlRenderStoreError extends Schema.TaggedError<HtmlRenderStoreError>()(
-  "HtmlRenderStoreError",
-  { cause: Schema.Defect() },
-) {
+export class HtmlRenderStoreError extends Schema.TaggedError<
+  HtmlRenderStoreError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderStoreError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "The HTML render could not be saved.";
   }

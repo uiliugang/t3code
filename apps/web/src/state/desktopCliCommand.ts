@@ -7,19 +7,19 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 
 type DesktopCliCommandBridge = DesktopBridge["cliCommand"];
 
-class DesktopCliCommandUnavailableError extends Schema.TaggedError<DesktopCliCommandUnavailableError>()(
-  "DesktopCliCommandUnavailableError",
-  {},
-) {
+class DesktopCliCommandUnavailableError extends Schema.TaggedError<
+  DesktopCliCommandUnavailableError,
+  { readonly brand: unique symbol }
+>()("DesktopCliCommandUnavailableError", {}) {
   override get message(): string {
     return "The t3 command is unavailable.";
   }
 }
 
-class DesktopCliCommandLoadError extends Schema.TaggedError<DesktopCliCommandLoadError>()(
-  "DesktopCliCommandLoadError",
-  { cause: Schema.Defect() },
-) {
+class DesktopCliCommandLoadError extends Schema.TaggedError<
+  DesktopCliCommandLoadError,
+  { readonly brand: unique symbol }
+>()("DesktopCliCommandLoadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to load the t3 command state.";
   }

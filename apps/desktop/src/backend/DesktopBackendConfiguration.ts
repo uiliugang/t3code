@@ -29,13 +29,13 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "../wsl/DesktopWslServerTree.ts";
 
-export class DesktopBackendObservabilitySettingsReadError extends Schema.TaggedError<DesktopBackendObservabilitySettingsReadError>()(
-  "DesktopBackendObservabilitySettingsReadError",
-  {
-    settingsPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopBackendObservabilitySettingsReadError extends Schema.TaggedError<
+  DesktopBackendObservabilitySettingsReadError,
+  { readonly brand: unique symbol }
+>()("DesktopBackendObservabilitySettingsReadError", {
+  settingsPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read persisted backend observability settings at ${this.settingsPath}.`;
   }

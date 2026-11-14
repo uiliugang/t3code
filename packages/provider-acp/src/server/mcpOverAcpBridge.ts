@@ -24,10 +24,10 @@ interface Connection {
   nextRequestId: number;
 }
 
-export class AcpMcpOverAcpError extends Schema.TaggedError<AcpMcpOverAcpError>()(
-  "AcpMcpOverAcpError",
-  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {}
+export class AcpMcpOverAcpError extends Schema.TaggedError<
+  AcpMcpOverAcpError,
+  { readonly brand: unique symbol }
+>()("AcpMcpOverAcpError", { message: Schema.String, cause: Schema.optional(Schema.Defect()) }) {}
 
 const isAcpMcpOverAcpError = Schema.is(AcpMcpOverAcpError);
 

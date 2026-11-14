@@ -31,14 +31,14 @@ export interface TraceDiagnosticsOptions {
   readonly readAt?: DateTime.Utc;
 }
 
-export class TraceFileReadError extends Schema.TaggedError<TraceFileReadError>()(
-  "TraceFileReadError",
-  {
-    traceFilePath: Schema.String,
-    causeTag: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class TraceFileReadError extends Schema.TaggedError<
+  TraceFileReadError,
+  { readonly brand: unique symbol }
+>()("TraceFileReadError", {
+  traceFilePath: Schema.String,
+  causeTag: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read local trace file '${this.traceFilePath}'.`;
   }

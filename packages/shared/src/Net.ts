@@ -6,10 +6,13 @@ import * as Context from "effect/Context";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-export class NetError extends Schema.TaggedError<NetError>()("NetError", {
-  message: Schema.String,
-  cause: Schema.optional(Schema.Defect()),
-}) {}
+export class NetError extends Schema.TaggedError<NetError, { readonly brand: unique symbol }>()(
+  "NetError",
+  {
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
 
 const isErrnoExceptionWithCode = (
   cause: unknown,

@@ -3,10 +3,10 @@ import * as Schema from "effect/Schema";
 import { withDeviceHubQuery } from "./hubAccess.ts";
 import type { DeviceStreamTarget } from "./stream.ts";
 
-export class DeviceScreenshotError extends Schema.TaggedError<DeviceScreenshotError>()(
-  "DeviceScreenshotError",
-  { status: Schema.Number },
-) {
+export class DeviceScreenshotError extends Schema.TaggedError<
+  DeviceScreenshotError,
+  { readonly brand: unique symbol }
+>()("DeviceScreenshotError", { status: Schema.Number }) {
   override get message(): string {
     return `Screenshot capture failed (${this.status}). Try again.`;
   }

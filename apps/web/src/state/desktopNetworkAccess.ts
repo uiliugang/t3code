@@ -21,28 +21,28 @@ export interface DesktopNetworkAccessSnapshot {
   readonly serverExposureState: DesktopServerExposureState;
 }
 
-class DesktopNetworkAccessUnavailableError extends Schema.TaggedError<DesktopNetworkAccessUnavailableError>()(
-  "DesktopNetworkAccessUnavailableError",
-  {},
-) {
+class DesktopNetworkAccessUnavailableError extends Schema.TaggedError<
+  DesktopNetworkAccessUnavailableError,
+  { readonly brand: unique symbol }
+>()("DesktopNetworkAccessUnavailableError", {}) {
   override get message(): string {
     return "Desktop network access is unavailable.";
   }
 }
 
-class DesktopServerExposureStateLoadError extends Schema.TaggedError<DesktopServerExposureStateLoadError>()(
-  "DesktopServerExposureStateLoadError",
-  { cause: Schema.Defect() },
-) {
+class DesktopServerExposureStateLoadError extends Schema.TaggedError<
+  DesktopServerExposureStateLoadError,
+  { readonly brand: unique symbol }
+>()("DesktopServerExposureStateLoadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to load desktop server exposure state.";
   }
 }
 
-class DesktopAdvertisedEndpointsLoadError extends Schema.TaggedError<DesktopAdvertisedEndpointsLoadError>()(
-  "DesktopAdvertisedEndpointsLoadError",
-  { cause: Schema.Defect() },
-) {
+class DesktopAdvertisedEndpointsLoadError extends Schema.TaggedError<
+  DesktopAdvertisedEndpointsLoadError,
+  { readonly brand: unique symbol }
+>()("DesktopAdvertisedEndpointsLoadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to load advertised desktop endpoints.";
   }

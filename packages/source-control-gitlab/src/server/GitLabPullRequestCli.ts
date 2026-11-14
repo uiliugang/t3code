@@ -93,15 +93,15 @@ import type {
   ProviderListCursor,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 
-export class GitLabMergeRequestReadError extends Schema.TaggedError<GitLabMergeRequestReadError>()(
-  "GitLabMergeRequestReadError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class GitLabMergeRequestReadError extends Schema.TaggedError<
+  GitLabMergeRequestReadError,
+  { readonly brand: unique symbol }
+>()("GitLabMergeRequestReadError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return `GitLab CLI returned an unreadable ${this.operation} response.`;
   }
@@ -111,13 +111,13 @@ export class GitLabMergeRequestReadError extends Schema.TaggedError<GitLabMergeR
   }
 }
 
-export class GitLabViewerUnavailableError extends Schema.TaggedError<GitLabViewerUnavailableError>()(
-  "GitLabViewerUnavailableError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-  },
-) {
+export class GitLabViewerUnavailableError extends Schema.TaggedError<
+  GitLabViewerUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitLabViewerUnavailableError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+}) {
   get detail(): string {
     return "GitLab CLI returned no username for the authenticated account.";
   }
@@ -127,14 +127,14 @@ export class GitLabViewerUnavailableError extends Schema.TaggedError<GitLabViewe
   }
 }
 
-export class GitLabDiffRefsUnavailableError extends Schema.TaggedError<GitLabDiffRefsUnavailableError>()(
-  "GitLabDiffRefsUnavailableError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    number: Schema.Int,
-  },
-) {
+export class GitLabDiffRefsUnavailableError extends Schema.TaggedError<
+  GitLabDiffRefsUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitLabDiffRefsUnavailableError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  number: Schema.Int,
+}) {
   get detail(): string {
     return "The merge request reported no diff revisions.";
   }
@@ -144,15 +144,15 @@ export class GitLabDiffRefsUnavailableError extends Schema.TaggedError<GitLabDif
   }
 }
 
-export class GitLabRevertUnavailableError extends Schema.TaggedError<GitLabRevertUnavailableError>()(
-  "GitLabRevertUnavailableError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    number: Schema.Int,
-    reason: Schema.Literals(["not-merged", "several-commits"]),
-  },
-) {
+export class GitLabRevertUnavailableError extends Schema.TaggedError<
+  GitLabRevertUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitLabRevertUnavailableError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  number: Schema.Int,
+  reason: Schema.Literals(["not-merged", "several-commits"]),
+}) {
   get detail(): string {
     return this.reason === "not-merged"
       ? "Only a merged merge request can be reverted."
@@ -164,13 +164,13 @@ export class GitLabRevertUnavailableError extends Schema.TaggedError<GitLabRever
   }
 }
 
-export class GitLabDiffCursorError extends Schema.TaggedError<GitLabDiffCursorError>()(
-  "GitLabDiffCursorError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-  },
-) {
+export class GitLabDiffCursorError extends Schema.TaggedError<
+  GitLabDiffCursorError,
+  { readonly brand: unique symbol }
+>()("GitLabDiffCursorError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+}) {
   get detail(): string {
     return "The diff cursor was not one this merge request handed out.";
   }
@@ -180,13 +180,13 @@ export class GitLabDiffCursorError extends Schema.TaggedError<GitLabDiffCursorEr
   }
 }
 
-export class GitLabDiffCommitError extends Schema.TaggedError<GitLabDiffCommitError>()(
-  "GitLabDiffCommitError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-  },
-) {
+export class GitLabDiffCommitError extends Schema.TaggedError<
+  GitLabDiffCommitError,
+  { readonly brand: unique symbol }
+>()("GitLabDiffCommitError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+}) {
   get detail(): string {
     return "The named commit was not a commit sha.";
   }
@@ -196,14 +196,14 @@ export class GitLabDiffCommitError extends Schema.TaggedError<GitLabDiffCommitEr
   }
 }
 
-export class GitLabDiffCommitParentUnavailableError extends Schema.TaggedError<GitLabDiffCommitParentUnavailableError>()(
-  "GitLabDiffCommitParentUnavailableError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    commit: Schema.String,
-  },
-) {
+export class GitLabDiffCommitParentUnavailableError extends Schema.TaggedError<
+  GitLabDiffCommitParentUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitLabDiffCommitParentUnavailableError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  commit: Schema.String,
+}) {
   get detail(): string {
     return `Commit ${this.commit} reported no parent revision.`;
   }
@@ -213,15 +213,15 @@ export class GitLabDiffCommitParentUnavailableError extends Schema.TaggedError<G
   }
 }
 
-export class GitLabDiffFileContentsUnavailableError extends Schema.TaggedError<GitLabDiffFileContentsUnavailableError>()(
-  "GitLabDiffFileContentsUnavailableError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    path: Schema.String,
-    reason: Schema.Literals(["oversized", "binary"]),
-  },
-) {
+export class GitLabDiffFileContentsUnavailableError extends Schema.TaggedError<
+  GitLabDiffFileContentsUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitLabDiffFileContentsUnavailableError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  path: Schema.String,
+  reason: Schema.Literals(["oversized", "binary"]),
+}) {
   get detail(): string {
     return this.reason === "oversized"
       ? `The diff file '${this.path}' exceeds the 1 MB expansion limit.`
@@ -233,15 +233,15 @@ export class GitLabDiffFileContentsUnavailableError extends Schema.TaggedError<G
   }
 }
 
-export class GitLabMutationRefusedError extends Schema.TaggedError<GitLabMutationRefusedError>()(
-  "GitLabMutationRefusedError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    operation: Schema.String,
-    reasons: Schema.Array(Schema.String),
-  },
-) {
+export class GitLabMutationRefusedError extends Schema.TaggedError<
+  GitLabMutationRefusedError,
+  { readonly brand: unique symbol }
+>()("GitLabMutationRefusedError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  operation: Schema.String,
+  reasons: Schema.Array(Schema.String),
+}) {
   get detail(): string {
     return `GitLab refused it: ${this.reasons.join("; ")}`;
   }
@@ -261,21 +261,21 @@ const REQUEST_CHANGES_MUTATION = `mutation($projectPath: ID!, $iid: String!) {
   mergeRequestRequestChanges(input: { projectPath: $projectPath, iid: $iid }) { errors }
 }`;
 
-export class GitLabBranchDeletionRefusedError extends Schema.TaggedError<GitLabBranchDeletionRefusedError>()(
-  "GitLabBranchDeletionRefusedError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    number: Schema.Int,
-    reason: Schema.Literals([
-      "open",
-      "not-allowed",
-      "source-unavailable",
-      "default-branch",
-      "head-changed",
-    ]),
-  },
-) {
+export class GitLabBranchDeletionRefusedError extends Schema.TaggedError<
+  GitLabBranchDeletionRefusedError,
+  { readonly brand: unique symbol }
+>()("GitLabBranchDeletionRefusedError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  number: Schema.Int,
+  reason: Schema.Literals([
+    "open",
+    "not-allowed",
+    "source-unavailable",
+    "default-branch",
+    "head-changed",
+  ]),
+}) {
   get detail(): string {
     switch (this.reason) {
       case "open":
@@ -296,14 +296,14 @@ export class GitLabBranchDeletionRefusedError extends Schema.TaggedError<GitLabB
   }
 }
 
-export class GitLabUnknownLabelError extends Schema.TaggedError<GitLabUnknownLabelError>()(
-  "GitLabUnknownLabelError",
-  {
-    command: Schema.Literal("glab"),
-    cwd: Schema.String,
-    labels: Schema.Array(Schema.String),
-  },
-) {
+export class GitLabUnknownLabelError extends Schema.TaggedError<
+  GitLabUnknownLabelError,
+  { readonly brand: unique symbol }
+>()("GitLabUnknownLabelError", {
+  command: Schema.Literal("glab"),
+  cwd: Schema.String,
+  labels: Schema.Array(Schema.String),
+}) {
   get detail(): string {
     return `The project has no label named ${this.labels.map((label) => `"${label}"`).join(", ")}.`;
   }

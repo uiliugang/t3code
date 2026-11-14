@@ -35,7 +35,10 @@ import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 const kind = SourceControlProviderKind.make;
 
-class NotAnswered extends Schema.TaggedError<NotAnswered>()("NotAnswered", {}) {}
+class NotAnswered extends Schema.TaggedError<NotAnswered, { readonly brand: unique symbol }>()(
+  "NotAnswered",
+  {},
+) {}
 
 const linkSubject = (host: string) => () =>
   Effect.succeed({ title: `${host} subject`, body: null });

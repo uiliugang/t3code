@@ -36,10 +36,10 @@ export interface ExpoCredential {
   };
 }
 
-export class ExpoNotSignedInError extends Schema.TaggedError<ExpoNotSignedInError>()(
-  "ExpoNotSignedInError",
-  {},
-) {
+export class ExpoNotSignedInError extends Schema.TaggedError<
+  ExpoNotSignedInError,
+  { readonly brand: unique symbol }
+>()("ExpoNotSignedInError", {}) {
   override get message(): string {
     return "No Expo credential on the server: save an access token for this host, set EXPO_TOKEN, or run `eas login`.";
   }
@@ -51,10 +51,10 @@ const CREDENTIAL_SOURCE_NAMES: Record<ExpoCredentialSource, string> = {
   "eas-login": "The eas login session",
 };
 
-export class ExpoInvalidCredentialError extends Schema.TaggedError<ExpoInvalidCredentialError>()(
-  "ExpoInvalidCredentialError",
-  { source: Schema.Literals(["settings", "env", "eas-login"]) },
-) {
+export class ExpoInvalidCredentialError extends Schema.TaggedError<
+  ExpoInvalidCredentialError,
+  { readonly brand: unique symbol }
+>()("ExpoInvalidCredentialError", { source: Schema.Literals(["settings", "env", "eas-login"]) }) {
   override get message(): string {
     return `${CREDENTIAL_SOURCE_NAMES[this.source]} is not a usable Expo credential. Replace it.`;
   }
@@ -80,7 +80,10 @@ const credential = (
       } satisfies ExpoCredential)
     : Effect.fail(new ExpoInvalidCredentialError({ source }));
 
-export class ExpoApiError extends Schema.TaggedError<ExpoApiError>()("ExpoApiError", {
+export class ExpoApiError extends Schema.TaggedError<
+  ExpoApiError,
+  { readonly brand: unique symbol }
+>()("ExpoApiError", {
   operation: Schema.String,
   detail: Schema.optional(Schema.String),
   /**

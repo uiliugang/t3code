@@ -24,15 +24,15 @@ export const PersistenceErrorCorrelation = Schema.Union([
 ]);
 export type PersistenceErrorCorrelation = typeof PersistenceErrorCorrelation.Type;
 
-export class PersistenceSqlError extends Schema.TaggedError<PersistenceSqlError>()(
-  "PersistenceSqlError",
-  {
-    operation: Schema.String,
-    detail: Schema.optional(Schema.String),
-    correlation: Schema.optional(PersistenceErrorCorrelation),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class PersistenceSqlError extends Schema.TaggedError<
+  PersistenceSqlError,
+  { readonly brand: unique symbol }
+>()("PersistenceSqlError", {
+  operation: Schema.String,
+  detail: Schema.optional(Schema.String),
+  correlation: Schema.optional(PersistenceErrorCorrelation),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.detail === undefined
       ? `SQL error in ${this.operation}`
@@ -40,15 +40,15 @@ export class PersistenceSqlError extends Schema.TaggedError<PersistenceSqlError>
   }
 }
 
-export class PersistenceDecodeError extends Schema.TaggedError<PersistenceDecodeError>()(
-  "PersistenceDecodeError",
-  {
-    operation: Schema.String,
-    issue: Schema.String,
-    correlation: Schema.optional(PersistenceErrorCorrelation),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class PersistenceDecodeError extends Schema.TaggedError<
+  PersistenceDecodeError,
+  { readonly brand: unique symbol }
+>()("PersistenceDecodeError", {
+  operation: Schema.String,
+  issue: Schema.String,
+  correlation: Schema.optional(PersistenceErrorCorrelation),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   static fromSchemaError(
     operation: string,
     cause: Schema.SchemaError,

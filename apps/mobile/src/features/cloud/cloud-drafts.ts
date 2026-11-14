@@ -7,14 +7,14 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { archiveCloudComposerDrafts } from "../../state/use-composer-drafts";
 
-export class CloudDraftArchiveError extends Schema.TaggedError<CloudDraftArchiveError>()(
-  "CloudDraftArchiveError",
-  {
-    environmentCount: Schema.Number,
-    hasAccountId: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
+export class CloudDraftArchiveError extends Schema.TaggedError<
+  CloudDraftArchiveError,
+  { readonly brand: unique symbol }
+>()("CloudDraftArchiveError", {
+  environmentCount: Schema.Number,
+  hasAccountId: Schema.Boolean,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not preserve local drafts for ${this.environmentCount} cloud environments before sign-out.`;
   }

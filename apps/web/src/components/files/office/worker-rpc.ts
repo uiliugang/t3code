@@ -45,12 +45,18 @@ export class Transfer<T> {
 }
 
 /** A call that a newer call with the same key replaced before it ran. */
-export class SupersededError extends Schema.TaggedError<SupersededError>()("SupersededError", {
+export class SupersededError extends Schema.TaggedError<
+  SupersededError,
+  { readonly brand: unique symbol }
+>()("SupersededError", {
   message: Schema.String,
 }) {}
 
 /** A call made after the worker failed or was closed, or pending when that happened. */
-class WorkerClosedError extends Schema.TaggedError<WorkerClosedError>()("WorkerClosedError", {
+class WorkerClosedError extends Schema.TaggedError<
+  WorkerClosedError,
+  { readonly brand: unique symbol }
+>()("WorkerClosedError", {
   message: Schema.String,
 }) {}
 

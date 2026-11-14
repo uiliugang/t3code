@@ -85,13 +85,13 @@ class LocalAttachmentPreviewKey implements Equal.Equal {
   }
 }
 
-class LocalAttachmentPreviewLoadError extends Schema.TaggedError<LocalAttachmentPreviewLoadError>()(
-  "LocalAttachmentPreviewLoadError",
-  {
-    message: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+class LocalAttachmentPreviewLoadError extends Schema.TaggedError<
+  LocalAttachmentPreviewLoadError,
+  { readonly brand: unique symbol }
+>()("LocalAttachmentPreviewLoadError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 const localAttachmentPreviewFamily = Atom.family((key: LocalAttachmentPreviewKey) =>
   Atom.make(

@@ -40,7 +40,10 @@ export interface UpstreamResponse {
 
 const OUTCOME_PATTERN = /^[a-z_]{1,32}$/;
 
-class ResponseTooLarge extends Schema.TaggedError<ResponseTooLarge>()("ResponseTooLarge", {}) {}
+class ResponseTooLarge extends Schema.TaggedError<
+  ResponseTooLarge,
+  { readonly brand: unique symbol }
+>()("ResponseTooLarge", {}) {}
 
 const readCapped = (response: HttpClientResponse.HttpClientResponse) =>
   Effect.suspend(() => {

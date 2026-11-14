@@ -105,22 +105,22 @@ const TransactionAcquire = Context.Reference<
   | undefined
 >("@t3tools/shared/nodeSqliteClient/TransactionAcquire", { defaultValue: () => undefined });
 
-export class UnsupportedNodeSqliteVersionError extends Schema.TaggedError<UnsupportedNodeSqliteVersionError>()(
-  "UnsupportedNodeSqliteVersionError",
-  {
-    nodeVersion: Schema.String,
-    requirement: Schema.String,
-  },
-) {
+export class UnsupportedNodeSqliteVersionError extends Schema.TaggedError<
+  UnsupportedNodeSqliteVersionError,
+  { readonly brand: unique symbol }
+>()("UnsupportedNodeSqliteVersionError", {
+  nodeVersion: Schema.String,
+  requirement: Schema.String,
+}) {
   override get message(): string {
     return `Node.js ${this.nodeVersion} is missing required node:sqlite APIs. Upgrade to ${this.requirement}.`;
   }
 }
 
-export class UnsupportedNodeSqliteOperationError extends Schema.TaggedError<UnsupportedNodeSqliteOperationError>()(
-  "UnsupportedNodeSqliteOperationError",
-  {},
-) {
+export class UnsupportedNodeSqliteOperationError extends Schema.TaggedError<
+  UnsupportedNodeSqliteOperationError,
+  { readonly brand: unique symbol }
+>()("UnsupportedNodeSqliteOperationError", {}) {
   override get message(): string {
     return "Node SQLite does not support executeStream.";
   }

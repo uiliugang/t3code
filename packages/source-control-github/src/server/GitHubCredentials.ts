@@ -43,19 +43,19 @@ export interface GitHubCredential {
   readonly fingerprint: string;
 }
 
-export class GitHubCliMissingError extends Schema.TaggedError<GitHubCliMissingError>()(
-  "GitHubCliMissingError",
-  { host: Schema.String },
-) {
+export class GitHubCliMissingError extends Schema.TaggedError<
+  GitHubCliMissingError,
+  { readonly brand: unique symbol }
+>()("GitHubCliMissingError", { host: Schema.String }) {
   override get message(): string {
     return `No GitHub credential for ${this.host}: set GH_TOKEN, or install the GitHub CLI and run \`gh auth login\`.`;
   }
 }
 
-export class GitHubNotSignedInError extends Schema.TaggedError<GitHubNotSignedInError>()(
-  "GitHubNotSignedInError",
-  { host: Schema.String, account: Schema.optional(Schema.String) },
-) {
+export class GitHubNotSignedInError extends Schema.TaggedError<
+  GitHubNotSignedInError,
+  { readonly brand: unique symbol }
+>()("GitHubNotSignedInError", { host: Schema.String, account: Schema.optional(Schema.String) }) {
   override get message(): string {
     return this.account === undefined
       ? `No GitHub credential for ${this.host}: run \`gh auth login --hostname ${this.host}\`.`
@@ -63,19 +63,19 @@ export class GitHubNotSignedInError extends Schema.TaggedError<GitHubNotSignedIn
   }
 }
 
-export class GitHubHostDisabledError extends Schema.TaggedError<GitHubHostDisabledError>()(
-  "GitHubHostDisabledError",
-  { host: Schema.String },
-) {
+export class GitHubHostDisabledError extends Schema.TaggedError<
+  GitHubHostDisabledError,
+  { readonly brand: unique symbol }
+>()("GitHubHostDisabledError", { host: Schema.String }) {
   override get message(): string {
     return `GitHub host ${this.host} is turned off in Settings → Source Control.`;
   }
 }
 
-export class GitHubCliFailedError extends Schema.TaggedError<GitHubCliFailedError>()(
-  "GitHubCliFailedError",
-  { host: Schema.String, cause: Schema.Defect() },
-) {
+export class GitHubCliFailedError extends Schema.TaggedError<
+  GitHubCliFailedError,
+  { readonly brand: unique symbol }
+>()("GitHubCliFailedError", { host: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `The GitHub CLI could not hand over a credential for ${this.host}. Check \`gh auth status\` on the server.`;
   }

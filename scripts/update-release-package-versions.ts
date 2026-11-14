@@ -12,35 +12,35 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/cli";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 
-export class ReleasePackageManifestError extends Schema.TaggedError<ReleasePackageManifestError>()(
-  "ReleasePackageManifestError",
-  {
-    operation: Schema.Literals(["read", "decode", "encode", "write"]),
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ReleasePackageManifestError extends Schema.TaggedError<
+  ReleasePackageManifestError,
+  { readonly brand: unique symbol }
+>()("ReleasePackageManifestError", {
+  operation: Schema.Literals(["read", "decode", "encode", "write"]),
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} release package manifest '${this.filePath}'.`;
   }
 }
 
-export class ReleaseGitHubOutputConfigurationError extends Schema.TaggedError<ReleaseGitHubOutputConfigurationError>()(
-  "ReleaseGitHubOutputConfigurationError",
-  { cause: Schema.Defect() },
-) {
+export class ReleaseGitHubOutputConfigurationError extends Schema.TaggedError<
+  ReleaseGitHubOutputConfigurationError,
+  { readonly brand: unique symbol }
+>()("ReleaseGitHubOutputConfigurationError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to resolve GITHUB_OUTPUT for release package version output.";
   }
 }
 
-export class ReleaseGitHubOutputWriteError extends Schema.TaggedError<ReleaseGitHubOutputWriteError>()(
-  "ReleaseGitHubOutputWriteError",
-  {
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ReleaseGitHubOutputWriteError extends Schema.TaggedError<
+  ReleaseGitHubOutputWriteError,
+  { readonly brand: unique symbol }
+>()("ReleaseGitHubOutputWriteError", {
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to append release package version output to '${this.filePath}'.`;
   }

@@ -28,7 +28,10 @@ export const ChromiumKeyFailure = Schema.Literals([
 ]);
 export type ChromiumKeyFailure = typeof ChromiumKeyFailure.Type;
 
-export class ChromiumKeyError extends Schema.TaggedError<ChromiumKeyError>()("ChromiumKeyError", {
+export class ChromiumKeyError extends Schema.TaggedError<
+  ChromiumKeyError,
+  { readonly brand: unique symbol }
+>()("ChromiumKeyError", {
   reason: ChromiumKeyFailure,
   cause: Schema.optional(Schema.Defect()),
 }) {

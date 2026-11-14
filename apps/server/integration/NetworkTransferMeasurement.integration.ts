@@ -12,13 +12,13 @@ import * as Scope from "effect/Scope";
 import { RpcClient, RpcSerialization } from "effect/rpc";
 import * as Socket from "effect/socket/Socket";
 
-export class TransferHttpRequestError extends Schema.TaggedError<TransferHttpRequestError>()(
-  "TransferHttpRequestError",
-  {
-    url: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+export class TransferHttpRequestError extends Schema.TaggedError<
+  TransferHttpRequestError,
+  { readonly brand: unique symbol }
+>()("TransferHttpRequestError", {
+  url: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 export interface HttpTransferMeasurement {
   readonly status: number;

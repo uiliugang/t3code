@@ -7,10 +7,10 @@ import * as WebCrypto from "../WebCrypto.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-export class FcmAssertionSigningError extends Schema.TaggedError<FcmAssertionSigningError>()(
-  "FcmAssertionSigningError",
-  { cause: Schema.Defect() },
-) {
+export class FcmAssertionSigningError extends Schema.TaggedError<
+  FcmAssertionSigningError,
+  { readonly brand: unique symbol }
+>()("FcmAssertionSigningError", { cause: Schema.Defect() }) {
   override get message() {
     return "Failed to sign Firebase authorization assertion.";
   }

@@ -232,10 +232,10 @@ function antigravityEnvironment(
   };
 }
 
-class AntigravitySkillLinkError extends Schema.TaggedError<AntigravitySkillLinkError>()(
-  "AntigravitySkillLinkError",
-  { link: Schema.String, cause: Schema.Defect() },
-) {
+class AntigravitySkillLinkError extends Schema.TaggedError<
+  AntigravitySkillLinkError,
+  { readonly brand: unique symbol }
+>()("AntigravitySkillLinkError", { link: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not link Antigravity user skills at ${this.link}.`;
   }

@@ -5,10 +5,14 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-export class V2DatabaseImportError extends Schema.TaggedError<V2DatabaseImportError>()(
-  "V2DatabaseImportError",
-  { sourcePath: Schema.String, destinationPath: Schema.String, cause: Schema.Defect() },
-) {
+export class V2DatabaseImportError extends Schema.TaggedError<
+  V2DatabaseImportError,
+  { readonly brand: unique symbol }
+>()("V2DatabaseImportError", {
+  sourcePath: Schema.String,
+  destinationPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message() {
     return `Could not copy the V1 database at ${this.sourcePath} to ${this.destinationPath}. The V1 database has not been migrated.`;
   }

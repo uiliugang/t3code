@@ -17,13 +17,13 @@ import {
 import * as ServerConfig from "../config.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 
-export class AttachmentClaimError extends Schema.TaggedError<AttachmentClaimError>()(
-  "AttachmentClaimError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class AttachmentClaimError extends Schema.TaggedError<
+  AttachmentClaimError,
+  { readonly brand: unique symbol }
+>()("AttachmentClaimError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export const validateAttachmentLimits = Effect.fn("AttachmentClaims.validateAttachmentLimits")(
   function* (attachments: ReadonlyArray<ChatAttachment>) {

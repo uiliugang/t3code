@@ -137,16 +137,16 @@ const MAX_TERMINAL_LABEL_LENGTH = 128;
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
 const decodeCodexSettings = Schema.decodeUnknownOption(CodexSettings);
 
-class TerminalSubprocessCheckError extends Schema.TaggedError<TerminalSubprocessCheckError>()(
-  "TerminalSubprocessCheckError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-    command: Schema.Literals(["powershell", "ps", "resource-monitor"]),
-    exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
-    timedOut: Schema.optional(Schema.Boolean),
-    stdoutTruncated: Schema.optional(Schema.Boolean),
-  },
-) {
+class TerminalSubprocessCheckError extends Schema.TaggedError<
+  TerminalSubprocessCheckError,
+  { readonly brand: unique symbol }
+>()("TerminalSubprocessCheckError", {
+  cause: Schema.optional(Schema.Defect()),
+  command: Schema.Literals(["powershell", "ps", "resource-monitor"]),
+  exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
+  timedOut: Schema.optional(Schema.Boolean),
+  stdoutTruncated: Schema.optional(Schema.Boolean),
+}) {
   override get message(): string {
     const details = [
       this.exitCode !== undefined && this.exitCode !== null ? `exit code ${this.exitCode}` : null,
@@ -159,14 +159,14 @@ class TerminalSubprocessCheckError extends Schema.TaggedError<TerminalSubprocess
   }
 }
 
-class TerminalProcessSignalError extends Schema.TaggedError<TerminalProcessSignalError>()(
-  "TerminalProcessSignalError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-    signal: Schema.Literals(["SIGTERM", "SIGKILL"]),
-    terminalPid: Schema.Number,
-  },
-) {
+class TerminalProcessSignalError extends Schema.TaggedError<
+  TerminalProcessSignalError,
+  { readonly brand: unique symbol }
+>()("TerminalProcessSignalError", {
+  cause: Schema.optional(Schema.Defect()),
+  signal: Schema.Literals(["SIGTERM", "SIGKILL"]),
+  terminalPid: Schema.Number,
+}) {
   override get message(): string {
     return `Failed to send ${this.signal} to terminal process ${this.terminalPid}`;
   }

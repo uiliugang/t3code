@@ -25,14 +25,14 @@ function readRelayUrl(): string | null {
   return resolveCloudPublicConfig().relay.url;
 }
 
-export class CloudEnvironmentLinkError extends Schema.TaggedError<CloudEnvironmentLinkError>()(
-  "CloudEnvironmentLinkError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-    traceId: Schema.optional(Schema.String),
-  },
-) {}
+export class CloudEnvironmentLinkError extends Schema.TaggedError<
+  CloudEnvironmentLinkError,
+  { readonly brand: unique symbol }
+>()("CloudEnvironmentLinkError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+  traceId: Schema.optional(Schema.String),
+}) {}
 
 const isEnvironmentCloudApiError = Schema.is(
   Schema.Union([

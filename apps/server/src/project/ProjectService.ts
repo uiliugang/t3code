@@ -62,71 +62,71 @@ export interface ProjectDeleteInput {
   readonly force?: boolean;
 }
 
-export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundError>()(
-  "ProjectNotFoundError",
-  { projectId: ProjectId },
-) {
+export class ProjectNotFoundError extends Schema.TaggedError<
+  ProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("ProjectNotFoundError", { projectId: ProjectId }) {
   override get message(): string {
     return `Project ${this.projectId} was not found.`;
   }
 }
 
-export class ProjectConflictError extends Schema.TaggedError<ProjectConflictError>()(
-  "ProjectConflictError",
-  {
-    projectId: ProjectId,
-    workspaceRoot: Schema.String,
-    conflictingProjectId: ProjectId,
-  },
-) {
+export class ProjectConflictError extends Schema.TaggedError<
+  ProjectConflictError,
+  { readonly brand: unique symbol }
+>()("ProjectConflictError", {
+  projectId: ProjectId,
+  workspaceRoot: Schema.String,
+  conflictingProjectId: ProjectId,
+}) {
   override get message(): string {
     return `Workspace ${this.workspaceRoot} already belongs to project ${this.conflictingProjectId}.`;
   }
 }
 
-export class ProjectNotEmptyError extends Schema.TaggedError<ProjectNotEmptyError>()(
-  "ProjectNotEmptyError",
-  { projectId: ProjectId },
-) {
+export class ProjectNotEmptyError extends Schema.TaggedError<
+  ProjectNotEmptyError,
+  { readonly brand: unique symbol }
+>()("ProjectNotEmptyError", { projectId: ProjectId }) {
   override get message(): string {
     return `Project ${this.projectId} is not empty.`;
   }
 }
 
-export class ProjectInvalidError extends Schema.TaggedError<ProjectInvalidError>()(
-  "ProjectInvalidError",
-  { projectId: ProjectId, detail: Schema.String },
-) {
+export class ProjectInvalidError extends Schema.TaggedError<
+  ProjectInvalidError,
+  { readonly brand: unique symbol }
+>()("ProjectInvalidError", { projectId: ProjectId, detail: Schema.String }) {
   override get message(): string {
     return this.detail;
   }
 }
 
-export class ProjectWorkspaceRootChangeBlockedError extends Schema.TaggedError<ProjectWorkspaceRootChangeBlockedError>()(
-  "ProjectWorkspaceRootChangeBlockedError",
-  { projectId: ProjectId },
-) {
+export class ProjectWorkspaceRootChangeBlockedError extends Schema.TaggedError<
+  ProjectWorkspaceRootChangeBlockedError,
+  { readonly brand: unique symbol }
+>()("ProjectWorkspaceRootChangeBlockedError", { projectId: ProjectId }) {
   override get message(): string {
     return "Cannot change the primary repository directory while this project has legacy tasks without a pinned directory (including archived tasks). Create a new project to use a different directory.";
   }
 }
 
-export class ProjectOperationError extends Schema.TaggedError<ProjectOperationError>()(
-  "ProjectOperationError",
-  {
-    operation: Schema.Literals([
-      "normalize-workspace",
-      "read-project",
-      "list-projects",
-      "list-threads",
-      "delete-thread",
-      "dispatch-project-command",
-    ]),
-    projectId: Schema.optional(ProjectId),
-    workspaceRoot: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectOperationError extends Schema.TaggedError<
+  ProjectOperationError,
+  { readonly brand: unique symbol }
+>()("ProjectOperationError", {
+  operation: Schema.Literals([
+    "normalize-workspace",
+    "read-project",
+    "list-projects",
+    "list-threads",
+    "delete-thread",
+    "dispatch-project-command",
+  ]),
+  projectId: Schema.optional(ProjectId),
+  workspaceRoot: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Project operation '${this.operation}' failed${this.projectId === undefined ? "" : ` for ${this.projectId}`}.`;
   }

@@ -18,7 +18,10 @@ export const RELAY_MANAGED_TUNNEL_RECOVERY_TYP = "t3-env-managed-tunnel-recovery
 export const RELAY_HOOK_DELIVERY_TYP = "t3-relay-hook-delivery+jwt";
 export const RELAY_HOOK_DELIVERY_HEADER = "x-t3-relay-delivery";
 
-export class RelayJwtError extends Schema.TaggedError<RelayJwtError>()("RelayJwtError", {
+export class RelayJwtError extends Schema.TaggedError<
+  RelayJwtError,
+  { readonly brand: unique symbol }
+>()("RelayJwtError", {
   operation: Schema.Literals(["sign", "verify", "decode"]),
   typ: Schema.optional(Schema.String),
   issuer: Schema.optional(Schema.String),

@@ -209,37 +209,37 @@ const resolveDesktopCoreAdvertisedEndpoints = (
   return endpoints;
 };
 
-export class DesktopServerExposureNoNetworkAddressError extends Schema.TaggedError<DesktopServerExposureNoNetworkAddressError>()(
-  "DesktopServerExposureNoNetworkAddressError",
-  {
-    port: Schema.Number,
-  },
-) {
+export class DesktopServerExposureNoNetworkAddressError extends Schema.TaggedError<
+  DesktopServerExposureNoNetworkAddressError,
+  { readonly brand: unique symbol }
+>()("DesktopServerExposureNoNetworkAddressError", {
+  port: Schema.Number,
+}) {
   override get message(): string {
     return `No reachable network address is available for desktop network access on port ${this.port}.`;
   }
 }
 
-export class DesktopServerExposureModePersistenceError extends Schema.TaggedError<DesktopServerExposureModePersistenceError>()(
-  "DesktopServerExposureModePersistenceError",
-  {
-    mode: DesktopServerExposureModeSchema,
-    cause: Schema.instanceOf(DesktopAppSettings.DesktopSettingsWriteError),
-  },
-) {
+export class DesktopServerExposureModePersistenceError extends Schema.TaggedError<
+  DesktopServerExposureModePersistenceError,
+  { readonly brand: unique symbol }
+>()("DesktopServerExposureModePersistenceError", {
+  mode: DesktopServerExposureModeSchema,
+  cause: Schema.instanceOf(DesktopAppSettings.DesktopSettingsWriteError),
+}) {
   override get message(): string {
     return `Failed to persist desktop server exposure mode ${this.mode}.`;
   }
 }
 
-export class DesktopTailscaleServePersistenceError extends Schema.TaggedError<DesktopTailscaleServePersistenceError>()(
-  "DesktopTailscaleServePersistenceError",
-  {
-    enabled: Schema.Boolean,
-    port: Schema.NullOr(Schema.Number),
-    cause: Schema.instanceOf(DesktopAppSettings.DesktopSettingsWriteError),
-  },
-) {
+export class DesktopTailscaleServePersistenceError extends Schema.TaggedError<
+  DesktopTailscaleServePersistenceError,
+  { readonly brand: unique symbol }
+>()("DesktopTailscaleServePersistenceError", {
+  enabled: Schema.Boolean,
+  port: Schema.NullOr(Schema.Number),
+  cause: Schema.instanceOf(DesktopAppSettings.DesktopSettingsWriteError),
+}) {
   override get message(): string {
     return `Failed to persist desktop Tailscale Serve settings (enabled: ${this.enabled}, port: ${this.port ?? "unchanged"}).`;
   }

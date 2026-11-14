@@ -63,10 +63,10 @@ function writtenFilePaths(
   );
 }
 
-export class ScratchProjectNotLoadedError extends Schema.TaggedError<ScratchProjectNotLoadedError>()(
-  "ScratchProjectNotLoadedError",
-  { projectId: ProjectId },
-) {
+export class ScratchProjectNotLoadedError extends Schema.TaggedError<
+  ScratchProjectNotLoadedError,
+  { readonly brand: unique symbol }
+>()("ScratchProjectNotLoadedError", { projectId: ProjectId }) {
   override get message(): string {
     return "The folder for threads without a project has not reached this device yet. Try again.";
   }

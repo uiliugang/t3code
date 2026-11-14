@@ -11,7 +11,10 @@ const LOG_HEADER_SIZE = 7;
 const TABLE_FOOTER_SIZE = 48;
 const BLOCK_TRAILER_SIZE = 5;
 
-class LevelDbFormatError extends Schema.TaggedError<LevelDbFormatError>()("LevelDbFormatError", {
+class LevelDbFormatError extends Schema.TaggedError<
+  LevelDbFormatError,
+  { readonly brand: unique symbol }
+>()("LevelDbFormatError", {
   detail: Schema.String,
 }) {}
 
@@ -346,13 +349,13 @@ function decodeChromiumString(bytes: Uint8Array): string | null {
   return null;
 }
 
-export class ChromiumLocalStorageReadError extends Schema.TaggedError<ChromiumLocalStorageReadError>()(
-  "ChromiumLocalStorageReadError",
-  {
-    directory: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ChromiumLocalStorageReadError extends Schema.TaggedError<
+  ChromiumLocalStorageReadError,
+  { readonly brand: unique symbol }
+>()("ChromiumLocalStorageReadError", {
+  directory: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message() {
     return `Could not read Chromium Local Storage at ${this.directory}.`;
   }

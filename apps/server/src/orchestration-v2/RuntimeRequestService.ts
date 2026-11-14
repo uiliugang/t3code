@@ -14,22 +14,22 @@ import * as Schema from "effect/Schema";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
-export class RuntimeRequestResponseExecutionError extends Schema.TaggedError<RuntimeRequestResponseExecutionError>()(
-  "RuntimeRequestResponseExecutionError",
-  {
-    reason: Schema.Literals([
-      "request-missing",
-      "request-not-ready",
-      "request-not-resumable",
-      "provider-session-not-active",
-      "unexpected-failure",
-    ]),
-    threadId: ThreadId,
-    providerSessionId: ProviderSessionId,
-    requestId: RuntimeRequestId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class RuntimeRequestResponseExecutionError extends Schema.TaggedError<
+  RuntimeRequestResponseExecutionError,
+  { readonly brand: unique symbol }
+>()("RuntimeRequestResponseExecutionError", {
+  reason: Schema.Literals([
+    "request-missing",
+    "request-not-ready",
+    "request-not-resumable",
+    "provider-session-not-active",
+    "unexpected-failure",
+  ]),
+  threadId: ThreadId,
+  providerSessionId: ProviderSessionId,
+  requestId: RuntimeRequestId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "request-missing":

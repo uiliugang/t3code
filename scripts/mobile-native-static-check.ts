@@ -19,45 +19,45 @@ interface NativeStaticTool {
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
-export class NativeStaticCheckSourceDiscoveryError extends Schema.TaggedError<NativeStaticCheckSourceDiscoveryError>()(
-  "NativeStaticCheckSourceDiscoveryError",
-  {
-    operation: Schema.Literals(["resolve-root", "read-directory", "stat-entry"]),
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NativeStaticCheckSourceDiscoveryError extends Schema.TaggedError<
+  NativeStaticCheckSourceDiscoveryError,
+  { readonly brand: unique symbol }
+>()("NativeStaticCheckSourceDiscoveryError", {
+  operation: Schema.Literals(["resolve-root", "read-directory", "stat-entry"]),
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Native source discovery operation '${this.operation}' failed.`;
   }
 }
 
-export class NativeStaticCheckProcessError extends Schema.TaggedError<NativeStaticCheckProcessError>()(
-  "NativeStaticCheckProcessError",
-  {
-    operation: Schema.Literals(["spawn", "wait-for-exit"]),
-    command: Schema.String,
-    argumentCount: NonNegativeInt,
-    cwd: Schema.String,
-    shell: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
+export class NativeStaticCheckProcessError extends Schema.TaggedError<
+  NativeStaticCheckProcessError,
+  { readonly brand: unique symbol }
+>()("NativeStaticCheckProcessError", {
+  operation: Schema.Literals(["spawn", "wait-for-exit"]),
+  command: Schema.String,
+  argumentCount: NonNegativeInt,
+  cwd: Schema.String,
+  shell: Schema.Boolean,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Native static check process operation '${this.operation}' failed for command '${this.command}'.`;
   }
 }
 
-export class NativeStaticCheckCommandError extends Schema.TaggedError<NativeStaticCheckCommandError>()(
-  "NativeStaticCheckCommandError",
-  {
-    command: Schema.String,
-    argumentCount: NonNegativeInt,
-    cwd: Schema.String,
-    shell: Schema.Boolean,
-    exitCode: Schema.Int,
-  },
-) {
+export class NativeStaticCheckCommandError extends Schema.TaggedError<
+  NativeStaticCheckCommandError,
+  { readonly brand: unique symbol }
+>()("NativeStaticCheckCommandError", {
+  command: Schema.String,
+  argumentCount: NonNegativeInt,
+  cwd: Schema.String,
+  shell: Schema.Boolean,
+  exitCode: Schema.Int,
+}) {
   override get message(): string {
     return `Native static check command '${this.command}' exited with code ${this.exitCode}.`;
   }
@@ -65,12 +65,12 @@ export class NativeStaticCheckCommandError extends Schema.TaggedError<NativeStat
 
 const kotlinToolCommands = ["ktlint", "detekt"] as const;
 
-export class NativeStaticCheckMissingToolError extends Schema.TaggedError<NativeStaticCheckMissingToolError>()(
-  "NativeStaticCheckMissingToolError",
-  {
-    commands: Schema.Array(Schema.Literals(kotlinToolCommands)),
-  },
-) {
+export class NativeStaticCheckMissingToolError extends Schema.TaggedError<
+  NativeStaticCheckMissingToolError,
+  { readonly brand: unique symbol }
+>()("NativeStaticCheckMissingToolError", {
+  commands: Schema.Array(Schema.Literals(kotlinToolCommands)),
+}) {
   override get message(): string {
     const names = this.commands.join(" and ");
     const verb = this.commands.length === 1 ? "is" : "are";

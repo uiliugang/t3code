@@ -333,15 +333,15 @@ export const AcpRegistryOperationErrorReason = Schema.Literals([
 ]);
 export type AcpRegistryOperationErrorReason = typeof AcpRegistryOperationErrorReason.Type;
 
-export class AcpRegistryOperationError extends Schema.TaggedError<AcpRegistryOperationError>()(
-  "AcpRegistryOperationError",
-  {
-    reason: AcpRegistryOperationErrorReason,
-    message: Schema.String,
-    authMethods: Schema.optionalKey(
-      Schema.Array(AcpRegistryProbeAuthMethod).check(Schema.isMaxLength(32)),
-    ),
-    authAction: Schema.optionalKey(AcpRegistryUrlAuthAction),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {}
+export class AcpRegistryOperationError extends Schema.TaggedError<
+  AcpRegistryOperationError,
+  { readonly brand: unique symbol }
+>()("AcpRegistryOperationError", {
+  reason: AcpRegistryOperationErrorReason,
+  message: Schema.String,
+  authMethods: Schema.optionalKey(
+    Schema.Array(AcpRegistryProbeAuthMethod).check(Schema.isMaxLength(32)),
+  ),
+  authAction: Schema.optionalKey(AcpRegistryUrlAuthAction),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {}

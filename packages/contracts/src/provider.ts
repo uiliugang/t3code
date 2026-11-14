@@ -37,13 +37,13 @@ export const ProviderUploadFeedbackResult = Schema.Struct({
 });
 export type ProviderUploadFeedbackResult = typeof ProviderUploadFeedbackResult.Type;
 
-export class ProviderUploadFeedbackError extends Schema.TaggedError<ProviderUploadFeedbackError>()(
-  "ProviderUploadFeedbackError",
-  {
-    threadId: ThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderUploadFeedbackError extends Schema.TaggedError<
+  ProviderUploadFeedbackError,
+  { readonly brand: unique symbol }
+>()("ProviderUploadFeedbackError", {
+  threadId: ThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to upload feedback for thread ${this.threadId}.`;
   }

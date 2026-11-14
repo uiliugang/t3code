@@ -275,13 +275,13 @@ export interface AcpAdapterV2ExtensionContext {
  * with invalid params. `makeProviderFailure` shows its message to the user;
  * the agent's reply stays on `cause`.
  */
-class AcpModelSelectionError extends Schema.TaggedError<AcpModelSelectionError>()(
-  "AcpModelSelectionError",
-  {
-    model: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+class AcpModelSelectionError extends Schema.TaggedError<
+  AcpModelSelectionError,
+  { readonly brand: unique symbol }
+>()("AcpModelSelectionError", {
+  model: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `The agent did not accept the model "${this.model}". Choose another model for this provider, then retry.`;
   }

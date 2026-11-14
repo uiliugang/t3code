@@ -80,40 +80,40 @@ export interface ProjectSetupScriptRunnerInput {
   };
 }
 
-export class ProjectSetupScriptOperationError extends Schema.TaggedError<ProjectSetupScriptOperationError>()(
-  "ProjectSetupScriptOperationError",
-  {
-    threadId: Schema.String,
-    projectId: Schema.optional(Schema.String),
-    projectCwd: Schema.optional(Schema.String),
-    worktreePath: Schema.String,
-    operation: Schema.Literals(["readThread", "resolveProject", "readSettings", "openTerminal"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectSetupScriptOperationError extends Schema.TaggedError<
+  ProjectSetupScriptOperationError,
+  { readonly brand: unique symbol }
+>()("ProjectSetupScriptOperationError", {
+  threadId: Schema.String,
+  projectId: Schema.optional(Schema.String),
+  projectCwd: Schema.optional(Schema.String),
+  worktreePath: Schema.String,
+  operation: Schema.Literals(["readThread", "resolveProject", "readSettings", "openTerminal"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Project setup script operation '${this.operation}' failed for thread '${this.threadId}' in '${this.worktreePath}'.`;
   }
 }
 
-export class ProjectSetupScriptProjectNotFoundError extends Schema.TaggedError<ProjectSetupScriptProjectNotFoundError>()(
-  "ProjectSetupScriptProjectNotFoundError",
-  {
-    threadId: Schema.String,
-    projectId: Schema.optional(Schema.String),
-    projectCwd: Schema.optional(Schema.String),
-    worktreePath: Schema.String,
-  },
-) {
+export class ProjectSetupScriptProjectNotFoundError extends Schema.TaggedError<
+  ProjectSetupScriptProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("ProjectSetupScriptProjectNotFoundError", {
+  threadId: Schema.String,
+  projectId: Schema.optional(Schema.String),
+  projectCwd: Schema.optional(Schema.String),
+  worktreePath: Schema.String,
+}) {
   override get message(): string {
     return `Project was not found for setup script execution for thread '${this.threadId}' in '${this.worktreePath}'.`;
   }
 }
 
-export class ProjectSetupScriptUnsupportedShellError extends Schema.TaggedError<ProjectSetupScriptUnsupportedShellError>()(
-  "ProjectSetupScriptUnsupportedShellError",
-  { shell: Schema.String },
-) {
+export class ProjectSetupScriptUnsupportedShellError extends Schema.TaggedError<
+  ProjectSetupScriptUnsupportedShellError,
+  { readonly brand: unique symbol }
+>()("ProjectSetupScriptUnsupportedShellError", { shell: Schema.String }) {
   override get message(): string {
     return "Project script completion is not supported in cmd.exe. Install PowerShell and retry.";
   }

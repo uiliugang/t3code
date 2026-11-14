@@ -16,29 +16,29 @@ const ConnectionProfileBase = {
   label: Schema.String,
 };
 
-export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnectionProfile>()(
-  "BearerConnectionProfile",
-  {
-    ...ConnectionProfileBase,
-    httpBaseUrl: Schema.String,
-    wsBaseUrl: Schema.String,
-    learned: Schema.optionalKey(Schema.Literal(true)),
-    authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
-    /**
-     * "tailscale" on a learned route the server found on its Tailscale
-     * interface. A bare 100.64.0.0/10 address could belong to any VPN.
-     */
-    network: Schema.optionalKey(Schema.Literal("tailscale")),
-  },
-) {}
+export class BearerConnectionProfile extends Schema.TaggedClass<
+  BearerConnectionProfile,
+  { readonly brand: unique symbol }
+>()("BearerConnectionProfile", {
+  ...ConnectionProfileBase,
+  httpBaseUrl: Schema.String,
+  wsBaseUrl: Schema.String,
+  learned: Schema.optionalKey(Schema.Literal(true)),
+  authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
+  /**
+   * "tailscale" on a learned route the server found on its Tailscale
+   * interface. A bare 100.64.0.0/10 address could belong to any VPN.
+   */
+  network: Schema.optionalKey(Schema.Literal("tailscale")),
+}) {}
 
-export class SshConnectionProfile extends Schema.TaggedClass<SshConnectionProfile>()(
-  "SshConnectionProfile",
-  {
-    ...ConnectionProfileBase,
-    target: DesktopSshEnvironmentTargetSchema,
-  },
-) {}
+export class SshConnectionProfile extends Schema.TaggedClass<
+  SshConnectionProfile,
+  { readonly brand: unique symbol }
+>()("SshConnectionProfile", {
+  ...ConnectionProfileBase,
+  target: DesktopSshEnvironmentTargetSchema,
+}) {}
 
 export const ConnectionProfile = Schema.Union([BearerConnectionProfile, SshConnectionProfile]);
 export type ConnectionProfile = typeof ConnectionProfile.Type;
@@ -57,48 +57,48 @@ export interface ConnectionCatalogEntry {
   readonly serverUpdateRequired?: boolean;
 }
 
-export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnectionCredential>()(
-  "BearerConnectionCredential",
-  {
-    token: Schema.String,
-  },
-) {}
+export class BearerConnectionCredential extends Schema.TaggedClass<
+  BearerConnectionCredential,
+  { readonly brand: unique symbol }
+>()("BearerConnectionCredential", {
+  token: Schema.String,
+}) {}
 
 export const ConnectionCredential = Schema.Union([BearerConnectionCredential]);
 export type ConnectionCredential = typeof ConnectionCredential.Type;
 
-export class PrimaryConnectionRegistration extends Schema.TaggedClass<PrimaryConnectionRegistration>()(
-  "PrimaryConnectionRegistration",
-  {
-    target: PrimaryConnectionTarget,
-  },
-) {}
+export class PrimaryConnectionRegistration extends Schema.TaggedClass<
+  PrimaryConnectionRegistration,
+  { readonly brand: unique symbol }
+>()("PrimaryConnectionRegistration", {
+  target: PrimaryConnectionTarget,
+}) {}
 
-export class RelayConnectionRegistration extends Schema.TaggedClass<RelayConnectionRegistration>()(
-  "RelayConnectionRegistration",
-  {
-    target: RelayConnectionTarget,
-  },
-) {}
+export class RelayConnectionRegistration extends Schema.TaggedClass<
+  RelayConnectionRegistration,
+  { readonly brand: unique symbol }
+>()("RelayConnectionRegistration", {
+  target: RelayConnectionTarget,
+}) {}
 
-export class BearerConnectionRegistration extends Schema.TaggedClass<BearerConnectionRegistration>()(
-  "BearerConnectionRegistration",
-  {
-    target: BearerConnectionTarget,
-    profile: BearerConnectionProfile,
-    credential: BearerConnectionCredential,
-  },
-) {}
+export class BearerConnectionRegistration extends Schema.TaggedClass<
+  BearerConnectionRegistration,
+  { readonly brand: unique symbol }
+>()("BearerConnectionRegistration", {
+  target: BearerConnectionTarget,
+  profile: BearerConnectionProfile,
+  credential: BearerConnectionCredential,
+}) {}
 
-export class SshConnectionRegistration extends Schema.TaggedClass<SshConnectionRegistration>()(
-  "SshConnectionRegistration",
-  {
-    target: SshConnectionTarget,
-    profile: SshConnectionProfile,
-    /** The token from pairing over SSH, which later connects reuse. */
-    credential: BearerConnectionCredential,
-  },
-) {}
+export class SshConnectionRegistration extends Schema.TaggedClass<
+  SshConnectionRegistration,
+  { readonly brand: unique symbol }
+>()("SshConnectionRegistration", {
+  target: SshConnectionTarget,
+  profile: SshConnectionProfile,
+  /** The token from pairing over SSH, which later connects reuse. */
+  credential: BearerConnectionCredential,
+}) {}
 
 export const ConnectionRegistration = Schema.Union([
   RelayConnectionRegistration,

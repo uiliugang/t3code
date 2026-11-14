@@ -45,22 +45,22 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 export const ROLLBACK_FAILED_MESSAGE =
   "The provider could not roll back this conversation. Try again; if it keeps failing, check the provider and server logs.";
 
-export class CheckpointRollbackExecutionError extends Schema.TaggedError<CheckpointRollbackExecutionError>()(
-  "CheckpointRollbackExecutionError",
-  {
-    reason: Schema.Literals([
-      "rollback-target-invalid",
-      "active-provider-changed",
-      "provider-turn-unavailable",
-      "unexpected-failure",
-      "shared-workspace",
-    ]),
-    threadId: ThreadId,
-    providerThreadId: ProviderThreadId,
-    checkpointId: CheckpointId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CheckpointRollbackExecutionError extends Schema.TaggedError<
+  CheckpointRollbackExecutionError,
+  { readonly brand: unique symbol }
+>()("CheckpointRollbackExecutionError", {
+  reason: Schema.Literals([
+    "rollback-target-invalid",
+    "active-provider-changed",
+    "provider-turn-unavailable",
+    "unexpected-failure",
+    "shared-workspace",
+  ]),
+  threadId: ThreadId,
+  providerThreadId: ProviderThreadId,
+  checkpointId: CheckpointId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "rollback-target-invalid":

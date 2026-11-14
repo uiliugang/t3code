@@ -72,18 +72,18 @@ const GUEST_SHARE_CREATE_MESSAGES = {
   changed: "The guest link changed while it was being created.",
 } as const;
 
-export class GuestShareCreateError extends Schema.TaggedError<GuestShareCreateError>()(
-  "GuestShareCreateError",
-  {
-    reason: Schema.Literals([
-      "disabled",
-      "connect_unavailable",
-      "thread_unavailable",
-      "read_failed",
-      "changed",
-    ]),
-  },
-) {
+export class GuestShareCreateError extends Schema.TaggedError<
+  GuestShareCreateError,
+  { readonly brand: unique symbol }
+>()("GuestShareCreateError", {
+  reason: Schema.Literals([
+    "disabled",
+    "connect_unavailable",
+    "thread_unavailable",
+    "read_failed",
+    "changed",
+  ]),
+}) {
   override get message(): string {
     return GUEST_SHARE_CREATE_MESSAGES[this.reason];
   }

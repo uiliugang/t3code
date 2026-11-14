@@ -4,10 +4,10 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { mapCodexModelCapabilities } from "./CodexProvider.ts";
 
-export class ChatGptCatalogError extends Schema.TaggedError<ChatGptCatalogError>()(
-  "ChatGptCatalogError",
-  { status: Schema.Int },
-) {}
+export class ChatGptCatalogError extends Schema.TaggedError<
+  ChatGptCatalogError,
+  { readonly brand: unique symbol }
+>()("ChatGptCatalogError", { status: Schema.Int }) {}
 
 const Catalog = Schema.Struct({
   models: Schema.Array(

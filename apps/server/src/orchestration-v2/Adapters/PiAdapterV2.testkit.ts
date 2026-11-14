@@ -36,46 +36,46 @@ const PiRpcReplayTranscript = Schema.Struct({
 type PiRpcReplayTranscript = typeof PiRpcReplayTranscript.Type;
 const decodePiRpcReplayTranscript = Schema.decodeUnknownEffect(PiRpcReplayTranscript);
 
-class PiReplayTranscriptDecodeError extends Schema.TaggedError<PiReplayTranscriptDecodeError>()(
-  "PiReplayTranscriptDecodeError",
-  {
-    driver: Schema.optional(Schema.String),
-    protocol: Schema.optional(Schema.String),
-    scenario: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+class PiReplayTranscriptDecodeError extends Schema.TaggedError<
+  PiReplayTranscriptDecodeError,
+  { readonly brand: unique symbol }
+>()("PiReplayTranscriptDecodeError", {
+  driver: Schema.optional(Schema.String),
+  protocol: Schema.optional(Schema.String),
+  scenario: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode Pi RPC replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
   }
 }
 
-class PiReplayMismatchError extends Schema.TaggedError<PiReplayMismatchError>()(
-  "PiReplayMismatchError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    process: Schema.Number,
-    label: Schema.optional(Schema.String),
-    actualType: Schema.optional(Schema.String),
-    expected: Schema.Unknown,
-    actual: Schema.Unknown,
-  },
-) {
+class PiReplayMismatchError extends Schema.TaggedError<
+  PiReplayMismatchError,
+  { readonly brand: unique symbol }
+>()("PiReplayMismatchError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  process: Schema.Number,
+  label: Schema.optional(Schema.String),
+  actualType: Schema.optional(Schema.String),
+  expected: Schema.Unknown,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Pi replay frame mismatch at cursor ${this.cursor} (expected ${this.label ?? "<none>"}, received ${this.actualType ?? "<untyped>"} from process ${this.process}) in scenario ${this.scenario}.`;
   }
 }
 
-class PiReplayIncompleteError extends Schema.TaggedError<PiReplayIncompleteError>()(
-  "PiReplayIncompleteError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    remaining: Schema.Number,
-    nextLabel: Schema.optional(Schema.String),
-  },
-) {
+class PiReplayIncompleteError extends Schema.TaggedError<
+  PiReplayIncompleteError,
+  { readonly brand: unique symbol }
+>()("PiReplayIncompleteError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  remaining: Schema.Number,
+  nextLabel: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return `Pi replay ended with ${this.remaining} unconsumed entries at cursor ${this.cursor} (next ${this.nextLabel ?? "<none>"}) in scenario ${this.scenario}.`;
   }

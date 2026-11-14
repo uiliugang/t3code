@@ -35,15 +35,15 @@ import { resolveBrowserDefaults } from "./browserDefaults";
 export const isBrowserPreviewFile = (path: string): boolean =>
   /\.(?:html?|pdf)$/i.test(path.split(/[?#]/, 1)[0] ?? "");
 
-export class BrowserPreviewUnavailableError extends Schema.TaggedError<BrowserPreviewUnavailableError>()(
-  "BrowserPreviewUnavailableError",
-  { message: Schema.String },
-) {}
+export class BrowserPreviewUnavailableError extends Schema.TaggedError<
+  BrowserPreviewUnavailableError,
+  { readonly brand: unique symbol }
+>()("BrowserPreviewUnavailableError", { message: Schema.String }) {}
 
-export class BrowserSettingsReadError extends Schema.TaggedError<BrowserSettingsReadError>()(
-  "BrowserSettingsReadError",
-  { cause: Schema.Defect() },
-) {
+export class BrowserSettingsReadError extends Schema.TaggedError<
+  BrowserSettingsReadError,
+  { readonly brand: unique symbol }
+>()("BrowserSettingsReadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Saved browser settings could not be loaded.";
   }

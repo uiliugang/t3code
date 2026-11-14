@@ -15,25 +15,25 @@ export interface ElectronAppMetadata {
   readonly runningUnderArm64Translation: boolean;
 }
 
-export class ElectronAppMetadataReadError extends Schema.TaggedError<ElectronAppMetadataReadError>()(
-  "ElectronAppMetadataReadError",
-  {
-    property: Schema.Literals(["app-version", "app-path"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronAppMetadataReadError extends Schema.TaggedError<
+  ElectronAppMetadataReadError,
+  { readonly brand: unique symbol }
+>()("ElectronAppMetadataReadError", {
+  property: Schema.Literals(["app-version", "app-path"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read Electron app metadata property "${this.property}".`;
   }
 }
 
-export class ElectronAppWhenReadyError extends Schema.TaggedError<ElectronAppWhenReadyError>()(
-  "ElectronAppWhenReadyError",
-  {
-    isPackaged: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronAppWhenReadyError extends Schema.TaggedError<
+  ElectronAppWhenReadyError,
+  { readonly brand: unique symbol }
+>()("ElectronAppWhenReadyError", {
+  isPackaged: Schema.Boolean,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to wait for the Electron app to become ready (packaged: ${this.isPackaged}).`;
   }

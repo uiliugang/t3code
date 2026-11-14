@@ -54,14 +54,14 @@ export const IdAllocatorV2Kind = Schema.Literals([
 ]);
 export type IdAllocatorV2Kind = typeof IdAllocatorV2Kind.Type;
 
-export class IdAllocatorV2AllocationError extends Schema.TaggedError<IdAllocatorV2AllocationError>()(
-  "IdAllocatorV2AllocationError",
-  {
-    kind: IdAllocatorV2Kind,
-    input: Schema.optional(Schema.Unknown),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class IdAllocatorV2AllocationError extends Schema.TaggedError<
+  IdAllocatorV2AllocationError,
+  { readonly brand: unique symbol }
+>()("IdAllocatorV2AllocationError", {
+  kind: IdAllocatorV2Kind,
+  input: Schema.optional(Schema.Unknown),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to allocate orchestration ${this.kind} id.`;
   }

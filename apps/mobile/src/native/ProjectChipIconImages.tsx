@@ -69,10 +69,10 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-class ProjectGlyphRasterizeError extends Schema.TaggedError<ProjectGlyphRasterizeError>()(
-  "ProjectGlyphRasterizeError",
-  { key: Schema.String, cause: Schema.Defect() },
-) {
+class ProjectGlyphRasterizeError extends Schema.TaggedError<
+  ProjectGlyphRasterizeError,
+  { readonly brand: unique symbol }
+>()("ProjectGlyphRasterizeError", { key: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not rasterize the project glyph ${this.key}.`;
   }

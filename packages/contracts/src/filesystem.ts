@@ -56,20 +56,20 @@ function decodedFilesystemBrowseErrorMessage(props: object): string | undefined 
   return typeof props.message === "string" ? props.message : undefined;
 }
 
-export class FilesystemBrowseError extends Schema.TaggedError<FilesystemBrowseError>()(
-  "FilesystemBrowseError",
-  {
-    partialPath: Schema.optional(TrimmedNonEmptyString),
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    failure: Schema.optional(FilesystemBrowseFailure),
-    parentPath: Schema.optional(TrimmedNonEmptyString),
-    platform: Schema.optional(TrimmedNonEmptyString),
-    /** Set when the directory does not exist; older clients ignore it. */
-    pathMissing: Schema.optional(Schema.Boolean),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class FilesystemBrowseError extends Schema.TaggedError<
+  FilesystemBrowseError,
+  { readonly brand: unique symbol }
+>()("FilesystemBrowseError", {
+  partialPath: Schema.optional(TrimmedNonEmptyString),
+  cwd: Schema.optional(TrimmedNonEmptyString),
+  failure: Schema.optional(FilesystemBrowseFailure),
+  parentPath: Schema.optional(TrimmedNonEmptyString),
+  platform: Schema.optional(TrimmedNonEmptyString),
+  /** Set when the directory does not exist; older clients ignore it. */
+  pathMissing: Schema.optional(Schema.Boolean),
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(props: {
     readonly partialPath: string;

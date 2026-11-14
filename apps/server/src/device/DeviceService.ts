@@ -142,19 +142,23 @@ export interface DeviceAgentReadiness extends DeviceReadiness {
 const DeviceHostName = Schema.Struct({ id: DeviceHostId, label: Schema.optional(Schema.String) });
 const hostName = (host: typeof DeviceHostName.Type) => host.label ?? `host ${host.id}`;
 
-export class DeviceHostAmbiguousError extends Schema.TaggedError<DeviceHostAmbiguousError>()(
-  "DeviceHostAmbiguousError",
-  { deviceId: DeviceId, hosts: Schema.Array(DeviceHostName) },
-) {
+export class DeviceHostAmbiguousError extends Schema.TaggedError<
+  DeviceHostAmbiguousError,
+  { readonly brand: unique symbol }
+>()("DeviceHostAmbiguousError", { deviceId: DeviceId, hosts: Schema.Array(DeviceHostName) }) {
   override get message(): string {
     return `Device ${this.deviceId} is on more than one host: ${this.hosts.map(hostName).join(", ")}.`;
   }
 }
 
-export class DeviceOnOtherHostError extends Schema.TaggedError<DeviceOnOtherHostError>()(
-  "DeviceOnOtherHostError",
-  { deviceId: DeviceId, host: DeviceHostName, hosts: Schema.Array(DeviceHostName) },
-) {
+export class DeviceOnOtherHostError extends Schema.TaggedError<
+  DeviceOnOtherHostError,
+  { readonly brand: unique symbol }
+>()("DeviceOnOtherHostError", {
+  deviceId: DeviceId,
+  host: DeviceHostName,
+  hosts: Schema.Array(DeviceHostName),
+}) {
   override get message(): string {
     return `Device ${this.deviceId} is not on ${hostName(this.host)}. It is on ${this.hosts.map(hostName).join(", ")}.`;
   }

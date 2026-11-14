@@ -10,53 +10,53 @@ const SUPPORTED_REMOTE_BACKEND_PROTOCOLS = new Set(["http:", "https:", "ws:", "w
 export const readHashParams = (url: URL): URLSearchParams =>
   new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
 
-export class RemoteBackendUrlMissingError extends Schema.TaggedError<RemoteBackendUrlMissingError>()(
-  "RemoteBackendUrlMissingError",
-  {},
-) {
+export class RemoteBackendUrlMissingError extends Schema.TaggedError<
+  RemoteBackendUrlMissingError,
+  { readonly brand: unique symbol }
+>()("RemoteBackendUrlMissingError", {}) {
   override get message(): string {
     return "Enter a backend URL.";
   }
 }
 
-export class RemotePairingUrlInvalidError extends Schema.TaggedError<RemotePairingUrlInvalidError>()(
-  "RemotePairingUrlInvalidError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-    protocol: Schema.optional(Schema.String),
-  },
-) {
+export class RemotePairingUrlInvalidError extends Schema.TaggedError<
+  RemotePairingUrlInvalidError,
+  { readonly brand: unique symbol }
+>()("RemotePairingUrlInvalidError", {
+  cause: Schema.optional(Schema.Defect()),
+  protocol: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return "Pairing URL is invalid.";
   }
 }
 
-export class RemoteBackendUrlInvalidError extends Schema.TaggedError<RemoteBackendUrlInvalidError>()(
-  "RemoteBackendUrlInvalidError",
-  {
-    source: Schema.Literals(["direct-host", "hosted-pairing-host"]),
-    cause: Schema.optional(Schema.Defect()),
-    protocol: Schema.optional(Schema.String),
-  },
-) {
+export class RemoteBackendUrlInvalidError extends Schema.TaggedError<
+  RemoteBackendUrlInvalidError,
+  { readonly brand: unique symbol }
+>()("RemoteBackendUrlInvalidError", {
+  source: Schema.Literals(["direct-host", "hosted-pairing-host"]),
+  cause: Schema.optional(Schema.Defect()),
+  protocol: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return "Backend URL is invalid.";
   }
 }
 
-export class RemotePairingTokenMissingError extends Schema.TaggedError<RemotePairingTokenMissingError>()(
-  "RemotePairingTokenMissingError",
-  { host: Schema.String },
-) {
+export class RemotePairingTokenMissingError extends Schema.TaggedError<
+  RemotePairingTokenMissingError,
+  { readonly brand: unique symbol }
+>()("RemotePairingTokenMissingError", { host: Schema.String }) {
   override get message(): string {
     return "Pairing URL is missing its token.";
   }
 }
 
-export class RemotePairingCodeMissingError extends Schema.TaggedError<RemotePairingCodeMissingError>()(
-  "RemotePairingCodeMissingError",
-  { host: Schema.String },
-) {
+export class RemotePairingCodeMissingError extends Schema.TaggedError<
+  RemotePairingCodeMissingError,
+  { readonly brand: unique symbol }
+>()("RemotePairingCodeMissingError", { host: Schema.String }) {
   override get message(): string {
     return "Enter a pairing code.";
   }

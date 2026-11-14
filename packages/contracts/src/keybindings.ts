@@ -219,14 +219,14 @@ export const ResolvedKeybindingsConfig = ForwardCompatibleArray(ResolvedKeybindi
 );
 export type ResolvedKeybindingsConfig = typeof ResolvedKeybindingsConfig.Type;
 
-export class KeybindingsConfigError extends Schema.TaggedError<KeybindingsConfigError>()(
-  "KeybindingsConfigParseError",
-  {
-    configPath: Schema.String,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class KeybindingsConfigError extends Schema.TaggedError<
+  KeybindingsConfigError,
+  { readonly brand: unique symbol }
+>()("KeybindingsConfigParseError", {
+  configPath: Schema.String,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Unable to parse keybindings config at ${this.configPath}: ${this.detail}`;
   }

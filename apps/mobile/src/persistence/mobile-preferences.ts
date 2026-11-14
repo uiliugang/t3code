@@ -144,19 +144,19 @@ export interface Preferences {
   readonly workspaceSelections?: WorkspaceSelections;
 }
 
-export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
-  "MobilePreferencesLoadError",
-  { cause: Schema.Defect() },
-) {
+export class MobilePreferencesLoadError extends Schema.TaggedError<
+  MobilePreferencesLoadError,
+  { readonly brand: unique symbol }
+>()("MobilePreferencesLoadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to load mobile preferences.";
   }
 }
 
-export class MobilePreferencesSaveError extends Schema.TaggedError<MobilePreferencesSaveError>()(
-  "MobilePreferencesSaveError",
-  { cause: Schema.Defect() },
-) {
+export class MobilePreferencesSaveError extends Schema.TaggedError<
+  MobilePreferencesSaveError,
+  { readonly brand: unique symbol }
+>()("MobilePreferencesSaveError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to save mobile preferences.";
   }

@@ -21,13 +21,13 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 
-export class EnvironmentRpcUnavailableError extends Schema.TaggedError<EnvironmentRpcUnavailableError>()(
-  "EnvironmentRpcUnavailableError",
-  {
-    environmentId: Schema.String,
-    message: Schema.String,
-  },
-) {}
+export class EnvironmentRpcUnavailableError extends Schema.TaggedError<
+  EnvironmentRpcUnavailableError,
+  { readonly brand: unique symbol }
+>()("EnvironmentRpcUnavailableError", {
+  environmentId: Schema.String,
+  message: Schema.String,
+}) {}
 
 export interface EnvironmentRpcRequestObservation {
   readonly environmentId: string;

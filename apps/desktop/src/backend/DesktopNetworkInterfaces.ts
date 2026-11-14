@@ -20,13 +20,13 @@ export type NetworkInterfaces = Readonly<
   Record<string, readonly DesktopNetworkInterfaceInfo[] | undefined>
 >;
 
-export class DesktopNetworkInterfacesReadError extends Schema.TaggedError<DesktopNetworkInterfacesReadError>()(
-  "DesktopNetworkInterfacesReadError",
-  {
-    platform: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopNetworkInterfacesReadError extends Schema.TaggedError<
+  DesktopNetworkInterfacesReadError,
+  { readonly brand: unique symbol }
+>()("DesktopNetworkInterfacesReadError", {
+  platform: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read desktop network interfaces on ${this.platform}.`;
   }

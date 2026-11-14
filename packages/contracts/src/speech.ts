@@ -40,7 +40,10 @@ export type CloudSpeechModel = typeof CloudSpeechModel.Type;
 export const CloudSpeechModels = Schema.Struct({ models: Schema.Array(CloudSpeechModel) });
 export type CloudSpeechModels = typeof CloudSpeechModels.Type;
 
-export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
+export class CloudSpeechError extends Schema.TaggedError<
+  CloudSpeechError,
+  { readonly brand: unique symbol }
+>()(
   "CloudSpeechError",
   {
     provider: CloudSpeechProvider,

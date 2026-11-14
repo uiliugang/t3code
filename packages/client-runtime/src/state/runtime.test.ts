@@ -72,7 +72,10 @@ const QUERY_ENVIRONMENT = new PrimaryConnectionTarget({
 
 const QUERY_RPC_SESSION = {} as RpcSession.RpcSession;
 
-class TestQueryError extends Schema.TaggedError<TestQueryError>()("TestQueryError", {
+class TestQueryError extends Schema.TaggedError<
+  TestQueryError,
+  { readonly brand: unique symbol }
+>()("TestQueryError", {
   message: Schema.String,
 }) {}
 

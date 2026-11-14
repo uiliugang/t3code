@@ -57,10 +57,10 @@ export {
 export * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 
 /** @public Required to name the error in consumers' inferred pull request results. */
-export class EnvironmentHttpConnectionNotReadyError extends Schema.TaggedError<EnvironmentHttpConnectionNotReadyError>()(
-  "EnvironmentHttpConnectionNotReadyError",
-  { message: Schema.String },
-) {}
+export class EnvironmentHttpConnectionNotReadyError extends Schema.TaggedError<
+  EnvironmentHttpConnectionNotReadyError,
+  { readonly brand: unique symbol }
+>()("EnvironmentHttpConnectionNotReadyError", { message: Schema.String }) {}
 
 const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 

@@ -4,7 +4,10 @@ import * as Schema from "effect/Schema";
 
 import type { HeldHook } from "./HookInboxStore.ts";
 
-export class HookInboxError extends Schema.TaggedError<HookInboxError>()("HookInboxError", {
+export class HookInboxError extends Schema.TaggedError<
+  HookInboxError,
+  { readonly brand: unique symbol }
+>()("HookInboxError", {
   operation: Schema.Literals(["hold", "wake", "clear"]),
   endpointKey: Schema.String,
   cause: Schema.Defect(),

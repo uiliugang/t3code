@@ -2,7 +2,10 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-export class PtySpawnError extends Schema.TaggedError<PtySpawnError>()("PtySpawnError", {
+export class PtySpawnError extends Schema.TaggedError<
+  PtySpawnError,
+  { readonly brand: unique symbol }
+>()("PtySpawnError", {
   adapter: Schema.String,
   shell: Schema.optional(Schema.String),
   attemptedShells: Schema.optional(Schema.Array(Schema.String)),

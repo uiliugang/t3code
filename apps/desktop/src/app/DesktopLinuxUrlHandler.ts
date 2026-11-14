@@ -15,16 +15,16 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 // AppImage integrators choose the .desktop filename, so setDesktopName cannot identify it for protocol registration.
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
-export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<DesktopLinuxUrlHandlerRegistrationError>()(
-  "DesktopLinuxUrlHandlerRegistrationError",
-  {
-    step: Schema.Literals(["write-desktop-entry", "set-default-handler"]),
-    scheme: Schema.String,
-    desktopEntryPath: Schema.optionalKey(Schema.String),
-    exitCode: Schema.optionalKey(Schema.Number),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<
+  DesktopLinuxUrlHandlerRegistrationError,
+  { readonly brand: unique symbol }
+>()("DesktopLinuxUrlHandlerRegistrationError", {
+  step: Schema.Literals(["write-desktop-entry", "set-default-handler"]),
+  scheme: Schema.String,
+  desktopEntryPath: Schema.optionalKey(Schema.String),
+  exitCode: Schema.optionalKey(Schema.Number),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     const exitCode = this.exitCode === undefined ? "" : `, xdg-mime exit code ${this.exitCode}`;
     return `Failed to register the ${this.scheme}:// URL handler (step: ${this.step}${exitCode}).`;
@@ -33,14 +33,14 @@ export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<
 
 const isRegistrationError = Schema.is(DesktopLinuxUrlHandlerRegistrationError);
 
-export class DesktopLinuxUrlHandlerCacheRefreshError extends Schema.TaggedError<DesktopLinuxUrlHandlerCacheRefreshError>()(
-  "DesktopLinuxUrlHandlerCacheRefreshError",
-  {
-    applicationsDir: Schema.String,
-    exitCode: Schema.optionalKey(Schema.Number),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
+export class DesktopLinuxUrlHandlerCacheRefreshError extends Schema.TaggedError<
+  DesktopLinuxUrlHandlerCacheRefreshError,
+  { readonly brand: unique symbol }
+>()("DesktopLinuxUrlHandlerCacheRefreshError", {
+  applicationsDir: Schema.String,
+  exitCode: Schema.optionalKey(Schema.Number),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
   override get message(): string {
     const exitCode =
       this.exitCode === undefined ? "" : `, update-desktop-database exit code ${this.exitCode}`;

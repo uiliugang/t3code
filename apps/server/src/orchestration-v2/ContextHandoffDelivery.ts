@@ -145,10 +145,10 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
   },
 );
 
-export class ContextHandoffDeliveryUncertainError extends Schema.TaggedError<ContextHandoffDeliveryUncertainError>()(
-  "ContextHandoffDeliveryUncertainError",
-  {},
-) {
+export class ContextHandoffDeliveryUncertainError extends Schema.TaggedError<
+  ContextHandoffDeliveryUncertainError,
+  { readonly brand: unique symbol }
+>()("ContextHandoffDeliveryUncertainError", {}) {
   override get message() {
     return "Historical context delivery is uncertain; replace the native thread before retrying.";
   }

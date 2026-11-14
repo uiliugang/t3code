@@ -72,10 +72,10 @@ export interface McpAppCallToolResult {
   readonly _meta?: unknown;
 }
 
-export class McpAppHostRefusal extends Schema.TaggedError<McpAppHostRefusal>()(
-  "McpAppHostRefusal",
-  { message: Schema.String },
-) {}
+export class McpAppHostRefusal extends Schema.TaggedError<
+  McpAppHostRefusal,
+  { readonly brand: unique symbol }
+>()("McpAppHostRefusal", { message: Schema.String }) {}
 
 const isMcpAppHostRefusal = Schema.is(McpAppHostRefusal);
 

@@ -17,14 +17,14 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "./HostProcess.ts";
 
-export class ManagedPolicyFileError extends Schema.TaggedError<ManagedPolicyFileError>()(
-  "ManagedPolicyFileError",
-  {
-    path: Schema.String,
-    reason: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ManagedPolicyFileError extends Schema.TaggedError<
+  ManagedPolicyFileError,
+  { readonly brand: unique symbol }
+>()("ManagedPolicyFileError", {
+  path: Schema.String,
+  reason: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override readonly [Runtime.errorExitCode] = SERVER_EXIT_CODE_MANAGED_POLICY;
 
   override get message(): string {
@@ -136,14 +136,14 @@ export const WINDOWS_POLICY_GROUPS = {
 // An absolute path: an earlier PATH entry could otherwise answer that there is no policy.
 const PLUTIL = "/usr/bin/plutil";
 
-export class WindowsRegistryError extends Schema.TaggedError<WindowsRegistryError>()(
-  "WindowsRegistryError",
-  {
-    /** The Win32 error, such as 5 for access denied; absent when the registry API cannot load. */
-    code: Schema.optional(Schema.Number),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class WindowsRegistryError extends Schema.TaggedError<
+  WindowsRegistryError,
+  { readonly brand: unique symbol }
+>()("WindowsRegistryError", {
+  /** The Win32 error, such as 5 for access denied; absent when the registry API cannot load. */
+  code: Schema.optional(Schema.Number),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.code === undefined ? "the registry API cannot load" : `Windows error ${this.code}`;
   }
@@ -186,9 +186,12 @@ const ERROR_NO_MORE_ITEMS = 259;
 // Value and key names are at most 16,383 characters.
 const MAX_NAME_CHARS = 16_384;
 
-class Win32Failure extends Schema.TaggedError<Win32Failure>()("Win32Failure", {
-  code: Schema.Number,
-}) {
+class Win32Failure extends Schema.TaggedError<Win32Failure, { readonly brand: unique symbol }>()(
+  "Win32Failure",
+  {
+    code: Schema.Number,
+  },
+) {
   override get message(): string {
     return `Windows error ${this.code}`;
   }

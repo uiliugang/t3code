@@ -34,15 +34,15 @@ const SCREENSHOT_TIMEOUT_MS = 3_000;
 const WAIT_POLL_MS = 100;
 export const DIAGNOSTIC_BUFFER_LIMIT = 200;
 
-export class ServerBrowserOperationError extends Schema.TaggedError<ServerBrowserOperationError>()(
-  "ServerBrowserOperationError",
-  {
-    tag: Schema.String,
-    message: Schema.String,
-    detail: Schema.optional(Schema.Unknown),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ServerBrowserOperationError extends Schema.TaggedError<
+  ServerBrowserOperationError,
+  { readonly brand: unique symbol }
+>()("ServerBrowserOperationError", {
+  tag: Schema.String,
+  message: Schema.String,
+  detail: Schema.optional(Schema.Unknown),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isServerBrowserOperationError = Schema.is(ServerBrowserOperationError);
 

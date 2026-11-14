@@ -17,15 +17,15 @@ export interface CursorSdkCatalogSnapshot {
   readonly models: ReadonlyArray<SDKModel>;
 }
 
-export class CursorSdkCatalogError extends Schema.TaggedError<CursorSdkCatalogError>()(
-  "CursorSdkCatalogError",
-  {
-    authenticationFailure: Schema.Boolean,
-    status: Schema.optionalKey(Schema.Number),
-    code: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class CursorSdkCatalogError extends Schema.TaggedError<
+  CursorSdkCatalogError,
+  { readonly brand: unique symbol }
+>()("CursorSdkCatalogError", {
+  authenticationFailure: Schema.Boolean,
+  status: Schema.optionalKey(Schema.Number),
+  code: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return this.authenticationFailure
       ? "Cursor SDK authentication failed."

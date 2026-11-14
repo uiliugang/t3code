@@ -28,28 +28,28 @@ export interface GitCafeCredential {
   readonly source: "settings" | "env" | "cafe";
 }
 
-export class GitCafeCliMissingError extends Schema.TaggedError<GitCafeCliMissingError>()(
-  "GitCafeCliMissingError",
-  { host: Schema.String },
-) {
+export class GitCafeCliMissingError extends Schema.TaggedError<
+  GitCafeCliMissingError,
+  { readonly brand: unique symbol }
+>()("GitCafeCliMissingError", { host: Schema.String }) {
   override get message(): string {
     return `No GitCafe credential for ${this.host}: set CAFE_TOKEN, or install the GitCafe CLI and run \`cafe auth login\`.`;
   }
 }
 
-export class GitCafeNotSignedInError extends Schema.TaggedError<GitCafeNotSignedInError>()(
-  "GitCafeNotSignedInError",
-  { host: Schema.String },
-) {
+export class GitCafeNotSignedInError extends Schema.TaggedError<
+  GitCafeNotSignedInError,
+  { readonly brand: unique symbol }
+>()("GitCafeNotSignedInError", { host: Schema.String }) {
   override get message(): string {
     return `No GitCafe credential for ${this.host}: run \`cafe auth login --host https://${this.host}/api\`.`;
   }
 }
 
-export class GitCafeCliFailedError extends Schema.TaggedError<GitCafeCliFailedError>()(
-  "GitCafeCliFailedError",
-  { host: Schema.String, cause: Schema.Defect() },
-) {
+export class GitCafeCliFailedError extends Schema.TaggedError<
+  GitCafeCliFailedError,
+  { readonly brand: unique symbol }
+>()("GitCafeCliFailedError", { host: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `The GitCafe CLI could not hand over a credential for ${this.host}. Check \`cafe auth status\` on the server.`;
   }

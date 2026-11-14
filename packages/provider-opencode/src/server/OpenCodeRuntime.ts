@@ -106,15 +106,15 @@ const OPENCODE_RUNTIME_ERROR_TAG = "OpenCodeRuntimeError";
 const OpenCodeStartupFailureReason = Schema.Literal("databaseLocked");
 export type OpenCodeStartupFailureReason = typeof OpenCodeStartupFailureReason.Type;
 
-export class OpenCodeRuntimeError extends Schema.TaggedError<OpenCodeRuntimeError>()(
-  OPENCODE_RUNTIME_ERROR_TAG,
-  {
-    operation: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-    detail: Schema.String,
-    reason: Schema.optional(OpenCodeStartupFailureReason),
-  },
-) {}
+export class OpenCodeRuntimeError extends Schema.TaggedError<
+  OpenCodeRuntimeError,
+  { readonly brand: unique symbol }
+>()(OPENCODE_RUNTIME_ERROR_TAG, {
+  operation: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+  detail: Schema.String,
+  reason: Schema.optional(OpenCodeStartupFailureReason),
+}) {}
 
 // Classify stderr database locks at exit so callers need not parse diagnostics.
 function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {

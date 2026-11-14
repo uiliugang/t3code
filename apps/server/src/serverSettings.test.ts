@@ -65,8 +65,11 @@ it.effect("removes a default provider across reloads and restores it on upsert",
     });
     assert.isDefined(deriveProviderInstanceConfigMap(yield* service.getSettings)[instanceId]);
   }).pipe(
-    Effect.provide(layerServerSettings()),
-    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.provide(
+      layerServerSettings().pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
   ),
 );
 

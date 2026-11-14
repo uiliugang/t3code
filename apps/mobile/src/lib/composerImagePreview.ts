@@ -44,10 +44,10 @@ function materializePreviewOnce(id: string, dataUrl: string): Promise<string | n
   return next;
 }
 
-class ImagePreviewCacheError extends Schema.TaggedError<ImagePreviewCacheError>()(
-  "ImagePreviewCacheError",
-  { cause: Schema.Defect() },
-) {
+class ImagePreviewCacheError extends Schema.TaggedError<
+  ImagePreviewCacheError,
+  { readonly brand: unique symbol }
+>()("ImagePreviewCacheError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not cache an image preview.";
   }

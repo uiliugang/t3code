@@ -130,60 +130,60 @@ import type {
   ProviderListCursor,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 
-export class GitHubPullRequestReadError extends Schema.TaggedError<GitHubPullRequestReadError>()(
-  "GitHubPullRequestReadError",
-  {
-    cwd: Schema.String,
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class GitHubPullRequestReadError extends Schema.TaggedError<
+  GitHubPullRequestReadError,
+  { readonly brand: unique symbol }
+>()("GitHubPullRequestReadError", {
+  cwd: Schema.String,
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `GitHub returned an unreadable ${this.operation} response.`;
   }
 }
 
-export class GitHubViewerLoginUnavailableError extends Schema.TaggedError<GitHubViewerLoginUnavailableError>()(
-  "GitHubViewerLoginUnavailableError",
-  {
-    cwd: Schema.String,
-  },
-) {
+export class GitHubViewerLoginUnavailableError extends Schema.TaggedError<
+  GitHubViewerLoginUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitHubViewerLoginUnavailableError", {
+  cwd: Schema.String,
+}) {
   override get message(): string {
     return "GitHub returned no login for the authenticated account.";
   }
 }
 
-export class GitHubDiffCursorError extends Schema.TaggedError<GitHubDiffCursorError>()(
-  "GitHubDiffCursorError",
-  {
-    cwd: Schema.String,
-  },
-) {
+export class GitHubDiffCursorError extends Schema.TaggedError<
+  GitHubDiffCursorError,
+  { readonly brand: unique symbol }
+>()("GitHubDiffCursorError", {
+  cwd: Schema.String,
+}) {
   override get message(): string {
     return "The diff cursor was not one this pull request handed out.";
   }
 }
 
-export class GitHubDiffCommitError extends Schema.TaggedError<GitHubDiffCommitError>()(
-  "GitHubDiffCommitError",
-  {
-    cwd: Schema.String,
-  },
-) {
+export class GitHubDiffCommitError extends Schema.TaggedError<
+  GitHubDiffCommitError,
+  { readonly brand: unique symbol }
+>()("GitHubDiffCommitError", {
+  cwd: Schema.String,
+}) {
   override get message(): string {
     return "The named commit was not a commit sha.";
   }
 }
 
-export class GitHubDiffRevisionsUnavailableError extends Schema.TaggedError<GitHubDiffRevisionsUnavailableError>()(
-  "GitHubDiffRevisionsUnavailableError",
-  {
-    cwd: Schema.String,
-    number: Schema.Int,
-    commit: Schema.optional(Schema.String),
-  },
-) {
+export class GitHubDiffRevisionsUnavailableError extends Schema.TaggedError<
+  GitHubDiffRevisionsUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitHubDiffRevisionsUnavailableError", {
+  cwd: Schema.String,
+  number: Schema.Int,
+  commit: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return this.commit === undefined
       ? `Pull request #${this.number} reported no usable base and head revisions.`
@@ -191,14 +191,14 @@ export class GitHubDiffRevisionsUnavailableError extends Schema.TaggedError<GitH
   }
 }
 
-export class GitHubDiffFileContentsUnavailableError extends Schema.TaggedError<GitHubDiffFileContentsUnavailableError>()(
-  "GitHubDiffFileContentsUnavailableError",
-  {
-    cwd: Schema.String,
-    path: Schema.String,
-    reason: Schema.Literals(["oversized", "binary"]),
-  },
-) {
+export class GitHubDiffFileContentsUnavailableError extends Schema.TaggedError<
+  GitHubDiffFileContentsUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitHubDiffFileContentsUnavailableError", {
+  cwd: Schema.String,
+  path: Schema.String,
+  reason: Schema.Literals(["oversized", "binary"]),
+}) {
   override get message(): string {
     return this.reason === "oversized"
       ? `The diff file '${this.path}' exceeds the 1 MB expansion limit.`
@@ -206,40 +206,40 @@ export class GitHubDiffFileContentsUnavailableError extends Schema.TaggedError<G
   }
 }
 
-export class GitHubRepositorySelectorError extends Schema.TaggedError<GitHubRepositorySelectorError>()(
-  "GitHubRepositorySelectorError",
-  {
-    cwd: Schema.String,
-    operation: Schema.String,
-  },
-) {
+export class GitHubRepositorySelectorError extends Schema.TaggedError<
+  GitHubRepositorySelectorError,
+  { readonly brand: unique symbol }
+>()("GitHubRepositorySelectorError", {
+  cwd: Schema.String,
+  operation: Schema.String,
+}) {
   override get message(): string {
     return "A repository was named that GitHub cannot address.";
   }
 }
 
-export class GitHubSubjectScopeError extends Schema.TaggedError<GitHubSubjectScopeError>()(
-  "GitHubSubjectScopeError",
-  {
-    cwd: Schema.String,
-    operation: Schema.String,
-  },
-) {
+export class GitHubSubjectScopeError extends Schema.TaggedError<
+  GitHubSubjectScopeError,
+  { readonly brand: unique symbol }
+>()("GitHubSubjectScopeError", {
+  cwd: Schema.String,
+  operation: Schema.String,
+}) {
   override get message(): string {
     return "The named subject did not belong to the named pull request.";
   }
 }
 
-export class GitHubWorkflowApprovalRefusedError extends Schema.TaggedError<GitHubWorkflowApprovalRefusedError>()(
-  "GitHubWorkflowApprovalRefusedError",
-  {
-    cwd: Schema.String,
-    number: Schema.Int,
-    reason: Schema.Literals(["head-list-truncated", "head-not-unique", "run-list-truncated"]),
-    observedCount: Schema.Int,
-    limit: Schema.Int,
-  },
-) {
+export class GitHubWorkflowApprovalRefusedError extends Schema.TaggedError<
+  GitHubWorkflowApprovalRefusedError,
+  { readonly brand: unique symbol }
+>()("GitHubWorkflowApprovalRefusedError", {
+  cwd: Schema.String,
+  number: Schema.Int,
+  reason: Schema.Literals(["head-list-truncated", "head-not-unique", "run-list-truncated"]),
+  observedCount: Schema.Int,
+  limit: Schema.Int,
+}) {
   override get message(): string {
     if (this.reason === "head-list-truncated") {
       return `GitHub returned more than ${this.limit} pull requests for this head branch.`;
@@ -251,43 +251,43 @@ export class GitHubWorkflowApprovalRefusedError extends Schema.TaggedError<GitHu
   }
 }
 
-export class GitHubWorkflowApprovalHeadUnavailableError extends Schema.TaggedError<GitHubWorkflowApprovalHeadUnavailableError>()(
-  "GitHubWorkflowApprovalHeadUnavailableError",
-  {
-    cwd: Schema.String,
-    number: Schema.Int,
-  },
-) {
+export class GitHubWorkflowApprovalHeadUnavailableError extends Schema.TaggedError<
+  GitHubWorkflowApprovalHeadUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitHubWorkflowApprovalHeadUnavailableError", {
+  cwd: Schema.String,
+  number: Schema.Int,
+}) {
   override get message(): string {
     return `GitHub did not report a complete head revision for #${this.number}.`;
   }
 }
 
-export class GitHubWorkflowApprovalHeadChangedError extends Schema.TaggedError<GitHubWorkflowApprovalHeadChangedError>()(
-  "GitHubWorkflowApprovalHeadChangedError",
-  {
-    cwd: Schema.String,
-    number: Schema.Int,
-  },
-) {
+export class GitHubWorkflowApprovalHeadChangedError extends Schema.TaggedError<
+  GitHubWorkflowApprovalHeadChangedError,
+  { readonly brand: unique symbol }
+>()("GitHubWorkflowApprovalHeadChangedError", {
+  cwd: Schema.String,
+  number: Schema.Int,
+}) {
   override get message(): string {
     return `The head revision of #${this.number} changed before its workflows could be approved.`;
   }
 }
 
-export class GitHubBranchDeletionRefusedError extends Schema.TaggedError<GitHubBranchDeletionRefusedError>()(
-  "GitHubBranchDeletionRefusedError",
-  {
-    number: Schema.Int,
-    reason: Schema.Literals([
-      "open-pr",
-      "stack",
-      "source-unavailable",
-      "unsafe-branch",
-      "head-changed",
-    ]),
-  },
-) {
+export class GitHubBranchDeletionRefusedError extends Schema.TaggedError<
+  GitHubBranchDeletionRefusedError,
+  { readonly brand: unique symbol }
+>()("GitHubBranchDeletionRefusedError", {
+  number: Schema.Int,
+  reason: Schema.Literals([
+    "open-pr",
+    "stack",
+    "source-unavailable",
+    "unsafe-branch",
+    "head-changed",
+  ]),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "open-pr":

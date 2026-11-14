@@ -49,16 +49,19 @@ import {
 
 const TRANSCRIPT_PREFIX_BYTES = 32 * 1024;
 
-class TranscriptParseError extends Schema.TaggedError<TranscriptParseError>()(
-  "TranscriptParseError",
-  { filePath: Schema.String, cause: Schema.Defect() },
-) {
+class TranscriptParseError extends Schema.TaggedError<
+  TranscriptParseError,
+  { readonly brand: unique symbol }
+>()("TranscriptParseError", { filePath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not parse the transcript at ${this.filePath}.`;
   }
 }
 
-class CodexStateReadError extends Schema.TaggedError<CodexStateReadError>()("CodexStateReadError", {
+class CodexStateReadError extends Schema.TaggedError<
+  CodexStateReadError,
+  { readonly brand: unique symbol }
+>()("CodexStateReadError", {
   databasePath: Schema.String,
   cause: Schema.Defect(),
 }) {

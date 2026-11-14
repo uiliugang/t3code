@@ -31,16 +31,16 @@ export interface DeviceToolchainPaths {
   readonly agentDevice: DeviceToolPaths;
 }
 
-export class DeviceToolchainInstallError extends Schema.TaggedError<DeviceToolchainInstallError>()(
-  "DeviceToolchainInstallError",
-  {
-    tool: Schema.String,
-    step: Schema.String,
-    exitCode: Schema.optional(Schema.Number),
-    reason: Schema.optional(Schema.Literal("npm_not_found")),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class DeviceToolchainInstallError extends Schema.TaggedError<
+  DeviceToolchainInstallError,
+  { readonly brand: unique symbol }
+>()("DeviceToolchainInstallError", {
+  tool: Schema.String,
+  step: Schema.String,
+  exitCode: Schema.optional(Schema.Number),
+  reason: Schema.optional(Schema.Literal("npm_not_found")),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     if (this.reason === "npm_not_found")
       return "Device support needs npm, which is not on the T3 server's PATH. Install npm (it comes with Node.js from nodejs.org), restart T3 Code, then retry.";

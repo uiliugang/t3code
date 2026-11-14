@@ -86,7 +86,7 @@ it.effect("keeps hosts independent when serials collide and another host fails",
             : Effect.succeed(ready),
         ensureAgentReady: () => Effect.succeed(ready),
         current: Effect.succeed(ready),
-        releaseAgentSession: releaseAgentDeviceSession(http, ready.agentDevice),
+        releaseAgentSession: ready.releaseAgentSession!,
         stopAgent: Effect.void,
         stop: Effect.void,
       };

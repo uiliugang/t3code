@@ -15,7 +15,10 @@ import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-export class MuseSdkError extends Schema.TaggedError<MuseSdkError>()("MuseSdkError", {
+export class MuseSdkError extends Schema.TaggedError<
+  MuseSdkError,
+  { readonly brand: unique symbol }
+>()("MuseSdkError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {

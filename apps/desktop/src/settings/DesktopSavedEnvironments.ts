@@ -69,53 +69,53 @@ const DesktopSavedEnvironmentSecretProtectionOperation = Schema.Literals([
   "decrypt-secret",
 ]);
 
-export class DesktopSavedEnvironmentsReadError extends Schema.TaggedError<DesktopSavedEnvironmentsReadError>()(
-  "DesktopSavedEnvironmentsReadError",
-  {
-    registryPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopSavedEnvironmentsReadError extends Schema.TaggedError<
+  DesktopSavedEnvironmentsReadError,
+  { readonly brand: unique symbol }
+>()("DesktopSavedEnvironmentsReadError", {
+  registryPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read desktop saved environments at ${this.registryPath}.`;
   }
 }
 
-export class DesktopSavedEnvironmentsDocumentDecodeError extends Schema.TaggedError<DesktopSavedEnvironmentsDocumentDecodeError>()(
-  "DesktopSavedEnvironmentsDocumentDecodeError",
-  {
-    registryPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopSavedEnvironmentsDocumentDecodeError extends Schema.TaggedError<
+  DesktopSavedEnvironmentsDocumentDecodeError,
+  { readonly brand: unique symbol }
+>()("DesktopSavedEnvironmentsDocumentDecodeError", {
+  registryPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode desktop saved environments at ${this.registryPath}.`;
   }
 }
 
-export class DesktopSavedEnvironmentSecretDecodeError extends Schema.TaggedError<DesktopSavedEnvironmentSecretDecodeError>()(
-  "DesktopSavedEnvironmentSecretDecodeError",
-  {
-    environmentId: Schema.String,
-    registryPath: Schema.String,
-    field: Schema.Literal("encryptedBearerToken"),
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopSavedEnvironmentSecretDecodeError extends Schema.TaggedError<
+  DesktopSavedEnvironmentSecretDecodeError,
+  { readonly brand: unique symbol }
+>()("DesktopSavedEnvironmentSecretDecodeError", {
+  environmentId: Schema.String,
+  registryPath: Schema.String,
+  field: Schema.Literal("encryptedBearerToken"),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode ${this.field} for environment ${this.environmentId} at ${this.registryPath}.`;
   }
 }
 
-export class DesktopSavedEnvironmentSecretProtectionError extends Schema.TaggedError<DesktopSavedEnvironmentSecretProtectionError>()(
-  "DesktopSavedEnvironmentSecretProtectionError",
-  {
-    operation: DesktopSavedEnvironmentSecretProtectionOperation,
-    environmentId: Schema.String,
-    registryPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopSavedEnvironmentSecretProtectionError extends Schema.TaggedError<
+  DesktopSavedEnvironmentSecretProtectionError,
+  { readonly brand: unique symbol }
+>()("DesktopSavedEnvironmentSecretProtectionError", {
+  operation: DesktopSavedEnvironmentSecretProtectionOperation,
+  environmentId: Schema.String,
+  registryPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop saved-environment secret protection failed during ${this.operation} for environment ${this.environmentId} at ${this.registryPath}.`;
   }

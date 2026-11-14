@@ -46,35 +46,35 @@ const IMPORT_EVENT_PREFIX = "agent-session-import:v2";
 const CLAUDE_SESSION_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-class AgentSessionUnresumableSessionError extends Schema.TaggedError<AgentSessionUnresumableSessionError>()(
-  "AgentSessionUnresumableSessionError",
-  {
-    source: AgentSessionSource,
-    providerSessionId: Schema.String,
-  },
-) {
+class AgentSessionUnresumableSessionError extends Schema.TaggedError<
+  AgentSessionUnresumableSessionError,
+  { readonly brand: unique symbol }
+>()("AgentSessionUnresumableSessionError", {
+  source: AgentSessionSource,
+  providerSessionId: Schema.String,
+}) {
   override get message(): string {
     return `Session '${this.providerSessionId}' from '${this.source}' cannot be resumed.`;
   }
 }
 
-class AgentSessionThreadProjectConflictError extends Schema.TaggedError<AgentSessionThreadProjectConflictError>()(
-  "AgentSessionThreadProjectConflictError",
-  {
-    threadId: ThreadId,
-    expectedProjectId: ProjectId,
-    actualProjectId: ProjectId,
-  },
-) {
+class AgentSessionThreadProjectConflictError extends Schema.TaggedError<
+  AgentSessionThreadProjectConflictError,
+  { readonly brand: unique symbol }
+>()("AgentSessionThreadProjectConflictError", {
+  threadId: ThreadId,
+  expectedProjectId: ProjectId,
+  actualProjectId: ProjectId,
+}) {
   override get message(): string {
     return `Imported thread '${this.threadId}' belongs to project '${this.actualProjectId}', not '${this.expectedProjectId}'.`;
   }
 }
 
-class AgentSessionThreadModifiedError extends Schema.TaggedError<AgentSessionThreadModifiedError>()(
-  "AgentSessionThreadModifiedError",
-  { threadId: ThreadId },
-) {
+class AgentSessionThreadModifiedError extends Schema.TaggedError<
+  AgentSessionThreadModifiedError,
+  { readonly brand: unique symbol }
+>()("AgentSessionThreadModifiedError", { threadId: ThreadId }) {
   override get message(): string {
     return `Imported thread '${this.threadId}' already contains non-imported activity.`;
   }

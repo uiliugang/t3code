@@ -332,13 +332,13 @@ export function makeCursorAgentOptions(input: {
   };
 }
 
-class CursorModelUnavailableError extends Schema.TaggedError<CursorModelUnavailableError>()(
-  "CursorModelUnavailableError",
-  {
-    model: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+class CursorModelUnavailableError extends Schema.TaggedError<
+  CursorModelUnavailableError,
+  { readonly brand: unique symbol }
+>()("CursorModelUnavailableError", {
+  model: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Cursor cannot run the model "${this.model}". Cursor only runs models from your Cursor account. Choose one of those, or use OpenCode for OpenRouter and other API-key models.`;
   }

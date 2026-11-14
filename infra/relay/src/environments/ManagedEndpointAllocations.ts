@@ -49,33 +49,33 @@ export function resolveReadyManagedEndpoint(input: {
   return managedEndpointForHostname(input.allocation.hostname);
 }
 
-export class ManagedEndpointAllocationPersistenceError extends Schema.TaggedError<ManagedEndpointAllocationPersistenceError>()(
-  "ManagedEndpointAllocationPersistenceError",
-  {
-    operation: Schema.Literals([
-      "get",
-      "reserve",
-      "record-tunnel",
-      "record-dns",
-      "mark-ready",
-      "enable-recovery",
-      "list-tunnels",
-      "lock-tunnel",
-      "claim-release",
-      "claim-deprovision",
-      "remove-claimed",
-      "get-by-tunnel-name",
-    ]),
-    stage: Schema.Literals(["database-request", "resolve-reservation"]),
-    userId: Schema.String,
-    environmentId: Schema.String,
-    hostname: Schema.optionalKey(Schema.String),
-    tunnelName: Schema.optionalKey(Schema.String),
-    tunnelId: Schema.optionalKey(Schema.String),
-    dnsRecordId: Schema.optionalKey(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ManagedEndpointAllocationPersistenceError extends Schema.TaggedError<
+  ManagedEndpointAllocationPersistenceError,
+  { readonly brand: unique symbol }
+>()("ManagedEndpointAllocationPersistenceError", {
+  operation: Schema.Literals([
+    "get",
+    "reserve",
+    "record-tunnel",
+    "record-dns",
+    "mark-ready",
+    "enable-recovery",
+    "list-tunnels",
+    "lock-tunnel",
+    "claim-release",
+    "claim-deprovision",
+    "remove-claimed",
+    "get-by-tunnel-name",
+  ]),
+  stage: Schema.Literals(["database-request", "resolve-reservation"]),
+  userId: Schema.String,
+  environmentId: Schema.String,
+  hostname: Schema.optionalKey(Schema.String),
+  tunnelName: Schema.optionalKey(Schema.String),
+  tunnelId: Schema.optionalKey(Schema.String),
+  dnsRecordId: Schema.optionalKey(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Managed endpoint allocation '${this.operation}' failed during '${this.stage}' for user '${this.userId}', environment '${this.environmentId}'`;
   }

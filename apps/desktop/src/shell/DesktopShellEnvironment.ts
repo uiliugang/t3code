@@ -50,25 +50,25 @@ const desktopShellEnvironmentCommandFields = {
   argumentCount: Schema.Number,
 };
 
-export class DesktopShellEnvironmentCommandError extends Schema.TaggedError<DesktopShellEnvironmentCommandError>()(
-  "DesktopShellEnvironmentCommandError",
-  {
-    ...desktopShellEnvironmentCommandFields,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopShellEnvironmentCommandError extends Schema.TaggedError<
+  DesktopShellEnvironmentCommandError,
+  { readonly brand: unique symbol }
+>()("DesktopShellEnvironmentCommandError", {
+  ...desktopShellEnvironmentCommandFields,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop shell environment ${this.probe} probe (${this.executable}) failed.`;
   }
 }
 
-export class DesktopShellEnvironmentCommandTimeoutError extends Schema.TaggedError<DesktopShellEnvironmentCommandTimeoutError>()(
-  "DesktopShellEnvironmentCommandTimeoutError",
-  {
-    ...desktopShellEnvironmentCommandFields,
-    timeoutMs: Schema.Number,
-  },
-) {
+export class DesktopShellEnvironmentCommandTimeoutError extends Schema.TaggedError<
+  DesktopShellEnvironmentCommandTimeoutError,
+  { readonly brand: unique symbol }
+>()("DesktopShellEnvironmentCommandTimeoutError", {
+  ...desktopShellEnvironmentCommandFields,
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `Desktop shell environment ${this.probe} probe (${this.executable}) timed out after ${this.timeoutMs}ms.`;
   }

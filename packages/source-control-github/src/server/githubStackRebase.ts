@@ -13,19 +13,24 @@ export interface CascadeLayer {
   readonly headSha: string;
 }
 
-export class GitHubStackRebaseConflictError extends Schema.TaggedError<GitHubStackRebaseConflictError>()(
-  "GitHubStackRebaseConflictError",
-  { number: Schema.Int, completed: Schema.Int },
-) {
+export class GitHubStackRebaseConflictError extends Schema.TaggedError<
+  GitHubStackRebaseConflictError,
+  { readonly brand: unique symbol }
+>()("GitHubStackRebaseConflictError", { number: Schema.Int, completed: Schema.Int }) {
   override get message(): string {
     return `PR #${this.number} conflicts with the layer below it. ${this.completed} layers were rebased; resolve #${this.number} with \`gh stack rebase\` and push.`;
   }
 }
 
-export class GitHubStackRebaseGitError extends Schema.TaggedError<GitHubStackRebaseGitError>()(
-  "GitHubStackRebaseGitError",
-  { step: Schema.String, number: Schema.Int, completed: Schema.Int, cause: Schema.Defect() },
-) {
+export class GitHubStackRebaseGitError extends Schema.TaggedError<
+  GitHubStackRebaseGitError,
+  { readonly brand: unique symbol }
+>()("GitHubStackRebaseGitError", {
+  step: Schema.String,
+  number: Schema.Int,
+  completed: Schema.Int,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Stack rebase stopped at PR #${this.number} while ${this.step}. ${this.completed} layers were rebased.`;
   }

@@ -18,7 +18,10 @@ import {
   ManagedRelayDpopSigner,
 } from "./managedRelay.ts";
 
-export class DpopProofError extends Schema.TaggedError<DpopProofError>()("DpopProofError", {
+export class DpopProofError extends Schema.TaggedError<
+  DpopProofError,
+  { readonly brand: unique symbol }
+>()("DpopProofError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}

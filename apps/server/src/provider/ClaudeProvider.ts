@@ -430,10 +430,13 @@ function claudeGatewayDiscoveryGraceMs(environment: Readonly<Record<string, unkn
   return Number.isFinite(configured) && configured > 0 ? configured : 3_000;
 }
 
-class ClaudeCapabilitiesProbeSdkError extends Schema.TaggedError<ClaudeCapabilitiesProbeSdkError>()(
-  "ClaudeCapabilitiesProbeSdkError",
-  { operation: Schema.Literals(["initialize", "usage", "settings"]), cause: Schema.Defect() },
-) {
+class ClaudeCapabilitiesProbeSdkError extends Schema.TaggedError<
+  ClaudeCapabilitiesProbeSdkError,
+  { readonly brand: unique symbol }
+>()("ClaudeCapabilitiesProbeSdkError", {
+  operation: Schema.Literals(["initialize", "usage", "settings"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Claude capability probe ${this.operation} failed.`;
   }

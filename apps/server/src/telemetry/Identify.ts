@@ -64,53 +64,53 @@ export interface TelemetryOwner {
 export const TelemetryIdentitySource = Schema.Literals(["codex", "claude", "anonymous"]);
 export type TelemetryIdentitySource = typeof TelemetryIdentitySource.Type;
 
-class TelemetryIdentityReadError extends Schema.TaggedError<TelemetryIdentityReadError>()(
-  "TelemetryIdentityReadError",
-  {
-    source: TelemetryIdentitySource,
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+class TelemetryIdentityReadError extends Schema.TaggedError<
+  TelemetryIdentityReadError,
+  { readonly brand: unique symbol }
+>()("TelemetryIdentityReadError", {
+  source: TelemetryIdentitySource,
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read ${this.source} telemetry identity at '${this.filePath}'.`;
   }
 }
 
-class TelemetryIdentityDecodeError extends Schema.TaggedError<TelemetryIdentityDecodeError>()(
-  "TelemetryIdentityDecodeError",
-  {
-    source: Schema.Literals(["codex", "claude"]),
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+class TelemetryIdentityDecodeError extends Schema.TaggedError<
+  TelemetryIdentityDecodeError,
+  { readonly brand: unique symbol }
+>()("TelemetryIdentityDecodeError", {
+  source: Schema.Literals(["codex", "claude"]),
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode ${this.source} telemetry identity at '${this.filePath}'.`;
   }
 }
 
-export class TelemetryAnonymousIdGenerationError extends Schema.TaggedError<TelemetryAnonymousIdGenerationError>()(
-  "TelemetryAnonymousIdGenerationError",
-  {
-    source: Schema.Literal("anonymous"),
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class TelemetryAnonymousIdGenerationError extends Schema.TaggedError<
+  TelemetryAnonymousIdGenerationError,
+  { readonly brand: unique symbol }
+>()("TelemetryAnonymousIdGenerationError", {
+  source: Schema.Literal("anonymous"),
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to generate anonymous telemetry identity for '${this.filePath}'.`;
   }
 }
 
-export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedError<TelemetryAnonymousIdPersistenceError>()(
-  "TelemetryAnonymousIdPersistenceError",
-  {
-    source: Schema.Literal("anonymous"),
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedError<
+  TelemetryAnonymousIdPersistenceError,
+  { readonly brand: unique symbol }
+>()("TelemetryAnonymousIdPersistenceError", {
+  source: Schema.Literal("anonymous"),
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist anonymous telemetry identity at '${this.filePath}'.`;
   }

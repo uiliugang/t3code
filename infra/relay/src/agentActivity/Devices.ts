@@ -13,41 +13,41 @@ import { sql } from "drizzle-orm";
 import * as RelayDb from "../db.ts";
 import { relayLiveActivities, relayMobileDevices } from "../persistence/schema.ts";
 
-export class DeviceRegistrationPersistenceError extends Schema.TaggedError<DeviceRegistrationPersistenceError>()(
-  "DeviceRegistrationPersistenceError",
-  {
-    userId: Schema.String,
-    deviceId: Schema.String,
-    stage: Schema.Literals(["claim-push-token", "claim-push-to-start-token", "upsert-device"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class DeviceRegistrationPersistenceError extends Schema.TaggedError<
+  DeviceRegistrationPersistenceError,
+  { readonly brand: unique symbol }
+>()("DeviceRegistrationPersistenceError", {
+  userId: Schema.String,
+  deviceId: Schema.String,
+  stage: Schema.Literals(["claim-push-token", "claim-push-to-start-token", "upsert-device"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist mobile device registration for ${this.userId}/${this.deviceId} during ${this.stage}.`;
   }
 }
 
-export class DeviceUnregistrationPersistenceError extends Schema.TaggedError<DeviceUnregistrationPersistenceError>()(
-  "DeviceUnregistrationPersistenceError",
-  {
-    userId: Schema.String,
-    deviceId: Schema.String,
-    stage: Schema.Literals(["delete-live-activity", "delete-device"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class DeviceUnregistrationPersistenceError extends Schema.TaggedError<
+  DeviceUnregistrationPersistenceError,
+  { readonly brand: unique symbol }
+>()("DeviceUnregistrationPersistenceError", {
+  userId: Schema.String,
+  deviceId: Schema.String,
+  stage: Schema.Literals(["delete-live-activity", "delete-device"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to unregister mobile device ${this.userId}/${this.deviceId} during ${this.stage}.`;
   }
 }
 
-export class DeviceListPersistenceError extends Schema.TaggedError<DeviceListPersistenceError>()(
-  "DeviceListPersistenceError",
-  {
-    userId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DeviceListPersistenceError extends Schema.TaggedError<
+  DeviceListPersistenceError,
+  { readonly brand: unique symbol }
+>()("DeviceListPersistenceError", {
+  userId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to list mobile devices for ${this.userId}.`;
   }

@@ -29,48 +29,48 @@ const DesktopPackageJsonSchema = Schema.Struct({
   version: Schema.NonEmptyString,
 });
 
-export class InvalidDesktopPackageVersionError extends Schema.TaggedError<InvalidDesktopPackageVersionError>()(
-  "InvalidDesktopPackageVersionError",
-  {
-    version: Schema.String,
-  },
-) {
+export class InvalidDesktopPackageVersionError extends Schema.TaggedError<
+  InvalidDesktopPackageVersionError,
+  { readonly brand: unique symbol }
+>()("InvalidDesktopPackageVersionError", {
+  version: Schema.String,
+}) {
   override get message(): string {
     return `Invalid desktop package version '${this.version}'.`;
   }
 }
 
-export class NightlyReleaseDesktopPackageError extends Schema.TaggedError<NightlyReleaseDesktopPackageError>()(
-  "NightlyReleaseDesktopPackageError",
-  {
-    operation: Schema.Literals(["read", "decode"]),
-    packageJsonPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NightlyReleaseDesktopPackageError extends Schema.TaggedError<
+  NightlyReleaseDesktopPackageError,
+  { readonly brand: unique symbol }
+>()("NightlyReleaseDesktopPackageError", {
+  operation: Schema.Literals(["read", "decode"]),
+  packageJsonPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} desktop package metadata at ${this.packageJsonPath}.`;
   }
 }
 
-export class NightlyReleaseGitHubOutputConfigError extends Schema.TaggedError<NightlyReleaseGitHubOutputConfigError>()(
-  "NightlyReleaseGitHubOutputConfigError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class NightlyReleaseGitHubOutputConfigError extends Schema.TaggedError<
+  NightlyReleaseGitHubOutputConfigError,
+  { readonly brand: unique symbol }
+>()("NightlyReleaseGitHubOutputConfigError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to resolve the GITHUB_OUTPUT path for nightly release metadata.";
   }
 }
 
-export class NightlyReleaseGitHubOutputAppendError extends Schema.TaggedError<NightlyReleaseGitHubOutputAppendError>()(
-  "NightlyReleaseGitHubOutputAppendError",
-  {
-    outputPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NightlyReleaseGitHubOutputAppendError extends Schema.TaggedError<
+  NightlyReleaseGitHubOutputAppendError,
+  { readonly brand: unique symbol }
+>()("NightlyReleaseGitHubOutputAppendError", {
+  outputPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to append nightly release metadata to ${this.outputPath}.`;
   }

@@ -22,14 +22,14 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 
-export class RuntimePolicyResolveError extends Schema.TaggedError<RuntimePolicyResolveError>()(
-  "RuntimePolicyResolveError",
-  {
-    projectId: ProjectId,
-    providerInstanceId: ProviderInstanceId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class RuntimePolicyResolveError extends Schema.TaggedError<
+  RuntimePolicyResolveError,
+  { readonly brand: unique symbol }
+>()("RuntimePolicyResolveError", {
+  projectId: ProjectId,
+  providerInstanceId: ProviderInstanceId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     if (typeof this.cause === "string") return this.cause;
     return `Failed to resolve runtime policy for provider instance ${this.providerInstanceId} in project ${this.projectId}.`;
@@ -41,15 +41,15 @@ export class RuntimePolicyResolveError extends Schema.TaggedError<RuntimePolicyR
  * they are dispatched; this catches the ones it never saw, such as a run resumed after a restart
  * on a thread whose mode predates the policy.
  */
-export class RuntimePolicyAboveCeilingError extends Schema.TaggedError<RuntimePolicyAboveCeilingError>()(
-  "RuntimePolicyAboveCeilingError",
-  {
-    threadId: ThreadId,
-    runtimeMode: RuntimeMode,
-    maxRuntimeMode: RuntimeMode,
-    organization: Schema.String,
-  },
-) {
+export class RuntimePolicyAboveCeilingError extends Schema.TaggedError<
+  RuntimePolicyAboveCeilingError,
+  { readonly brand: unique symbol }
+>()("RuntimePolicyAboveCeilingError", {
+  threadId: ThreadId,
+  runtimeMode: RuntimeMode,
+  maxRuntimeMode: RuntimeMode,
+  organization: Schema.String,
+}) {
   override get message(): string {
     return `${managedRuntimeModeCeilingMessage(this.organization, this.maxRuntimeMode)} Switch this thread's mode to continue.`;
   }

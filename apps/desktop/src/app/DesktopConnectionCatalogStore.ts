@@ -67,65 +67,65 @@ const DesktopConnectionCatalogStoreProtectionOperation = Schema.Literals([
   "decrypt-catalog",
 ]);
 
-export class DesktopConnectionCatalogStoreWriteError extends Schema.TaggedError<DesktopConnectionCatalogStoreWriteError>()(
-  "DesktopConnectionCatalogStoreWriteError",
-  {
-    operation: DesktopConnectionCatalogStoreWriteOperation,
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopConnectionCatalogStoreWriteError extends Schema.TaggedError<
+  DesktopConnectionCatalogStoreWriteError,
+  { readonly brand: unique symbol }
+>()("DesktopConnectionCatalogStoreWriteError", {
+  operation: DesktopConnectionCatalogStoreWriteOperation,
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop connection catalog write failed during ${this.operation} at ${this.path}.`;
   }
 }
 
-export class DesktopConnectionCatalogStoreDecodeError extends Schema.TaggedError<DesktopConnectionCatalogStoreDecodeError>()(
-  "DesktopConnectionCatalogStoreDecodeError",
-  {
-    resource: Schema.Literal("encryptedCatalog"),
-    catalogPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopConnectionCatalogStoreDecodeError extends Schema.TaggedError<
+  DesktopConnectionCatalogStoreDecodeError,
+  { readonly brand: unique symbol }
+>()("DesktopConnectionCatalogStoreDecodeError", {
+  resource: Schema.Literal("encryptedCatalog"),
+  catalogPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode ${this.resource} for the desktop connection catalog at ${this.catalogPath}.`;
   }
 }
 
-export class DesktopConnectionCatalogStoreReadError extends Schema.TaggedError<DesktopConnectionCatalogStoreReadError>()(
-  "DesktopConnectionCatalogStoreReadError",
-  {
-    catalogPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopConnectionCatalogStoreReadError extends Schema.TaggedError<
+  DesktopConnectionCatalogStoreReadError,
+  { readonly brand: unique symbol }
+>()("DesktopConnectionCatalogStoreReadError", {
+  catalogPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read the desktop connection catalog at ${this.catalogPath}.`;
   }
 }
 
-export class DesktopConnectionCatalogStoreDocumentDecodeError extends Schema.TaggedError<DesktopConnectionCatalogStoreDocumentDecodeError>()(
-  "DesktopConnectionCatalogStoreDocumentDecodeError",
-  {
-    catalogPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopConnectionCatalogStoreDocumentDecodeError extends Schema.TaggedError<
+  DesktopConnectionCatalogStoreDocumentDecodeError,
+  { readonly brand: unique symbol }
+>()("DesktopConnectionCatalogStoreDocumentDecodeError", {
+  catalogPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode the desktop connection catalog document at ${this.catalogPath}.`;
   }
 }
 
-export class DesktopConnectionCatalogStoreMigrationError extends Schema.TaggedError<DesktopConnectionCatalogStoreMigrationError>()(
-  "DesktopConnectionCatalogStoreMigrationError",
-  {
-    operation: DesktopConnectionCatalogStoreMigrationOperation,
-    catalogPath: Schema.String,
-    environmentId: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopConnectionCatalogStoreMigrationError extends Schema.TaggedError<
+  DesktopConnectionCatalogStoreMigrationError,
+  { readonly brand: unique symbol }
+>()("DesktopConnectionCatalogStoreMigrationError", {
+  operation: DesktopConnectionCatalogStoreMigrationOperation,
+  catalogPath: Schema.String,
+  environmentId: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const environment =
       this.environmentId === undefined ? "" : ` for environment ${this.environmentId}`;
@@ -133,14 +133,14 @@ export class DesktopConnectionCatalogStoreMigrationError extends Schema.TaggedEr
   }
 }
 
-export class DesktopConnectionCatalogStoreProtectionError extends Schema.TaggedError<DesktopConnectionCatalogStoreProtectionError>()(
-  "DesktopConnectionCatalogStoreProtectionError",
-  {
-    operation: DesktopConnectionCatalogStoreProtectionOperation,
-    catalogPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopConnectionCatalogStoreProtectionError extends Schema.TaggedError<
+  DesktopConnectionCatalogStoreProtectionError,
+  { readonly brand: unique symbol }
+>()("DesktopConnectionCatalogStoreProtectionError", {
+  operation: DesktopConnectionCatalogStoreProtectionOperation,
+  catalogPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop connection catalog protection failed during ${this.operation} at ${this.catalogPath}.`;
   }

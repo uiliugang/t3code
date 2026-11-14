@@ -1503,13 +1503,13 @@ export const OrchestrationV2CheckpointRollbackRequest = Schema.Struct({
 export type OrchestrationV2CheckpointRollbackRequest =
   typeof OrchestrationV2CheckpointRollbackRequest.Type;
 
-export class OrchestrationV2CheckpointUnavailableError extends Schema.TaggedError<OrchestrationV2CheckpointUnavailableError>()(
-  "OrchestrationV2CheckpointUnavailableError",
-  {
-    threadId: ThreadId,
-    target: Schema.String,
-  },
-) {
+export class OrchestrationV2CheckpointUnavailableError extends Schema.TaggedError<
+  OrchestrationV2CheckpointUnavailableError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2CheckpointUnavailableError", {
+  threadId: ThreadId,
+  target: Schema.String,
+}) {
   override get message(): string {
     return `Rollback target ${this.target} is unavailable for thread ${this.threadId}.`;
   }
@@ -3822,14 +3822,14 @@ export const OrchestrationV2CommandOutputFrame = Schema.Struct({
 });
 export type OrchestrationV2CommandOutputFrame = typeof OrchestrationV2CommandOutputFrame.Type;
 
-export class OrchestrationV2CommandOutputError extends Schema.TaggedError<OrchestrationV2CommandOutputError>()(
-  "OrchestrationV2CommandOutputError",
-  {
-    threadId: ThreadId,
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationV2CommandOutputError extends Schema.TaggedError<
+  OrchestrationV2CommandOutputError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2CommandOutputError", {
+  threadId: ThreadId,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export const OrchestrationV2SubscribePromptSuggestionInput = Schema.Struct({
   threadId: ThreadId,
@@ -4151,43 +4151,43 @@ export const OrchestrationV2ThreadStreamItem = withRecordIdTable(
 );
 export type OrchestrationV2ThreadStreamItem = typeof OrchestrationV2ThreadStreamItem.Type;
 
-export class OrchestrationV2DispatchCommandError extends Schema.TaggedError<OrchestrationV2DispatchCommandError>()(
-  "OrchestrationV2DispatchCommandError",
-  {
-    commandId: CommandId,
-    commandType: Schema.String,
-    message: Schema.String,
-    detail: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationV2DispatchCommandError extends Schema.TaggedError<
+  OrchestrationV2DispatchCommandError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2DispatchCommandError", {
+  commandId: CommandId,
+  commandType: Schema.String,
+  message: Schema.String,
+  detail: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
-export class OrchestrationV2GetThreadProjectionError extends Schema.TaggedError<OrchestrationV2GetThreadProjectionError>()(
-  "OrchestrationV2GetThreadProjectionError",
-  {
-    threadId: ThreadId,
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationV2GetThreadProjectionError extends Schema.TaggedError<
+  OrchestrationV2GetThreadProjectionError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2GetThreadProjectionError", {
+  threadId: ThreadId,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
-export class OrchestrationV2GetShellSnapshotError extends Schema.TaggedError<OrchestrationV2GetShellSnapshotError>()(
-  "OrchestrationV2GetShellSnapshotError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationV2GetShellSnapshotError extends Schema.TaggedError<
+  OrchestrationV2GetShellSnapshotError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2GetShellSnapshotError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
-export class OrchestrationV2ThreadLaunchError extends Schema.TaggedError<OrchestrationV2ThreadLaunchError>()(
-  "OrchestrationV2ThreadLaunchError",
-  {
-    commandId: CommandId,
-    projectId: ProjectId,
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationV2ThreadLaunchError extends Schema.TaggedError<
+  OrchestrationV2ThreadLaunchError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2ThreadLaunchError", {
+  commandId: CommandId,
+  projectId: ProjectId,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export const OrchestrationV2StopWorkflowInput = Schema.Struct({
   threadId: ThreadId,
@@ -4195,15 +4195,15 @@ export const OrchestrationV2StopWorkflowInput = Schema.Struct({
 });
 export type OrchestrationV2StopWorkflowInput = typeof OrchestrationV2StopWorkflowInput.Type;
 
-export class OrchestrationV2StopWorkflowError extends Schema.TaggedError<OrchestrationV2StopWorkflowError>()(
-  "OrchestrationV2StopWorkflowError",
-  {
-    threadId: ThreadId,
-    subagentId: NodeId,
-    reason: Schema.Literals(["not-running", "unsupported", "unavailable", "stop-failed"]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestrationV2StopWorkflowError extends Schema.TaggedError<
+  OrchestrationV2StopWorkflowError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2StopWorkflowError", {
+  threadId: ThreadId,
+  subagentId: NodeId,
+  reason: Schema.Literals(["not-running", "unsupported", "unavailable", "stop-failed"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "not-running":
@@ -4237,15 +4237,15 @@ export const OrchestrationV2ForceStopThreadResult = Schema.Struct({
 });
 export type OrchestrationV2ForceStopThreadResult = typeof OrchestrationV2ForceStopThreadResult.Type;
 
-export class OrchestrationV2ForceStopThreadError extends Schema.TaggedError<OrchestrationV2ForceStopThreadError>()(
-  "OrchestrationV2ForceStopThreadError",
-  {
-    threadId: ThreadId,
-    /** `superseded`: a newer run started since the user asked; nothing was stopped. */
-    reason: Schema.optional(Schema.Literal("superseded")),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestrationV2ForceStopThreadError extends Schema.TaggedError<
+  OrchestrationV2ForceStopThreadError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2ForceStopThreadError", {
+  threadId: ThreadId,
+  /** `superseded`: a newer run started since the user asked; nothing was stopped. */
+  reason: Schema.optional(Schema.Literal("superseded")),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.reason === "superseded"
       ? "A new turn started, so nothing was force stopped."
@@ -4303,13 +4303,13 @@ export const OrchestrationV2GetNativeChildWorkResult = Schema.Struct({
 export type OrchestrationV2GetNativeChildWorkResult =
   typeof OrchestrationV2GetNativeChildWorkResult.Type;
 
-export class OrchestrationV2GetNativeChildWorkError extends Schema.TaggedError<OrchestrationV2GetNativeChildWorkError>()(
-  "OrchestrationV2GetNativeChildWorkError",
-  {
-    threadId: ThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestrationV2GetNativeChildWorkError extends Schema.TaggedError<
+  OrchestrationV2GetNativeChildWorkError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2GetNativeChildWorkError", {
+  threadId: ThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return "Failed to read the subagent's work.";
   }
@@ -4326,23 +4326,23 @@ const WORKFLOW_FILE_ERROR_MESSAGES = {
   "read-failed": "Workflow file read failed.",
 } as const;
 
-export class OrchestrationWorkflowFileError extends Schema.TaggedError<OrchestrationWorkflowFileError>()(
-  "OrchestrationWorkflowFileError",
-  {
-    reason: Schema.Literals([
-      "invalid-path",
-      "root-unavailable",
-      "not-found",
-      "outside-root",
-      "wrong-extension",
-      "not-regular-file",
-      "changed-during-read",
-      "read-failed",
-    ]),
-    path: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestrationWorkflowFileError extends Schema.TaggedError<
+  OrchestrationWorkflowFileError,
+  { readonly brand: unique symbol }
+>()("OrchestrationWorkflowFileError", {
+  reason: Schema.Literals([
+    "invalid-path",
+    "root-unavailable",
+    "not-found",
+    "outside-root",
+    "wrong-extension",
+    "not-regular-file",
+    "changed-during-read",
+    "read-failed",
+  ]),
+  path: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return WORKFLOW_FILE_ERROR_MESSAGES[this.reason];
   }
@@ -4371,23 +4371,23 @@ const WORKFLOW_SCRIPT_ERROR_MESSAGES = {
   "read-failed": "Script read failed.",
 } as const;
 
-export class OrchestrationGetWorkflowScriptError extends Schema.TaggedError<OrchestrationGetWorkflowScriptError>()(
-  "OrchestrationGetWorkflowScriptError",
-  {
-    reason: Schema.Literals([
-      "invalid-path",
-      "root-unavailable",
-      "not-found",
-      "outside-root",
-      "not-js",
-      "not-regular-file",
-      "changed-during-read",
-      "read-failed",
-    ]),
-    scriptPath: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestrationGetWorkflowScriptError extends Schema.TaggedError<
+  OrchestrationGetWorkflowScriptError,
+  { readonly brand: unique symbol }
+>()("OrchestrationGetWorkflowScriptError", {
+  reason: Schema.Literals([
+    "invalid-path",
+    "root-unavailable",
+    "not-found",
+    "outside-root",
+    "not-js",
+    "not-regular-file",
+    "changed-during-read",
+    "read-failed",
+  ]),
+  scriptPath: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return WORKFLOW_SCRIPT_ERROR_MESSAGES[this.reason];
   }
@@ -4436,10 +4436,10 @@ export const OrchestrationV2SearchThreadResult = Schema.Struct({
 });
 export type OrchestrationV2SearchThreadResult = typeof OrchestrationV2SearchThreadResult.Type;
 
-export class OrchestrationV2SearchThreadError extends Schema.TaggedError<OrchestrationV2SearchThreadError>()(
-  "OrchestrationV2SearchThreadError",
-  { cause: Schema.Defect() },
-) {
+export class OrchestrationV2SearchThreadError extends Schema.TaggedError<
+  OrchestrationV2SearchThreadError,
+  { readonly brand: unique symbol }
+>()("OrchestrationV2SearchThreadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not search this thread. Please retry.";
   }

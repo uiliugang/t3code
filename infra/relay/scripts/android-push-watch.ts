@@ -42,7 +42,10 @@ const Connection = Schema.Struct({
   wsUrl: Schema.NonEmptyString,
   bearerToken: Schema.NonEmptyString,
 });
-class WatchReadFileError extends Schema.TaggedError<WatchReadFileError>()("WatchReadFileError", {
+class WatchReadFileError extends Schema.TaggedError<
+  WatchReadFileError,
+  { readonly brand: unique symbol }
+>()("WatchReadFileError", {
   path: Schema.String,
   cause: Schema.Defect(),
 }) {
@@ -56,16 +59,19 @@ const readFile = (path: string) =>
     catch: (cause) => new WatchReadFileError({ path, cause }),
   });
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-class WatchUnregisteredDeviceError extends Schema.TaggedError<WatchUnregisteredDeviceError>()(
-  "WatchUnregisteredDeviceError",
-  {},
-) {
+class WatchUnregisteredDeviceError extends Schema.TaggedError<
+  WatchUnregisteredDeviceError,
+  { readonly brand: unique symbol }
+>()("WatchUnregisteredDeviceError", {}) {
   override get message() {
     return "Device token is no longer registered";
   }
 }
 
-class WatchStoppedError extends Schema.TaggedError<WatchStoppedError>()("WatchStoppedError", {
+class WatchStoppedError extends Schema.TaggedError<
+  WatchStoppedError,
+  { readonly brand: unique symbol }
+>()("WatchStoppedError", {
   cause: Schema.Defect(),
 }) {
   override get message() {

@@ -36,16 +36,16 @@ export const CommandPolicyCapability = Schema.Literals([
 ]);
 export type CommandPolicyCapability = typeof CommandPolicyCapability.Type;
 
-export class CommandPolicyCapabilityUnsupportedError extends Schema.TaggedError<CommandPolicyCapabilityUnsupportedError>()(
-  "CommandPolicyCapabilityUnsupportedError",
-  {
-    commandId: CommandId,
-    threadId: ThreadId,
-    providerInstanceId: ProviderInstanceId,
-    capability: CommandPolicyCapability,
-    detail: Schema.String,
-  },
-) {
+export class CommandPolicyCapabilityUnsupportedError extends Schema.TaggedError<
+  CommandPolicyCapabilityUnsupportedError,
+  { readonly brand: unique symbol }
+>()("CommandPolicyCapabilityUnsupportedError", {
+  commandId: CommandId,
+  threadId: ThreadId,
+  providerInstanceId: ProviderInstanceId,
+  capability: CommandPolicyCapability,
+  detail: Schema.String,
+}) {
   override get message(): string {
     return `${this.providerInstanceId} cannot satisfy ${this.capability} for command ${this.commandId}: ${this.detail}`;
   }

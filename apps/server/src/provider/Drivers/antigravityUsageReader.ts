@@ -221,10 +221,13 @@ interface UsageCandidate {
   timestampQuality: number;
 }
 
-class AntigravityDatabaseDecodeError extends Schema.TaggedError<AntigravityDatabaseDecodeError>()(
-  "AntigravityDatabaseDecodeError",
-  { path: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+class AntigravityDatabaseDecodeError extends Schema.TaggedError<
+  AntigravityDatabaseDecodeError,
+  { readonly brand: unique symbol }
+>()("AntigravityDatabaseDecodeError", {
+  path: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Antigravity usage could not be decoded from ${this.path}.`;
   }

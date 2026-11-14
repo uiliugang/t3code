@@ -33,12 +33,12 @@ const LegacyConnectionDocument = Schema.Struct({
 });
 const decodeLegacyConnectionDocument = Schema.decodeUnknownEffect(LegacyConnectionDocument);
 
-export class LegacyConnectionMigrationError extends Schema.TaggedError<LegacyConnectionMigrationError>()(
-  "LegacyConnectionMigrationError",
-  {
-    message: Schema.String,
-  },
-) {}
+export class LegacyConnectionMigrationError extends Schema.TaggedError<
+  LegacyConnectionMigrationError,
+  { readonly brand: unique symbol }
+>()("LegacyConnectionMigrationError", {
+  message: Schema.String,
+}) {}
 
 function isRelayManaged(connection: typeof LegacySavedRemoteConnection.Type): boolean {
   return connection.relayManaged === true || connection.authenticationMethod === "dpop";

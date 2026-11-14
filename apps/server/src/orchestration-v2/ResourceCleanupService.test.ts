@@ -1,4 +1,5 @@
 import { it, expect } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ThreadId,
   ProjectId,
@@ -35,7 +36,9 @@ it.effect("preserves services reactivated while archive cleanup waits for discov
           Layer.provide(
             Layer.mergeAll(
               FileSystem.layerNoop({}),
-              Layer.mock(ServerConfig.ServerConfig)({}),
+              ServerConfig.layerTest("/test", { prefix: "t3-cleanup-" }).pipe(
+                Layer.provide(NodeServices.layer),
+              ),
               Layer.mock(Devices.DeviceService)({
                 sessionsForThread: (threadId) =>
                   Effect.succeed(
@@ -105,6 +108,7 @@ it.effect("preserves services reactivated while archive cleanup waits for discov
                 closeOnSettle: () => Effect.void,
               }),
               Layer.mock(Ports.PortDiscovery)({
+                trackAgent: () => () => undefined,
                 stopThreadServers: ({ shouldStop }) =>
                   Effect.gen(function* () {
                     yield* Deferred.succeed(discovered, undefined);
@@ -132,5 +136,5 @@ it.effect("preserves services reactivated while archive cleanup waits for discov
     );
     expect(retry._tag).toBe("Failure");
     expect(released).toEqual(["local"]);
-  }),
+  }).pipe(Effect.scoped),
 );

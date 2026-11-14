@@ -22,10 +22,10 @@ const stackErrorIdentity = {
   stackNumber: Schema.Int,
 };
 
-export class GitHubStackChangedError extends Schema.TaggedError<GitHubStackChangedError>()(
-  "GitHubStackChangedError",
-  { ...stackErrorIdentity, completed: Schema.Int },
-) {
+export class GitHubStackChangedError extends Schema.TaggedError<
+  GitHubStackChangedError,
+  { readonly brand: unique symbol }
+>()("GitHubStackChangedError", { ...stackErrorIdentity, completed: Schema.Int }) {
   override get message(): string {
     return this.completed > 0
       ? `The stack changed at PR #${this.number} after ${this.completed} layers. Earlier updates remain on GitHub. Refresh it before trying again.`
@@ -33,55 +33,62 @@ export class GitHubStackChangedError extends Schema.TaggedError<GitHubStackChang
   }
 }
 
-export class GitHubStackUnsupportedError extends Schema.TaggedError<GitHubStackUnsupportedError>()(
-  "GitHubStackUnsupportedError",
-  stackErrorIdentity,
-) {
+export class GitHubStackUnsupportedError extends Schema.TaggedError<
+  GitHubStackUnsupportedError,
+  { readonly brand: unique symbol }
+>()("GitHubStackUnsupportedError", stackErrorIdentity) {
   override get message(): string {
     return "This operation is not supported for this stack.";
   }
 }
 
-export class GitHubStackResponseInvalidError extends Schema.TaggedError<GitHubStackResponseInvalidError>()(
-  "GitHubStackResponseInvalidError",
-  { ...stackErrorIdentity, cause: Schema.optional(Schema.Defect()) },
-) {
+export class GitHubStackResponseInvalidError extends Schema.TaggedError<
+  GitHubStackResponseInvalidError,
+  { readonly brand: unique symbol }
+>()("GitHubStackResponseInvalidError", {
+  ...stackErrorIdentity,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return "GitHub returned an unreadable stack operation response.";
   }
 }
 
-export class GitHubStackMergeRejectedError extends Schema.TaggedError<GitHubStackMergeRejectedError>()(
-  "GitHubStackMergeRejectedError",
-  { ...stackErrorIdentity, cause: Schema.Defect() },
-) {
+export class GitHubStackMergeRejectedError extends Schema.TaggedError<
+  GitHubStackMergeRejectedError,
+  { readonly brand: unique symbol }
+>()("GitHubStackMergeRejectedError", { ...stackErrorIdentity, cause: Schema.Defect() }) {
   override get message(): string {
     return "GitHub refused the stack merge. Check the stack's branch rules and merge requirements.";
   }
 }
 
-export class GitHubStackMergePendingError extends Schema.TaggedError<GitHubStackMergePendingError>()(
-  "GitHubStackMergePendingError",
-  stackErrorIdentity,
-) {
+export class GitHubStackMergePendingError extends Schema.TaggedError<
+  GitHubStackMergePendingError,
+  { readonly brand: unique symbol }
+>()("GitHubStackMergePendingError", stackErrorIdentity) {
   override get message(): string {
     return "The merge is still running on GitHub. Check its status there before submitting another request.";
   }
 }
 
-export class GitHubStackPermissionError extends Schema.TaggedError<GitHubStackPermissionError>()(
-  "GitHubStackPermissionError",
-  stackErrorIdentity,
-) {
+export class GitHubStackPermissionError extends Schema.TaggedError<
+  GitHubStackPermissionError,
+  { readonly brand: unique symbol }
+>()("GitHubStackPermissionError", stackErrorIdentity) {
   override get message(): string {
     return "You cannot update every branch in this stack. Check write access and fork maintainer permissions before retrying.";
   }
 }
 
-export class GitHubStackRebaseFailedError extends Schema.TaggedError<GitHubStackRebaseFailedError>()(
-  "GitHubStackRebaseFailedError",
-  { ...stackErrorIdentity, completed: Schema.Int, cause: Schema.Defect() },
-) {
+export class GitHubStackRebaseFailedError extends Schema.TaggedError<
+  GitHubStackRebaseFailedError,
+  { readonly brand: unique symbol }
+>()("GitHubStackRebaseFailedError", {
+  ...stackErrorIdentity,
+  completed: Schema.Int,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return this.cause instanceof Error && this.cause.message !== ""
       ? this.cause.message

@@ -44,14 +44,14 @@ const SkillFrontmatter = Schema.Struct({
 });
 const decodeSkillFrontmatter = Schema.decodeUnknownSync(SkillFrontmatter);
 
-export class AntigravitySkillsProbeError extends Schema.TaggedError<AntigravitySkillsProbeError>()(
-  "AntigravitySkillsProbeError",
-  {
-    reason: Schema.Literals(["scan-budget-exhausted", "filesystem-error"]),
-    path: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class AntigravitySkillsProbeError extends Schema.TaggedError<
+  AntigravitySkillsProbeError,
+  { readonly brand: unique symbol }
+>()("AntigravitySkillsProbeError", {
+  reason: Schema.Literals(["scan-budget-exhausted", "filesystem-error"]),
+  path: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.reason === "scan-budget-exhausted"
       ? `Antigravity skill discovery exceeded its scan limit at '${this.path}'.`

@@ -47,10 +47,14 @@ export const claudeManagedPaths = Effect.fn("ClaudeInstallation.paths")(function
   };
 });
 
-export class ClaudeInstallationError extends Schema.TaggedError<ClaudeInstallationError>()(
-  "ClaudeInstallationError",
-  { operation: Schema.String, detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {}
+export class ClaudeInstallationError extends Schema.TaggedError<
+  ClaudeInstallationError,
+  { readonly brand: unique symbol }
+>()("ClaudeInstallationError", {
+  operation: Schema.String,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 const isInstallationError = Schema.is(ClaudeInstallationError);
 
 export class ClaudeInstallation extends Context.Service<

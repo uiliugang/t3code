@@ -7,7 +7,10 @@ import { subscribeRenderedAppearance } from "../hooks/useTheme";
 import { getRenderedCodeTheme } from "../hooks/useCodeTheme";
 import { PREFERRED_HIGHLIGHTER } from "../lib/syntaxHighlighting";
 
-export class DiffWorkerError extends Schema.TaggedError<DiffWorkerError>()("DiffWorkerError", {
+export class DiffWorkerError extends Schema.TaggedError<
+  DiffWorkerError,
+  { readonly brand: unique symbol }
+>()("DiffWorkerError", {
   operation: Schema.Literals(["create-worker", "get-render-options", "set-render-options"]),
   themeName: Schema.Literals([
     "pierre-dark",

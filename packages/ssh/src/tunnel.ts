@@ -998,10 +998,10 @@ if [ -f "$LOG_FILE" ]; then
 fi
 `;
 
-export class SshInvalidArchiveVersionError extends Schema.TaggedError<SshInvalidArchiveVersionError>()(
-  "SshInvalidArchiveVersionError",
-  { archiveVersion: Schema.String },
-) {
+export class SshInvalidArchiveVersionError extends Schema.TaggedError<
+  SshInvalidArchiveVersionError,
+  { readonly brand: unique symbol }
+>()("SshInvalidArchiveVersionError", { archiveVersion: Schema.String }) {
   override get message(): string {
     return `'${this.archiveVersion}' is not an exact t3 version and cannot name a runtime directory.`;
   }
@@ -1013,10 +1013,10 @@ export class SshInvalidArchiveVersionError extends Schema.TaggedError<SshInvalid
 const EXACT_ARCHIVE_VERSION =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 
-export class SshMissingRunnerError extends Schema.TaggedError<SshMissingRunnerError>()(
-  "SshMissingRunnerError",
-  {},
-) {
+export class SshMissingRunnerError extends Schema.TaggedError<
+  SshMissingRunnerError,
+  { readonly brand: unique symbol }
+>()("SshMissingRunnerError", {}) {
   override get message(): string {
     return "A remote t3 runner needs an archive version or a node script path.";
   }

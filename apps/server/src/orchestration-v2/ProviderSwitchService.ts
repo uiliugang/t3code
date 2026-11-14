@@ -24,14 +24,14 @@ export interface ProviderSwitchPlanV2 {
   readonly transition: ProviderSessionTransition;
 }
 
-export class ProviderSwitchPlanError extends Schema.TaggedError<ProviderSwitchPlanError>()(
-  "ProviderSwitchPlanError",
-  {
-    threadId: ThreadId,
-    targetProviderInstanceId: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ProviderSwitchPlanError extends Schema.TaggedError<
+  ProviderSwitchPlanError,
+  { readonly brand: unique symbol }
+>()("ProviderSwitchPlanError", {
+  threadId: ThreadId,
+  targetProviderInstanceId: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export interface ProviderSwitchServiceV2Shape {
   readonly plan: (input: {

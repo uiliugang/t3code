@@ -18,10 +18,10 @@ function isIpLiteral(host: string): boolean {
   }
 }
 
-export class PairingQrPayloadEmptyError extends Schema.TaggedError<PairingQrPayloadEmptyError>()(
-  "PairingQrPayloadEmptyError",
-  {},
-) {
+export class PairingQrPayloadEmptyError extends Schema.TaggedError<
+  PairingQrPayloadEmptyError,
+  { readonly brand: unique symbol }
+>()("PairingQrPayloadEmptyError", {}) {
   override get message(): string {
     return "Scanned QR code did not contain a pairing URL.";
   }

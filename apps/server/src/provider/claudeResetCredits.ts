@@ -72,15 +72,15 @@ const RESET_CREDIT_FAILURES = {
   requestFailed: "Claude could not redeem the reset.",
 } as const;
 
-class ClaudeResetCreditError extends Schema.TaggedError<ClaudeResetCreditError>()(
-  "ClaudeResetCreditError",
-  {
-    reason: Schema.Literals(
-      Object.keys(RESET_CREDIT_FAILURES) as Array<keyof typeof RESET_CREDIT_FAILURES>,
-    ),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+class ClaudeResetCreditError extends Schema.TaggedError<
+  ClaudeResetCreditError,
+  { readonly brand: unique symbol }
+>()("ClaudeResetCreditError", {
+  reason: Schema.Literals(
+    Object.keys(RESET_CREDIT_FAILURES) as Array<keyof typeof RESET_CREDIT_FAILURES>,
+  ),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return RESET_CREDIT_FAILURES[this.reason];
   }

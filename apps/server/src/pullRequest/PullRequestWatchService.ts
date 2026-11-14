@@ -26,37 +26,37 @@ import {
   threadPullRequestsOf,
 } from "../sourceControl/threadPullRequests.ts";
 
-export class PullRequestWatchFailedError extends Schema.TaggedError<PullRequestWatchFailedError>()(
-  "PullRequestWatchFailedError",
-  { cause: Schema.Defect() },
-) {
+export class PullRequestWatchFailedError extends Schema.TaggedError<
+  PullRequestWatchFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestWatchFailedError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not change whether the pull request is watched.";
   }
 }
 
-export class PullRequestNotOpenError extends Schema.TaggedError<PullRequestNotOpenError>()(
-  "PullRequestNotOpenError",
-  { state: Schema.String },
-) {
+export class PullRequestNotOpenError extends Schema.TaggedError<
+  PullRequestNotOpenError,
+  { readonly brand: unique symbol }
+>()("PullRequestNotOpenError", { state: Schema.String }) {
   override get message(): string {
     return `The pull request is ${this.state}, so there is nothing to watch.`;
   }
 }
 
-export class PullRequestWatchFromSubagentError extends Schema.TaggedError<PullRequestWatchFromSubagentError>()(
-  "PullRequestWatchFromSubagentError",
-  {},
-) {
+export class PullRequestWatchFromSubagentError extends Schema.TaggedError<
+  PullRequestWatchFromSubagentError,
+  { readonly brand: unique symbol }
+>()("PullRequestWatchFromSubagentError", {}) {
   override get message(): string {
     return "This thread is a subagent, so it cannot watch pull requests. Its parent thread owns the pull request: finish your task and report back instead.";
   }
 }
 
-export class PullRequestWatchThreadNotFoundError extends Schema.TaggedError<PullRequestWatchThreadNotFoundError>()(
-  "PullRequestWatchThreadNotFoundError",
-  { threadId: ThreadId },
-) {
+export class PullRequestWatchThreadNotFoundError extends Schema.TaggedError<
+  PullRequestWatchThreadNotFoundError,
+  { readonly brand: unique symbol }
+>()("PullRequestWatchThreadNotFoundError", { threadId: ThreadId }) {
   override get message(): string {
     return `Thread ${this.threadId} was not found.`;
   }

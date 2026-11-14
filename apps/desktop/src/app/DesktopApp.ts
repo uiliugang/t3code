@@ -55,23 +55,23 @@ const makeDesktopRunId = SecureRandom.SecureRandom.pipe(
   Effect.map((value) => value.replaceAll("-", "").slice(0, 12)),
 );
 
-export class DesktopBackendPortUnavailableError extends Schema.TaggedError<DesktopBackendPortUnavailableError>()(
-  "DesktopBackendPortUnavailableError",
-  {
-    startPort: Schema.Int,
-    maxPort: Schema.Int,
-    hosts: Schema.Array(Schema.String),
-  },
-) {
+export class DesktopBackendPortUnavailableError extends Schema.TaggedError<
+  DesktopBackendPortUnavailableError,
+  { readonly brand: unique symbol }
+>()("DesktopBackendPortUnavailableError", {
+  startPort: Schema.Int,
+  maxPort: Schema.Int,
+  hosts: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     return `No desktop backend port is available on hosts ${this.hosts.join(", ")} between ${this.startPort} and ${this.maxPort}.`;
   }
 }
 
-export class DesktopDevelopmentBackendPortRequiredError extends Schema.TaggedError<DesktopDevelopmentBackendPortRequiredError>()(
-  "DesktopDevelopmentBackendPortRequiredError",
-  {},
-) {
+export class DesktopDevelopmentBackendPortRequiredError extends Schema.TaggedError<
+  DesktopDevelopmentBackendPortRequiredError,
+  { readonly brand: unique symbol }
+>()("DesktopDevelopmentBackendPortRequiredError", {}) {
   override get message(): string {
     return "T3CODE_PORT is required in desktop development.";
   }

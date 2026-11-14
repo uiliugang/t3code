@@ -61,49 +61,49 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 
-export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveBlockedError>()(
-  "ThreadArchiveBlockedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadArchiveBlockedError extends Schema.TaggedError<
+  ThreadArchiveBlockedError,
+  { readonly brand: unique symbol }
+>()("ThreadArchiveBlockedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "Cannot archive while the provider is active.";
   }
 }
 
-export class ThreadSettlementUnsupportedError extends Schema.TaggedError<ThreadSettlementUnsupportedError>()(
-  "ThreadSettlementUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadSettlementUnsupportedError extends Schema.TaggedError<
+  ThreadSettlementUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ThreadSettlementUnsupportedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "This environment's server does not support settling yet. Update the server to use Settle.";
   }
 }
 
-export class ThreadSnoozeUnsupportedError extends Schema.TaggedError<ThreadSnoozeUnsupportedError>()(
-  "ThreadSnoozeUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadSnoozeUnsupportedError extends Schema.TaggedError<
+  ThreadSnoozeUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ThreadSnoozeUnsupportedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "This environment's server does not support snoozing yet. Update the server to use Snooze.";
   }
 }
 
-export class ThreadSnoozeBlockedError extends Schema.TaggedError<ThreadSnoozeBlockedError>()(
-  "ThreadSnoozeBlockedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadSnoozeBlockedError extends Schema.TaggedError<
+  ThreadSnoozeBlockedError,
+  { readonly brand: unique symbol }
+>()("ThreadSnoozeBlockedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "This thread is waiting on you. Respond to the pending request before snoozing it.";
   }
@@ -118,49 +118,49 @@ function topOfPinnedRunOrderKey(): string | undefined {
   return pinOrderKeyBetween(null, firstKey) ?? undefined;
 }
 
-export class ThreadAutoSettleOptOutUnsupportedError extends Schema.TaggedError<ThreadAutoSettleOptOutUnsupportedError>()(
-  "ThreadAutoSettleOptOutUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadAutoSettleOptOutUnsupportedError extends Schema.TaggedError<
+  ThreadAutoSettleOptOutUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ThreadAutoSettleOptOutUnsupportedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "This environment's server does not support turning auto-settle off per thread yet. Update the server to use it.";
   }
 }
 
-export class ThreadPinningUnsupportedError extends Schema.TaggedError<ThreadPinningUnsupportedError>()(
-  "ThreadPinningUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadPinningUnsupportedError extends Schema.TaggedError<
+  ThreadPinningUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ThreadPinningUnsupportedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "This environment's server does not support pinning yet. Update the server to use Pin.";
   }
 }
 
-export class ThreadPinReorderUnsupportedError extends Schema.TaggedError<ThreadPinReorderUnsupportedError>()(
-  "ThreadPinReorderUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadPinReorderUnsupportedError extends Schema.TaggedError<
+  ThreadPinReorderUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ThreadPinReorderUnsupportedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "This environment's server does not support reordering pinned threads yet. Update the server to reorder pins.";
   }
 }
 
-export class ThreadActiveReorderUnsupportedError extends Schema.TaggedError<ThreadActiveReorderUnsupportedError>()(
-  "ThreadActiveReorderUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
+export class ThreadActiveReorderUnsupportedError extends Schema.TaggedError<
+  ThreadActiveReorderUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ThreadActiveReorderUnsupportedError", {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return "Update this environment's server to reorder active threads.";
   }

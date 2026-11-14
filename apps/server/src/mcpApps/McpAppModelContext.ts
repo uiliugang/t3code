@@ -9,10 +9,10 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 export const MCP_APP_MODEL_CONTEXT_MAX_BYTES = 16 * 1024;
 
-export class McpAppModelContextError extends Schema.TaggedError<McpAppModelContextError>()(
-  "McpAppModelContextError",
-  { cause: Schema.optional(Schema.Defect()) },
-) {}
+export class McpAppModelContextError extends Schema.TaggedError<
+  McpAppModelContextError,
+  { readonly brand: unique symbol }
+>()("McpAppModelContextError", { cause: Schema.optional(Schema.Defect()) }) {}
 
 export interface McpAppModelContextEntry {
   readonly itemId: string;

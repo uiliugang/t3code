@@ -193,23 +193,23 @@ function idTokenIdentity(idToken: string | undefined): string | null {
   return null;
 }
 
-export class CloudCliCredentialRemovalError extends Schema.TaggedError<CloudCliCredentialRemovalError>()(
-  "CloudCliCredentialRemovalError",
-  { cause: Schema.Defect() },
-) {
+export class CloudCliCredentialRemovalError extends Schema.TaggedError<
+  CloudCliCredentialRemovalError,
+  { readonly brand: unique symbol }
+>()("CloudCliCredentialRemovalError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not remove the stored T3 Connect CLI credential.";
   }
 }
 
-export class CloudCliCredentialRefreshError extends Schema.TaggedError<CloudCliCredentialRefreshError>()(
-  "CloudCliCredentialRefreshError",
-  {
-    cause: Schema.Defect(),
-    status: Schema.optional(Schema.Number),
-    oauthErrorCode: Schema.optional(OAuthRefreshErrorCode),
-  },
-) {
+export class CloudCliCredentialRefreshError extends Schema.TaggedError<
+  CloudCliCredentialRefreshError,
+  { readonly brand: unique symbol }
+>()("CloudCliCredentialRefreshError", {
+  cause: Schema.Defect(),
+  status: Schema.optional(Schema.Number),
+  oauthErrorCode: Schema.optional(OAuthRefreshErrorCode),
+}) {
   get requiresLogin(): boolean {
     return this.status !== undefined && isPermanentRefreshStatus(this.status);
   }
@@ -225,37 +225,37 @@ export class CloudCliCredentialRefreshError extends Schema.TaggedError<CloudCliC
 
 export const isCloudCliCredentialRefreshError = Schema.is(CloudCliCredentialRefreshError);
 
-export class CloudCliCredentialReadError extends Schema.TaggedError<CloudCliCredentialReadError>()(
-  "CloudCliCredentialReadError",
-  { cause: Schema.Defect() },
-) {
+export class CloudCliCredentialReadError extends Schema.TaggedError<
+  CloudCliCredentialReadError,
+  { readonly brand: unique symbol }
+>()("CloudCliCredentialReadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not read the stored T3 Connect CLI credential.";
   }
 }
 
-export class CloudCliAuthorizationError extends Schema.TaggedError<CloudCliAuthorizationError>()(
-  "CloudCliAuthorizationError",
-  { cause: Schema.Defect() },
-) {
+export class CloudCliAuthorizationError extends Schema.TaggedError<
+  CloudCliAuthorizationError,
+  { readonly brand: unique symbol }
+>()("CloudCliAuthorizationError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not authorize the T3 Connect CLI.";
   }
 }
 
-export class CloudCliAuthorizationTimeoutError extends Schema.TaggedError<CloudCliAuthorizationTimeoutError>()(
-  "CloudCliAuthorizationTimeoutError",
-  { cause: Schema.Defect() },
-) {
+export class CloudCliAuthorizationTimeoutError extends Schema.TaggedError<
+  CloudCliAuthorizationTimeoutError,
+  { readonly brand: unique symbol }
+>()("CloudCliAuthorizationTimeoutError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Timed out waiting for T3 Connect authorization.";
   }
 }
 
-export class CloudCliAuthorizationDeniedError extends Schema.TaggedError<CloudCliAuthorizationDeniedError>()(
-  "CloudCliAuthorizationDeniedError",
-  {},
-) {
+export class CloudCliAuthorizationDeniedError extends Schema.TaggedError<
+  CloudCliAuthorizationDeniedError,
+  { readonly brand: unique symbol }
+>()("CloudCliAuthorizationDeniedError", {}) {
   override get message(): string {
     return "T3 Connect authorization was denied in the browser.";
   }

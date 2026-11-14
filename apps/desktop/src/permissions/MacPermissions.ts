@@ -19,10 +19,10 @@ export class MacPermissions extends Context.Service<
   }
 >()("@t3tools/desktop/permissions/MacPermissions") {}
 
-class MacPermissionHelperError extends Schema.TaggedError<MacPermissionHelperError>()(
-  "MacPermissionHelperError",
-  { cause: Schema.Defect() },
-) {
+class MacPermissionHelperError extends Schema.TaggedError<
+  MacPermissionHelperError,
+  { readonly brand: unique symbol }
+>()("MacPermissionHelperError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not show the permission helper.";
   }

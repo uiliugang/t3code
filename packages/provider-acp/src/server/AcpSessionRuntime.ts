@@ -166,15 +166,15 @@ export interface AcpSessionRequestLogEvent {
   readonly cause?: Cause.Cause<EffectAcpErrors.AcpError>;
 }
 
-export class AcpProcessGroupTerminationError extends Schema.TaggedError<AcpProcessGroupTerminationError>()(
-  "AcpProcessGroupTerminationError",
-  {
-    detail: Schema.String,
-    pid: Schema.optionalKey(Schema.Int),
-    exitCode: Schema.optionalKey(Schema.Number),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class AcpProcessGroupTerminationError extends Schema.TaggedError<
+  AcpProcessGroupTerminationError,
+  { readonly brand: unique symbol }
+>()("AcpProcessGroupTerminationError", {
+  detail: Schema.String,
+  pid: Schema.optionalKey(Schema.Int),
+  exitCode: Schema.optionalKey(Schema.Number),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.detail;
   }

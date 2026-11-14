@@ -85,19 +85,19 @@ export const WorktreeMcpStatusResult = Schema.Struct({
 });
 export type WorktreeMcpStatusResult = typeof WorktreeMcpStatusResult.Type;
 
-export class WorktreeMcpFailure extends Schema.TaggedError<WorktreeMcpFailure>()(
-  "WorktreeMcpFailure",
-  {
-    code: Schema.Literals([
-      "capability_denied",
-      "thread_not_found",
-      "project_not_found",
-      "already_in_worktree",
-      "handoff_in_progress",
-      "invalid_request",
-      "operation_failed",
-      "thread_credential_required",
-    ]),
-    message: Schema.String,
-  },
-) {}
+export class WorktreeMcpFailure extends Schema.TaggedError<
+  WorktreeMcpFailure,
+  { readonly brand: unique symbol }
+>()("WorktreeMcpFailure", {
+  code: Schema.Literals([
+    "capability_denied",
+    "thread_not_found",
+    "project_not_found",
+    "already_in_worktree",
+    "handoff_in_progress",
+    "invalid_request",
+    "operation_failed",
+    "thread_credential_required",
+  ]),
+  message: Schema.String,
+}) {}

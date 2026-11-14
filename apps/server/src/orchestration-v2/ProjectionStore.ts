@@ -120,47 +120,47 @@ import {
   type ThreadHistoryPrefix,
 } from "./threadHistoryPaging.ts";
 
-export class ProjectionStoreApplyEventError extends Schema.TaggedError<ProjectionStoreApplyEventError>()(
-  "ProjectionStoreApplyEventError",
-  {
-    eventType: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectionStoreApplyEventError extends Schema.TaggedError<
+  ProjectionStoreApplyEventError,
+  { readonly brand: unique symbol }
+>()("ProjectionStoreApplyEventError", {
+  eventType: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to apply orchestration projection event ${this.eventType}.`;
   }
 }
 
-export class ProjectionStoreSetupError extends Schema.TaggedError<ProjectionStoreSetupError>()(
-  "ProjectionStoreSetupError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectionStoreSetupError extends Schema.TaggedError<
+  ProjectionStoreSetupError,
+  { readonly brand: unique symbol }
+>()("ProjectionStoreSetupError", {
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return "Failed to initialize orchestration projection store.";
   }
 }
 
-export class ProjectionStoreThreadNotFoundError extends Schema.TaggedError<ProjectionStoreThreadNotFoundError>()(
-  "ProjectionStoreThreadNotFoundError",
-  {
-    threadId: ThreadId,
-  },
-) {
+export class ProjectionStoreThreadNotFoundError extends Schema.TaggedError<
+  ProjectionStoreThreadNotFoundError,
+  { readonly brand: unique symbol }
+>()("ProjectionStoreThreadNotFoundError", {
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return `No orchestration projection exists for thread ${this.threadId}.`;
   }
 }
 
-export class ProjectionStoreReadError extends Schema.TaggedError<ProjectionStoreReadError>()(
-  "ProjectionStoreReadError",
-  {
-    threadId: ThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectionStoreReadError extends Schema.TaggedError<
+  ProjectionStoreReadError,
+  { readonly brand: unique symbol }
+>()("ProjectionStoreReadError", {
+  threadId: ThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to read orchestration projection for thread ${this.threadId}.`;
   }

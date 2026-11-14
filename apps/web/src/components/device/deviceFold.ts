@@ -10,7 +10,10 @@ export interface AndroidFoldState {
   readonly hingeAngle: number | null;
 }
 
-export class AndroidFoldError extends Schema.TaggedError<AndroidFoldError>()("AndroidFoldError", {
+export class AndroidFoldError extends Schema.TaggedError<
+  AndroidFoldError,
+  { readonly brand: unique symbol }
+>()("AndroidFoldError", {
   message: Schema.String,
   status: Schema.Number,
 }) {}

@@ -22,10 +22,10 @@ const SVG_DENSITY = 300;
 const OUTPUT_DIRECTORY = "apps/mobile/assets";
 const PRODUCTION_BACKGROUND_COLOR = "#000000";
 
-export class AndroidIconRenderError extends Schema.TaggedError<AndroidIconRenderError>()(
-  "AndroidIconRenderError",
-  { layer: Schema.String, cause: Schema.Defect() },
-) {}
+export class AndroidIconRenderError extends Schema.TaggedError<
+  AndroidIconRenderError,
+  { readonly brand: unique symbol }
+>()("AndroidIconRenderError", { layer: Schema.String, cause: Schema.Defect() }) {}
 
 const wordmarkTransform = (size: number) => {
   const scale = (size * WORDMARK_FRACTION) / TEXT.width;

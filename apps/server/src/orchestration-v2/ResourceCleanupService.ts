@@ -16,22 +16,22 @@ import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 
-export class ResourceCleanupError extends Schema.TaggedError<ResourceCleanupError>()(
-  "ResourceCleanupError",
-  {
-    operation: Schema.Literals([
-      "terminal",
-      "preview",
-      "device",
-      "attachment",
-      "scheduled-tasks",
-      "runtime",
-    ]),
-    threadId: Schema.optional(Schema.String),
-    attachmentId: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {}
+export class ResourceCleanupError extends Schema.TaggedError<
+  ResourceCleanupError,
+  { readonly brand: unique symbol }
+>()("ResourceCleanupError", {
+  operation: Schema.Literals([
+    "terminal",
+    "preview",
+    "device",
+    "attachment",
+    "scheduled-tasks",
+    "runtime",
+  ]),
+  threadId: Schema.optional(Schema.String),
+  attachmentId: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {}
 
 export class ResourceCleanupService extends Context.Reference<{
   readonly cleanupScheduledTasks: (threadId: ThreadId) => Effect.Effect<void, ResourceCleanupError>;
@@ -125,25 +125,26 @@ export const layer = Layer.effect(
           Effect.map((current) => current !== null && retirementKey(current, mode) === key),
         );
         const sessions = yield* devices.sessionsForThread(threadId);
-        const [, failures] = yield* Effect.partition(
-          [
-            ports.stopThreadServers({ threadId, shouldStop: shouldRelease, mode }),
+        const wrapCleanup = <E>(cleanup: Effect.Effect<void, E>) =>
+          cleanup.pipe(
+            Effect.mapError(
+              (cause) => new ResourceCleanupError({ operation: "runtime", threadId, cause }),
+            ),
+          );
+        const cleanups = [
+          wrapCleanup(ports.stopThreadServers({ threadId, shouldStop: shouldRelease, mode })),
+          wrapCleanup(
             terminals.closeOnSettle({
               threadId,
               shouldClose: shouldRelease,
               deleteHistory: mode === "removed",
             }),
-            ...sessions.map((session) => devices.closeRetired(session, shouldRelease)),
-          ],
-          (cleanup) => cleanup,
-        );
+          ),
+          ...sessions.map((session) => wrapCleanup(devices.closeRetired(session, shouldRelease))),
+        ];
+        const [, failures] = yield* Effect.partition(cleanups, (cleanup) => cleanup);
         const [failure] = failures;
-        if (failure !== undefined)
-          return yield* new ResourceCleanupError({
-            operation: "runtime",
-            threadId,
-            cause: failure,
-          });
+        if (failure !== undefined) return yield* failure;
         return yield* shouldRelease;
       }),
       cleanupPreviews: Effect.fn("ResourceCleanupService.cleanupPreviews")(function (

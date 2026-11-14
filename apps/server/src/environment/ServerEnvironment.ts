@@ -27,14 +27,14 @@ import { isSpeechPlatformSupported } from "../speech/platform.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
 
-export class ServerEnvironmentIdPersistenceError extends Schema.TaggedError<ServerEnvironmentIdPersistenceError>()(
-  "ServerEnvironmentIdPersistenceError",
-  {
-    operation: Schema.Literals(["check", "read", "write", "initialize"]),
-    environmentIdPath: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerEnvironmentIdPersistenceError extends Schema.TaggedError<
+  ServerEnvironmentIdPersistenceError,
+  { readonly brand: unique symbol }
+>()("ServerEnvironmentIdPersistenceError", {
+  operation: Schema.Literals(["check", "read", "write", "initialize"]),
+  environmentIdPath: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     if (this.operation === "initialize") {
       return `Server environment ID file is missing or empty after initialization at '${this.environmentIdPath}'.`;

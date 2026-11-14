@@ -92,32 +92,32 @@ export type ApnsDeliveryError =
   | LiveActivities.LiveActivityTargetListPersistenceError
   | LiveActivities.LiveActivityDeliveryMarkPersistenceError;
 
-export class ApnsDeliveryJobClaimInFlight extends Schema.TaggedError<ApnsDeliveryJobClaimInFlight>()(
-  "ApnsDeliveryJobClaimInFlight",
-  {
-    sourceJobId: Schema.String,
-  },
-) {
+export class ApnsDeliveryJobClaimInFlight extends Schema.TaggedError<
+  ApnsDeliveryJobClaimInFlight,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobClaimInFlight", {
+  sourceJobId: Schema.String,
+}) {
   override get message(): string {
     return `APNs delivery job '${this.sourceJobId}' is already in flight`;
   }
 }
 
-export class ApnsDeliveryTransportError extends Schema.TaggedError<ApnsDeliveryTransportError>()(
-  "ApnsDeliveryTransportError",
-  {
-    deviceId: Schema.String,
-    kind: RelayDeliveryKindSchema,
-    sourceJobId: Schema.NullOr(Schema.String),
-    apnsErrorTag: Schema.Literals([
-      "ApnsJwtEncodingError",
-      "ApnsJwtSigningError",
-      "ApnsHttpRequestError",
-    ]),
-    requestStage: Schema.NullOr(Schema.Literals(["send", "read-response"])),
-    cause: Schema.Defect(),
-  },
-) {
+export class ApnsDeliveryTransportError extends Schema.TaggedError<
+  ApnsDeliveryTransportError,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryTransportError", {
+  deviceId: Schema.String,
+  kind: RelayDeliveryKindSchema,
+  sourceJobId: Schema.NullOr(Schema.String),
+  apnsErrorTag: Schema.Literals([
+    "ApnsJwtEncodingError",
+    "ApnsJwtSigningError",
+    "ApnsHttpRequestError",
+  ]),
+  requestStage: Schema.NullOr(Schema.Literals(["send", "read-response"])),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `APNs ${this.kind} delivery failed for device ${this.deviceId}.`;
   }

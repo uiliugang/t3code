@@ -21,10 +21,10 @@ export const NPM_LAUNCHER_PACKAGE_NAME = "t3";
 
 const encodePackageJson = Schema.encodeEffect(fromJsonStringPretty(Schema.Unknown));
 
-export class NpmLauncherCommandFailedError extends Schema.TaggedError<NpmLauncherCommandFailedError>()(
-  "NpmLauncherCommandFailedError",
-  { command: Schema.String, exitCode: Schema.Int },
-) {
+export class NpmLauncherCommandFailedError extends Schema.TaggedError<
+  NpmLauncherCommandFailedError,
+  { readonly brand: unique symbol }
+>()("NpmLauncherCommandFailedError", { command: Schema.String, exitCode: Schema.Int }) {
   override get message(): string {
     return `${this.command} exited with code ${this.exitCode}.`;
   }

@@ -53,37 +53,37 @@ export interface ProjectDeleteCommand {
 
 export type ProjectCommand = ProjectCreateCommand | ProjectMetaUpdateCommand | ProjectDeleteCommand;
 
-export class ProjectCommandInvariantError extends Schema.TaggedError<ProjectCommandInvariantError>()(
-  "ProjectCommandInvariantError",
-  {
-    commandType: Schema.String,
-    detail: Schema.String,
-  },
-) {
+export class ProjectCommandInvariantError extends Schema.TaggedError<
+  ProjectCommandInvariantError,
+  { readonly brand: unique symbol }
+>()("ProjectCommandInvariantError", {
+  commandType: Schema.String,
+  detail: Schema.String,
+}) {
   override get message(): string {
     return `Project command invariant failed (${this.commandType}): ${this.detail}`;
   }
 }
 
-export class ProjectCommandMissingProjectError extends Schema.TaggedError<ProjectCommandMissingProjectError>()(
-  "ProjectCommandMissingProjectError",
-  {
-    commandType: Schema.String,
-    projectId: ProjectId,
-  },
-) {
+export class ProjectCommandMissingProjectError extends Schema.TaggedError<
+  ProjectCommandMissingProjectError,
+  { readonly brand: unique symbol }
+>()("ProjectCommandMissingProjectError", {
+  commandType: Schema.String,
+  projectId: ProjectId,
+}) {
   override get message(): string {
     return `Project '${this.projectId}' does not exist for command '${this.commandType}'.`;
   }
 }
 
-export class ProjectWorkspaceConflictError extends Schema.TaggedError<ProjectWorkspaceConflictError>()(
-  "ProjectWorkspaceConflictError",
-  {
-    workspaceRoot: Schema.String,
-    conflictingProjectId: ProjectId,
-  },
-) {
+export class ProjectWorkspaceConflictError extends Schema.TaggedError<
+  ProjectWorkspaceConflictError,
+  { readonly brand: unique symbol }
+>()("ProjectWorkspaceConflictError", {
+  workspaceRoot: Schema.String,
+  conflictingProjectId: ProjectId,
+}) {
   override get message(): string {
     return `Active project '${this.conflictingProjectId}' already exists for workspace root '${this.workspaceRoot}'.`;
   }

@@ -10,10 +10,10 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 
-export class CodexUsageHistoryReadError extends Schema.TaggedError<CodexUsageHistoryReadError>()(
-  "CodexUsageHistoryReadError",
-  { requestedTurnCount: Schema.Number, cause: Schema.Defect() },
-) {
+export class CodexUsageHistoryReadError extends Schema.TaggedError<
+  CodexUsageHistoryReadError,
+  { readonly brand: unique symbol }
+>()("CodexUsageHistoryReadError", { requestedTurnCount: Schema.Number, cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not read historical Codex usage tiers.";
   }

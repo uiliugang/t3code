@@ -27,13 +27,13 @@ import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectService from "./ProjectService.ts";
 
-export class ScratchUnavailableError extends Schema.TaggedError<ScratchUnavailableError>()(
-  "ScratchUnavailableError",
-  {
-    baseDir: Schema.String,
-    repositoryRoot: Schema.optional(Schema.String),
-  },
-) {
+export class ScratchUnavailableError extends Schema.TaggedError<
+  ScratchUnavailableError,
+  { readonly brand: unique symbol }
+>()("ScratchUnavailableError", {
+  baseDir: Schema.String,
+  repositoryRoot: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     if (this.repositoryRoot === undefined) {
       return "Threads without a project are not available on this environment.";
@@ -42,25 +42,25 @@ export class ScratchUnavailableError extends Schema.TaggedError<ScratchUnavailab
   }
 }
 
-export class ScratchFolderError extends Schema.TaggedError<ScratchFolderError>()(
-  "ScratchFolderError",
-  {
-    folder: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ScratchFolderError extends Schema.TaggedError<
+  ScratchFolderError,
+  { readonly brand: unique symbol }
+>()("ScratchFolderError", {
+  folder: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to create the folder for threads without a project.";
   }
 }
 
-export class ScratchProjectError extends Schema.TaggedError<ScratchProjectError>()(
-  "ScratchProjectError",
-  {
-    workspaceRoot: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ScratchProjectError extends Schema.TaggedError<
+  ScratchProjectError,
+  { readonly brand: unique symbol }
+>()("ScratchProjectError", {
+  workspaceRoot: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to create the project for threads without a project.";
   }
@@ -76,13 +76,13 @@ const isMissingExecutable = (cause: unknown) =>
 
 const isGitCommandError = Schema.is(GitCommandError);
 
-export class NamedProjectFolderError extends Schema.TaggedError<NamedProjectFolderError>()(
-  "NamedProjectFolderError",
-  {
-    folder: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NamedProjectFolderError extends Schema.TaggedError<
+  NamedProjectFolderError,
+  { readonly brand: unique symbol }
+>()("NamedProjectFolderError", {
+  folder: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return isGitCommandError(this.cause) && isMissingExecutable(this.cause.cause)
       ? "Git isn't installed on this machine. Install Git to create a project."
@@ -90,13 +90,13 @@ export class NamedProjectFolderError extends Schema.TaggedError<NamedProjectFold
   }
 }
 
-export class NamedProjectCreateError extends Schema.TaggedError<NamedProjectCreateError>()(
-  "NamedProjectCreateError",
-  {
-    workspaceRoot: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class NamedProjectCreateError extends Schema.TaggedError<
+  NamedProjectCreateError,
+  { readonly brand: unique symbol }
+>()("NamedProjectCreateError", {
+  workspaceRoot: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to create the project.";
   }

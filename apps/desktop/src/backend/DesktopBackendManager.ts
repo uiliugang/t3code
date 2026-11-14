@@ -103,68 +103,68 @@ const backendProcessContextSchema = {
   httpBaseUrl: Schema.URL,
 };
 
-export class BackendReadinessTimeoutError extends Schema.TaggedError<BackendReadinessTimeoutError>()(
-  "BackendReadinessTimeoutError",
-  {
-    ...backendProcessContextSchema,
-    readinessUrl: Schema.URL,
-    timeoutMs: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class BackendReadinessTimeoutError extends Schema.TaggedError<
+  BackendReadinessTimeoutError,
+  { readonly brand: unique symbol }
+>()("BackendReadinessTimeoutError", {
+  ...backendProcessContextSchema,
+  readinessUrl: Schema.URL,
+  timeoutMs: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Timed out after ${this.timeoutMs}ms waiting for desktop backend readiness at ${this.readinessUrl.href}.`;
   }
 }
 
-export class BackendProcessBootstrapEncodeError extends Schema.TaggedError<BackendProcessBootstrapEncodeError>()(
-  "BackendProcessBootstrapEncodeError",
-  {
-    ...backendProcessContextSchema,
-    cause: Schema.Defect(),
-  },
-) {
+export class BackendProcessBootstrapEncodeError extends Schema.TaggedError<
+  BackendProcessBootstrapEncodeError,
+  { readonly brand: unique symbol }
+>()("BackendProcessBootstrapEncodeError", {
+  ...backendProcessContextSchema,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to encode the desktop backend bootstrap payload for ${this.entryPath}.`;
   }
 }
 
-export class BackendProcessSpawnError extends Schema.TaggedError<BackendProcessSpawnError>()(
-  "BackendProcessSpawnError",
-  {
-    ...backendProcessContextSchema,
-    cause: Schema.Defect(),
-  },
-) {
+export class BackendProcessSpawnError extends Schema.TaggedError<
+  BackendProcessSpawnError,
+  { readonly brand: unique symbol }
+>()("BackendProcessSpawnError", {
+  ...backendProcessContextSchema,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to spawn desktop backend entry ${this.entryPath} with ${this.executablePath}.`;
   }
 }
 
-export class BackendProcessOutputReadError extends Schema.TaggedError<BackendProcessOutputReadError>()(
-  "BackendProcessOutputReadError",
-  {
-    ...backendProcessContextSchema,
-    pid: Schema.Number,
-    streamName: Schema.Literals(["stdout", "stderr"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class BackendProcessOutputReadError extends Schema.TaggedError<
+  BackendProcessOutputReadError,
+  { readonly brand: unique symbol }
+>()("BackendProcessOutputReadError", {
+  ...backendProcessContextSchema,
+  pid: Schema.Number,
+  streamName: Schema.Literals(["stdout", "stderr"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read ${this.streamName} from desktop backend process ${this.pid}.`;
   }
 }
 
-export class BackendProcessOutputHandlingError extends Schema.TaggedError<BackendProcessOutputHandlingError>()(
-  "BackendProcessOutputHandlingError",
-  {
-    ...backendProcessContextSchema,
-    pid: Schema.Number,
-    streamName: Schema.Literals(["stdout", "stderr"]),
-    chunkByteLength: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class BackendProcessOutputHandlingError extends Schema.TaggedError<
+  BackendProcessOutputHandlingError,
+  { readonly brand: unique symbol }
+>()("BackendProcessOutputHandlingError", {
+  ...backendProcessContextSchema,
+  pid: Schema.Number,
+  streamName: Schema.Literals(["stdout", "stderr"]),
+  chunkByteLength: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to handle ${this.chunkByteLength} bytes from ${this.streamName} of desktop backend process ${this.pid}.`;
   }
@@ -174,14 +174,14 @@ export type BackendProcessOutputError =
   | BackendProcessOutputReadError
   | BackendProcessOutputHandlingError;
 
-export class BackendProcessExitStatusError extends Schema.TaggedError<BackendProcessExitStatusError>()(
-  "BackendProcessExitStatusError",
-  {
-    ...backendProcessContextSchema,
-    pid: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class BackendProcessExitStatusError extends Schema.TaggedError<
+  BackendProcessExitStatusError,
+  { readonly brand: unique symbol }
+>()("BackendProcessExitStatusError", {
+  ...backendProcessContextSchema,
+  pid: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read the exit status of desktop backend process ${this.pid}.`;
   }

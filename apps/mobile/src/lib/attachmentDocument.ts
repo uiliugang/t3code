@@ -58,13 +58,13 @@ async function readAttachmentText(key: AttachmentTextKey, signal: AbortSignal) {
   return readFilePreviewResponse(response, signal);
 }
 
-class AttachmentTextReadError extends Schema.TaggedError<AttachmentTextReadError>()(
-  "AttachmentTextReadError",
-  {
-    message: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+class AttachmentTextReadError extends Schema.TaggedError<
+  AttachmentTextReadError,
+  { readonly brand: unique symbol }
+>()("AttachmentTextReadError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 // Plain-object keys compare structurally (Effect `Equal`/`Hash`). Unmounting the
 // last reader interrupts the read, which aborts the fetch.

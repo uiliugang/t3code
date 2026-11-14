@@ -165,10 +165,10 @@ const STATUS_READ_MS = 250;
 const VIEWER_NAVIGATION_OPTIONS = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
 const ACTION_TIMELINE_LIMIT = 50;
 
-export class ServerBrowserTabNotFoundError extends Schema.TaggedError<ServerBrowserTabNotFoundError>()(
-  "ServerBrowserTabNotFoundError",
-  { threadId: Schema.String, tabId: Schema.String },
-) {
+export class ServerBrowserTabNotFoundError extends Schema.TaggedError<
+  ServerBrowserTabNotFoundError,
+  { readonly brand: unique symbol }
+>()("ServerBrowserTabNotFoundError", { threadId: Schema.String, tabId: Schema.String }) {
   override get message(): string {
     return "The server preview tab does not exist.";
   }
@@ -183,19 +183,19 @@ const isHostSetupError = Schema.is(
   ]),
 );
 
-class ServerBrowserDownloadsCleanupError extends Schema.TaggedError<ServerBrowserDownloadsCleanupError>()(
-  "ServerBrowserDownloadsCleanupError",
-  { cause: Schema.Defect() },
-) {
+class ServerBrowserDownloadsCleanupError extends Schema.TaggedError<
+  ServerBrowserDownloadsCleanupError,
+  { readonly brand: unique symbol }
+>()("ServerBrowserDownloadsCleanupError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "The server preview could not clear earlier downloads.";
   }
 }
 
-export class ServerBrowserLaunchError extends Schema.TaggedError<ServerBrowserLaunchError>()(
-  "ServerBrowserLaunchError",
-  { cause: Schema.Defect() },
-) {
+export class ServerBrowserLaunchError extends Schema.TaggedError<
+  ServerBrowserLaunchError,
+  { readonly brand: unique symbol }
+>()("ServerBrowserLaunchError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "The server preview browser could not start.";
   }

@@ -9,32 +9,32 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-export class ProviderReplayNdjsonLineParseError extends Schema.TaggedError<ProviderReplayNdjsonLineParseError>()(
-  "ProviderReplayNdjsonLineParseError",
-  {
-    lineNumber: Schema.Number,
-    line: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderReplayNdjsonLineParseError extends Schema.TaggedError<
+  ProviderReplayNdjsonLineParseError,
+  { readonly brand: unique symbol }
+>()("ProviderReplayNdjsonLineParseError", {
+  lineNumber: Schema.Number,
+  line: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to parse provider replay NDJSON line ${this.lineNumber}.`;
   }
 }
 
-export class ProviderReplayNdjsonMissingHeaderError extends Schema.TaggedError<ProviderReplayNdjsonMissingHeaderError>()(
-  "ProviderReplayNdjsonMissingHeaderError",
-  {},
-) {
+export class ProviderReplayNdjsonMissingHeaderError extends Schema.TaggedError<
+  ProviderReplayNdjsonMissingHeaderError,
+  { readonly brand: unique symbol }
+>()("ProviderReplayNdjsonMissingHeaderError", {}) {
   override get message(): string {
     return "Provider replay NDJSON requires a transcript_start header or fallback transcript metadata.";
   }
 }
 
-export class ProviderReplayNdjsonEmptyError extends Schema.TaggedError<ProviderReplayNdjsonEmptyError>()(
-  "ProviderReplayNdjsonEmptyError",
-  {},
-) {
+export class ProviderReplayNdjsonEmptyError extends Schema.TaggedError<
+  ProviderReplayNdjsonEmptyError,
+  { readonly brand: unique symbol }
+>()("ProviderReplayNdjsonEmptyError", {}) {
   override get message(): string {
     return "Provider replay NDJSON did not contain any records.";
   }

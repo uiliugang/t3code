@@ -123,13 +123,13 @@ export interface OrchestratorV2ScenarioResult {
   readonly commandOutput?: ReadonlyMap<TurnItemId, RecordedCommandOutput>;
 }
 
-export class OrchestratorV2ScenarioStepError extends Schema.TaggedError<OrchestratorV2ScenarioStepError>()(
-  "OrchestratorV2ScenarioStepError",
-  {
-    scenario: Schema.String,
-    step: Schema.String,
-  },
-) {
+export class OrchestratorV2ScenarioStepError extends Schema.TaggedError<
+  OrchestratorV2ScenarioStepError,
+  { readonly brand: unique symbol }
+>()("OrchestratorV2ScenarioStepError", {
+  scenario: Schema.String,
+  step: Schema.String,
+}) {
   override get message(): string {
     return `Invalid orchestrator scenario step ${this.step} in ${this.scenario}.`;
   }

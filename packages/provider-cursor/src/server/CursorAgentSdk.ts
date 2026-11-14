@@ -26,13 +26,13 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 export const CURSOR_AGENT_SDK_PROTOCOL = "cursor-agent-sdk.local" as const;
 export const CURSOR_PROVIDER = ProviderDriverKind.make("cursor");
 
-export class CursorAgentSdkRunnerError extends Schema.TaggedError<CursorAgentSdkRunnerError>()(
-  "CursorAgentSdkRunnerError",
-  {
-    method: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class CursorAgentSdkRunnerError extends Schema.TaggedError<
+  CursorAgentSdkRunnerError,
+  { readonly brand: unique symbol }
+>()("CursorAgentSdkRunnerError", {
+  method: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Cursor Agent SDK ${this.method} failed.`;
   }

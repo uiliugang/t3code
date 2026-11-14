@@ -145,63 +145,63 @@ const activeTurnItemStatuses: ReadonlyArray<OrchestrationV2TurnItem["status"]> =
   "waiting",
 ];
 
-export class ProviderSessionOpenError extends Schema.TaggedError<ProviderSessionOpenError>()(
-  "ProviderSessionOpenError",
-  {
-    instanceId: ProviderInstanceId,
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionOpenError extends Schema.TaggedError<
+  ProviderSessionOpenError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionOpenError", {
+  instanceId: ProviderInstanceId,
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to open provider instance ${this.instanceId} session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionLookupError extends Schema.TaggedError<ProviderSessionLookupError>()(
-  "ProviderSessionLookupError",
-  {
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionLookupError extends Schema.TaggedError<
+  ProviderSessionLookupError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionLookupError", {
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to look up provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionCloseError extends Schema.TaggedError<ProviderSessionCloseError>()(
-  "ProviderSessionCloseError",
-  {
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionCloseError extends Schema.TaggedError<
+  ProviderSessionCloseError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionCloseError", {
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to close provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionReleaseError extends Schema.TaggedError<ProviderSessionReleaseError>()(
-  "ProviderSessionReleaseError",
-  {
-    providerSessionId: ProviderSessionId,
-    reason: ProviderSessionReleaseReason,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionReleaseError extends Schema.TaggedError<
+  ProviderSessionReleaseError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionReleaseError", {
+  providerSessionId: ProviderSessionId,
+  reason: ProviderSessionReleaseReason,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to release provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderSessionActivityError extends Schema.TaggedError<ProviderSessionActivityError>()(
-  "ProviderSessionActivityError",
-  {
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderSessionActivityError extends Schema.TaggedError<
+  ProviderSessionActivityError,
+  { readonly brand: unique symbol }
+>()("ProviderSessionActivityError", {
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to update provider session activity for ${this.providerSessionId}.`;
   }

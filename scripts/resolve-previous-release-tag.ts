@@ -14,13 +14,13 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 const ReleaseChannel = Schema.Literals(["stable", "nightly", "preview"]);
 type ReleaseChannel = typeof ReleaseChannel.Type;
 
-export class InvalidReleaseTagError extends Schema.TaggedError<InvalidReleaseTagError>()(
-  "InvalidReleaseTagError",
-  {
-    channel: ReleaseChannel,
-    currentTag: Schema.String,
-  },
-) {
+export class InvalidReleaseTagError extends Schema.TaggedError<
+  InvalidReleaseTagError,
+  { readonly brand: unique symbol }
+>()("InvalidReleaseTagError", {
+  channel: ReleaseChannel,
+  currentTag: Schema.String,
+}) {
   override get message(): string {
     return `Invalid ${this.channel} release tag '${this.currentTag}'.`;
   }
@@ -34,51 +34,51 @@ const releaseTagListProcessContext = {
   cwd: Schema.String,
 };
 
-export class ReleaseTagListProcessError extends Schema.TaggedError<ReleaseTagListProcessError>()(
-  "ReleaseTagListProcessError",
-  {
-    ...releaseTagListProcessContext,
-    operation: Schema.Literals(["spawn", "read-stdout", "read-stderr", "wait-for-exit"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class ReleaseTagListProcessError extends Schema.TaggedError<
+  ReleaseTagListProcessError,
+  { readonly brand: unique symbol }
+>()("ReleaseTagListProcessError", {
+  ...releaseTagListProcessContext,
+  operation: Schema.Literals(["spawn", "read-stdout", "read-stderr", "wait-for-exit"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to list release tags during process operation "${this.operation}".`;
   }
 }
 
-export class ReleaseTagListProcessExitError extends Schema.TaggedError<ReleaseTagListProcessExitError>()(
-  "ReleaseTagListProcessExitError",
-  {
-    ...releaseTagListProcessContext,
-    exitCode: Schema.Number,
-    stdoutLength: NonNegativeInt,
-    stderrLength: NonNegativeInt,
-  },
-) {
+export class ReleaseTagListProcessExitError extends Schema.TaggedError<
+  ReleaseTagListProcessExitError,
+  { readonly brand: unique symbol }
+>()("ReleaseTagListProcessExitError", {
+  ...releaseTagListProcessContext,
+  exitCode: Schema.Number,
+  stdoutLength: NonNegativeInt,
+  stderrLength: NonNegativeInt,
+}) {
   override get message(): string {
     return `Release tag listing exited with code ${this.exitCode}.`;
   }
 }
 
-export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedError<PreviousReleaseTagGitHubOutputConfigError>()(
-  "PreviousReleaseTagGitHubOutputConfigError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedError<
+  PreviousReleaseTagGitHubOutputConfigError,
+  { readonly brand: unique symbol }
+>()("PreviousReleaseTagGitHubOutputConfigError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to resolve the GITHUB_OUTPUT path for the previous release tag.";
   }
 }
 
-export class PreviousReleaseTagGitHubOutputAppendError extends Schema.TaggedError<PreviousReleaseTagGitHubOutputAppendError>()(
-  "PreviousReleaseTagGitHubOutputAppendError",
-  {
-    outputPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class PreviousReleaseTagGitHubOutputAppendError extends Schema.TaggedError<
+  PreviousReleaseTagGitHubOutputAppendError,
+  { readonly brand: unique symbol }
+>()("PreviousReleaseTagGitHubOutputAppendError", {
+  outputPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to append the previous release tag to ${this.outputPath}.`;
   }

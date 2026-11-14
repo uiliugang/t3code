@@ -17,10 +17,10 @@ import {
 import { isElectron } from "~/env";
 import { previewEnvironment } from "~/state/preview";
 
-class PreviewSessionThreadKeyParseError extends Schema.TaggedError<PreviewSessionThreadKeyParseError>()(
-  "PreviewSessionThreadKeyParseError",
-  { threadKey: Schema.String },
-) {
+class PreviewSessionThreadKeyParseError extends Schema.TaggedError<
+  PreviewSessionThreadKeyParseError,
+  { readonly brand: unique symbol }
+>()("PreviewSessionThreadKeyParseError", { threadKey: Schema.String }) {
   override get message(): string {
     return `Invalid scoped preview thread key: ${this.threadKey}`;
   }

@@ -9,19 +9,19 @@ const DESKTOP_WSL_STATE_STALE_TIME_MS = 30_000;
 
 type DesktopWslStateBridge = Pick<DesktopBridge, "getWslState">;
 
-class DesktopWslStateUnavailableError extends Schema.TaggedError<DesktopWslStateUnavailableError>()(
-  "DesktopWslStateUnavailableError",
-  {},
-) {
+class DesktopWslStateUnavailableError extends Schema.TaggedError<
+  DesktopWslStateUnavailableError,
+  { readonly brand: unique symbol }
+>()("DesktopWslStateUnavailableError", {}) {
   override get message(): string {
     return "Desktop WSL state is unavailable.";
   }
 }
 
-class DesktopWslStateLoadError extends Schema.TaggedError<DesktopWslStateLoadError>()(
-  "DesktopWslStateLoadError",
-  { cause: Schema.Defect() },
-) {
+class DesktopWslStateLoadError extends Schema.TaggedError<
+  DesktopWslStateLoadError,
+  { readonly brand: unique symbol }
+>()("DesktopWslStateLoadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to load WSL state.";
   }

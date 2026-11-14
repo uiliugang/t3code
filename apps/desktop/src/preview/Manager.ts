@@ -3564,77 +3564,77 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   };
 });
 
-export class PreviewTabNotFoundError extends Schema.TaggedError<PreviewTabNotFoundError>()(
-  "PreviewTabNotFoundError",
-  { tabId: Schema.String },
-) {
+export class PreviewTabNotFoundError extends Schema.TaggedError<
+  PreviewTabNotFoundError,
+  { readonly brand: unique symbol }
+>()("PreviewTabNotFoundError", { tabId: Schema.String }) {
   override get message(): string {
     return `Preview tab not found: ${this.tabId}`;
   }
 }
 
-export class PreviewWebContentsNotFoundError extends Schema.TaggedError<PreviewWebContentsNotFoundError>()(
-  "PreviewWebContentsNotFoundError",
-  { tabId: Schema.String, webContentsId: Schema.Number },
-) {
+export class PreviewWebContentsNotFoundError extends Schema.TaggedError<
+  PreviewWebContentsNotFoundError,
+  { readonly brand: unique symbol }
+>()("PreviewWebContentsNotFoundError", { tabId: Schema.String, webContentsId: Schema.Number }) {
   override get message(): string {
     return `WebContents ${this.webContentsId} not found for preview tab ${this.tabId}`;
   }
 }
 
-export class PreviewWebviewNotInitializedError extends Schema.TaggedError<PreviewWebviewNotInitializedError>()(
-  "PreviewWebviewNotInitializedError",
-  { tabId: Schema.String },
-) {
+export class PreviewWebviewNotInitializedError extends Schema.TaggedError<
+  PreviewWebviewNotInitializedError,
+  { readonly brand: unique symbol }
+>()("PreviewWebviewNotInitializedError", { tabId: Schema.String }) {
   override get message(): string {
     return `Preview tab "${this.tabId}" has no webview registered`;
   }
 }
 
-export class PreviewMainWindowClosedError extends Schema.TaggedError<PreviewMainWindowClosedError>()(
-  "PreviewMainWindowClosedError",
-  { tabId: Schema.String },
-) {
+export class PreviewMainWindowClosedError extends Schema.TaggedError<
+  PreviewMainWindowClosedError,
+  { readonly brand: unique symbol }
+>()("PreviewMainWindowClosedError", { tabId: Schema.String }) {
   override get message(): string {
     return `Cannot start preview frame capture while the main window is closed: ${this.tabId}`;
   }
 }
 
-export class PreviewRecordingArmConflictError extends Schema.TaggedError<PreviewRecordingArmConflictError>()(
-  "PreviewRecordingArmConflictError",
-  {
-    tabId: Schema.String,
-    webContentsId: Schema.Number,
-    armedTabId: Schema.String,
-  },
-) {
+export class PreviewRecordingArmConflictError extends Schema.TaggedError<
+  PreviewRecordingArmConflictError,
+  { readonly brand: unique symbol }
+>()("PreviewRecordingArmConflictError", {
+  tabId: Schema.String,
+  webContentsId: Schema.Number,
+  armedTabId: Schema.String,
+}) {
   override get message(): string {
     return `Preview tab ${this.armedTabId} is still claiming the capture stream, so recording could not start for tab ${this.tabId}`;
   }
 }
 
-export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedError<PreviewRecordingCaptureUnavailableError>()(
-  "PreviewRecordingCaptureUnavailableError",
-  {
-    tabId: Schema.String,
-    webContentsId: Schema.Number,
-  },
-) {
+export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedError<
+  PreviewRecordingCaptureUnavailableError,
+  { readonly brand: unique symbol }
+>()("PreviewRecordingCaptureUnavailableError", {
+  tabId: Schema.String,
+  webContentsId: Schema.Number,
+}) {
   override get message(): string {
     return `Preview recording capture is unavailable for tab ${this.tabId} in WebContents ${this.webContentsId}`;
   }
 }
 
-export class PreviewOperationError extends Schema.TaggedError<PreviewOperationError>()(
-  "PreviewOperationError",
-  {
-    operation: Schema.String,
-    tabId: Schema.optional(Schema.String),
-    webContentsId: Schema.optional(Schema.Number),
-    artifactPath: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class PreviewOperationError extends Schema.TaggedError<
+  PreviewOperationError,
+  { readonly brand: unique symbol }
+>()("PreviewOperationError", {
+  operation: Schema.String,
+  tabId: Schema.optional(Schema.String),
+  webContentsId: Schema.optional(Schema.Number),
+  artifactPath: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   static toTimelineMessage(error: PreviewOperationError): string {
     return error.cause instanceof Error ? error.cause.message : String(error.cause);
   }
@@ -3651,40 +3651,40 @@ export class PreviewOperationError extends Schema.TaggedError<PreviewOperationEr
 
 const isPreviewOperationError = Schema.is(PreviewOperationError);
 
-export class PreviewArtifactPathOutsideDirectoryError extends Schema.TaggedError<PreviewArtifactPathOutsideDirectoryError>()(
-  "PreviewArtifactPathOutsideDirectoryError",
-  {
-    artifactPath: Schema.String,
-    artifactDirectory: Schema.String,
-  },
-) {
+export class PreviewArtifactPathOutsideDirectoryError extends Schema.TaggedError<
+  PreviewArtifactPathOutsideDirectoryError,
+  { readonly brand: unique symbol }
+>()("PreviewArtifactPathOutsideDirectoryError", {
+  artifactPath: Schema.String,
+  artifactDirectory: Schema.String,
+}) {
   override get message(): string {
     return `Preview artifact path ${this.artifactPath} is outside ${this.artifactDirectory}`;
   }
 }
 
-export class PreviewArtifactImageLoadError extends Schema.TaggedError<PreviewArtifactImageLoadError>()(
-  "PreviewArtifactImageLoadError",
-  { artifactPath: Schema.String },
-) {
+export class PreviewArtifactImageLoadError extends Schema.TaggedError<
+  PreviewArtifactImageLoadError,
+  { readonly brand: unique symbol }
+>()("PreviewArtifactImageLoadError", { artifactPath: Schema.String }) {
   override get message(): string {
     return `Preview artifact could not be loaded as an image: ${this.artifactPath}`;
   }
 }
 
-export class PreviewAutomationDevToolsOpenError extends Schema.TaggedError<PreviewAutomationDevToolsOpenError>()(
-  "PreviewAutomationDevToolsOpenError",
-  { webContentsId: Schema.Number },
-) {
+export class PreviewAutomationDevToolsOpenError extends Schema.TaggedError<
+  PreviewAutomationDevToolsOpenError,
+  { readonly brand: unique symbol }
+>()("PreviewAutomationDevToolsOpenError", { webContentsId: Schema.Number }) {
   override get message(): string {
     return `Close preview DevTools before using agent browser control for WebContents ${this.webContentsId}`;
   }
 }
 
-export class PreviewAutomationDebuggerAttachedError extends Schema.TaggedError<PreviewAutomationDebuggerAttachedError>()(
-  "PreviewAutomationDebuggerAttachedError",
-  { webContentsId: Schema.Number },
-) {
+export class PreviewAutomationDebuggerAttachedError extends Schema.TaggedError<
+  PreviewAutomationDebuggerAttachedError,
+  { readonly brand: unique symbol }
+>()("PreviewAutomationDebuggerAttachedError", { webContentsId: Schema.Number }) {
   override get message(): string {
     return `Preview control cannot attach to WebContents ${this.webContentsId} because another debugger owns it`;
   }

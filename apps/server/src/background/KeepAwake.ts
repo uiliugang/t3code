@@ -89,10 +89,10 @@ const retryWithBackoff =
       Effect.retry(backoff),
     );
 
-class KeepAwakeInhibitorExited extends Schema.TaggedError<KeepAwakeInhibitorExited>()(
-  "KeepAwakeInhibitorExited",
-  { exitCode: Schema.Number },
-) {}
+class KeepAwakeInhibitorExited extends Schema.TaggedError<
+  KeepAwakeInhibitorExited,
+  { readonly brand: unique symbol }
+>()("KeepAwakeInhibitorExited", { exitCode: Schema.Number }) {}
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {

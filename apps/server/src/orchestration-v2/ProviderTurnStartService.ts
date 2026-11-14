@@ -73,13 +73,13 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 
-export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
-  "ProviderTurnStartError",
-  {
-    runId: RunId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ProviderTurnStartError extends Schema.TaggedError<
+  ProviderTurnStartError,
+  { readonly brand: unique symbol }
+>()("ProviderTurnStartError", {
+  runId: RunId,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 const isProviderAdapterProtocolError = Schema.is(ProviderAdapter.ProviderAdapterProtocolError);

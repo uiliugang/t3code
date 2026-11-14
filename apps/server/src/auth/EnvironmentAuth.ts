@@ -99,237 +99,237 @@ const serverAuthInternalErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class ServerAuthBootstrapCredentialValidationError extends Schema.TaggedError<ServerAuthBootstrapCredentialValidationError>()(
-  "ServerAuthBootstrapCredentialValidationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthBootstrapCredentialValidationError extends Schema.TaggedError<
+  ServerAuthBootstrapCredentialValidationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthBootstrapCredentialValidationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to validate bootstrap credential.";
   }
 }
 
-export class ServerAuthSessionCredentialValidationError extends Schema.TaggedError<ServerAuthSessionCredentialValidationError>()(
-  "ServerAuthSessionCredentialValidationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthSessionCredentialValidationError extends Schema.TaggedError<
+  ServerAuthSessionCredentialValidationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthSessionCredentialValidationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to validate session credential.";
   }
 }
 
-export class ServerAuthAuthenticatedSessionIssueError extends Schema.TaggedError<ServerAuthAuthenticatedSessionIssueError>()(
-  "ServerAuthAuthenticatedSessionIssueError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthAuthenticatedSessionIssueError extends Schema.TaggedError<
+  ServerAuthAuthenticatedSessionIssueError,
+  { readonly brand: unique symbol }
+>()("ServerAuthAuthenticatedSessionIssueError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to issue authenticated session.";
   }
 }
 
-export class ServerAuthAuthenticatedAccessTokenIssueError extends Schema.TaggedError<ServerAuthAuthenticatedAccessTokenIssueError>()(
-  "ServerAuthAuthenticatedAccessTokenIssueError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthAuthenticatedAccessTokenIssueError extends Schema.TaggedError<
+  ServerAuthAuthenticatedAccessTokenIssueError,
+  { readonly brand: unique symbol }
+>()("ServerAuthAuthenticatedAccessTokenIssueError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to issue authenticated access token.";
   }
 }
 
-export class ServerAuthPairingLinkCreationError extends Schema.TaggedError<ServerAuthPairingLinkCreationError>()(
-  "ServerAuthPairingLinkCreationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthPairingLinkCreationError extends Schema.TaggedError<
+  ServerAuthPairingLinkCreationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthPairingLinkCreationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to create pairing link.";
   }
 }
 
-export class ServerAuthPairingLinksListError extends Schema.TaggedError<ServerAuthPairingLinksListError>()(
-  "ServerAuthPairingLinksListError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthPairingLinksListError extends Schema.TaggedError<
+  ServerAuthPairingLinksListError,
+  { readonly brand: unique symbol }
+>()("ServerAuthPairingLinksListError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to list pairing links.";
   }
 }
 
-export class ServerAuthPairingLinkRevocationError extends Schema.TaggedError<ServerAuthPairingLinkRevocationError>()(
-  "ServerAuthPairingLinkRevocationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthPairingLinkRevocationError extends Schema.TaggedError<
+  ServerAuthPairingLinkRevocationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthPairingLinkRevocationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to revoke pairing link.";
   }
 }
 
-export class ServerAuthSessionTokenIssueError extends Schema.TaggedError<ServerAuthSessionTokenIssueError>()(
-  "ServerAuthSessionTokenIssueError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthSessionTokenIssueError extends Schema.TaggedError<
+  ServerAuthSessionTokenIssueError,
+  { readonly brand: unique symbol }
+>()("ServerAuthSessionTokenIssueError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to issue session token.";
   }
 }
 
-export class ServerAuthSessionsListError extends Schema.TaggedError<ServerAuthSessionsListError>()(
-  "ServerAuthSessionsListError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthSessionsListError extends Schema.TaggedError<
+  ServerAuthSessionsListError,
+  { readonly brand: unique symbol }
+>()("ServerAuthSessionsListError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to list sessions.";
   }
 }
 
-export class ServerAuthSessionRevocationError extends Schema.TaggedError<ServerAuthSessionRevocationError>()(
-  "ServerAuthSessionRevocationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthSessionRevocationError extends Schema.TaggedError<
+  ServerAuthSessionRevocationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthSessionRevocationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to revoke session.";
   }
 }
 
-export class ServerAuthOtherSessionsRevocationError extends Schema.TaggedError<ServerAuthOtherSessionsRevocationError>()(
-  "ServerAuthOtherSessionsRevocationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthOtherSessionsRevocationError extends Schema.TaggedError<
+  ServerAuthOtherSessionsRevocationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthOtherSessionsRevocationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to revoke other sessions.";
   }
 }
 
-export class ServerAuthWebSocketTokenIssueError extends Schema.TaggedError<ServerAuthWebSocketTokenIssueError>()(
-  "ServerAuthWebSocketTokenIssueError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthWebSocketTokenIssueError extends Schema.TaggedError<
+  ServerAuthWebSocketTokenIssueError,
+  { readonly brand: unique symbol }
+>()("ServerAuthWebSocketTokenIssueError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to issue websocket token.";
   }
 }
 
-export class ServerAuthDpopReplayStateRecordError extends Schema.TaggedError<ServerAuthDpopReplayStateRecordError>()(
-  "ServerAuthDpopReplayStateRecordError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthDpopReplayStateRecordError extends Schema.TaggedError<
+  ServerAuthDpopReplayStateRecordError,
+  { readonly brand: unique symbol }
+>()("ServerAuthDpopReplayStateRecordError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to record DPoP proof replay state.";
   }
 }
 
-export class ServerAuthDpopReplayKeyCalculationError extends Schema.TaggedError<ServerAuthDpopReplayKeyCalculationError>()(
-  "ServerAuthDpopReplayKeyCalculationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthDpopReplayKeyCalculationError extends Schema.TaggedError<
+  ServerAuthDpopReplayKeyCalculationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthDpopReplayKeyCalculationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to calculate DPoP replay key.";
   }
 }
 
-export class ServerAuthLinkedCloudAccountVerificationError extends Schema.TaggedError<ServerAuthLinkedCloudAccountVerificationError>()(
-  "ServerAuthLinkedCloudAccountVerificationError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthLinkedCloudAccountVerificationError extends Schema.TaggedError<
+  ServerAuthLinkedCloudAccountVerificationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthLinkedCloudAccountVerificationError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Could not verify the linked cloud account.";
   }
 }
 
-export class ServerAuthLinkedCloudAccountReadError extends Schema.TaggedError<ServerAuthLinkedCloudAccountReadError>()(
-  "ServerAuthLinkedCloudAccountReadError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthLinkedCloudAccountReadError extends Schema.TaggedError<
+  ServerAuthLinkedCloudAccountReadError,
+  { readonly brand: unique symbol }
+>()("ServerAuthLinkedCloudAccountReadError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Could not read the linked cloud account.";
   }
 }
 
-export class ServerAuthLinkedCloudAccountMissingError extends Schema.TaggedError<ServerAuthLinkedCloudAccountMissingError>()(
-  "ServerAuthLinkedCloudAccountMissingError",
-  {},
-) {
+export class ServerAuthLinkedCloudAccountMissingError extends Schema.TaggedError<
+  ServerAuthLinkedCloudAccountMissingError,
+  { readonly brand: unique symbol }
+>()("ServerAuthLinkedCloudAccountMissingError", {}) {
   override get message(): string {
     return "Cloud linked user is not installed for this environment.";
   }
 }
 
-export class ServerAuthCloudLinkJwtSigningError extends Schema.TaggedError<ServerAuthCloudLinkJwtSigningError>()(
-  "ServerAuthCloudLinkJwtSigningError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthCloudLinkJwtSigningError extends Schema.TaggedError<
+  ServerAuthCloudLinkJwtSigningError,
+  { readonly brand: unique symbol }
+>()("ServerAuthCloudLinkJwtSigningError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to sign cloud link JWT.";
   }
 }
 
-export class ServerAuthCloudMintPublicKeyMissingError extends Schema.TaggedError<ServerAuthCloudMintPublicKeyMissingError>()(
-  "ServerAuthCloudMintPublicKeyMissingError",
-  {},
-) {
+export class ServerAuthCloudMintPublicKeyMissingError extends Schema.TaggedError<
+  ServerAuthCloudMintPublicKeyMissingError,
+  { readonly brand: unique symbol }
+>()("ServerAuthCloudMintPublicKeyMissingError", {}) {
   override get message(): string {
     return "Cloud mint public key is not installed for this environment.";
   }
 }
 
-export class ServerAuthCloudRelayIssuerMissingError extends Schema.TaggedError<ServerAuthCloudRelayIssuerMissingError>()(
-  "ServerAuthCloudRelayIssuerMissingError",
-  {},
-) {
+export class ServerAuthCloudRelayIssuerMissingError extends Schema.TaggedError<
+  ServerAuthCloudRelayIssuerMissingError,
+  { readonly brand: unique symbol }
+>()("ServerAuthCloudRelayIssuerMissingError", {}) {
   override get message(): string {
     return "Cloud relay issuer is not installed for this environment.";
   }
 }
 
-export class ServerAuthCloudHealthJwtSigningError extends Schema.TaggedError<ServerAuthCloudHealthJwtSigningError>()(
-  "ServerAuthCloudHealthJwtSigningError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthCloudHealthJwtSigningError extends Schema.TaggedError<
+  ServerAuthCloudHealthJwtSigningError,
+  { readonly brand: unique symbol }
+>()("ServerAuthCloudHealthJwtSigningError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to sign cloud health JWT.";
   }
 }
 
-export class ServerAuthCloudMintJwtSigningError extends Schema.TaggedError<ServerAuthCloudMintJwtSigningError>()(
-  "ServerAuthCloudMintJwtSigningError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
+export class ServerAuthCloudMintJwtSigningError extends Schema.TaggedError<
+  ServerAuthCloudMintJwtSigningError,
+  { readonly brand: unique symbol }
+>()("ServerAuthCloudMintJwtSigningError", {
+  ...serverAuthInternalErrorContext,
+}) {
   override get message(): string {
     return "Failed to sign cloud mint JWT.";
   }
@@ -362,23 +362,23 @@ export const ServerAuthInternalError = Schema.Union([
 export type ServerAuthInternalError = typeof ServerAuthInternalError.Type;
 export const isServerAuthInternalError = Schema.is(ServerAuthInternalError);
 
-export class ServerAuthMissingCredentialError extends Schema.TaggedError<ServerAuthMissingCredentialError>()(
-  "ServerAuthMissingCredentialError",
-  {},
-) {
+export class ServerAuthMissingCredentialError extends Schema.TaggedError<
+  ServerAuthMissingCredentialError,
+  { readonly brand: unique symbol }
+>()("ServerAuthMissingCredentialError", {}) {
   override get message(): string {
     return "Server authentication credential is missing.";
   }
 }
 
-export class ServerAuthInvalidCredentialError extends Schema.TaggedError<ServerAuthInvalidCredentialError>()(
-  "ServerAuthInvalidCredentialError",
-  {
-    diagnostic: Schema.optional(Schema.String),
-    dpopFailureReason: Schema.optionalKey(DpopFailureReason),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerAuthInvalidCredentialError extends Schema.TaggedError<
+  ServerAuthInvalidCredentialError,
+  { readonly brand: unique symbol }
+>()("ServerAuthInvalidCredentialError", {
+  diagnostic: Schema.optional(Schema.String),
+  dpopFailureReason: Schema.optionalKey(DpopFailureReason),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return "Server authentication credential is invalid.";
   }
@@ -400,19 +400,19 @@ export const serverAuthDpopFailureReason = (
 ): DpopFailureReasonType | undefined =>
   error._tag === "ServerAuthInvalidCredentialError" ? error.dpopFailureReason : undefined;
 
-export class ServerAuthInvalidScopeError extends Schema.TaggedError<ServerAuthInvalidScopeError>()(
-  "ServerAuthInvalidScopeError",
-  {},
-) {
+export class ServerAuthInvalidScopeError extends Schema.TaggedError<
+  ServerAuthInvalidScopeError,
+  { readonly brand: unique symbol }
+>()("ServerAuthInvalidScopeError", {}) {
   override get message(): string {
     return "The requested authentication scope is invalid.";
   }
 }
 
-export class ServerAuthScopeNotGrantedError extends Schema.TaggedError<ServerAuthScopeNotGrantedError>()(
-  "ServerAuthScopeNotGrantedError",
-  {},
-) {
+export class ServerAuthScopeNotGrantedError extends Schema.TaggedError<
+  ServerAuthScopeNotGrantedError,
+  { readonly brand: unique symbol }
+>()("ServerAuthScopeNotGrantedError", {}) {
   override get message(): string {
     return "The requested authentication scope was not granted.";
   }
@@ -429,10 +429,12 @@ export const serverAuthInvalidRequestReason = (
 ): "invalid_scope" | "scope_not_granted" =>
   error._tag === "ServerAuthInvalidScopeError" ? "invalid_scope" : "scope_not_granted";
 
-export class ServerAuthMcpApprovalCodeError extends Schema.TaggedError<ServerAuthMcpApprovalCodeError>()(
-  "ServerAuthMcpApprovalCodeError",
-  { reason: Schema.Literals(["unknown_or_used", "not_a_pairing_code", "insufficient_scope"]) },
-) {
+export class ServerAuthMcpApprovalCodeError extends Schema.TaggedError<
+  ServerAuthMcpApprovalCodeError,
+  { readonly brand: unique symbol }
+>()("ServerAuthMcpApprovalCodeError", {
+  reason: Schema.Literals(["unknown_or_used", "not_a_pairing_code", "insufficient_scope"]),
+}) {
   override get message(): string {
     return this.reason === "insufficient_scope"
       ? "That pairing code cannot grant this access. It has not been used, so choose an access level it grants, or create a code with the standard scopes."
@@ -442,10 +444,10 @@ export class ServerAuthMcpApprovalCodeError extends Schema.TaggedError<ServerAut
   }
 }
 
-export class ServerAuthForbiddenOperationError extends Schema.TaggedError<ServerAuthForbiddenOperationError>()(
-  "ServerAuthForbiddenOperationError",
-  {},
-) {
+export class ServerAuthForbiddenOperationError extends Schema.TaggedError<
+  ServerAuthForbiddenOperationError,
+  { readonly brand: unique symbol }
+>()("ServerAuthForbiddenOperationError", {}) {
   override get message(): string {
     return "The current authentication session cannot revoke itself.";
   }

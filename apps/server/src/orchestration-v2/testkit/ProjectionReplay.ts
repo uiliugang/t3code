@@ -20,10 +20,10 @@ export interface ProjectionReplayVerification {
   readonly unexpectedThreadIds: ReadonlyArray<ThreadId>;
 }
 
-export class ProjectionReplayError extends Schema.TaggedError<ProjectionReplayError>()(
-  "ProjectionReplayError",
-  { cause: Schema.Defect() },
-) {}
+export class ProjectionReplayError extends Schema.TaggedError<
+  ProjectionReplayError,
+  { readonly brand: unique symbol }
+>()("ProjectionReplayError", { cause: Schema.Defect() }) {}
 
 /**
  * Test oracle: projections must equal a replay of an unpruned event log. Production prunes

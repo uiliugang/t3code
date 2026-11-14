@@ -144,7 +144,10 @@ export interface AcpRequestDiagnostics {
   readonly maximumPathDepth?: number;
 }
 
-export class AcpSpawnError extends Schema.TaggedError<AcpSpawnError>()("AcpSpawnError", {
+export class AcpSpawnError extends Schema.TaggedError<
+  AcpSpawnError,
+  { readonly brand: unique symbol }
+>()("AcpSpawnError", {
   command: Schema.optional(Schema.String),
   cause: Schema.Defect(),
 }) {
@@ -155,16 +158,16 @@ export class AcpSpawnError extends Schema.TaggedError<AcpSpawnError>()("AcpSpawn
   }
 }
 
-export class AcpProcessExitedError extends Schema.TaggedError<AcpProcessExitedError>()(
-  "AcpProcessExitedError",
-  {
-    code: Schema.optional(Schema.Number),
-    signal: Schema.optionalKey(Schema.String),
-    pid: Schema.optionalKey(Schema.Int),
-    stderr: Schema.optionalKey(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class AcpProcessExitedError extends Schema.TaggedError<
+  AcpProcessExitedError,
+  { readonly brand: unique symbol }
+>()("AcpProcessExitedError", {
+  code: Schema.optional(Schema.Number),
+  signal: Schema.optionalKey(Schema.String),
+  pid: Schema.optionalKey(Schema.Int),
+  stderr: Schema.optionalKey(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     const base =
       this.signal !== undefined
@@ -184,19 +187,19 @@ export const AcpProtocolParseOperation = Schema.Literals([
 ]);
 export type AcpProtocolParseOperation = typeof AcpProtocolParseOperation.Type;
 
-export class AcpProtocolParseError extends Schema.TaggedError<AcpProtocolParseError>()(
-  "AcpProtocolParseError",
-  {
-    operation: AcpProtocolParseOperation,
-    method: Schema.optionalKey(Schema.String),
-    requestId: Schema.optionalKey(AcpRequestId),
-    issueCount: Schema.optionalKey(Schema.Number),
-    issueKinds: Schema.optionalKey(Schema.Array(AcpSchemaIssueKind)),
-    maximumPathDepth: Schema.optionalKey(Schema.Number),
-    issueSummary: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class AcpProtocolParseError extends Schema.TaggedError<
+  AcpProtocolParseError,
+  { readonly brand: unique symbol }
+>()("AcpProtocolParseError", {
+  operation: AcpProtocolParseOperation,
+  method: Schema.optionalKey(Schema.String),
+  requestId: Schema.optionalKey(AcpRequestId),
+  issueCount: Schema.optionalKey(Schema.Number),
+  issueKinds: Schema.optionalKey(Schema.Array(AcpSchemaIssueKind)),
+  maximumPathDepth: Schema.optionalKey(Schema.Number),
+  issueSummary: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message() {
     const method = this.method === undefined ? "" : ` for method '${this.method}'`;
     const summary = this.issueSummary === undefined ? "" : `: ${this.issueSummary}`;
@@ -231,18 +234,18 @@ export class AcpProtocolParseError extends Schema.TaggedError<AcpProtocolParseEr
   }
 }
 
-export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
-  "AcpTransportError",
-  {
-    operation: Schema.optional(
-      Schema.Literals(["call-rpc", "read-input-stream", "read-process-exit-status"]),
-    ),
-    method: Schema.optional(Schema.String),
-    detail: Schema.optional(Schema.String),
-    pid: Schema.optionalKey(Schema.Int),
-    cause: Schema.Defect(),
-  },
-) {
+export class AcpTransportError extends Schema.TaggedError<
+  AcpTransportError,
+  { readonly brand: unique symbol }
+>()("AcpTransportError", {
+  operation: Schema.optional(
+    Schema.Literals(["call-rpc", "read-input-stream", "read-process-exit-status"]),
+  ),
+  method: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
+  pid: Schema.optionalKey(Schema.Int),
+  cause: Schema.Defect(),
+}) {
   override get message() {
     const operation = this.operation ? ` ${this.operation}` : "";
     const method = this.method ? ` for method ${this.method}` : "";
@@ -252,16 +255,19 @@ export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
   }
 }
 
-export class AcpInputStreamEndedError extends Schema.TaggedError<AcpInputStreamEndedError>()(
-  "AcpInputStreamEndedError",
-  {},
-) {
+export class AcpInputStreamEndedError extends Schema.TaggedError<
+  AcpInputStreamEndedError,
+  { readonly brand: unique symbol }
+>()("AcpInputStreamEndedError", {}) {
   override get message() {
     return "ACP input stream ended.";
   }
 }
 
-export class AcpRequestError extends Schema.TaggedError<AcpRequestError>()("AcpRequestError", {
+export class AcpRequestError extends Schema.TaggedError<
+  AcpRequestError,
+  { readonly brand: unique symbol }
+>()("AcpRequestError", {
   code: AcpSchema.ErrorCode,
   errorMessage: Schema.String,
   data: Schema.optional(Schema.Unknown),

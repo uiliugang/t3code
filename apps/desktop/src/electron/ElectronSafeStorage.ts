@@ -11,34 +11,34 @@ const electronSafeStorageErrorFields = {
   cause: Schema.Defect(),
 };
 
-export class ElectronSafeStorageAvailabilityError extends Schema.TaggedError<ElectronSafeStorageAvailabilityError>()(
-  "ElectronSafeStorageAvailabilityError",
-  {
-    ...electronSafeStorageErrorFields,
-  },
-) {
+export class ElectronSafeStorageAvailabilityError extends Schema.TaggedError<
+  ElectronSafeStorageAvailabilityError,
+  { readonly brand: unique symbol }
+>()("ElectronSafeStorageAvailabilityError", {
+  ...electronSafeStorageErrorFields,
+}) {
   override get message(): string {
     return "Electron safe storage failed to check encryption availability.";
   }
 }
 
-export class ElectronSafeStorageEncryptError extends Schema.TaggedError<ElectronSafeStorageEncryptError>()(
-  "ElectronSafeStorageEncryptError",
-  {
-    ...electronSafeStorageErrorFields,
-  },
-) {
+export class ElectronSafeStorageEncryptError extends Schema.TaggedError<
+  ElectronSafeStorageEncryptError,
+  { readonly brand: unique symbol }
+>()("ElectronSafeStorageEncryptError", {
+  ...electronSafeStorageErrorFields,
+}) {
   override get message(): string {
     return "Electron safe storage failed to encrypt a string.";
   }
 }
 
-export class ElectronSafeStorageDecryptError extends Schema.TaggedError<ElectronSafeStorageDecryptError>()(
-  "ElectronSafeStorageDecryptError",
-  {
-    ...electronSafeStorageErrorFields,
-  },
-) {
+export class ElectronSafeStorageDecryptError extends Schema.TaggedError<
+  ElectronSafeStorageDecryptError,
+  { readonly brand: unique symbol }
+>()("ElectronSafeStorageDecryptError", {
+  ...electronSafeStorageErrorFields,
+}) {
   override get message(): string {
     return "Electron safe storage failed to decrypt a string.";
   }

@@ -9,10 +9,13 @@ import { indexEntryStat, invalidateChangedIndexStats, parseIndex } from "./gitIn
 const MAX_INDEX_BYTES = 1024 * 1024;
 const MAX_CACHED_INDEXES = 16;
 
-class CheckpointIndexCacheError extends Schema.TaggedError<CheckpointIndexCacheError>()(
-  "CheckpointIndexCacheError",
-  { operation: Schema.Literals(["load", "prepare", "remember"]), cause: Schema.Defect() },
-) {}
+class CheckpointIndexCacheError extends Schema.TaggedError<
+  CheckpointIndexCacheError,
+  { readonly brand: unique symbol }
+>()("CheckpointIndexCacheError", {
+  operation: Schema.Literals(["load", "prepare", "remember"]),
+  cause: Schema.Defect(),
+}) {}
 
 interface CachedIndex {
   readonly source: string;
