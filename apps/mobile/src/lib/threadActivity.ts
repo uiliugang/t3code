@@ -6,10 +6,7 @@ import { linkRequestTargetName } from "@t3tools/client-runtime/link-request";
 import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
-import {
-  isLiveSubagentTurnItem,
-  waitingOnSubagentsLabel,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import {
   turnItemDetailRevision,
@@ -263,6 +260,7 @@ type ThreadFeedEntryContent =
       readonly createdAt: string;
       readonly runId: RunId | null;
       readonly label?: string;
+      readonly waitingOnSubagents?: number;
       /** Shown instead of "Thinking" while the provider has not started a turn. */
       readonly providerStartingLabel?: string;
     };
@@ -1843,8 +1841,9 @@ export function deriveThreadFeedPresentation(
       thinkingRow(
         activeWorkStartedAt,
         activeRunId,
-        waitingOn > 0 ? waitingOnSubagentsLabel(waitingOn) : zen ? liveAnswerPreview(feed) : null,
+        zen ? liveAnswerPreview(feed) : null,
         latestRun?.providerStartingLabel,
+        waitingOn,
       ),
     );
   }
@@ -1969,11 +1968,13 @@ function thinkingRow(
   runId: RunId | null,
   label: string | null,
   providerStartingLabel: string | undefined,
+  waitingOnSubagents: number,
 ) {
   if (
     cachedThinkingRow?.createdAt !== createdAt ||
     cachedThinkingRow.runId !== runId ||
     (cachedThinkingRow.label ?? null) !== label ||
+    (cachedThinkingRow.waitingOnSubagents ?? 0) !== waitingOnSubagents ||
     cachedThinkingRow.providerStartingLabel !== providerStartingLabel
   ) {
     cachedThinkingRow = {
@@ -1982,6 +1983,7 @@ function thinkingRow(
       createdAt,
       runId,
       ...(label === null ? {} : { label }),
+      ...(waitingOnSubagents > 0 ? { waitingOnSubagents } : {}),
       ...(providerStartingLabel === undefined ? {} : { providerStartingLabel }),
     };
   }

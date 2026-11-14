@@ -1,3 +1,4 @@
+import { waitingOnSubagentsLabel } from "@t3tools/client-runtime/state/subagentRuntime";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogButton, WorkLogList, WorkLogRow } from "./WorkLog";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
@@ -431,6 +432,7 @@ function CompactingLabel({ createdAt }: { createdAt: string | null }) {
 }
 
 export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "thinking" }> }) {
+  const t = useUiTranslation();
   const ctx = use(TimelineRowCtx);
   const { isCompacting, isPreparingWorktree, liveAnswerPreview, providerStartingLabel } =
     use(TimelineRowActivityCtx);
@@ -439,7 +441,12 @@ export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind:
   const live = ctx.pendingApprovals.size === 0;
   const activity = (
     <LiveActivityRow
-      label={providerStartingLabel ?? row.label ?? liveAnswerPreview ?? "Thinking"}
+      label={
+        providerStartingLabel ??
+        (row.waitingOnSubagents
+          ? waitingOnSubagentsLabel(row.waitingOnSubagents, t)
+          : (liveAnswerPreview ?? t("Thinking")))
+      }
       iconName="brain"
       active={live}
       shimmer={live}

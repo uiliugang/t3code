@@ -1,3 +1,4 @@
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { groupBy } from "effect/Array";
 import * as DateTime from "effect/DateTime";
 import type {
@@ -97,8 +98,8 @@ export function isLiveSubagentTurnItem(item: OrchestrationV2TurnItem): boolean {
   return item.type === "subagent" && isOrchestrationV2WorkActive(item.status);
 }
 
-export function waitingOnSubagentsLabel(count: number): string {
-  return count === 1 ? "Waiting on a subagent" : `Waiting on ${count} subagents`;
+export function waitingOnSubagentsLabel(count: number, t: UiTranslator): string {
+  return count === 1 ? t("Waiting on a subagent") : t("Waiting on {count} subagents", { count });
 }
 
 export interface SubagentWorkflowGroup {

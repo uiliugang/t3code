@@ -326,6 +326,18 @@ export default defineConfig({
     overrides: [
       {
         files: [
+          "apps/web/src/components/HostedEmptyState.tsx",
+          "apps/web/src/components/auth/ApproveAgentSurface.tsx",
+          "apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx",
+          "apps/web/src/components/cloud/ConnectCliAuthSurface.tsx",
+          "apps/web/src/components/cloud/ConnectOnboardingDialog.tsx",
+          "apps/mobile/src/features/connection/ConnectDeviceApprovalCoordinator.tsx",
+          "packages/client-runtime/src/state/subagentRuntime.ts",
+        ],
+        rules: { "t3code/require-ui-translation": "error" },
+      },
+      {
+        files: [
           "**/*.{test,spec,testkit}.{ts,tsx}",
           "**/{test,tests,testkit,testing,fixtures,integration}/**",
           "packages/provider-testing/**",

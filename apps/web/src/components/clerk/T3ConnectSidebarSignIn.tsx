@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { UserButton, useAuth } from "@clerk/react";
 import { LogInIcon, RotateCwIcon } from "lucide-react";
 
@@ -49,6 +50,7 @@ function ConfiguredT3ConnectSidebarAvatar() {
 }
 
 function ConfiguredT3ConnectSidebarSignIn() {
+  const t = useUiTranslation();
   const { isLoaded, isSignedIn } = useAuth();
   const loadFailed = useClerkLoadFailed();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
@@ -59,7 +61,7 @@ function ConfiguredT3ConnectSidebarSignIn() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={retryClerkLoad}>
             <RotateCwIcon />
-            <span>Retry T3 Connect</span>
+            <span>{t("Retry T3 Connect")}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -72,7 +74,7 @@ function ConfiguredT3ConnectSidebarSignIn() {
       <SidebarMenuItem>
         <SidebarMenuButton onClick={openAuthPrompt}>
           <LogInIcon />
-          <span>Sign in to T3 Connect</span>
+          <span>{t("Sign in to T3 Connect")}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

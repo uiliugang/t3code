@@ -1,10 +1,7 @@
 import * as DateTime from "effect/DateTime";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
-import {
-  isLiveSubagentTurnItem,
-  waitingOnSubagentsLabel,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import * as Equal from "effect/Equal";
 import { shallow } from "zustand/vanilla/shallow";
 import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
@@ -536,7 +533,7 @@ type MessagesTimelineRowContent =
       id: string;
       createdAt: string | null;
       /** Replaces "Thinking" while the run has done nothing since launching children that still run. */
-      label?: string;
+      waitingOnSubagents?: number;
       groupId?: string;
       expanded?: boolean;
     }
@@ -567,7 +564,7 @@ type MessagesTimelineRowContent =
       id: string;
       createdAt: string;
       runId: RunId;
-      label: string;
+      label: TurnFoldLabel;
       expanded: boolean;
     }
   | {
@@ -734,6 +731,19 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
   return new Set(lastAssistantMessageIdByResponseKey.values());
 }
 
+type TurnFoldLabel =
+  | {
+      readonly message: "Worked" | "Continued" | "You stopped this response";
+      readonly duration?: never;
+    }
+  | {
+      readonly message:
+        | "Worked for {duration}"
+        | "Continued for {duration}"
+        | "You stopped after {duration}";
+      readonly duration: string;
+    };
+
 interface TurnFold {
   runId: RunId;
   anchorEntryId: string;
@@ -741,7 +751,7 @@ interface TurnFold {
   hiddenEntryIds: ReadonlySet<string>;
   /** Every entry in the segment, including the cards a fold never hides. */
   entryIds: ReadonlySet<string>;
-  label: string;
+  label: TurnFoldLabel;
 }
 
 interface SupersededAttemptFold {
@@ -1211,13 +1221,13 @@ function deriveTurnFolds(input: {
               lastEntryEnd,
           );
     const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
-    const label = isLatestInterruptedTurn
+    const label: TurnFoldLabel = isLatestInterruptedTurn
       ? duration
-        ? `You stopped after ${duration}`
-        : "You stopped this response"
+        ? { message: "You stopped after {duration}", duration }
+        : { message: "You stopped this response" }
       : duration
-        ? `Worked for ${duration}`
-        : "Worked";
+        ? { message: "Worked for {duration}", duration }
+        : { message: "Worked" };
 
     // The top row keeps the whole turn's time, steers included. Work after a
     // steer folds under its own row below that steer, keyed apart from the run
@@ -1248,7 +1258,10 @@ function deriveTurnFolds(input: {
         createdAt: steer.createdAt,
         hiddenEntryIds: segmentHiddenIds(entries),
         entryIds: new Set(entries.map((entry) => entry.id)),
-        label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
+        label:
+          segmentMs !== null
+            ? { message: "Continued for {duration}", duration: formatDuration(segmentMs) }
+            : { message: "Continued" },
       });
     }
   }
@@ -2345,7 +2358,7 @@ export function deriveMessagesTimelineRows(input: {
         kind: "thinking",
         id: LIVE_ACTIVITY_ROW_ID,
         createdAt: input.activeTurnStartedAt ?? null,
-        ...(waitingOn > 0 ? { label: waitingOnSubagentsLabel(waitingOn) } : {}),
+        ...(waitingOn > 0 ? { waitingOnSubagents: waitingOn } : {}),
       });
     }
   }
@@ -2709,7 +2722,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.createdAt === bt.createdAt &&
         a.groupId === bt.groupId &&
         a.expanded === bt.expanded &&
-        a.label === bt.label
+        a.waitingOnSubagents === bt.waitingOnSubagents
       );
     }
     case "worktree-setup":
@@ -2733,7 +2746,11 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       const nextAnchors = bf.deferredWorkItemIds ?? [];
       return (
         a.createdAt === bf.createdAt &&
-        a.label === bf.label &&
+        (typeof a.label === "string"
+          ? a.label === bf.label
+          : typeof bf.label !== "string" &&
+            a.label.message === bf.label.message &&
+            a.label.duration === bf.label.duration) &&
         a.expanded === bf.expanded &&
         anchors.length === nextAnchors.length &&
         anchors.every((id, index) => id === nextAnchors[index])

@@ -1,3 +1,4 @@
+import { waitingOnSubagentsLabel } from "@t3tools/client-runtime/state/subagentRuntime";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Button } from "../../components/ui/Button";
 import { ThreadSubagentGroup } from "./thread-subagent-group";
@@ -1421,12 +1422,17 @@ export function ThreadThinkingRow(props: {
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
   readonly iconSubtleColor: ColorValue;
   readonly label?: string;
+  readonly waitingOnSubagents?: number | undefined;
   /** Replaces "Thinking" while the provider has not started a turn. */
   readonly providerStartingLabel?: string | undefined;
 }) {
   const t = useUiTranslation();
 
-  const label = props.providerStartingLabel ?? props.label ?? "Thinking";
+  const label =
+    props.providerStartingLabel ??
+    (props.waitingOnSubagents
+      ? waitingOnSubagentsLabel(props.waitingOnSubagents, t)
+      : (props.label ?? "Thinking"));
   return (
     <View
       accessible

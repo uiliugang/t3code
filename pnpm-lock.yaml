@@ -1500,6 +1500,9 @@ importers:
       '@oxlint/plugins':
         specifier: ^1.63.0
         version: 1.89.0
+      '@t3tools/shared':
+        specifier: workspace:*
+        version: link:../packages/shared
       effect:
         specifier: 4.1.3
         version: 4.1.3

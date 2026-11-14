@@ -9,6 +9,50 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "This computer is off": "此计算机已关闭",
+  "No computer connected": "尚未连接计算机",
+  "Turn it back on, or connect a different computer.": "重新开启此计算机，或连接另一台计算机。",
+  "Your agents run on your computer.": "代理在你的计算机上运行。",
+  "Your agents run on your computer. Start T3 Code there first.":
+    "代理在你的计算机上运行。请先在计算机上启动 T3 Code。",
+  "Open Environments": "打开环境",
+  "Signed in": "已登录",
+  "Waiting for your computer…": "正在等待你的计算机…",
+  "Add pairing link": "添加配对链接",
+  "Run on your computer:": "在你的计算机上运行：",
+  "Or download the desktop app": "或下载桌面应用",
+  "Retry T3 Connect": "重试 T3 Connect",
+  "Browser authorization": "浏览器授权",
+  "Connecting your terminal": "正在连接你的终端",
+  "Redirecting to authorize T3 Connect for your CLI…": "正在跳转，为命令行授权 T3 Connect…",
+  "Sign in to continue authorizing T3 Connect for your CLI.": "登录以继续为命令行授权 T3 Connect。",
+  "Authorization request": "授权请求",
+  "This connect link is incomplete": "此连接链接不完整",
+  "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.":
+    "链接缺少授权请求。请在终端中重新运行 `t3 connect`，并打开新生成的链接。",
+  "Could not load sign-in": "无法加载登录",
+  "T3 Connect sign-in did not load. Check your connection, then try again.":
+    "T3 Connect 登录未能加载。请检查网络连接后重试。",
+  "Mesh your devices together. Publish this environment and connect the rest, all in one place.":
+    "将你的设备连接在一起。在此发布当前环境并连接其他设备。",
+  "Don't show this again": "不再显示",
+  "Not now": "暂时不用",
+  "Connect devices": "连接设备",
+  "Publish this environment": "发布此环境",
+  "Make this environment available to your other devices through T3 Connect.":
+    "通过 T3 Connect 让你的其他设备访问此环境。",
+  "Send activity from this environment to your mobile clients for push notifications and Live Activities.":
+    "将此环境的活动发送到移动客户端，用于推送通知和实时活动。",
+  "No other environments are published to your account yet. Publish one from another device and it will show up here.":
+    "你的账户尚未发布其他环境。在另一台设备上发布环境后，即可在此看到。",
+  "T3 Connect enabled": "已启用 T3 Connect",
+  "This environment is available to your other devices through T3 Connect.":
+    "你的其他设备现在可以通过 T3 Connect 访问此环境。",
+  "This environment publishes agent activity to your mobile clients.":
+    "此环境会向你的移动客户端发布代理活动。",
+  "Waiting on a subagent": "正在等待一个子代理",
+  "Waiting on {count} subagents": "正在等待 {count} 个子代理",
+
   "Custom CSS": "自定义 CSS",
   "Clear CSS": "清除 CSS",
   "Ln {line}, Col {column}": "第 {line} 行，第 {column} 列",
@@ -6009,6 +6053,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "You can bring it back anytime by importing its JSON file.": "随时导入其 JSON 文件即可恢复。",
   "Remove theme": "移除主题",
 };
+
+export function hasUiTranslation(message: string): boolean {
+  return Object.hasOwn(zhCN, message);
+}
 
 export function translateUi(
   locale: UiLocale,

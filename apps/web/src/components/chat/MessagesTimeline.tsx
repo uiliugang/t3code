@@ -1826,6 +1826,7 @@ function WorkHistorySkeleton() {
 }
 
 function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
+  const t = useUiTranslation();
   const ctx = use(TimelineRowCtx);
   const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
     ctx.onToggleTurnFold(row.runId),
@@ -1843,7 +1844,10 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
           <span>
-            {row.label}
+            {t(
+              row.label.message,
+              row.label.duration === undefined ? undefined : { duration: row.label.duration },
+            )}
             {error ? ` · ${error}` : ""}
           </span>
           {row.expanded ? (

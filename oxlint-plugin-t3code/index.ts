@@ -35,6 +35,7 @@ import preferEffectFn from "./rules/prefer-effect-fn.ts";
 import requireCenteredScrollGutter from "./rules/require-centered-scroll-gutter.ts";
 import requireDisposableRender from "./rules/require-disposable-render.ts";
 import requireSuppressionReason from "./rules/require-suppression-reason.ts";
+import requireUiTranslation from "./rules/require-ui-translation.ts";
 
 export default definePlugin({
   meta: {
@@ -76,5 +77,6 @@ export default definePlugin({
     "require-centered-scroll-gutter": requireCenteredScrollGutter,
     "require-disposable-render": requireDisposableRender,
     "require-suppression-reason": requireSuppressionReason,
+    "require-ui-translation": requireUiTranslation,
   },
 });

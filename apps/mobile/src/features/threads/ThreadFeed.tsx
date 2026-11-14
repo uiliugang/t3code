@@ -1771,6 +1771,7 @@ function renderFeedEntry(
         rowSizing={props.workRowSizing}
         iconSubtleColor={iconSubtleColor}
         label={entry.label}
+        waitingOnSubagents={entry.waitingOnSubagents}
         providerStartingLabel={entry.providerStartingLabel}
       />
     );
