@@ -30,7 +30,11 @@ export const IssueProjectSource = Schema.Struct({
 });
 export const IssueSourcesResult = Schema.Array(IssueProjectSource);
 export type IssueTarget = typeof IssueTarget.Type;
-export const IssueOption = Schema.Struct({ value: Text, label: Text });
+export const IssueOption = Schema.Struct({
+  value: Text,
+  label: Text,
+  category: Schema.optional(Schema.String),
+});
 export type IssueOption = typeof IssueOption.Type;
 export const Issue = Schema.Struct({
   id: TrimmedNonEmptyString,

@@ -75,64 +75,76 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90, 96, 99])("upgrades a database at exactly %s", (id) =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: id });
-      if (id >= 87) {
-        yield* sql`INSERT INTO wechat_deliveries (id, generation, text, status, created_at, attempts, next_at)
+  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100])(
+    "upgrades a database at exactly %s",
+    (id) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: id });
+        if (id >= 87) {
+          yield* sql`INSERT INTO wechat_deliveries (id, generation, text, status, created_at, attempts, next_at)
           VALUES ('legacy', 'g', 'existing delivery', 'pending', 0, 0, 0)`;
-      }
-      assert.deepStrictEqual(
-        yield* runMigrations(),
-        migrationManifest.filter(([migrationId]) => migrationId > id),
-      );
-      assert.deepStrictEqual(yield* history, migrationManifest);
-      if (id >= 87) {
+        }
         assert.deepStrictEqual(
-          yield* sql`SELECT text, request_json FROM wechat_deliveries WHERE id = 'legacy'`,
-          [{ text: "existing delivery", request_json: null }],
+          yield* runMigrations(),
+          migrationManifest.filter(([migrationId]) => migrationId > id),
         );
-      }
-      assert.isAbove(yield* v2TableCount, 0);
-      const taskColumns = yield* sql<{ readonly name: string }>`PRAGMA table_info(scheduled_tasks)`;
-      assert.include(
-        taskColumns.map(({ name }) => name),
-        "thread_mode",
-      );
-      yield* sql`INSERT INTO managed_worktree_snapshots (group_id, payload_json) VALUES ('group', '{}')`;
-      yield* sql`INSERT INTO skill_catalog (id, payload) VALUES (1, '{}')`;
-      const indexes = yield* sql<{ name: string }>`
+        assert.deepStrictEqual(yield* history, migrationManifest);
+        if (id >= 87) {
+          assert.deepStrictEqual(
+            yield* sql`SELECT text, request_json FROM wechat_deliveries WHERE id = 'legacy'`,
+            [{ text: "existing delivery", request_json: null }],
+          );
+        }
+        assert.isAbove(yield* v2TableCount, 0);
+        const taskColumns = yield* sql<{
+          readonly name: string;
+        }>`PRAGMA table_info(scheduled_tasks)`;
+        assert.include(
+          taskColumns.map(({ name }) => name),
+          "thread_mode",
+        );
+        yield* sql`INSERT INTO managed_worktree_snapshots (group_id, payload_json) VALUES ('group', '{}')`;
+        yield* sql`INSERT INTO skill_catalog (id, payload) VALUES (1, '{}')`;
+        const deliveryTables = yield* sql<{ name: string }>`
+        SELECT name FROM sqlite_master WHERE type = 'table'
+        AND name IN ('work_item_delivery_actions', 'work_item_issue_projects') ORDER BY name
+      `;
+        assert.deepStrictEqual(
+          deliveryTables.map(({ name }) => name),
+          ["work_item_delivery_actions", "work_item_issue_projects"],
+        );
+        const indexes = yield* sql<{ name: string }>`
         SELECT name FROM sqlite_master WHERE type = 'index'
         AND name LIKE 'orchestration_v2_projection_turn_items_active_%'
         ORDER BY name
       `;
-      assert.deepStrictEqual(
-        indexes.map(({ name }) => name),
-        [
-          "orchestration_v2_projection_turn_items_active_ordinal_idx",
-          "orchestration_v2_projection_turn_items_active_run_idx",
-        ],
-      );
-      yield* Effect.gen(function* () {
-        const store = yield* ProjectionStore.ProjectionStoreV2;
-        const thread = workspaceThreadFixture(workspaceFixture());
-        yield* store.apply({
-          id: EventId.make("migration-shell-thread"),
-          type: "thread.created",
-          threadId: thread.id,
-          occurredAt: thread.createdAt,
-          payload: thread,
-        });
-        const snapshot = yield* store.getShellSnapshot();
         assert.deepStrictEqual(
-          snapshot.threads.map(({ id }) => id),
-          [thread.id],
+          indexes.map(({ name }) => name),
+          [
+            "orchestration_v2_projection_turn_items_active_ordinal_idx",
+            "orchestration_v2_projection_turn_items_active_run_idx",
+          ],
         );
-        assert.deepStrictEqual(snapshot.threads[0]?.workspace, thread.workspace);
-      }).pipe(Effect.provide(ProjectionStore.layer));
-      assert.deepStrictEqual(yield* runMigrations(), []);
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+        yield* Effect.gen(function* () {
+          const store = yield* ProjectionStore.ProjectionStoreV2;
+          const thread = workspaceThreadFixture(workspaceFixture());
+          yield* store.apply({
+            id: EventId.make("migration-shell-thread"),
+            type: "thread.created",
+            threadId: thread.id,
+            occurredAt: thread.createdAt,
+            payload: thread,
+          });
+          const snapshot = yield* store.getShellSnapshot();
+          assert.deepStrictEqual(
+            snapshot.threads.map(({ id }) => id),
+            [thread.id],
+          );
+          assert.deepStrictEqual(snapshot.threads[0]?.workspace, thread.workspace);
+        }).pipe(Effect.provide(ProjectionStore.layer));
+        assert.deepStrictEqual(yield* runMigrations(), []);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("drops the unused correlation index and keeps correlation values", () =>

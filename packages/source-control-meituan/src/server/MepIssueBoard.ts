@@ -28,6 +28,9 @@ const Options = Schema.Array(
     value: Value,
     displayValue: Schema.String,
     disabled: Schema.optional(Schema.Boolean),
+    extra: Schema.optional(
+      Schema.NullOr(Schema.Struct({ category: Schema.optional(Schema.String) })),
+    ),
   }),
 );
 const MetadataField = Schema.Struct({
@@ -197,7 +200,11 @@ export const make = Effect.gen(function* () {
     );
     return rows
       .filter((row) => !row.disabled)
-      .map((row) => ({ value: String(row.value), label: row.displayValue }));
+      .map((row) => ({
+        value: String(row.value),
+        label: row.displayValue,
+        ...(row.extra?.category ? { category: row.extra.category } : {}),
+      }));
   });
   const readRow = Effect.fn("MepIssueBoard.readRow")(function* ({
     source,

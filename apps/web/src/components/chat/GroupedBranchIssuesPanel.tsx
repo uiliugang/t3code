@@ -5,6 +5,7 @@ import {
   parseBranchIssueUrl,
   type BranchIssue,
   type EnvironmentId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import {
@@ -16,7 +17,7 @@ import {
   RefreshCwIcon,
   UnlinkIcon,
 } from "lucide-react";
-import { useContext, useState } from "react";
+import { useContext, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -31,6 +32,9 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { groupBranchIssues, type IssueBranch } from "./branchIssueGroups";
 import { BranchIssueAssociationContext } from "./branchIssueAssociation";
+import { serverEnvironment } from "../../state/server";
+import { useEnvironmentQuery } from "../../state/query";
+import { Link } from "@tanstack/react-router";
 
 function BranchRow({
   target,
@@ -268,12 +272,23 @@ export function GroupedBranchIssuesPanel({
   environmentId,
   cwds,
   currentCwd,
+  creationControl,
+  threadId,
 }: {
   environmentId: EnvironmentId;
   cwds: readonly string[];
   currentCwd: string | null;
+  creationControl?: ReactNode;
+  threadId?: ThreadId;
 }) {
   const t = useUiTranslation();
+  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const linked = useEnvironmentQuery(
+    threadId && config?.workItemDelivery === true
+      ? serverEnvironment.workItemsLive({ environmentId, input: { threadId } })
+      : null,
+  );
+  const threadIssues = (linked.data?.items ?? []).filter((item) => item.issue);
   const registry = useContext(RegistryContext);
   const showEmpty = useClientSettings((settings) => settings.branchIssuesShowEmpty);
   const [expanded, setExpanded] = useLocalStorage(
@@ -322,7 +337,8 @@ export function GroupedBranchIssuesPanel({
       if (entry.issueAtom) registry.refresh(entry.issueAtom);
     }
   }
-  if (!groups.length && !pending && !failed && (!showEmpty || !unlinked.length)) return null;
+  if (!creationControl && !groups.length && !pending && !failed && (!showEmpty || !unlinked.length))
+    return null;
   return (
     <section
       aria-label={t("Linked issues")}
@@ -338,7 +354,14 @@ export function GroupedBranchIssuesPanel({
         >
           <Link2Icon className="size-4 text-muted-foreground" />
           {t("Linked issues")}
-          <span className="text-muted-foreground">{groups.length}</span>
+          <span className="text-muted-foreground">
+            {
+              new Set([
+                ...groups.map((group) => group.issue.url),
+                ...threadIssues.map((item) => item.issue!.url),
+              ]).size
+            }
+          </span>
         </button>
         <Tooltip>
           <TooltipTrigger
@@ -366,6 +389,25 @@ export function GroupedBranchIssuesPanel({
         </ThreadDetailsControl>
       </div>
       <div hidden={!expanded} className="space-y-3 px-3 pb-3">
+        {creationControl}
+        {threadIssues
+          .filter((item) => !groups.some((group) => group.issue.url === item.issue?.url))
+          .map((item) => (
+            <Link
+              key={item.id}
+              className="block text-xs text-primary hover:underline"
+              to="/requirements"
+              search={{
+                environmentId,
+                provider: item.issue!.provider,
+                issueId: item.issue!.id,
+                issueProjectId: item.projectId,
+                issueScope: item.issue!.repository,
+              }}
+            >
+              {item.title} #{item.issue!.id}
+            </Link>
+          ))}
         {pending ? <p className="text-xs text-muted-foreground">{t("Loading...")}</p> : null}
         {failed ? (
           <div role="alert" className="text-xs text-destructive">

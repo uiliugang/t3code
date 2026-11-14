@@ -43,6 +43,7 @@ export class TextGeneration extends Context.Service<TextGeneration, ProviderText
 ) {}
 
 type TextGenerationOp =
+  | "generateWorkItemDraft"
   | "generatePredictedMessage"
   | "generateCommitMessage"
   | "generatePrContent"
@@ -162,6 +163,14 @@ export const make = Effect.gen(function* () {
     );
   });
   return TextGeneration.of({
+    generateWorkItemDraft: Effect.fn("TextGeneration.generateWorkItemDraft")(function (input) {
+      return generate(
+        "generateWorkItemDraft",
+        input.modelSelection,
+        input.projectId,
+        (service, modelSelection) => service.generateWorkItemDraft({ ...input, modelSelection }),
+      );
+    }),
     generatePredictedMessage: Effect.fn("TextGeneration.generatePredictedMessage")(
       function (input) {
         return resolveInstance(

@@ -13,6 +13,9 @@ import {
 import { ModelSelection } from "./modelSelection.ts";
 import { OrchestrationV2ThreadLaunchWorkspaceStrategy } from "./orchestrationV2.ts";
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
+import { WorkItemDelivery, DeliveryScope, DeliverySummary } from "./workItemDelivery.ts";
+import { BranchIssueRef } from "./branchIssues.ts";
+import { IssueSource } from "./issues.ts";
 
 export const WorkItemId = TrimmedNonEmptyString.pipe(Schema.brand("WorkItemId"));
 export type WorkItemId = typeof WorkItemId.Type;
@@ -39,6 +42,16 @@ export const WorkItemSpecification = Schema.Struct({
   acceptanceCriteria: Lines,
 });
 export type WorkItemSpecification = typeof WorkItemSpecification.Type;
+export const WorkItemDraft = Schema.Struct({
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  ...WorkItemSpecification.fields,
+});
+export type WorkItemDraft = typeof WorkItemDraft.Type;
+export const WorkItemDraftInput = Schema.Struct({
+  projectId: ProjectId,
+  context: TrimmedNonEmptyString.check(Schema.isMaxLength(16_000)),
+});
+export type WorkItemDraftInput = typeof WorkItemDraftInput.Type;
 export const WorkItemExecution = Schema.Struct({
   id: WorkItemExecutionId,
   workItemId: WorkItemId,
@@ -52,6 +65,7 @@ export const WorkItemExecution = Schema.Struct({
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   specRevision: Revision,
   specSnapshot: WorkItemSpecification,
+  deliveryRevision: Schema.optional(Revision),
   status: Schema.Literals([
     "queued",
     "preparing",
@@ -113,6 +127,7 @@ export const WorkItem = Schema.Struct({
   reviewFeedback: Schema.optional(Text),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  delivery: Schema.optional(WorkItemDelivery),
 });
 export type WorkItem = typeof WorkItem.Type;
 export const WorkItemCandidate = Schema.Struct({
@@ -127,6 +142,10 @@ export type WorkItemCandidate = typeof WorkItemCandidate.Type;
 export const WorkItemCursor = Schema.Struct({ updatedAt: IsoDateTime, id: WorkItemId });
 export const WorkItemListInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
+  threadId: Schema.optional(ThreadId),
+  issueUrl: Schema.optional(TrimmedNonEmptyString),
+  issueUrls: Schema.optional(Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(100))),
+  attentionOnly: Schema.optional(Schema.Boolean),
   id: Schema.optional(WorkItemId),
   cursor: Schema.optional(WorkItemCursor),
   limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
@@ -146,6 +165,8 @@ export const WorkItemSummary = Schema.Struct({
   updatedAt: IsoDateTime,
   executionCount: Schema.Int,
   activeExecutionCount: Schema.Int,
+  issue: Schema.optional(BranchIssueRef),
+  deliverySummary: Schema.optional(DeliverySummary),
 });
 export type WorkItemSummary = typeof WorkItemSummary.Type;
 export const WorkItemListResult = Schema.Struct({
@@ -188,6 +209,7 @@ export const WorkItemCommandInput = Schema.Union([
     type: Schema.Literal("start"),
     ...Existing,
     specRevision: Revision,
+    deliveryRevision: Schema.optional(Revision),
     participants: Schema.Array(WorkItemParticipant).check(
       Schema.isMinLength(1),
       Schema.isMaxLength(20),
@@ -236,6 +258,55 @@ export const WorkItemCommandInput = Schema.Union([
     expectedVersion: Revision,
     status: Schema.Literals(["todo", "in_progress"]),
   }),
+  Schema.Struct({
+    type: Schema.Literal("link_issue"),
+    ...Existing,
+    expectedVersion: Revision,
+    issue: BranchIssueRef,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("delivery_scope"),
+    ...Existing,
+    expectedVersion: Revision,
+    requiredPullRequests: DeliveryScope.fields.requiredPullRequests,
+    changedServices: DeliveryScope.fields.changedServices,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("confirm_scope"),
+    ...Existing,
+    expectedVersion: Revision,
+    scopeRevision: Revision,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("release_plans"),
+    ...Existing,
+    expectedVersion: Revision,
+    planIds: Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(100)),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("delivery_exception"),
+    ...Existing,
+    expectedVersion: Revision,
+    reason: TrimmedNonEmptyString.check(Schema.isMaxLength(4000)),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("unlink_issue_thread"),
+    ...Existing,
+    expectedVersion: Revision,
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("completion_state"),
+    ...Existing,
+    expectedVersion: Revision,
+    state: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("reopen_delivery"),
+    ...Existing,
+    expectedVersion: Revision,
+    state: TrimmedNonEmptyString,
+  }),
 ]);
 export type WorkItemCommandInput = typeof WorkItemCommandInput.Type;
 export const WorkItemMutationResult = Schema.Struct({ item: WorkItem });
@@ -248,6 +319,13 @@ export type WorkItemDiscoverInput = typeof WorkItemDiscoverInput.Type;
 export const WorkItemDiscoverResult = Schema.Struct({
   candidates: Schema.Array(WorkItemCandidate),
 });
+export const WorkItemCreateIssueInput = Schema.Struct({
+  commandId: CommandId,
+  threadId: ThreadId,
+  source: IssueSource,
+});
+export type WorkItemCreateIssueInput = typeof WorkItemCreateIssueInput.Type;
+export const WorkItemRefreshDeliveryInput = Schema.Struct({ id: WorkItemId });
 export type WorkItemDiscoverResult = typeof WorkItemDiscoverResult.Type;
 export class WorkItemError extends Schema.TaggedError<WorkItemError>()("WorkItemError", {
   code: Schema.Literals([

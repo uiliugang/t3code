@@ -10,7 +10,7 @@ import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3too
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
-import type { AtomRegistry } from "effect/reactivity";
+import { AsyncResult, type AtomRegistry } from "effect/reactivity";
 import {
   CircleAlertIcon,
   CircleCheckIcon,
@@ -39,6 +39,8 @@ import {
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
+import { serverEnvironment } from "../state/server";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
 interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
@@ -309,6 +311,75 @@ export function startThreadNotifications(
   };
 
   const watchEnvironment = (environmentId: EnvironmentId): WatchedEnvironment => {
+    let stopDeliveryAlerts = () => {};
+    const announcedDeliveryAlerts = new Set<string>();
+    const unsubscribeDeliveryConfig = registry.subscribe(
+      serverEnvironment.configValueAtom(environmentId),
+      (config) => {
+        stopDeliveryAlerts();
+        stopDeliveryAlerts = () => {};
+        if (config?.workItemDelivery !== true) return;
+        stopDeliveryAlerts = registry.subscribe(
+          serverEnvironment.workItemsLive({
+            environmentId,
+            input: { attentionOnly: true, limit: 100 },
+          }),
+          (result) => {
+            const snapshot = AsyncResult.getOrElse(result, () => null);
+            for (const item of snapshot?.items ?? []) {
+              if (!item.issue || !item.deliverySummary || item.archived) continue;
+              const summary = item.deliverySummary;
+              const key = `${item.id}:${summary.revision}:${summary.progress}:${summary.error ?? ""}`;
+              if (announcedDeliveryAlerts.has(key)) continue;
+              announcedDeliveryAlerts.add(key);
+              const settings = getClientSettings();
+              const title = translateUi(settings.uiLanguage, "Delivery needs attention");
+              const open = () => {
+                void router.navigate({
+                  to: "/requirements",
+                  search: {
+                    environmentId,
+                    provider: item.issue!.provider,
+                    issueId: item.issue!.id,
+                    issueProjectId: item.projectId,
+                    issueScope: item.issue!.repository,
+                  },
+                });
+              };
+              if (settings.inAppNotificationsEnabled)
+                toastManager.add({
+                  type: "warning",
+                  title,
+                  description: item.title,
+                  actionProps: {
+                    children: translateUi(settings.uiLanguage, "Open requirement"),
+                    onClick: open,
+                  },
+                });
+              if (
+                hasDesktopNotifications(settings.notificationMode) &&
+                typeof Notification !== "undefined" &&
+                Notification.permission === "granted" &&
+                document.visibilityState !== "visible"
+              ) {
+                try {
+                  const notification = new Notification(title, {
+                    body: item.title,
+                    tag: `delivery:${environmentId}:${item.id}`,
+                    silent: true,
+                  });
+                  notification.addEventListener("click", open);
+                } catch {
+                  /* Notification delivery can be unavailable in a remote browser. */
+                }
+              }
+            }
+          },
+          { immediate: true },
+        );
+      },
+      { immediate: true },
+    );
     const entry: WatchedEnvironment = {
       previous: new Map(),
       reconnecting: false,
@@ -347,6 +418,8 @@ export function startThreadNotifications(
       reobserve,
     );
     entry.unsubscribe = () => {
+      unsubscribeDeliveryConfig();
+      stopDeliveryAlerts();
       unsubscribeShell();
       unsubscribeRequests();
       unsubscribeDelegated();

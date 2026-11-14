@@ -1,4 +1,6 @@
 import * as WorkItems from "./work-items/WorkItemService.ts";
+import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
+import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
 import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as PullRequestNotifications from "./communication/PullRequestNotificationService.ts";
@@ -1502,6 +1504,8 @@ export const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const workItems = yield* WorkItems.WorkItemService;
+      const deliveryAutomation = yield* DeliveryAutomation.DeliveryAutomationService;
+      const deliverySync = yield* DeliverySync.DeliverySyncReactor;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
@@ -1923,7 +1927,9 @@ export const layerWsRpc = (
           threadSnapshotPagination: true,
           threadFind: true,
           workItems: true,
+          workItemDelivery: true,
           workItemDiscovery: true,
+          workItemDraftGeneration: true,
           workItemAnalysis: false,
           threadPredictions: true,
           threadFindProgressive: true,
@@ -2331,6 +2337,9 @@ export const layerWsRpc = (
         [WS_METHODS.workItemsSubscribe]: (input) => workItems.subscribeList(input),
         [WS_METHODS.workItemsMutate]: (input) => workItems.mutate(input),
         [WS_METHODS.workItemsDiscover]: (input) => workItems.discover(input),
+        [WS_METHODS.workItemsGenerateDraft]: (input) => workItems.generateDraft(input),
+        [WS_METHODS.workItemsCreateIssue]: (input) => deliveryAutomation.createIssue(input),
+        [WS_METHODS.workItemsRefreshDelivery]: (input) => deliverySync.refresh(input.id),
         [ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion]: (input) =>
           providerSessionManager.subscribePromptSuggestion(input.threadId),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>

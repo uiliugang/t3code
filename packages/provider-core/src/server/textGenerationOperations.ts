@@ -1,7 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { type ChatAttachment, type ModelSelection, TextGenerationError } from "@t3tools/contracts";
+import {
+  type ChatAttachment,
+  type ModelSelection,
+  TextGenerationError,
+  WorkItemDraft,
+} from "@t3tools/contracts";
 import { formatGeneratedBranchName, sanitizeFeatureBranchName } from "@t3tools/shared/git";
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
 
@@ -13,6 +18,7 @@ import {
   buildPrContentPrompt,
   buildReviewGuidePrompt,
   buildThreadTitlePrompt,
+  buildWorkItemDraftPrompt,
 } from "./textGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
@@ -209,6 +215,15 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
   });
 
   return {
+    generateWorkItemDraft: Effect.fn(`${name}.generateWorkItemDraft`)(function (input) {
+      return run({
+        operation: "generateWorkItemDraft",
+        cwd: input.cwd,
+        modelSelection: input.modelSelection,
+        prompt: buildWorkItemDraftPrompt(input),
+        outputSchema: WorkItemDraft,
+      });
+    }),
     generatePredictedMessage,
     generateCommitMessage,
     generatePrContent,

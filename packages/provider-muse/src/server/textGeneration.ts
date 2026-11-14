@@ -4,6 +4,7 @@ import {
   type ModelSelection,
   type ServerProviderModel,
   TextGenerationError,
+  WorkItemDraft,
 } from "@t3tools/contracts";
 import type { MuseSettings } from "../settings.ts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
@@ -33,6 +34,7 @@ import {
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
+  buildWorkItemDraftPrompt,
 } from "@t3tools/provider-core/server/textGenerationPrompts";
 import {
   sanitizeCommitSubject,
@@ -374,6 +376,14 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     return { text: text && text.length <= 500 ? text : null };
   });
   return {
+    generateWorkItemDraft: Effect.fn("MuseTextGeneration.generateWorkItemDraft")(function (input) {
+      return runMuseJson({
+        operation: "generateWorkItemDraft",
+        prompt: buildWorkItemDraftPrompt(input),
+        outputSchema: WorkItemDraft,
+        modelSelection: input.modelSelection,
+      });
+    }),
     generatePredictedMessage,
     generateCommitMessage,
     generatePrContent,

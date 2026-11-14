@@ -366,6 +366,7 @@ const layerWorkItemsProvided = WorkItems.layer.pipe(
   Layer.provide(
     Layer.mergeAll(layerThreadLaunchProvided, layerThreadManagementProvided, ProjectStore.layer),
   ),
+  Layer.provide(TextGeneration.layer.pipe(Layer.provide(ProviderInstallationGate.layer))),
 );
 const layerScratchThreadPromotionProvided = ScratchThreadPromotion.layer.pipe(
   Layer.provide(

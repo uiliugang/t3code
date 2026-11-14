@@ -4,8 +4,12 @@ import {
   WorkItemCommandInput,
   WorkItemMutationResult,
   WorkItemDiscoverInput,
+  WorkItemDraftInput,
+  WorkItemDraft,
   WorkItemDiscoverResult,
   WorkItemError,
+  WorkItemCreateIssueInput,
+  WorkItemRefreshDeliveryInput,
 } from "./workItem.ts";
 import { WechatError, WechatMutation, WechatSendInput, WechatState } from "./wechat.ts";
 import {
@@ -664,6 +668,9 @@ export const WS_METHODS = {
   workItemsSubscribe: "workItems.subscribe",
   workItemsMutate: "workItems.mutate",
   workItemsDiscover: "workItems.discover",
+  workItemsGenerateDraft: "workItems.generateDraft",
+  workItemsCreateIssue: "workItems.createIssue",
+  workItemsRefreshDelivery: "workItems.refreshDelivery",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
   scheduledTasksSetEnabled: "scheduledTasks.setEnabled",
@@ -2345,6 +2352,21 @@ const WsWorkItemsDiscoverRpc = Rpc.make(WS_METHODS.workItemsDiscover, {
   success: WorkItemDiscoverResult,
   error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
 });
+const WsWorkItemsGenerateDraftRpc = Rpc.make(WS_METHODS.workItemsGenerateDraft, {
+  payload: WorkItemDraftInput,
+  success: WorkItemDraft,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsCreateIssueRpc = Rpc.make(WS_METHODS.workItemsCreateIssue, {
+  payload: WorkItemCreateIssueInput,
+  success: WorkItemMutationResult,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsRefreshDeliveryRpc = Rpc.make(WS_METHODS.workItemsRefreshDelivery, {
+  payload: WorkItemRefreshDeliveryInput,
+  success: WorkItemMutationResult,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
 
 const WsScheduledTasksSubscribeRpc = Rpc.make(WS_METHODS.scheduledTasksSubscribe, {
   payload: ScheduledTaskListInput,
@@ -2505,6 +2527,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkItemsSubscribeRpc,
   WsWorkItemsMutateRpc,
   WsWorkItemsDiscoverRpc,
+  WsWorkItemsGenerateDraftRpc,
+  WsWorkItemsCreateIssueRpc,
+  WsWorkItemsRefreshDeliveryRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,
   WsScheduledTasksSetEnabledRpc,
