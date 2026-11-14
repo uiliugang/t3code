@@ -285,7 +285,11 @@ const make = Effect.gen(function* () {
           ? Effect.succeed(root)
           : projects
               .getByWorkspaceRoot(target)
-              .pipe(Effect.map((project) => (Option.isSome(project) ? target : root))),
+              .pipe(
+                Effect.map((project) =>
+                  Option.isSome(project) ? project.value.workspaceRoot : root,
+                ),
+              ),
       ),
       Effect.orElseSucceed(() => root),
     );

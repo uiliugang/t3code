@@ -9,6 +9,16 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Custom CSS": "自定义 CSS",
+  "Clear CSS": "清除 CSS",
+  "Ln {line}, Col {column}": "第 {line} 行，第 {column} 列",
+  "Tab indents. Shift+Tab unindents. Press Escape, then Tab to leave.":
+    "按 Tab 缩进，按 Shift+Tab 取消缩进。先按 Escape 再按 Tab 离开编辑器。",
+  "Tab moves to the next control.": "按 Tab 移到下一个控件。",
+  "Saved with this theme and included when you export it. Web and desktop only. Rules that load remote files are ignored.":
+    "CSS 随主题保存并包含在导出文件中，仅适用于网页和桌面端。加载远程文件的规则会被忽略。",
+  "“{theme}” has different custom CSS. Use the same CSS or pick another name.":
+    "“{theme}”包含不同的自定义 CSS。请使用相同的 CSS，或选择其他名称。",
   "A device wants to connect to {environment}": "有设备请求连接 {environment}",
   "{device}. Approve only if it shows code {code}.":
     "{device}。仅当该设备显示验证码 {code} 时批准。",
@@ -5992,6 +6002,12 @@ const zhCN: Readonly<Record<string, string>> = {
   "{project} to start": "{project}以开始",
   "Add a project to start": "添加项目以开始",
   "or start without a project": "或直接开始，无需项目",
+  "Remove themes from “{collection}”?": "移除“{collection}”中的主题？",
+  "Remove “{theme}”?": "移除“{theme}”？",
+  "Select the variants you want to remove. You can restore them by importing the extension again.":
+    "选择要移除的变体。再次导入扩展即可恢复。",
+  "You can bring it back anytime by importing its JSON file.": "随时导入其 JSON 文件即可恢复。",
+  "Remove theme": "移除主题",
 };
 
 export function translateUi(

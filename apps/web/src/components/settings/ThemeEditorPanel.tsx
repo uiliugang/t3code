@@ -779,7 +779,9 @@ export function ThemeEditorPanel({
 
     if (mergeTarget?.css && css.trim() && mergeTarget.css !== css) {
       setError(
-        `“${mergeTarget.label}” has different custom CSS. Use the same CSS or pick another name.`,
+        t("“{theme}” has different custom CSS. Use the same CSS or pick another name.", {
+          theme: mergeTarget.label,
+        }),
       );
       return;
     }
@@ -1266,13 +1268,14 @@ export function ThemeEditorPanel({
                 onClick={() => setCssOpen(!cssOpen)}
               >
                 {cssOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                Custom CSS
+                {t("Custom CSS")}
               </Button>
               {cssOpen ? (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Saved with this theme and included when you export it. Web and desktop only.
-                    Rules that load remote files are ignored.
+                    {t(
+                      "Saved with this theme and included when you export it. Web and desktop only. Rules that load remote files are ignored.",
+                    )}
                   </p>
                   <ThemeCssEditor value={css} onChange={setCss} />
                 </>

@@ -1846,7 +1846,7 @@ const make = Effect.gen(function* () {
         const changes = yield* localChangesReason(worktreePath, settings);
         if (changes !== null) return keep(changes);
         const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
-        if (!eligible) {
+        if (!eligible && thread.branch !== null) {
           const integration = yield* integrationReason(
             worktreePath,
             path.resolve(project.workspaceRoot),
