@@ -72,6 +72,7 @@ const APPLICATION_SERVER_SETTINGS_KEYS = [
   "hideMergedRemoteBranches",
   "autoDeleteMergedBranches",
   "worktreeSubmodules",
+  "worktreeSharedDependencies",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
   "sidebarAutoSettleKeepPullRequests",

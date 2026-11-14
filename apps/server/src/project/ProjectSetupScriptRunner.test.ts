@@ -6,6 +6,7 @@ import {
   TerminalNotRunningError,
   type TerminalEvent,
   type TerminalSessionSnapshot,
+  type ServerSettings as ServerSettingsValue,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -44,16 +45,21 @@ const makeHarness = Effect.fn(function* (options: {
   readonly history?: string;
   readonly opening?: Deferred.Deferred<void>;
   readonly shell?: string | null;
+  readonly settings?: Partial<ServerSettingsValue>;
 }) {
   const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const writes = yield* Queue.unbounded<string>();
   const outputLines = yield* Queue.unbounded<string>();
+  const opened = yield* Queue.unbounded<Record<string, string> | undefined>();
   const terminals = Layer.mock(TerminalManager.TerminalManager)({
-    open: () =>
+    open: (input) =>
       (options.opening
         ? Deferred.succeed(options.opening, undefined).pipe(Effect.andThen(Effect.never))
         : Effect.void
-      ).pipe(Effect.as(openSnapshot(options.history ?? ""))),
+      ).pipe(
+        Effect.andThen(Queue.offer(opened, input.env)),
+        Effect.as(openSnapshot(options.history ?? "")),
+      ),
     getShell: () =>
       options.shell === null
         ? Effect.fail(new TerminalNotRunningError({ threadId, terminalId }))
@@ -75,7 +81,7 @@ const makeHarness = Effect.fn(function* (options: {
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadShell: () => Effect.succeed(null),
         }),
-        ServerSettings.layerTest(),
+        ServerSettings.layerTest(options.settings),
         NodeCrypto.layer,
       ),
     ),
@@ -104,7 +110,7 @@ const makeHarness = Effect.fn(function* (options: {
   });
   const emit = (terminalEvent: TerminalEvent) =>
     Effect.forEach([...listeners], (listener) => listener(terminalEvent), { discard: true });
-  return { start, listeners, writes, outputLines, emit };
+  return { start, listeners, writes, outputLines, opened, emit };
 });
 
 const setup = Effect.fn(function* (
@@ -122,6 +128,35 @@ const setup = Effect.fn(function* (
 });
 
 describe("ProjectSetupScriptRunner", () => {
+  it.effect("uses shared dependencies by default and honors environment and project opt-outs", () =>
+    Effect.gen(function* () {
+      for (const [settings, expected] of [
+        [{}, "global"],
+        [{ worktreeSharedDependencies: false }, "project"],
+        [
+          {
+            projectSettingsOverrides: {
+              [ProjectId.make("project-1")]: { worktreeSharedDependencies: false },
+            },
+          },
+          "project",
+        ],
+        [
+          {
+            worktreeSharedDependencies: false,
+            projectSettingsOverrides: {
+              [ProjectId.make("project-1")]: { worktreeSharedDependencies: true },
+            },
+          },
+          "global",
+        ],
+      ] as const) {
+        const harness = yield* makeHarness({ settings });
+        yield* harness.start;
+        expect((yield* Queue.take(harness.opened))?.PNPM_CONFIG_VIRTUAL_STORE_TYPE).toBe(expected);
+      }
+    }),
+  );
   it.effect("skips an automatic script outside its selected repository scope", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ repositoryRootIds: ["backend"] });

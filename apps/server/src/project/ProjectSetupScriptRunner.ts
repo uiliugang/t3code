@@ -19,6 +19,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import { worktreeDependencyEnvironment } from "../workspace/worktreeDependencyEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectService from "./ProjectService.ts";
@@ -463,6 +464,7 @@ export const make = Effect.gen(function* () {
         project: { cwd: target?.sourcePath ?? project.workspaceRoot },
         worktreePath: input.worktreePath,
       }),
+      ...(input.worktreePath ? worktreeDependencyEnvironment(settings, project.id) : {}),
       // Before client attachment, truecolor probes wait for terminal replies nobody can send.
       COLORTERM: "",
     };

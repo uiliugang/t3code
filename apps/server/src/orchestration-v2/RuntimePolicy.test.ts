@@ -11,6 +11,7 @@ import {
   ProviderInstanceId,
   type RuntimeMode,
   type ServerProvider,
+  type ServerSettings as ServerSettingsValue,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -90,9 +91,12 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
     },
   }) as unknown as ProviderInstance;
 
-const layerWithPolicy = (policy?: ManagedPolicySummary) =>
+const layerWithPolicy = (
+  policy?: ManagedPolicySummary,
+  settings: Partial<ServerSettingsValue> = {},
+) =>
   RuntimePolicy.layerFromProjectStore.pipe(
-    Layer.provide(ServerSettings.layerTest({}, policy)),
+    Layer.provide(ServerSettings.layerTest(settings, policy)),
     Layer.provide(
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
         getInstance: (instanceId) => Effect.succeed(providerInstanceFor(instanceId)),
@@ -127,6 +131,34 @@ const layerWithPolicy = (policy?: ManagedPolicySummary) =>
   );
 
 const layerTest = layerWithPolicy();
+
+it.effect.each([
+  { settings: {}, mode: "global" },
+  { settings: { worktreeSharedDependencies: false }, mode: "project" },
+  {
+    settings: {
+      worktreeSharedDependencies: false,
+      projectSettingsOverrides: { [projectId]: { worktreeSharedDependencies: true } },
+    },
+    mode: "global",
+  },
+])("resolves worktree install environment as $mode", ({ settings, mode }) =>
+  Effect.gen(function* () {
+    const policy = yield* RuntimePolicy.RuntimePolicyV2;
+    const now = yield* DateTime.now;
+    const thread = makeThread({ now, worktreePath: null });
+    const workspace = workspaceFixture({ projectId });
+    for (const bound of [
+      { ...thread, worktreePath: "/worktree" },
+      { ...thread, workspace },
+    ]) {
+      const resolved = yield* policy.resolve({ thread: bound, modelSelection });
+      assert.deepEqual(resolved.environment, { PNPM_CONFIG_VIRTUAL_STORE_TYPE: mode });
+    }
+    const ordinary = yield* policy.resolve({ thread, modelSelection });
+    assert.isUndefined(ordinary.environment);
+  }).pipe(Effect.provide(layerWithPolicy(undefined, settings))),
+);
 
 it.layer(layerTest)("RuntimePolicyV2", (it) => {
   it.effect("keeps a task's bound directories when project defaults change", () =>

@@ -111,6 +111,7 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "hideMergedRemoteBranches",
     "autoDeleteMergedBranches",
     "worktreeSubmodules",
+    "worktreeSharedDependencies",
     "branchNamingMode",
     "branchNamePrefix",
     "branchNameInstructions",
@@ -568,6 +569,17 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                   />
                 </SettingsSection>
                 <SettingsSection title={t("Creation")}>
+                  <SettingsSwitchRow
+                    icon="arrow.triangle.branch"
+                    label={t("Shared dependencies")}
+                    subtitle={managedSubtitle(
+                      "worktreeSharedDependencies",
+                      "Share pnpm packages across worktrees while keeping dependency versions independent. Applies to setup scripts and new terminals; reinstall dependencies to change existing worktrees.",
+                    )}
+                    value={uniform("worktreeSharedDependencies")}
+                    disabled={disabledFor("worktreeSharedDependencies")}
+                    onValueChange={(value) => write({ worktreeSharedDependencies: value })}
+                  />
                   <SettingsSwitchRow
                     icon="arrow.triangle.branch"
                     label={t("Start from remote")}

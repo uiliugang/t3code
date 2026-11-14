@@ -27,10 +27,12 @@ a new browser.
 
 Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Code and Codespaces setup.
 
-The Setup Worktree action reuses pnpm's global virtual store while keeping each worktree's
+Installs default to pnpm's global virtual store while keeping each worktree's
 workspace links independent. It does not share the main checkout's `node_modules`. Packages in
 that store are shared writable cache entries; do not patch installed dependency files in place.
-For tools that require the traditional per-project layout, reinstall with
+The **Shared dependencies** setting under **Settings → Worktrees → Creation** controls setup
+scripts and new T3 terminals, including project overrides. Reinstall to apply a changed setting.
+For installs outside T3 that require the traditional per-project layout, use
 `vp i --frozen-lockfile -- --config.virtual-store-type=project`.
 
 ## Forge mirror (optional)

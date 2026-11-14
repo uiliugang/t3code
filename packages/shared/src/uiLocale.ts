@@ -2109,6 +2109,9 @@ const zhCN: Readonly<Record<string, string>> = {
   "New threads": "新会话",
   Submodules: "子模块",
   "Start from remote": "从远程分支开始",
+  "Shared dependencies": "共享依赖",
+  "Share pnpm packages across worktrees while keeping dependency versions independent. Applies to setup scripts and new terminals; reinstall dependencies to change existing worktrees.":
+    "在工作树之间共享 pnpm 依赖包，各自保留独立的依赖版本。对初始化脚本和新终端生效；现有工作树需重新安装依赖才能切换。",
   "Add project starts in": "添加项目的起始目录",
   "Unpin confirmation": "取消置顶前确认",
   "Archive confirmation": "归档前确认",
