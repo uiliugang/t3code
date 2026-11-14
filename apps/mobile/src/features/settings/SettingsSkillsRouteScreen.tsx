@@ -963,7 +963,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
         contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-4 px-5 pt-4 pb-8"
       >
-        {copying && showCopy && (
+        {copying && (
           <SkillCopySheet
             environmentId={environmentId}
             items={[

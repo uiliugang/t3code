@@ -1755,7 +1755,7 @@ function EnvironmentSkills({
   };
   return (
     <div className="min-w-0 space-y-4">
-      {copying && showCopy && (
+      {copying && (
         <SkillCopyDialog
           environmentId={environmentId}
           items={[

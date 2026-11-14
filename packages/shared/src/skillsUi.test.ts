@@ -144,6 +144,13 @@ describe("skill management views", () => {
     expect(skillRows(sourced, "", "all", true, "").rows.map((row) => row.name)).toEqual([
       "external",
     ]);
+    const inheritedId = {
+      ...snapshot,
+      skills: [{ ...skill, sourceId: "constructor" }],
+      discovered: [],
+    };
+    expect(skillRows(inheritedId).sourceCounts["constructor"]).toBe(1);
+    expect(skillRows(inheritedId, "", "all", false, "constructor").rows).toHaveLength(1);
   });
 
   it("groups a package by its source while retaining independent children", () => {

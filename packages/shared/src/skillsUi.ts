@@ -86,7 +86,7 @@ export function skillRows(
   const rows = [...managed, ...discovered];
   const rowSource = (row: (typeof rows)[number]) =>
     row.kind === "managed" ? row.skill.sourceId : (row.skill.origin?.sourceId ?? "");
-  const sourceCounts: Record<string, number> = {};
+  const sourceCounts: Record<string, number> = Object.create(null);
   for (const row of rows) {
     const id = rowSource(row);
     sourceCounts[id] = (sourceCounts[id] ?? 0) + 1;
