@@ -36,7 +36,7 @@ const layerTest = Store.layer.pipe(
   Layer.provideMerge(NodeCrypto.layer),
 );
 
-const connection: Store.Connection = {
+const connection = {
   generation: "test",
   botId: "bot",
   userId: "user",
@@ -50,7 +50,7 @@ const connection: Store.Connection = {
   cursor: "",
   sequence: 0,
   enabledAt: 0,
-};
+} satisfies Store.Connection;
 const records = {
   thread: {
     id: connection.threadId,
@@ -221,7 +221,23 @@ const setup = Effect.fn("WechatBridgeTest.setup")(function* (options?: {
           runtimeRequests,
         })),
       ),
-    listProjectThreads: () => Effect.succeed([]),
+    listProjectThreads: () =>
+      Effect.succeed([
+        {
+          id: connection.threadId,
+          projectId: connection.projectId,
+          title: "Test thread",
+          lineage: {
+            parentThreadId: null,
+            relationshipToParent: null,
+            rootThreadId: connection.threadId,
+          },
+          settledOverride: null,
+          settledAt: null,
+          snoozedUntil: null,
+          updatedAt: DateTime.makeUnsafe(0),
+        },
+      ]),
     sendToThread: (input) => Queue.offer(dispatched, input).pipe(Effect.as({} as never)),
   });
   const eventLayer = Layer.mock(Events.EventSinkV2)({
@@ -267,6 +283,15 @@ it.effect("rejects other senders and dispatches a durable message once across re
       const input = yield* Queue.take(fixture.dispatched);
       assert.equal(input.text, "authorized");
       assert.equal(input.commandId, "wechat:test:2");
+      const snapshot = yield* bridge.subscribe.pipe(Stream.runHead);
+      assert.isTrue(Option.isSome(snapshot));
+      assert.deepEqual(Option.getOrUndefined(snapshot)?.targets, [
+        {
+          threadId: connection.threadId,
+          projectId: connection.projectId,
+          title: "Test thread",
+        },
+      ]);
       assert.isTrue(
         new TextDecoder().decode(fixture.bytes.get("wechat-test")).includes("new-context"),
       );

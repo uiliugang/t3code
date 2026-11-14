@@ -1,5 +1,7 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
 import {
+  type ConnectionTarget,
   type EnvironmentConnectionPresentation,
   RelayConnectionRegistration,
   RelayConnectionTarget,
@@ -24,6 +26,7 @@ import * as Option from "effect/Option";
 import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 
 import { environmentCatalog } from "~/connection/catalog";
+import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { cn } from "~/lib/utils";
 import { relayEnvironmentDiscovery } from "~/state/relay";
 import { useRelayEnvironmentDiscovery } from "~/state/environments";
@@ -49,6 +52,7 @@ function discoveredCompatibilityError(
 
 export interface SavedCloudEnvironmentConnection {
   readonly environmentId: EnvironmentId;
+  readonly entry: { readonly target: ConnectionTarget };
   readonly connection: EnvironmentConnectionPresentation;
   readonly relayManaged: boolean;
   readonly serverConfig?: Pick<ServerConfig, "environment"> | null;
@@ -89,6 +93,7 @@ export function CloudEnvironmentConnectRows({
     readonly onChange: (environmentId: EnvironmentId, selected: boolean) => void;
   };
 }) {
+  const t = useUiTranslation();
   const environmentsState = useRelayEnvironmentDiscovery();
   const registerEnvironment = useAtomCommand(environmentCatalog.register, {
     reportFailure: false,
@@ -120,6 +125,11 @@ export function CloudEnvironmentConnectRows({
   const savedWithoutRelay = new Set(
     savedEnvironments
       .filter((environment) => !environment.relayManaged)
+      .map((environment) => environment.environmentId),
+  );
+  const desktopLocalIds = new Set(
+    savedEnvironments
+      .filter((environment) => isDesktopLocalConnectionTarget(environment.entry.target))
       .map((environment) => environment.environmentId),
   );
 
@@ -189,6 +199,7 @@ export function CloudEnvironmentConnectRows({
   // Omit machines saved over other routes; onboarding selection must not add a T3 Connect route.
   const isVisibleEnvironment = (environmentId: EnvironmentId) =>
     environmentId !== primaryEnvironmentId &&
+    !desktopLocalIds.has(environmentId) &&
     (showSavedEnvironments || !savedById.has(environmentId)) &&
     !(selection && savedWithoutRelay.has(environmentId));
   const visibleEnvironments = [...environmentsState.environments.values()].filter(
@@ -269,7 +280,7 @@ export function CloudEnvironmentConnectRows({
     };
   }, [shouldRefreshWhileEmpty]);
 
-  const standalone = showSavedEnvironments || savedEnvironments.length === 0;
+  const standalone = showSavedEnvironments || savedEnvironments.length === desktopLocalIds.size;
 
   if (
     !refreshWhileEmpty &&
@@ -314,13 +325,16 @@ export function CloudEnvironmentConnectRows({
     const unsupportedDetail =
       compatibilityError?.message ?? savedEnvironment?.connection.error ?? null;
     const savedConnection = unsupported
-      ? presentSavedCloudEnvironmentConnection({
-          phase: "unsupported",
-          error: unsupportedDetail,
-          traceId: null,
-        })
+      ? presentSavedCloudEnvironmentConnection(
+          {
+            phase: "unsupported",
+            error: unsupportedDetail,
+            traceId: null,
+          },
+          t,
+        )
       : savedEnvironment
-        ? presentSavedCloudEnvironmentConnection(savedEnvironment.connection)
+        ? presentSavedCloudEnvironmentConnection(savedEnvironment.connection, t)
         : null;
     const relayStatus = status === undefined ? null : Option.getOrNull(status);
     const descriptor = relayStatus?.descriptor;
@@ -460,7 +474,9 @@ export function CloudEnvironmentConnectRows({
               className={cn(
                 "mt-1 truncate text-xs",
                 savedConnection?.tone === "error" ||
-                  (savedConnection?.tone === "connecting" && savedEnvironment?.connection.error) ||
+                  (savedConnection?.tone === "connecting" &&
+                    savedEnvironment?.connection.error &&
+                    !savedEnvironment.connection.awaitingApproval) ||
                   (savedConnection === null && availability === "error")
                   ? "text-destructive"
                   : "text-muted-foreground",

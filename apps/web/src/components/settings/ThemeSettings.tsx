@@ -386,7 +386,7 @@ function ThemeLibraryCard({
                         }
                       />
                       <TooltipPopup>
-                        {variantNavigation ? "Remove themes" : "Remove theme"}
+                        {variantNavigation ? "Remove themes" : t("Remove theme")}
                       </TooltipPopup>
                     </Tooltip>
                   ) : null}
@@ -897,13 +897,17 @@ export function ThemeLibrary({
           <AlertDialogHeader>
             <AlertDialogTitle>
               {canRemoveCollection
-                ? `Remove themes from “${removeDialogCollectionLabel}”?`
-                : `Remove “${removeDialogTheme?.label}”?`}
+                ? t("Remove themes from “{collection}”?", {
+                    collection: removeDialogCollectionLabel ?? "",
+                  })
+                : t("Remove “{theme}”?", { theme: removeDialogTheme?.label ?? "" })}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {canRemoveCollection
-                ? "Select the variants you want to remove. You can restore them by importing the extension again."
-                : "You can bring it back anytime by importing its JSON file."}
+                ? t(
+                    "Select the variants you want to remove. You can restore them by importing the extension again.",
+                  )
+                : t("You can bring it back anytime by importing its JSON file.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {canRemoveCollection ? (
@@ -965,7 +969,7 @@ export function ThemeLibrary({
             >
               {canRemoveCollection
                 ? `Remove selected${themeIdsToRemove.length > 0 ? ` (${themeIdsToRemove.length})` : ""}`
-                : "Remove theme"}
+                : t("Remove theme")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>

@@ -7,6 +7,7 @@ import {
   type OrchestrationV2SubagentWorkflow,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
 import {
   deriveWorkflowGroups,
@@ -14,6 +15,7 @@ import {
   projectedSubagentsToRuntime,
   resolveWorkflowOpening,
   workflowMemberModelSelection,
+  waitingOnSubagentsLabel,
 } from "./subagentRuntime.ts";
 import { resolveSubagentMetadata } from "./subagentDisplay.ts";
 import { formatSubagentEffort } from "./threadExecution.ts";
@@ -50,6 +52,18 @@ const member = (
 
 const groupsOf = (subagents: ReadonlyArray<ProjectedSubagent>) =>
   deriveWorkflowGroups(projectedSubagentsToRuntime(subagents));
+
+it("switches subagent waiting counts between the current UI languages", () => {
+  for (const [locale, expected] of [
+    ["zh-CN", ["正在等待一个子代理", "正在等待 2 个子代理"]],
+    ["en", ["Waiting on a subagent", "Waiting on 2 subagents"]],
+    ["zh-CN", ["正在等待一个子代理", "正在等待 2 个子代理"]],
+  ] as const) {
+    expect(
+      [1, 2].map((count) => waitingOnSubagentsLabel(count, translateUi.bind(null, locale))),
+    ).toEqual(expected);
+  }
+});
 
 describe("projectedSubagentsToRuntime workflow expansion", () => {
   it("uses a settled member's wall-clock completion separately from its execution duration", () => {

@@ -25,8 +25,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as WorkItems from "./WorkItemService.ts";
+import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as DeliveryAutomation from "./DeliveryAutomationService.ts";
 import * as Issues from "../sourceControl/IssueService.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
@@ -42,6 +44,7 @@ import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
 const projectId = ProjectId.make("project:tasks");
 const now = "2026-11-09T01:00:00.000Z";
+const candidatePreview = "Visible source description. ".repeat(25);
 const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "test" };
 const participant = {
   assignment: "Implement the feature",
@@ -108,6 +111,9 @@ function setup(
   const stopped: ThreadId[] = [];
   const failures = { shell: false, records: false, launch: false };
   const dependencies = Layer.mergeAll(
+    Layer.mock(ThreadSearch.ThreadSearch)({
+      latestMessagePreview: () => Effect.succeed(candidatePreview.slice(0, 500)),
+    }),
     Layer.mock(TextGeneration.TextGeneration)({
       generateWorkItemDraft: () =>
         Effect.succeed({
@@ -162,8 +168,40 @@ function setup(
         failures.records
           ? Effect.fail(new Orchestrator.OrchestratorProjectionError({ threadId: id }))
           : Effect.succeed(projections.get(id) ?? projection(id)),
-      listProjectThreads: () =>
-        Effect.succeed([...projections.values()].map(threadShellFromProjection)),
+      listProjectThreads: (input) =>
+        Effect.succeed(
+          [...projections.values()]
+            .map(threadShellFromProjection)
+            .filter(
+              (thread) =>
+                thread.archivedAt === null &&
+                thread.deletedAt === null &&
+                (input.projectId === undefined || thread.projectId === input.projectId) &&
+                thread.lineage.sideChat !== true &&
+                (input.includeSubagents || thread.lineage.relationshipToParent !== "subagent"),
+            )
+            .map(
+              ({
+                id,
+                projectId,
+                title,
+                lineage,
+                settledOverride,
+                settledAt,
+                snoozedUntil,
+                updatedAt,
+              }) => ({
+                id,
+                projectId,
+                title,
+                lineage,
+                settledOverride,
+                settledAt,
+                snoozedUntil,
+                updatedAt,
+              }),
+            ),
+        ),
       interruptThread: (input) =>
         Effect.sync(() => {
           stopped.push(input.threadId);
@@ -750,16 +788,87 @@ it.effect(
   () => {
     const test = setup();
     return Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(now));
       const service = yield* WorkItems.WorkItemService;
       const sourceId = ThreadId.make("source");
-      test.projections.set(sourceId, projection(sourceId));
+      const at = DateTime.makeUnsafe(now);
+      const source = projection(sourceId);
+      const userMessage = {
+        createdBy: "user",
+        creationSource: "web",
+        id: MessageId.make("discovery-request"),
+        threadId: sourceId,
+        runId: null,
+        nodeId: null,
+        role: "user",
+        text: "Implement the requested behavior",
+        attachments: [],
+        streaming: false,
+        createdAt: at,
+        updatedAt: at,
+      } as const;
+      const current = {
+        ...source,
+        thread: { ...source.thread, title: "Candidate title", updatedAt: at },
+        messages: [userMessage],
+        updatedAt: at,
+      };
+      test.projections.set(sourceId, current);
+      const oldId = ThreadId.make("old-source");
+      const old = projection(oldId);
+      test.projections.set(oldId, {
+        ...old,
+        thread: { ...old.thread, updatedAt: DateTime.makeUnsafe(Date.parse(now) - 40 * 86400000) },
+        updatedAt: DateTime.makeUnsafe(Date.parse(now) - 40 * 86400000),
+      });
       const discovered = yield* service.discover({ projectId });
-      assert.equal(discovered.candidates.length, 1);
+      assert.deepEqual(discovered.candidates, [
+        {
+          id: sourceId,
+          projectId,
+          title: "Candidate title",
+          description: candidatePreview.slice(0, 500),
+          status: "running",
+          updatedAt: now,
+        },
+      ]);
       assert.equal(
         (yield* service.discover({ projectId, dismissThreadId: sourceId })).candidates.length,
         0,
       );
       assert.equal((yield* service.discover({ projectId })).candidates.length, 0);
+      const noticeAt = DateTime.makeUnsafe(Date.parse(now) + 1000);
+      test.projections.set(sourceId, {
+        ...current,
+        thread: { ...current.thread, updatedAt: noticeAt },
+        messages: [
+          userMessage,
+          {
+            ...userMessage,
+            id: MessageId.make("agent-notice"),
+            createdBy: "agent",
+            creationSource: "server",
+            updatedAt: noticeAt,
+          },
+        ],
+        updatedAt: noticeAt,
+      });
+      assert.deepEqual((yield* service.discover({ projectId })).candidates, []);
+      const requestAt = DateTime.makeUnsafe(Date.parse(now) + 2000);
+      test.projections.set(sourceId, {
+        ...current,
+        thread: { ...current.thread, updatedAt: requestAt },
+        messages: [
+          userMessage,
+          { ...userMessage, id: MessageId.make("new-request"), updatedAt: requestAt },
+        ],
+        runs: current.runs.map((run) => ({ ...run, status: "completed", completedAt: requestAt })),
+        updatedAt: requestAt,
+      });
+      const refreshed = (yield* service.discover({ projectId })).candidates;
+      assert.equal(refreshed.length, 1);
+      assert.equal(refreshed[0]?.updatedAt, DateTime.formatIso(requestAt));
+      assert.equal(refreshed[0]?.status, "completed");
       const { item } = yield* create(service);
       const started = yield* service.mutate({
         type: "start",

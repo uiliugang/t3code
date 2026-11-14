@@ -163,7 +163,7 @@ export function ThreadMarkdownImageView(props: {
             {failed ? (
               <Text className="px-3 text-center text-xs text-foreground-muted">
                 {props.unavailableDetail
-                  ? t("Image unavailable. {detail}", { detail: props.unavailableDetail })
+                  ? t("Image unavailable. {detail}", { detail: t(props.unavailableDetail) })
                   : t("Image unavailable")}
               </Text>
             ) : (

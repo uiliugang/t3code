@@ -342,6 +342,16 @@ it.layer(layerTest)("ThreadSearch", (it) => {
           streaming: true,
         }),
         message(assistantOnly, "assistant-system", "system", "needle system prompt"),
+        message(assistantOnly, "generated-notice", "user", "needle generated notice", {
+          minute: 3,
+          createdBy: "agent",
+        }),
+        message(assistantOnly, "async-answer:hidden", "user", "needle hidden answer", {
+          minute: 4,
+        }),
+        message(assistantOnly, "attachment-placeholder", "user", ATTACHMENT_ONLY_BOOTSTRAP_PROMPT, {
+          minute: 5,
+        }),
         thread(ThreadId.make("thread:archived"), project, { archivedAt: at(1) }),
         message(ThreadId.make("thread:archived"), "archived", "user", "needle archived"),
         thread(ThreadId.make("thread:deleted"), project, { deletedAt: at(1) }),
@@ -363,6 +373,16 @@ it.layer(layerTest)("ThreadSearch", (it) => {
       );
       assert.lengthOf((yield* search.search({ query: "needle", limit: 1 })).matches, 1);
       assert.deepEqual((yield* search.search({ query: "ne%le" })).matches, []);
+      assert.equal(yield* search.latestMessagePreview(both), "needle from the answer");
+      assert.equal(yield* search.latestMessagePreview(assistantOnly), "needle in an answer");
+      for (const id of ["thread:archived", "thread:deleted", "thread:orphaned", "thread:missing"]) {
+        assert.equal(yield* search.latestMessagePreview(ThreadId.make(id)), "");
+      }
+      const longPreview = "Long bounded preview. ".repeat(40);
+      yield* projections.apply(
+        message(assistantOnly, "long-preview", "assistant", longPreview, { minute: 10 }),
+      );
+      assert.equal(yield* search.latestMessagePreview(assistantOnly), longPreview.slice(0, 500));
     }),
   );
 

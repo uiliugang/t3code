@@ -64,6 +64,7 @@ export const ConnectionTransientReason = Schema.Literals([
   "relay-unavailable",
   "remote-unavailable",
   "session-pending",
+  "approval-pending",
 ]);
 export type ConnectionTransientReason = typeof ConnectionTransientReason.Type;
 
@@ -87,6 +88,7 @@ export const ConnectionFailureCause = Schema.Literals([
   "relay_error",
   "tunnel_pending",
   "tunnel_not_enabled",
+  "approval_pending",
 ]);
 export type ConnectionFailureCause = typeof ConnectionFailureCause.Type;
 
@@ -109,6 +111,7 @@ export class ConnectionTransientError extends Schema.TaggedError<
   reason: ConnectionTransientReason,
   detail: Schema.String,
   traceId: Schema.optionalKey(Schema.String),
+  verificationCode: Schema.optionalKey(Schema.String),
   ...ConnectionFailureFields,
 }) {
   override get message(): string {

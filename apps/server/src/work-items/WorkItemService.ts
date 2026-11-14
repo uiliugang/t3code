@@ -44,6 +44,7 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import {
   DispatchModeLimit,
   exceededDispatchModeLimit,
@@ -135,6 +136,7 @@ const make = Effect.gen(function* () {
   const digest = yield* Digest.Digest;
   const launches = yield* ThreadLaunchService.ThreadLaunchService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
+  const threadSearch = yield* ThreadSearch.ThreadSearch;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const settings = yield* ServerSettings.ServerSettingsService;
@@ -787,23 +789,25 @@ const make = Effect.gen(function* () {
       ]),
     );
     const candidates: WorkItemCandidate[] = [];
-    for (const thread of allThreads) {
+    for (const listed of allThreads) {
+      if (bound.has(listed.id) || DateTime.toEpochMillis(listed.updatedAt) < cutoff) continue;
+      const thread = yield* threads.getThreadShell(listed.id);
+      if (
+        thread === null ||
+        thread.projectId !== input.projectId ||
+        thread.deletedAt !== null ||
+        thread.archivedAt !== null
+      )
+        continue;
       const sourceAt = DateTime.formatIso(
         thread.latestUserAuthoredMessageAt ?? thread.latestUserMessageAt ?? thread.updatedAt,
       );
-      if (
-        thread.deletedAt !== null ||
-        thread.archivedAt !== null ||
-        bound.has(thread.id) ||
-        DateTime.toEpochMillis(thread.updatedAt) < cutoff ||
-        ignored.get(thread.id) === sourceAt
-      )
-        continue;
+      if (ignored.get(thread.id) === sourceAt) continue;
       candidates.push({
         id: thread.id,
         projectId: thread.projectId,
         title: thread.title,
-        description: thread.latestVisibleMessage?.text.slice(0, 500) ?? "",
+        description: (yield* threadSearch.latestMessagePreview(thread.id)).slice(0, 500),
         status: thread.status,
         updatedAt: sourceAt,
       });

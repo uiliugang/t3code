@@ -75,7 +75,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100])(
+  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102])(
     "upgrades a database at exactly %s",
     (id) =>
       Effect.gen(function* () {
@@ -96,6 +96,13 @@ describe("runMigrations", () => {
             [{ text: "existing delivery", request_json: null }],
           );
         }
+        const pairingColumns = yield* sql<{ name: string }>`PRAGMA table_info(auth_pairing_links)`;
+        assert.includeMembers(
+          pairingColumns.map(({ name }) => name),
+          ["requires_connect_approval", "requested_client_json", "connect_denied"],
+        );
+        const approvedDevices = yield* sql`SELECT * FROM auth_connect_devices`;
+        assert.deepStrictEqual(approvedDevices, []);
         assert.isAbove(yield* v2TableCount, 0);
         const taskColumns = yield* sql<{
           readonly name: string;

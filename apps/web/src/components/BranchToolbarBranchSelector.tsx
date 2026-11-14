@@ -27,6 +27,7 @@ import { GitBranchIcon } from "lucide-react";
 import {
   useEffect,
   useContext,
+  useEffectEvent,
   useImperativeHandle,
   useOptimistic,
   useState,
@@ -38,6 +39,7 @@ import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { readLocalApi } from "../localApi";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { usePaginatedBranches } from "../state/queries";
+import { useProjectClone } from "../state/projectClones";
 import { readThreadShell, useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -66,6 +68,7 @@ import {
   resolveBranchToolbarPrBranch,
   resolveBranchSelectionTarget,
   resolveBranchToolbarValue,
+  resolveDefaultWorktreeBaseBranch,
   resolveDraftEnvModeAfterBranchChange,
   resolveEffectiveEnvMode,
   sanitizeNewRefName,
@@ -351,7 +354,6 @@ export function BranchToolbarBranchSelector({
   const createBranchItemValue = canCreateBranch
     ? `__create_new_branch__:${trimmedBranchQuery}`
     : null;
-  const defaultBranchName = refs.find((refName) => refName.isDefault)?.name ?? null;
   const pickerCreateBranchItemValue = hasExactBranchMatch ? null : createBranchItemValue;
   const branchPickerItems = [
     ...(checkoutPullRequestItemValue ? [checkoutPullRequestItemValue] : []),
@@ -631,12 +633,21 @@ export function BranchToolbarBranchSelector({
 
   const worktreeBaseBranchCandidate = isInitialBranchesLoadPending
     ? null
-    : isSelectingWorktreeBase && mainBranchOnly
-      ? (defaultBranchName ??
-        refs.find((ref) => ref.name === "main")?.name ??
-        refs[0]?.name ??
-        null)
-      : (defaultBranchName ?? currentGitBranch);
+    : (resolveDefaultWorktreeBaseBranch(refs) ??
+      (isSelectingWorktreeBase && mainBranchOnly ? (refs[0]?.name ?? null) : null));
+
+  const projectCloneDone = useProjectClone(activeProjectRef)?.phase === "done";
+  const refreshRefsAfterClone = useEffectEvent(() => {
+    if (branchCwd === null) return;
+    void refreshLocalStatusForPicker({
+      environmentId,
+      input: { cwd: branchCwd, localOnly: true },
+    });
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refs listed while the project was cloning are empty; reload them past the server's snapshot when the clone finishes
+  useEffect(() => {
+    if (projectCloneDone) refreshRefsAfterClone();
+  }, [projectCloneDone]);
   const activeWorktreeBaseAllowed =
     !mainBranchOnly ||
     (activeThreadBranch !== null &&
@@ -917,6 +928,8 @@ export function BranchToolbarBranchSelector({
             }
             className="min-w-0 max-w-full active:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
+            // NVDA browse mode re-reads a combobox when its attributes change, not when its text does.
+            aria-label={`Branch: ${triggerLabel}`}
           >
             <GitBranchIcon
               className={cn(
@@ -925,7 +938,12 @@ export function BranchToolbarBranchSelector({
               )}
             />
             <ComposerContextLabel displayMode={displayMode}>
-              <MiddleTruncate value={triggerLabel} variant="cap-aligned" className="w-full" />
+              <MiddleTruncate
+                value={triggerLabel}
+                variant="cap-aligned"
+                className="w-full"
+                aria-hidden
+              />
             </ComposerContextLabel>
           </ComboboxTrigger>
         </span>

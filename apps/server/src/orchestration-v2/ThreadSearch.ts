@@ -278,6 +278,7 @@ export interface ThreadSearchHit {
 export class ThreadSearch extends Context.Service<
   ThreadSearch,
   {
+    readonly latestMessagePreview: (threadId: ThreadId) => Effect.Effect<string, ThreadSearchError>;
     /** Message text matches, for clients that rank their own thread list. */
     readonly search: (
       input: OrchestrationSearchThreadsInput,
@@ -343,6 +344,28 @@ export const make = Effect.gen(function* () {
         ${latestUserMessageAt(sql)} AS "latestUserMessageAt"
       FROM orchestration_v2_projection_threads AS threads
       WHERE threads.thread_id IN (SELECT value FROM json_each(${threadIds}))
+    `,
+  });
+
+  const messagePreviewRows = SqlSchema.findAll({
+    Request: ThreadId,
+    Result: Schema.Struct({ text: Schema.String }),
+    execute: (threadId) => sql`
+      SELECT substr(${messageSearchText(sql)}, 1, 500) AS text
+      FROM orchestration_v2_projection_messages AS messages
+      INNER JOIN orchestration_v2_projection_threads AS threads
+        ON threads.thread_id = messages.thread_id
+      INNER JOIN projection_projects AS projects
+        ON projects.project_id = threads.project_id
+      WHERE messages.thread_id = ${threadId}
+        AND threads.deleted_at IS NULL
+        AND threads.archived_at IS NULL
+        AND projects.deleted_at IS NULL
+        AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
+        AND ${indexedMessageCondition(sql)}
+        AND messages.message_id NOT LIKE 'async-answer:%'
+      ORDER BY messages.created_at DESC, messages.message_id DESC
+      LIMIT 1
     `,
   });
 
@@ -435,6 +458,13 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
+
+  const latestMessagePreview = Effect.fn("ThreadSearch.latestMessagePreview")(function* (
+    threadId: ThreadId,
+  ) {
+    const rows = yield* read(messagePreviewRows(threadId));
+    return rows[0]?.text ?? "";
+  });
 
   // A project scope applies before ranking, so other projects' stronger hits
   // cannot use up the limit.
@@ -653,7 +683,7 @@ export const make = Effect.gen(function* () {
     ];
   });
 
-  return ThreadSearch.of({ search, searchThreads, searchOlderSettled });
+  return ThreadSearch.of({ latestMessagePreview, search, searchThreads, searchOlderSettled });
 });
 
 export const layer = Layer.effect(ThreadSearch, make);

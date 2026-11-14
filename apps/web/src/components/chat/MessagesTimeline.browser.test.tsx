@@ -303,6 +303,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("keeps the worked-for heading in place when expanded at the bottom", async () => {
+    setup();
     const props = baseProps();
     const runId = RunId.make("completed-run");
     const container = document.createElement("div");
@@ -348,6 +349,7 @@ describe("MessagesTimeline work rows", () => {
   });
 
   it("keeps following a streaming turn after a heading is expanded at the bottom", async () => {
+    setup();
     const props = { ...baseProps(), isWorking: true };
     const runId = RunId.make("live-run");
     const container = document.createElement("div");

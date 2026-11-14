@@ -4,6 +4,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasSavedBearerRoute, hostFreezeNotice } from "@t3tools/client-runtime/connection";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
@@ -26,15 +27,21 @@ import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { environmentStatusText } from "./environmentStatusText";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 
-function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
+function connectionStatusLabel(
+  environment: ConnectedEnvironmentSummary,
+  t: UiTranslator,
+): string | null {
   if (!environment.isEnabled && environment.connectionState !== "unsupported") {
-    return "Off";
+    return t("Off");
   }
-  return environmentStatusText({
-    phase: environment.connectionState,
-    error: environment.connectionError,
-    traceId: environment.connectionErrorTraceId,
-  });
+  return environmentStatusText(
+    {
+      phase: environment.connectionState,
+      error: environment.connectionError,
+      traceId: environment.connectionErrorTraceId,
+    },
+    t,
+  );
 }
 
 export function ConnectionEnvironmentRow(props: {
@@ -66,9 +73,13 @@ export function ConnectionEnvironmentRow(props: {
     presentation,
   );
   const enabled = props.environment.isEnabled && !unsupported;
-  const statusLabel = connectionStatusLabel(props.environment);
+  const awaitingApproval = enabled && presentation?.connection.awaitingApproval === true;
+  const statusLabel = awaitingApproval
+    ? environmentStatusText(presentation.connection, t)
+    : connectionStatusLabel(props.environment, t);
   const statusTraceId = enabled ? props.environment.connectionErrorTraceId : null;
-  const hasConnectionFailure = enabled && props.environment.connectionError !== null;
+  const hasConnectionFailure =
+    enabled && props.environment.connectionError !== null && !awaitingApproval;
   const freeze = enabled
     ? hostFreezeNotice(props.environment.environmentLabel, serverConfig?.lastEventLoopStall)
     : null;
@@ -133,7 +144,7 @@ export function ConnectionEnvironmentRow(props: {
               {props.environment.displayUrl}
             </Text>
           ) : null}
-          {diagnosis ? (
+          {diagnosis && !awaitingApproval ? (
             <>
               <Text className="text-xs text-danger-foreground">{t(diagnosis.headline)}</Text>
               {connectionState.attempt > 0 ? (
@@ -151,7 +162,7 @@ export function ConnectionEnvironmentRow(props: {
               numberOfLines={props.expanded ? undefined : 1}
               selectable={props.expanded}
             >
-              {t(statusLabel)}
+              {statusLabel}
               {statusTraceId ? (
                 <ConnectionTraceId
                   traceId={statusTraceId}
