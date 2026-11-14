@@ -431,7 +431,10 @@ const makeFaviconWebContents = (options?: {
   const loadURL = vi.fn(async (url: string) => {
     currentUrl = url;
   });
-  const off = vi.fn();
+  const listenerSets = new Map<string, Set<(...args: never[]) => void>>();
+  const off = vi.fn((event: string, listener: (...args: never[]) => void) => {
+    listenerSets.get(event)?.delete(listener);
+  });
   const debuggerOff = vi.fn();
   const webContents = {
     id: options?.id ?? 42,
@@ -449,7 +452,12 @@ const makeFaviconWebContents = (options?: {
     reloadIgnoringCache: vi.fn(),
     loadURL,
     on: vi.fn((event: string, listener: (...args: never[]) => void) => {
-      listeners.set(event, listener);
+      const registered = listenerSets.get(event) ?? new Set();
+      registered.add(listener);
+      listenerSets.set(event, registered);
+      listeners.set(event, (...args) => {
+        for (const current of registered) current(...args);
+      });
     }),
     off,
     ipc: { on: vi.fn(), off: vi.fn() },
@@ -1178,6 +1186,49 @@ describe("PreviewManager", () => {
           operation: "navigate.loadURL",
           cause: { errno: -105 },
         });
+
+        const statuses = yield* Queue.unbounded<PreviewManager.PreviewNavStatus>();
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          state.navStatus.kind === "LoadFailed"
+            ? Queue.offer(statuses, state.navStatus).pipe(Effect.asVoid)
+            : Effect.void,
+        );
+        for (const [errno, code, isMainFrame] of [
+          [-102, "ERR_CONNECTION_REFUSED", true],
+          [-105, "ERR_NAME_NOT_RESOLVED", true],
+          [-202, "ERR_CERT_AUTHORITY_INVALID", true],
+          [-105, "ERR_NAME_NOT_RESOLVED", false],
+        ] as const) {
+          const url = `https://missing.invalid/${code}`;
+          preview.loadURL.mockImplementationOnce(async () => {
+            const failLoad = preview.listeners.get("did-fail-load") as
+              | ((
+                  event: object,
+                  code: number,
+                  description: string,
+                  url: string,
+                  main: boolean,
+                ) => void)
+              | undefined;
+            failLoad?.({}, errno, code, url, isMainFrame);
+            throw loadError(errno, code, url);
+          });
+          const navigated = yield* Effect.exit(manager.navigate("tab_redirect", url));
+          expect(Exit.isSuccess(navigated)).toBe(isMainFrame);
+          if (!isMainFrame) continue;
+          expect(yield* Queue.take(statuses)).toMatchObject({
+            kind: "LoadFailed",
+            url,
+            code: errno,
+            description: code,
+          });
+        }
+        preview.loadURL.mockRejectedValueOnce(new Error("Object has been destroyed"));
+        expect(
+          Exit.isFailure(
+            yield* Effect.exit(manager.navigate("tab_redirect", "https://example.com/destroyed")),
+          ),
+        ).toBe(true);
       }),
     ),
   );

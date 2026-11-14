@@ -2127,22 +2127,39 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       return;
     }
     let unloadPrevented = false;
+    let failedLoadCode: number | undefined;
     const onPreventUnload = () => {
       unloadPrevented = true;
     };
+    const onFailedLoad = (
+      _event: Electron.Event,
+      code: number,
+      _description: string,
+      _validatedUrl: string,
+      isMainFrame: boolean,
+    ) => {
+      if (isMainFrame && code !== -3) failedLoadCode = code;
+    };
     yield* attemptPromise({ operation: "navigate.loadURL", tabId, webContentsId: wc.id }, () => {
       wc.on("will-prevent-unload", onPreventUnload);
+      wc.on("did-fail-load", onFailedLoad);
       return wc.loadURL(url);
     }).pipe(
-      // Blocked unloads and superseding navigations both reject with ERR_ABORTED.
+      // Page failures already reach the tab through did-fail-load; blocked unloads still reject.
       Effect.catchIf(
         (error) =>
           !unloadPrevented &&
           Predicate.hasProperty(error.cause, "errno") &&
-          error.cause.errno === -3,
+          (error.cause.errno === -3 ||
+            (failedLoadCode !== undefined && error.cause.errno === failedLoadCode)),
         () => Effect.void,
       ),
-      Effect.ensuring(Effect.sync(() => wc.off("will-prevent-unload", onPreventUnload))),
+      Effect.ensuring(
+        Effect.sync(() => {
+          wc.off("will-prevent-unload", onPreventUnload);
+          wc.off("did-fail-load", onFailedLoad);
+        }),
+      ),
     );
   });
 
