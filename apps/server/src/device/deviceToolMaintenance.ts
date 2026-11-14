@@ -95,15 +95,15 @@ function pruneTools(root, specs, flat) {
 }
 `;
 
-class DeviceToolMaintenanceError extends Schema.TaggedError<DeviceToolMaintenanceError>()(
-  "DeviceToolMaintenanceError",
-  {
-    operation: Schema.Literal("prune"),
-    tool: Schema.Literals(["hub", "agent"]),
-    exitCode: Schema.NullOr(Schema.Int),
-    cause: Schema.Defect(),
-  },
-) {
+class DeviceToolMaintenanceError extends Schema.TaggedError<
+  DeviceToolMaintenanceError,
+  { readonly brand: unique symbol }
+>()("DeviceToolMaintenanceError", {
+  operation: Schema.Literal("prune"),
+  tool: Schema.Literals(["hub", "agent"]),
+  exitCode: Schema.NullOr(Schema.Int),
+  cause: Schema.Defect(),
+}) {
   override get message() {
     return `Device tool ${this.operation} failed for ${this.tool} (exit code ${this.exitCode ?? "unknown"}).`;
   }

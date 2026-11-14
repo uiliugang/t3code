@@ -52,13 +52,13 @@ const latestUserMessageAt = (sql: SqlClient.SqlClient) => sql`(
   LIMIT 1
 )`;
 
-export class ThreadSearchError extends Schema.TaggedError<ThreadSearchError>()(
-  "ThreadSearchError",
-  {
-    operation: Schema.Literals(["query", "decode"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class ThreadSearchError extends Schema.TaggedError<
+  ThreadSearchError,
+  { readonly brand: unique symbol }
+>()("ThreadSearchError", {
+  operation: Schema.Literals(["query", "decode"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Thread search ${this.operation} failed.`;
   }

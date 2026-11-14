@@ -4,7 +4,10 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-export class ScenarioError extends Schema.TaggedError<ScenarioError>()("ScenarioError", {
+export class ScenarioError extends Schema.TaggedError<
+  ScenarioError,
+  { readonly brand: unique symbol }
+>()("ScenarioError", {
   message: Schema.String,
 }) {}
 

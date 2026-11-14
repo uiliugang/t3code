@@ -108,96 +108,96 @@ export function isBrowserAllowedPort(port: number): boolean {
   return !FETCH_BAD_PORTS.has(port);
 }
 
-export class DevRunnerConfigurationError extends Schema.TaggedError<DevRunnerConfigurationError>()(
-  "DevRunnerConfigurationError",
-  {
-    configKeys: Schema.Array(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class DevRunnerConfigurationError extends Schema.TaggedError<
+  DevRunnerConfigurationError,
+  { readonly brand: unique symbol }
+>()("DevRunnerConfigurationError", {
+  configKeys: Schema.Array(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read dev-runner configuration: ${this.configKeys.join(", ")}.`;
   }
 }
 
-export class DevRunnerInvalidPortOffsetError extends Schema.TaggedError<DevRunnerInvalidPortOffsetError>()(
-  "DevRunnerInvalidPortOffsetError",
-  {
-    configKey: Schema.Literal("T3CODE_PORT_OFFSET"),
-    portOffset: Schema.Number,
-    minimum: Schema.Number,
-  },
-) {
+export class DevRunnerInvalidPortOffsetError extends Schema.TaggedError<
+  DevRunnerInvalidPortOffsetError,
+  { readonly brand: unique symbol }
+>()("DevRunnerInvalidPortOffsetError", {
+  configKey: Schema.Literal("T3CODE_PORT_OFFSET"),
+  portOffset: Schema.Number,
+  minimum: Schema.Number,
+}) {
   override get message(): string {
     return `${this.configKey} must be at least ${this.minimum}; received ${this.portOffset}.`;
   }
 }
 
-export class DevRunnerPortExhaustedError extends Schema.TaggedError<DevRunnerPortExhaustedError>()(
-  "DevRunnerPortExhaustedError",
-  {
-    startOffset: Schema.Number,
-    requireServerPort: Schema.Boolean,
-    requireWebPort: Schema.Boolean,
-    baseServerPort: Schema.Number,
-    baseWebPort: Schema.Number,
-    maximumPort: Schema.Number,
-  },
-) {
+export class DevRunnerPortExhaustedError extends Schema.TaggedError<
+  DevRunnerPortExhaustedError,
+  { readonly brand: unique symbol }
+>()("DevRunnerPortExhaustedError", {
+  startOffset: Schema.Number,
+  requireServerPort: Schema.Boolean,
+  requireWebPort: Schema.Boolean,
+  baseServerPort: Schema.Number,
+  baseWebPort: Schema.Number,
+  maximumPort: Schema.Number,
+}) {
   override get message(): string {
     return `No required dev ports were available from offset ${this.startOffset} through maximum port ${this.maximumPort}.`;
   }
 }
 
-export class DevRunnerProcessError extends Schema.TaggedError<DevRunnerProcessError>()(
-  "DevRunnerProcessError",
-  {
-    operation: Schema.Literals(["spawn", "wait-for-exit"]),
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
-    executable: Schema.Literal("vp"),
-    argumentCount: Schema.Number,
-    shell: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
+export class DevRunnerProcessError extends Schema.TaggedError<
+  DevRunnerProcessError,
+  { readonly brand: unique symbol }
+>()("DevRunnerProcessError", {
+  operation: Schema.Literals(["spawn", "wait-for-exit"]),
+  mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+  executable: Schema.Literal("vp"),
+  argumentCount: Schema.Number,
+  shell: Schema.Boolean,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Dev-runner process operation "${this.operation}" failed for mode "${this.mode}".`;
   }
 }
 
-export class DevRunnerProcessExitError extends Schema.TaggedError<DevRunnerProcessExitError>()(
-  "DevRunnerProcessExitError",
-  {
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
-    executable: Schema.Literal("vp"),
-    argumentCount: Schema.Number,
-    shell: Schema.Boolean,
-    exitCode: Schema.Number,
-  },
-) {
+export class DevRunnerProcessExitError extends Schema.TaggedError<
+  DevRunnerProcessExitError,
+  { readonly brand: unique symbol }
+>()("DevRunnerProcessExitError", {
+  mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+  executable: Schema.Literal("vp"),
+  argumentCount: Schema.Number,
+  shell: Schema.Boolean,
+  exitCode: Schema.Number,
+}) {
   override get message(): string {
     return `Dev-runner process exited with code ${this.exitCode} in mode "${this.mode}".`;
   }
 }
 
-export class DevRunnerHostNotProxiableError extends Schema.TaggedError<DevRunnerHostNotProxiableError>()(
-  "DevRunnerHostNotProxiableError",
-  {
-    mode: Schema.Literals(["dev", "dev:web"]),
-    host: Schema.String,
-  },
-) {
+export class DevRunnerHostNotProxiableError extends Schema.TaggedError<
+  DevRunnerHostNotProxiableError,
+  { readonly brand: unique symbol }
+>()("DevRunnerHostNotProxiableError", {
+  mode: Schema.Literals(["dev", "dev:web"]),
+  host: Schema.String,
+}) {
   override get message(): string {
     return `--host ${this.host} cannot be combined with ${this.mode}: single-origin browser dev proxies the backend at localhost, and a backend bound only to ${this.host} leaves localhost unanswered, so every proxied request fails. Use a wildcard (0.0.0.0 or ::) to serve that interface and loopback together, or --share for remote access.`;
   }
 }
 
-export class DevRunnerBuiltNeedsShareError extends Schema.TaggedError<DevRunnerBuiltNeedsShareError>()(
-  "DevRunnerBuiltNeedsShareError",
-  {
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
-  },
-) {
+export class DevRunnerBuiltNeedsShareError extends Schema.TaggedError<
+  DevRunnerBuiltNeedsShareError,
+  { readonly brand: unique symbol }
+>()("DevRunnerBuiltNeedsShareError", {
+  mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+}) {
   override get message(): string {
     return `--built only works with \`dev --share\` (got ${this.mode}${this.mode === "dev" ? " without --share" : ""}): the backend serves the built client on the tailnet URL.`;
   }

@@ -9,13 +9,13 @@ export const CheckpointDiffOperation = Schema.Literals([
 ]);
 export type CheckpointDiffOperation = typeof CheckpointDiffOperation.Type;
 
-export class CheckpointDiffResultInvalidError extends Schema.TaggedError<CheckpointDiffResultInvalidError>()(
-  "CheckpointDiffResultInvalidError",
-  {
-    operation: CheckpointDiffOperation,
-    threadId: ThreadId,
-  },
-) {
+export class CheckpointDiffResultInvalidError extends Schema.TaggedError<
+  CheckpointDiffResultInvalidError,
+  { readonly brand: unique symbol }
+>()("CheckpointDiffResultInvalidError", {
+  operation: CheckpointDiffOperation,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     const result =
       this.operation === "CheckpointDiffQuery.getTurnDiff" ? "turn diff" : "full thread diff";
@@ -23,25 +23,25 @@ export class CheckpointDiffResultInvalidError extends Schema.TaggedError<Checkpo
   }
 }
 
-export class CheckpointThreadNotFoundError extends Schema.TaggedError<CheckpointThreadNotFoundError>()(
-  "CheckpointThreadNotFoundError",
-  {
-    operation: CheckpointDiffOperation,
-    threadId: ThreadId,
-  },
-) {
+export class CheckpointThreadNotFoundError extends Schema.TaggedError<
+  CheckpointThreadNotFoundError,
+  { readonly brand: unique symbol }
+>()("CheckpointThreadNotFoundError", {
+  operation: CheckpointDiffOperation,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     return `Checkpoint invariant violation in ${this.operation}: Thread '${this.threadId}' not found.`;
   }
 }
 
-export class CheckpointWorkspacePathMissingError extends Schema.TaggedError<CheckpointWorkspacePathMissingError>()(
-  "CheckpointWorkspacePathMissingError",
-  {
-    operation: CheckpointDiffOperation,
-    threadId: ThreadId,
-  },
-) {
+export class CheckpointWorkspacePathMissingError extends Schema.TaggedError<
+  CheckpointWorkspacePathMissingError,
+  { readonly brand: unique symbol }
+>()("CheckpointWorkspacePathMissingError", {
+  operation: CheckpointDiffOperation,
+  threadId: ThreadId,
+}) {
   override get message(): string {
     const diff =
       this.operation === "CheckpointDiffQuery.getTurnDiff" ? "turn diff" : "full thread diff";
@@ -49,29 +49,29 @@ export class CheckpointWorkspacePathMissingError extends Schema.TaggedError<Chec
   }
 }
 
-export class CheckpointTurnRangeUnavailableError extends Schema.TaggedError<CheckpointTurnRangeUnavailableError>()(
-  "CheckpointTurnRangeUnavailableError",
-  {
-    operation: CheckpointDiffOperation,
-    threadId: ThreadId,
-    requestedTurnCount: NonNegativeInt,
-    availableTurnCount: NonNegativeInt,
-  },
-) {
+export class CheckpointTurnRangeUnavailableError extends Schema.TaggedError<
+  CheckpointTurnRangeUnavailableError,
+  { readonly brand: unique symbol }
+>()("CheckpointTurnRangeUnavailableError", {
+  operation: CheckpointDiffOperation,
+  threadId: ThreadId,
+  requestedTurnCount: NonNegativeInt,
+  availableTurnCount: NonNegativeInt,
+}) {
   override get message(): string {
     return `Checkpoint unavailable for thread ${this.threadId} turn ${this.requestedTurnCount}: Turn diff range exceeds current turn count: requested ${this.requestedTurnCount}, current ${this.availableTurnCount}.`;
   }
 }
 
-export class CheckpointRefUnavailableError extends Schema.TaggedError<CheckpointRefUnavailableError>()(
-  "CheckpointRefUnavailableError",
-  {
-    operation: CheckpointDiffOperation,
-    threadId: ThreadId,
-    turnCount: NonNegativeInt,
-    checkpoint: Schema.Literals(["from", "to"]),
-  },
-) {
+export class CheckpointRefUnavailableError extends Schema.TaggedError<
+  CheckpointRefUnavailableError,
+  { readonly brand: unique symbol }
+>()("CheckpointRefUnavailableError", {
+  operation: CheckpointDiffOperation,
+  threadId: ThreadId,
+  turnCount: NonNegativeInt,
+  checkpoint: Schema.Literals(["from", "to"]),
+}) {
   override get message(): string {
     return `Checkpoint unavailable for thread ${this.threadId} turn ${this.turnCount}: Checkpoint ref is unavailable for turn ${this.turnCount}.`;
   }

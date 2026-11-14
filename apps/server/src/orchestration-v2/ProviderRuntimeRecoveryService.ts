@@ -38,14 +38,14 @@ import {
   neverStarted,
 } from "./RestartBackgroundNote.ts";
 
-export class ProviderRuntimeRecoveryError extends Schema.TaggedError<ProviderRuntimeRecoveryError>()(
-  "ProviderRuntimeRecoveryError",
-  {
-    operation: Schema.Literals(["read-projections", "reconcile", "drain-outbox"]),
-    threadId: Schema.optional(ThreadId),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProviderRuntimeRecoveryError extends Schema.TaggedError<
+  ProviderRuntimeRecoveryError,
+  { readonly brand: unique symbol }
+>()("ProviderRuntimeRecoveryError", {
+  operation: Schema.Literals(["read-projections", "reconcile", "drain-outbox"]),
+  threadId: Schema.optional(ThreadId),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Provider runtime recovery failed during ${this.operation}.`;
   }

@@ -2,27 +2,27 @@ import * as Schema from "effect/Schema";
 
 const ClerkPublishableKeyPrefix = Schema.Literals(["pk_test", "pk_live", "unknown"]);
 
-export class ClerkPublishableKeyDecodeError extends Schema.TaggedError<ClerkPublishableKeyDecodeError>()(
-  "ClerkPublishableKeyDecodeError",
-  {
-    keyPrefix: ClerkPublishableKeyPrefix,
-    cause: Schema.Defect(),
-  },
-) {
+export class ClerkPublishableKeyDecodeError extends Schema.TaggedError<
+  ClerkPublishableKeyDecodeError,
+  { readonly brand: unique symbol }
+>()("ClerkPublishableKeyDecodeError", {
+  keyPrefix: ClerkPublishableKeyPrefix,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode Clerk publishable key (${this.keyPrefix}).`;
   }
 }
 
-export class ClerkPublishableKeyFrontendApiError extends Schema.TaggedError<ClerkPublishableKeyFrontendApiError>()(
-  "ClerkPublishableKeyFrontendApiError",
-  {
-    keyPrefix: ClerkPublishableKeyPrefix,
-    frontendApi: Schema.String,
-    reason: Schema.Literals(["empty", "contains-path", "invalid-url"]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ClerkPublishableKeyFrontendApiError extends Schema.TaggedError<
+  ClerkPublishableKeyFrontendApiError,
+  { readonly brand: unique symbol }
+>()("ClerkPublishableKeyFrontendApiError", {
+  keyPrefix: ClerkPublishableKeyPrefix,
+  frontendApi: Schema.String,
+  reason: Schema.Literals(["empty", "contains-path", "invalid-url"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Invalid Clerk frontend API decoded from publishable key (${this.keyPrefix}; ${this.reason}).`;
   }

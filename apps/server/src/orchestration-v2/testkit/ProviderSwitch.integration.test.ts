@@ -488,10 +488,10 @@ const waitForIdle = Effect.fn("ProviderSwitchTest.waitForIdle")(function* (
 });
 
 // Same tag as the adapter's unexported error raised when Claude never answers setMcpServers.
-class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegistrationTimeoutError>()(
-  "ClaudeMcpRegistrationTimeoutError",
-  {},
-) {}
+class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<
+  ClaudeMcpRegistrationTimeoutError,
+  { readonly brand: unique symbol }
+>()("ClaudeMcpRegistrationTimeoutError", {}) {}
 
 describe("orchestration v2 provider switching", () => {
   it.live.each([

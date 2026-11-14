@@ -27,14 +27,14 @@ const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
 });
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
 
-export class DesktopClientSettingsReadError extends Schema.TaggedError<DesktopClientSettingsReadError>()(
-  "DesktopClientSettingsReadError",
-  {
-    operation: Schema.Literals(["read-file", "decode-document"]),
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopClientSettingsReadError extends Schema.TaggedError<
+  DesktopClientSettingsReadError,
+  { readonly brand: unique symbol }
+>()("DesktopClientSettingsReadError", {
+  operation: Schema.Literals(["read-file", "decode-document"]),
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
   }
@@ -49,14 +49,14 @@ const DesktopClientSettingsWriteOperation = Schema.Literals([
   "replace-settings-file",
 ]);
 
-export class DesktopClientSettingsWriteError extends Schema.TaggedError<DesktopClientSettingsWriteError>()(
-  "DesktopClientSettingsWriteError",
-  {
-    operation: DesktopClientSettingsWriteOperation,
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopClientSettingsWriteError extends Schema.TaggedError<
+  DesktopClientSettingsWriteError,
+  { readonly brand: unique symbol }
+>()("DesktopClientSettingsWriteError", {
+  operation: DesktopClientSettingsWriteOperation,
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop client settings write failed during ${this.operation} at ${this.path}.`;
   }

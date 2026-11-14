@@ -463,10 +463,10 @@ const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
   return { value: value(), text, omitted };
 };
 
-export class PreviewScreenshotSaveError extends Schema.TaggedError<PreviewScreenshotSaveError>()(
-  "PreviewScreenshotSaveError",
-  { screenshotPath: Schema.String, cause: Schema.Defect() },
-) {
+export class PreviewScreenshotSaveError extends Schema.TaggedError<
+  PreviewScreenshotSaveError,
+  { readonly brand: unique symbol }
+>()("PreviewScreenshotSaveError", { screenshotPath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not save preview screenshot to ${this.screenshotPath}.`;
   }

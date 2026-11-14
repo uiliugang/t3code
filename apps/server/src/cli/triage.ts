@@ -49,28 +49,28 @@ const TRIAGE_AGENTS: ReadonlyArray<TriageAgent> = [
 const resolveAgentStateDir = (agent: TriageAgent) =>
   process.env[agent.stateDirEnv]?.trim() || NodePath.join(NodeOS.homedir(), agent.defaultStateDir);
 
-export class TriageAgentUnavailableError extends Schema.TaggedError<TriageAgentUnavailableError>()(
-  "TriageAgentUnavailableError",
-  { agent: Schema.String },
-) {
+export class TriageAgentUnavailableError extends Schema.TaggedError<
+  TriageAgentUnavailableError,
+  { readonly brand: unique symbol }
+>()("TriageAgentUnavailableError", { agent: Schema.String }) {
   override get message(): string {
     return `\`${this.agent}\` is not installed or was not found on PATH.`;
   }
 }
 
-export class TriageAgentChoiceRequiredError extends Schema.TaggedError<TriageAgentChoiceRequiredError>()(
-  "TriageAgentChoiceRequiredError",
-  {},
-) {
+export class TriageAgentChoiceRequiredError extends Schema.TaggedError<
+  TriageAgentChoiceRequiredError,
+  { readonly brand: unique symbol }
+>()("TriageAgentChoiceRequiredError", {}) {
   override get message(): string {
     return "Both claude and codex are installed and there is no terminal to ask which to use. Re-run with --agent claude or --agent codex.";
   }
 }
 
-export class TriageAgentSpawnError extends Schema.TaggedError<TriageAgentSpawnError>()(
-  "TriageAgentSpawnError",
-  { command: Schema.String, cause: Schema.Defect() },
-) {
+export class TriageAgentSpawnError extends Schema.TaggedError<
+  TriageAgentSpawnError,
+  { readonly brand: unique symbol }
+>()("TriageAgentSpawnError", { command: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not start \`${this.command}\`.`;
   }

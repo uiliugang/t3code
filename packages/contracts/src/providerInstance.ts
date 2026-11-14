@@ -94,7 +94,7 @@ export const ProviderInstanceMutation = Schema.Union([
     instance: ProviderInstanceConfig,
   }),
   Schema.Struct({
-    operation: Schema.Literal("remove"),
+    operation: Schema.Literals(["remove", "delete"]),
     instanceId: ProviderInstanceId,
   }),
 ]);

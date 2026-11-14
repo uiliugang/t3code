@@ -27,15 +27,15 @@ export interface VcsProjectConfigResolveInput {
   readonly requestedKind?: VcsDriverKindType | "auto";
 }
 
-export class VcsProjectConfigError extends Schema.TaggedError<VcsProjectConfigError>()(
-  "VcsProjectConfigError",
-  {
-    operation: Schema.Literals(["inspect", "read", "decode"]),
-    cwd: Schema.String,
-    configPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class VcsProjectConfigError extends Schema.TaggedError<
+  VcsProjectConfigError,
+  { readonly brand: unique symbol }
+>()("VcsProjectConfigError", {
+  operation: Schema.Literals(["inspect", "read", "decode"]),
+  cwd: Schema.String,
+  configPath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} VCS project config at ${this.configPath}.`;
   }

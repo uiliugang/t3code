@@ -78,12 +78,12 @@ const BitbucketApiOperation = Schema.Literals([
 ]);
 type BitbucketApiOperation = typeof BitbucketApiOperation.Type;
 
-export class BitbucketRepositoryLocatorError extends Schema.TaggedError<BitbucketRepositoryLocatorError>()(
-  "BitbucketRepositoryLocatorError",
-  {
-    repository: Schema.String,
-  },
-) {
+export class BitbucketRepositoryLocatorError extends Schema.TaggedError<
+  BitbucketRepositoryLocatorError,
+  { readonly brand: unique symbol }
+>()("BitbucketRepositoryLocatorError", {
+  repository: Schema.String,
+}) {
   static readonly detail = "Bitbucket repositories must be specified as workspace/repository.";
 
   get detail(): string {
@@ -99,13 +99,13 @@ export class BitbucketRepositoryLocatorError extends Schema.TaggedError<Bitbucke
   }
 }
 
-export class BitbucketRequestError extends Schema.TaggedError<BitbucketRequestError>()(
-  "BitbucketRequestError",
-  {
-    operation: BitbucketApiOperation,
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketRequestError extends Schema.TaggedError<
+  BitbucketRequestError,
+  { readonly brand: unique symbol }
+>()("BitbucketRequestError", {
+  operation: BitbucketApiOperation,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return "Failed to send the Bitbucket request.";
   }
@@ -115,15 +115,15 @@ export class BitbucketRequestError extends Schema.TaggedError<BitbucketRequestEr
   }
 }
 
-export class BitbucketResponseError extends Schema.TaggedError<BitbucketResponseError>()(
-  "BitbucketResponseError",
-  {
-    operation: BitbucketApiOperation,
-    status: Schema.Int,
-    responseBodyLength: NonNegativeInt,
-    retryAt: Schema.optional(Schema.Number),
-  },
-) {
+export class BitbucketResponseError extends Schema.TaggedError<
+  BitbucketResponseError,
+  { readonly brand: unique symbol }
+>()("BitbucketResponseError", {
+  operation: BitbucketApiOperation,
+  status: Schema.Int,
+  responseBodyLength: NonNegativeInt,
+  retryAt: Schema.optional(Schema.Number),
+}) {
   get detail(): string {
     return `Bitbucket returned HTTP ${this.status}.`;
   }
@@ -133,15 +133,15 @@ export class BitbucketResponseError extends Schema.TaggedError<BitbucketResponse
   }
 }
 
-export class BitbucketResponseBodyReadError extends Schema.TaggedError<BitbucketResponseBodyReadError>()(
-  "BitbucketResponseBodyReadError",
-  {
-    operation: BitbucketApiOperation,
-    status: Schema.Int,
-    retryAt: Schema.optional(Schema.Number),
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketResponseBodyReadError extends Schema.TaggedError<
+  BitbucketResponseBodyReadError,
+  { readonly brand: unique symbol }
+>()("BitbucketResponseBodyReadError", {
+  operation: BitbucketApiOperation,
+  status: Schema.Int,
+  retryAt: Schema.optional(Schema.Number),
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return `Bitbucket returned HTTP ${this.status}.`;
   }
@@ -151,14 +151,14 @@ export class BitbucketResponseBodyReadError extends Schema.TaggedError<Bitbucket
   }
 }
 
-export class BitbucketResponseDecodeError extends Schema.TaggedError<BitbucketResponseDecodeError>()(
-  "BitbucketResponseDecodeError",
-  {
-    operation: BitbucketApiOperation,
-    status: Schema.Int,
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketResponseDecodeError extends Schema.TaggedError<
+  BitbucketResponseDecodeError,
+  { readonly brand: unique symbol }
+>()("BitbucketResponseDecodeError", {
+  operation: BitbucketApiOperation,
+  status: Schema.Int,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return "Bitbucket returned invalid JSON for the requested resource.";
   }
@@ -168,13 +168,13 @@ export class BitbucketResponseDecodeError extends Schema.TaggedError<BitbucketRe
   }
 }
 
-export class BitbucketRepositoryVcsResolveError extends Schema.TaggedError<BitbucketRepositoryVcsResolveError>()(
-  "BitbucketRepositoryVcsResolveError",
-  {
-    cwd: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketRepositoryVcsResolveError extends Schema.TaggedError<
+  BitbucketRepositoryVcsResolveError,
+  { readonly brand: unique symbol }
+>()("BitbucketRepositoryVcsResolveError", {
+  cwd: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return `Failed to resolve VCS repository for ${this.cwd}.`;
   }
@@ -184,13 +184,13 @@ export class BitbucketRepositoryVcsResolveError extends Schema.TaggedError<Bitbu
   }
 }
 
-export class BitbucketRepositoryRemotesListError extends Schema.TaggedError<BitbucketRepositoryRemotesListError>()(
-  "BitbucketRepositoryRemotesListError",
-  {
-    cwd: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketRepositoryRemotesListError extends Schema.TaggedError<
+  BitbucketRepositoryRemotesListError,
+  { readonly brand: unique symbol }
+>()("BitbucketRepositoryRemotesListError", {
+  cwd: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return `Failed to list remotes for ${this.cwd}.`;
   }
@@ -200,12 +200,12 @@ export class BitbucketRepositoryRemotesListError extends Schema.TaggedError<Bitb
   }
 }
 
-export class BitbucketRepositoryRemoteNotFoundError extends Schema.TaggedError<BitbucketRepositoryRemoteNotFoundError>()(
-  "BitbucketRepositoryRemoteNotFoundError",
-  {
-    cwd: Schema.String,
-  },
-) {
+export class BitbucketRepositoryRemoteNotFoundError extends Schema.TaggedError<
+  BitbucketRepositoryRemoteNotFoundError,
+  { readonly brand: unique symbol }
+>()("BitbucketRepositoryRemoteNotFoundError", {
+  cwd: Schema.String,
+}) {
   get detail(): string {
     return `No Bitbucket repository remote was detected for ${this.cwd}.`;
   }
@@ -215,14 +215,14 @@ export class BitbucketRepositoryRemoteNotFoundError extends Schema.TaggedError<B
   }
 }
 
-export class BitbucketPullRequestBodyReadError extends Schema.TaggedError<BitbucketPullRequestBodyReadError>()(
-  "BitbucketPullRequestBodyReadError",
-  {
-    cwd: Schema.String,
-    bodyFile: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketPullRequestBodyReadError extends Schema.TaggedError<
+  BitbucketPullRequestBodyReadError,
+  { readonly brand: unique symbol }
+>()("BitbucketPullRequestBodyReadError", {
+  cwd: Schema.String,
+  bodyFile: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return `Failed to read pull request body file ${this.bodyFile}.`;
   }
@@ -232,14 +232,14 @@ export class BitbucketPullRequestBodyReadError extends Schema.TaggedError<Bitbuc
   }
 }
 
-export class BitbucketCheckoutError extends Schema.TaggedError<BitbucketCheckoutError>()(
-  "BitbucketCheckoutError",
-  {
-    cwd: Schema.String,
-    reference: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BitbucketCheckoutError extends Schema.TaggedError<
+  BitbucketCheckoutError,
+  { readonly brand: unique symbol }
+>()("BitbucketCheckoutError", {
+  cwd: Schema.String,
+  reference: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return "Failed to check out the Bitbucket pull request.";
   }
@@ -250,13 +250,13 @@ export class BitbucketCheckoutError extends Schema.TaggedError<BitbucketCheckout
 }
 
 /** Reject response-supplied URLs that could leak credentials. */
-export class BitbucketUntrustedUrlError extends Schema.TaggedError<BitbucketUntrustedUrlError>()(
-  "BitbucketUntrustedUrlError",
-  {
-    /** Host only; signed URL queries can contain credentials. */
-    host: Schema.String,
-  },
-) {
+export class BitbucketUntrustedUrlError extends Schema.TaggedError<
+  BitbucketUntrustedUrlError,
+  { readonly brand: unique symbol }
+>()("BitbucketUntrustedUrlError", {
+  /** Host only; signed URL queries can contain credentials. */
+  host: Schema.String,
+}) {
   get detail(): string {
     return `The response pointed at ${this.host}, outside the configured Bitbucket.`;
   }

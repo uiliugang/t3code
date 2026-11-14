@@ -76,54 +76,54 @@ const CodexShadowHomeContext = {
   effectiveHomePath: Schema.String,
 };
 
-export class CodexShadowHomeFileSystemError extends Schema.TaggedError<CodexShadowHomeFileSystemError>()(
-  "CodexShadowHomeFileSystemError",
-  {
-    ...CodexShadowHomeContext,
-    operation: Schema.Literals(["readLink", "makeDirectory", "readDirectory", "remove", "symlink"]),
-    path: Schema.String,
-    targetPath: Schema.optional(Schema.String),
-    entryName: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class CodexShadowHomeFileSystemError extends Schema.TaggedError<
+  CodexShadowHomeFileSystemError,
+  { readonly brand: unique symbol }
+>()("CodexShadowHomeFileSystemError", {
+  ...CodexShadowHomeContext,
+  operation: Schema.Literals(["readLink", "makeDirectory", "readDirectory", "remove", "symlink"]),
+  path: Schema.String,
+  targetPath: Schema.optional(Schema.String),
+  entryName: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const target = this.targetPath === undefined ? "" : ` to '${this.targetPath}'`;
     return `Codex shadow home filesystem operation '${this.operation}' failed for '${this.path}'${target}.`;
   }
 }
 
-export class CodexShadowHomePathConflictError extends Schema.TaggedError<CodexShadowHomePathConflictError>()(
-  "CodexShadowHomePathConflictError",
-  CodexShadowHomeContext,
-) {
+export class CodexShadowHomePathConflictError extends Schema.TaggedError<
+  CodexShadowHomePathConflictError,
+  { readonly brand: unique symbol }
+>()("CodexShadowHomePathConflictError", CodexShadowHomeContext) {
   override get message(): string {
     return `Codex shadow home path '${this.effectiveHomePath}' must be different from the shared home path '${this.sharedHomePath}'.`;
   }
 }
 
-export class CodexShadowHomeEntryConflictError extends Schema.TaggedError<CodexShadowHomeEntryConflictError>()(
-  "CodexShadowHomeEntryConflictError",
-  {
-    ...CodexShadowHomeContext,
-    entryName: Schema.String,
-    linkPath: Schema.String,
-    targetPath: Schema.String,
-  },
-) {
+export class CodexShadowHomeEntryConflictError extends Schema.TaggedError<
+  CodexShadowHomeEntryConflictError,
+  { readonly brand: unique symbol }
+>()("CodexShadowHomeEntryConflictError", {
+  ...CodexShadowHomeContext,
+  entryName: Schema.String,
+  linkPath: Schema.String,
+  targetPath: Schema.String,
+}) {
   override get message(): string {
     return `Cannot create Codex shadow home entry '${this.entryName}' because '${this.linkPath}' already exists and is not a symlink.`;
   }
 }
 
-export class CodexShadowHomePrivateEntrySymlinkError extends Schema.TaggedError<CodexShadowHomePrivateEntrySymlinkError>()(
-  "CodexShadowHomePrivateEntrySymlinkError",
-  {
-    ...CodexShadowHomeContext,
-    entryName: Schema.String,
-    path: Schema.String,
-  },
-) {
+export class CodexShadowHomePrivateEntrySymlinkError extends Schema.TaggedError<
+  CodexShadowHomePrivateEntrySymlinkError,
+  { readonly brand: unique symbol }
+>()("CodexShadowHomePrivateEntrySymlinkError", {
+  ...CodexShadowHomeContext,
+  entryName: Schema.String,
+  path: Schema.String,
+}) {
   override get message(): string {
     return `Codex shadow home private entry '${this.entryName}' at '${this.path}' must be a real file, not a symlink.`;
   }

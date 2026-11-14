@@ -13,7 +13,10 @@ export interface BrowserDpopKey {
   readonly thumbprint: string;
 }
 
-export class BrowserDpopError extends Schema.TaggedError<BrowserDpopError>()("BrowserDpopError", {
+export class BrowserDpopError extends Schema.TaggedError<
+  BrowserDpopError,
+  { readonly brand: unique symbol }
+>()("BrowserDpopError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}

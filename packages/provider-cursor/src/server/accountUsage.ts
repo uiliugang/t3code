@@ -42,10 +42,10 @@ export interface CursorAccountUsageReadResult {
   readonly error: string | null;
 }
 
-class CursorAccountUsageInvalidError extends Schema.TaggedError<CursorAccountUsageInvalidError>()(
-  "CursorAccountUsageInvalidError",
-  { reason: Schema.String },
-) {}
+class CursorAccountUsageInvalidError extends Schema.TaggedError<
+  CursorAccountUsageInvalidError,
+  { readonly brand: unique symbol }
+>()("CursorAccountUsageInvalidError", { reason: Schema.String }) {}
 
 const invalid = (reason: string) => Effect.fail(new CursorAccountUsageInvalidError({ reason }));
 

@@ -28,16 +28,16 @@ import { loopbackBindAddress } from "../auth/utils.ts";
 
 type PolicyDocument = { readonly document: ManagedPolicyDocument | undefined };
 
-export class ManagedPolicyRefusedError extends Schema.TaggedError<ManagedPolicyRefusedError>()(
-  "ManagedPolicyRefusedError",
-  {
-    organization: Schema.String,
-    /** What the policy does not allow, for example "T3 Connect". */
-    action: Schema.String,
-    /** What that means for this request, for example "so the server cannot listen on 0.0.0.0". */
-    detail: Schema.optionalKey(Schema.String),
-  },
-) {
+export class ManagedPolicyRefusedError extends Schema.TaggedError<
+  ManagedPolicyRefusedError,
+  { readonly brand: unique symbol }
+>()("ManagedPolicyRefusedError", {
+  organization: Schema.String,
+  /** What the policy does not allow, for example "T3 Connect". */
+  action: Schema.String,
+  /** What that means for this request, for example "so the server cannot listen on 0.0.0.0". */
+  detail: Schema.optionalKey(Schema.String),
+}) {
   override get message(): string {
     return `${this.organization}'s policy does not allow ${this.action}${
       this.detail === undefined ? "" : `, ${this.detail}`

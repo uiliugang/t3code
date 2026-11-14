@@ -18,13 +18,13 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
-export class ProjectStoreV2Error extends Schema.TaggedError<ProjectStoreV2Error>()(
-  "ProjectStoreV2Error",
-  {
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectStoreV2Error extends Schema.TaggedError<
+  ProjectStoreV2Error,
+  { readonly brand: unique symbol }
+>()("ProjectStoreV2Error", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Project store operation '${this.operation}' failed.`;
   }

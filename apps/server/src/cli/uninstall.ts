@@ -22,10 +22,10 @@ import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import * as CliService from "./service.ts";
 import { findWindowsShim } from "./update.ts";
 
-export class CliUninstallError extends Schema.TaggedError<CliUninstallError>()(
-  "CliUninstallError",
-  { reason: Schema.String },
-) {
+export class CliUninstallError extends Schema.TaggedError<
+  CliUninstallError,
+  { readonly brand: unique symbol }
+>()("CliUninstallError", { reason: Schema.String }) {
   override get message(): string {
     return this.reason;
   }

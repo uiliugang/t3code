@@ -37,13 +37,13 @@ interface CursorSkillScanBudget {
   incomplete: boolean;
 }
 
-class CursorSkillsProbeError extends Schema.TaggedError<CursorSkillsProbeError>()(
-  "CursorSkillsProbeError",
-  {
-    reason: Schema.Literals(["scan-budget-exhausted", "filesystem-error"]),
-    cwd: Schema.optional(Schema.String),
-  },
-) {
+class CursorSkillsProbeError extends Schema.TaggedError<
+  CursorSkillsProbeError,
+  { readonly brand: unique symbol }
+>()("CursorSkillsProbeError", {
+  reason: Schema.Literals(["scan-budget-exhausted", "filesystem-error"]),
+  cwd: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     const location = this.cwd === undefined ? "" : ` for '${this.cwd}'`;
     return `Cursor skill discovery${location} was incomplete (${this.reason}).`;

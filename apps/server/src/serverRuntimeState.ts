@@ -35,14 +35,14 @@ export const PersistedServerRuntimeState = Schema.Struct({
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
 
-export class ServerRuntimeStateError extends Schema.TaggedError<ServerRuntimeStateError>()(
-  "ServerRuntimeStateError",
-  {
-    operation: Schema.Literals(["persist", "read", "decode", "clear"]),
-    statePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ServerRuntimeStateError extends Schema.TaggedError<
+  ServerRuntimeStateError,
+  { readonly brand: unique symbol }
+>()("ServerRuntimeStateError", {
+  operation: Schema.Literals(["persist", "read", "decode", "clear"]),
+  statePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} server runtime state at ${this.statePath}.`;
   }

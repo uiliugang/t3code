@@ -149,13 +149,13 @@ interface FreshAssetUrlKey {
   readonly revision: number;
 }
 
-class AssetUrlUnavailableError extends Schema.TaggedError<AssetUrlUnavailableError>()(
-  "AssetUrlUnavailableError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+class AssetUrlUnavailableError extends Schema.TaggedError<
+  AssetUrlUnavailableError,
+  { readonly brand: unique symbol }
+>()("AssetUrlUnavailableError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 // Plain-object keys compare structurally (Effect `Equal`/`Hash`).
 const freshAssetUrlFamily = Atom.family((key: FreshAssetUrlKey) =>

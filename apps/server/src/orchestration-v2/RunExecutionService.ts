@@ -533,14 +533,14 @@ export function routeProviderEvent(
   }
 }
 
-export class RunExecutionStartError extends Schema.TaggedError<RunExecutionStartError>()(
-  "RunExecutionStartError",
-  {
-    commandId: CommandId,
-    runId: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class RunExecutionStartError extends Schema.TaggedError<
+  RunExecutionStartError,
+  { readonly brand: unique symbol }
+>()("RunExecutionStartError", {
+  commandId: CommandId,
+  runId: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to start orchestration V2 run execution ${this.runId}.`;
   }
@@ -548,13 +548,13 @@ export class RunExecutionStartError extends Schema.TaggedError<RunExecutionStart
 
 const isProviderEventStreamError = Schema.is(ProviderAdapter.ProviderAdapterEventStreamError);
 
-export class RunExecutionIngestError extends Schema.TaggedError<RunExecutionIngestError>()(
-  "RunExecutionIngestError",
-  {
-    runId: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class RunExecutionIngestError extends Schema.TaggedError<
+  RunExecutionIngestError,
+  { readonly brand: unique symbol }
+>()("RunExecutionIngestError", {
+  runId: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed while ingesting orchestration V2 run execution ${this.runId}.`;
   }

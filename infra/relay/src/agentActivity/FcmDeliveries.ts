@@ -49,7 +49,10 @@ const decodePreviousActivity = Schema.decodeUnknownOption(
   Schema.fromJsonString(RelayAgentActivityAggregateState),
 );
 
-export class FcmDeliveryError extends Schema.TaggedError<FcmDeliveryError>()("FcmDeliveryError", {
+export class FcmDeliveryError extends Schema.TaggedError<
+  FcmDeliveryError,
+  { readonly brand: unique symbol }
+>()("FcmDeliveryError", {
   operation: Schema.Literals(["enqueue", "decode-job", "invalidate-token"]),
   cause: Schema.Defect(),
 }) {

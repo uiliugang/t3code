@@ -18,38 +18,38 @@ const PrimaryEnvironmentUrlKind = Schema.Literals([
 ]);
 type PrimaryEnvironmentUrlKind = typeof PrimaryEnvironmentUrlKind.Type;
 
-export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedError<PrimaryEnvironmentUrlInvalidError>()(
-  "PrimaryEnvironmentUrlInvalidError",
-  {
-    source: PrimaryEnvironmentTargetSource,
-    urlKind: PrimaryEnvironmentUrlKind,
-    cause: Schema.Defect(),
-  },
-) {
+export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedError<
+  PrimaryEnvironmentUrlInvalidError,
+  { readonly brand: unique symbol }
+>()("PrimaryEnvironmentUrlInvalidError", {
+  source: PrimaryEnvironmentTargetSource,
+  urlKind: PrimaryEnvironmentUrlKind,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not parse ${this.urlKind} for the ${this.source} primary environment target.`;
   }
 }
 
-export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedError<PrimaryEnvironmentProtocolUnsupportedError>()(
-  "PrimaryEnvironmentProtocolUnsupportedError",
-  {
-    source: PrimaryEnvironmentTargetSource,
-    protocol: Schema.String,
-  },
-) {
+export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedError<
+  PrimaryEnvironmentProtocolUnsupportedError,
+  { readonly brand: unique symbol }
+>()("PrimaryEnvironmentProtocolUnsupportedError", {
+  source: PrimaryEnvironmentTargetSource,
+  protocol: Schema.String,
+}) {
   override get message(): string {
     return `The ${this.source} primary environment target uses unsupported protocol ${this.protocol}.`;
   }
 }
 
-export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedError<DesktopEnvironmentBootstrapIncompleteError>()(
-  "DesktopEnvironmentBootstrapIncompleteError",
-  {
-    hasHttpBaseUrl: Schema.Boolean,
-    hasWsBaseUrl: Schema.Boolean,
-  },
-) {
+export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedError<
+  DesktopEnvironmentBootstrapIncompleteError,
+  { readonly brand: unique symbol }
+>()("DesktopEnvironmentBootstrapIncompleteError", {
+  hasHttpBaseUrl: Schema.Boolean,
+  hasWsBaseUrl: Schema.Boolean,
+}) {
   override get message(): string {
     const missing = [
       ...(this.hasHttpBaseUrl ? [] : ["httpBaseUrl"]),
@@ -59,10 +59,10 @@ export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedErr
   }
 }
 
-export class PrimaryEnvironmentDisabledError extends Schema.TaggedError<PrimaryEnvironmentDisabledError>()(
-  "PrimaryEnvironmentDisabledError",
-  {},
-) {
+export class PrimaryEnvironmentDisabledError extends Schema.TaggedError<
+  PrimaryEnvironmentDisabledError,
+  { readonly brand: unique symbol }
+>()("PrimaryEnvironmentDisabledError", {}) {
   override get message(): string {
     return "The local environment is disabled.";
   }

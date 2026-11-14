@@ -13,7 +13,10 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const extensions = new Set(["docx", "xlsx", "pptx", "odt", "ods", "odp", "rtf", "epub", "ipynb"]);
 
-class DocumentTextError extends Schema.TaggedError<DocumentTextError>()("DocumentTextError", {
+class DocumentTextError extends Schema.TaggedError<
+  DocumentTextError,
+  { readonly brand: unique symbol }
+>()("DocumentTextError", {
   operation: Schema.Literal("extract"),
   path: Schema.String,
   extension: Schema.String,

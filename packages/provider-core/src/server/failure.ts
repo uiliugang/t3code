@@ -17,19 +17,19 @@ import * as IdAllocator from "./IdAllocator.ts";
 import type { ProviderAdapterFailureReason } from "./ProviderAdapter.ts";
 import * as Schema from "effect/Schema";
 
-export class ContextHandoffBudgetError extends Schema.TaggedError<ContextHandoffBudgetError>()(
-  "ContextHandoffBudgetError",
-  {},
-) {
+export class ContextHandoffBudgetError extends Schema.TaggedError<
+  ContextHandoffBudgetError,
+  { readonly brand: unique symbol }
+>()("ContextHandoffBudgetError", {}) {
   override get message() {
     return "The request leaves too little context for a provider handoff. Shorten the request or use a larger-context model; the current request has not been truncated.";
   }
 }
 
-export class ContextHandoffBackgroundWorkError extends Schema.TaggedError<ContextHandoffBackgroundWorkError>()(
-  "ContextHandoffBackgroundWorkError",
-  {},
-) {
+export class ContextHandoffBackgroundWorkError extends Schema.TaggedError<
+  ContextHandoffBackgroundWorkError,
+  { readonly brand: unique symbol }
+>()("ContextHandoffBackgroundWorkError", {}) {
   override get message() {
     return "The target provider still has background work running. Wait for it to finish or stop it before retrying the handoff.";
   }

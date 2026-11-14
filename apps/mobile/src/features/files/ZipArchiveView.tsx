@@ -91,7 +91,10 @@ const NETWORK: ZipFailure = {
   retry: true,
 };
 
-class ZipFailureError extends Schema.TaggedError<ZipFailureError>()("ZipFailureError", {
+class ZipFailureError extends Schema.TaggedError<
+  ZipFailureError,
+  { readonly brand: unique symbol }
+>()("ZipFailureError", {
   failure: ZipFailure,
 }) {
   override get message(): string {

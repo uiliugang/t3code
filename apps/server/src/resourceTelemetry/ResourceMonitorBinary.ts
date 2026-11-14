@@ -9,38 +9,38 @@ import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 
-export class ResourceMonitorBinaryUnsupported extends Schema.TaggedError<ResourceMonitorBinaryUnsupported>()(
-  "ResourceMonitorBinaryUnsupported",
-  {
-    platform: Schema.String,
-    architecture: Schema.String,
-  },
-) {
+export class ResourceMonitorBinaryUnsupported extends Schema.TaggedError<
+  ResourceMonitorBinaryUnsupported,
+  { readonly brand: unique symbol }
+>()("ResourceMonitorBinaryUnsupported", {
+  platform: Schema.String,
+  architecture: Schema.String,
+}) {
   override get message(): string {
     return `Resource monitoring is unsupported on ${this.platform}/${this.architecture}.`;
   }
 }
 
-export class ResourceMonitorBinaryNotFound extends Schema.TaggedError<ResourceMonitorBinaryNotFound>()(
-  "ResourceMonitorBinaryNotFound",
-  {
-    platform: Schema.String,
-    architecture: Schema.String,
-    candidates: Schema.Array(Schema.String),
-  },
-) {
+export class ResourceMonitorBinaryNotFound extends Schema.TaggedError<
+  ResourceMonitorBinaryNotFound,
+  { readonly brand: unique symbol }
+>()("ResourceMonitorBinaryNotFound", {
+  platform: Schema.String,
+  architecture: Schema.String,
+  candidates: Schema.Array(Schema.String),
+}) {
   override get message(): string {
     return `Resource monitor binary was not found for ${this.platform}/${this.architecture}.`;
   }
 }
 
-export class ResourceMonitorBinaryNotExecutable extends Schema.TaggedError<ResourceMonitorBinaryNotExecutable>()(
-  "ResourceMonitorBinaryNotExecutable",
-  {
-    path: Schema.String,
-    mode: Schema.Number,
-  },
-) {
+export class ResourceMonitorBinaryNotExecutable extends Schema.TaggedError<
+  ResourceMonitorBinaryNotExecutable,
+  { readonly brand: unique symbol }
+>()("ResourceMonitorBinaryNotExecutable", {
+  path: Schema.String,
+  mode: Schema.Number,
+}) {
   override get message(): string {
     return `Resource monitor binary at '${this.path}' is not executable.`;
   }

@@ -1144,6 +1144,63 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
   }),
 );
 
+it.effect(
+  "ProviderSessionManagerV2 waits for in-flight opens before removing instance resources",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const openStarted = yield* Deferred.make<void>();
+      const releaseOpen = yield* Deferred.make<void>();
+      const cleanupStarted = yield* Deferred.make<void>();
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const threadId = ThreadId.make("thread-provider-session-manager-delete-race");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+          ],
+        });
+        const opening = yield* manager
+          .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
+          .pipe(Effect.forkScoped);
+        yield* Deferred.await(openStarted);
+        const deleting = yield* manager
+          .withInstanceClosed(
+            modelSelection.instanceId,
+            Effect.gen(function* () {
+              assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
+              assert.equal((yield* Ref.get(state)).closeCount, 1);
+              yield* Deferred.succeed(cleanupStarted, undefined);
+            }),
+          )
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        assert.isFalse(yield* Deferred.isDone(cleanupStarted));
+        yield* Deferred.succeed(releaseOpen, undefined);
+        yield* Fiber.join(opening);
+        yield* Fiber.join(deleting);
+        assert.isTrue(yield* Deferred.isDone(cleanupStarted));
+      });
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            beforeOpen: () =>
+              Deferred.succeed(openStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseOpen)),
+              ),
+          }),
+        ),
+      );
+    }),
+);
+
 it.effect("ProviderSessionManagerV2 opens provider sessions inside the installation gate", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);

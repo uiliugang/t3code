@@ -55,7 +55,10 @@ export function readMcmCoverage(
   );
 }
 
-export class McmReleaseError extends Schema.TaggedError<McmReleaseError>()("McmReleaseError", {
+export class McmReleaseError extends Schema.TaggedError<
+  McmReleaseError,
+  { readonly brand: unique symbol }
+>()("McmReleaseError", {
   cause: Schema.Defect(),
 }) {}
 const isMcmReleaseError = Schema.is(McmReleaseError);

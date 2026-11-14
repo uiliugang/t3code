@@ -35,13 +35,13 @@ const MAX_REQUEST_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const isDesktopAppActivationRequest = Schema.is(DesktopAppActivationRequest);
 
-export class DesktopAppActivationStartError extends Schema.TaggedError<DesktopAppActivationStartError>()(
-  "DesktopAppActivationStartError",
-  {
-    address: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopAppActivationStartError extends Schema.TaggedError<
+  DesktopAppActivationStartError,
+  { readonly brand: unique symbol }
+>()("DesktopAppActivationStartError", {
+  address: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not start the desktop app control socket at ${this.address}.`;
   }

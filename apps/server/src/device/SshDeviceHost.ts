@@ -1,3 +1,4 @@
+import { DeviceOperationError } from "@t3tools/contracts";
 import {
   type DeviceHostSummary,
   DevicePlatformAvailability,
@@ -31,10 +32,10 @@ import { quoteRemoteArg, remoteDeviceEnvironment, remoteDeviceScript } from "./s
 const UNHEALTHY_PROBE_LIMIT = 3;
 
 /** The host bootstrap failed on a host identified as Windows. */
-export class SshWindowsHostError extends Schema.TaggedError<SshWindowsHostError>()(
-  "SshWindowsHostError",
-  { cause: Schema.Defect() },
-) {
+export class SshWindowsHostError extends Schema.TaggedError<
+  SshWindowsHostError,
+  { readonly brand: unique symbol }
+>()("SshWindowsHostError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.";
   }
@@ -75,7 +76,7 @@ const commandArgs = (script: string) => [
 const bootstrap = (
   config: SshDeviceHostConfig,
   owner: string,
-  mode: "probe" | "start" | "agent-start" | "stop-agent" | "stop",
+  mode: Parameters<typeof remoteDeviceScript>[1],
 ) =>
   runSshCommand(targetFor(config), {
     preHostArgs: identityArgs(config),
@@ -86,7 +87,12 @@ const bootstrap = (
     timeoutMs: mode === "start" || mode === "agent-start" ? 1_300_000 : 45_000,
   }).pipe(
     Effect.mapError(
-      (cause) => new DeviceHost.DeviceHostError({ hostId: config.id, step: mode, cause }),
+      (cause) =>
+        new DeviceHost.DeviceHostError({
+          hostId: config.id,
+          step: typeof mode === "string" ? mode : "release-session",
+          cause,
+        }),
     ),
   );
 
@@ -564,6 +570,17 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
       ),
     ),
     current: Effect.sync(() => ready),
+    releaseAgentSession: Effect.fn("SshDeviceHost.releaseAgentSession")(
+      function* (session: string, deviceId: string) {
+        const active = ready?.releaseAgentSession;
+        if (active) return yield* active(session, deviceId);
+        yield* provide(bootstrap(config, owner, { releaseSession: session }));
+      },
+      Effect.mapError(
+        (cause) =>
+          new DeviceOperationError({ operation: "close", reason: "request_failed", cause }),
+      ),
+    ),
     ensureReady,
     ensureAgentReady: (onPhase) =>
       ensureReady(onPhase).pipe(

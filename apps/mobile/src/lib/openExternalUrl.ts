@@ -13,15 +13,15 @@ const ExternalUrlTarget = Schema.Literals([
 
 export type ExternalUrlTarget = typeof ExternalUrlTarget.Type;
 
-export class ExternalUrlOpenError extends Schema.TaggedError<ExternalUrlOpenError>()(
-  "ExternalUrlOpenError",
-  {
-    target: ExternalUrlTarget,
-    scheme: Schema.String,
-    host: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ExternalUrlOpenError extends Schema.TaggedError<
+  ExternalUrlOpenError,
+  { readonly brand: unique symbol }
+>()("ExternalUrlOpenError", {
+  target: ExternalUrlTarget,
+  scheme: Schema.String,
+  host: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to open ${this.target} URL with the ${this.scheme} scheme.`;
   }

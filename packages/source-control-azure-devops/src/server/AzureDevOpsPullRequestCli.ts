@@ -28,15 +28,15 @@ import {
 } from "./azureDevOpsPullRequestJson.ts";
 import type { ProviderListCursor } from "@t3tools/source-control-core/server/PullRequestProvider";
 
-export class AzureDevOpsPullRequestReadError extends Schema.TaggedError<AzureDevOpsPullRequestReadError>()(
-  "AzureDevOpsPullRequestReadError",
-  {
-    command: Schema.Literal("az"),
-    cwd: Schema.String,
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class AzureDevOpsPullRequestReadError extends Schema.TaggedError<
+  AzureDevOpsPullRequestReadError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsPullRequestReadError", {
+  command: Schema.Literal("az"),
+  cwd: Schema.String,
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   get detail(): string {
     return `Azure CLI returned an unreadable ${this.operation} response.`;
   }
@@ -46,13 +46,13 @@ export class AzureDevOpsPullRequestReadError extends Schema.TaggedError<AzureDev
   }
 }
 
-export class AzureDevOpsViewerUnavailableError extends Schema.TaggedError<AzureDevOpsViewerUnavailableError>()(
-  "AzureDevOpsViewerUnavailableError",
-  {
-    command: Schema.Literal("az"),
-    cwd: Schema.String,
-  },
-) {
+export class AzureDevOpsViewerUnavailableError extends Schema.TaggedError<
+  AzureDevOpsViewerUnavailableError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsViewerUnavailableError", {
+  command: Schema.Literal("az"),
+  cwd: Schema.String,
+}) {
   get detail(): string {
     return "Azure CLI could not name the signed-in account. Run `az login` and retry.";
   }
@@ -62,14 +62,14 @@ export class AzureDevOpsViewerUnavailableError extends Schema.TaggedError<AzureD
   }
 }
 
-export class AzureDevOpsPullRequestIncompleteError extends Schema.TaggedError<AzureDevOpsPullRequestIncompleteError>()(
-  "AzureDevOpsPullRequestIncompleteError",
-  {
-    command: Schema.Literal("az"),
-    cwd: Schema.String,
-    number: Schema.Int,
-  },
-) {
+export class AzureDevOpsPullRequestIncompleteError extends Schema.TaggedError<
+  AzureDevOpsPullRequestIncompleteError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsPullRequestIncompleteError", {
+  command: Schema.Literal("az"),
+  cwd: Schema.String,
+  number: Schema.Int,
+}) {
   get detail(): string {
     return "Azure DevOps returned no branch or link for the pull request.";
   }
@@ -79,13 +79,13 @@ export class AzureDevOpsPullRequestIncompleteError extends Schema.TaggedError<Az
   }
 }
 
-export class AzureDevOpsReviewerNameError extends Schema.TaggedError<AzureDevOpsReviewerNameError>()(
-  "AzureDevOpsReviewerNameError",
-  {
-    command: Schema.Literal("az"),
-    cwd: Schema.String,
-  },
-) {
+export class AzureDevOpsReviewerNameError extends Schema.TaggedError<
+  AzureDevOpsReviewerNameError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsReviewerNameError", {
+  command: Schema.Literal("az"),
+  cwd: Schema.String,
+}) {
   get detail(): string {
     return "A reviewer is named by an email address or an identity id.";
   }

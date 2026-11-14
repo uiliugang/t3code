@@ -43,6 +43,7 @@ const agentFixture = Effect.fn("agentFixture")(function* (
   ) => Effect.Effect<ProcessRunner.ProcessRunOutput, ProcessRunner.ProcessRunError>,
   avdOutput: ProcessRunner.ProcessRunOutput = processOutput(0),
   previousDaemon?: typeof LocalDeviceHost.__testing.AgentDeviceDaemonFile.Type,
+  startHub = true,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -52,6 +53,7 @@ const agentFixture = Effect.fn("agentFixture")(function* (
   const stateDir = agentDeviceStateDir(path, path.join(baseDir, "userdata"));
   const daemonHealthy = yield* Ref.make(true);
   const runs: Array<ProcessRunner.ProcessRunInput> = [];
+  const requests: string[] = [];
   for (const [name, version, entry] of [
     ["expo-device-hub", DEVICE_HUB_VERSION, "dist/server/cli.mjs"],
     ["agent-device", AGENT_DEVICE_VERSION, "bin/agent-device.mjs"],
@@ -115,24 +117,47 @@ const agentFixture = Effect.fn("agentFixture")(function* (
     Effect.provideService(
       HttpClient.HttpClient,
       HttpClient.make((request) =>
-        Ref.get(daemonHealthy).pipe(
+        Effect.sync(() => requests.push(request.url)).pipe(
+          Effect.andThen(Ref.get(daemonHealthy)),
           Effect.map((healthy) =>
             HttpClientResponse.fromWeb(
               request,
-              new Response("ok", {
-                status: request.url.endsWith("/health") && !healthy ? 503 : 200,
-              }),
+              new Response(
+                request.url.endsWith("/rpc") ? JSON.stringify({ result: { ok: true } }) : "ok",
+                {
+                  status: request.url.endsWith("/health") && !healthy ? 503 : 200,
+                },
+              ),
             ),
           ),
         ),
       ),
     ),
   );
-  yield* host.ensureReady(() => Effect.void);
-  return { host, fs, baseDir, stateDir, hub, daemonHealthy, daemonStopRequested, runs };
+  if (startHub) yield* host.ensureReady(() => Effect.void);
+  return { host, fs, baseDir, stateDir, hub, daemonHealthy, daemonStopRequested, runs, requests };
 });
 
 describe("AgentDevice startup", () => {
+  it.effect("releases a persisted session without starting the hub or agent tools", () =>
+    Effect.gen(function* () {
+      const f = yield* agentFixture(
+        () => Effect.die("must not start tools"),
+        processOutput(0),
+        { httpPort: 12345, token: "test" },
+        false,
+      );
+      expect(yield* f.host.current).toBeNull();
+      yield* (
+        f.host.releaseAgentSession?.("restored-session", "emulator-5554") ??
+          Effect.die("Local host needs offline release")
+      );
+      expect(f.requests).toEqual(["http://127.0.0.1:12345/rpc"]);
+      expect(f.runs).toEqual([]);
+      expect(yield* f.host.current).toBeNull();
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("restarts a cached daemon that no longer answers its health check", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

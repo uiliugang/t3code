@@ -380,15 +380,15 @@ function draftWithInsertedContext(
   return withReferencedContextFiles(draft, text, context);
 }
 
-export class ComposerDraftPersistenceError extends Schema.TaggedError<ComposerDraftPersistenceError>()(
-  "ComposerDraftPersistenceError",
-  {
-    operation: Schema.Literals(["open", "read", "decode", "encode", "write", "hydrate"]),
-    directory: Schema.String,
-    fileName: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ComposerDraftPersistenceError extends Schema.TaggedError<
+  ComposerDraftPersistenceError,
+  { readonly brand: unique symbol }
+>()("ComposerDraftPersistenceError", {
+  operation: Schema.Literals(["open", "read", "decode", "encode", "write", "hydrate"]),
+  directory: Schema.String,
+  fileName: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Composer draft persistence operation ${this.operation} failed for ${this.directory}/${this.fileName}.`;
   }

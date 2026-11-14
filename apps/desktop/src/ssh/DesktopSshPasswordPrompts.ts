@@ -45,111 +45,111 @@ const DesktopSshPromptPresentationOperation = Schema.Literals([
 ]);
 type DesktopSshPromptPresentationOperation = typeof DesktopSshPromptPresentationOperation.Type;
 
-export class DesktopSshPromptRequestIdGenerationError extends Schema.TaggedError<DesktopSshPromptRequestIdGenerationError>()(
-  "DesktopSshPromptRequestIdGenerationError",
-  {
-    destination: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopSshPromptRequestIdGenerationError extends Schema.TaggedError<
+  DesktopSshPromptRequestIdGenerationError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptRequestIdGenerationError", {
+  destination: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Secure randomness is unavailable.";
   }
 }
 
-export class DesktopSshPromptWindowUnavailableError extends Schema.TaggedError<DesktopSshPromptWindowUnavailableError>()(
-  "DesktopSshPromptWindowUnavailableError",
-  {
-    destination: Schema.String,
-    requestId: Schema.NullOr(Schema.String),
-    stage: DesktopSshPromptWindowAvailabilityStage,
-  },
-) {
+export class DesktopSshPromptWindowUnavailableError extends Schema.TaggedError<
+  DesktopSshPromptWindowUnavailableError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptWindowUnavailableError", {
+  destination: Schema.String,
+  requestId: Schema.NullOr(Schema.String),
+  stage: DesktopSshPromptWindowAvailabilityStage,
+}) {
   override get message(): string {
     const request = this.requestId === null ? "before a request id was assigned" : this.requestId;
     return `T3 Code window is unavailable during ${this.stage} for SSH authentication to ${this.destination} (request: ${request}).`;
   }
 }
 
-export class DesktopSshPromptPresentationError extends Schema.TaggedError<DesktopSshPromptPresentationError>()(
-  "DesktopSshPromptPresentationError",
-  {
-    requestId: Schema.NullOr(Schema.String),
-    destination: Schema.String,
-    operation: DesktopSshPromptPresentationOperation,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopSshPromptPresentationError extends Schema.TaggedError<
+  DesktopSshPromptPresentationError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptPresentationError", {
+  requestId: Schema.NullOr(Schema.String),
+  destination: Schema.String,
+  operation: DesktopSshPromptPresentationOperation,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to present SSH password prompt for ${this.destination}.`;
   }
 }
 
-export class DesktopSshPromptTimedOutError extends Schema.TaggedError<DesktopSshPromptTimedOutError>()(
-  "DesktopSshPromptTimedOutError",
-  {
-    requestId: Schema.String,
-    destination: Schema.String,
-  },
-) {
+export class DesktopSshPromptTimedOutError extends Schema.TaggedError<
+  DesktopSshPromptTimedOutError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptTimedOutError", {
+  requestId: Schema.String,
+  destination: Schema.String,
+}) {
   override get message(): string {
     return `SSH authentication timed out for ${this.destination}.`;
   }
 }
 
-export class DesktopSshPromptCancelledError extends Schema.TaggedError<DesktopSshPromptCancelledError>()(
-  "DesktopSshPromptCancelledError",
-  {
-    requestId: Schema.String,
-    destination: Schema.String,
-  },
-) {
+export class DesktopSshPromptCancelledError extends Schema.TaggedError<
+  DesktopSshPromptCancelledError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptCancelledError", {
+  requestId: Schema.String,
+  destination: Schema.String,
+}) {
   override get message(): string {
     return `SSH authentication cancelled for ${this.destination}.`;
   }
 }
 
-export class DesktopSshPromptWindowClosedError extends Schema.TaggedError<DesktopSshPromptWindowClosedError>()(
-  "DesktopSshPromptWindowClosedError",
-  {
-    requestId: Schema.String,
-    destination: Schema.String,
-  },
-) {
+export class DesktopSshPromptWindowClosedError extends Schema.TaggedError<
+  DesktopSshPromptWindowClosedError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptWindowClosedError", {
+  requestId: Schema.String,
+  destination: Schema.String,
+}) {
   override get message(): string {
     return "SSH authentication was cancelled because the app window closed.";
   }
 }
 
-export class DesktopSshPromptServiceStoppedError extends Schema.TaggedError<DesktopSshPromptServiceStoppedError>()(
-  "DesktopSshPromptServiceStoppedError",
-  {
-    requestId: Schema.String,
-    destination: Schema.String,
-  },
-) {
+export class DesktopSshPromptServiceStoppedError extends Schema.TaggedError<
+  DesktopSshPromptServiceStoppedError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptServiceStoppedError", {
+  requestId: Schema.String,
+  destination: Schema.String,
+}) {
   override get message(): string {
     return "SSH password prompt service stopped.";
   }
 }
 
-export class DesktopSshPromptInvalidRequestIdError extends Schema.TaggedError<DesktopSshPromptInvalidRequestIdError>()(
-  "DesktopSshPromptInvalidRequestIdError",
-  {
-    requestId: Schema.String,
-  },
-) {
+export class DesktopSshPromptInvalidRequestIdError extends Schema.TaggedError<
+  DesktopSshPromptInvalidRequestIdError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptInvalidRequestIdError", {
+  requestId: Schema.String,
+}) {
   override get message(): string {
     return "Invalid SSH password prompt id.";
   }
 }
 
-export class DesktopSshPromptExpiredError extends Schema.TaggedError<DesktopSshPromptExpiredError>()(
-  "DesktopSshPromptExpiredError",
-  {
-    requestId: Schema.String,
-  },
-) {
+export class DesktopSshPromptExpiredError extends Schema.TaggedError<
+  DesktopSshPromptExpiredError,
+  { readonly brand: unique symbol }
+>()("DesktopSshPromptExpiredError", {
+  requestId: Schema.String,
+}) {
   override get message(): string {
     return "SSH password prompt expired. Try connecting again.";
   }

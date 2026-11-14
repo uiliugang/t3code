@@ -93,25 +93,25 @@ const GUEST_ACCESS_MESSAGES = {
 } as const;
 
 /** What a guest is told. The message comes from `reason`, never from a cause. */
-export class GuestShareAccessError extends Schema.TaggedError<GuestShareAccessError>()(
-  "GuestShareAccessError",
-  {
-    reason: Schema.Literals([
-      "invalid",
-      "inactive",
-      "used",
-      "busy",
-      "stale_page",
-      "unavailable",
-      "rejected",
-      "empty",
-      "too_many_files",
-      "too_large",
-      "unsupported_file",
-      "files_busy",
-    ]),
-  },
-) {
+export class GuestShareAccessError extends Schema.TaggedError<
+  GuestShareAccessError,
+  { readonly brand: unique symbol }
+>()("GuestShareAccessError", {
+  reason: Schema.Literals([
+    "invalid",
+    "inactive",
+    "used",
+    "busy",
+    "stale_page",
+    "unavailable",
+    "rejected",
+    "empty",
+    "too_many_files",
+    "too_large",
+    "unsupported_file",
+    "files_busy",
+  ]),
+}) {
   override get message(): string {
     return GUEST_ACCESS_MESSAGES[this.reason];
   }

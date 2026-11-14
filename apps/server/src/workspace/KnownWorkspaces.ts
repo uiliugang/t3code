@@ -15,13 +15,13 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
 
-export class UnknownWorkspaceError extends Schema.TaggedError<UnknownWorkspaceError>()(
-  "UnknownWorkspaceError",
-  {
-    cwd: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class UnknownWorkspaceError extends Schema.TaggedError<
+  UnknownWorkspaceError,
+  { readonly brand: unique symbol }
+>()("UnknownWorkspaceError", {
+  cwd: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `'${this.cwd}' is not a registered project, a managed worktree, or a thread's worktree.`;
   }

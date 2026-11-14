@@ -22,12 +22,12 @@ const MAX_JOBS = 16;
 // Stay below macOS's 104-byte and Linux's 108-byte sockaddr_un limits, including NUL.
 const UNIX_SOCKET_PATH_BYTES = 100;
 const encodeResponse = Schema.encodeSync(Schema.fromJsonString(Protocol.Response));
-class BrokerStartError extends Schema.TaggedError<BrokerStartError>()(
-  "ManagedTokenBrokerStartError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+class BrokerStartError extends Schema.TaggedError<
+  BrokerStartError,
+  { readonly brand: unique symbol }
+>()("ManagedTokenBrokerStartError", {
+  cause: Schema.Defect(),
+}) {
   override get message() {
     return "Could not start the private managed token listener.";
   }

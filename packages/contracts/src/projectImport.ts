@@ -120,13 +120,13 @@ export const ProjectImportSnapshot = Schema.Struct({
 });
 export type ProjectImportSnapshot = typeof ProjectImportSnapshot.Type;
 
-export class ProjectImportError extends Schema.TaggedError<ProjectImportError>()(
-  "ProjectImportError",
-  {
-    operation: Schema.Literals(["export", "read", "save", "start", "retry", "forget"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectImportError extends Schema.TaggedError<
+  ProjectImportError,
+  { readonly brand: unique symbol }
+>()("ProjectImportError", {
+  operation: Schema.Literals(["export", "read", "save", "start", "retry", "forget"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return typeof this.cause === "string"
       ? this.cause

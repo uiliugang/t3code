@@ -404,10 +404,10 @@ export type ServerPrepareTriageResult = typeof ServerPrepareTriageResult.Type;
  */
 export const TRIAGE_PROMPT_FILE_NAME = "triage-playbook.md";
 
-export class ServerPrepareTriageError extends Schema.TaggedError<ServerPrepareTriageError>()(
-  "ServerPrepareTriageError",
-  { cause: Schema.optional(Schema.Defect()) },
-) {
+export class ServerPrepareTriageError extends Schema.TaggedError<
+  ServerPrepareTriageError,
+  { readonly brand: unique symbol }
+>()("ServerPrepareTriageError", { cause: Schema.optional(Schema.Defect()) }) {
   override get message(): string {
     return "Could not write the triage session files.";
   }
@@ -967,14 +967,14 @@ export const ServerProviderUpdateInput = Schema.Struct({
 });
 export type ServerProviderUpdateInput = typeof ServerProviderUpdateInput.Type;
 
-export class ServerProviderUpdateError extends Schema.TaggedError<ServerProviderUpdateError>()(
-  "ServerProviderUpdateError",
-  {
-    provider: ProviderDriverKind,
-    reason: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerProviderUpdateError extends Schema.TaggedError<
+  ServerProviderUpdateError,
+  { readonly brand: unique symbol }
+>()("ServerProviderUpdateError", {
+  provider: ProviderDriverKind,
+  reason: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Provider update failed for ${this.provider}: ${this.reason}`;
   }
@@ -995,10 +995,10 @@ export const ServerNpmRelease = Schema.Struct({
 });
 export type ServerNpmRelease = typeof ServerNpmRelease.Type;
 
-export class ServerNpmReleaseError extends Schema.TaggedError<ServerNpmReleaseError>()(
-  "ServerNpmReleaseError",
-  { reason: Schema.String },
-) {
+export class ServerNpmReleaseError extends Schema.TaggedError<
+  ServerNpmReleaseError,
+  { readonly brand: unique symbol }
+>()("ServerNpmReleaseError", { reason: Schema.String }) {
   override get message(): string {
     return `Could not check the configured npm registry: ${this.reason}`;
   }
@@ -1042,13 +1042,13 @@ export const ServerSelfUpdateProgressEvent = Schema.Union([
 ]);
 export type ServerSelfUpdateProgressEvent = typeof ServerSelfUpdateProgressEvent.Type;
 
-export class ServerSelfUpdateError extends Schema.TaggedError<ServerSelfUpdateError>()(
-  "ServerSelfUpdateError",
-  {
-    reason: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerSelfUpdateError extends Schema.TaggedError<
+  ServerSelfUpdateError,
+  { readonly brand: unique symbol }
+>()("ServerSelfUpdateError", {
+  reason: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Server update failed: ${this.reason}`;
   }

@@ -43,10 +43,10 @@ export const ProjectFolderImportResult = Schema.Struct({
 export type ProjectFolderImportResult = typeof ProjectFolderImportResult.Type;
 export const ProjectFoldersImportResult = Schema.Array(ProjectFolderImportResult);
 
-export class ProjectFoldersError extends Schema.TaggedError<ProjectFoldersError>()(
-  "ProjectFoldersError",
-  { cause: Schema.Defect() },
-) {
+export class ProjectFoldersError extends Schema.TaggedError<
+  ProjectFoldersError,
+  { readonly brand: unique symbol }
+>()("ProjectFoldersError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not inspect or import project folders.";
   }

@@ -11,13 +11,13 @@ type DesktopUpdateBridge = Pick<DesktopBridge, "getUpdateState" | "onUpdateState
 
 const INITIAL_STATE_READ_ATTEMPT_COUNT = 3;
 
-export class DesktopUpdateStateReadError extends Schema.TaggedError<DesktopUpdateStateReadError>()(
-  "DesktopUpdateStateReadError",
-  {
-    attemptCount: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopUpdateStateReadError extends Schema.TaggedError<
+  DesktopUpdateStateReadError,
+  { readonly brand: unique symbol }
+>()("DesktopUpdateStateReadError", {
+  attemptCount: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read the initial desktop update state after ${this.attemptCount} attempts.`;
   }

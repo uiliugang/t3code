@@ -7,9 +7,10 @@ import * as Schema from "effect/Schema";
 
 import type { ConnectionAttemptError } from "../connection/model.ts";
 
-export class RemoteDpopAccessToken extends Schema.Class<RemoteDpopAccessToken>(
-  "@t3tools/client-runtime/authorization/RemoteDpopAccessToken",
-)({
+export class RemoteDpopAccessToken extends Schema.Class<
+  RemoteDpopAccessToken,
+  { readonly brand: unique symbol }
+>("@t3tools/client-runtime/authorization/RemoteDpopAccessToken")({
   environmentId: EnvironmentId,
   accountId: Schema.optionalKey(Schema.String),
   label: Schema.String,

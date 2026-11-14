@@ -29,19 +29,19 @@ export function filterDiscoveredSshHosts(
   return [...prefixMatches, ...substringMatches];
 }
 
-class DesktopSshDiscoveryUnavailableError extends Schema.TaggedError<DesktopSshDiscoveryUnavailableError>()(
-  "DesktopSshDiscoveryUnavailableError",
-  {},
-) {
+class DesktopSshDiscoveryUnavailableError extends Schema.TaggedError<
+  DesktopSshDiscoveryUnavailableError,
+  { readonly brand: unique symbol }
+>()("DesktopSshDiscoveryUnavailableError", {}) {
   override get message(): string {
     return "Desktop SSH host discovery is unavailable.";
   }
 }
 
-class DesktopSshDiscoveryError extends Schema.TaggedError<DesktopSshDiscoveryError>()(
-  "DesktopSshDiscoveryError",
-  { cause: Schema.Defect() },
-) {
+class DesktopSshDiscoveryError extends Schema.TaggedError<
+  DesktopSshDiscoveryError,
+  { readonly brand: unique symbol }
+>()("DesktopSshDiscoveryError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to discover SSH hosts.";
   }

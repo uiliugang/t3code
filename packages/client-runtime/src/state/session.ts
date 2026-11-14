@@ -20,10 +20,10 @@ import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAut
 import { followStreamInEnvironment } from "./environmentStreams.ts";
 
 /** @public Required to name the error in consumers' inferred session results. */
-export class SessionHttpClientUnavailable extends Schema.TaggedError<SessionHttpClientUnavailable>()(
-  "SessionHttpClientUnavailable",
-  {},
-) {}
+export class SessionHttpClientUnavailable extends Schema.TaggedError<
+  SessionHttpClientUnavailable,
+  { readonly brand: unique symbol }
+>()("SessionHttpClientUnavailable", {}) {}
 
 function initialConfigOption<E>(
   initialConfig: Effect.Effect<ServerConfig, E>,

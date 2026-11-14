@@ -21,13 +21,13 @@ const Marker = Schema.Struct({ version: Schema.String });
 const decodeMarker = Schema.decodeUnknownEffect(Schema.fromJsonString(Marker));
 const encodeMarker = Schema.encodeEffect(Schema.fromJsonString(Marker));
 
-export class DesktopWslServerTreeExtractError extends Schema.TaggedError<DesktopWslServerTreeExtractError>()(
-  "DesktopWslServerTreeExtractError",
-  {
-    targetDir: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopWslServerTreeExtractError extends Schema.TaggedError<
+  DesktopWslServerTreeExtractError,
+  { readonly brand: unique symbol }
+>()("DesktopWslServerTreeExtractError", {
+  targetDir: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to extract the WSL server tree to ${this.targetDir}.`;
   }

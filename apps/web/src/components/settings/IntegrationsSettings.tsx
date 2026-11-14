@@ -176,10 +176,10 @@ const zoomLabel = (zoomFactor: number) => `${Math.round(zoomFactor * 100)}%`;
 
 /** IPC carries reason tokens inside messages; treat unknown tokens as read failures without exposing raw
  * text. */
-class ProfileLimitReachedError extends Schema.TaggedError<ProfileLimitReachedError>()(
-  "ProfileLimitReachedError",
-  {},
-) {
+class ProfileLimitReachedError extends Schema.TaggedError<
+  ProfileLimitReachedError,
+  { readonly brand: unique symbol }
+>()("ProfileLimitReachedError", {}) {
   override get message(): string {
     return "Browser profile limit reached.";
   }

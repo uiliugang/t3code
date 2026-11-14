@@ -97,10 +97,10 @@ export type BoundedProjectionResult = {
   readonly latestLocalTurnOrdinal: number | null;
 };
 
-export class InvalidThreadHistoryCursorError extends Schema.TaggedError<InvalidThreadHistoryCursorError>()(
-  "InvalidThreadHistoryCursorError",
-  {},
-) {
+export class InvalidThreadHistoryCursorError extends Schema.TaggedError<
+  InvalidThreadHistoryCursorError,
+  { readonly brand: unique symbol }
+>()("InvalidThreadHistoryCursorError", {}) {
   override get message(): string {
     return "Invalid thread history cursor.";
   }

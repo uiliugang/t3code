@@ -23,10 +23,10 @@ import { createRuntimeCommand } from "./runtime.ts";
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /** The environment cannot be reached through T3 Connect with this account. */
-export class ConnectMcpApprovalUnavailableError extends Schema.TaggedError<ConnectMcpApprovalUnavailableError>()(
-  "ConnectMcpApprovalUnavailableError",
-  { cause: Schema.Defect() },
-) {
+export class ConnectMcpApprovalUnavailableError extends Schema.TaggedError<
+  ConnectMcpApprovalUnavailableError,
+  { readonly brand: unique symbol }
+>()("ConnectMcpApprovalUnavailableError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not reach that environment through T3 Connect with this account.";
   }

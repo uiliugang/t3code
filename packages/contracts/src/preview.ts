@@ -327,13 +327,13 @@ export const PreviewStopLocalServerInput = Schema.Struct({
 });
 export type PreviewStopLocalServerInput = typeof PreviewStopLocalServerInput.Type;
 
-export class PreviewStopLocalServerError extends Schema.TaggedError<PreviewStopLocalServerError>()(
-  "PreviewStopLocalServerError",
-  {
-    reason: Schema.Literals(["not-found", "shared-group", "unsupported", "signal-failed"]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class PreviewStopLocalServerError extends Schema.TaggedError<
+  PreviewStopLocalServerError,
+  { readonly brand: unique symbol }
+>()("PreviewStopLocalServerError", {
+  reason: Schema.Literals(["not-found", "shared-group", "unsupported", "signal-failed"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     switch (this.reason) {
       case "not-found":
@@ -355,46 +355,46 @@ export const DiscoveredLocalServerList = Schema.Struct({
 });
 export type DiscoveredLocalServerList = typeof DiscoveredLocalServerList.Type;
 
-export class PreviewSessionLookupError extends Schema.TaggedError<PreviewSessionLookupError>()(
-  "PreviewSessionLookupError",
-  {
-    threadId: Schema.String,
-    tabId: Schema.String,
-  },
-) {
+export class PreviewSessionLookupError extends Schema.TaggedError<
+  PreviewSessionLookupError,
+  { readonly brand: unique symbol }
+>()("PreviewSessionLookupError", {
+  threadId: Schema.String,
+  tabId: Schema.String,
+}) {
   override get message() {
     return `Unknown preview session: thread=${this.threadId}, tab=${this.tabId}`;
   }
 }
 
-export class PreviewInvalidUrlError extends Schema.TaggedError<PreviewInvalidUrlError>()(
-  "PreviewInvalidUrlError",
-  {
-    inputLength: Schema.Number,
-    reason: Schema.Literals(["empty", "parse", "unsupported-protocol", "unexpected"]),
-    protocol: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class PreviewInvalidUrlError extends Schema.TaggedError<
+  PreviewInvalidUrlError,
+  { readonly brand: unique symbol }
+>()("PreviewInvalidUrlError", {
+  inputLength: Schema.Number,
+  reason: Schema.Literals(["empty", "parse", "unsupported-protocol", "unexpected"]),
+  protocol: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message() {
     const protocol = this.protocol === undefined ? "" : `: ${this.protocol}`;
     return `Invalid preview URL (${this.reason}${protocol}; input length ${this.inputLength}). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.`;
   }
 }
 
-export class PreviewControlRequiredError extends Schema.TaggedError<PreviewControlRequiredError>()(
-  "PreviewControlRequiredError",
-  { tabId: Schema.String },
-) {
+export class PreviewControlRequiredError extends Schema.TaggedError<
+  PreviewControlRequiredError,
+  { readonly brand: unique symbol }
+>()("PreviewControlRequiredError", { tabId: Schema.String }) {
   override get message() {
     return "Take control of the server browser and use its viewer controls.";
   }
 }
 
-export class PreviewClearProfileError extends Schema.TaggedError<PreviewClearProfileError>()(
-  "PreviewClearProfileError",
-  { profileId: Schema.String, cause: Schema.Defect() },
-) {
+export class PreviewClearProfileError extends Schema.TaggedError<
+  PreviewClearProfileError,
+  { readonly brand: unique symbol }
+>()("PreviewClearProfileError", { profileId: Schema.String, cause: Schema.Defect() }) {
   override get message() {
     return "The environment could not delete this browser profile's data.";
   }

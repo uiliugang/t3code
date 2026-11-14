@@ -23,7 +23,10 @@ const HeadSchema = Schema.Struct({
 });
 const decodeHead = Schema.decodeUnknownEffect(Schema.fromJsonString(HeadSchema));
 
-class ChecksUnavailable extends Schema.TaggedError<ChecksUnavailable>()("ChecksUnavailable", {}) {}
+class ChecksUnavailable extends Schema.TaggedError<
+  ChecksUnavailable,
+  { readonly brand: unique symbol }
+>()("ChecksUnavailable", {}) {}
 
 const WorkflowRunSchema = Schema.Struct({
   id: Schema.Int,

@@ -69,15 +69,15 @@ export interface CommandResult {
   readonly code: number;
 }
 
-export class ProviderCommandNotFoundError extends Schema.TaggedError<ProviderCommandNotFoundError>()(
-  "ProviderCommandNotFoundError",
-  {
-    binaryPath: Schema.String,
-    exitCode: Schema.Number,
-    stdoutLength: Schema.Number,
-    stderrLength: Schema.Number,
-  },
-) {
+export class ProviderCommandNotFoundError extends Schema.TaggedError<
+  ProviderCommandNotFoundError,
+  { readonly brand: unique symbol }
+>()("ProviderCommandNotFoundError", {
+  binaryPath: Schema.String,
+  exitCode: Schema.Number,
+  stdoutLength: Schema.Number,
+  stderrLength: Schema.Number,
+}) {
   override get message(): string {
     return `Provider command ${this.binaryPath} was not found (exit code ${this.exitCode}).`;
   }

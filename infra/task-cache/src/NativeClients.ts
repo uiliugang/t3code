@@ -7,10 +7,14 @@ import { developerIdentity } from "./developerAuth.ts";
 
 export const routePrefix = "/projects/t3code/native-clients/";
 
-export class NativeClientsError extends Schema.TaggedError<NativeClientsError>()(
-  "NativeClientsError",
-  { status: Schema.Number, reason: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {}
+export class NativeClientsError extends Schema.TaggedError<
+  NativeClientsError,
+  { readonly brand: unique symbol }
+>()("NativeClientsError", {
+  status: Schema.Number,
+  reason: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export class Bindings extends Context.Service<
   Bindings,

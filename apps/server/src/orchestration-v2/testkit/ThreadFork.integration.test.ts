@@ -54,13 +54,13 @@ const CODEX_READ_ONLY_NEVER_POLICY = {
   },
 } as const;
 
-class ThreadForkGitCommandError extends Schema.TaggedError<ThreadForkGitCommandError>()(
-  "ThreadForkGitCommandError",
-  {
-    command: Schema.String,
-    exitCode: Schema.Number,
-  },
-) {
+class ThreadForkGitCommandError extends Schema.TaggedError<
+  ThreadForkGitCommandError,
+  { readonly brand: unique symbol }
+>()("ThreadForkGitCommandError", {
+  command: Schema.String,
+  exitCode: Schema.Number,
+}) {
   override get message(): string {
     return `${this.command} failed with exit ${this.exitCode}.`;
   }

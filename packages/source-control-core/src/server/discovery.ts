@@ -391,10 +391,10 @@ export const failedProbeHint = Effect.fn("discovery.failedProbeHint")(function* 
     : probeFailureHint(probe, cause);
 });
 
-class UnknownRemoteUnanswered extends Schema.TaggedError<UnknownRemoteUnanswered>()(
-  "UnknownRemoteUnanswered",
-  {},
-) {}
+class UnknownRemoteUnanswered extends Schema.TaggedError<
+  UnknownRemoteUnanswered,
+  { readonly brand: unique symbol }
+>()("UnknownRemoteUnanswered", {}) {}
 
 export interface UnknownRemoteVerdict {
   readonly provider: SourceControlProviderInfo | null;

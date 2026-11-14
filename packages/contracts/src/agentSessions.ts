@@ -54,19 +54,19 @@ export const AgentSessionImportInput = Schema.Struct({
 });
 export type AgentSessionImportInput = typeof AgentSessionImportInput.Type;
 
-export class AgentSessionImportProjectNotFoundError extends Schema.TaggedError<AgentSessionImportProjectNotFoundError>()(
-  "AgentSessionImportProjectNotFoundError",
-  { projectId: ProjectId },
-) {
+export class AgentSessionImportProjectNotFoundError extends Schema.TaggedError<
+  AgentSessionImportProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("AgentSessionImportProjectNotFoundError", { projectId: ProjectId }) {
   override get message(): string {
     return `Project '${this.projectId}' does not exist.`;
   }
 }
 
-export class AgentSessionImportProjectChangedError extends Schema.TaggedError<AgentSessionImportProjectChangedError>()(
-  "AgentSessionImportProjectChangedError",
-  { projectId: ProjectId },
-) {
+export class AgentSessionImportProjectChangedError extends Schema.TaggedError<
+  AgentSessionImportProjectChangedError,
+  { readonly brand: unique symbol }
+>()("AgentSessionImportProjectChangedError", { projectId: ProjectId }) {
   override get message(): string {
     return `Project '${this.projectId}' changed directories. Scan for projects again before importing history.`;
   }
@@ -78,13 +78,13 @@ export const AgentSessionImportResult = Schema.Struct({
 });
 export type AgentSessionImportResult = typeof AgentSessionImportResult.Type;
 
-export class AgentSessionScanError extends Schema.TaggedError<AgentSessionScanError>()(
-  "AgentSessionScanError",
-  {
-    operation: Schema.Literals(["read-settings", "read-projects"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class AgentSessionScanError extends Schema.TaggedError<
+  AgentSessionScanError,
+  { readonly brand: unique symbol }
+>()("AgentSessionScanError", {
+  operation: Schema.Literals(["read-settings", "read-projects"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to scan agent sessions during ${this.operation}.`;
   }

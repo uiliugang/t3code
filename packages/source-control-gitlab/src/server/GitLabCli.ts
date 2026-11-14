@@ -36,10 +36,10 @@ const gitLabCliDecodeErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class GitLabCliUnavailableError extends Schema.TaggedError<GitLabCliUnavailableError>()(
-  "GitLabCliUnavailableError",
-  gitLabCliExecutionErrorContext,
-) {
+export class GitLabCliUnavailableError extends Schema.TaggedError<
+  GitLabCliUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitLabCliUnavailableError", gitLabCliExecutionErrorContext) {
   get detail(): string {
     return "GitLab CLI (`glab`) is required but not available on PATH.";
   }
@@ -49,10 +49,10 @@ export class GitLabCliUnavailableError extends Schema.TaggedError<GitLabCliUnava
   }
 }
 
-export class GitLabCliAuthenticationError extends Schema.TaggedError<GitLabCliAuthenticationError>()(
-  "GitLabCliAuthenticationError",
-  gitLabCliExecutionErrorContext,
-) {
+export class GitLabCliAuthenticationError extends Schema.TaggedError<
+  GitLabCliAuthenticationError,
+  { readonly brand: unique symbol }
+>()("GitLabCliAuthenticationError", gitLabCliExecutionErrorContext) {
   get detail(): string {
     return "GitLab CLI is not authenticated. Run `glab auth login` and retry.";
   }
@@ -62,10 +62,10 @@ export class GitLabCliAuthenticationError extends Schema.TaggedError<GitLabCliAu
   }
 }
 
-export class GitLabCliRateLimitError extends Schema.TaggedError<GitLabCliRateLimitError>()(
-  "GitLabCliRateLimitError",
-  gitLabCliExecutionErrorContext,
-) {
+export class GitLabCliRateLimitError extends Schema.TaggedError<
+  GitLabCliRateLimitError,
+  { readonly brand: unique symbol }
+>()("GitLabCliRateLimitError", gitLabCliExecutionErrorContext) {
   get detail(): string {
     return "GitLab API rate limit exceeded.";
   }
@@ -75,13 +75,13 @@ export class GitLabCliRateLimitError extends Schema.TaggedError<GitLabCliRateLim
   }
 }
 
-export class GitLabMergeRequestNotFoundError extends Schema.TaggedError<GitLabMergeRequestNotFoundError>()(
-  "GitLabMergeRequestNotFoundError",
-  {
-    ...gitLabCliExecutionErrorContext,
-    reference: Schema.String,
-  },
-) {
+export class GitLabMergeRequestNotFoundError extends Schema.TaggedError<
+  GitLabMergeRequestNotFoundError,
+  { readonly brand: unique symbol }
+>()("GitLabMergeRequestNotFoundError", {
+  ...gitLabCliExecutionErrorContext,
+  reference: Schema.String,
+}) {
   get detail(): string {
     return `Merge request ${this.reference} was not found. Check the MR number or URL and try again.`;
   }
@@ -114,10 +114,10 @@ export class GitLabMergeRequestNotFoundError extends Schema.TaggedError<GitLabMe
   }
 }
 
-export class GitLabCliCommandError extends Schema.TaggedError<GitLabCliCommandError>()(
-  "GitLabCliCommandError",
-  gitLabCliExecutionErrorContext,
-) {
+export class GitLabCliCommandError extends Schema.TaggedError<
+  GitLabCliCommandError,
+  { readonly brand: unique symbol }
+>()("GitLabCliCommandError", gitLabCliExecutionErrorContext) {
   get detail(): string {
     return "GitLab CLI command failed.";
   }
@@ -159,13 +159,13 @@ export class GitLabCliCommandError extends Schema.TaggedError<GitLabCliCommandEr
   }
 }
 
-export class GitLabMergeRequestListDecodeError extends Schema.TaggedError<GitLabMergeRequestListDecodeError>()(
-  "GitLabMergeRequestListDecodeError",
-  {
-    ...gitLabCliDecodeErrorContext,
-    operation: Schema.Literal("listMergeRequests"),
-  },
-) {
+export class GitLabMergeRequestListDecodeError extends Schema.TaggedError<
+  GitLabMergeRequestListDecodeError,
+  { readonly brand: unique symbol }
+>()("GitLabMergeRequestListDecodeError", {
+  ...gitLabCliDecodeErrorContext,
+  operation: Schema.Literal("listMergeRequests"),
+}) {
   get detail(): string {
     return "GitLab CLI returned invalid MR list JSON.";
   }
@@ -175,14 +175,14 @@ export class GitLabMergeRequestListDecodeError extends Schema.TaggedError<GitLab
   }
 }
 
-export class GitLabMergeRequestDecodeError extends Schema.TaggedError<GitLabMergeRequestDecodeError>()(
-  "GitLabMergeRequestDecodeError",
-  {
-    ...gitLabCliDecodeErrorContext,
-    operation: Schema.Literal("getMergeRequest"),
-    reference: Schema.String,
-  },
-) {
+export class GitLabMergeRequestDecodeError extends Schema.TaggedError<
+  GitLabMergeRequestDecodeError,
+  { readonly brand: unique symbol }
+>()("GitLabMergeRequestDecodeError", {
+  ...gitLabCliDecodeErrorContext,
+  operation: Schema.Literal("getMergeRequest"),
+  reference: Schema.String,
+}) {
   get detail(): string {
     return "GitLab CLI returned invalid merge request JSON.";
   }
@@ -192,14 +192,14 @@ export class GitLabMergeRequestDecodeError extends Schema.TaggedError<GitLabMerg
   }
 }
 
-export class GitLabRepositoryDecodeError extends Schema.TaggedError<GitLabRepositoryDecodeError>()(
-  "GitLabRepositoryDecodeError",
-  {
-    ...gitLabCliDecodeErrorContext,
-    operation: Schema.Literals(["getRepositoryCloneUrls", "createRepository", "getDefaultBranch"]),
-    repository: Schema.optional(Schema.String),
-  },
-) {
+export class GitLabRepositoryDecodeError extends Schema.TaggedError<
+  GitLabRepositoryDecodeError,
+  { readonly brand: unique symbol }
+>()("GitLabRepositoryDecodeError", {
+  ...gitLabCliDecodeErrorContext,
+  operation: Schema.Literals(["getRepositoryCloneUrls", "createRepository", "getDefaultBranch"]),
+  repository: Schema.optional(Schema.String),
+}) {
   get detail(): string {
     return "GitLab CLI returned invalid repository JSON.";
   }
@@ -209,14 +209,14 @@ export class GitLabRepositoryDecodeError extends Schema.TaggedError<GitLabReposi
   }
 }
 
-export class GitLabNamespaceDecodeError extends Schema.TaggedError<GitLabNamespaceDecodeError>()(
-  "GitLabNamespaceDecodeError",
-  {
-    ...gitLabCliDecodeErrorContext,
-    operation: Schema.Literal("createRepository"),
-    namespacePath: Schema.String,
-  },
-) {
+export class GitLabNamespaceDecodeError extends Schema.TaggedError<
+  GitLabNamespaceDecodeError,
+  { readonly brand: unique symbol }
+>()("GitLabNamespaceDecodeError", {
+  ...gitLabCliDecodeErrorContext,
+  operation: Schema.Literal("createRepository"),
+  namespacePath: Schema.String,
+}) {
   get detail(): string {
     return "GitLab CLI returned invalid namespace JSON.";
   }

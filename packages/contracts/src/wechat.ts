@@ -1,7 +1,10 @@
 import * as Schema from "effect/Schema";
 import { ThreadId, ProjectId } from "./baseSchemas.ts";
 
-export class WechatError extends Schema.TaggedError<WechatError>()("WechatError", {
+export class WechatError extends Schema.TaggedError<
+  WechatError,
+  { readonly brand: unique symbol }
+>()("WechatError", {
   reason: Schema.Literals([
     "network",
     "protocol",

@@ -133,68 +133,68 @@ export interface ThreadLaunchResult {
   readonly sequence?: number;
 }
 
-export class ThreadLaunchError extends Schema.TaggedError<ThreadLaunchError>()(
-  "ThreadLaunchError",
-  {
-    operation: Schema.Literals([
-      "resolve-project",
-      "read-receipt",
-      "generate-metadata",
-      "provision-worktree",
-      "run-setup-script",
-      "create-thread",
-      "update-thread",
-      "dispatch-message",
-      "release-run",
-      "fail-run",
-    ]),
-    commandId: CommandId,
-    projectId: ProjectId,
-    threadId: Schema.optional(ThreadId),
-    cause: Schema.Defect(),
-  },
-) {
+export class ThreadLaunchError extends Schema.TaggedError<
+  ThreadLaunchError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchError", {
+  operation: Schema.Literals([
+    "resolve-project",
+    "read-receipt",
+    "generate-metadata",
+    "provision-worktree",
+    "run-setup-script",
+    "create-thread",
+    "update-thread",
+    "dispatch-message",
+    "release-run",
+    "fail-run",
+  ]),
+  commandId: CommandId,
+  projectId: ProjectId,
+  threadId: Schema.optional(ThreadId),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Thread launch ${this.commandId} failed during ${this.operation}.`;
   }
 }
 
-export class ThreadLaunchBaseRefError extends Schema.TaggedError<ThreadLaunchBaseRefError>()(
-  "ThreadLaunchBaseRefError",
-  {
-    projectId: ProjectId,
-    projectTitle: Schema.String,
-    workspaceRoot: Schema.String,
-    baseRef: Schema.String,
-  },
-) {
+export class ThreadLaunchBaseRefError extends Schema.TaggedError<
+  ThreadLaunchBaseRefError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchBaseRefError", {
+  projectId: ProjectId,
+  projectTitle: Schema.String,
+  workspaceRoot: Schema.String,
+  baseRef: Schema.String,
+}) {
   override get message(): string {
     return `Base ref "${this.baseRef}" does not resolve to a commit in project "${this.projectTitle}" (${this.workspaceRoot}).`;
   }
 }
 
-export class ThreadLaunchBranchConflictError extends Schema.TaggedError<ThreadLaunchBranchConflictError>()(
-  "ThreadLaunchBranchConflictError",
-  {
-    projectId: ProjectId,
-    projectTitle: Schema.String,
-    branch: Schema.String,
-    conflictingBranch: Schema.String,
-  },
-) {
+export class ThreadLaunchBranchConflictError extends Schema.TaggedError<
+  ThreadLaunchBranchConflictError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchBranchConflictError", {
+  projectId: ProjectId,
+  projectTitle: Schema.String,
+  branch: Schema.String,
+  conflictingBranch: Schema.String,
+}) {
   override get message(): string {
     return `Branch "${this.branch}" cannot be created in project "${this.projectTitle}": branch "${this.conflictingBranch}" exists.`;
   }
 }
 
-export class ThreadLaunchNotRepositoryError extends Schema.TaggedError<ThreadLaunchNotRepositoryError>()(
-  "ThreadLaunchNotRepositoryError",
-  {
-    projectId: ProjectId,
-    projectTitle: Schema.String,
-    workspaceRoot: Schema.String,
-  },
-) {
+export class ThreadLaunchNotRepositoryError extends Schema.TaggedError<
+  ThreadLaunchNotRepositoryError,
+  { readonly brand: unique symbol }
+>()("ThreadLaunchNotRepositoryError", {
+  projectId: ProjectId,
+  projectTitle: Schema.String,
+  workspaceRoot: Schema.String,
+}) {
   override get message(): string {
     return `Project "${this.projectTitle}" (${this.workspaceRoot}) is not a Git repository.`;
   }

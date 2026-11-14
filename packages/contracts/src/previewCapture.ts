@@ -1,19 +1,19 @@
 import * as Schema from "effect/Schema";
 
 /** A plain encoded failure crosses IPC and contextBridge without an arbitrary Error or stack. */
-export class PreviewCaptureFailure extends Schema.TaggedError<PreviewCaptureFailure>()(
-  "PreviewCaptureFailure",
-  {
-    reason: Schema.Literals([
-      "renderer-unavailable",
-      "capture-unavailable",
-      "capture-timeout",
-      "recording-conflict",
-      "capture-failed",
-    ]),
-    stage: Schema.Literals(["screenshot", "capture-page", "recording-start"]),
-  },
-) {
+export class PreviewCaptureFailure extends Schema.TaggedError<
+  PreviewCaptureFailure,
+  { readonly brand: unique symbol }
+>()("PreviewCaptureFailure", {
+  reason: Schema.Literals([
+    "renderer-unavailable",
+    "capture-unavailable",
+    "capture-timeout",
+    "recording-conflict",
+    "capture-failed",
+  ]),
+  stage: Schema.Literals(["screenshot", "capture-page", "recording-start"]),
+}) {
   override get message(): string {
     switch (this.reason) {
       case "renderer-unavailable":

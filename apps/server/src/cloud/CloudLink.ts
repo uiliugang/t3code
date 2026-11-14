@@ -139,27 +139,27 @@ const RELAY_CONFIG_FIELD_MESSAGES = {
   cloudMintPublicKey: "Cloud mint public key must be a valid Ed25519 public key.",
 } as const;
 
-export class CloudLinkRelayConfigInvalidError extends Schema.TaggedError<CloudLinkRelayConfigInvalidError>()(
-  "CloudLinkRelayConfigInvalidError",
-  {
-    field: Schema.Literals([
-      "relayUrl",
-      "relayIssuer",
-      "environmentCredential",
-      "cloudUserId",
-      "cloudMintPublicKey",
-    ]),
-  },
-) {
+export class CloudLinkRelayConfigInvalidError extends Schema.TaggedError<
+  CloudLinkRelayConfigInvalidError,
+  { readonly brand: unique symbol }
+>()("CloudLinkRelayConfigInvalidError", {
+  field: Schema.Literals([
+    "relayUrl",
+    "relayIssuer",
+    "environmentCredential",
+    "cloudUserId",
+    "cloudMintPublicKey",
+  ]),
+}) {
   override get message(): string {
     return RELAY_CONFIG_FIELD_MESSAGES[this.field];
   }
 }
 
-export class CloudLinkOriginInvalidError extends Schema.TaggedError<CloudLinkOriginInvalidError>()(
-  "CloudLinkOriginInvalidError",
-  { origin: Schema.Literals(["endpoint", "local"]) },
-) {
+export class CloudLinkOriginInvalidError extends Schema.TaggedError<
+  CloudLinkOriginInvalidError,
+  { readonly brand: unique symbol }
+>()("CloudLinkOriginInvalidError", { origin: Schema.Literals(["endpoint", "local"]) }) {
   override get message(): string {
     return this.origin === "endpoint"
       ? "Invalid managed endpoint origin."
@@ -167,28 +167,28 @@ export class CloudLinkOriginInvalidError extends Schema.TaggedError<CloudLinkOri
   }
 }
 
-export class CloudLinkNotLinkedError extends Schema.TaggedError<CloudLinkNotLinkedError>()(
-  "CloudLinkNotLinkedError",
-  {},
-) {
+export class CloudLinkNotLinkedError extends Schema.TaggedError<
+  CloudLinkNotLinkedError,
+  { readonly brand: unique symbol }
+>()("CloudLinkNotLinkedError", {}) {
   override get message(): string {
     return "Link this environment to T3 Connect first.";
   }
 }
 
-export class CloudLinkAccountMismatchError extends Schema.TaggedError<CloudLinkAccountMismatchError>()(
-  "CloudLinkAccountMismatchError",
-  {},
-) {
+export class CloudLinkAccountMismatchError extends Schema.TaggedError<
+  CloudLinkAccountMismatchError,
+  { readonly brand: unique symbol }
+>()("CloudLinkAccountMismatchError", {}) {
   override get message(): string {
     return "This environment is already linked to a different cloud account. Unlink it before switching accounts.";
   }
 }
 
-export class CloudLinkAuthorizationMissingError extends Schema.TaggedError<CloudLinkAuthorizationMissingError>()(
-  "CloudLinkAuthorizationMissingError",
-  {},
-) {
+export class CloudLinkAuthorizationMissingError extends Schema.TaggedError<
+  CloudLinkAuthorizationMissingError,
+  { readonly brand: unique symbol }
+>()("CloudLinkAuthorizationMissingError", {}) {
   override get message(): string {
     return "Run `t3 connect link` to authorize this environment.";
   }
@@ -196,40 +196,40 @@ export class CloudLinkAuthorizationMissingError extends Schema.TaggedError<Cloud
 
 const SignedRelayRequest = Schema.Literals(["health", "mint"]);
 
-export class CloudLinkProofRejectedError extends Schema.TaggedError<CloudLinkProofRejectedError>()(
-  "CloudLinkProofRejectedError",
-  { request: SignedRelayRequest },
-) {
+export class CloudLinkProofRejectedError extends Schema.TaggedError<
+  CloudLinkProofRejectedError,
+  { readonly brand: unique symbol }
+>()("CloudLinkProofRejectedError", { request: SignedRelayRequest }) {
   override get message(): string {
     return `Invalid cloud ${this.request} request.`;
   }
 }
 
-export class CloudLinkProofReplayedError extends Schema.TaggedError<CloudLinkProofReplayedError>()(
-  "CloudLinkProofReplayedError",
-  { request: SignedRelayRequest },
-) {
+export class CloudLinkProofReplayedError extends Schema.TaggedError<
+  CloudLinkProofReplayedError,
+  { readonly brand: unique symbol }
+>()("CloudLinkProofReplayedError", { request: SignedRelayRequest }) {
   override get message(): string {
     return `Cloud ${this.request} request was already consumed.`;
   }
 }
 
-export class CloudLinkTunnelSupersededError extends Schema.TaggedError<CloudLinkTunnelSupersededError>()(
-  "CloudLinkTunnelSupersededError",
-  {},
-) {
+export class CloudLinkTunnelSupersededError extends Schema.TaggedError<
+  CloudLinkTunnelSupersededError,
+  { readonly brand: unique symbol }
+>()("CloudLinkTunnelSupersededError", {}) {
   override get message(): string {
     return "The managed tunnel configuration changed during registration.";
   }
 }
 
-export class CloudLinkEndpointUnavailableError extends Schema.TaggedError<CloudLinkEndpointUnavailableError>()(
-  "CloudLinkEndpointUnavailableError",
-  {
-    reason: Schema.Literals(["runtime-not-started", "origin-unconfirmed"]),
-    endpointRuntimeStatus: Schema.Unknown,
-  },
-) {
+export class CloudLinkEndpointUnavailableError extends Schema.TaggedError<
+  CloudLinkEndpointUnavailableError,
+  { readonly brand: unique symbol }
+>()("CloudLinkEndpointUnavailableError", {
+  reason: Schema.Literals(["runtime-not-started", "origin-unconfirmed"]),
+  endpointRuntimeStatus: Schema.Unknown,
+}) {
   override get message(): string {
     return this.reason === "runtime-not-started"
       ? "Managed endpoint runtime could not be started."
@@ -258,18 +258,18 @@ const INTERNAL_OPERATION_MESSAGES = {
   "issue-credential": "Could not issue cloud connection credential.",
 } as const;
 
-export class CloudLinkInternalError extends Schema.TaggedError<CloudLinkInternalError>()(
-  "CloudLinkInternalError",
-  {
-    operation: Schema.Literals(
-      Object.keys(INTERNAL_OPERATION_MESSAGES) as [
-        keyof typeof INTERNAL_OPERATION_MESSAGES,
-        ...Array<keyof typeof INTERNAL_OPERATION_MESSAGES>,
-      ],
-    ),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class CloudLinkInternalError extends Schema.TaggedError<
+  CloudLinkInternalError,
+  { readonly brand: unique symbol }
+>()("CloudLinkInternalError", {
+  operation: Schema.Literals(
+    Object.keys(INTERNAL_OPERATION_MESSAGES) as [
+      keyof typeof INTERNAL_OPERATION_MESSAGES,
+      ...Array<keyof typeof INTERNAL_OPERATION_MESSAGES>,
+    ],
+  ),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return INTERNAL_OPERATION_MESSAGES[this.operation];
   }

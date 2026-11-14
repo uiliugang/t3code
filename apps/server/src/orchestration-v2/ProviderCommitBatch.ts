@@ -24,7 +24,10 @@ const isSnapshot = (event: { readonly type: string }) =>
   event.type === "turn_item.updated" ||
   event.type === "plan.updated";
 
-export class CommitBatchError extends Schema.TaggedError<CommitBatchError>()("CommitBatchError", {
+export class CommitBatchError extends Schema.TaggedError<
+  CommitBatchError,
+  { readonly brand: unique symbol }
+>()("CommitBatchError", {
   cause: Schema.Defect(),
 }) {}
 export const isCommitBatchError = Schema.is(CommitBatchError);

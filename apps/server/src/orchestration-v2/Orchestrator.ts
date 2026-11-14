@@ -206,44 +206,48 @@ const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
 );
 
-export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDispatchError>()(
-  "OrchestratorDispatchError",
-  {
-    commandId: CommandId,
-    commandType: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestratorDispatchError extends Schema.TaggedError<
+  OrchestratorDispatchError,
+  { readonly brand: unique symbol }
+>()("OrchestratorDispatchError", {
+  commandId: CommandId,
+  commandType: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to dispatch orchestration command ${this.commandType} (${this.commandId}).`;
   }
 }
 
-export class OrchestratorThreadAlreadyExistsError extends Schema.TaggedError<OrchestratorThreadAlreadyExistsError>()(
-  "OrchestratorThreadAlreadyExistsError",
-  { commandId: CommandId, threadId: ThreadId },
-) {
+export class OrchestratorThreadAlreadyExistsError extends Schema.TaggedError<
+  OrchestratorThreadAlreadyExistsError,
+  { readonly brand: unique symbol }
+>()("OrchestratorThreadAlreadyExistsError", { commandId: CommandId, threadId: ThreadId }) {
   override get message(): string {
     return `Thread ${this.threadId} already exists. Use a new thread id.`;
   }
 }
 
-export class OrchestratorCommandRejectedError extends Schema.TaggedError<OrchestratorCommandRejectedError>()(
-  "OrchestratorCommandRejectedError",
-  { commandId: CommandId, commandType: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class OrchestratorCommandRejectedError extends Schema.TaggedError<
+  OrchestratorCommandRejectedError,
+  { readonly brand: unique symbol }
+>()("OrchestratorCommandRejectedError", {
+  commandId: CommandId,
+  commandType: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Orchestration command ${this.commandType} (${this.commandId}) was rejected before commit.`;
   }
 }
 
-export class OrchestratorProjectionError extends Schema.TaggedError<OrchestratorProjectionError>()(
-  "OrchestratorProjectionError",
-  {
-    threadId: ThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestratorProjectionError extends Schema.TaggedError<
+  OrchestratorProjectionError,
+  { readonly brand: unique symbol }
+>()("OrchestratorProjectionError", {
+  threadId: ThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to load orchestration projection for thread ${this.threadId}.`;
   }
@@ -251,58 +255,58 @@ export class OrchestratorProjectionError extends Schema.TaggedError<Orchestrator
 
 const isOrchestratorProjectionError = Schema.is(OrchestratorProjectionError);
 
-export class OrchestratorDomainEventStreamError extends Schema.TaggedError<OrchestratorDomainEventStreamError>()(
-  "OrchestratorDomainEventStreamError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestratorDomainEventStreamError extends Schema.TaggedError<
+  OrchestratorDomainEventStreamError,
+  { readonly brand: unique symbol }
+>()("OrchestratorDomainEventStreamError", {
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return "Failed while streaming orchestration domain events.";
   }
 }
 
-export class OrchestratorProviderAdapterError extends Schema.TaggedError<OrchestratorProviderAdapterError>()(
-  "OrchestratorProviderAdapterError",
-  {
-    commandId: CommandId,
-    providerInstanceId: ProviderInstanceId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class OrchestratorProviderAdapterError extends Schema.TaggedError<
+  OrchestratorProviderAdapterError,
+  { readonly brand: unique symbol }
+>()("OrchestratorProviderAdapterError", {
+  commandId: CommandId,
+  providerInstanceId: ProviderInstanceId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Provider adapter failed while dispatching orchestration command ${this.commandId}.`;
   }
 }
 
-export class OrchestratorSubagentThreadReadOnlyError extends Schema.TaggedError<OrchestratorSubagentThreadReadOnlyError>()(
-  "OrchestratorSubagentThreadReadOnlyError",
-  { commandId: CommandId, threadId: ThreadId },
-) {
+export class OrchestratorSubagentThreadReadOnlyError extends Schema.TaggedError<
+  OrchestratorSubagentThreadReadOnlyError,
+  { readonly brand: unique symbol }
+>()("OrchestratorSubagentThreadReadOnlyError", { commandId: CommandId, threadId: ThreadId }) {
   override get message(): string {
     return "This subagent is run by its provider and cannot take messages. Message the parent thread instead.";
   }
 }
 
-export class OrchestratorThreadAboveModeLimitError extends Schema.TaggedError<OrchestratorThreadAboveModeLimitError>()(
-  "OrchestratorThreadAboveModeLimitError",
-  {
-    commandId: CommandId,
-    threadId: ThreadId,
-    mode: Schema.Literals(["runtime", "interaction"]),
-    runtimeMode: RuntimeMode,
-    interactionMode: ProviderInteractionMode,
-  },
-) {
+export class OrchestratorThreadAboveModeLimitError extends Schema.TaggedError<
+  OrchestratorThreadAboveModeLimitError,
+  { readonly brand: unique symbol }
+>()("OrchestratorThreadAboveModeLimitError", {
+  commandId: CommandId,
+  threadId: ThreadId,
+  mode: Schema.Literals(["runtime", "interaction"]),
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+}) {
   override get message(): string {
     return `Thread ${this.threadId} now runs in ${this.runtimeMode}/${this.interactionMode} mode, above what this caller may change.`;
   }
 }
 
-export class OrchestratorProviderSelectionBusyError extends Schema.TaggedError<OrchestratorProviderSelectionBusyError>()(
-  "OrchestratorProviderSelectionBusyError",
-  { commandId: CommandId, threadId: ThreadId },
-) {
+export class OrchestratorProviderSelectionBusyError extends Schema.TaggedError<
+  OrchestratorProviderSelectionBusyError,
+  { readonly brand: unique symbol }
+>()("OrchestratorProviderSelectionBusyError", { commandId: CommandId, threadId: ThreadId }) {
   override get message(): string {
     return `Thread ${this.threadId} has an active turn. Wait for it to finish, then retry the provider selection change.`;
   }
@@ -317,45 +321,45 @@ function runtimePolicyCeilingCause(error: unknown) {
   return isRuntimePolicyAboveCeilingError(current) ? current : undefined;
 }
 
-export class OrchestratorRuntimeModeAboveCeilingError extends Schema.TaggedError<OrchestratorRuntimeModeAboveCeilingError>()(
-  "OrchestratorRuntimeModeAboveCeilingError",
-  {
-    commandId: CommandId,
-    threadId: ThreadId,
-    refused: Schema.Literals(["mode", "turn"]),
-    runtimeMode: RuntimeMode,
-    maxRuntimeMode: RuntimeMode,
-    organization: Schema.String,
-  },
-) {
+export class OrchestratorRuntimeModeAboveCeilingError extends Schema.TaggedError<
+  OrchestratorRuntimeModeAboveCeilingError,
+  { readonly brand: unique symbol }
+>()("OrchestratorRuntimeModeAboveCeilingError", {
+  commandId: CommandId,
+  threadId: ThreadId,
+  refused: Schema.Literals(["mode", "turn"]),
+  runtimeMode: RuntimeMode,
+  maxRuntimeMode: RuntimeMode,
+  organization: Schema.String,
+}) {
   override get message(): string {
     const limit = managedRuntimeModeCeilingMessage(this.organization, this.maxRuntimeMode);
     return this.refused === "turn" ? `${limit} Switch this thread's mode to continue.` : limit;
   }
 }
 
-export class OrchestratorCommandPreviouslyRejectedError extends Schema.TaggedError<OrchestratorCommandPreviouslyRejectedError>()(
-  "OrchestratorCommandPreviouslyRejectedError",
-  {
-    commandId: CommandId,
-    commandType: Schema.String,
-    detail: Schema.String,
-  },
-) {
+export class OrchestratorCommandPreviouslyRejectedError extends Schema.TaggedError<
+  OrchestratorCommandPreviouslyRejectedError,
+  { readonly brand: unique symbol }
+>()("OrchestratorCommandPreviouslyRejectedError", {
+  commandId: CommandId,
+  commandType: Schema.String,
+  detail: Schema.String,
+}) {
   override get message(): string {
     return `Command ${this.commandId} was previously rejected: ${this.detail}`;
   }
 }
 
-export class OrchestratorCommandIdConflictError extends Schema.TaggedError<OrchestratorCommandIdConflictError>()(
-  "OrchestratorCommandIdConflictError",
-  {
-    commandId: CommandId,
-    commandType: Schema.String,
-    receiptThreadId: ThreadId,
-    commandThreadId: ThreadId,
-  },
-) {
+export class OrchestratorCommandIdConflictError extends Schema.TaggedError<
+  OrchestratorCommandIdConflictError,
+  { readonly brand: unique symbol }
+>()("OrchestratorCommandIdConflictError", {
+  commandId: CommandId,
+  commandType: Schema.String,
+  receiptThreadId: ThreadId,
+  commandThreadId: ThreadId,
+}) {
   override get message(): string {
     return `Command ${this.commandId} was already handled for thread ${this.receiptThreadId} and cannot be replayed for ${this.commandThreadId}.`;
   }

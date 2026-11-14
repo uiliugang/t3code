@@ -111,7 +111,10 @@ export class HookForwarder extends Context.Service<
   }
 >()("t3code-relay/hooks/HookForwarder") {}
 
-class HookBodyTooLarge extends Schema.TaggedError<HookBodyTooLarge>()("HookBodyTooLarge", {}) {}
+class HookBodyTooLarge extends Schema.TaggedError<
+  HookBodyTooLarge,
+  { readonly brand: unique symbol }
+>()("HookBodyTooLarge", {}) {}
 
 const errorResponse = (status: number, error: string, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe({ error }, { status, ...(headers ? { headers } : {}) });

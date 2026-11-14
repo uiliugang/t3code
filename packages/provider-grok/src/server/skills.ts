@@ -25,15 +25,15 @@ export function leadingGrokSkillMention(
   return { name: match[2], rest: text.slice(match[0].length) };
 }
 
-class GrokSkillsProbeError extends Schema.TaggedError<GrokSkillsProbeError>()(
-  "GrokSkillsProbeError",
-  {
-    stage: Schema.Literals(["spawn", "timeout", "exit", "decode"]),
-    cwd: Schema.optional(Schema.String),
-    exitCode: Schema.optional(Schema.Number),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+class GrokSkillsProbeError extends Schema.TaggedError<
+  GrokSkillsProbeError,
+  { readonly brand: unique symbol }
+>()("GrokSkillsProbeError", {
+  stage: Schema.Literals(["spawn", "timeout", "exit", "decode"]),
+  cwd: Schema.optional(Schema.String),
+  exitCode: Schema.optional(Schema.Number),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     const location = this.cwd === undefined ? "" : ` for '${this.cwd}'`;
     const exitCode = this.exitCode === undefined ? "" : ` with exit code ${this.exitCode}`;

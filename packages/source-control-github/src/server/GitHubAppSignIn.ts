@@ -68,10 +68,10 @@ const DeviceCodeResponse = Schema.Struct({
   error_description: Schema.optional(Schema.String),
 });
 
-export class GitHubAppSessionError extends Schema.TaggedError<GitHubAppSessionError>()(
-  "GitHubAppSessionError",
-  { host: Schema.String, cause: Schema.Defect() },
-) {
+export class GitHubAppSessionError extends Schema.TaggedError<
+  GitHubAppSessionError,
+  { readonly brand: unique symbol }
+>()("GitHubAppSessionError", { host: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not refresh the ${GitHubClient.APP_SIGN_IN.appName} sign-in for ${this.host}. Check the server's connection to GitHub, or sign in again in Settings → Source Control.`;
   }

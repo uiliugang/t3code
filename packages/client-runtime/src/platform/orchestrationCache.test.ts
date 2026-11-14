@@ -27,12 +27,12 @@ const decodeStoredShellSnapshotSync = Schema.decodeUnknownSync(StoredOrchestrati
 const encodeStoredThreadSnapshotJson = Schema.encodeSync(StoredThreadSnapshotJson);
 const decodeStoredThreadSnapshotJson = Schema.decodeUnknownSync(StoredThreadSnapshotJson);
 
-class TestCacheDecodeError extends Schema.TaggedError<TestCacheDecodeError>()(
-  "TestCacheDecodeError",
-  {
-    message: Schema.String,
-  },
-) {}
+class TestCacheDecodeError extends Schema.TaggedError<
+  TestCacheDecodeError,
+  { readonly brand: unique symbol }
+>()("TestCacheDecodeError", {
+  message: Schema.String,
+}) {}
 
 describe("orchestration cache envelopes", () => {
   it("preserves live provider notices through persisted thread snapshots", () => {

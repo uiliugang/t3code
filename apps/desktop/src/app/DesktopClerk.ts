@@ -26,27 +26,27 @@ import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 
-export class DesktopClerkBridgeInitializationError extends Schema.TaggedError<DesktopClerkBridgeInitializationError>()(
-  "DesktopClerkBridgeInitializationError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopClerkBridgeInitializationError extends Schema.TaggedError<
+  DesktopClerkBridgeInitializationError,
+  { readonly brand: unique symbol }
+>()("DesktopClerkBridgeInitializationError", {
+  stateDir: Schema.String,
+  isDevelopment: Schema.Boolean,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to initialize the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
   }
 }
 
-export class DesktopClerkBridgeCleanupError extends Schema.TaggedError<DesktopClerkBridgeCleanupError>()(
-  "DesktopClerkBridgeCleanupError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopClerkBridgeCleanupError extends Schema.TaggedError<
+  DesktopClerkBridgeCleanupError,
+  { readonly brand: unique symbol }
+>()("DesktopClerkBridgeCleanupError", {
+  stateDir: Schema.String,
+  isDevelopment: Schema.Boolean,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to clean up the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
   }

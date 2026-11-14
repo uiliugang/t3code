@@ -9,7 +9,10 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-class LinuxArm64SeaError extends Schema.TaggedError<LinuxArm64SeaError>()("LinuxArm64SeaError", {
+class LinuxArm64SeaError extends Schema.TaggedError<
+  LinuxArm64SeaError,
+  { readonly brand: unique symbol }
+>()("LinuxArm64SeaError", {
   message: Schema.String,
 }) {}
 

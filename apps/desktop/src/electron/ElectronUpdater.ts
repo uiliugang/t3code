@@ -30,39 +30,39 @@ const relaunchWithoutInheritedDescriptors = (updater: AppImageUpdater) => {
 
 export type ElectronUpdaterFeedUrl = Parameters<AutoUpdater["setFeedURL"]>[0];
 
-export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedError<ElectronUpdaterCheckForUpdatesError>()(
-  "ElectronUpdaterCheckForUpdatesError",
-  {
-    channel: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedError<
+  ElectronUpdaterCheckForUpdatesError,
+  { readonly brand: unique symbol }
+>()("ElectronUpdaterCheckForUpdatesError", {
+  channel: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Electron updater failed to check for updates on channel ${this.channel ?? "default"}.`;
   }
 }
 
-export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedError<ElectronUpdaterDownloadUpdateError>()(
-  "ElectronUpdaterDownloadUpdateError",
-  {
-    channel: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedError<
+  ElectronUpdaterDownloadUpdateError,
+  { readonly brand: unique symbol }
+>()("ElectronUpdaterDownloadUpdateError", {
+  channel: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Electron updater failed to download the update on channel ${this.channel ?? "default"}.`;
   }
 }
 
-export class ElectronUpdaterQuitAndInstallError extends Schema.TaggedError<ElectronUpdaterQuitAndInstallError>()(
-  "ElectronUpdaterQuitAndInstallError",
-  {
-    channel: Schema.NullOr(Schema.String),
-    isSilent: Schema.Boolean,
-    isForceRunAfter: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronUpdaterQuitAndInstallError extends Schema.TaggedError<
+  ElectronUpdaterQuitAndInstallError,
+  { readonly brand: unique symbol }
+>()("ElectronUpdaterQuitAndInstallError", {
+  channel: Schema.NullOr(Schema.String),
+  isSilent: Schema.Boolean,
+  isForceRunAfter: Schema.Boolean,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Electron updater failed to quit and install the update on channel ${this.channel ?? "default"} (silent: ${this.isSilent}, force run after: ${this.isForceRunAfter}).`;
   }

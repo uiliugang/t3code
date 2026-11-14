@@ -45,10 +45,10 @@ import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
 const TITLEBAR_HEIGHT = 40;
 
-class ContextMenuImageCopyError extends Schema.TaggedError<ContextMenuImageCopyError>()(
-  "ContextMenuImageCopyError",
-  { cause: Schema.Defect() },
-) {
+class ContextMenuImageCopyError extends Schema.TaggedError<
+  ContextMenuImageCopyError,
+  { readonly brand: unique symbol }
+>()("ContextMenuImageCopyError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not copy the context-menu image.";
   }

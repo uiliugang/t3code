@@ -19,41 +19,41 @@ import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 
-export class RemoteEnvironmentAuthFetchError extends Schema.TaggedError<RemoteEnvironmentAuthFetchError>()(
-  "RemoteEnvironmentAuthFetchError",
-  {
-    message: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+export class RemoteEnvironmentAuthFetchError extends Schema.TaggedError<
+  RemoteEnvironmentAuthFetchError,
+  { readonly brand: unique symbol }
+>()("RemoteEnvironmentAuthFetchError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
-class RemoteEnvironmentAuthInvalidJsonError extends Schema.TaggedError<RemoteEnvironmentAuthInvalidJsonError>()(
-  "RemoteEnvironmentAuthInvalidJsonError",
-  {
-    message: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+class RemoteEnvironmentAuthInvalidJsonError extends Schema.TaggedError<
+  RemoteEnvironmentAuthInvalidJsonError,
+  { readonly brand: unique symbol }
+>()("RemoteEnvironmentAuthInvalidJsonError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
-export class RemoteEnvironmentAuthUndeclaredStatusError extends Schema.TaggedError<RemoteEnvironmentAuthUndeclaredStatusError>()(
-  "RemoteEnvironmentAuthUndeclaredStatusError",
-  {
-    status: Schema.Number,
-    requestUrl: Schema.String,
-  },
-) {
+export class RemoteEnvironmentAuthUndeclaredStatusError extends Schema.TaggedError<
+  RemoteEnvironmentAuthUndeclaredStatusError,
+  { readonly brand: unique symbol }
+>()("RemoteEnvironmentAuthUndeclaredStatusError", {
+  status: Schema.Number,
+  requestUrl: Schema.String,
+}) {
   override get message(): string {
     return `Remote environment endpoint ${this.requestUrl} returned undeclared status ${this.status}.`;
   }
 }
 
-export class RemoteEnvironmentAuthTimeoutError extends Schema.TaggedError<RemoteEnvironmentAuthTimeoutError>()(
-  "RemoteEnvironmentAuthTimeoutError",
-  {
-    requestUrl: Schema.String,
-    timeoutMs: Schema.Number,
-  },
-) {
+export class RemoteEnvironmentAuthTimeoutError extends Schema.TaggedError<
+  RemoteEnvironmentAuthTimeoutError,
+  { readonly brand: unique symbol }
+>()("RemoteEnvironmentAuthTimeoutError", {
+  requestUrl: Schema.String,
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `Remote environment endpoint ${this.requestUrl} timed out after ${this.timeoutMs}ms.`;
   }

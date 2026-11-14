@@ -6,14 +6,14 @@ import * as SecureStore from "expo-secure-store";
 
 const MobileSecureStorageOperation = Schema.Literals(["read", "write", "delete"]);
 
-export class MobileSecureStorageError extends Schema.TaggedError<MobileSecureStorageError>()(
-  "MobileSecureStorageError",
-  {
-    operation: MobileSecureStorageOperation,
-    key: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class MobileSecureStorageError extends Schema.TaggedError<
+  MobileSecureStorageError,
+  { readonly brand: unique symbol }
+>()("MobileSecureStorageError", {
+  operation: MobileSecureStorageOperation,
+  key: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Mobile secure storage operation ${this.operation} failed for key ${this.key}.`;
   }

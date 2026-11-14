@@ -20,7 +20,10 @@ const TRANSIENT_JSIGN_ERROR =
 const JSIGN_RETRIES = 3;
 const STDERR_TAIL_CHARS = 64 * 1024;
 
-export class JsignFailedError extends Schema.TaggedError<JsignFailedError>()("JsignFailedError", {
+export class JsignFailedError extends Schema.TaggedError<
+  JsignFailedError,
+  { readonly brand: unique symbol }
+>()("JsignFailedError", {
   file: Schema.String,
   exitCode: Schema.Number,
   transient: Schema.Boolean,

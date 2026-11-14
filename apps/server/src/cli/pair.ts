@@ -61,15 +61,15 @@ export type PairStateVariant = "userdata" | "dev";
 // Only devUrl's presence selects dev state; its value is unused.
 const DEV_VARIANT_PLACEHOLDER_URL = new URL("http://localhost");
 
-export class NoRunningServerError extends Schema.TaggedError<NoRunningServerError>()(
-  "NoRunningServerError",
-  {
-    checkedStatePaths: Schema.Array(Schema.String),
-    inLinkedWorktree: Schema.Boolean,
-    serveCommand: Schema.String,
-    connectCommand: Schema.String,
-  },
-) {
+export class NoRunningServerError extends Schema.TaggedError<
+  NoRunningServerError,
+  { readonly brand: unique symbol }
+>()("NoRunningServerError", {
+  checkedStatePaths: Schema.Array(Schema.String),
+  inLinkedWorktree: Schema.Boolean,
+  serveCommand: Schema.String,
+  connectCommand: Schema.String,
+}) {
   override get message(): string {
     return [
       "No running T3 Code server found.",
@@ -82,14 +82,14 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
   }
 }
 
-export class IncompatibleServerProtocolError extends Schema.TaggedError<IncompatibleServerProtocolError>()(
-  "IncompatibleServerProtocolError",
-  {
-    serverVersion: Schema.String,
-    serverProtocolVersion: Schema.Number,
-    pairCommand: Schema.String,
-  },
-) {
+export class IncompatibleServerProtocolError extends Schema.TaggedError<
+  IncompatibleServerProtocolError,
+  { readonly brand: unique symbol }
+>()("IncompatibleServerProtocolError", {
+  serverVersion: Schema.String,
+  serverProtocolVersion: Schema.Number,
+  pairCommand: Schema.String,
+}) {
   override get message(): string {
     return [
       `The running T3 Code server (${this.serverVersion}) speaks orchestration protocol ${String(this.serverProtocolVersion)}, but this CLI speaks protocol ${String(ORCHESTRATION_PROTOCOL_VERSION)}.`,
@@ -98,64 +98,64 @@ export class IncompatibleServerProtocolError extends Schema.TaggedError<Incompat
   }
 }
 
-export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnavailableError>()(
-  "TailscaleUnavailableError",
-  { cause: Schema.Defect() },
-) {
+export class TailscaleUnavailableError extends Schema.TaggedError<
+  TailscaleUnavailableError,
+  { readonly brand: unique symbol }
+>()("TailscaleUnavailableError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not talk to Tailscale. Is tailscaled running? Try `tailscale status`.";
   }
 }
 
-export class MagicDnsNameMissingError extends Schema.TaggedError<MagicDnsNameMissingError>()(
-  "MagicDnsNameMissingError",
-  {},
-) {
+export class MagicDnsNameMissingError extends Schema.TaggedError<
+  MagicDnsNameMissingError,
+  { readonly brand: unique symbol }
+>()("MagicDnsNameMissingError", {}) {
   override get message(): string {
     return "This machine has no MagicDNS name. Run `tailscale up` and enable MagicDNS.";
   }
 }
 
-export class TailscaleServeNotEnabledError extends Schema.TaggedError<TailscaleServeNotEnabledError>()(
-  "TailscaleServeNotEnabledError",
-  {},
-) {
+export class TailscaleServeNotEnabledError extends Schema.TaggedError<
+  TailscaleServeNotEnabledError,
+  { readonly brand: unique symbol }
+>()("TailscaleServeNotEnabledError", {}) {
   override get message(): string {
     return "Tailscale Serve is not enabled on your tailnet. Enable HTTPS certificates at https://login.tailscale.com/admin/dns, then run this command again.";
   }
 }
 
-export class ServesOtherEnvironmentError extends Schema.TaggedError<ServesOtherEnvironmentError>()(
-  "ServesOtherEnvironmentError",
-  { servePort: Schema.Number },
-) {
+export class ServesOtherEnvironmentError extends Schema.TaggedError<
+  ServesOtherEnvironmentError,
+  { readonly brand: unique symbol }
+>()("ServesOtherEnvironmentError", { servePort: Schema.Number }) {
   override get message(): string {
     return `Tailscale Serve on HTTPS port ${String(this.servePort)} already fronts a different T3 Code server. Pass --tailscale-serve-port to publish this one on another port.`;
   }
 }
 
-export class TailscaleServeFailedError extends Schema.TaggedError<TailscaleServeFailedError>()(
-  "TailscaleServeFailedError",
-  { servePort: Schema.Number, cause: Schema.Defect() },
-) {
+export class TailscaleServeFailedError extends Schema.TaggedError<
+  TailscaleServeFailedError,
+  { readonly brand: unique symbol }
+>()("TailscaleServeFailedError", { servePort: Schema.Number, cause: Schema.Defect() }) {
   override get message(): string {
     return `tailscale serve failed for HTTPS port ${String(this.servePort)}. Run \`tailscale serve --https=${String(this.servePort)} --bg <local-url>\` by hand to see why.`;
   }
 }
 
-export class TailscaleServeTargetRefusedError extends Schema.TaggedError<TailscaleServeTargetRefusedError>()(
-  "TailscaleServeTargetRefusedError",
-  { localHost: Schema.String },
-) {
+export class TailscaleServeTargetRefusedError extends Schema.TaggedError<
+  TailscaleServeTargetRefusedError,
+  { readonly brand: unique symbol }
+>()("TailscaleServeTargetRefusedError", { localHost: Schema.String }) {
   override get message(): string {
     return `This Tailscale install can only proxy to localhost, and the server listens on ${this.localHost}. Restart it with \`--host 127.0.0.1\` or \`--host 0.0.0.0\`, then run this command again.`;
   }
 }
 
-export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupiedError>()(
-  "ServePortOccupiedError",
-  { servePort: Schema.Number },
-) {
+export class ServePortOccupiedError extends Schema.TaggedError<
+  ServePortOccupiedError,
+  { readonly brand: unique symbol }
+>()("ServePortOccupiedError", { servePort: Schema.Number }) {
   override get message(): string {
     return `HTTPS port ${String(this.servePort)} on the tailnet already serves something that is not a T3 Code server. Pass --tailscale-serve-port to publish this one on another port.`;
   }
@@ -167,10 +167,10 @@ const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string
     privateNetworkOnly: state.privateNetworkOnly,
   });
 
-export class DevServerNotProxiableError extends Schema.TaggedError<DevServerNotProxiableError>()(
-  "DevServerNotProxiableError",
-  { devUrl: Schema.String },
-) {
+export class DevServerNotProxiableError extends Schema.TaggedError<
+  DevServerNotProxiableError,
+  { readonly brand: unique symbol }
+>()("DevServerNotProxiableError", { devUrl: Schema.String }) {
   override get message(): string {
     return `Tailscale Serve can only proxy plain-HTTP local targets, and this dev server runs at ${this.devUrl}. Pair without --tailscale instead.`;
   }

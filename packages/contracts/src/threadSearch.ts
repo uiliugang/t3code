@@ -51,10 +51,10 @@ export const OrchestrationSearchThreadsResult = Schema.Struct({
 });
 export type OrchestrationSearchThreadsResult = typeof OrchestrationSearchThreadsResult.Type;
 
-export class OrchestrationSearchThreadsError extends Schema.TaggedError<OrchestrationSearchThreadsError>()(
-  "OrchestrationSearchThreadsError",
-  {
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class OrchestrationSearchThreadsError extends Schema.TaggedError<
+  OrchestrationSearchThreadsError,
+  { readonly brand: unique symbol }
+>()("OrchestrationSearchThreadsError", {
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {}

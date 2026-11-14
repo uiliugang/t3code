@@ -23,10 +23,10 @@ export interface RelayClientConfig {
   readonly tokenDigest: string;
 }
 
-export class RelayUrlUnavailableError extends Schema.TaggedError<RelayUrlUnavailableError>()(
-  "RelayUrlUnavailableError",
-  {},
-) {
+export class RelayUrlUnavailableError extends Schema.TaggedError<
+  RelayUrlUnavailableError,
+  { readonly brand: unique symbol }
+>()("RelayUrlUnavailableError", {}) {
   override get message(): string {
     return "The relay worker has no URL yet; deploy again once the worker exists.";
   }
@@ -43,10 +43,10 @@ const relayClientConfigEnv = (config: RelayClientConfig & { readonly url: string
     T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: Redacted.value(config.clientTracingToken),
   }) as const;
 
-export class EnvValueNotSingleLineError extends Schema.TaggedError<EnvValueNotSingleLineError>()(
-  "EnvValueNotSingleLineError",
-  { key: Schema.String },
-) {
+export class EnvValueNotSingleLineError extends Schema.TaggedError<
+  EnvValueNotSingleLineError,
+  { readonly brand: unique symbol }
+>()("EnvValueNotSingleLineError", { key: Schema.String }) {
   override get message(): string {
     return `${this.key} contains a line break and cannot be written as one .env assignment.`;
   }

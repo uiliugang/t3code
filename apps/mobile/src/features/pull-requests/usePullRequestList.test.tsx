@@ -24,10 +24,10 @@ vi.mock("../../state/pull-requests", async () => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   const Effect = await import("effect/Effect");
   const Schema = await import("effect/Schema");
-  class PullRequestListTestError extends Schema.TaggedError<PullRequestListTestError>()(
-    "PullRequestListTestError",
-    { message: Schema.String },
-  ) {}
+  class PullRequestListTestError extends Schema.TaggedError<
+    PullRequestListTestError,
+    { readonly brand: unique symbol }
+  >()("PullRequestListTestError", { message: Schema.String }) {}
   const page = (nextCursors: PullRequestListResult["nextCursors"]): PullRequestListResult => ({
     entries: [],
     nextCursors,

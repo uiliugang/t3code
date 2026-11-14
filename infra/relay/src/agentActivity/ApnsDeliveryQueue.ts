@@ -26,17 +26,17 @@ import {
 } from "./apnsDeliveryJobs.ts";
 import * as RelayConfiguration from "../Config.ts";
 
-export class ApnsDeliveryQueueSendError extends Schema.TaggedError<ApnsDeliveryQueueSendError>()(
-  "ApnsDeliveryQueueSendError",
-  {
-    operation: Schema.Literals(["generate-job-id", "send"]),
-    jobId: Schema.NullOr(Schema.String),
-    kind: RelayDeliveryKindSchema,
-    userId: Schema.String,
-    deviceId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ApnsDeliveryQueueSendError extends Schema.TaggedError<
+  ApnsDeliveryQueueSendError,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryQueueSendError", {
+  operation: Schema.Literals(["generate-job-id", "send"]),
+  jobId: Schema.NullOr(Schema.String),
+  kind: RelayDeliveryKindSchema,
+  userId: Schema.String,
+  deviceId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to enqueue APNs ${this.kind.replaceAll("_", " ")} delivery during ${this.operation} for device ${this.deviceId}.`;
   }

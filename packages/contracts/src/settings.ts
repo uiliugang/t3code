@@ -1052,10 +1052,10 @@ export const ListTextGeneratorModelsResult = Schema.Struct({
 });
 export type ListTextGeneratorModelsResult = typeof ListTextGeneratorModelsResult.Type;
 
-export class TextGeneratorError extends Schema.TaggedError<TextGeneratorError>()(
-  "TextGeneratorError",
-  { detail: Schema.String },
-) {
+export class TextGeneratorError extends Schema.TaggedError<
+  TextGeneratorError,
+  { readonly brand: unique symbol }
+>()("TextGeneratorError", { detail: Schema.String }) {
   override get message(): string {
     return this.detail;
   }
@@ -1343,10 +1343,10 @@ export const DatabaseStorageStatus = Schema.Struct({
 });
 export type DatabaseStorageStatus = typeof DatabaseStorageStatus.Type;
 
-export class DatabaseReclaimError extends Schema.TaggedError<DatabaseReclaimError>()(
-  "DatabaseReclaimError",
-  { reason: Schema.String },
-) {
+export class DatabaseReclaimError extends Schema.TaggedError<
+  DatabaseReclaimError,
+  { readonly brand: unique symbol }
+>()("DatabaseReclaimError", { reason: Schema.String }) {
   override get message() {
     return this.reason;
   }
@@ -1637,6 +1637,7 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  removedProviderInstances: Schema.optionalKey(Schema.Array(ProviderInstanceId)),
   daxiang: Schema.Struct({
     clientId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
     clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
@@ -1712,10 +1713,14 @@ export const resolveProviderInstanceEnabled = (
 };
 
 export const resolveProjectProviderInstanceEnabled = (
-  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
+  settings: Pick<
+    ServerSettings,
+    "providerInstances" | "projectSettingsOverrides" | "removedProviderInstances"
+  >,
   projectId: ProjectId | null,
   instanceId: ProviderInstanceId,
 ): boolean => {
+  if (settings.removedProviderInstances?.includes(instanceId)) return false;
   const override =
     projectId === null
       ? undefined
@@ -1803,6 +1808,8 @@ export const ServerSettingsOperation = Schema.Literals([
   "normalize",
   "check-exists",
   "create-provider-instance",
+  "remove-provider-resources",
+  "stop-provider-sessions",
   "read-file",
   "read-provider-history",
   "read-project-settings",
@@ -1822,22 +1829,28 @@ export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
 export const disallowedProviderMessage = (organization: string | undefined, label: string) =>
   `${organization === undefined ? "Your organization" : `${organization}'s`} policy does not allow the ${label} provider.`;
 
-export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>()(
-  "ServerSettingsError",
-  {
-    settingsPath: Schema.String,
-    operation: ServerSettingsOperation,
-    providerInstanceId: Schema.optional(Schema.String),
-    environmentVariable: Schema.optional(Schema.String),
-    /** For `write-managed-setting`: the locked dot path and who manages it. */
-    managedSetting: Schema.optional(Schema.String),
-    managedBy: Schema.optional(Schema.String),
-    /** For `use-disallowed-provider`: the provider's name as users know it. */
-    providerLabel: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ServerSettingsError extends Schema.TaggedError<
+  ServerSettingsError,
+  { readonly brand: unique symbol }
+>()("ServerSettingsError", {
+  settingsPath: Schema.String,
+  operation: ServerSettingsOperation,
+  providerInstanceId: Schema.optional(Schema.String),
+  environmentVariable: Schema.optional(Schema.String),
+  /** For `write-managed-setting`: the locked dot path and who manages it. */
+  managedSetting: Schema.optional(Schema.String),
+  managedBy: Schema.optional(Schema.String),
+  /** For `use-disallowed-provider`: the provider's name as users know it. */
+  providerLabel: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
+    if (this.operation === "remove-provider-resources") {
+      return "The provider was removed, but some managed resources could not be cleaned up.";
+    }
+    if (this.operation === "stop-provider-sessions") {
+      return "Could not stop this provider's active sessions. Its settings and managed resources were kept.";
+    }
     if (this.operation === "write-managed-setting") {
       return `${this.managedSetting ?? "This setting"} is managed by ${this.managedBy ?? "your organization"} and cannot be changed.`;
     }

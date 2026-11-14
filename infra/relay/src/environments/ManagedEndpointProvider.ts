@@ -31,16 +31,16 @@ import * as CloudflareApiPause from "./CloudflareApiPause.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
 import * as ManagedTunnelLimits from "./ManagedTunnelLimits.ts";
 
-export class ManagedEndpointProvisioningNotConfigured extends Schema.TaggedError<ManagedEndpointProvisioningNotConfigured>()(
-  "ManagedEndpointProvisioningNotConfigured",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    missingSettings: Schema.Array(
-      Schema.Literals(["managedEndpointBaseDomain", "managedEndpointNamespace"]),
-    ),
-  },
-) {
+export class ManagedEndpointProvisioningNotConfigured extends Schema.TaggedError<
+  ManagedEndpointProvisioningNotConfigured,
+  { readonly brand: unique symbol }
+>()("ManagedEndpointProvisioningNotConfigured", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  missingSettings: Schema.Array(
+    Schema.Literals(["managedEndpointBaseDomain", "managedEndpointNamespace"]),
+  ),
+}) {
   override get message(): string {
     return `Managed endpoint provisioning is not configured for user '${this.userId}', environment '${this.environmentId}': missing ${this.missingSettings.join(", ")}`;
   }
@@ -70,22 +70,22 @@ const ManagedEndpointProvisioningFailureReason = Schema.Literals([
   "invalid-tunnel-response",
 ]);
 
-export class ManagedEndpointProvisioningFailed extends Schema.TaggedError<ManagedEndpointProvisioningFailed>()(
-  "ManagedEndpointProvisioningFailed",
-  {
-    stage: ManagedEndpointProvisioningStage,
-    reason: Schema.optionalKey(ManagedEndpointProvisioningFailureReason),
-    userId: Schema.String,
-    environmentId: Schema.String,
-    hostname: Schema.optionalKey(Schema.String),
-    tunnelName: Schema.optionalKey(Schema.String),
-    tunnelId: Schema.optionalKey(Schema.String),
-    dnsRecordId: Schema.optionalKey(Schema.String),
-    returnedTunnelName: Schema.optionalKey(Schema.String),
-    returnedTunnelId: Schema.optionalKey(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ManagedEndpointProvisioningFailed extends Schema.TaggedError<
+  ManagedEndpointProvisioningFailed,
+  { readonly brand: unique symbol }
+>()("ManagedEndpointProvisioningFailed", {
+  stage: ManagedEndpointProvisioningStage,
+  reason: Schema.optionalKey(ManagedEndpointProvisioningFailureReason),
+  userId: Schema.String,
+  environmentId: Schema.String,
+  hostname: Schema.optionalKey(Schema.String),
+  tunnelName: Schema.optionalKey(Schema.String),
+  tunnelId: Schema.optionalKey(Schema.String),
+  dnsRecordId: Schema.optionalKey(Schema.String),
+  returnedTunnelName: Schema.optionalKey(Schema.String),
+  returnedTunnelId: Schema.optionalKey(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Managed endpoint provisioning failed during '${this.stage}' for user '${this.userId}', environment '${this.environmentId}'`;
   }
@@ -101,31 +101,31 @@ const ManagedEndpointDeprovisioningStage = Schema.Literals([
   "remove-allocation",
 ]);
 
-export class ManagedEndpointDeprovisioningFailed extends Schema.TaggedError<ManagedEndpointDeprovisioningFailed>()(
-  "ManagedEndpointDeprovisioningFailed",
-  {
-    stage: ManagedEndpointDeprovisioningStage,
-    userId: Schema.String,
-    environmentId: Schema.String,
-    tunnelId: Schema.optionalKey(Schema.String),
-    dnsRecordId: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedEndpointDeprovisioningFailed extends Schema.TaggedError<
+  ManagedEndpointDeprovisioningFailed,
+  { readonly brand: unique symbol }
+>()("ManagedEndpointDeprovisioningFailed", {
+  stage: ManagedEndpointDeprovisioningStage,
+  userId: Schema.String,
+  environmentId: Schema.String,
+  tunnelId: Schema.optionalKey(Schema.String),
+  dnsRecordId: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Managed endpoint deprovisioning failed during '${this.stage}' for user '${this.userId}', environment '${this.environmentId}'`;
   }
 }
 
-export class ManagedEndpointOriginNotAllowed extends Schema.TaggedError<ManagedEndpointOriginNotAllowed>()(
-  "ManagedEndpointOriginNotAllowed",
-  {
-    userId: Schema.String,
-    environmentId: Schema.String,
-    host: Schema.String,
-    port: Schema.Number,
-  },
-) {
+export class ManagedEndpointOriginNotAllowed extends Schema.TaggedError<
+  ManagedEndpointOriginNotAllowed,
+  { readonly brand: unique symbol }
+>()("ManagedEndpointOriginNotAllowed", {
+  userId: Schema.String,
+  environmentId: Schema.String,
+  host: Schema.String,
+  port: Schema.Number,
+}) {
   override get message(): string {
     return `Managed endpoint origin '${this.host}:${this.port}' is not allowed for user '${this.userId}', environment '${this.environmentId}'`;
   }
@@ -221,15 +221,15 @@ const ManagedEndpointTunnelClientOperation = Schema.Literals([
   "delete",
 ]);
 
-export class ManagedEndpointTunnelClientError extends Schema.TaggedError<ManagedEndpointTunnelClientError>()(
-  "ManagedEndpointTunnelClientError",
-  {
-    operation: ManagedEndpointTunnelClientOperation,
-    tunnelName: Schema.optionalKey(Schema.String),
-    tunnelId: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedEndpointTunnelClientError extends Schema.TaggedError<
+  ManagedEndpointTunnelClientError,
+  { readonly brand: unique symbol }
+>()("ManagedEndpointTunnelClientError", {
+  operation: ManagedEndpointTunnelClientOperation,
+  tunnelName: Schema.optionalKey(Schema.String),
+  tunnelId: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const target = this.tunnelId ?? this.tunnelName;
     return `Managed endpoint tunnel provider '${this.operation}' request failed${target === undefined ? "" : ` for '${target}'`}`;
@@ -301,15 +301,15 @@ const ManagedEndpointDnsClientOperation = Schema.Literals([
   "delete-record",
 ]);
 
-export class ManagedEndpointDnsClientError extends Schema.TaggedError<ManagedEndpointDnsClientError>()(
-  "ManagedEndpointDnsClientError",
-  {
-    operation: ManagedEndpointDnsClientOperation,
-    hostname: Schema.optionalKey(Schema.String),
-    dnsRecordId: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedEndpointDnsClientError extends Schema.TaggedError<
+  ManagedEndpointDnsClientError,
+  { readonly brand: unique symbol }
+>()("ManagedEndpointDnsClientError", {
+  operation: ManagedEndpointDnsClientOperation,
+  hostname: Schema.optionalKey(Schema.String),
+  dnsRecordId: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const target = this.dnsRecordId ?? this.hostname;
     return `Managed endpoint DNS provider '${this.operation}' request failed${target === undefined ? "" : ` for '${target}'`}`;
@@ -401,10 +401,10 @@ function isManagedEndpointNotFound(cause: unknown): boolean {
   return "cause" in cause && isManagedEndpointNotFound(cause.cause);
 }
 
-export class CloudflareApiPaused extends Schema.TaggedError<CloudflareApiPaused>()(
-  "CloudflareApiPaused",
-  { retryAfterMillis: Schema.Number },
-) {
+export class CloudflareApiPaused extends Schema.TaggedError<
+  CloudflareApiPaused,
+  { readonly brand: unique symbol }
+>()("CloudflareApiPaused", { retryAfterMillis: Schema.Number }) {
   override get message(): string {
     return `Cloudflare API calls are paused for ${this.retryAfterMillis}ms after a rate limit`;
   }

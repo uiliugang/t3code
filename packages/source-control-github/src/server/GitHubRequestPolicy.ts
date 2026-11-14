@@ -33,47 +33,51 @@ export const PinnedGitHubCredential = Context.Reference<{
   defaultValue: () => null,
 });
 
-export class GitHubApiRequestError extends Schema.TaggedError<GitHubApiRequestError>()(
-  "GitHubApiRequestError",
-  { host: Schema.String, operation: Schema.String, cause: Schema.Defect() },
-) {
+export class GitHubApiRequestError extends Schema.TaggedError<
+  GitHubApiRequestError,
+  { readonly brand: unique symbol }
+>()("GitHubApiRequestError", {
+  host: Schema.String,
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not reach GitHub at ${this.host}.`;
   }
 }
 
-export class GitHubApiAuthenticationError extends Schema.TaggedError<GitHubApiAuthenticationError>()(
-  "GitHubApiAuthenticationError",
-  { host: Schema.String, operation: Schema.String },
-) {
+export class GitHubApiAuthenticationError extends Schema.TaggedError<
+  GitHubApiAuthenticationError,
+  { readonly brand: unique symbol }
+>()("GitHubApiAuthenticationError", { host: Schema.String, operation: Schema.String }) {
   override get message(): string {
     return `GitHub refused the credential for ${this.host}. Run \`gh auth login --hostname ${this.host}\` and retry.`;
   }
 }
 
-export class GitHubApiRateLimitError extends Schema.TaggedError<GitHubApiRateLimitError>()(
-  "GitHubApiRateLimitError",
-  {
-    host: Schema.String,
-    operation: Schema.String,
-    retryAt: Schema.optionalKey(Schema.Finite),
-  },
-) {
+export class GitHubApiRateLimitError extends Schema.TaggedError<
+  GitHubApiRateLimitError,
+  { readonly brand: unique symbol }
+>()("GitHubApiRateLimitError", {
+  host: Schema.String,
+  operation: Schema.String,
+  retryAt: Schema.optionalKey(Schema.Finite),
+}) {
   override get message(): string {
     return "GitHub API rate limit exceeded.";
   }
 }
 
-export class GitHubApiNotFoundError extends Schema.TaggedError<GitHubApiNotFoundError>()(
-  "GitHubApiNotFoundError",
-  {
-    host: Schema.String,
-    operation: Schema.String,
-    githubErrors: Schema.optionalKey(Schema.Array(Schema.String)),
-    /** The source of the credential the refused request carried, when known. */
-    credential: Schema.optionalKey(GitHubCredentials.GitHubCredentialSource),
-  },
-) {
+export class GitHubApiNotFoundError extends Schema.TaggedError<
+  GitHubApiNotFoundError,
+  { readonly brand: unique symbol }
+>()("GitHubApiNotFoundError", {
+  host: Schema.String,
+  operation: Schema.String,
+  githubErrors: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The source of the credential the refused request carried, when known. */
+  credential: Schema.optionalKey(GitHubCredentials.GitHubCredentialSource),
+}) {
   override get message(): string {
     const missing =
       "GitHub could not find the requested resource, or the credential cannot see it.";
@@ -83,16 +87,16 @@ export class GitHubApiNotFoundError extends Schema.TaggedError<GitHubApiNotFound
   }
 }
 
-export class GitHubApiResponseError extends Schema.TaggedError<GitHubApiResponseError>()(
-  "GitHubApiResponseError",
-  {
-    host: Schema.String,
-    operation: Schema.String,
-    status: Schema.Int,
-    githubErrors: Schema.optionalKey(Schema.Array(Schema.String)),
-    githubErrorTypes: Schema.optionalKey(Schema.Array(Schema.NullOr(Schema.String))),
-  },
-) {
+export class GitHubApiResponseError extends Schema.TaggedError<
+  GitHubApiResponseError,
+  { readonly brand: unique symbol }
+>()("GitHubApiResponseError", {
+  host: Schema.String,
+  operation: Schema.String,
+  status: Schema.Int,
+  githubErrors: Schema.optionalKey(Schema.Array(Schema.String)),
+  githubErrorTypes: Schema.optionalKey(Schema.Array(Schema.NullOr(Schema.String))),
+}) {
   override get message(): string {
     return this.githubErrors !== undefined && this.githubErrors.length > 0
       ? `GitHub returned an error: ${this.githubErrors.join("; ")}`

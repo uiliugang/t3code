@@ -39,7 +39,10 @@ const decodeFcmError = Schema.decodeUnknownOption(
   }),
 );
 
-export class FcmClientError extends Schema.TaggedError<FcmClientError>()("FcmClientError", {
+export class FcmClientError extends Schema.TaggedError<
+  FcmClientError,
+  { readonly brand: unique symbol }
+>()("FcmClientError", {
   operation: Schema.Literals(["configuration", "authorize", "send"]),
   status: Schema.NullOr(Schema.Number),
   cause: Schema.optional(Schema.Defect()),

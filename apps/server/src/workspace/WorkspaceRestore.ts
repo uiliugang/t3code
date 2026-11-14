@@ -39,10 +39,14 @@ type RestoreInput = {
   readonly checkpoint: OrchestrationV2Checkpoint;
 };
 
-export class WorkspaceRestoreError extends Schema.TaggedError<WorkspaceRestoreError>()(
-  "WorkspaceRestoreError",
-  { threadId: ThreadId, detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class WorkspaceRestoreError extends Schema.TaggedError<
+  WorkspaceRestoreError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRestoreError", {
+  threadId: ThreadId,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     return this.detail;
   }

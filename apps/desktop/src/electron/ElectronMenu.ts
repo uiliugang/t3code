@@ -31,16 +31,16 @@ const ElectronMenuOperation = Schema.Literals([
   "show-context-menu",
 ]);
 
-export class ElectronMenuOperationError extends Schema.TaggedError<ElectronMenuOperationError>()(
-  "ElectronMenuOperationError",
-  {
-    operation: ElectronMenuOperation,
-    platform: Schema.String,
-    windowId: Schema.NullOr(Schema.Number),
-    itemCount: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronMenuOperationError extends Schema.TaggedError<
+  ElectronMenuOperationError,
+  { readonly brand: unique symbol }
+>()("ElectronMenuOperationError", {
+  operation: ElectronMenuOperation,
+  platform: Schema.String,
+  windowId: Schema.NullOr(Schema.Number),
+  itemCount: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const window = this.windowId === null ? "" : ` for window ${this.windowId}`;
     return `Electron menu operation ${JSON.stringify(this.operation)} failed${window} with ${this.itemCount} items on ${this.platform}.`;

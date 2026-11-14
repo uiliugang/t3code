@@ -1,9 +1,15 @@
+import * as Cleanup from "./ResourceCleanupService.ts";
+import * as Previews from "../preview/Manager.ts";
+import * as Tasks from "../scheduledTasks/ScheduledTaskService.ts";
+import * as ServerConfig from "../config.ts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Schema from "effect/Schema";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import {
   ThreadWorkspaceRevision,
+  type DeviceSession,
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
   EventId,
@@ -16,6 +22,7 @@ import {
   TurnItemId,
   type OrchestrationProjectShell,
   type OrchestrationV2AppThread,
+  PreviewStopLocalServerError,
   type OrchestrationV2Command,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ShellSnapshot,
@@ -45,6 +52,8 @@ import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerActivation from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as DeviceService from "../device/DeviceService.ts";
+import * as PortScanner from "../preview/PortScanner.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -591,7 +600,10 @@ interface HarnessOptions {
   readonly onScriptRun?: (
     input: ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput,
   ) => Effect.Effect<void>;
-  readonly onCloseIdle?: () => Effect.Effect<void>;
+  readonly deviceSessions?: ReadonlyArray<DeviceSession>;
+  readonly servers?: ReadonlyArray<import("@t3tools/contracts").DiscoveredLocalServer>;
+  readonly onCloseIdle?: (input: { readonly threadId: string }) => Effect.Effect<void>;
+  readonly onStopServers?: PortScanner.PortDiscovery["Service"]["stopThreadServers"];
   readonly currentThreads?: ReadonlyArray<OrchestrationV2AppThread>;
   readonly projections?: ProjectionStore.ProjectionStoreV2Shape;
 }
@@ -625,6 +637,9 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const invalidatedCwds = yield* Ref.make<ReadonlyArray<string>>([]);
   const domainEvents = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
   const observedEvents = yield* Queue.unbounded<EventId>();
+  const deviceSessions = yield* Ref.make(options.deviceSessions ?? []);
+  const closedDevices = yield* Ref.make<ReadonlyArray<ThreadId>>([]);
+  const stoppedServers = yield* Ref.make<ReadonlyArray<ThreadId>>([]);
   const closedIdle = yield* Queue.unbounded<{ readonly threadId: string }>();
   const scriptRuns =
     yield* Queue.unbounded<ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput>();
@@ -683,6 +698,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     ),
     updateSettings,
     updateProviderInstance: () => Effect.die("Unexpected provider mutation"),
+    validateProviderInstanceMutation: () => Effect.die("Unexpected provider validation"),
     withSettingsSnapshot: (use) => Ref.get(settings).pipe(Effect.flatMap(use)),
     streamChanges: Stream.fromPubSub(settingsChanges),
     subscribeChanges: PubSub.subscribe(settingsChanges).pipe(
@@ -691,6 +707,11 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   });
 
   const layerDependencies = Layer.mergeAll(
+    Layer.mock(Previews.PreviewManager)({}),
+    Layer.mock(Tasks.ScheduledTaskService)({}),
+    ServerConfig.layerTest("/test", { prefix: "t3-settlement-" }).pipe(
+      Layer.provide(NodeServices.layer),
+    ),
     Layer.mock(ProjectStore.ProjectStoreV2)({
       listShells: () => Ref.get(snapshots).pipe(Effect.map((snapshot) => snapshot.projects)),
     }),
@@ -725,9 +746,61 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       ),
       dispatch,
     }),
+    Layer.mock(DeviceService.DeviceService)({
+      state: Ref.get(deviceSessions).pipe(
+        Effect.map((sessions) => ({
+          sessions,
+          hosts: [],
+          hostStatus: "idle" as const,
+          hostStatuses: {},
+          devices: [],
+          onboardingCompleted: true,
+          agentAccessEnabled: true,
+          hubBasePath: "/device",
+          revision: 0,
+        })),
+      ),
+      sessionsForThread: (threadId) =>
+        Ref.get(deviceSessions).pipe(
+          Effect.map((sessions) => sessions.filter((s) => s.threadId === threadId)),
+        ),
+      closeRetired: ({ threadId }, shouldClose) =>
+        shouldClose.pipe(
+          Effect.flatMap((allowed) =>
+            allowed
+              ? Ref.update(closedDevices, (ids) => [...ids, threadId]).pipe(
+                  Effect.andThen(
+                    Ref.update(deviceSessions, (sessions) =>
+                      sessions.filter((session) => session.threadId !== threadId),
+                    ),
+                  ),
+                )
+              : Effect.void,
+          ),
+        ),
+    }),
+    Layer.mock(PortScanner.PortDiscovery)({
+      scan: () => Effect.succeed(options.servers ?? []),
+      trackAgent: () => () => undefined,
+      stopThreadServers: ({ threadId, shouldStop }) =>
+        shouldStop.pipe(
+          Effect.flatMap((allowed) =>
+            allowed
+              ? Ref.update(stoppedServers, (ids) => [...ids, threadId]).pipe(
+                  Effect.andThen(
+                    options.onStopServers?.({ threadId, shouldStop, mode: "settled" }) ??
+                      Effect.void,
+                  ),
+                )
+              : Effect.void,
+          ),
+        ),
+    }),
     Layer.mock(TerminalManager.TerminalManager)({
       closeOnSettle: (input) =>
-        Queue.offer(closedIdle, input).pipe(Effect.andThen(options.onCloseIdle?.() ?? Effect.void)),
+        Queue.offer(closedIdle, { threadId: input.threadId }).pipe(
+          Effect.andThen(options.onCloseIdle?.({ threadId: input.threadId }) ?? Effect.void),
+        ),
     }),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       runForThread: (input) =>
@@ -779,6 +852,8 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     summaryRecovery,
     invalidatedCwds,
     closedIdle,
+    closedDevices,
+    stoppedServers,
     scriptRuns,
     observedEvents,
     publishEvent: (event: OrchestrationV2DomainEvent) => PubSub.publish(domainEvents, event),
@@ -794,7 +869,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     layer: Layer.effect(
       ThreadSettlementService.ThreadSettlementServiceV2,
       ThreadSettlementService.make,
-    ).pipe(Layer.provide(layerDependencies)),
+    ).pipe(Layer.provide(Cleanup.layer), Layer.provide(layerDependencies)),
   };
 });
 
@@ -1871,6 +1946,49 @@ describe("ThreadSettlementServiceV2 worker", () => {
 });
 
 describe("ThreadSettlementServiceV2 terminals", () => {
+  it.effect(
+    "recovers service-only and device-only retired threads after restart without touching active threads",
+    () =>
+      Effect.gen(function* () {
+        const settled = appThread("restored-settled", "settled");
+        const active = appThread("restored-active", "active");
+        const serviceOnly = appThread("restored-service", "settled");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [settled, active, serviceOnly],
+          servers: [
+            {
+              host: "127.0.0.1",
+              port: 4321,
+              url: "http://127.0.0.1:4321",
+              pid: 100,
+              processName: "node",
+              terminal: null,
+              agent: { threadId: serviceOnly.id },
+            },
+          ],
+          settings: { sidebarAutoSettleOnMerge: false, sidebarAutoSettleAfterDays: null },
+          deviceSessions: [settled, active].map((thread) => ({
+            threadId: thread.id,
+            hostId: "local",
+            deviceId: thread.id,
+            platform: "android",
+            openedAt: NOW,
+          })),
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), [settled.id]);
+          assert.deepStrictEqual(yield* Ref.get(fixture.stoppedServers), [
+            settled.id,
+            serviceOnly.id,
+          ]);
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: settled.id });
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+  );
+
   it.effect("keeps the terminals of a thread re-engaged before the event ran", () =>
     Effect.gen(function* () {
       const settled = appThread("reengaged-thread", "settled");
@@ -1887,6 +2005,10 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         yield* fixture.publishEvent(settledEvent(settled));
         yield* fixture.publishEvent(settledEvent(marker));
         assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: marker.id });
+        yield* fixture.publishEvent(settledEvent(marker));
+        yield* service.drain;
+        assert.isFalse((yield* Ref.get(fixture.closedDevices)).includes(reengaged.id));
+        assert.isFalse((yield* Ref.get(fixture.stoppedServers)).includes(reengaged.id));
       }).pipe(Effect.provide(fixture.layer));
     }),
   );
@@ -1965,6 +2087,13 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           assert.strictEqual(run.threadId, worktree.id);
           assert.strictEqual(run.worktreePath, "/worktrees/thread");
           assert.strictEqual(run.trigger, "settle");
+          assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), []);
+          assert.deepStrictEqual(yield* Ref.get(fixture.stoppedServers), [
+            shared.id,
+            missing.id,
+            group.id,
+            worktree.id,
+          ]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
@@ -1991,6 +2120,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         yield* fixture.publishEvent(settledEvent(settled));
         yield* fixture.publishEvent(settledEvent(marker));
         assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
+        assert.isFalse((yield* Ref.get(fixture.closedDevices)).includes(settled.id));
       }).pipe(Effect.provide(fixture.layer));
     }),
   );
@@ -2028,26 +2158,48 @@ describe("ThreadSettlementServiceV2 terminals", () => {
     }),
   );
 
-  it.effect("runs the settle script once when a settlement is re-emitted", () =>
-    Effect.gen(function* () {
-      const repeated = appThread("repeated-thread", "settled", "/worktrees/repeated");
-      const marker = appThread("marker-thread", "settled", "/worktrees/marker");
-      const fixture = yield* makeHarness({
-        snapshot: makeSnapshot([]),
-        currentThreads: [repeated, marker],
-        existingWorktreePaths: ["/worktrees/repeated", "/worktrees/marker"],
-      });
+  it.effect.each([false, true])(
+    "keeps the settle script running across repeated settlement and cleanup failure=%s",
+    (failOnce) =>
+      Effect.gen(function* () {
+        const repeated = appThread("repeated-thread", "settled", "/worktrees/repeated");
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+        const attempts = yield* Ref.make(0);
+        const scriptRunning = yield* Ref.make(false);
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [repeated, marker],
+          existingWorktreePaths: ["/worktrees/repeated", "/worktrees/marker"],
+          onStopServers: ({ threadId }) =>
+            threadId !== repeated.id
+              ? Effect.void
+              : Ref.updateAndGet(attempts, (n) => n + 1).pipe(
+                  Effect.flatMap((n) =>
+                    failOnce && n === 1
+                      ? Effect.fail(new PreviewStopLocalServerError({ reason: "signal-failed" }))
+                      : Effect.void,
+                  ),
+                ),
+          onCloseIdle: () => Effect.void,
+          onScriptRun: ({ threadId }) =>
+            threadId === repeated.id ? Ref.set(scriptRunning, true) : Effect.void,
+        });
 
-      yield* Effect.gen(function* () {
-        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
-        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-        yield* fixture.publishEvent(settledEvent(repeated));
-        yield* fixture.publishEvent(settledEvent(repeated));
-        yield* fixture.publishEvent(settledEvent(marker));
-        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, repeated.id);
-        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
-      }).pipe(Effect.provide(fixture.layer));
-    }),
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(repeated));
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, repeated.id);
+          yield* fixture.publishEvent(settledEvent(repeated));
+          yield* fixture.publishEvent(settledEvent(marker));
+          assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
+          assert.isTrue(yield* Ref.get(scriptRunning));
+          assert.isAtLeast(
+            (yield* Ref.get(fixture.stoppedServers)).filter((id) => id === repeated.id).length,
+            2,
+          );
+        }).pipe(Effect.provide(fixture.layer));
+      }),
   );
 
   it.effect("retries the settle script on a re-emitted settlement after a failed start", () =>

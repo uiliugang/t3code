@@ -30,10 +30,10 @@ const azureDevOpsCommandErrorFields = {
   cause: Schema.Defect(),
 };
 
-export class AzureDevOpsCliUnavailableError extends Schema.TaggedError<AzureDevOpsCliUnavailableError>()(
-  "AzureDevOpsCliUnavailableError",
-  azureDevOpsCommandErrorFields,
-) {
+export class AzureDevOpsCliUnavailableError extends Schema.TaggedError<
+  AzureDevOpsCliUnavailableError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsCliUnavailableError", azureDevOpsCommandErrorFields) {
   get detail(): string {
     return "Azure CLI (`az`) with the Azure DevOps extension is required but not available on PATH.";
   }
@@ -43,10 +43,10 @@ export class AzureDevOpsCliUnavailableError extends Schema.TaggedError<AzureDevO
   }
 }
 
-export class AzureDevOpsCliAuthenticationError extends Schema.TaggedError<AzureDevOpsCliAuthenticationError>()(
-  "AzureDevOpsCliAuthenticationError",
-  azureDevOpsCommandErrorFields,
-) {
+export class AzureDevOpsCliAuthenticationError extends Schema.TaggedError<
+  AzureDevOpsCliAuthenticationError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsCliAuthenticationError", azureDevOpsCommandErrorFields) {
   get detail(): string {
     return "Azure DevOps CLI is not authenticated. Run `az devops login` and retry.";
   }
@@ -56,10 +56,10 @@ export class AzureDevOpsCliAuthenticationError extends Schema.TaggedError<AzureD
   }
 }
 
-export class AzureDevOpsCliRateLimitError extends Schema.TaggedError<AzureDevOpsCliRateLimitError>()(
-  "AzureDevOpsCliRateLimitError",
-  azureDevOpsCommandErrorFields,
-) {
+export class AzureDevOpsCliRateLimitError extends Schema.TaggedError<
+  AzureDevOpsCliRateLimitError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsCliRateLimitError", azureDevOpsCommandErrorFields) {
   get detail(): string {
     return "Azure DevOps API rate limit exceeded.";
   }
@@ -69,10 +69,10 @@ export class AzureDevOpsCliRateLimitError extends Schema.TaggedError<AzureDevOps
   }
 }
 
-export class AzureDevOpsPullRequestNotFoundError extends Schema.TaggedError<AzureDevOpsPullRequestNotFoundError>()(
-  "AzureDevOpsPullRequestNotFoundError",
-  azureDevOpsCommandErrorFields,
-) {
+export class AzureDevOpsPullRequestNotFoundError extends Schema.TaggedError<
+  AzureDevOpsPullRequestNotFoundError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsPullRequestNotFoundError", azureDevOpsCommandErrorFields) {
   get detail(): string {
     return "Pull request not found. Check the PR number or URL and try again.";
   }
@@ -82,10 +82,10 @@ export class AzureDevOpsPullRequestNotFoundError extends Schema.TaggedError<Azur
   }
 }
 
-export class AzureDevOpsCommandFailedError extends Schema.TaggedError<AzureDevOpsCommandFailedError>()(
-  "AzureDevOpsCommandFailedError",
-  azureDevOpsCommandErrorFields,
-) {
+export class AzureDevOpsCommandFailedError extends Schema.TaggedError<
+  AzureDevOpsCommandFailedError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsCommandFailedError", azureDevOpsCommandErrorFields) {
   get detail(): string {
     return "Azure DevOps CLI command failed.";
   }
@@ -138,13 +138,13 @@ const azureDevOpsDecodeErrorFields = {
   cause: Schema.Defect(),
 };
 
-export class AzureDevOpsPullRequestListDecodeError extends Schema.TaggedError<AzureDevOpsPullRequestListDecodeError>()(
-  "AzureDevOpsPullRequestListDecodeError",
-  {
-    operation: Schema.Literal("listPullRequests"),
-    ...azureDevOpsDecodeErrorFields,
-  },
-) {
+export class AzureDevOpsPullRequestListDecodeError extends Schema.TaggedError<
+  AzureDevOpsPullRequestListDecodeError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsPullRequestListDecodeError", {
+  operation: Schema.Literal("listPullRequests"),
+  ...azureDevOpsDecodeErrorFields,
+}) {
   get detail(): string {
     return "Azure DevOps CLI returned invalid PR list JSON.";
   }
@@ -154,13 +154,13 @@ export class AzureDevOpsPullRequestListDecodeError extends Schema.TaggedError<Az
   }
 }
 
-export class AzureDevOpsPullRequestDecodeError extends Schema.TaggedError<AzureDevOpsPullRequestDecodeError>()(
-  "AzureDevOpsPullRequestDecodeError",
-  {
-    operation: Schema.Literal("getPullRequest"),
-    ...azureDevOpsDecodeErrorFields,
-  },
-) {
+export class AzureDevOpsPullRequestDecodeError extends Schema.TaggedError<
+  AzureDevOpsPullRequestDecodeError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsPullRequestDecodeError", {
+  operation: Schema.Literal("getPullRequest"),
+  ...azureDevOpsDecodeErrorFields,
+}) {
   get detail(): string {
     return "Azure DevOps CLI returned invalid pull request JSON.";
   }
@@ -176,13 +176,13 @@ const AzureDevOpsRepositoryDecodeOperation = Schema.Literals([
   "createRepository",
 ]);
 
-export class AzureDevOpsRepositoryDecodeError extends Schema.TaggedError<AzureDevOpsRepositoryDecodeError>()(
-  "AzureDevOpsRepositoryDecodeError",
-  {
-    operation: AzureDevOpsRepositoryDecodeOperation,
-    ...azureDevOpsDecodeErrorFields,
-  },
-) {
+export class AzureDevOpsRepositoryDecodeError extends Schema.TaggedError<
+  AzureDevOpsRepositoryDecodeError,
+  { readonly brand: unique symbol }
+>()("AzureDevOpsRepositoryDecodeError", {
+  operation: AzureDevOpsRepositoryDecodeOperation,
+  ...azureDevOpsDecodeErrorFields,
+}) {
   get detail(): string {
     return "Azure DevOps CLI returned invalid repository JSON.";
   }

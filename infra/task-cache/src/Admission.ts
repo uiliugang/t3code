@@ -5,10 +5,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export class AdmissionRejected extends Schema.TaggedError<AdmissionRejected>()(
-  "AdmissionRejected",
-  {},
-) {}
+export class AdmissionRejected extends Schema.TaggedError<
+  AdmissionRejected,
+  { readonly brand: unique symbol }
+>()("AdmissionRejected", {}) {}
 
 export class Admission extends Context.Service<
   Admission,

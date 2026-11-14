@@ -11,15 +11,15 @@ import { T3ProjectFileFromJson } from "@t3tools/shared/t3ProjectFile";
 
 const decodeT3ProjectFileJson = Schema.decodeEffect(T3ProjectFileFromJson);
 
-export class T3ProjectFileLoadError extends Schema.TaggedError<T3ProjectFileLoadError>()(
-  "T3ProjectFileLoadError",
-  {
-    operation: Schema.Literals(["read", "decode"]),
-    workspaceRoot: Schema.String,
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class T3ProjectFileLoadError extends Schema.TaggedError<
+  T3ProjectFileLoadError,
+  { readonly brand: unique symbol }
+>()("T3ProjectFileLoadError", {
+  operation: Schema.Literals(["read", "decode"]),
+  workspaceRoot: Schema.String,
+  filePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} ${T3_PROJECT_FILE_NAME} at ${this.filePath}.`;
   }

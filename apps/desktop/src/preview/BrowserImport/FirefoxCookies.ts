@@ -5,13 +5,13 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { cookieScope, snapshotCookieDatabase, type ImportedCookie } from "./CookieDatabase.ts";
 
-export class FirefoxCookieReadError extends Schema.TaggedError<FirefoxCookieReadError>()(
-  "FirefoxCookieReadError",
-  {
-    cookieDatabasePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class FirefoxCookieReadError extends Schema.TaggedError<
+  FirefoxCookieReadError,
+  { readonly brand: unique symbol }
+>()("FirefoxCookieReadError", {
+  cookieDatabasePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not read Firefox cookies at ${this.cookieDatabasePath}.`;
   }

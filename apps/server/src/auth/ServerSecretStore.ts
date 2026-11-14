@@ -16,100 +16,100 @@ const secretStoreErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class SecretStoreSecureError extends Schema.TaggedError<SecretStoreSecureError>()(
-  "SecretStoreSecureError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStoreSecureError extends Schema.TaggedError<
+  SecretStoreSecureError,
+  { readonly brand: unique symbol }
+>()("SecretStoreSecureError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to secure ${this.resource}.`;
   }
 }
 
-export class SecretStoreReadError extends Schema.TaggedError<SecretStoreReadError>()(
-  "SecretStoreReadError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStoreReadError extends Schema.TaggedError<
+  SecretStoreReadError,
+  { readonly brand: unique symbol }
+>()("SecretStoreReadError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to read ${this.resource}.`;
   }
 }
 
-export class SecretStoreTemporaryPathError extends Schema.TaggedError<SecretStoreTemporaryPathError>()(
-  "SecretStoreTemporaryPathError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStoreTemporaryPathError extends Schema.TaggedError<
+  SecretStoreTemporaryPathError,
+  { readonly brand: unique symbol }
+>()("SecretStoreTemporaryPathError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to create temporary path for ${this.resource}.`;
   }
 }
 
-export class SecretStorePersistError extends Schema.TaggedError<SecretStorePersistError>()(
-  "SecretStorePersistError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStorePersistError extends Schema.TaggedError<
+  SecretStorePersistError,
+  { readonly brand: unique symbol }
+>()("SecretStorePersistError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to persist ${this.resource}.`;
   }
 }
 
-export class SecretStoreRandomGenerationError extends Schema.TaggedError<SecretStoreRandomGenerationError>()(
-  "SecretStoreRandomGenerationError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStoreRandomGenerationError extends Schema.TaggedError<
+  SecretStoreRandomGenerationError,
+  { readonly brand: unique symbol }
+>()("SecretStoreRandomGenerationError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to generate random bytes for ${this.resource}.`;
   }
 }
 
-export class SecretStoreConcurrentReadError extends Schema.TaggedError<SecretStoreConcurrentReadError>()(
-  "SecretStoreConcurrentReadError",
-  {
-    resource: Schema.String,
-  },
-) {
+export class SecretStoreConcurrentReadError extends Schema.TaggedError<
+  SecretStoreConcurrentReadError,
+  { readonly brand: unique symbol }
+>()("SecretStoreConcurrentReadError", {
+  resource: Schema.String,
+}) {
   override get message(): string {
     return `Failed to read ${this.resource} after concurrent creation.`;
   }
 }
 
-export class SecretStoreRemoveError extends Schema.TaggedError<SecretStoreRemoveError>()(
-  "SecretStoreRemoveError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStoreRemoveError extends Schema.TaggedError<
+  SecretStoreRemoveError,
+  { readonly brand: unique symbol }
+>()("SecretStoreRemoveError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to remove ${this.resource}.`;
   }
 }
 
-export class SecretStoreDecodeError extends Schema.TaggedError<SecretStoreDecodeError>()(
-  "SecretStoreDecodeError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStoreDecodeError extends Schema.TaggedError<
+  SecretStoreDecodeError,
+  { readonly brand: unique symbol }
+>()("SecretStoreDecodeError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to decode ${this.resource}.`;
   }
 }
 
-export class SecretStoreEncodeError extends Schema.TaggedError<SecretStoreEncodeError>()(
-  "SecretStoreEncodeError",
-  {
-    ...secretStoreErrorContext,
-  },
-) {
+export class SecretStoreEncodeError extends Schema.TaggedError<
+  SecretStoreEncodeError,
+  { readonly brand: unique symbol }
+>()("SecretStoreEncodeError", {
+  ...secretStoreErrorContext,
+}) {
   override get message(): string {
     return `Failed to encode ${this.resource}.`;
   }

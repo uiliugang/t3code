@@ -81,19 +81,19 @@ const decodePnpmModulesManifest = Schema.decodeUnknownEffect(
   }),
 );
 
-class PnpmModulesManifestParseError extends Schema.TaggedError<PnpmModulesManifestParseError>()(
-  "PnpmModulesManifestParseError",
-  { cause: Schema.Defect() },
-) {
+class PnpmModulesManifestParseError extends Schema.TaggedError<
+  PnpmModulesManifestParseError,
+  { readonly brand: unique symbol }
+>()("PnpmModulesManifestParseError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not parse the pnpm modules manifest.";
   }
 }
 
-class WorktreeDirectoryReadError extends Schema.TaggedError<WorktreeDirectoryReadError>()(
-  "WorktreeDirectoryReadError",
-  { cause: Schema.Defect() },
-) {
+class WorktreeDirectoryReadError extends Schema.TaggedError<
+  WorktreeDirectoryReadError,
+  { readonly brand: unique symbol }
+>()("WorktreeDirectoryReadError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not read a worktree directory.";
   }

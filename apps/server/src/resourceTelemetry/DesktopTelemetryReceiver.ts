@@ -45,70 +45,70 @@ const DEFAULT_HOST_POWER_ACTIVE_INTERVAL_MS = 30_000;
 const DEFAULT_HOST_POWER_IDLE_INTERVAL_MS = 120_000;
 const STALE_CHECK_INTERVAL = Duration.seconds(30);
 
-export class DesktopTelemetryDescriptorUnavailable extends Schema.TaggedError<DesktopTelemetryDescriptorUnavailable>()(
-  "DesktopTelemetryDescriptorUnavailable",
-  {
-    mode: Schema.String,
-  },
-) {
+export class DesktopTelemetryDescriptorUnavailable extends Schema.TaggedError<
+  DesktopTelemetryDescriptorUnavailable,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryDescriptorUnavailable", {
+  mode: Schema.String,
+}) {
   override get message(): string {
     return `Desktop telemetry descriptor is unavailable in '${this.mode}' mode.`;
   }
 }
 
-export class DesktopTelemetryProtocolMismatch extends Schema.TaggedError<DesktopTelemetryProtocolMismatch>()(
-  "DesktopTelemetryProtocolMismatch",
-  {
-    expectedVersion: Schema.Number,
-    receivedVersion: Schema.Number,
-  },
-) {
+export class DesktopTelemetryProtocolMismatch extends Schema.TaggedError<
+  DesktopTelemetryProtocolMismatch,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryProtocolMismatch", {
+  expectedVersion: Schema.Number,
+  receivedVersion: Schema.Number,
+}) {
   override get message(): string {
     return `Desktop telemetry protocol ${this.receivedVersion} is incompatible with expected protocol ${this.expectedVersion}.`;
   }
 }
 
-export class DesktopTelemetryDecodeFailed extends Schema.TaggedError<DesktopTelemetryDecodeFailed>()(
-  "DesktopTelemetryDecodeFailed",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopTelemetryDecodeFailed extends Schema.TaggedError<
+  DesktopTelemetryDecodeFailed,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryDecodeFailed", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Failed to decode desktop telemetry.";
   }
 }
 
-export class DesktopTelemetryStreamFailed extends Schema.TaggedError<DesktopTelemetryStreamFailed>()(
-  "DesktopTelemetryStreamFailed",
-  {
-    fd: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopTelemetryStreamFailed extends Schema.TaggedError<
+  DesktopTelemetryStreamFailed,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryStreamFailed", {
+  fd: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop telemetry stream on fd ${this.fd} failed.`;
   }
 }
 
-export class DesktopTelemetryStreamClosed extends Schema.TaggedError<DesktopTelemetryStreamClosed>()(
-  "DesktopTelemetryStreamClosed",
-  {
-    fd: Schema.Number,
-  },
-) {
+export class DesktopTelemetryStreamClosed extends Schema.TaggedError<
+  DesktopTelemetryStreamClosed,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryStreamClosed", {
+  fd: Schema.Number,
+}) {
   override get message(): string {
     return `Desktop telemetry stream on fd ${this.fd} closed.`;
   }
 }
 
-export class DesktopTelemetryStale extends Schema.TaggedError<DesktopTelemetryStale>()(
-  "DesktopTelemetryStale",
-  {
-    fd: Schema.Number,
-    staleAfterMs: Schema.Number,
-  },
-) {
+export class DesktopTelemetryStale extends Schema.TaggedError<
+  DesktopTelemetryStale,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryStale", {
+  fd: Schema.Number,
+  staleAfterMs: Schema.Number,
+}) {
   override get message(): string {
     return `Desktop telemetry on fd ${this.fd} has not updated for ${this.staleAfterMs}ms.`;
   }
@@ -121,26 +121,26 @@ export type DesktopTelemetryReceiverError =
   | DesktopTelemetryStreamFailed
   | DesktopTelemetryStreamClosed;
 
-export class DesktopTelemetryControlFailed extends Schema.TaggedError<DesktopTelemetryControlFailed>()(
-  "DesktopTelemetryControlFailed",
-  {
-    fd: Schema.Number,
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopTelemetryControlFailed extends Schema.TaggedError<
+  DesktopTelemetryControlFailed,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryControlFailed", {
+  fd: Schema.Number,
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop telemetry control '${this.operation}' failed on fd ${this.fd}.`;
   }
 }
 
-export class DesktopTelemetryControlStalled extends Schema.TaggedError<DesktopTelemetryControlStalled>()(
-  "DesktopTelemetryControlStalled",
-  {
-    fd: Schema.Number,
-    remainingBytes: Schema.Number,
-  },
-) {
+export class DesktopTelemetryControlStalled extends Schema.TaggedError<
+  DesktopTelemetryControlStalled,
+  { readonly brand: unique symbol }
+>()("DesktopTelemetryControlStalled", {
+  fd: Schema.Number,
+  remainingBytes: Schema.Number,
+}) {
   override get message(): string {
     return `Desktop telemetry control stalled on fd ${this.fd} with ${this.remainingBytes} bytes remaining.`;
   }
@@ -208,10 +208,10 @@ export class DesktopTelemetryReceiver extends Context.Service<
   }
 >()("t3/resourceTelemetry/DesktopTelemetryReceiver") {}
 
-class DesktopShellCertificatesUpdateFailed extends Schema.TaggedError<DesktopShellCertificatesUpdateFailed>()(
-  "DesktopShellCertificatesUpdateFailed",
-  { cause: Schema.Defect() },
-) {
+class DesktopShellCertificatesUpdateFailed extends Schema.TaggedError<
+  DesktopShellCertificatesUpdateFailed,
+  { readonly brand: unique symbol }
+>()("DesktopShellCertificatesUpdateFailed", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to update desktop shell TLS certificates.";
   }

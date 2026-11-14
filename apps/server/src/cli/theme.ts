@@ -39,82 +39,85 @@ const decodeThemeFileJsonExit = Schema.decodeUnknownExit(
 );
 const isEnvironmentThemeId = Schema.is(EnvironmentThemeId);
 
-export class ThemeSettingsUnreadableError extends Schema.TaggedError<ThemeSettingsUnreadableError>()(
-  "ThemeSettingsUnreadableError",
-  { settingsPath: Schema.String, cause: Schema.Defect() },
-) {
+export class ThemeSettingsUnreadableError extends Schema.TaggedError<
+  ThemeSettingsUnreadableError,
+  { readonly brand: unique symbol }
+>()("ThemeSettingsUnreadableError", { settingsPath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not read ${this.settingsPath}. Fix its permissions, then run this again.`;
   }
 }
 
-export class ThemeSettingsMalformedError extends Schema.TaggedError<ThemeSettingsMalformedError>()(
-  "ThemeSettingsMalformedError",
-  { settingsPath: Schema.String, cause: Schema.Defect() },
-) {
+export class ThemeSettingsMalformedError extends Schema.TaggedError<
+  ThemeSettingsMalformedError,
+  { readonly brand: unique symbol }
+>()("ThemeSettingsMalformedError", { settingsPath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `${this.settingsPath} is not a JSON object. Fix or remove it, then run this again.`;
   }
 }
 
-export class ThemeSettingsBusyError extends Schema.TaggedError<ThemeSettingsBusyError>()(
-  "ThemeSettingsBusyError",
-  { settingsPath: Schema.String, attempts: Schema.Number },
-) {
+export class ThemeSettingsBusyError extends Schema.TaggedError<
+  ThemeSettingsBusyError,
+  { readonly brand: unique symbol }
+>()("ThemeSettingsBusyError", { settingsPath: Schema.String, attempts: Schema.Number }) {
   override get message(): string {
     return `${this.settingsPath} kept changing while writing (gave up after ${this.attempts} attempts). Try again.`;
   }
 }
 
-export class ThemeSettingsWriteError extends Schema.TaggedError<ThemeSettingsWriteError>()(
-  "ThemeSettingsWriteError",
-  { settingsPath: Schema.String, cause: Schema.Defect() },
-) {
+export class ThemeSettingsWriteError extends Schema.TaggedError<
+  ThemeSettingsWriteError,
+  { readonly brand: unique symbol }
+>()("ThemeSettingsWriteError", { settingsPath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not write ${this.settingsPath}.`;
   }
 }
 
-export class ThemeFileUnreadableError extends Schema.TaggedError<ThemeFileUnreadableError>()(
-  "ThemeFileUnreadableError",
-  { filePath: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class ThemeFileUnreadableError extends Schema.TaggedError<
+  ThemeFileUnreadableError,
+  { readonly brand: unique symbol }
+>()("ThemeFileUnreadableError", {
+  filePath: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Could not read ${this.filePath}.`;
   }
 }
 
-export class ThemeFileInvalidError extends Schema.TaggedError<ThemeFileInvalidError>()(
-  "ThemeFileInvalidError",
-  { filePath: Schema.String, cause: Schema.Defect() },
-) {
+export class ThemeFileInvalidError extends Schema.TaggedError<
+  ThemeFileInvalidError,
+  { readonly brand: unique symbol }
+>()("ThemeFileInvalidError", { filePath: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `${this.filePath} is not a valid theme file. Use a theme exported from T3 Code, or a seeded file with name, appearance, canvas, and accent.`;
   }
 }
 
-export class ThemeFileTooLargeError extends Schema.TaggedError<ThemeFileTooLargeError>()(
-  "ThemeFileTooLargeError",
-  { filePath: Schema.String, limit: Schema.Number },
-) {
+export class ThemeFileTooLargeError extends Schema.TaggedError<
+  ThemeFileTooLargeError,
+  { readonly brand: unique symbol }
+>()("ThemeFileTooLargeError", { filePath: Schema.String, limit: Schema.Number }) {
   override get message(): string {
     return `${this.filePath} is larger than ${this.limit} bytes, which is more than a theme can publish.`;
   }
 }
 
-export class ThemeFileColorlessError extends Schema.TaggedError<ThemeFileColorlessError>()(
-  "ThemeFileColorlessError",
-  { filePath: Schema.String },
-) {
+export class ThemeFileColorlessError extends Schema.TaggedError<
+  ThemeFileColorlessError,
+  { readonly brand: unique symbol }
+>()("ThemeFileColorlessError", { filePath: Schema.String }) {
   override get message(): string {
     return `${this.filePath} has no colors to publish.`;
   }
 }
 
-export class ThemePublishError extends Schema.TaggedError<ThemePublishError>()(
-  "ThemePublishError",
-  { themesDir: Schema.String, cause: Schema.Defect() },
-) {
+export class ThemePublishError extends Schema.TaggedError<
+  ThemePublishError,
+  { readonly brand: unique symbol }
+>()("ThemePublishError", { themesDir: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not publish the theme into ${this.themesDir}.`;
   }
@@ -123,37 +126,37 @@ export class ThemePublishError extends Schema.TaggedError<ThemePublishError>()(
 const INVALID_THEME_ID_REASON =
   "is not a valid theme id (lowercase letters, digits, and hyphens; not an appearance keyword)";
 
-export class ThemeIdUnknownError extends Schema.TaggedError<ThemeIdUnknownError>()(
-  "ThemeIdUnknownError",
-  { themeId: Schema.String, known: Schema.Array(Schema.String) },
-) {
+export class ThemeIdUnknownError extends Schema.TaggedError<
+  ThemeIdUnknownError,
+  { readonly brand: unique symbol }
+>()("ThemeIdUnknownError", { themeId: Schema.String, known: Schema.Array(Schema.String) }) {
   override get message(): string {
     return `No theme named "${this.themeId}". Available: ${this.known.join(", ")}. Publish one by passing a theme file instead of an id.`;
   }
 }
 
-export class ThemeIdInvalidError extends Schema.TaggedError<ThemeIdInvalidError>()(
-  "ThemeIdInvalidError",
-  { themeId: Schema.String },
-) {
+export class ThemeIdInvalidError extends Schema.TaggedError<
+  ThemeIdInvalidError,
+  { readonly brand: unique symbol }
+>()("ThemeIdInvalidError", { themeId: Schema.String }) {
   override get message(): string {
     return `"${this.themeId}" ${INVALID_THEME_ID_REASON}.`;
   }
 }
 
-export class ThemeFileIdInvalidError extends Schema.TaggedError<ThemeFileIdInvalidError>()(
-  "ThemeFileIdInvalidError",
-  { themeId: Schema.String, filePath: Schema.String },
-) {
+export class ThemeFileIdInvalidError extends Schema.TaggedError<
+  ThemeFileIdInvalidError,
+  { readonly brand: unique symbol }
+>()("ThemeFileIdInvalidError", { themeId: Schema.String, filePath: Schema.String }) {
   override get message(): string {
     return `"${this.themeId}" ${INVALID_THEME_ID_REASON}. Pass one with --id.`;
   }
 }
 
-export class ThemeTargetMissingError extends Schema.TaggedError<ThemeTargetMissingError>()(
-  "ThemeTargetMissingError",
-  {},
-) {
+export class ThemeTargetMissingError extends Schema.TaggedError<
+  ThemeTargetMissingError,
+  { readonly brand: unique symbol }
+>()("ThemeTargetMissingError", {}) {
   override get message(): string {
     return "Provide a theme id or file, or run `t3 theme clear` to remove the theme.";
   }

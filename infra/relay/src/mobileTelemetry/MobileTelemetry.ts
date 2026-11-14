@@ -69,10 +69,10 @@ export class MobileTelemetryRateLimiter extends Context.Service<
   { readonly allow: (key: string) => Effect.Effect<boolean> }
 >()("t3code-relay/mobileTelemetry/MobileTelemetry/MobileTelemetryRateLimiter") {}
 
-export class SourceMapObjectError extends Schema.TaggedError<SourceMapObjectError>()(
-  "SourceMapObjectError",
-  { key: Schema.String, cause: Schema.Defect() },
-) {}
+export class SourceMapObjectError extends Schema.TaggedError<
+  SourceMapObjectError,
+  { readonly brand: unique symbol }
+>()("SourceMapObjectError", { key: Schema.String, cause: Schema.Defect() }) {}
 
 /** An object in the source maps bucket, read only once its size is known to fit. */
 interface StoredSourceMap {
@@ -158,7 +158,10 @@ export class MobileTelemetry extends Context.Service<
   }
 >()("t3code-relay/mobileTelemetry/MobileTelemetry") {}
 
-class BodyTooLarge extends Schema.TaggedError<BodyTooLarge>()("BodyTooLarge", {}) {}
+class BodyTooLarge extends Schema.TaggedError<BodyTooLarge, { readonly brand: unique symbol }>()(
+  "BodyTooLarge",
+  {},
+) {}
 
 const errorResponse = (status: number, error: string, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe({ error }, { status, ...(headers ? { headers } : {}) });

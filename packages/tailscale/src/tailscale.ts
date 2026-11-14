@@ -75,53 +75,53 @@ const stderrDiagnosticOf = (stderr: string): TailscaleStderrDiagnostic | undefin
   return STDERR_DIAGNOSTIC_PATTERNS.find(([pattern]) => pattern.test(stderr))?.[1] ?? "unknown";
 };
 
-export class TailscaleCommandSpawnError extends Schema.TaggedError<TailscaleCommandSpawnError>()(
-  "TailscaleCommandSpawnError",
-  {
-    ...TailscaleCommandContext,
-    cause: Schema.Defect(),
-  },
-) {
+export class TailscaleCommandSpawnError extends Schema.TaggedError<
+  TailscaleCommandSpawnError,
+  { readonly brand: unique symbol }
+>()("TailscaleCommandSpawnError", {
+  ...TailscaleCommandContext,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to spawn tailscale ${this.subcommand}.`;
   }
 }
 
-class TailscaleCommandOutputError extends Schema.TaggedError<TailscaleCommandOutputError>()(
-  "TailscaleCommandOutputError",
-  {
-    ...TailscaleCommandContext,
-    cause: Schema.Defect(),
-  },
-) {
+class TailscaleCommandOutputError extends Schema.TaggedError<
+  TailscaleCommandOutputError,
+  { readonly brand: unique symbol }
+>()("TailscaleCommandOutputError", {
+  ...TailscaleCommandContext,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read output from tailscale ${this.subcommand}.`;
   }
 }
 
-export class TailscaleCommandExitError extends Schema.TaggedError<TailscaleCommandExitError>()(
-  "TailscaleCommandExitError",
-  {
-    ...TailscaleCommandContext,
-    exitCode: Schema.Number,
-    stdoutLength: Schema.optional(Schema.Number),
-    stderrLength: Schema.Number,
-    stderrDiagnostic: Schema.optional(TailscaleStderrDiagnostic),
-  },
-) {
+export class TailscaleCommandExitError extends Schema.TaggedError<
+  TailscaleCommandExitError,
+  { readonly brand: unique symbol }
+>()("TailscaleCommandExitError", {
+  ...TailscaleCommandContext,
+  exitCode: Schema.Number,
+  stdoutLength: Schema.optional(Schema.Number),
+  stderrLength: Schema.Number,
+  stderrDiagnostic: Schema.optional(TailscaleStderrDiagnostic),
+}) {
   override get message(): string {
     return `tailscale ${this.subcommand} exited with code ${this.exitCode}.`;
   }
 }
 
-export class TailscaleCommandTimeoutError extends Schema.TaggedError<TailscaleCommandTimeoutError>()(
-  "TailscaleCommandTimeoutError",
-  {
-    ...TailscaleCommandContext,
-    timeoutMs: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class TailscaleCommandTimeoutError extends Schema.TaggedError<
+  TailscaleCommandTimeoutError,
+  { readonly brand: unique symbol }
+>()("TailscaleCommandTimeoutError", {
+  ...TailscaleCommandContext,
+  timeoutMs: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `tailscale ${this.subcommand} timed out after ${this.timeoutMs}ms.`;
   }
@@ -133,10 +133,10 @@ export type TailscaleCommandError =
   | TailscaleCommandExitError
   | TailscaleCommandTimeoutError;
 
-export class TailscaleStatusParseError extends Schema.TaggedError<TailscaleStatusParseError>()(
-  "TailscaleStatusParseError",
-  { cause: Schema.Defect() },
-) {
+export class TailscaleStatusParseError extends Schema.TaggedError<
+  TailscaleStatusParseError,
+  { readonly brand: unique symbol }
+>()("TailscaleStatusParseError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Failed to decode tailscale status JSON.";
   }
@@ -454,10 +454,10 @@ const runTailscaleCommand = Effect.fn("tailscale.runTailscaleCommand")(function*
   );
 });
 
-export class TailscaleServeHttpsDisabledError extends Schema.TaggedError<TailscaleServeHttpsDisabledError>()(
-  "TailscaleServeHttpsDisabledError",
-  {},
-) {
+export class TailscaleServeHttpsDisabledError extends Schema.TaggedError<
+  TailscaleServeHttpsDisabledError,
+  { readonly brand: unique symbol }
+>()("TailscaleServeHttpsDisabledError", {}) {
   override get message(): string {
     return "Tailscale Serve needs HTTPS enabled on the tailnet. Enable HTTPS certificates at https://login.tailscale.com/admin/dns.";
   }

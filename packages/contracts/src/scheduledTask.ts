@@ -410,11 +410,11 @@ export const ScheduledTaskRunNowResult = Schema.Struct({
 });
 export type ScheduledTaskRunNowResult = typeof ScheduledTaskRunNowResult.Type;
 
-export class ScheduledTaskError extends Schema.TaggedError<ScheduledTaskError>()(
-  "ScheduledTaskError",
-  {
-    message: Schema.String,
-    taskId: Schema.optional(ScheduledTaskId),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ScheduledTaskError extends Schema.TaggedError<
+  ScheduledTaskError,
+  { readonly brand: unique symbol }
+>()("ScheduledTaskError", {
+  message: Schema.String,
+  taskId: Schema.optional(ScheduledTaskId),
+  cause: Schema.optional(Schema.Defect()),
+}) {}

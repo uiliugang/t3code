@@ -48,21 +48,21 @@ export const PRIMARY_INSTANCE_ID = DesktopBackendManager.PRIMARY_INSTANCE_ID;
 export type DesktopBackendInstance = DesktopBackendManager.DesktopBackendInstance;
 export type BackendInstanceSpec = DesktopBackendManager.BackendInstanceSpec;
 
-export class DesktopBackendPoolInstanceAlreadyRegisteredError extends Schema.TaggedError<DesktopBackendPoolInstanceAlreadyRegisteredError>()(
-  "DesktopBackendPoolInstanceAlreadyRegisteredError",
-  {
-    id: Schema.String,
-  },
-) {
+export class DesktopBackendPoolInstanceAlreadyRegisteredError extends Schema.TaggedError<
+  DesktopBackendPoolInstanceAlreadyRegisteredError,
+  { readonly brand: unique symbol }
+>()("DesktopBackendPoolInstanceAlreadyRegisteredError", {
+  id: Schema.String,
+}) {
   override get message() {
     return `Backend instance "${this.id}" is already registered in the pool.`;
   }
 }
 
-export class DesktopBackendPoolCannotUnregisterPrimaryError extends Schema.TaggedError<DesktopBackendPoolCannotUnregisterPrimaryError>()(
-  "DesktopBackendPoolCannotUnregisterPrimaryError",
-  {},
-) {
+export class DesktopBackendPoolCannotUnregisterPrimaryError extends Schema.TaggedError<
+  DesktopBackendPoolCannotUnregisterPrimaryError,
+  { readonly brand: unique symbol }
+>()("DesktopBackendPoolCannotUnregisterPrimaryError", {}) {
   override get message() {
     return "Refusing to unregister the primary backend from the pool.";
   }

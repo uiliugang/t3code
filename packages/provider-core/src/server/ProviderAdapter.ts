@@ -205,54 +205,54 @@ export const ProviderAdapterV2Event = Schema.Union([
 ]);
 export type ProviderAdapterV2Event = typeof ProviderAdapterV2Event.Type;
 
-export class ProviderAdapterCapabilitiesError extends Schema.TaggedError<ProviderAdapterCapabilitiesError>()(
-  "ProviderAdapterCapabilitiesError",
-  {
-    driver: ProviderDriverKind,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterCapabilitiesError extends Schema.TaggedError<
+  ProviderAdapterCapabilitiesError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterCapabilitiesError", {
+  driver: ProviderDriverKind,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to read ${this.driver} provider capabilities.`;
   }
 }
 
-export class ProviderAdapterOpenSessionError extends Schema.TaggedError<ProviderAdapterOpenSessionError>()(
-  "ProviderAdapterOpenSessionError",
-  {
-    driver: ProviderDriverKind,
-    providerSessionId: ProviderSessionId,
-    requiresSignIn: Schema.optional(Schema.Literal(true)),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterOpenSessionError extends Schema.TaggedError<
+  ProviderAdapterOpenSessionError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterOpenSessionError", {
+  driver: ProviderDriverKind,
+  providerSessionId: ProviderSessionId,
+  requiresSignIn: Schema.optional(Schema.Literal(true)),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to open ${this.driver} provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderAdapterCloseSessionError extends Schema.TaggedError<ProviderAdapterCloseSessionError>()(
-  "ProviderAdapterCloseSessionError",
-  {
-    driver: ProviderDriverKind,
-    providerSessionId: ProviderSessionId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterCloseSessionError extends Schema.TaggedError<
+  ProviderAdapterCloseSessionError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterCloseSessionError", {
+  driver: ProviderDriverKind,
+  providerSessionId: ProviderSessionId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to close ${this.driver} provider session ${this.providerSessionId}.`;
   }
 }
 
-export class ProviderAdapterResumeThreadError extends Schema.TaggedError<ProviderAdapterResumeThreadError>()(
-  "ProviderAdapterResumeThreadError",
-  {
-    driver: ProviderDriverKind,
-    providerSessionId: ProviderSessionId,
-    providerThreadId: ProviderThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterResumeThreadError extends Schema.TaggedError<
+  ProviderAdapterResumeThreadError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterResumeThreadError", {
+  driver: ProviderDriverKind,
+  providerSessionId: ProviderSessionId,
+  providerThreadId: ProviderThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to resume ${this.driver} provider thread ${this.providerThreadId}.`;
   }
@@ -262,15 +262,15 @@ export class ProviderAdapterResumeThreadError extends Schema.TaggedError<Provide
  * The native thread is live in another process that owns its writes. Starting
  * a replacement would split the conversation, so callers must not fall back.
  */
-export class ProviderAdapterThreadInUseError extends Schema.TaggedError<ProviderAdapterThreadInUseError>()(
-  "ProviderAdapterThreadInUseError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    detail: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ProviderAdapterThreadInUseError extends Schema.TaggedError<
+  ProviderAdapterThreadInUseError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterThreadInUseError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  detail: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return this.detail;
   }
@@ -279,173 +279,173 @@ export class ProviderAdapterThreadInUseError extends Schema.TaggedError<Provider
 /**
  * The user sent `/compact` to a driver whose session has no native compaction.
  */
-export class ProviderCompactionUnsupportedError extends Schema.TaggedError<ProviderCompactionUnsupportedError>()(
-  "ProviderCompactionUnsupportedError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-  },
-) {
+export class ProviderCompactionUnsupportedError extends Schema.TaggedError<
+  ProviderCompactionUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ProviderCompactionUnsupportedError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+}) {
   override get message(): string {
     return "This provider does not support /compact. Start a new thread to continue with a fresh context.";
   }
 }
 
-export class ProviderAdapterEnsureThreadError extends Schema.TaggedError<ProviderAdapterEnsureThreadError>()(
-  "ProviderAdapterEnsureThreadError",
-  {
-    driver: ProviderDriverKind,
-    threadId: ThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterEnsureThreadError extends Schema.TaggedError<
+  ProviderAdapterEnsureThreadError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterEnsureThreadError", {
+  driver: ProviderDriverKind,
+  threadId: ThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to ensure ${this.driver} provider thread for app thread ${this.threadId}.`;
   }
 }
 
-export class ProviderAdapterReadThreadSnapshotError extends Schema.TaggedError<ProviderAdapterReadThreadSnapshotError>()(
-  "ProviderAdapterReadThreadSnapshotError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterReadThreadSnapshotError extends Schema.TaggedError<
+  ProviderAdapterReadThreadSnapshotError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterReadThreadSnapshotError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to read ${this.driver} provider thread snapshot ${this.providerThreadId}.`;
   }
 }
 
-export class ProviderAdapterRollbackThreadError extends Schema.TaggedError<ProviderAdapterRollbackThreadError>()(
-  "ProviderAdapterRollbackThreadError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    checkpointId: Schema.optional(CheckpointId),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterRollbackThreadError extends Schema.TaggedError<
+  ProviderAdapterRollbackThreadError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterRollbackThreadError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  checkpointId: Schema.optional(CheckpointId),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to roll back ${this.driver} provider thread ${this.providerThreadId}.`;
   }
 }
 
-export class ProviderAdapterForkThreadError extends Schema.TaggedError<ProviderAdapterForkThreadError>()(
-  "ProviderAdapterForkThreadError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterForkThreadError extends Schema.TaggedError<
+  ProviderAdapterForkThreadError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterForkThreadError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to fork ${this.driver} provider thread ${this.providerThreadId}.`;
   }
 }
 
-export class ProviderAdapterTurnStartError extends Schema.TaggedError<ProviderAdapterTurnStartError>()(
-  "ProviderAdapterTurnStartError",
-  {
-    driver: ProviderDriverKind,
-    threadId: ThreadId,
-    providerThreadId: ProviderThreadId,
-    runId: RunId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterTurnStartError extends Schema.TaggedError<
+  ProviderAdapterTurnStartError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterTurnStartError", {
+  driver: ProviderDriverKind,
+  threadId: ThreadId,
+  providerThreadId: ProviderThreadId,
+  runId: RunId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to start run ${this.runId} on ${this.driver} provider thread ${this.providerThreadId}.`;
   }
 }
 
-export class ProviderAdapterSteerRunUnsupportedError extends Schema.TaggedError<ProviderAdapterSteerRunUnsupportedError>()(
-  "ProviderAdapterSteerRunUnsupportedError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-  },
-) {
+export class ProviderAdapterSteerRunUnsupportedError extends Schema.TaggedError<
+  ProviderAdapterSteerRunUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterSteerRunUnsupportedError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+}) {
   override get message(): string {
     return `${this.driver} provider thread ${this.providerThreadId} does not support active-run steering.`;
   }
 }
 
-export class ProviderAdapterSteerDeclinedError extends Schema.TaggedError<ProviderAdapterSteerDeclinedError>()(
-  "ProviderAdapterSteerDeclinedError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    providerTurnId: ProviderTurnId,
-  },
-) {}
+export class ProviderAdapterSteerDeclinedError extends Schema.TaggedError<
+  ProviderAdapterSteerDeclinedError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterSteerDeclinedError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  providerTurnId: ProviderTurnId,
+}) {}
 
-export class ProviderAdapterSteerRunError extends Schema.TaggedError<ProviderAdapterSteerRunError>()(
-  "ProviderAdapterSteerRunError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    providerTurnId: ProviderTurnId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterSteerRunError extends Schema.TaggedError<
+  ProviderAdapterSteerRunError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterSteerRunError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  providerTurnId: ProviderTurnId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to steer active run ${this.providerTurnId} on ${this.driver} provider thread ${this.providerThreadId}.`;
   }
 }
 
-export class ProviderAdapterInterruptError extends Schema.TaggedError<ProviderAdapterInterruptError>()(
-  "ProviderAdapterInterruptError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    providerTurnId: ProviderTurnId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterInterruptError extends Schema.TaggedError<
+  ProviderAdapterInterruptError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterInterruptError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  providerTurnId: ProviderTurnId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to interrupt ${this.driver} provider turn ${this.providerTurnId}.`;
   }
 }
 
 /** The provider did not confirm a stop in time; its processes may still be running. */
-export class ProviderAdapterInterruptTimeoutError extends Schema.TaggedError<ProviderAdapterInterruptTimeoutError>()(
-  "ProviderAdapterInterruptTimeoutError",
-  {
-    driver: ProviderDriverKind,
-    providerThreadId: ProviderThreadId,
-    providerTurnId: ProviderTurnId,
-    timeoutMs: Schema.Number,
-  },
-) {
+export class ProviderAdapterInterruptTimeoutError extends Schema.TaggedError<
+  ProviderAdapterInterruptTimeoutError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterInterruptTimeoutError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  providerTurnId: ProviderTurnId,
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `The ${this.driver} provider did not confirm stopping turn ${this.providerTurnId} within ${this.timeoutMs} ms.`;
   }
 }
 
-export class ProviderAdapterRuntimeRequestResponseError extends Schema.TaggedError<ProviderAdapterRuntimeRequestResponseError>()(
-  "ProviderAdapterRuntimeRequestResponseError",
-  {
-    driver: ProviderDriverKind,
-    requestId: RuntimeRequestId,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterRuntimeRequestResponseError extends Schema.TaggedError<
+  ProviderAdapterRuntimeRequestResponseError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterRuntimeRequestResponseError", {
+  driver: ProviderDriverKind,
+  requestId: RuntimeRequestId,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed to respond to ${this.driver} runtime request ${this.requestId}.`;
   }
 }
 
-export class ProviderAdapterEventStreamError extends Schema.TaggedError<ProviderAdapterEventStreamError>()(
-  "ProviderAdapterEventStreamError",
-  {
-    driver: ProviderDriverKind,
-    providerSessionId: ProviderSessionId,
-    /** Set when T3 closed the session because this thread detached from it, not the provider. */
-    detachedThreadId: Schema.optional(ThreadId),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProviderAdapterEventStreamError extends Schema.TaggedError<
+  ProviderAdapterEventStreamError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterEventStreamError", {
+  driver: ProviderDriverKind,
+  providerSessionId: ProviderSessionId,
+  /** Set when T3 closed the session because this thread detached from it, not the provider. */
+  detachedThreadId: Schema.optional(ThreadId),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Failed while streaming ${this.driver} provider session ${this.providerSessionId} events.`;
   }
@@ -458,25 +458,25 @@ const ProviderAdapterFailureReason = Schema.Literals([
 ]);
 export type ProviderAdapterFailureReason = typeof ProviderAdapterFailureReason.Type;
 
-export class ProviderAdapterProtocolError extends Schema.TaggedError<ProviderAdapterProtocolError>()(
-  "ProviderAdapterProtocolError",
-  {
-    driver: ProviderDriverKind,
-    detail: Schema.String,
-    reason: Schema.optional(ProviderAdapterFailureReason),
-    cause: Schema.optional(Schema.Defect()),
-    payload: Schema.optional(Schema.Unknown),
-  },
-) {
+export class ProviderAdapterProtocolError extends Schema.TaggedError<
+  ProviderAdapterProtocolError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterProtocolError", {
+  driver: ProviderDriverKind,
+  detail: Schema.String,
+  reason: Schema.optional(ProviderAdapterFailureReason),
+  cause: Schema.optional(Schema.Defect()),
+  payload: Schema.optional(Schema.Unknown),
+}) {
   override get message(): string {
     return `${this.driver} provider protocol error: ${this.detail}.`;
   }
 }
 
-export class ProviderAdapterSessionStoppedError extends Schema.TaggedError<ProviderAdapterSessionStoppedError>()(
-  "ProviderAdapterSessionStoppedError",
-  { driver: ProviderDriverKind },
-) {
+export class ProviderAdapterSessionStoppedError extends Schema.TaggedError<
+  ProviderAdapterSessionStoppedError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterSessionStoppedError", { driver: ProviderDriverKind }) {
   override get message(): string {
     return `No running ${this.driver} session owns this thread.`;
   }

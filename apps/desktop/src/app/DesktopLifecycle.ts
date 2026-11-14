@@ -23,13 +23,13 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 
-export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLifecycleRelaunchError>()(
-  "DesktopLifecycleRelaunchError",
-  {
-    reason: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopLifecycleRelaunchError extends Schema.TaggedError<
+  DesktopLifecycleRelaunchError,
+  { readonly brand: unique symbol }
+>()("DesktopLifecycleRelaunchError", {
+  reason: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop relaunch failed for reason "${this.reason}".`;
   }

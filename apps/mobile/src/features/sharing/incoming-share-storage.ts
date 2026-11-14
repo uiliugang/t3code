@@ -5,14 +5,14 @@ import { decodeIncomingShareDraft, type IncomingShareDraft } from "./incoming-sh
 
 const INCOMING_SHARE_DIRECTORY = "incoming-shares";
 
-export class IncomingShareStorageError extends Schema.TaggedError<IncomingShareStorageError>()(
-  "IncomingShareStorageError",
-  {
-    operation: Schema.Literals(["load", "write", "remove"]),
-    shareId: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class IncomingShareStorageError extends Schema.TaggedError<
+  IncomingShareStorageError,
+  { readonly brand: unique symbol }
+>()("IncomingShareStorageError", {
+  operation: Schema.Literals(["load", "write", "remove"]),
+  shareId: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Incoming share storage operation ${this.operation} failed for ${this.shareId ?? "unknown"}.`;
   }

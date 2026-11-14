@@ -75,10 +75,14 @@ export const Preparation = Schema.Struct({
 });
 const json = Schema.fromJsonString(Preparation);
 
-export class WorkspacePreparationError extends Schema.TaggedError<WorkspacePreparationError>()(
-  "WorkspacePreparationError",
-  { threadId: ThreadId, detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class WorkspacePreparationError extends Schema.TaggedError<
+  WorkspacePreparationError,
+  { readonly brand: unique symbol }
+>()("WorkspacePreparationError", {
+  threadId: ThreadId,
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     return this.detail;
   }

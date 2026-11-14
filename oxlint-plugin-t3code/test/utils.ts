@@ -17,21 +17,21 @@ const oxlintPackageJsonPath = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("vite-plus/package.json"),
 ).resolve("oxlint/package.json");
 
-class OxlintFixtureFailure extends Schema.TaggedError<OxlintFixtureFailure>()(
-  "OxlintFixtureFailure",
-  {
-    exitCode: Schema.Number,
-    stdout: Schema.String,
-    stderr: Schema.String,
-  },
-) {}
+class OxlintFixtureFailure extends Schema.TaggedError<
+  OxlintFixtureFailure,
+  { readonly brand: unique symbol }
+>()("OxlintFixtureFailure", {
+  exitCode: Schema.Number,
+  stdout: Schema.String,
+  stderr: Schema.String,
+}) {}
 
 const isOxlintFixtureFailure = Schema.is(OxlintFixtureFailure);
 
-class OxlintFixtureExpectedFailure extends Schema.TaggedError<OxlintFixtureExpectedFailure>()(
-  "OxlintFixtureExpectedFailure",
-  { ruleName: Schema.String },
-) {
+class OxlintFixtureExpectedFailure extends Schema.TaggedError<
+  OxlintFixtureExpectedFailure,
+  { readonly brand: unique symbol }
+>()("OxlintFixtureExpectedFailure", { ruleName: Schema.String }) {
   override get message() {
     return `Expected oxlint to report a failure for rule ${this.ruleName}, but it passed.`;
   }

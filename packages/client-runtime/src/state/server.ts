@@ -103,37 +103,37 @@ export const serverUpdateStateAtom = Atom.family((environmentId: EnvironmentId) 
   ),
 );
 
-export class ServerUpdateResumeTimeoutError extends Schema.TaggedError<ServerUpdateResumeTimeoutError>()(
-  "ServerUpdateResumeTimeoutError",
-  {
-    environmentId: Schema.String,
-    targetVersion: Schema.String,
-  },
-) {
+export class ServerUpdateResumeTimeoutError extends Schema.TaggedError<
+  ServerUpdateResumeTimeoutError,
+  { readonly brand: unique symbol }
+>()("ServerUpdateResumeTimeoutError", {
+  environmentId: Schema.String,
+  targetVersion: Schema.String,
+}) {
   override get message(): string {
     return `Could not confirm that the server resumed on t3@${this.targetVersion}. Reconnect to check the update outcome.`;
   }
 }
 
-export class ServerUpdateProgressIncompleteError extends Schema.TaggedError<ServerUpdateProgressIncompleteError>()(
-  "ServerUpdateProgressIncompleteError",
-  {
-    targetVersion: Schema.String,
-  },
-) {
+export class ServerUpdateProgressIncompleteError extends Schema.TaggedError<
+  ServerUpdateProgressIncompleteError,
+  { readonly brand: unique symbol }
+>()("ServerUpdateProgressIncompleteError", {
+  targetVersion: Schema.String,
+}) {
   override get message(): string {
     return `The t3@${this.targetVersion} update ended before the server accepted the restart.`;
   }
 }
 
-export class ServerUpdateTerminalError extends Schema.TaggedError<ServerUpdateTerminalError>()(
-  "ServerUpdateTerminalError",
-  {
-    targetVersion: Schema.String,
-    status: Schema.Literals(["committed", "rolled-back", "failed"]),
-    reason: Schema.optional(Schema.String),
-  },
-) {
+export class ServerUpdateTerminalError extends Schema.TaggedError<
+  ServerUpdateTerminalError,
+  { readonly brand: unique symbol }
+>()("ServerUpdateTerminalError", {
+  targetVersion: Schema.String,
+  status: Schema.Literals(["committed", "rolled-back", "failed"]),
+  reason: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return this.reason ?? `The t3@${this.targetVersion} update ${this.status}.`;
   }

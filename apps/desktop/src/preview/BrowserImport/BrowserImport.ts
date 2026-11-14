@@ -39,14 +39,14 @@ import {
   type BrowserImportSourceDefinition,
 } from "./Sources.ts";
 
-export class BrowserImportFailedError extends Schema.TaggedError<BrowserImportFailedError>()(
-  "BrowserImportFailedError",
-  {
-    sourceId: Schema.String,
-    reason: BrowserImportFailureReason,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class BrowserImportFailedError extends Schema.TaggedError<
+  BrowserImportFailedError,
+  { readonly brand: unique symbol }
+>()("BrowserImportFailedError", {
+  sourceId: Schema.String,
+  reason: BrowserImportFailureReason,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   // IPC preserves only the message; the renderer needs its reason token for user-facing copy.
   override get message(): string {
     return `Importing cookies from ${this.sourceId} failed: ${this.reason}.`;
@@ -54,15 +54,15 @@ export class BrowserImportFailedError extends Schema.TaggedError<BrowserImportFa
 }
 
 /** An administrator's policy forbids the import, or the policy file could not be checked. */
-export class BrowserImportPolicyError extends Schema.TaggedError<BrowserImportPolicyError>()(
-  "BrowserImportPolicyError",
-  {
-    policyPath: Schema.String,
-    /** Absent when the policy could not be read or decoded. */
-    organization: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class BrowserImportPolicyError extends Schema.TaggedError<
+  BrowserImportPolicyError,
+  { readonly brand: unique symbol }
+>()("BrowserImportPolicyError", {
+  policyPath: Schema.String,
+  /** Absent when the policy could not be read or decoded. */
+  organization: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.organization === undefined
       ? `The managed policy at ${this.policyPath} could not be read, so importing browser cookies is not allowed.`
@@ -92,23 +92,23 @@ export const checkBrowserImportPolicy = Effect.fn("BrowserImport.checkPolicy")(f
   }
 });
 
-class BrowserCookieFlushError extends Schema.TaggedError<BrowserCookieFlushError>()(
-  "BrowserCookieFlushError",
-  { cause: Schema.Defect() },
-) {
+class BrowserCookieFlushError extends Schema.TaggedError<
+  BrowserCookieFlushError,
+  { readonly brand: unique symbol }
+>()("BrowserCookieFlushError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Imported cookies could not be flushed to disk.";
   }
 }
 
-export class BrowserCookieWriteError extends Schema.TaggedError<BrowserCookieWriteError>()(
-  "BrowserCookieWriteError",
-  {
-    url: Schema.String,
-    cookieName: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class BrowserCookieWriteError extends Schema.TaggedError<
+  BrowserCookieWriteError,
+  { readonly brand: unique symbol }
+>()("BrowserCookieWriteError", {
+  url: Schema.String,
+  cookieName: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not write imported cookie ${this.cookieName} for ${this.url}.`;
   }

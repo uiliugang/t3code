@@ -274,14 +274,14 @@ export const ProjectMutation = Schema.Union([
 ]);
 export type ProjectMutation = typeof ProjectMutation.Type;
 
-export class ProjectMutationError extends Schema.TaggedError<ProjectMutationError>()(
-  "ProjectMutationError",
-  {
-    commandId: CommandId,
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ProjectMutationError extends Schema.TaggedError<
+  ProjectMutationError,
+  { readonly brand: unique symbol }
+>()("ProjectMutationError", {
+  commandId: CommandId,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export const ProjectEntryKind = Schema.Literals(["file", "directory"]);
 export type ProjectEntryKind = typeof ProjectEntryKind.Type;
@@ -401,20 +401,20 @@ function decodedProjectErrorMessage(props: object): string | undefined {
   return typeof props.message === "string" ? props.message : undefined;
 }
 
-export class ProjectSearchEntriesError extends Schema.TaggedError<ProjectSearchEntriesError>()(
-  "ProjectSearchEntriesError",
-  {
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    queryLength: Schema.optional(NonNegativeInt),
-    limit: Schema.optional(PositiveInt),
-    failure: Schema.optional(ProjectEntriesFailure),
-    normalizedCwd: Schema.optional(TrimmedNonEmptyString),
-    timeout: Schema.optional(TrimmedNonEmptyString),
-    detail: Schema.optional(TrimmedNonEmptyString),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectSearchEntriesError extends Schema.TaggedError<
+  ProjectSearchEntriesError,
+  { readonly brand: unique symbol }
+>()("ProjectSearchEntriesError", {
+  cwd: Schema.optional(TrimmedNonEmptyString),
+  queryLength: Schema.optional(NonNegativeInt),
+  limit: Schema.optional(PositiveInt),
+  failure: Schema.optional(ProjectEntriesFailure),
+  normalizedCwd: Schema.optional(TrimmedNonEmptyString),
+  timeout: Schema.optional(TrimmedNonEmptyString),
+  detail: Schema.optional(TrimmedNonEmptyString),
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(
     props: ProjectEntriesFailureContext & {
@@ -432,20 +432,20 @@ export class ProjectSearchEntriesError extends Schema.TaggedError<ProjectSearchE
   }
 }
 
-export class ProjectSearchContentsError extends Schema.TaggedError<ProjectSearchContentsError>()(
-  "ProjectSearchContentsError",
-  {
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    queryLength: Schema.optional(NonNegativeInt),
-    limit: Schema.optional(PositiveInt),
-    failure: Schema.optional(ProjectEntriesFailure),
-    normalizedCwd: Schema.optional(TrimmedNonEmptyString),
-    timeout: Schema.optional(TrimmedNonEmptyString),
-    detail: Schema.optional(TrimmedNonEmptyString),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectSearchContentsError extends Schema.TaggedError<
+  ProjectSearchContentsError,
+  { readonly brand: unique symbol }
+>()("ProjectSearchContentsError", {
+  cwd: Schema.optional(TrimmedNonEmptyString),
+  queryLength: Schema.optional(NonNegativeInt),
+  limit: Schema.optional(PositiveInt),
+  failure: Schema.optional(ProjectEntriesFailure),
+  normalizedCwd: Schema.optional(TrimmedNonEmptyString),
+  timeout: Schema.optional(TrimmedNonEmptyString),
+  detail: Schema.optional(TrimmedNonEmptyString),
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(
     props: ProjectEntriesFailureContext & {
@@ -463,18 +463,18 @@ export class ProjectSearchContentsError extends Schema.TaggedError<ProjectSearch
   }
 }
 
-export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntriesError>()(
-  "ProjectListEntriesError",
-  {
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    failure: Schema.optional(ProjectEntriesFailure),
-    normalizedCwd: Schema.optional(TrimmedNonEmptyString),
-    timeout: Schema.optional(TrimmedNonEmptyString),
-    detail: Schema.optional(TrimmedNonEmptyString),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectListEntriesError extends Schema.TaggedError<
+  ProjectListEntriesError,
+  { readonly brand: unique symbol }
+>()("ProjectListEntriesError", {
+  cwd: Schema.optional(TrimmedNonEmptyString),
+  failure: Schema.optional(ProjectEntriesFailure),
+  normalizedCwd: Schema.optional(TrimmedNonEmptyString),
+  timeout: Schema.optional(TrimmedNonEmptyString),
+  detail: Schema.optional(TrimmedNonEmptyString),
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(props: ProjectEntriesFailureContext & { readonly cwd: string }) {
     super({
@@ -536,20 +536,20 @@ type ProjectFileFailureContext = {
   readonly cause?: unknown;
 };
 
-export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileError>()(
-  "ProjectReadFileError",
-  {
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    relativePath: Schema.optional(Schema.NonEmptyString),
-    failure: Schema.optional(ProjectFileFailure),
-    resolvedPath: Schema.optional(Schema.NonEmptyString),
-    resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
-    operation: Schema.optional(ProjectFileOperation),
-    operationPath: Schema.optional(Schema.NonEmptyString),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectReadFileError extends Schema.TaggedError<
+  ProjectReadFileError,
+  { readonly brand: unique symbol }
+>()("ProjectReadFileError", {
+  cwd: Schema.optional(TrimmedNonEmptyString),
+  relativePath: Schema.optional(Schema.NonEmptyString),
+  failure: Schema.optional(ProjectFileFailure),
+  resolvedPath: Schema.optional(Schema.NonEmptyString),
+  resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  operation: Schema.optional(ProjectFileOperation),
+  operationPath: Schema.optional(Schema.NonEmptyString),
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(props: ProjectFileFailureContext) {
     super({
@@ -601,20 +601,20 @@ export const ProjectCreateFromThreadResult = Schema.Struct({
 });
 export type ProjectCreateFromThreadResult = typeof ProjectCreateFromThreadResult.Type;
 
-export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileError>()(
-  "ProjectWriteFileError",
-  {
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    relativePath: Schema.optional(Schema.NonEmptyString),
-    failure: Schema.optional(ProjectFileFailure),
-    resolvedPath: Schema.optional(Schema.NonEmptyString),
-    resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
-    operation: Schema.optional(ProjectFileOperation),
-    operationPath: Schema.optional(Schema.NonEmptyString),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ProjectWriteFileError extends Schema.TaggedError<
+  ProjectWriteFileError,
+  { readonly brand: unique symbol }
+>()("ProjectWriteFileError", {
+  cwd: Schema.optional(TrimmedNonEmptyString),
+  relativePath: Schema.optional(Schema.NonEmptyString),
+  failure: Schema.optional(ProjectFileFailure),
+  resolvedPath: Schema.optional(Schema.NonEmptyString),
+  resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  operation: Schema.optional(ProjectFileOperation),
+  operationPath: Schema.optional(Schema.NonEmptyString),
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(props: ProjectFileFailureContext) {
     super({

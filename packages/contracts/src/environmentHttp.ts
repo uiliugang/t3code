@@ -150,7 +150,10 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
 
-export class EnvironmentRequestInvalidError extends Schema.TaggedError<EnvironmentRequestInvalidError>()(
+export class EnvironmentRequestInvalidError extends Schema.TaggedError<
+  EnvironmentRequestInvalidError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentRequestInvalidError",
   {
     code: Schema.Literal("invalid_request"),
@@ -168,7 +171,10 @@ export class EnvironmentRequestInvalidError extends Schema.TaggedError<Environme
   }
 }
 
-export class EnvironmentAuthInvalidError extends Schema.TaggedError<EnvironmentAuthInvalidError>()(
+export class EnvironmentAuthInvalidError extends Schema.TaggedError<
+  EnvironmentAuthInvalidError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentAuthInvalidError",
   {
     code: Schema.Literal("auth_invalid"),
@@ -187,7 +193,10 @@ export class EnvironmentAuthInvalidError extends Schema.TaggedError<EnvironmentA
   }
 }
 
-export class EnvironmentScopeRequiredError extends Schema.TaggedError<EnvironmentScopeRequiredError>()(
+export class EnvironmentScopeRequiredError extends Schema.TaggedError<
+  EnvironmentScopeRequiredError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentScopeRequiredError",
   {
     code: Schema.Literal("insufficient_scope"),
@@ -206,7 +215,10 @@ export class EnvironmentScopeRequiredError extends Schema.TaggedError<Environmen
   }
 }
 
-export class EnvironmentOperationForbiddenError extends Schema.TaggedError<EnvironmentOperationForbiddenError>()(
+export class EnvironmentOperationForbiddenError extends Schema.TaggedError<
+  EnvironmentOperationForbiddenError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentOperationForbiddenError",
   {
     code: Schema.Literal("operation_forbidden"),
@@ -224,7 +236,10 @@ export class EnvironmentOperationForbiddenError extends Schema.TaggedError<Envir
   }
 }
 
-export class EnvironmentInternalError extends Schema.TaggedError<EnvironmentInternalError>()(
+export class EnvironmentInternalError extends Schema.TaggedError<
+  EnvironmentInternalError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentInternalError",
   {
     code: Schema.Literal("internal_error"),
@@ -245,7 +260,10 @@ export class EnvironmentInternalError extends Schema.TaggedError<EnvironmentInte
 export const EnvironmentResourceNotFoundReason = Schema.Literals(["thread_not_found"]);
 export type EnvironmentResourceNotFoundReason = typeof EnvironmentResourceNotFoundReason.Type;
 
-export class EnvironmentResourceNotFoundError extends Schema.TaggedError<EnvironmentResourceNotFoundError>()(
+export class EnvironmentResourceNotFoundError extends Schema.TaggedError<
+  EnvironmentResourceNotFoundError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentResourceNotFoundError",
   {
     code: Schema.Literal("not_found"),
@@ -278,7 +296,10 @@ const EnvironmentAuthenticationErrors = [
   EnvironmentInternalError,
 ] as const;
 
-export class EnvironmentHttpBadRequestError extends Schema.TaggedError<EnvironmentHttpBadRequestError>()(
+export class EnvironmentHttpBadRequestError extends Schema.TaggedError<
+  EnvironmentHttpBadRequestError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentHttpBadRequestError",
   {
     message: Schema.String,
@@ -290,7 +311,10 @@ export class EnvironmentHttpBadRequestError extends Schema.TaggedError<Environme
   }
 }
 
-export class EnvironmentHttpUnauthorizedError extends Schema.TaggedError<EnvironmentHttpUnauthorizedError>()(
+export class EnvironmentHttpUnauthorizedError extends Schema.TaggedError<
+  EnvironmentHttpUnauthorizedError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentHttpUnauthorizedError",
   {
     message: Schema.String,
@@ -302,7 +326,10 @@ export class EnvironmentHttpUnauthorizedError extends Schema.TaggedError<Environ
   }
 }
 
-export class EnvironmentHttpForbiddenError extends Schema.TaggedError<EnvironmentHttpForbiddenError>()(
+export class EnvironmentHttpForbiddenError extends Schema.TaggedError<
+  EnvironmentHttpForbiddenError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentHttpForbiddenError",
   {
     message: Schema.String,
@@ -314,7 +341,10 @@ export class EnvironmentHttpForbiddenError extends Schema.TaggedError<Environmen
   }
 }
 
-export class EnvironmentHttpInternalServerError extends Schema.TaggedError<EnvironmentHttpInternalServerError>()(
+export class EnvironmentHttpInternalServerError extends Schema.TaggedError<
+  EnvironmentHttpInternalServerError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentHttpInternalServerError",
   {
     message: Schema.String,
@@ -326,7 +356,10 @@ export class EnvironmentHttpInternalServerError extends Schema.TaggedError<Envir
   }
 }
 
-export class EnvironmentHttpConflictError extends Schema.TaggedError<EnvironmentHttpConflictError>()(
+export class EnvironmentHttpConflictError extends Schema.TaggedError<
+  EnvironmentHttpConflictError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentHttpConflictError",
   {
     message: Schema.String,
@@ -338,7 +371,10 @@ export class EnvironmentHttpConflictError extends Schema.TaggedError<Environment
   }
 }
 
-export class EnvironmentCloudEndpointUnavailableError extends Schema.TaggedError<EnvironmentCloudEndpointUnavailableError>()(
+export class EnvironmentCloudEndpointUnavailableError extends Schema.TaggedError<
+  EnvironmentCloudEndpointUnavailableError,
+  { readonly brand: unique symbol }
+>()(
   "EnvironmentCloudEndpointUnavailableError",
   {
     message: Schema.String,

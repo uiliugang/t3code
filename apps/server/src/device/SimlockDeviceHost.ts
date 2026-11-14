@@ -705,6 +705,8 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       return { ...(yield* ensureReady(onPhase)), agentDevice: null };
     }),
     current: Effect.sync(() => ready),
+    // Pool leases are shared across threads and end through the host's lease lifecycle.
+    releaseAgentSession: Effect.fn("SimlockDeviceHost.releaseAgentSession")(() => Effect.void),
     stopAgent: Effect.void,
     stop: stopAll,
   });

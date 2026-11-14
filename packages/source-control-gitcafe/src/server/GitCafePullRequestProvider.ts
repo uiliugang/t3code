@@ -134,14 +134,14 @@ const SourceBlob = Schema.Struct({
 });
 const MAX_DIFF_FILE_BYTES = 1024 * 1024;
 
-class GitCafeDiffSourceUnavailableError extends Schema.TaggedError<GitCafeDiffSourceUnavailableError>()(
-  "GitCafeDiffSourceUnavailableError",
-  {
-    path: Schema.String,
-    reason: Schema.Literals(["oversized", "binary", "unavailable"]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+class GitCafeDiffSourceUnavailableError extends Schema.TaggedError<
+  GitCafeDiffSourceUnavailableError,
+  { readonly brand: unique symbol }
+>()("GitCafeDiffSourceUnavailableError", {
+  path: Schema.String,
+  reason: Schema.Literals(["oversized", "binary", "unavailable"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 const Snapshot = {
   version: NonNegativeInt,
   headOid: TrimmedNonEmptyString,

@@ -62,49 +62,52 @@ const formatProcessInvocation = (input: {
     : `'${input.command}' in '${executionCwd}'`;
 };
 
-export class ProcessSpawnError extends Schema.TaggedError<ProcessSpawnError>()(
-  "ProcessSpawnError",
-  {
-    ...ProcessInvocationFields,
-    resolvedCommand: Schema.optional(Schema.String),
-    resolvedArgumentCount: Schema.optional(Schema.Number),
-    shell: Schema.optional(Schema.Boolean),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProcessSpawnError extends Schema.TaggedError<
+  ProcessSpawnError,
+  { readonly brand: unique symbol }
+>()("ProcessSpawnError", {
+  ...ProcessInvocationFields,
+  resolvedCommand: Schema.optional(Schema.String),
+  resolvedArgumentCount: Schema.optional(Schema.Number),
+  shell: Schema.optional(Schema.Boolean),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to spawn process ${formatProcessInvocation(this)}`;
   }
 }
 
-export class ProcessStdinError extends Schema.TaggedError<ProcessStdinError>()(
-  "ProcessStdinError",
-  {
-    ...ProcessInvocationFields,
-    stdinBytes: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ProcessStdinError extends Schema.TaggedError<
+  ProcessStdinError,
+  { readonly brand: unique symbol }
+>()("ProcessStdinError", {
+  ...ProcessInvocationFields,
+  stdinBytes: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to write stdin for process ${formatProcessInvocation(this)}`;
   }
 }
 
-export class ProcessOutputLimitError extends Schema.TaggedError<ProcessOutputLimitError>()(
-  "ProcessOutputLimitError",
-  {
-    ...ProcessInvocationFields,
-    stream: Schema.Literals(["stdout", "stderr"]),
-    maxBytes: Schema.Number,
-    observedBytes: Schema.Number,
-  },
-) {
+export class ProcessOutputLimitError extends Schema.TaggedError<
+  ProcessOutputLimitError,
+  { readonly brand: unique symbol }
+>()("ProcessOutputLimitError", {
+  ...ProcessInvocationFields,
+  stream: Schema.Literals(["stdout", "stderr"]),
+  maxBytes: Schema.Number,
+  observedBytes: Schema.Number,
+}) {
   override get message(): string {
     return `Process ${formatProcessInvocation(this)} ${this.stream} produced ${this.observedBytes} bytes, exceeding the ${this.maxBytes} byte limit`;
   }
 }
 
-export class ProcessReadError extends Schema.TaggedError<ProcessReadError>()("ProcessReadError", {
+export class ProcessReadError extends Schema.TaggedError<
+  ProcessReadError,
+  { readonly brand: unique symbol }
+>()("ProcessReadError", {
   ...ProcessInvocationFields,
   stream: Schema.Literals(["stdout", "stderr", "exitCode"]),
   cause: Schema.Defect(),
@@ -114,13 +117,13 @@ export class ProcessReadError extends Schema.TaggedError<ProcessReadError>()("Pr
   }
 }
 
-export class ProcessTimeoutError extends Schema.TaggedError<ProcessTimeoutError>()(
-  "ProcessTimeoutError",
-  {
-    ...ProcessInvocationFields,
-    timeoutMs: Schema.Number,
-  },
-) {
+export class ProcessTimeoutError extends Schema.TaggedError<
+  ProcessTimeoutError,
+  { readonly brand: unique symbol }
+>()("ProcessTimeoutError", {
+  ...ProcessInvocationFields,
+  timeoutMs: Schema.Number,
+}) {
   override get message(): string {
     return `Process ${formatProcessInvocation(this)} timed out after ${this.timeoutMs}ms`;
   }

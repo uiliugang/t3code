@@ -25,6 +25,7 @@ import {
   type ProviderInstanceConfig,
   type ProviderInstanceId,
   type ServerProvider,
+  ServerSettingsError,
   resolveEnvironmentMachineKind,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -37,6 +38,7 @@ import {
 import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { PlusIcon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
@@ -132,6 +134,8 @@ import {
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
 
+const isServerSettingsError = Schema.is(ServerSettingsError);
+
 function providerInstanceName(instance: ProviderInstanceConfig): string {
   return (
     instance.displayName?.trim() ||
@@ -142,9 +146,9 @@ function providerInstanceName(instance: ProviderInstanceConfig): string {
 
 async function confirmProviderInstanceRemoval(
   question: string,
-  consequence = "",
+  description: string,
 ): Promise<boolean> {
-  const message = `${question}\nIts saved settings, including any custom binary path, will be removed.${consequence}`;
+  const message = `${question}\n${description}`;
   const confirmed = await settlePromise(() =>
     ensureLocalApi().dialogs.confirm(message, { variant: "destructive" }),
   );
@@ -157,12 +161,6 @@ function modelListChanges(current: ReadonlyArray<string>, next: ReadonlyArray<st
   return [...new Set([...currentSet, ...nextSet])]
     .filter((model) => currentSet.has(model) !== nextSet.has(model))
     .map((model) => ({ model, selected: nextSet.has(model) }));
-}
-
-function providerConfigString(config: unknown, key: string): string | null {
-  if (config === null || typeof config !== "object") return null;
-  const value = (config as Record<string, unknown>)[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 const PROVIDER_SETTINGS = providerClients.definitions.map((definition) => ({
@@ -564,16 +562,16 @@ export function EnvironmentProviderSettings({
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.environment.capabilities.projectProviderInstanceOverrides === true,
   );
+  const supportsProviderDeletion = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.providerInstanceDeletion === true,
+  );
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
-  const uninstallAcpRegistryManagedBinary = useAtomCommand(
-    serverEnvironment.uninstallAcpRegistryManagedBinary,
-    { reportFailure: false },
-  );
   const acceptAcpRegistryUrlAuth = useAtomCommand(serverEnvironment.acceptAcpRegistryUrlAuth, {
     reportFailure: false,
   });
@@ -738,6 +736,7 @@ export function EnvironmentProviderSettings({
     const isDirty = explicitInstance !== undefined;
     const hasDefaultSlot = providerSettings.hasDefaultInstance || explicitInstance !== undefined;
     if (
+      !settings.removedProviderInstances?.includes(defaultInstanceId) &&
       hasDefaultSlot &&
       (driver === "codex" ||
         driver === "claudeAgent" ||
@@ -836,41 +835,39 @@ export function EnvironmentProviderSettings({
 
   const deleteInstance = useStableCallback(
     async (instanceId: ProviderInstanceId, instance: ProviderInstanceConfig) => {
-      const confirmed = await confirmProviderInstanceRemoval(
-        `Remove the ${providerInstanceName(instance)} provider instance?`,
-      );
-      if (!confirmed) return;
-      const updateResult = await persistProviderInstance({
-        operation: "remove",
-        instanceId,
-      });
-      if (updateResult._tag === "Failure") {
-        const error = squashAtomCommandFailure(updateResult);
+      if (!supportsProviderDeletion) {
         toastManager.add({
           type: "error",
-          title: t("Could not delete provider instance"),
-          description: error instanceof Error ? error.message : "The settings update failed.",
+          title: t("Update this environment's server to remove providers."),
         });
         return;
       }
-
-      if (instance.driver !== ProviderDriverKind.make("acpRegistry")) return;
-      if (providerConfigString(instance.config, "source") === "local") return;
-      const agentId = providerConfigString(instance.config, "agentId");
-      if (agentId === null) return;
-
-      // Concurrent removals race client snapshots; let the server decide whether the agent remains in use.
-      const uninstallResult = await uninstallAcpRegistryManagedBinary({
-        environmentId,
-        input: { agentId },
+      const confirmed = await confirmProviderInstanceRemoval(
+        t("Remove {name}?", { name: providerInstanceName(instance) }),
+        t(
+          "Active sessions will be stopped. Saved settings and unused T3-managed resources will be removed. Personal CLI installations and configuration will be kept.",
+        ),
+      );
+      if (!confirmed) return;
+      const updateResult = await persistProviderInstance({
+        operation: "delete",
+        instanceId,
       });
-      if (uninstallResult._tag === "Failure" && !isAtomCommandInterrupted(uninstallResult)) {
-        const error = squashAtomCommandFailure(uninstallResult);
+      if (updateResult._tag === "Failure") {
+        if (isAtomCommandInterrupted(updateResult)) return;
+        const error = squashAtomCommandFailure(updateResult);
+        const cleanupFailed =
+          isServerSettingsError(error) && error.operation === "remove-provider-resources";
         toastManager.add({
-          type: "warning",
-          title: t("Provider deleted, but managed files remain"),
-          description: error instanceof Error ? error.message : "Managed binary cleanup failed.",
+          type: cleanupFailed ? "warning" : "error",
+          title: t(
+            cleanupFailed
+              ? "Provider deleted, but managed files remain"
+              : "Could not delete provider instance",
+          ),
+          description: error instanceof Error ? error.message : "The settings update failed.",
         });
+        return;
       }
     },
   );
@@ -882,8 +879,9 @@ export function EnvironmentProviderSettings({
       resolveProviderInstanceEnabled(instance) &&
       !resolveProviderInstanceEnabled({ driver: driverKind });
     const confirmed = await confirmProviderInstanceRemoval(
-      `Reset the ${providerInstanceName(instance)} provider to its defaults?`,
-      turnsOff ? " It will also be turned off." : "",
+      t("Reset the {name} provider to its defaults?", { name: providerInstanceName(instance) }),
+      t("Its saved settings, including any custom binary path, will be removed.") +
+        (turnsOff ? ` ${t("It will also be turned off.")}` : ""),
     );
     if (!confirmed) return;
     const result = await persistProviderInstance({ operation: "remove", instanceId });
@@ -1441,11 +1439,7 @@ function ProviderInstanceRow({
         ) : null
       }
       onUpdate={(next) => actions.updateInstance(instanceId, instance, next)}
-      onDelete={
-        mode === "editor" && !isDefault
-          ? () => actions.deleteInstance(instanceId, instance)
-          : undefined
-      }
+      onDelete={mode === "editor" ? () => actions.deleteInstance(instanceId, instance) : undefined}
       headerAction={
         mode === "editor" && isDefault && isDirty ? (
           <SettingResetButton

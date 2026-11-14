@@ -253,46 +253,46 @@ export const RemoteOpenTarget = Schema.Struct({
 });
 export type RemoteOpenTarget = typeof RemoteOpenTarget.Type;
 
-export class ExternalLauncherUnknownEditorError extends Schema.TaggedError<ExternalLauncherUnknownEditorError>()(
-  "ExternalLauncherUnknownEditorError",
-  {
-    editor: Schema.String,
-  },
-) {
+export class ExternalLauncherUnknownEditorError extends Schema.TaggedError<
+  ExternalLauncherUnknownEditorError,
+  { readonly brand: unique symbol }
+>()("ExternalLauncherUnknownEditorError", {
+  editor: Schema.String,
+}) {
   override get message(): string {
     return `Unknown editor: ${this.editor}`;
   }
 }
 
-export class ExternalLauncherUnsupportedEditorError extends Schema.TaggedError<ExternalLauncherUnsupportedEditorError>()(
-  "ExternalLauncherUnsupportedEditorError",
-  {
-    editor: EditorId,
-  },
-) {
+export class ExternalLauncherUnsupportedEditorError extends Schema.TaggedError<
+  ExternalLauncherUnsupportedEditorError,
+  { readonly brand: unique symbol }
+>()("ExternalLauncherUnsupportedEditorError", {
+  editor: EditorId,
+}) {
   override get message(): string {
     return `Unsupported editor: ${this.editor}`;
   }
 }
 
-export class ExternalLauncherCommandNotFoundError extends Schema.TaggedError<ExternalLauncherCommandNotFoundError>()(
-  "ExternalLauncherCommandNotFoundError",
-  {
-    editor: EditorId,
-    command: Schema.String,
-  },
-) {
+export class ExternalLauncherCommandNotFoundError extends Schema.TaggedError<
+  ExternalLauncherCommandNotFoundError,
+  { readonly brand: unique symbol }
+>()("ExternalLauncherCommandNotFoundError", {
+  editor: EditorId,
+  command: Schema.String,
+}) {
   override get message(): string {
     return `Editor command not found: ${this.command}`;
   }
 }
 
-export class ExternalLauncherUnsupportedTargetError extends Schema.TaggedError<ExternalLauncherUnsupportedTargetError>()(
-  "ExternalLauncherUnsupportedTargetError",
-  {
-    editor: EditorId,
-  },
-) {
+export class ExternalLauncherUnsupportedTargetError extends Schema.TaggedError<
+  ExternalLauncherUnsupportedTargetError,
+  { readonly brand: unique symbol }
+>()("ExternalLauncherUnsupportedTargetError", {
+  editor: EditorId,
+}) {
   override get message(): string {
     return `${this.editor} cannot open a path containing line breaks or double quotes`;
   }
@@ -304,26 +304,26 @@ const ExternalLauncherSpawnFields = {
   cause: Schema.Defect(),
 };
 
-export class ExternalLauncherBrowserSpawnError extends Schema.TaggedError<ExternalLauncherBrowserSpawnError>()(
-  "ExternalLauncherBrowserSpawnError",
-  {
-    ...ExternalLauncherSpawnFields,
-    target: Schema.String,
-  },
-) {
+export class ExternalLauncherBrowserSpawnError extends Schema.TaggedError<
+  ExternalLauncherBrowserSpawnError,
+  { readonly brand: unique symbol }
+>()("ExternalLauncherBrowserSpawnError", {
+  ...ExternalLauncherSpawnFields,
+  target: Schema.String,
+}) {
   override get message(): string {
     return `Failed to launch browser target '${this.target}' with '${[this.command, ...this.args].join(" ")}'`;
   }
 }
 
-export class ExternalLauncherEditorSpawnError extends Schema.TaggedError<ExternalLauncherEditorSpawnError>()(
-  "ExternalLauncherEditorSpawnError",
-  {
-    ...ExternalLauncherSpawnFields,
-    editor: EditorId,
-    target: Schema.String,
-  },
-) {
+export class ExternalLauncherEditorSpawnError extends Schema.TaggedError<
+  ExternalLauncherEditorSpawnError,
+  { readonly brand: unique symbol }
+>()("ExternalLauncherEditorSpawnError", {
+  ...ExternalLauncherSpawnFields,
+  editor: EditorId,
+  target: Schema.String,
+}) {
   override get message(): string {
     return `Failed to launch '${this.target}' in ${this.editor} with '${[this.command, ...this.args].join(" ")}'`;
   }

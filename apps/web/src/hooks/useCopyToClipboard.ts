@@ -6,47 +6,47 @@ import {
 } from "@t3tools/shared/composerContextClipboard";
 import { useStableCallback } from "./useStableCallback";
 
-export class ClipboardApiUnavailableError extends Schema.TaggedError<ClipboardApiUnavailableError>()(
-  "ClipboardApiUnavailableError",
-  {
-    target: Schema.String,
-  },
-) {
+export class ClipboardApiUnavailableError extends Schema.TaggedError<
+  ClipboardApiUnavailableError,
+  { readonly brand: unique symbol }
+>()("ClipboardApiUnavailableError", {
+  target: Schema.String,
+}) {
   override get message(): string {
     return `Clipboard API is unavailable while copying ${this.target}.`;
   }
 }
 
-export class ClipboardWriteError extends Schema.TaggedError<ClipboardWriteError>()(
-  "ClipboardWriteError",
-  {
-    target: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ClipboardWriteError extends Schema.TaggedError<
+  ClipboardWriteError,
+  { readonly brand: unique symbol }
+>()("ClipboardWriteError", {
+  target: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to copy ${this.target} to the clipboard.`;
   }
 }
 
-export class ClipboardReadUnavailableError extends Schema.TaggedError<ClipboardReadUnavailableError>()(
-  "ClipboardReadUnavailableError",
-  {
-    target: Schema.String,
-  },
-) {
+export class ClipboardReadUnavailableError extends Schema.TaggedError<
+  ClipboardReadUnavailableError,
+  { readonly brand: unique symbol }
+>()("ClipboardReadUnavailableError", {
+  target: Schema.String,
+}) {
   override get message(): string {
     return `Clipboard API is unavailable while reading ${this.target}.`;
   }
 }
 
-export class ClipboardReadError extends Schema.TaggedError<ClipboardReadError>()(
-  "ClipboardReadError",
-  {
-    target: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ClipboardReadError extends Schema.TaggedError<
+  ClipboardReadError,
+  { readonly brand: unique symbol }
+>()("ClipboardReadError", {
+  target: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read ${this.target} from the clipboard.`;
   }

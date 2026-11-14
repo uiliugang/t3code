@@ -18,53 +18,53 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import * as RelayDb from "../db.ts";
 import { relayLiveActivities, relayMobileDevices } from "../persistence/schema.ts";
 
-export class LiveActivityRegistrationPersistenceError extends Schema.TaggedError<LiveActivityRegistrationPersistenceError>()(
-  "LiveActivityRegistrationPersistenceError",
-  {
-    userId: Schema.String,
-    deviceId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class LiveActivityRegistrationPersistenceError extends Schema.TaggedError<
+  LiveActivityRegistrationPersistenceError,
+  { readonly brand: unique symbol }
+>()("LiveActivityRegistrationPersistenceError", {
+  userId: Schema.String,
+  deviceId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist Live Activity registration for user ${this.userId} and device ${this.deviceId}.`;
   }
 }
 
-export class LiveActivityTargetListPersistenceError extends Schema.TaggedError<LiveActivityTargetListPersistenceError>()(
-  "LiveActivityTargetListPersistenceError",
-  {
-    userId: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class LiveActivityTargetListPersistenceError extends Schema.TaggedError<
+  LiveActivityTargetListPersistenceError,
+  { readonly brand: unique symbol }
+>()("LiveActivityTargetListPersistenceError", {
+  userId: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to list Live Activity delivery targets for user ${this.userId}.`;
   }
 }
 
-export class LiveActivityIdleTargetListPersistenceError extends Schema.TaggedError<LiveActivityIdleTargetListPersistenceError>()(
-  "LiveActivityIdleTargetListPersistenceError",
-  {
-    deliveredBefore: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class LiveActivityIdleTargetListPersistenceError extends Schema.TaggedError<
+  LiveActivityIdleTargetListPersistenceError,
+  { readonly brand: unique symbol }
+>()("LiveActivityIdleTargetListPersistenceError", {
+  deliveredBefore: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to list idle Live Activities delivered before ${this.deliveredBefore}.`;
   }
 }
 
-export class LiveActivityDeliveryMarkPersistenceError extends Schema.TaggedError<LiveActivityDeliveryMarkPersistenceError>()(
-  "LiveActivityDeliveryMarkPersistenceError",
-  {
-    operation: Schema.Literals(["mark-delivery", "invalidate-delivery-token"]),
-    userId: Schema.String,
-    deviceId: Schema.String,
-    kind: Schema.NullOr(RelayDeliveryKindSchema),
-    cause: Schema.Defect(),
-  },
-) {
+export class LiveActivityDeliveryMarkPersistenceError extends Schema.TaggedError<
+  LiveActivityDeliveryMarkPersistenceError,
+  { readonly brand: unique symbol }
+>()("LiveActivityDeliveryMarkPersistenceError", {
+  operation: Schema.Literals(["mark-delivery", "invalidate-delivery-token"]),
+  userId: Schema.String,
+  deviceId: Schema.String,
+  kind: Schema.NullOr(RelayDeliveryKindSchema),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist Live Activity state during ${this.operation} for user ${this.userId} and device ${this.deviceId}.`;
   }

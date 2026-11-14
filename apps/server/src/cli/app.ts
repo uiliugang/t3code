@@ -32,47 +32,47 @@ const CLI_RESPONSE_TIMEOUT_MS = 17_000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const isDesktopAppActivationResponse = Schema.is(DesktopAppActivationResponse);
 
-export class DesktopAppSshUnsupportedError extends Schema.TaggedError<DesktopAppSshUnsupportedError>()(
-  "DesktopAppSshUnsupportedError",
-  {},
-) {
+export class DesktopAppSshUnsupportedError extends Schema.TaggedError<
+  DesktopAppSshUnsupportedError,
+  { readonly brand: unique symbol }
+>()("DesktopAppSshUnsupportedError", {}) {
   override get message(): string {
     return "`t3 app` only controls a desktop app on the same machine. It cannot run over SSH.";
   }
 }
 
-export class DesktopAppPlatformUnsupportedError extends Schema.TaggedError<DesktopAppPlatformUnsupportedError>()(
-  "DesktopAppPlatformUnsupportedError",
-  { platform: Schema.String },
-) {
+export class DesktopAppPlatformUnsupportedError extends Schema.TaggedError<
+  DesktopAppPlatformUnsupportedError,
+  { readonly brand: unique symbol }
+>()("DesktopAppPlatformUnsupportedError", { platform: Schema.String }) {
   override get message(): string {
     return `\`t3 app\` is not supported on ${this.platform}.`;
   }
 }
 
-export class DesktopAppUnreachableError extends Schema.TaggedError<DesktopAppUnreachableError>()(
-  "DesktopAppUnreachableError",
-  {
-    candidateAddresses: Schema.Array(Schema.String),
-    requestId: Schema.String,
-    workspaceRoot: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopAppUnreachableError extends Schema.TaggedError<
+  DesktopAppUnreachableError,
+  { readonly brand: unique symbol }
+>()("DesktopAppUnreachableError", {
+  candidateAddresses: Schema.Array(Schema.String),
+  requestId: Schema.String,
+  workspaceRoot: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Could not reach the T3 Code desktop app. Start or update the desktop app on this machine, then run `t3 app` again. A running T3 Code server is not enough.";
   }
 }
 
-export class DesktopAppRequestFailedError extends Schema.TaggedError<DesktopAppRequestFailedError>()(
-  "DesktopAppRequestFailedError",
-  {
-    code: DesktopAppActivationErrorCode,
-    requestId: Schema.String,
-    workspaceRoot: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopAppRequestFailedError extends Schema.TaggedError<
+  DesktopAppRequestFailedError,
+  { readonly brand: unique symbol }
+>()("DesktopAppRequestFailedError", {
+  code: DesktopAppActivationErrorCode,
+  requestId: Schema.String,
+  workspaceRoot: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `T3 Code could not open ${this.workspaceRoot} (${this.code}).`;
   }

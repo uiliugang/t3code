@@ -33,16 +33,16 @@ const PrimaryEnvironmentRequestOperation = Schema.Literals([
 ]);
 type PrimaryEnvironmentRequestOperation = typeof PrimaryEnvironmentRequestOperation.Type;
 
-export class PrimaryEnvironmentRequestError extends Schema.TaggedError<PrimaryEnvironmentRequestError>()(
-  "PrimaryEnvironmentRequestError",
-  {
-    operation: PrimaryEnvironmentRequestOperation,
-    status: Schema.Number,
-    pairingLinkId: Schema.optional(Schema.String),
-    sessionId: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class PrimaryEnvironmentRequestError extends Schema.TaggedError<
+  PrimaryEnvironmentRequestError,
+  { readonly brand: unique symbol }
+>()("PrimaryEnvironmentRequestError", {
+  operation: PrimaryEnvironmentRequestOperation,
+  status: Schema.Number,
+  pairingLinkId: Schema.optional(Schema.String),
+  sessionId: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   static fromCause(input: {
     readonly operation: PrimaryEnvironmentRequestOperation;
     readonly cause: unknown;
@@ -66,36 +66,36 @@ export class PrimaryEnvironmentRequestError extends Schema.TaggedError<PrimaryEn
 
 const isPrimaryEnvironmentRequestError = Schema.is(PrimaryEnvironmentRequestError);
 
-export class PrimaryEnvironmentPairingCredentialRejectedError extends Schema.TaggedError<PrimaryEnvironmentPairingCredentialRejectedError>()(
-  "PrimaryEnvironmentPairingCredentialRejectedError",
-  {
-    providedLength: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class PrimaryEnvironmentPairingCredentialRejectedError extends Schema.TaggedError<
+  PrimaryEnvironmentPairingCredentialRejectedError,
+  { readonly brand: unique symbol }
+>()("PrimaryEnvironmentPairingCredentialRejectedError", {
+  providedLength: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Invalid pairing token. Check the token and try again.";
   }
 }
 
-export class PrimaryEnvironmentAuthSessionTimeoutError extends Schema.TaggedError<PrimaryEnvironmentAuthSessionTimeoutError>()(
-  "PrimaryEnvironmentAuthSessionTimeoutError",
-  {
-    timeoutMs: Schema.Number,
-    elapsedMs: Schema.Number,
-  },
-) {
+export class PrimaryEnvironmentAuthSessionTimeoutError extends Schema.TaggedError<
+  PrimaryEnvironmentAuthSessionTimeoutError,
+  { readonly brand: unique symbol }
+>()("PrimaryEnvironmentAuthSessionTimeoutError", {
+  timeoutMs: Schema.Number,
+  elapsedMs: Schema.Number,
+}) {
   override get message(): string {
     return "Timed out waiting for authenticated session after bootstrap.";
   }
 }
 
-export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.TaggedError<PrimaryEnvironmentPairingCredentialRequiredError>()(
-  "PrimaryEnvironmentPairingCredentialRequiredError",
-  {
-    providedLength: Schema.Number,
-  },
-) {
+export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.TaggedError<
+  PrimaryEnvironmentPairingCredentialRequiredError,
+  { readonly brand: unique symbol }
+>()("PrimaryEnvironmentPairingCredentialRequiredError", {
+  providedLength: Schema.Number,
+}) {
   override get message(): string {
     return "Enter a pairing token to continue.";
   }

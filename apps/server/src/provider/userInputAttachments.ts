@@ -4,14 +4,14 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as DocumentText from "./DocumentText.ts";
-class UserInputAttachmentError extends Schema.TaggedError<UserInputAttachmentError>()(
-  "UserInputAttachmentError",
-  {
-    operation: Schema.String,
-    issue: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+class UserInputAttachmentError extends Schema.TaggedError<
+  UserInputAttachmentError,
+  { readonly brand: unique symbol }
+>()("UserInputAttachmentError", {
+  operation: Schema.String,
+  issue: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 const quoteReference = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 

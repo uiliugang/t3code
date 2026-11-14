@@ -38,14 +38,14 @@ export const ChromiumCookieReadReason = Schema.Literals([
 ]);
 export type ChromiumCookieReadReason = typeof ChromiumCookieReadReason.Type;
 
-export class ChromiumCookieReadError extends Schema.TaggedError<ChromiumCookieReadError>()(
-  "ChromiumCookieReadError",
-  {
-    reason: ChromiumCookieReadReason,
-    cookieDatabasePath: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ChromiumCookieReadError extends Schema.TaggedError<
+  ChromiumCookieReadError,
+  { readonly brand: unique symbol }
+>()("ChromiumCookieReadError", {
+  reason: ChromiumCookieReadReason,
+  cookieDatabasePath: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Could not read Chromium cookies at ${this.cookieDatabasePath}: ${this.reason}.`;
   }

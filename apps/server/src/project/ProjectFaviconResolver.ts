@@ -78,21 +78,21 @@ const LINK_ICON_HTML_RE =
 const ICON_REL_RE = /\brel\s*:\s*["'](?:icon|shortcut icon)["']/i;
 const ICON_HREF_RE = /\bhref\s*:\s*["']([^"'?]+)/i;
 
-export class ProjectFaviconResolutionError extends Schema.TaggedError<ProjectFaviconResolutionError>()(
-  "ProjectFaviconResolutionError",
-  {
-    operation: Schema.Literals([
-      "normalize-workspace",
-      "resolve-path",
-      "stat-candidate",
-      "read-source",
-    ]),
-    workspaceRoot: Schema.String,
-    relativePath: Schema.optional(Schema.String),
-    absolutePath: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProjectFaviconResolutionError extends Schema.TaggedError<
+  ProjectFaviconResolutionError,
+  { readonly brand: unique symbol }
+>()("ProjectFaviconResolutionError", {
+  operation: Schema.Literals([
+    "normalize-workspace",
+    "resolve-path",
+    "stat-candidate",
+    "read-source",
+  ]),
+  workspaceRoot: Schema.String,
+  relativePath: Schema.optional(Schema.String),
+  absolutePath: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to resolve project favicon during ${this.operation} for workspace ${this.workspaceRoot}.`;
   }

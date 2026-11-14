@@ -65,7 +65,12 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import {
+  mergeProviderInstanceEnvironment,
+  RESOURCE_OWNER_ENV,
+  RESOURCE_ROLE_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 import type { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
@@ -132,16 +137,16 @@ const MAX_TERMINAL_LABEL_LENGTH = 128;
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
 const decodeCodexSettings = Schema.decodeUnknownOption(CodexSettings);
 
-class TerminalSubprocessCheckError extends Schema.TaggedError<TerminalSubprocessCheckError>()(
-  "TerminalSubprocessCheckError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-    command: Schema.Literals(["powershell", "ps", "resource-monitor"]),
-    exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
-    timedOut: Schema.optional(Schema.Boolean),
-    stdoutTruncated: Schema.optional(Schema.Boolean),
-  },
-) {
+class TerminalSubprocessCheckError extends Schema.TaggedError<
+  TerminalSubprocessCheckError,
+  { readonly brand: unique symbol }
+>()("TerminalSubprocessCheckError", {
+  cause: Schema.optional(Schema.Defect()),
+  command: Schema.Literals(["powershell", "ps", "resource-monitor"]),
+  exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
+  timedOut: Schema.optional(Schema.Boolean),
+  stdoutTruncated: Schema.optional(Schema.Boolean),
+}) {
   override get message(): string {
     const details = [
       this.exitCode !== undefined && this.exitCode !== null ? `exit code ${this.exitCode}` : null,
@@ -154,14 +159,14 @@ class TerminalSubprocessCheckError extends Schema.TaggedError<TerminalSubprocess
   }
 }
 
-class TerminalProcessSignalError extends Schema.TaggedError<TerminalProcessSignalError>()(
-  "TerminalProcessSignalError",
-  {
-    cause: Schema.optional(Schema.Defect()),
-    signal: Schema.Literals(["SIGTERM", "SIGKILL"]),
-    terminalPid: Schema.Number,
-  },
-) {
+class TerminalProcessSignalError extends Schema.TaggedError<
+  TerminalProcessSignalError,
+  { readonly brand: unique symbol }
+>()("TerminalProcessSignalError", {
+  cause: Schema.optional(Schema.Defect()),
+  signal: Schema.Literals(["SIGTERM", "SIGKILL"]),
+  terminalPid: Schema.Number,
+}) {
   override get message(): string {
     return `Failed to send ${this.signal} to terminal process ${this.terminalPid}`;
   }
@@ -175,7 +180,7 @@ export class TerminalManager extends Context.Service<
   TerminalManager,
   {
     readonly open: (
-      input: TerminalOpenInput,
+      input: TerminalOpenInput & { readonly keepOnSettle?: boolean },
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     readonly getShell: (input: TerminalObserveInput) => Effect.Effect<string, TerminalError>;
@@ -225,7 +230,11 @@ export class TerminalManager extends Context.Service<
     /** Omit terminalId to close all sessions for the thread. */
     readonly close: (input: TerminalCloseInput) => Effect.Effect<void, TerminalError>;
 
-    readonly closeOnSettle: (input: { readonly threadId: string }) => Effect.Effect<void>;
+    readonly closeOnSettle: (input: {
+      readonly shouldClose: Effect.Effect<boolean>;
+      readonly deleteHistory?: boolean;
+      readonly threadId: string;
+    }) => Effect.Effect<void, TerminalError>;
 
     readonly closeIdle: (input: {
       readonly threadId: string;
@@ -287,6 +296,8 @@ interface TerminalStartInput {
 }
 
 interface TerminalSessionState {
+  processGeneration: number;
+  keepOnSettle: boolean;
   threadId: string;
   terminalId: string;
   cwd: string;
@@ -312,7 +323,6 @@ interface TerminalSessionState {
   hasRunningSubprocess: boolean;
   childCommandLabel: string | null;
   runtimeEnv: Record<string, string> | null;
-  stopOnSettle: boolean;
 }
 
 interface TerminalGrid {
@@ -1572,6 +1582,7 @@ function normalizedRuntimeEnv(
 }
 
 interface TerminalManagerOptions {
+  stateDir?: string;
   logsDir: string;
   historyLineLimit?: number;
   historyByteLimit?: number;
@@ -1592,6 +1603,7 @@ interface TerminalManagerOptions {
     readonly threadId: string;
     readonly terminalId: string;
     readonly processIds: ReadonlyArray<number>;
+    readonly keepOnSettle?: boolean;
   }) => Effect.Effect<void>;
   unregisterTerminal?: (input: {
     readonly threadId: string;
@@ -1655,7 +1667,8 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
 export const make = Effect.fn("TerminalManager.make")(function* (
   deriveConfigMap: typeof deriveProviderInstanceConfigMap,
 ) {
-  const { terminalLogsDir, providerStatusCacheDir, baseDir } = yield* ServerConfig.ServerConfig;
+  const { terminalLogsDir, providerStatusCacheDir, baseDir, stateDir } =
+    yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
   const portDiscovery = yield* PortScanner.PortDiscovery;
   const nativeTelemetry = yield* NativeTelemetryClient.NativeTelemetryClient;
@@ -1674,6 +1687,7 @@ export const make = Effect.fn("TerminalManager.make")(function* (
   );
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
+    stateDir,
     ptyAdapter,
     processTable: nativeTelemetry.processTable.pipe(
       Effect.mapError(
@@ -2624,6 +2638,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     const startingAt = yield* nowIso;
     yield* modifyManagerState((state) => {
+      session.processGeneration += 1;
       session.status = "starting";
       session.shell = null;
       session.cwd = input.cwd;
@@ -2655,6 +2670,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               platform,
               yield* HostProcess.HomeDirectory,
             );
+            terminalEnv[PortScanner.AGENT_THREAD_ENV] = session.threadId;
+            if (session.keepOnSettle)
+              terminalEnv[RESOURCE_ROLE_ENV] = `settlement:${session.terminalId}`;
+            if (options.stateDir) terminalEnv[RESOURCE_OWNER_ENV] = resourceOwner(options.stateDir);
             // Append managed install directories so agent commands resolve without shadowing user/system tools.
             if (
               options.managedBinaryCacheDir !== undefined &&
@@ -2909,6 +2928,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         threadId: session.threadId,
         terminalId: session.terminalId,
         processIds: next.processIds,
+        keepOnSettle: session.keepOnSettle,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
       const event = yield* modifyManagerState((state) => {
@@ -3035,7 +3055,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   );
 
   const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
-    requestedInput: TerminalOpenInput,
+    requestedInput: TerminalOpenInput & { readonly keepOnSettle?: boolean },
   ) {
     const terminalId = requestedInput.terminalId;
     yield* assertValidCwd(requestedInput.cwd);
@@ -3074,6 +3094,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         updatedAt: yield* nowIso,
         eventSequence: 0,
         inputCount: 0,
+        processGeneration: 0,
+        keepOnSettle: input.keepOnSettle === true,
         cols,
         rows,
         process: null,
@@ -3083,9 +3105,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         hasRunningSubprocess: false,
         childCommandLabel: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
-        stopOnSettle: input.stopOnSettle ?? false,
       };
 
+      if (session.keepOnSettle)
+        yield* registerTerminalProcesses({
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+          processIds: [],
+          keepOnSettle: true,
+        });
       const createdSession = session;
       yield* modifyManagerState((state) => {
         const sessions = new Map(state.sessions);
@@ -3109,7 +3137,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }
 
     const liveSession = existing.value;
-    if (input.stopOnSettle !== undefined) liveSession.stopOnSettle = input.stopOnSettle;
     const nextRuntimeEnv = normalizedRuntimeEnv(input.env);
     const currentRuntimeEnv = liveSession.runtimeEnv;
     const targetCols = input.cols ?? liveSession.cols;
@@ -3165,7 +3192,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return snapshot(liveSession);
   });
 
-  const openLocked = (input: TerminalOpenInput) =>
+  const openLocked = (input: TerminalOpenInput & { readonly keepOnSettle?: boolean }) =>
     withWorkspaceLease(
       path.resolve(input.worktreePath ?? input.cwd),
       openWithWorkspaceLease(input),
@@ -3688,21 +3715,31 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       ),
     );
 
-  const closeOnSettle = Effect.fn("terminal.closeOnSettle")(function* (input: {
-    readonly threadId: string;
-  }) {
+  const closeOnSettle: TerminalManager["Service"]["closeOnSettle"] = Effect.fn(
+    "terminal.closeOnSettle",
+  )(function* (input) {
+    const expected = new Map(
+      (yield* sessionsForThread(input.threadId)).map((session) => [
+        session,
+        session.processGeneration,
+      ]),
+    );
     yield* withThreadLock(
       input.threadId,
       Effect.gen(function* () {
-        const sessions = yield* sessionsForThread(input.threadId);
-        yield* Effect.forEach(
-          sessions.filter((session) => session.stopOnSettle),
-          (session) => closeSession(input.threadId, session.terminalId, false),
-          { discard: true },
-        );
+        for (const session of yield* sessionsForThread(input.threadId)) {
+          if (
+            (!input.deleteHistory && session.keepOnSettle) ||
+            expected.get(session) !== session.processGeneration
+          )
+            continue;
+          if (!(yield* input.shouldClose)) return;
+          yield* closeSession(input.threadId, session.terminalId, false);
+        }
+        if (input.deleteHistory && (yield* input.shouldClose))
+          yield* deleteAllHistoryForThread(input.threadId);
       }),
     );
-    yield* closeIdle(input);
   });
 
   return TerminalManager.of({

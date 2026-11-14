@@ -1,3 +1,7 @@
+import {
+  RESOURCE_OWNER_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 import type { ThreadWorkspaceRevision } from "@t3tools/contracts";
 import { workspaceContext } from "@t3tools/provider-core/server/workspacePolicy";
 import * as DocumentText from "../../provider/DocumentText.ts";
@@ -696,33 +700,35 @@ export interface ClaudeAgentSdkQuerySession {
 
 type ClaudeQueryStreamExit = Exit.Exit<void, ClaudeAgentSdkQueryRunnerError>;
 
-export class ClaudeAgentSdkQueryRunnerError extends Schema.TaggedError<ClaudeAgentSdkQueryRunnerError>()(
-  "ClaudeAgentSdkQueryRunnerError",
-  {
-    method: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ClaudeAgentSdkQueryRunnerError extends Schema.TaggedError<
+  ClaudeAgentSdkQueryRunnerError,
+  { readonly brand: unique symbol }
+>()("ClaudeAgentSdkQueryRunnerError", {
+  method: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Claude Agent SDK query failed.";
   }
 }
 
-export class ClaudeCodeRootRefusalError extends Schema.TaggedError<ClaudeCodeRootRefusalError>()(
-  "ClaudeCodeRootRefusalError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
+export class ClaudeCodeRootRefusalError extends Schema.TaggedError<
+  ClaudeCodeRootRefusalError,
+  { readonly brand: unique symbol }
+>()("ClaudeCodeRootRefusalError", {
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Claude Code exited before it started: ${CLAUDE_ROOT_REFUSAL}`;
   }
 }
 
-class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegistrationTimeoutError>()(
-  "ClaudeMcpRegistrationTimeoutError",
-  { phase: Schema.Literals(["initialize", "setMcpServers"]) },
-) {
+class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<
+  ClaudeMcpRegistrationTimeoutError,
+  { readonly brand: unique symbol }
+>()("ClaudeMcpRegistrationTimeoutError", {
+  phase: Schema.Literals(["initialize", "setMcpServers"]),
+}) {
   override get message(): string {
     return this.phase === "initialize"
       ? "Claude timed out while starting up. Retry the turn; if it keeps failing, check Claude and the server logs."
@@ -730,43 +736,45 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
   }
 }
 
-export class ClaudeBackgroundWorkBlocksQueryReplacementError extends Schema.TaggedError<ClaudeBackgroundWorkBlocksQueryReplacementError>()(
-  "ClaudeBackgroundWorkBlocksQueryReplacementError",
-  {},
-) {
+export class ClaudeBackgroundWorkBlocksQueryReplacementError extends Schema.TaggedError<
+  ClaudeBackgroundWorkBlocksQueryReplacementError,
+  { readonly brand: unique symbol }
+>()("ClaudeBackgroundWorkBlocksQueryReplacementError", {}) {
   override get message(): string {
     return "Claude is still running background agents or commands, and this model or setting change would end them. Wait for them to finish, or press Stop, then send the message again.";
   }
 }
 
-export class ClaudeAppendSystemPromptFileError extends Schema.TaggedError<ClaudeAppendSystemPromptFileError>()(
-  "ClaudeAppendSystemPromptFileError",
-  {
-    path: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ClaudeAppendSystemPromptFileError extends Schema.TaggedError<
+  ClaudeAppendSystemPromptFileError,
+  { readonly brand: unique symbol }
+>()("ClaudeAppendSystemPromptFileError", {
+  path: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Claude could not read the --append-system-prompt-file launch argument at ${this.path}. Fix the path in the Claude launch arguments, then send the message again.`;
   }
 }
 
-export class ClaudeAppendSystemPromptMissingValueError extends Schema.TaggedError<ClaudeAppendSystemPromptMissingValueError>()(
-  "ClaudeAppendSystemPromptMissingValueError",
-  { flag: Schema.Literals(["--append-system-prompt", "--append-system-prompt-file"]) },
-) {
+export class ClaudeAppendSystemPromptMissingValueError extends Schema.TaggedError<
+  ClaudeAppendSystemPromptMissingValueError,
+  { readonly brand: unique symbol }
+>()("ClaudeAppendSystemPromptMissingValueError", {
+  flag: Schema.Literals(["--append-system-prompt", "--append-system-prompt-file"]),
+}) {
   override get message(): string {
     return `The ${this.flag} launch argument has no ${this.flag === "--append-system-prompt" ? "text" : "file path"}. Add it after the flag in the Claude launch arguments, then send the message again.`;
   }
 }
 
-export class ClaudeSettingsLaunchArgError extends Schema.TaggedError<ClaudeSettingsLaunchArgError>()(
-  "ClaudeSettingsLaunchArgError",
-  {
-    path: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ClaudeSettingsLaunchArgError extends Schema.TaggedError<
+  ClaudeSettingsLaunchArgError,
+  { readonly brand: unique symbol }
+>()("ClaudeSettingsLaunchArgError", {
+  path: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Claude could not read the --settings launch argument${this.path === undefined ? "" : ` at ${this.path}`} as a JSON object. Fix it in the Claude launch arguments, then send the message again.`;
   }
@@ -13875,7 +13883,10 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     return yield* makeClaudeAdapterV2({
       instanceId,
       settings: { ...config, enabled, binaryPath },
-      environment: claudeEnvironment,
+      environment: {
+        ...claudeEnvironment,
+        [RESOURCE_OWNER_ENV]: resourceOwner(serverConfig.stateDir),
+      },
       attachmentsDir: serverConfig.attachmentsDir,
       fileSystem,
       path,

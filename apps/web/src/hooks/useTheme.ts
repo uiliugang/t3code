@@ -93,15 +93,15 @@ function themeHalvesSignature(halves: ThemeHalves | null): string {
 const THEME_COLOR_META_NAME = "theme-color";
 const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
 
-export class ThemeStorageError extends Schema.TaggedError<ThemeStorageError>()(
-  "ThemeStorageError",
-  {
-    operation: Schema.Literals(["read", "write"]),
-    storageKey: Schema.String,
-    theme: Schema.optional(ThemePreference),
-    cause: Schema.Defect(),
-  },
-) {
+export class ThemeStorageError extends Schema.TaggedError<
+  ThemeStorageError,
+  { readonly brand: unique symbol }
+>()("ThemeStorageError", {
+  operation: Schema.Literals(["read", "write"]),
+  storageKey: Schema.String,
+  theme: Schema.optional(ThemePreference),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to ${this.operation} theme preference for ${this.storageKey}.`;
   }
@@ -109,13 +109,13 @@ export class ThemeStorageError extends Schema.TaggedError<ThemeStorageError>()(
 
 const isThemeStorageError = Schema.is(ThemeStorageError);
 
-export class DesktopThemeSyncError extends Schema.TaggedError<DesktopThemeSyncError>()(
-  "DesktopThemeSyncError",
-  {
-    theme: ThemePreference,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopThemeSyncError extends Schema.TaggedError<
+  DesktopThemeSyncError,
+  { readonly brand: unique symbol }
+>()("DesktopThemeSyncError", {
+  theme: ThemePreference,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to sync the ${this.theme} theme to the desktop shell.`;
   }

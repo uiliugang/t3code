@@ -30,13 +30,13 @@ const PEER_PAIRING_CODE_LABEL = "T3 Code link";
 const MCP_APPROVAL_CODE_LABEL = "App sign-in";
 
 /** Minting failed; the user can still paste a code from the other environment. */
-export class PeerPairingCodeError extends Schema.TaggedError<PeerPairingCodeError>()(
-  "PeerPairingCodeError",
-  {
-    reason: Schema.Literals(["not_allowed", "unavailable"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class PeerPairingCodeError extends Schema.TaggedError<
+  PeerPairingCodeError,
+  { readonly brand: unique symbol }
+>()("PeerPairingCodeError", {
+  reason: Schema.Literals(["not_allowed", "unavailable"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return this.reason === "not_allowed"
       ? "Your session there cannot create pairing codes. Paste a code from there instead."

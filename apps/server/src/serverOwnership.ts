@@ -40,10 +40,10 @@ import {
   type PersistedServerRuntimeState,
 } from "./serverRuntimeState.ts";
 
-export class ServerAlreadyRunningError extends Schema.TaggedError<ServerAlreadyRunningError>()(
-  "ServerAlreadyRunningError",
-  { stateDir: Schema.String },
-) {
+export class ServerAlreadyRunningError extends Schema.TaggedError<
+  ServerAlreadyRunningError,
+  { readonly brand: unique symbol }
+>()("ServerAlreadyRunningError", { stateDir: Schema.String }) {
   // Distinct exit codes let supervisors stop restarting an already-owned server.
   override readonly [Runtime.errorExitCode] = SERVER_EXIT_CODE_STATE_DIR_OWNED;
 
@@ -52,10 +52,10 @@ export class ServerAlreadyRunningError extends Schema.TaggedError<ServerAlreadyR
   }
 }
 
-export class OlderBootServiceError extends Schema.TaggedError<OlderBootServiceError>()(
-  "OlderBootServiceError",
-  { baseDir: Schema.String },
-) {
+export class OlderBootServiceError extends Schema.TaggedError<
+  OlderBootServiceError,
+  { readonly brand: unique symbol }
+>()("OlderBootServiceError", { baseDir: Schema.String }) {
   override readonly [Runtime.errorExitCode] = SERVER_EXIT_CODE_STATE_DIR_OWNED;
 
   override get message(): string {
@@ -63,10 +63,10 @@ export class OlderBootServiceError extends Schema.TaggedError<OlderBootServiceEr
   }
 }
 
-export class ServerOwnershipError extends Schema.TaggedError<ServerOwnershipError>()(
-  "ServerOwnershipError",
-  { stateDir: Schema.String, cause: Schema.Defect() },
-) {
+export class ServerOwnershipError extends Schema.TaggedError<
+  ServerOwnershipError,
+  { readonly brand: unique symbol }
+>()("ServerOwnershipError", { stateDir: Schema.String, cause: Schema.Defect() }) {
   override get message(): string {
     return `Could not acquire server ownership of ${this.stateDir}.`;
   }

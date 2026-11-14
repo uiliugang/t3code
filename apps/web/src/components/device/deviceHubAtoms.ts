@@ -43,10 +43,10 @@ export const deviceEventLogAtom = Atom.family((target: DeviceHubTarget) =>
   }).pipe(Atom.withLabel(`device-event-log:${target.deviceId}`)),
 );
 
-class DeviceAxTreeFetchError extends Schema.TaggedError<DeviceAxTreeFetchError>()(
-  "DeviceAxTreeFetchError",
-  { cause: Schema.Defect() },
-) {
+class DeviceAxTreeFetchError extends Schema.TaggedError<
+  DeviceAxTreeFetchError,
+  { readonly brand: unique symbol }
+>()("DeviceAxTreeFetchError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not read the device accessibility tree.";
   }

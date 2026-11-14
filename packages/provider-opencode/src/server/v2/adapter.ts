@@ -625,10 +625,10 @@ const OWNED_RECOVERY_RETRY = {
   schedule: OWNED_RECONNECT_SCHEDULE,
   while: (error: unknown) => !isPermanentRecoveryError(error),
 };
-class OpenCode2ServerExitedError extends Schema.TaggedError<OpenCode2ServerExitedError>()(
-  "OpenCode2ServerExitedError",
-  {},
-) {}
+class OpenCode2ServerExitedError extends Schema.TaggedError<
+  OpenCode2ServerExitedError,
+  { readonly brand: unique symbol }
+>()("OpenCode2ServerExitedError", {}) {}
 const LOST_BACKGROUND =
   "T3 Code lost its connection to OpenCode while this subagent ran, so its result is not shown.";
 const INVENTORY_TIMEOUT = "5 seconds";

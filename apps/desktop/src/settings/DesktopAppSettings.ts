@@ -135,14 +135,14 @@ const DesktopSettingsWriteOperation = Schema.Literals([
 ]);
 type DesktopSettingsWriteOperation = typeof DesktopSettingsWriteOperation.Type;
 
-export class DesktopSettingsWriteError extends Schema.TaggedError<DesktopSettingsWriteError>()(
-  "DesktopSettingsWriteError",
-  {
-    operation: DesktopSettingsWriteOperation,
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopSettingsWriteError extends Schema.TaggedError<
+  DesktopSettingsWriteError,
+  { readonly brand: unique symbol }
+>()("DesktopSettingsWriteError", {
+  operation: DesktopSettingsWriteOperation,
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Desktop settings write failed during ${this.operation} at ${this.path}.`;
   }

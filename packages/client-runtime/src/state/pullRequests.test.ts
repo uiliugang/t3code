@@ -56,7 +56,10 @@ const trustedRouting = {
   forget: () => Effect.void,
 };
 
-class MutationRefused extends Schema.TaggedError<MutationRefused>()("MutationRefused", {}) {}
+class MutationRefused extends Schema.TaggedError<
+  MutationRefused,
+  { readonly brand: unique symbol }
+>()("MutationRefused", {}) {}
 
 it.effect.each([
   "prefers the local environment with the same github account",

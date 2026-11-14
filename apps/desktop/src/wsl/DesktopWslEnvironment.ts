@@ -76,10 +76,10 @@ export type ProbeWslRuntimeResult =
       readonly reason: string;
     };
 
-export class DesktopWslDistroListError extends Schema.TaggedError<DesktopWslDistroListError>()(
-  "DesktopWslDistroListError",
-  { reason: Schema.String },
-) {
+export class DesktopWslDistroListError extends Schema.TaggedError<
+  DesktopWslDistroListError,
+  { readonly brand: unique symbol }
+>()("DesktopWslDistroListError", { reason: Schema.String }) {
   override get message(): string {
     return this.reason;
   }

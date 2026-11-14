@@ -45,39 +45,42 @@ const MuseReplayTranscript = Schema.Struct({
 type MuseReplayTranscript = typeof MuseReplayTranscript.Type;
 const decodeMuseReplayTranscript = Schema.decodeUnknownEffect(MuseReplayTranscript);
 
-class MuseReplayTranscriptDecodeError extends Schema.TaggedError<MuseReplayTranscriptDecodeError>()(
-  "MuseReplayTranscriptDecodeError",
-  { scenario: Schema.optional(Schema.String), cause: Schema.Defect() },
-) {
+class MuseReplayTranscriptDecodeError extends Schema.TaggedError<
+  MuseReplayTranscriptDecodeError,
+  { readonly brand: unique symbol }
+>()("MuseReplayTranscriptDecodeError", {
+  scenario: Schema.optional(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to decode Muse MSP replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
   }
 }
 
-class MuseReplayMismatchError extends Schema.TaggedError<MuseReplayMismatchError>()(
-  "MuseReplayMismatchError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    host: Schema.Number,
-    expected: Schema.Unknown,
-    actual: Schema.Unknown,
-  },
-) {
+class MuseReplayMismatchError extends Schema.TaggedError<
+  MuseReplayMismatchError,
+  { readonly brand: unique symbol }
+>()("MuseReplayMismatchError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  host: Schema.Number,
+  expected: Schema.Unknown,
+  actual: Schema.Unknown,
+}) {
   override get message(): string {
     return `Muse replay frame mismatch at cursor ${this.cursor} from host ${this.host} in scenario ${this.scenario}.`;
   }
 }
 
-class MuseReplayIncompleteError extends Schema.TaggedError<MuseReplayIncompleteError>()(
-  "MuseReplayIncompleteError",
-  {
-    scenario: Schema.String,
-    cursor: Schema.Number,
-    remaining: Schema.Number,
-    nextLabel: Schema.optional(Schema.String),
-  },
-) {
+class MuseReplayIncompleteError extends Schema.TaggedError<
+  MuseReplayIncompleteError,
+  { readonly brand: unique symbol }
+>()("MuseReplayIncompleteError", {
+  scenario: Schema.String,
+  cursor: Schema.Number,
+  remaining: Schema.Number,
+  nextLabel: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     return `Muse replay ended with ${this.remaining} unconsumed entries at cursor ${this.cursor} (next ${this.nextLabel ?? "<none>"}) in scenario ${this.scenario}.`;
   }

@@ -13,13 +13,13 @@ import {
 } from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
-export class ProjectionMaintenanceError extends Schema.TaggedError<ProjectionMaintenanceError>()(
-  "ProjectionMaintenanceError",
-  {
-    operation: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class ProjectionMaintenanceError extends Schema.TaggedError<
+  ProjectionMaintenanceError,
+  { readonly brand: unique symbol }
+>()("ProjectionMaintenanceError", {
+  operation: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 export interface ProjectionMaintenanceV2Shape {
   /** Deletes events the projections already cover once they are older than the retained history. */

@@ -149,17 +149,20 @@ export const DeviceSimlockIdentity = Schema.Struct({
 });
 export type DeviceSimlockIdentity = typeof DeviceSimlockIdentity.Type;
 
-export class DeviceSimlockIdentityError extends Schema.TaggedError<DeviceSimlockIdentityError>()(
-  "DeviceSimlockIdentityError",
-  { reason: Schema.String },
-) {
+export class DeviceSimlockIdentityError extends Schema.TaggedError<
+  DeviceSimlockIdentityError,
+  { readonly brand: unique symbol }
+>()("DeviceSimlockIdentityError", { reason: Schema.String }) {
   override get message(): string {
     return this.reason;
   }
 }
 
 /** Checking an Expo credential failed; no device host is involved yet. */
-export class DeviceEasAccountError extends Schema.TaggedError<DeviceEasAccountError>()(
+export class DeviceEasAccountError extends Schema.TaggedError<
+  DeviceEasAccountError,
+  { readonly brand: unique symbol }
+>()(
   "DeviceEasAccountError",
   // No cause: this error reaches the browser, and the reason already says what Expo answered.
   { reason: Schema.String },
@@ -518,47 +521,50 @@ export type DeviceActionType = DeviceActionInput["type"];
 export const DeviceDetailInput = Schema.Struct(DeviceTarget);
 export type DeviceDetailInput = typeof DeviceDetailInput.Type;
 
-export class DeviceHostUnavailableError extends Schema.TaggedError<DeviceHostUnavailableError>()(
-  "DeviceHostUnavailableError",
-  {
-    hostId: DeviceHostId,
-    /** The host's name in Settings, which the message shows instead of its id. */
-    hostLabel: Schema.optional(Schema.String),
-    reason: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class DeviceHostUnavailableError extends Schema.TaggedError<
+  DeviceHostUnavailableError,
+  { readonly brand: unique symbol }
+>()("DeviceHostUnavailableError", {
+  hostId: DeviceHostId,
+  /** The host's name in Settings, which the message shows instead of its id. */
+  hostLabel: Schema.optional(Schema.String),
+  reason: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `${this.hostLabel ?? `Device host ${this.hostId}`} is unavailable: ${this.reason}`;
   }
 }
 
-export class DevicePlatformUnavailableError extends Schema.TaggedError<DevicePlatformUnavailableError>()(
-  "DevicePlatformUnavailableError",
-  {
-    hostId: DeviceHostId,
-    platform: DevicePlatform,
-    reason: Schema.String,
-  },
-) {
+export class DevicePlatformUnavailableError extends Schema.TaggedError<
+  DevicePlatformUnavailableError,
+  { readonly brand: unique symbol }
+>()("DevicePlatformUnavailableError", {
+  hostId: DeviceHostId,
+  platform: DevicePlatform,
+  reason: Schema.String,
+}) {
   override get message(): string {
     return `${this.platform} devices are unavailable on host ${this.hostId}: ${this.reason}`;
   }
 }
 
-export class DeviceNotFoundError extends Schema.TaggedError<DeviceNotFoundError>()(
-  "DeviceNotFoundError",
-  {
-    hostId: DeviceHostId,
-    deviceId: DeviceId,
-  },
-) {
+export class DeviceNotFoundError extends Schema.TaggedError<
+  DeviceNotFoundError,
+  { readonly brand: unique symbol }
+>()("DeviceNotFoundError", {
+  hostId: DeviceHostId,
+  deviceId: DeviceId,
+}) {
   override get message(): string {
     return `Device ${this.deviceId} was not found on host ${this.hostId}.`;
   }
 }
 
-export class DeviceBootError extends Schema.TaggedError<DeviceBootError>()("DeviceBootError", {
+export class DeviceBootError extends Schema.TaggedError<
+  DeviceBootError,
+  { readonly brand: unique symbol }
+>()("DeviceBootError", {
   hostId: DeviceHostId,
   deviceId: DeviceId,
   reason: Schema.Literals(["disk_space", "timeout", "launch_failed"]),
@@ -578,21 +584,21 @@ export class DeviceBootError extends Schema.TaggedError<DeviceBootError>()("Devi
   }
 }
 
-export class DeviceOperationError extends Schema.TaggedError<DeviceOperationError>()(
-  "DeviceOperationError",
-  {
-    operation: Schema.String,
-    reason: Schema.Literals([
-      "command_failed",
-      "request_failed",
-      "invalid_payload",
-      "settings_failed",
-      "hub_rejected",
-    ]),
-    exitCode: Schema.optional(Schema.Number),
-    cause: Schema.Defect(),
-  },
-) {
+export class DeviceOperationError extends Schema.TaggedError<
+  DeviceOperationError,
+  { readonly brand: unique symbol }
+>()("DeviceOperationError", {
+  operation: Schema.String,
+  reason: Schema.Literals([
+    "command_failed",
+    "request_failed",
+    "invalid_payload",
+    "settings_failed",
+    "hub_rejected",
+  ]),
+  exitCode: Schema.optional(Schema.Number),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const explanation = {
       command_failed: `The device command failed${this.exitCode === undefined ? "" : ` (exit code ${this.exitCode})`}.`,
@@ -605,14 +611,14 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
   }
 }
 
-export class DeviceActionUnavailableError extends Schema.TaggedError<DeviceActionUnavailableError>()(
-  "DeviceActionUnavailableError",
-  {
-    operation: Schema.String,
-    platform: DevicePlatform,
-    reason: Schema.Literals(["unsupported", "helper_missing"]),
-  },
-) {
+export class DeviceActionUnavailableError extends Schema.TaggedError<
+  DeviceActionUnavailableError,
+  { readonly brand: unique symbol }
+>()("DeviceActionUnavailableError", {
+  operation: Schema.String,
+  platform: DevicePlatform,
+  reason: Schema.Literals(["unsupported", "helper_missing"]),
+}) {
   override get message(): string {
     return this.reason === "helper_missing"
       ? `Device ${this.operation} requires a helper missing from this install. Set up device support again.`
@@ -702,13 +708,13 @@ export const DeviceToolCloseInput = Schema.Struct({
 });
 export type DeviceToolCloseInput = typeof DeviceToolCloseInput.Type;
 
-export class DeviceToolUnavailableError extends Schema.TaggedError<DeviceToolUnavailableError>()(
-  "DeviceToolUnavailableError",
-  {
-    reason: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class DeviceToolUnavailableError extends Schema.TaggedError<
+  DeviceToolUnavailableError,
+  { readonly brand: unique symbol }
+>()("DeviceToolUnavailableError", {
+  reason: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.reason;
   }

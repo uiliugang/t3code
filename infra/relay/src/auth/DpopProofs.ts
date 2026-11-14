@@ -13,17 +13,17 @@ import {
 import * as RelayDb from "../db.ts";
 import { relayDpopProofs } from "../persistence/schema.ts";
 
-export class DpopProofReplayPersistenceError extends Schema.TaggedError<DpopProofReplayPersistenceError>()(
-  "DpopProofReplayPersistenceError",
-  {
-    operation: Schema.Literals(["consume", "prune-expired"]),
-    thumbprint: Schema.optionalKey(Schema.String),
-    jti: Schema.optionalKey(Schema.String),
-    iat: Schema.optionalKey(Schema.Number),
-    expiresBefore: Schema.optionalKey(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class DpopProofReplayPersistenceError extends Schema.TaggedError<
+  DpopProofReplayPersistenceError,
+  { readonly brand: unique symbol }
+>()("DpopProofReplayPersistenceError", {
+  operation: Schema.Literals(["consume", "prune-expired"]),
+  thumbprint: Schema.optionalKey(Schema.String),
+  jti: Schema.optionalKey(Schema.String),
+  iat: Schema.optionalKey(Schema.Number),
+  expiresBefore: Schema.optionalKey(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to persist DPoP proof replay state during '${this.operation}'`;
   }
@@ -35,12 +35,12 @@ export const DpopProofFailureCode = Schema.Union([
 ]);
 export type DpopProofFailureCode = typeof DpopProofFailureCode.Type;
 
-export class DpopProofRejected extends Schema.TaggedError<DpopProofRejected>()(
-  "DpopProofRejected",
-  {
-    code: DpopProofFailureCode,
-  },
-) {
+export class DpopProofRejected extends Schema.TaggedError<
+  DpopProofRejected,
+  { readonly brand: unique symbol }
+>()("DpopProofRejected", {
+  code: DpopProofFailureCode,
+}) {
   override get message(): string {
     return `DPoP proof rejected: ${this.code}`;
   }

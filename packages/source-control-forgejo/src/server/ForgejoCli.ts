@@ -20,7 +20,10 @@ import type { SourceControlProviderContext } from "@t3tools/source-control-core/
 
 const encodeApiBody = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
-export class ForgejoCliError extends Schema.TaggedError<ForgejoCliError>()("ForgejoCliError", {
+export class ForgejoCliError extends Schema.TaggedError<
+  ForgejoCliError,
+  { readonly brand: unique symbol }
+>()("ForgejoCliError", {
   command: Schema.Literals(["fj", "tea"]),
   cwd: Schema.String,
   detail: Schema.String,

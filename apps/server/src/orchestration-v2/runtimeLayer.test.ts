@@ -97,6 +97,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as DeviceHost from "../device/DeviceHost.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import * as PortScanner from "../preview/PortScanner.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
@@ -447,10 +448,12 @@ const bootedSimulatorHost = DeviceHost.DeviceHost.of({
   ensureReady: () => Effect.succeed(bootedSimulatorReady),
   ensureAgentReady: () => Effect.succeed(bootedSimulatorReady),
   current: Effect.succeed(bootedSimulatorReady),
+  releaseAgentSession: () => Effect.void,
   stopAgent: Effect.void,
   stop: Effect.void,
 });
 const layerResourceCleanupTest = ResourceCleanupService.layer.pipe(
+  Layer.provideMerge(ProjectionStore.layer),
   Layer.provideMerge(layerScheduledTasksTest),
   Layer.provideMerge(
     Layer.effect(
@@ -460,8 +463,9 @@ const layerResourceCleanupTest = ResourceCleanupService.layer.pipe(
   ),
   Layer.provide(
     Layer.mergeAll(
+      PortScanner.layerTest,
       Layer.mock(PreviewManager.PreviewManager)({ close: () => Effect.void }),
-      Layer.mock(TerminalManager.TerminalManager)({ close: () => Effect.void }),
+      Layer.mock(TerminalManager.TerminalManager)({ closeOnSettle: () => Effect.void }),
     ),
   ),
 );

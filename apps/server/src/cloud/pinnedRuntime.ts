@@ -65,18 +65,18 @@ export function pinnedRuntimePaths(
   };
 }
 
-export class PinnedRuntimeInstallError extends Schema.TaggedError<PinnedRuntimeInstallError>()(
-  "PinnedRuntimeInstallError",
-  {
-    step: Schema.String,
-    exitCode: Schema.optional(Schema.Number),
-    stdoutLength: Schema.optional(Schema.Number),
-    stderrLength: Schema.optional(Schema.Number),
-    httpStatus: Schema.optional(Schema.Number),
-    downloadHost: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class PinnedRuntimeInstallError extends Schema.TaggedError<
+  PinnedRuntimeInstallError,
+  { readonly brand: unique symbol }
+>()("PinnedRuntimeInstallError", {
+  step: Schema.String,
+  exitCode: Schema.optional(Schema.Number),
+  stdoutLength: Schema.optional(Schema.Number),
+  stderrLength: Schema.optional(Schema.Number),
+  httpStatus: Schema.optional(Schema.Number),
+  downloadHost: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.exitCode === undefined
       ? `Pinned runtime install failed while ${this.step}.`
@@ -84,13 +84,13 @@ export class PinnedRuntimeInstallError extends Schema.TaggedError<PinnedRuntimeI
   }
 }
 
-export class PinnedRuntimePreflightBlockedError extends Schema.TaggedError<PinnedRuntimePreflightBlockedError>()(
-  "PinnedRuntimePreflightBlockedError",
-  {
-    version: Schema.String,
-    reason: Schema.String,
-  },
-) {
+export class PinnedRuntimePreflightBlockedError extends Schema.TaggedError<
+  PinnedRuntimePreflightBlockedError,
+  { readonly brand: unique symbol }
+>()("PinnedRuntimePreflightBlockedError", {
+  version: Schema.String,
+  reason: Schema.String,
+}) {
   override get message(): string {
     return this.reason;
   }

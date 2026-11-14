@@ -19,10 +19,10 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
-export class CliArchiveSmokeError extends Schema.TaggedError<CliArchiveSmokeError>()(
-  "CliArchiveSmokeError",
-  { step: Schema.String, detail: Schema.String },
-) {
+export class CliArchiveSmokeError extends Schema.TaggedError<
+  CliArchiveSmokeError,
+  { readonly brand: unique symbol }
+>()("CliArchiveSmokeError", { step: Schema.String, detail: Schema.String }) {
   override get message(): string {
     return `CLI archive smoke test failed while ${this.step}: ${this.detail}`;
   }

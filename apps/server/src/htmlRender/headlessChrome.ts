@@ -13,16 +13,16 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { publicProxy } from "./publicProxy.ts";
 
-export class HtmlRenderBrowserError extends Schema.TaggedError<HtmlRenderBrowserError>()(
-  "HtmlRenderBrowserError",
-  {
-    reason: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-    output: Schema.optional(Schema.String),
-    exitCode: Schema.optional(Schema.Number),
-    signal: Schema.optional(Schema.String),
-  },
-) {
+export class HtmlRenderBrowserError extends Schema.TaggedError<
+  HtmlRenderBrowserError,
+  { readonly brand: unique symbol }
+>()("HtmlRenderBrowserError", {
+  reason: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+  output: Schema.optional(Schema.String),
+  exitCode: Schema.optional(Schema.Number),
+  signal: Schema.optional(Schema.String),
+}) {
   override get message(): string {
     const exit =
       this.exitCode !== undefined

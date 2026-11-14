@@ -2,19 +2,19 @@ import { PreviewAutomationControlReason } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-export class BrowserControlInterrupted extends Schema.TaggedError<BrowserControlInterrupted>()(
-  "BrowserControlInterrupted",
-  {
-    message: Schema.String.pipe(
-      Schema.withConstructorDefault(
-        Effect.succeed("Browser control changed. Refresh the snapshot before trying again."),
-      ),
+export class BrowserControlInterrupted extends Schema.TaggedError<
+  BrowserControlInterrupted,
+  { readonly brand: unique symbol }
+>()("BrowserControlInterrupted", {
+  message: Schema.String.pipe(
+    Schema.withConstructorDefault(
+      Effect.succeed("Browser control changed. Refresh the snapshot before trying again."),
     ),
-    reason: PreviewAutomationControlReason.pipe(
-      Schema.withConstructorDefault(Effect.succeed("interrupted" as const)),
-    ),
-  },
-) {}
+  ),
+  reason: PreviewAutomationControlReason.pipe(
+    Schema.withConstructorDefault(Effect.succeed("interrupted" as const)),
+  ),
+}) {}
 
 const settle = (work: Promise<unknown>) =>
   work.then(

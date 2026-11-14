@@ -25,17 +25,17 @@ export async function flushThreadOutboxWrites(): Promise<void> {
   }
 }
 
-export class ThreadOutboxStorageError extends Schema.TaggedError<ThreadOutboxStorageError>()(
-  "ThreadOutboxStorageError",
-  {
-    operation: Schema.Literals(["load", "read-message", "write", "remove"]),
-    environmentId: Schema.NullOr(EnvironmentId),
-    threadId: Schema.NullOr(ThreadId),
-    messageId: Schema.NullOr(MessageId),
-    fileName: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ThreadOutboxStorageError extends Schema.TaggedError<
+  ThreadOutboxStorageError,
+  { readonly brand: unique symbol }
+>()("ThreadOutboxStorageError", {
+  operation: Schema.Literals(["load", "read-message", "write", "remove"]),
+  environmentId: Schema.NullOr(EnvironmentId),
+  threadId: Schema.NullOr(ThreadId),
+  messageId: Schema.NullOr(MessageId),
+  fileName: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Thread outbox storage operation ${this.operation} failed for environment ${this.environmentId ?? "unknown"}, thread ${this.threadId ?? "unknown"}, message ${this.messageId ?? "unknown"}, file ${this.fileName ?? "unknown"}.`;
   }

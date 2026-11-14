@@ -190,14 +190,14 @@ export interface PendingOrchestrationEffectV2 {
   readonly availableAt?: DateTime.Utc;
 }
 
-export class EffectOutboxError extends Schema.TaggedError<EffectOutboxError>()(
-  "EffectOutboxError",
-  {
-    operation: Schema.String,
-    effectId: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class EffectOutboxError extends Schema.TaggedError<
+  EffectOutboxError,
+  { readonly brand: unique symbol }
+>()("EffectOutboxError", {
+  operation: Schema.String,
+  effectId: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `Orchestration effect outbox ${this.operation} failed${this.effectId === undefined ? "" : ` for ${this.effectId}`}.`;
   }

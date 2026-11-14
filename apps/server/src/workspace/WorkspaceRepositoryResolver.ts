@@ -22,30 +22,26 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { sameDirectoryIdentity } from "./directoryIdentity.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-export class WorkspaceRepositoryError extends Schema.TaggedError<WorkspaceRepositoryError>()(
-  "WorkspaceRepositoryError",
-  {
-    path: Schema.String,
-    operation: Schema.Literals(["inspect", "resolve-base", "verify-identity"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class WorkspaceRepositoryError extends Schema.TaggedError<
+  WorkspaceRepositoryError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRepositoryError", {
+  path: Schema.String,
+  operation: Schema.Literals(["inspect", "resolve-base", "verify-identity"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Workspace repository ${this.operation} failed at '${this.path}'.`;
   }
 }
 
-export class WorkspaceRootConflictError extends Schema.TaggedError<WorkspaceRootConflictError>()(
-  "WorkspaceRootConflictError",
-  {
-    rootIds: Schema.Array(WorkspaceRootId),
-    reason: Schema.Literals([
-      "invalid-selection",
-      "incompatible-settings",
-      "overlapping-checkouts",
-    ]),
-  },
-) {
+export class WorkspaceRootConflictError extends Schema.TaggedError<
+  WorkspaceRootConflictError,
+  { readonly brand: unique symbol }
+>()("WorkspaceRootConflictError", {
+  rootIds: Schema.Array(WorkspaceRootId),
+  reason: Schema.Literals(["invalid-selection", "incompatible-settings", "overlapping-checkouts"]),
+}) {
   override get message(): string {
     return `Workspace roots cannot be combined (${this.reason}).`;
   }

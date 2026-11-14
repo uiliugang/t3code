@@ -132,6 +132,14 @@ it.effect("preserves installed status after probes and cleans failed agent activ
         ),
       ),
     );
+    expect(yield* host.current).toBeNull();
+    yield* (
+      host.releaseAgentSession?.("restored-session", "device") ??
+        Effect.die("SSH restoration needs offline session release")
+    );
+    expect(modes).toEqual(["release-session"]);
+    expect(forwards).toBe(0);
+    expect(yield* host.current).toBeNull();
     yield* host.ensureReady(() => Effect.void);
     yield* SshDeviceHost.probe({
       kind: "ssh",

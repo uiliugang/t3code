@@ -30,14 +30,14 @@ const decodeManagedRelayAccessTokenCache = Schema.decodeUnknownEffect(
 );
 const encodeManagedRelayAccessTokenCache = Schema.encodeEffect(ManagedRelayAccessTokenCacheSchema);
 
-export class ManagedRelayTokenStoreError extends Schema.TaggedError<ManagedRelayTokenStoreError>()(
-  "ManagedRelayTokenStoreError",
-  {
-    operation: Schema.Literals(["read", "decode", "encode", "write", "clear"]),
-    storageKey: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ManagedRelayTokenStoreError extends Schema.TaggedError<
+  ManagedRelayTokenStoreError,
+  { readonly brand: unique symbol }
+>()("ManagedRelayTokenStoreError", {
+  operation: Schema.Literals(["read", "decode", "encode", "write", "clear"]),
+  storageKey: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Managed relay token store operation "${this.operation}" failed for key "${this.storageKey}".`;
   }

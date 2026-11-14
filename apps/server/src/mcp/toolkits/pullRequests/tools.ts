@@ -69,55 +69,58 @@ export const PullRequestTargetInput = Schema.Struct({
 });
 export type PullRequestTargetInput = typeof PullRequestTargetInput.Type;
 
-export class PullRequestThreadRequiredError extends Schema.TaggedError<PullRequestThreadRequiredError>()(
-  "PullRequestThreadRequiredError",
-  {},
-) {
+export class PullRequestThreadRequiredError extends Schema.TaggedError<
+  PullRequestThreadRequiredError,
+  { readonly brand: unique symbol }
+>()("PullRequestThreadRequiredError", {}) {
   override get message(): string {
     return "Pass threadId: this MCP client is not running inside a T3 thread.";
   }
 }
 
-export class PullRequestLinkFailedError extends Schema.TaggedError<PullRequestLinkFailedError>()(
-  "PullRequestLinkFailedError",
-  { cause: Schema.Defect() },
-) {
+export class PullRequestLinkFailedError extends Schema.TaggedError<
+  PullRequestLinkFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestLinkFailedError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not link the pull request.";
   }
 }
 
-export class PullRequestUnlinkFailedError extends Schema.TaggedError<PullRequestUnlinkFailedError>()(
-  "PullRequestUnlinkFailedError",
-  { cause: Schema.Defect() },
-) {
+export class PullRequestUnlinkFailedError extends Schema.TaggedError<
+  PullRequestUnlinkFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestUnlinkFailedError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not unlink the pull request.";
   }
 }
 
-export class PullRequestListFailedError extends Schema.TaggedError<PullRequestListFailedError>()(
-  "PullRequestListFailedError",
-  { cause: Schema.Defect() },
-) {
+export class PullRequestListFailedError extends Schema.TaggedError<
+  PullRequestListFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestListFailedError", { cause: Schema.Defect() }) {
   override get message(): string {
     return "Could not list the pull request.";
   }
 }
 
-export class PullRequestProjectNotFoundError extends Schema.TaggedError<PullRequestProjectNotFoundError>()(
-  "PullRequestProjectNotFoundError",
-  { repository: Schema.String },
-) {
+export class PullRequestProjectNotFoundError extends Schema.TaggedError<
+  PullRequestProjectNotFoundError,
+  { readonly brand: unique symbol }
+>()("PullRequestProjectNotFoundError", { repository: Schema.String }) {
   override get message(): string {
     return `No project in this environment is a checkout of ${this.repository}, so its pull requests cannot be read here. Add one with t3_project_create.`;
   }
 }
 
-export class PullRequestGuideFailedError extends Schema.TaggedError<PullRequestGuideFailedError>()(
-  "PullRequestGuideFailedError",
-  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class PullRequestGuideFailedError extends Schema.TaggedError<
+  PullRequestGuideFailedError,
+  { readonly brand: unique symbol }
+>()("PullRequestGuideFailedError", {
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.detail;
   }

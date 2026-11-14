@@ -17,14 +17,14 @@ const FLAG_HTTP_ONLY = 0x4;
 export const SafariCookieReadFailure = Schema.Literals(["needsFullDiskAccess", "readFailed"]);
 export type SafariCookieReadFailure = typeof SafariCookieReadFailure.Type;
 
-export class SafariCookieReadError extends Schema.TaggedError<SafariCookieReadError>()(
-  "SafariCookieReadError",
-  {
-    reason: SafariCookieReadFailure,
-    cookieDatabasePath: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class SafariCookieReadError extends Schema.TaggedError<
+  SafariCookieReadError,
+  { readonly brand: unique symbol }
+>()("SafariCookieReadError", {
+  reason: SafariCookieReadFailure,
+  cookieDatabasePath: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return this.cookieDatabasePath === undefined
       ? `Could not read Safari cookies: ${this.reason}.`

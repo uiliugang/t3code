@@ -78,7 +78,10 @@ const decodeNumber = Schema.decodeUnknownEffect(Schema.Number);
 
 const QUERY_RPC_SESSION = {} as RpcSession.RpcSession;
 
-class TestQueryError extends Schema.TaggedError<TestQueryError>()("TestQueryError", {
+class TestQueryError extends Schema.TaggedError<
+  TestQueryError,
+  { readonly brand: unique symbol }
+>()("TestQueryError", {
   message: Schema.String,
 }) {}
 

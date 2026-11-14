@@ -122,7 +122,10 @@ const T3_PREFIX = "mcp__t3-code__";
 const RUNTIME_MARKER = "<runtime_info>";
 const TOOL_LOADED = "Tool loaded.";
 
-class EvalToolCallError extends Schema.TaggedError<EvalToolCallError>()("EvalToolCallError", {
+class EvalToolCallError extends Schema.TaggedError<
+  EvalToolCallError,
+  { readonly brand: unique symbol }
+>()("EvalToolCallError", {
   tool: Schema.String,
   cause: Schema.Defect(),
 }) {

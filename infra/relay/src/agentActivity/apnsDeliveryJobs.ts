@@ -72,121 +72,121 @@ export const SignedApnsDeliveryJob = Schema.Struct({
 });
 export type SignedApnsDeliveryJob = typeof SignedApnsDeliveryJob.Type;
 
-export class ApnsDeliveryJobQueuePayloadInvalid extends Schema.TaggedError<ApnsDeliveryJobQueuePayloadInvalid>()(
-  "ApnsDeliveryJobQueuePayloadInvalid",
-  {
-    receivedType: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class ApnsDeliveryJobQueuePayloadInvalid extends Schema.TaggedError<
+  ApnsDeliveryJobQueuePayloadInvalid,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobQueuePayloadInvalid", {
+  receivedType: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Invalid APNs delivery queue job with ${this.receivedType} payload.`;
   }
 }
 
-export class ApnsDeliveryJobLiveActivityAggregateMissing extends Schema.TaggedError<ApnsDeliveryJobLiveActivityAggregateMissing>()(
-  "ApnsDeliveryJobLiveActivityAggregateMissing",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: LiveActivityStartOrUpdateKindSchema,
-  },
-) {
+export class ApnsDeliveryJobLiveActivityAggregateMissing extends Schema.TaggedError<
+  ApnsDeliveryJobLiveActivityAggregateMissing,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobLiveActivityAggregateMissing", {
+  ...ApnsDeliveryJobContext,
+  kind: LiveActivityStartOrUpdateKindSchema,
+}) {
   override get message(): string {
     return `APNs ${this.kind.replaceAll("_", " ")} job ${this.jobId} requires an aggregate.`;
   }
 }
 
-export class ApnsDeliveryJobLiveActivityNotificationUnexpected extends Schema.TaggedError<ApnsDeliveryJobLiveActivityNotificationUnexpected>()(
-  "ApnsDeliveryJobLiveActivityNotificationUnexpected",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: LiveActivityKindSchema,
-  },
-) {
+export class ApnsDeliveryJobLiveActivityNotificationUnexpected extends Schema.TaggedError<
+  ApnsDeliveryJobLiveActivityNotificationUnexpected,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobLiveActivityNotificationUnexpected", {
+  ...ApnsDeliveryJobContext,
+  kind: LiveActivityKindSchema,
+}) {
   override get message(): string {
     return `APNs ${this.kind.replaceAll("_", " ")} job ${this.jobId} must not carry a push notification payload.`;
   }
 }
 
-export class ApnsDeliveryJobPushNotificationMissing extends Schema.TaggedError<ApnsDeliveryJobPushNotificationMissing>()(
-  "ApnsDeliveryJobPushNotificationMissing",
-  ApnsDeliveryJobContext,
-) {
+export class ApnsDeliveryJobPushNotificationMissing extends Schema.TaggedError<
+  ApnsDeliveryJobPushNotificationMissing,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobPushNotificationMissing", ApnsDeliveryJobContext) {
   override get message(): string {
     return `APNs push notification job ${this.jobId} requires a notification payload.`;
   }
 }
 
-export class ApnsDeliveryJobPushNotificationAggregateUnexpected extends Schema.TaggedError<ApnsDeliveryJobPushNotificationAggregateUnexpected>()(
-  "ApnsDeliveryJobPushNotificationAggregateUnexpected",
-  ApnsDeliveryJobContext,
-) {
+export class ApnsDeliveryJobPushNotificationAggregateUnexpected extends Schema.TaggedError<
+  ApnsDeliveryJobPushNotificationAggregateUnexpected,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobPushNotificationAggregateUnexpected", ApnsDeliveryJobContext) {
   override get message(): string {
     return `APNs push notification job ${this.jobId} must not carry aggregate state.`;
   }
 }
 
-export class ApnsDeliveryJobCreatedAtInvalid extends Schema.TaggedError<ApnsDeliveryJobCreatedAtInvalid>()(
-  "ApnsDeliveryJobCreatedAtInvalid",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: ApnsDeliveryKindSchema,
-    createdAt: Schema.String,
-  },
-) {
+export class ApnsDeliveryJobCreatedAtInvalid extends Schema.TaggedError<
+  ApnsDeliveryJobCreatedAtInvalid,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobCreatedAtInvalid", {
+  ...ApnsDeliveryJobContext,
+  kind: ApnsDeliveryKindSchema,
+  createdAt: Schema.String,
+}) {
   override get message(): string {
     return `APNs delivery job ${this.jobId} has invalid creation time ${this.createdAt}.`;
   }
 }
 
-export class ApnsDeliveryJobExpiresAtInvalid extends Schema.TaggedError<ApnsDeliveryJobExpiresAtInvalid>()(
-  "ApnsDeliveryJobExpiresAtInvalid",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: ApnsDeliveryKindSchema,
-    expiresAt: Schema.String,
-  },
-) {
+export class ApnsDeliveryJobExpiresAtInvalid extends Schema.TaggedError<
+  ApnsDeliveryJobExpiresAtInvalid,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobExpiresAtInvalid", {
+  ...ApnsDeliveryJobContext,
+  kind: ApnsDeliveryKindSchema,
+  expiresAt: Schema.String,
+}) {
   override get message(): string {
     return `APNs delivery job ${this.jobId} has invalid expiry ${this.expiresAt}.`;
   }
 }
 
-export class ApnsDeliveryJobTimeWindowInvalid extends Schema.TaggedError<ApnsDeliveryJobTimeWindowInvalid>()(
-  "ApnsDeliveryJobTimeWindowInvalid",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: ApnsDeliveryKindSchema,
-    createdAt: Schema.String,
-    expiresAt: Schema.String,
-  },
-) {
+export class ApnsDeliveryJobTimeWindowInvalid extends Schema.TaggedError<
+  ApnsDeliveryJobTimeWindowInvalid,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobTimeWindowInvalid", {
+  ...ApnsDeliveryJobContext,
+  kind: ApnsDeliveryKindSchema,
+  createdAt: Schema.String,
+  expiresAt: Schema.String,
+}) {
   override get message(): string {
     return `APNs delivery job ${this.jobId} has invalid time window ${this.createdAt} to ${this.expiresAt}.`;
   }
 }
 
-export class ApnsDeliveryJobTimeWindowTooLong extends Schema.TaggedError<ApnsDeliveryJobTimeWindowTooLong>()(
-  "ApnsDeliveryJobTimeWindowTooLong",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: ApnsDeliveryKindSchema,
-    createdAt: Schema.String,
-    expiresAt: Schema.String,
-  },
-) {
+export class ApnsDeliveryJobTimeWindowTooLong extends Schema.TaggedError<
+  ApnsDeliveryJobTimeWindowTooLong,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobTimeWindowTooLong", {
+  ...ApnsDeliveryJobContext,
+  kind: ApnsDeliveryKindSchema,
+  createdAt: Schema.String,
+  expiresAt: Schema.String,
+}) {
   override get message(): string {
     return `APNs delivery job ${this.jobId} time window ${this.createdAt} to ${this.expiresAt} is too long.`;
   }
 }
 
-export class ApnsDeliveryJobSignatureInvalid extends Schema.TaggedError<ApnsDeliveryJobSignatureInvalid>()(
-  "ApnsDeliveryJobSignatureInvalid",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: ApnsDeliveryKindSchema,
-  },
-) {
+export class ApnsDeliveryJobSignatureInvalid extends Schema.TaggedError<
+  ApnsDeliveryJobSignatureInvalid,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobSignatureInvalid", {
+  ...ApnsDeliveryJobContext,
+  kind: ApnsDeliveryKindSchema,
+}) {
   override get message(): string {
     return `Invalid signature for APNs delivery job ${this.jobId}.`;
   }
@@ -206,14 +206,14 @@ export const ApnsDeliveryJobInvalid = Schema.Union([
 ]);
 export type ApnsDeliveryJobInvalid = typeof ApnsDeliveryJobInvalid.Type;
 
-export class ApnsDeliveryJobExpired extends Schema.TaggedError<ApnsDeliveryJobExpired>()(
-  "ApnsDeliveryJobExpired",
-  {
-    ...ApnsDeliveryJobContext,
-    kind: ApnsDeliveryKindSchema,
-    expiresAt: Schema.String,
-  },
-) {
+export class ApnsDeliveryJobExpired extends Schema.TaggedError<
+  ApnsDeliveryJobExpired,
+  { readonly brand: unique symbol }
+>()("ApnsDeliveryJobExpired", {
+  ...ApnsDeliveryJobContext,
+  kind: ApnsDeliveryKindSchema,
+  expiresAt: Schema.String,
+}) {
   override get message(): string {
     return `APNs delivery job ${this.jobId} expired at ${this.expiresAt}.`;
   }

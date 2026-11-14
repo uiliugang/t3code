@@ -56,10 +56,12 @@ export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
 ): ProviderInstanceConfigMap => {
   const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
+  for (const instanceId of settings.removedProviderInstances ?? []) delete merged[instanceId];
 
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;
     const instanceId = defaultInstanceIdForDriver(driver.driverKind);
+    if (settings.removedProviderInstances?.includes(instanceId)) continue;
     if (instanceId in merged) continue;
     merged[instanceId] = { driver: driver.driverKind };
   }
@@ -104,7 +106,9 @@ export const seedDevReplayInstance = Effect.fn(
   if (!(yield* (yield* FileSystem.FileSystem).exists(agentPath))) return;
   const commandPath = yield* HostProcess.ExecutablePath;
   const serverSettings = yield* Settings.ServerSettingsService;
-  const existing = (yield* serverSettings.getSettings).providerInstances[DEV_REPLAY_INSTANCE_ID];
+  const settings = yield* serverSettings.getSettings;
+  if (settings.removedProviderInstances?.includes(DEV_REPLAY_INSTANCE_ID)) return;
+  const existing = settings.providerInstances[DEV_REPLAY_INSTANCE_ID];
   const existingConfig = existing?.config as Record<string, unknown> | undefined;
   // Rewritten only when stale: the node and checkout paths can move.
   if (

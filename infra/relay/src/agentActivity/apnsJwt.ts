@@ -11,30 +11,30 @@ import * as Schema from "effect/Schema";
 
 import type { ApnsCredentials } from "../Config.ts";
 
-export class ApnsJwtEncodingError extends Schema.TaggedError<ApnsJwtEncodingError>()(
-  "ApnsJwtEncodingError",
-  {
-    component: Schema.Literals(["header", "payload"]),
-    teamId: Schema.String,
-    keyId: Schema.String,
-    issuedAtUnixSeconds: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ApnsJwtEncodingError extends Schema.TaggedError<
+  ApnsJwtEncodingError,
+  { readonly brand: unique symbol }
+>()("ApnsJwtEncodingError", {
+  component: Schema.Literals(["header", "payload"]),
+  teamId: Schema.String,
+  keyId: Schema.String,
+  issuedAtUnixSeconds: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to encode APNs JWT ${this.component} for key ${this.keyId}.`;
   }
 }
 
-export class ApnsJwtSigningError extends Schema.TaggedError<ApnsJwtSigningError>()(
-  "ApnsJwtSigningError",
-  {
-    teamId: Schema.String,
-    keyId: Schema.String,
-    issuedAtUnixSeconds: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ApnsJwtSigningError extends Schema.TaggedError<
+  ApnsJwtSigningError,
+  { readonly brand: unique symbol }
+>()("ApnsJwtSigningError", {
+  teamId: Schema.String,
+  keyId: Schema.String,
+  issuedAtUnixSeconds: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to sign APNs JWT for key ${this.keyId}.`;
   }

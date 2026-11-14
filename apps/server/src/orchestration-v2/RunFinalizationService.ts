@@ -15,21 +15,21 @@ import { RunCheckoutReconciler } from "../workspace/RunCheckoutReconciler.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
-export class RunFinalizationError extends Schema.TaggedError<RunFinalizationError>()(
-  "RunFinalizationError",
-  {
-    threadId: ThreadId,
-    runId: RunId,
-    scopeId: CheckpointScopeId,
-    operation: Schema.Literals(["capture-checkpoint", "refresh-workspace"]),
-    cause: Schema.Defect(),
-  },
-) {}
+export class RunFinalizationError extends Schema.TaggedError<
+  RunFinalizationError,
+  { readonly brand: unique symbol }
+>()("RunFinalizationError", {
+  threadId: ThreadId,
+  runId: RunId,
+  scopeId: CheckpointScopeId,
+  operation: Schema.Literals(["capture-checkpoint", "refresh-workspace"]),
+  cause: Schema.Defect(),
+}) {}
 
-export class RunFinalizationRefreshError extends Schema.TaggedError<RunFinalizationRefreshError>()(
-  "RunFinalizationRefreshError",
-  { cwd: Schema.String, cause: Schema.Defect() },
-) {}
+export class RunFinalizationRefreshError extends Schema.TaggedError<
+  RunFinalizationRefreshError,
+  { readonly brand: unique symbol }
+>()("RunFinalizationRefreshError", { cwd: Schema.String, cause: Schema.Defect() }) {}
 
 export class RunFinalizationObserver extends Context.Reference<{
   readonly refreshAfterTurn: (projectId: ProjectId) => Effect.Effect<void>;

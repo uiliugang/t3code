@@ -20,78 +20,78 @@ import { rebuildMessageSearch } from "../src/orchestration-v2/messageSearchIndex
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<MigrateDevDbNotInWorktreeError>()(
-  "MigrateDevDbNotInWorktreeError",
-  {},
-) {
+export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<
+  MigrateDevDbNotInWorktreeError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbNotInWorktreeError", {}) {
   override get message(): string {
     return "Not inside a linked git worktree. Pass --base-dir to target an isolated .t3 directory.";
   }
 }
 
-export class MigrateDevDbSharedHomeError extends Schema.TaggedError<MigrateDevDbSharedHomeError>()(
-  "MigrateDevDbSharedHomeError",
-  {},
-) {
+export class MigrateDevDbSharedHomeError extends Schema.TaggedError<
+  MigrateDevDbSharedHomeError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbSharedHomeError", {}) {
   override get message(): string {
     return "Refusing to rebuild the shared ~/.t3 database. Use an isolated --base-dir.";
   }
 }
 
-export class MigrateDevDbSourceMissingError extends Schema.TaggedError<MigrateDevDbSourceMissingError>()(
-  "MigrateDevDbSourceMissingError",
-  {
-    sourcePath: Schema.String,
-  },
-) {
+export class MigrateDevDbSourceMissingError extends Schema.TaggedError<
+  MigrateDevDbSourceMissingError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbSourceMissingError", {
+  sourcePath: Schema.String,
+}) {
   override get message(): string {
     return `Source database does not exist at '${this.sourcePath}'.`;
   }
 }
 
-export class MigrateDevDbSourceIsDestinationError extends Schema.TaggedError<MigrateDevDbSourceIsDestinationError>()(
-  "MigrateDevDbSourceIsDestinationError",
-  {
-    sourcePath: Schema.String,
-  },
-) {
+export class MigrateDevDbSourceIsDestinationError extends Schema.TaggedError<
+  MigrateDevDbSourceIsDestinationError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbSourceIsDestinationError", {
+  sourcePath: Schema.String,
+}) {
   override get message(): string {
     return `Source database '${this.sourcePath}' resolves to a path this command rewrites. Pick a different --source or --base-dir.`;
   }
 }
 
-export class MigrateDevDbLegacySourceError extends Schema.TaggedError<MigrateDevDbLegacySourceError>()(
-  "MigrateDevDbLegacySourceError",
-  {
-    sourcePath: Schema.String,
-    legacyThreads: Schema.Number,
-  },
-) {
+export class MigrateDevDbLegacySourceError extends Schema.TaggedError<
+  MigrateDevDbLegacySourceError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbLegacySourceError", {
+  sourcePath: Schema.String,
+  legacyThreads: Schema.Number,
+}) {
   override get message(): string {
     return `Source database '${this.sourcePath}' holds ${this.legacyThreads} legacy threads the server has not imported into V2 yet, which this command cannot carry over. Start a server once on a T3 home holding a copy of it so it imports them, then pass the userdata/statev2.sqlite that server leaves behind as --source.`;
   }
 }
 
-export class MigrateDevDbServerRunningError extends Schema.TaggedError<MigrateDevDbServerRunningError>()(
-  "MigrateDevDbServerRunningError",
-  {
-    databasePath: Schema.String,
-    pid: Schema.Number,
-  },
-) {
+export class MigrateDevDbServerRunningError extends Schema.TaggedError<
+  MigrateDevDbServerRunningError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbServerRunningError", {
+  databasePath: Schema.String,
+  pid: Schema.Number,
+}) {
   override get message(): string {
     return `Dev database at '${this.databasePath}' is open by a running server (pid ${this.pid} per server-runtime.json). Stop that server first; if that pid is not actually a T3 server (stale descriptor, reused pid), delete the server-runtime.json next to the database and retry.`;
   }
 }
 
-export class MigrateDevDbDestinationBusyError extends Schema.TaggedError<MigrateDevDbDestinationBusyError>()(
-  "MigrateDevDbDestinationBusyError",
-  {
-    databasePath: Schema.String,
-    reason: Schema.Literals(["write-locked", "wal-held"]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class MigrateDevDbDestinationBusyError extends Schema.TaggedError<
+  MigrateDevDbDestinationBusyError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbDestinationBusyError", {
+  databasePath: Schema.String,
+  reason: Schema.Literals(["write-locked", "wal-held"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     const detail =
       this.reason === "write-locked"
@@ -101,14 +101,14 @@ export class MigrateDevDbDestinationBusyError extends Schema.TaggedError<Migrate
   }
 }
 
-export class MigrateDevDbPhaseError extends Schema.TaggedError<MigrateDevDbPhaseError>()(
-  "MigrateDevDbPhaseError",
-  {
-    phase: Schema.Literals(["snapshot", "prune", "compact", "migrate"]),
-    databasePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class MigrateDevDbPhaseError extends Schema.TaggedError<
+  MigrateDevDbPhaseError,
+  { readonly brand: unique symbol }
+>()("MigrateDevDbPhaseError", {
+  phase: Schema.Literals(["snapshot", "prune", "compact", "migrate"]),
+  databasePath: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `migrate-dev-db failed during ${this.phase} on '${this.databasePath}'.`;
   }

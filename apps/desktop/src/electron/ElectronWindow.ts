@@ -73,13 +73,13 @@ const ElectronWindowOperation = Schema.Literals([
   "destroy-window",
 ]);
 
-export class ElectronWindowCreateError extends Schema.TaggedError<ElectronWindowCreateError>()(
-  "ElectronWindowCreateError",
-  {
-    options: ElectronWindowCreateOptions,
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronWindowCreateError extends Schema.TaggedError<
+  ElectronWindowCreateError,
+  { readonly brand: unique symbol }
+>()("ElectronWindowCreateError", {
+  options: ElectronWindowCreateOptions,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const title = this.options.title === null ? "" : ` "${this.options.title}"`;
     const dimensions =
@@ -90,16 +90,16 @@ export class ElectronWindowCreateError extends Schema.TaggedError<ElectronWindow
   }
 }
 
-export class ElectronWindowOperationError extends Schema.TaggedError<ElectronWindowOperationError>()(
-  "ElectronWindowOperationError",
-  {
-    operation: ElectronWindowOperation,
-    platform: Schema.String,
-    windowId: Schema.NullOr(Schema.Number),
-    channel: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
+export class ElectronWindowOperationError extends Schema.TaggedError<
+  ElectronWindowOperationError,
+  { readonly brand: unique symbol }
+>()("ElectronWindowOperationError", {
+  operation: ElectronWindowOperation,
+  platform: Schema.String,
+  windowId: Schema.NullOr(Schema.Number),
+  channel: Schema.NullOr(Schema.String),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const window = this.windowId === null ? "" : ` for window ${this.windowId}`;
     const channel = this.channel === null ? "" : ` on channel ${JSON.stringify(this.channel)}`;

@@ -21,32 +21,32 @@ import { isWithinRoot } from "./KnownWorkspaces.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import { TerminalCwdRecovery } from "../terminal/Manager.ts";
 
-export class WorktreeRecreateError extends Schema.TaggedError<WorktreeRecreateError>()(
-  "WorktreeRecreateError",
-  {
-    worktreePath: Schema.String,
-    branch: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class WorktreeRecreateError extends Schema.TaggedError<
+  WorktreeRecreateError,
+  { readonly brand: unique symbol }
+>()("WorktreeRecreateError", {
+  worktreePath: Schema.String,
+  branch: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Could not recreate the worktree for branch '${this.branch}' at ${this.worktreePath}.`;
   }
 }
 
-class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoBaseError>()(
-  "WorktreeRecreateNoBaseError",
-  { worktreePath: Schema.String, branch: Schema.String },
-) {
+class WorktreeRecreateNoBaseError extends Schema.TaggedError<
+  WorktreeRecreateNoBaseError,
+  { readonly brand: unique symbol }
+>()("WorktreeRecreateNoBaseError", { worktreePath: Schema.String, branch: Schema.String }) {
   override get message(): string {
     return `Could not recreate branch '${this.branch}' at ${this.worktreePath}: no permitted base branch is available.`;
   }
 }
 
-class WorktreeMetadataMissingError extends Schema.TaggedError<WorktreeMetadataMissingError>()(
-  "WorktreeMetadataMissingError",
-  { worktreePath: Schema.String },
-) {
+class WorktreeMetadataMissingError extends Schema.TaggedError<
+  WorktreeMetadataMissingError,
+  { readonly brand: unique symbol }
+>()("WorktreeMetadataMissingError", { worktreePath: Schema.String }) {
   override get message(): string {
     return "Worktree metadata is missing. Files in this directory were retained. Inspect the directory before continuing.";
   }

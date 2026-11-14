@@ -92,20 +92,27 @@ const previewBrowserRelease = (
 
 const megabytes = (bytes: number) => Math.round(bytes / 1_000_000);
 
-export class PreviewBrowserInstallError extends Schema.TaggedError<PreviewBrowserInstallError>()(
-  "PreviewBrowserInstallError",
-  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
-) {
+export class PreviewBrowserInstallError extends Schema.TaggedError<
+  PreviewBrowserInstallError,
+  { readonly brand: unique symbol }
+>()("PreviewBrowserInstallError", {
+  detail: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     return `T3 could not install its headless browser: ${this.detail} Try again.`;
   }
 }
 const isInstallError = Schema.is(PreviewBrowserInstallError);
 
-export class PreviewBrowserInstallingError extends Schema.TaggedError<PreviewBrowserInstallingError>()(
-  "PreviewBrowserInstallingError",
-  { downloadedBytes: Schema.Number, totalBytes: Schema.Number, unpacking: Schema.Boolean },
-) {
+export class PreviewBrowserInstallingError extends Schema.TaggedError<
+  PreviewBrowserInstallingError,
+  { readonly brand: unique symbol }
+>()("PreviewBrowserInstallingError", {
+  downloadedBytes: Schema.Number,
+  totalBytes: Schema.Number,
+  unpacking: Schema.Boolean,
+}) {
   override get message(): string {
     const progress = this.unpacking
       ? "unpacking"
@@ -114,10 +121,10 @@ export class PreviewBrowserInstallingError extends Schema.TaggedError<PreviewBro
   }
 }
 
-export class PreviewBrowserUnsupportedError extends Schema.TaggedError<PreviewBrowserUnsupportedError>()(
-  "PreviewBrowserUnsupportedError",
-  { platform: Schema.String, arch: Schema.String },
-) {
+export class PreviewBrowserUnsupportedError extends Schema.TaggedError<
+  PreviewBrowserUnsupportedError,
+  { readonly brand: unique symbol }
+>()("PreviewBrowserUnsupportedError", { platform: Schema.String, arch: Schema.String }) {
   override get message(): string {
     return `T3's headless browser is not available on ${this.platform}-${this.arch}: Chrome for Testing has no headless shell for it.`;
   }

@@ -1247,15 +1247,15 @@ export function themeIdFromName(name: string): string {
   return `theme-${(hash >>> 0).toString(36)}`;
 }
 
-export class ThemeLibraryStorageError extends Schema.TaggedError<ThemeLibraryStorageError>()(
-  "ThemeLibraryStorageError",
-  {
-    storageKey: Schema.String,
-    operation: Schema.Literals(["read", "write"]),
-    reason: Schema.Literals(["malformed", "storage-unavailable"]),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export class ThemeLibraryStorageError extends Schema.TaggedError<
+  ThemeLibraryStorageError,
+  { readonly brand: unique symbol }
+>()("ThemeLibraryStorageError", {
+  storageKey: Schema.String,
+  operation: Schema.Literals(["read", "write"]),
+  reason: Schema.Literals(["malformed", "storage-unavailable"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message(): string {
     const direction = this.operation === "read" ? "from" : "to";
     return `Failed to ${this.operation} the theme library ${direction} ${this.storageKey}.`;

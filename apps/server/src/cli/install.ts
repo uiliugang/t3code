@@ -20,7 +20,10 @@ import {
 } from "../cloud/pinnedRuntime.ts";
 import { detectCliRunner, resolveEntryPath } from "./invocation.ts";
 
-export class CliInstallError extends Schema.TaggedError<CliInstallError>()("CliInstallError", {
+export class CliInstallError extends Schema.TaggedError<
+  CliInstallError,
+  { readonly brand: unique symbol }
+>()("CliInstallError", {
   reason: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {

@@ -1344,10 +1344,10 @@ function xAiPromptFailure(
 }
 
 /** Keep unbounded provider text out of structured attributes; read only at presentation. */
-export class XAiPromptFailureText extends Schema.TaggedError<XAiPromptFailureText>()(
-  "XAiPromptFailureText",
-  { message: Schema.String },
-) {}
+export class XAiPromptFailureText extends Schema.TaggedError<
+  XAiPromptFailureText,
+  { readonly brand: unique symbol }
+>()("XAiPromptFailureText", { message: Schema.String }) {}
 
 const registerXAiPromptCompletionFallback = (
   pendingRef: Ref.Ref<ReadonlyArray<PendingXAiPromptCompletion>>,

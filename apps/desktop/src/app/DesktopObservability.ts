@@ -103,13 +103,13 @@ export function makeComponentLogger(component: string): DesktopComponentLogger {
   };
 }
 
-class DesktopLogFileWriterConfigurationError extends Schema.TaggedError<DesktopLogFileWriterConfigurationError>()(
-  "DesktopLogFileWriterConfigurationError",
-  {
-    option: Schema.Literals(["maxBytes", "maxFiles"]),
-    value: Schema.Number,
-  },
-) {
+class DesktopLogFileWriterConfigurationError extends Schema.TaggedError<
+  DesktopLogFileWriterConfigurationError,
+  { readonly brand: unique symbol }
+>()("DesktopLogFileWriterConfigurationError", {
+  option: Schema.Literals(["maxBytes", "maxFiles"]),
+  value: Schema.Number,
+}) {
   override get message() {
     return `${this.option} must be >= 1 (received ${this.value})`;
   }

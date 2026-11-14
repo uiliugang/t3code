@@ -422,7 +422,10 @@ export const RelayInternalErrorReason = Schema.Literals([
 ]);
 export type RelayInternalErrorReason = typeof RelayInternalErrorReason.Type;
 
-export class RelayAuthInvalidError extends Schema.TaggedError<RelayAuthInvalidError>()(
+export class RelayAuthInvalidError extends Schema.TaggedError<
+  RelayAuthInvalidError,
+  { readonly brand: unique symbol }
+>()(
   "RelayAuthInvalidError",
   {
     code: Schema.Literal("auth_invalid"),
@@ -437,7 +440,10 @@ export class RelayAuthInvalidError extends Schema.TaggedError<RelayAuthInvalidEr
   }
 }
 
-export class RelayEnvironmentLinkProofExpiredError extends Schema.TaggedError<RelayEnvironmentLinkProofExpiredError>()(
+export class RelayEnvironmentLinkProofExpiredError extends Schema.TaggedError<
+  RelayEnvironmentLinkProofExpiredError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentLinkProofExpiredError",
   {
     code: Schema.Literal("environment_link_proof_expired"),
@@ -450,7 +456,10 @@ export class RelayEnvironmentLinkProofExpiredError extends Schema.TaggedError<Re
   }
 }
 
-export class RelayEnvironmentLinkProofInvalidError extends Schema.TaggedError<RelayEnvironmentLinkProofInvalidError>()(
+export class RelayEnvironmentLinkProofInvalidError extends Schema.TaggedError<
+  RelayEnvironmentLinkProofInvalidError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentLinkProofInvalidError",
   {
     code: Schema.Literal("environment_link_proof_invalid"),
@@ -477,7 +486,10 @@ export const RelayEnvironmentConnectNotAuthorizedReason = Schema.Literals([
 export type RelayEnvironmentConnectNotAuthorizedReason =
   typeof RelayEnvironmentConnectNotAuthorizedReason.Type;
 
-export class RelayEnvironmentConnectNotAuthorizedError extends Schema.TaggedError<RelayEnvironmentConnectNotAuthorizedError>()(
+export class RelayEnvironmentConnectNotAuthorizedError extends Schema.TaggedError<
+  RelayEnvironmentConnectNotAuthorizedError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentConnectNotAuthorizedError",
   {
     code: Schema.Literal("environment_connect_not_authorized"),
@@ -493,7 +505,10 @@ export class RelayEnvironmentConnectNotAuthorizedError extends Schema.TaggedErro
   }
 }
 
-export class RelayEnvironmentEndpointUnavailableError extends Schema.TaggedError<RelayEnvironmentEndpointUnavailableError>()(
+export class RelayEnvironmentEndpointUnavailableError extends Schema.TaggedError<
+  RelayEnvironmentEndpointUnavailableError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentEndpointUnavailableError",
   {
     code: Schema.Literal("environment_endpoint_unavailable"),
@@ -509,7 +524,10 @@ export class RelayEnvironmentEndpointUnavailableError extends Schema.TaggedError
   }
 }
 
-export class RelayEnvironmentEndpointTimedOutError extends Schema.TaggedError<RelayEnvironmentEndpointTimedOutError>()(
+export class RelayEnvironmentEndpointTimedOutError extends Schema.TaggedError<
+  RelayEnvironmentEndpointTimedOutError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentEndpointTimedOutError",
   {
     code: Schema.Literal("environment_endpoint_timed_out"),
@@ -522,7 +540,10 @@ export class RelayEnvironmentEndpointTimedOutError extends Schema.TaggedError<Re
   }
 }
 
-export class RelayEnvironmentLinkFailedError extends Schema.TaggedError<RelayEnvironmentLinkFailedError>()(
+export class RelayEnvironmentLinkFailedError extends Schema.TaggedError<
+  RelayEnvironmentLinkFailedError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentLinkFailedError",
   {
     code: Schema.Literal("environment_link_failed"),
@@ -536,7 +557,10 @@ export class RelayEnvironmentLinkFailedError extends Schema.TaggedError<RelayEnv
   }
 }
 
-export class RelayEnvironmentLinkUnavailableError extends Schema.TaggedError<RelayEnvironmentLinkUnavailableError>()(
+export class RelayEnvironmentLinkUnavailableError extends Schema.TaggedError<
+  RelayEnvironmentLinkUnavailableError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentLinkUnavailableError",
   {
     code: Schema.Literal("environment_link_unavailable"),
@@ -551,7 +575,10 @@ export class RelayEnvironmentLinkUnavailableError extends Schema.TaggedError<Rel
   }
 }
 
-export class RelayEnvironmentLinkLimitExceededError extends Schema.TaggedError<RelayEnvironmentLinkLimitExceededError>()(
+export class RelayEnvironmentLinkLimitExceededError extends Schema.TaggedError<
+  RelayEnvironmentLinkLimitExceededError,
+  { readonly brand: unique symbol }
+>()(
   "RelayEnvironmentLinkLimitExceededError",
   {
     code: Schema.Literal("environment_link_limit_exceeded"),
@@ -565,7 +592,10 @@ export class RelayEnvironmentLinkLimitExceededError extends Schema.TaggedError<R
   }
 }
 
-export class RelayAgentActivityPublishProofExpiredError extends Schema.TaggedError<RelayAgentActivityPublishProofExpiredError>()(
+export class RelayAgentActivityPublishProofExpiredError extends Schema.TaggedError<
+  RelayAgentActivityPublishProofExpiredError,
+  { readonly brand: unique symbol }
+>()(
   "RelayAgentActivityPublishProofExpiredError",
   {
     code: Schema.Literal("agent_activity_publish_proof_expired"),
@@ -578,7 +608,10 @@ export class RelayAgentActivityPublishProofExpiredError extends Schema.TaggedErr
   }
 }
 
-export class RelayAgentActivityPublishProofInvalidError extends Schema.TaggedError<RelayAgentActivityPublishProofInvalidError>()(
+export class RelayAgentActivityPublishProofInvalidError extends Schema.TaggedError<
+  RelayAgentActivityPublishProofInvalidError,
+  { readonly brand: unique symbol }
+>()(
   "RelayAgentActivityPublishProofInvalidError",
   {
     code: Schema.Literal("agent_activity_publish_proof_invalid"),
@@ -592,7 +625,10 @@ export class RelayAgentActivityPublishProofInvalidError extends Schema.TaggedErr
   }
 }
 
-export class RelayInternalError extends Schema.TaggedError<RelayInternalError>()(
+export class RelayInternalError extends Schema.TaggedError<
+  RelayInternalError,
+  { readonly brand: unique symbol }
+>()(
   "RelayInternalError",
   {
     code: Schema.Literal("internal_error"),

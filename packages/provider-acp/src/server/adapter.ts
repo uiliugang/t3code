@@ -1,3 +1,7 @@
+import {
+  RESOURCE_OWNER_ENV,
+  resourceOwner,
+} from "@t3tools/provider-core/server/instanceEnvironment";
 // @effect-diagnostics nodeBuiltinImport:off
 
 import {
@@ -279,13 +283,13 @@ export interface AcpAdapterV2ExtensionContext {
  * with invalid params. `makeProviderFailure` shows its message to the user;
  * the agent's reply stays on `cause`.
  */
-class AcpModelSelectionError extends Schema.TaggedError<AcpModelSelectionError>()(
-  "AcpModelSelectionError",
-  {
-    model: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+class AcpModelSelectionError extends Schema.TaggedError<
+  AcpModelSelectionError,
+  { readonly brand: unique symbol }
+>()("AcpModelSelectionError", {
+  model: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `The agent did not accept the model "${this.model}". Choose another model for this provider, then retry.`;
   }
@@ -1788,7 +1792,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const { flavor, selfInvocation: self } = options;
   const readMcpContext = (threadId: ThreadId | null) =>
-    threadId === null
+    (threadId === null
       ? Effect.succeed(acpMcpContext(undefined, self, flavor.mcpOverHttp, flavor.deferMcpTools))
       : mcpSessions
           .read(threadId)
@@ -1796,7 +1800,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             Effect.map((session) =>
               acpMcpContext(session, self, flavor.mcpOverHttp, flavor.deferMcpTools),
             ),
-          );
+          )
+    ).pipe(
+      Effect.map((context) => ({
+        ...context,
+        processEnvironment: {
+          ...context.processEnvironment,
+          [RESOURCE_OWNER_ENV]: resourceOwner(host.paths.stateDir),
+        },
+      })),
+    );
   const driver = flavor.driver;
   const continuationRequests = options.continuationRequests;
   const postSettleContinuationEnabled =

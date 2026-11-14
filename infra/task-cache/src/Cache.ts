@@ -12,10 +12,13 @@ import { developerIdentity } from "./developerAuth.ts";
 
 const decodeSummary = Schema.decodeEffect(Schema.fromJsonString(Summary));
 
-export class CacheError extends Schema.TaggedError<CacheError>()("CacheError", {
-  status: Schema.Number,
-  reason: Schema.String,
-}) {}
+export class CacheError extends Schema.TaggedError<CacheError, { readonly brand: unique symbol }>()(
+  "CacheError",
+  {
+    status: Schema.Number,
+    reason: Schema.String,
+  },
+) {}
 
 export class Bindings extends Context.Service<
   Bindings,

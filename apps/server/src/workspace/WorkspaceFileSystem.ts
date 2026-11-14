@@ -35,66 +35,66 @@ const isGitMetadataName = (segment: string) => {
   return name === ".GIT" || name === "GIT~1";
 };
 
-export class WorkspaceFileSystemOperationError extends Schema.TaggedError<WorkspaceFileSystemOperationError>()(
-  "WorkspaceFileSystemOperationError",
-  {
-    workspaceRoot: Schema.String,
-    relativePath: Schema.String,
-    resolvedPath: Schema.String,
-    operationPath: Schema.String,
-    operation: Schema.Literals([
-      "realpath-workspace-root",
-      "realpath-target",
-      "open",
-      "stat",
-      "read",
-      "close",
-      "make-directory",
-      "write-file",
-    ]),
-    cause: Schema.Defect(),
-  },
-) {
+export class WorkspaceFileSystemOperationError extends Schema.TaggedError<
+  WorkspaceFileSystemOperationError,
+  { readonly brand: unique symbol }
+>()("WorkspaceFileSystemOperationError", {
+  workspaceRoot: Schema.String,
+  relativePath: Schema.String,
+  resolvedPath: Schema.String,
+  operationPath: Schema.String,
+  operation: Schema.Literals([
+    "realpath-workspace-root",
+    "realpath-target",
+    "open",
+    "stat",
+    "read",
+    "close",
+    "make-directory",
+    "write-file",
+  ]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Workspace file operation '${this.operation}' failed at '${this.operationPath}' for resolved path '${this.resolvedPath}' (requested as '${this.relativePath}' in '${this.workspaceRoot}').`;
   }
 }
 
-export class WorkspaceFilePathEscapeError extends Schema.TaggedError<WorkspaceFilePathEscapeError>()(
-  "WorkspaceFilePathEscapeError",
-  {
-    workspaceRoot: Schema.String,
-    relativePath: Schema.String,
-    resolvedWorkspaceRoot: Schema.String,
-    resolvedPath: Schema.String,
-  },
-) {
+export class WorkspaceFilePathEscapeError extends Schema.TaggedError<
+  WorkspaceFilePathEscapeError,
+  { readonly brand: unique symbol }
+>()("WorkspaceFilePathEscapeError", {
+  workspaceRoot: Schema.String,
+  relativePath: Schema.String,
+  resolvedWorkspaceRoot: Schema.String,
+  resolvedPath: Schema.String,
+}) {
   override get message(): string {
     return `Workspace file '${this.relativePath}' resolves outside workspace root '${this.workspaceRoot}': ${this.resolvedPath}`;
   }
 }
 
-export class WorkspacePathNotFileError extends Schema.TaggedError<WorkspacePathNotFileError>()(
-  "WorkspacePathNotFileError",
-  {
-    workspaceRoot: Schema.String,
-    relativePath: Schema.String,
-    resolvedPath: Schema.String,
-  },
-) {
+export class WorkspacePathNotFileError extends Schema.TaggedError<
+  WorkspacePathNotFileError,
+  { readonly brand: unique symbol }
+>()("WorkspacePathNotFileError", {
+  workspaceRoot: Schema.String,
+  relativePath: Schema.String,
+  resolvedPath: Schema.String,
+}) {
   override get message(): string {
     return `Workspace path '${this.relativePath}' in '${this.workspaceRoot}' is not a file: ${this.resolvedPath}`;
   }
 }
 
-export class WorkspaceBinaryFileError extends Schema.TaggedError<WorkspaceBinaryFileError>()(
-  "WorkspaceBinaryFileError",
-  {
-    workspaceRoot: Schema.String,
-    relativePath: Schema.String,
-    resolvedPath: Schema.String,
-  },
-) {
+export class WorkspaceBinaryFileError extends Schema.TaggedError<
+  WorkspaceBinaryFileError,
+  { readonly brand: unique symbol }
+>()("WorkspaceBinaryFileError", {
+  workspaceRoot: Schema.String,
+  relativePath: Schema.String,
+  resolvedPath: Schema.String,
+}) {
   override get message(): string {
     return `Workspace file '${this.relativePath}' in '${this.workspaceRoot}' is binary and cannot be previewed as text.`;
   }

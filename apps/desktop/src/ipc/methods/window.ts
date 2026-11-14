@@ -334,7 +334,10 @@ export const openExternal = DesktopIpc.makeIpcMethod({
 const READ_MEDIA_MAX_BYTES = 256 * 1024 * 1024;
 
 // No URL field: media URLs can carry signed query tokens.
-class MediaReadError extends Schema.TaggedError<MediaReadError>()("MediaReadError", {
+class MediaReadError extends Schema.TaggedError<
+  MediaReadError,
+  { readonly brand: unique symbol }
+>()("MediaReadError", {
   message: Schema.String,
   cause: Schema.Defect(),
 }) {}

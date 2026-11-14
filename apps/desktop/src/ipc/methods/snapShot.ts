@@ -22,10 +22,10 @@ import * as DesktopSnapShot from "../../snapShot/DesktopSnapShot.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 
-class SnapShotIpcUnauthorizedSenderError extends Schema.TaggedError<SnapShotIpcUnauthorizedSenderError>()(
-  "SnapShotIpcUnauthorizedSenderError",
-  {},
-) {
+class SnapShotIpcUnauthorizedSenderError extends Schema.TaggedError<
+  SnapShotIpcUnauthorizedSenderError,
+  { readonly brand: unique symbol }
+>()("SnapShotIpcUnauthorizedSenderError", {}) {
   override get message(): string {
     return "Snapshot request was rejected.";
   }

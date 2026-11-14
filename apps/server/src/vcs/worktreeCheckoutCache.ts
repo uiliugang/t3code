@@ -77,10 +77,10 @@ function parentDirectories(paths: Iterable<string>): Set<string> {
   return directories;
 }
 
-class WorktreeCheckoutCacheError extends Schema.TaggedError<WorktreeCheckoutCacheError>()(
-  "WorktreeCheckoutCacheError",
-  { detail: Schema.String },
-) {
+class WorktreeCheckoutCacheError extends Schema.TaggedError<
+  WorktreeCheckoutCacheError,
+  { readonly brand: unique symbol }
+>()("WorktreeCheckoutCacheError", { detail: Schema.String }) {
   override get message(): string {
     return this.detail;
   }

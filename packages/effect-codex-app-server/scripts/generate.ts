@@ -57,7 +57,10 @@ interface JsonSchemaFile {
   readonly qualifiedName: string;
 }
 
-class GeneratorError extends Schema.TaggedError<GeneratorError>()("GeneratorError", {
+class GeneratorError extends Schema.TaggedError<
+  GeneratorError,
+  { readonly brand: unique symbol }
+>()("GeneratorError", {
   detail: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {

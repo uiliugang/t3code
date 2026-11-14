@@ -52,15 +52,15 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { formatHeadlessServeOutput, issueHeadlessServeAccessInfo } from "./startupAccess.ts";
 
-export class ServerRuntimeStartupError extends Schema.TaggedError<ServerRuntimeStartupError>()(
-  "ServerRuntimeStartupError",
-  {
-    mode: ServerConfig.RuntimeMode,
-    host: Schema.NullOr(Schema.String),
-    port: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
+export class ServerRuntimeStartupError extends Schema.TaggedError<
+  ServerRuntimeStartupError,
+  { readonly brand: unique symbol }
+>()("ServerRuntimeStartupError", {
+  mode: ServerConfig.RuntimeMode,
+  host: Schema.NullOr(Schema.String),
+  port: Schema.Number,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return "Server runtime startup failed before command readiness.";
   }

@@ -4,15 +4,15 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-export class DesktopUserDataInitializationError extends Schema.TaggedError<DesktopUserDataInitializationError>()(
-  "DesktopUserDataInitializationError",
-  {
-    operation: Schema.Literals(["inspect", "read", "create-directory", "write"]),
-    resourcePath: Schema.String,
-    category: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class DesktopUserDataInitializationError extends Schema.TaggedError<
+  DesktopUserDataInitializationError,
+  { readonly brand: unique symbol }
+>()("DesktopUserDataInitializationError", {
+  operation: Schema.Literals(["inspect", "read", "create-directory", "write"]),
+  resourcePath: Schema.String,
+  category: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message() {
     return `Could not initialize Electron user data during ${this.operation} at ${this.resourcePath} (${this.category}).`;
   }

@@ -79,13 +79,13 @@ export interface EventNdjsonLogStoreOptions {
   readonly attribution?: ResourceAttribution.ResourceAttribution["Service"];
 }
 
-export class EventNdjsonLogDirectoryError extends Schema.TaggedError<EventNdjsonLogDirectoryError>()(
-  "EventNdjsonLogDirectoryError",
-  {
-    directory: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
+export class EventNdjsonLogDirectoryError extends Schema.TaggedError<
+  EventNdjsonLogDirectoryError,
+  { readonly brand: unique symbol }
+>()("EventNdjsonLogDirectoryError", {
+  directory: Schema.String,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to create provider event log directory '${this.directory}'`;
   }

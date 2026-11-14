@@ -22,7 +22,10 @@ interface Totals {
   restore_failures: number;
 }
 
-export class SavingsError extends Schema.TaggedError<SavingsError>()("SavingsError", {
+export class SavingsError extends Schema.TaggedError<
+  SavingsError,
+  { readonly brand: unique symbol }
+>()("SavingsError", {
   operation: Schema.Literals(["record", "read", "cleanup"]),
   cause: Schema.Defect(),
 }) {

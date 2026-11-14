@@ -327,7 +327,10 @@ export const WorkItemCreateIssueInput = Schema.Struct({
 export type WorkItemCreateIssueInput = typeof WorkItemCreateIssueInput.Type;
 export const WorkItemRefreshDeliveryInput = Schema.Struct({ id: WorkItemId });
 export type WorkItemDiscoverResult = typeof WorkItemDiscoverResult.Type;
-export class WorkItemError extends Schema.TaggedError<WorkItemError>()("WorkItemError", {
+export class WorkItemError extends Schema.TaggedError<
+  WorkItemError,
+  { readonly brand: unique symbol }
+>()("WorkItemError", {
   code: Schema.Literals([
     "not_found",
     "conflict",

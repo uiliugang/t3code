@@ -23,10 +23,10 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 
 const { logInfo, logWarning } = makeComponentLogger("desktop-cli-command");
 
-export class DesktopCliCommandError extends Schema.TaggedError<DesktopCliCommandError>()(
-  "DesktopCliCommandError",
-  { message: Schema.String },
-) {}
+export class DesktopCliCommandError extends Schema.TaggedError<
+  DesktopCliCommandError,
+  { readonly brand: unique symbol }
+>()("DesktopCliCommandError", { message: Schema.String }) {}
 
 const userCandidates = (home: string) => [`${home}/.local/bin`, `${home}/bin`];
 

@@ -67,13 +67,13 @@ const AgentAwarenessOperation = Schema.Literals([
   "load-registration-record",
 ]);
 
-export class AgentAwarenessOperationError extends Schema.TaggedError<AgentAwarenessOperationError>()(
-  "AgentAwarenessOperationError",
-  {
-    operation: AgentAwarenessOperation,
-    cause: Schema.Defect(),
-  },
-) {
+export class AgentAwarenessOperationError extends Schema.TaggedError<
+  AgentAwarenessOperationError,
+  { readonly brand: unique symbol }
+>()("AgentAwarenessOperationError", {
+  operation: AgentAwarenessOperation,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Agent awareness operation ${this.operation} failed.`;
   }

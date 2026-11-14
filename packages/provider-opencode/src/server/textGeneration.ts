@@ -28,22 +28,22 @@ const openCodeTextGenerationErrorContext = {
   cwd: Schema.String,
 };
 
-export class OpenCodeTextGenerationSessionRequestError extends Schema.TaggedError<OpenCodeTextGenerationSessionRequestError>()(
-  "OpenCodeTextGenerationSessionRequestError",
-  {
-    ...openCodeTextGenerationErrorContext,
-    cause: Schema.Defect(),
-  },
-) {
+export class OpenCodeTextGenerationSessionRequestError extends Schema.TaggedError<
+  OpenCodeTextGenerationSessionRequestError,
+  { readonly brand: unique symbol }
+>()("OpenCodeTextGenerationSessionRequestError", {
+  ...openCodeTextGenerationErrorContext,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `OpenCode session creation request failed for ${this.operation} in ${this.cwd}.`;
   }
 }
 
-export class OpenCodeTextGenerationSessionPayloadError extends Schema.TaggedError<OpenCodeTextGenerationSessionPayloadError>()(
-  "OpenCodeTextGenerationSessionPayloadError",
-  openCodeTextGenerationErrorContext,
-) {
+export class OpenCodeTextGenerationSessionPayloadError extends Schema.TaggedError<
+  OpenCodeTextGenerationSessionPayloadError,
+  { readonly brand: unique symbol }
+>()("OpenCodeTextGenerationSessionPayloadError", openCodeTextGenerationErrorContext) {
   override get message(): string {
     return `OpenCode session.create returned no session payload for ${this.operation} in ${this.cwd}.`;
   }
@@ -56,27 +56,27 @@ const openCodePromptErrorContext = {
   modelId: Schema.String,
 };
 
-export class OpenCodeTextGenerationPromptRequestError extends Schema.TaggedError<OpenCodeTextGenerationPromptRequestError>()(
-  "OpenCodeTextGenerationPromptRequestError",
-  {
-    ...openCodePromptErrorContext,
-    cause: Schema.Defect(),
-  },
-) {
+export class OpenCodeTextGenerationPromptRequestError extends Schema.TaggedError<
+  OpenCodeTextGenerationPromptRequestError,
+  { readonly brand: unique symbol }
+>()("OpenCodeTextGenerationPromptRequestError", {
+  ...openCodePromptErrorContext,
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `OpenCode prompt request failed for ${this.operation} in ${this.cwd} using ${this.providerId}/${this.modelId} (session ${this.sessionId}).`;
   }
 }
 
-export class OpenCodeTextGenerationPromptResponseError extends Schema.TaggedError<OpenCodeTextGenerationPromptResponseError>()(
-  "OpenCodeTextGenerationPromptResponseError",
-  {
-    ...openCodePromptErrorContext,
-    providerErrorName: Schema.optional(Schema.String),
-    statusCode: Schema.optional(Schema.Int),
-    cause: Schema.Defect(),
-  },
-) {
+export class OpenCodeTextGenerationPromptResponseError extends Schema.TaggedError<
+  OpenCodeTextGenerationPromptResponseError,
+  { readonly brand: unique symbol }
+>()("OpenCodeTextGenerationPromptResponseError", {
+  ...openCodePromptErrorContext,
+  providerErrorName: Schema.optional(Schema.String),
+  statusCode: Schema.optional(Schema.Int),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     const providerError = this.providerErrorName ? ` ${this.providerErrorName}` : "";
     const status = this.statusCode === undefined ? "" : `, HTTP ${this.statusCode}`;
@@ -107,14 +107,14 @@ function openCodePromptResponseErrorDetail(error: OpenCodeTextGenerationPromptRe
   return "OpenCode could not generate the text.";
 }
 
-export class OpenCodeTextGenerationEmptyOutputError extends Schema.TaggedError<OpenCodeTextGenerationEmptyOutputError>()(
-  "OpenCodeTextGenerationEmptyOutputError",
-  {
-    ...openCodePromptErrorContext,
-    responsePartCount: NonNegativeInt,
-    textPartCount: NonNegativeInt,
-  },
-) {
+export class OpenCodeTextGenerationEmptyOutputError extends Schema.TaggedError<
+  OpenCodeTextGenerationEmptyOutputError,
+  { readonly brand: unique symbol }
+>()("OpenCodeTextGenerationEmptyOutputError", {
+  ...openCodePromptErrorContext,
+  responsePartCount: NonNegativeInt,
+  textPartCount: NonNegativeInt,
+}) {
   override get message(): string {
     return `OpenCode returned empty output for ${this.operation} in ${this.cwd} using ${this.providerId}/${this.modelId} (session ${this.sessionId}, ${this.responsePartCount} response parts, ${this.textPartCount} text parts).`;
   }
