@@ -103,6 +103,9 @@ export const layer = Layer.effect(
               runtimeMode: thread.runtimeMode,
               interactionMode: "default",
               workspaceStrategy: { type: "root" },
+              sideChatOf: thread.lineage.sideChat
+                ? (thread.lineage.parentThreadId ?? thread.id)
+                : thread.id,
               assignment: `The user clicked Create issue for the source conversation ${input.threadId}. Create one external issue using ONLY this configured destination: ${sourceJson}. Use the source conversation snapshot in the goal to prepare title, description and acceptance criteria. Ask only for missing required fields. Reuse an existing issue if a previous creation may have succeeded; never blindly retry an uncertain external write. Use the platform's existing CLI/skill. After creation, call work_item_link_issue for work item ${item.id} with its canonical issue identity, reading latest version first. This work item already links the user's original conversation; do not create a second task. Do not modify code or start development.`,
             },
           ],

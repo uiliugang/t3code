@@ -553,6 +553,41 @@ const driverLayer = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
 );
 
 it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) => {
+  it.effect("permits read-only side chats only for the bundled replay agent", () =>
+    Effect.gen(function* () {
+      for (const [instanceId, script, readOnly] of [
+        ["devReplay", "/repo/apps/server/scripts/dev-replay-agent.ts", true],
+        ["devReplay", "C:\\repo\\apps\\server\\scripts\\dev-replay-agent.ts", true],
+        ["custom", "/repo/apps/server/scripts/dev-replay-agent.ts", false],
+        ["devReplay", "/repo/custom-agent.ts", false],
+      ] as const) {
+        const instance = yield* AcpRegistryDriver.create({
+          instanceId: ProviderInstanceId.make(instanceId),
+          displayName: "Replay test",
+          enabled: true,
+          environment: [],
+          config: decodeSettings({
+            source: "local",
+            commandPath: process.execPath,
+            commandArgs: [script],
+          }),
+        });
+        const capabilities = yield* instance.orchestrationAdapter.getCapabilities();
+        expect(capabilities.runtimePolicy.supportsReadOnly === true).toBe(readOnly);
+      }
+    }).pipe(
+      Effect.provideService(
+        AcpRegistrySupport.AcpRegistryCatalog,
+        catalogWithInspection({
+          status: "ready",
+          agentId: "replay",
+          version: null,
+          distribution: "npx",
+        }),
+      ),
+    ),
+  );
+
   it.effect("drops cached and session-reported models when its caches are invalidated", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

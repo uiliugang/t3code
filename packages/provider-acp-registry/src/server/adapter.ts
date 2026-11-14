@@ -221,6 +221,12 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
       }
     : options;
   const copilotRouting = isCopilot ? makeCopilotSubagentRouting() : undefined;
+  const isDevReplay =
+    options.settings.source === "local" &&
+    options.instanceId === "devReplay" &&
+    options.settings.commandArgs[0]
+      ?.replaceAll("\\", "/")
+      .endsWith("/apps/server/scripts/dev-replay-agent.ts");
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
     // Cancelling a Copilot prompt also kills the background agents it started.
@@ -229,7 +235,13 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           ...AcpProviderCapabilitiesV2,
           turns: { ...AcpProviderCapabilitiesV2.turns, supportsSteeringByInterruptRestart: false },
         }
-      : AcpProviderCapabilitiesV2,
+      : isDevReplay
+        ? {
+            ...AcpProviderCapabilitiesV2,
+            // Replay emits recorded frames and never executes filesystem or terminal writes.
+            runtimePolicy: { ...AcpProviderCapabilitiesV2.runtimePolicy, supportsReadOnly: true },
+          }
+        : AcpProviderCapabilitiesV2,
     customModels: readCustomModelEntries(options.settings.customModels).map((entry) => entry.slug),
     compactViaAdvertisedCommand: true,
     promptFailure: (cause) => acpRegistryPromptFailure(registryAgentId, cause),

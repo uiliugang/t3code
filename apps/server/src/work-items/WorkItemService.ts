@@ -472,6 +472,51 @@ const make = Effect.gen(function* () {
     );
   }, Effect.mapError(persistenceError));
 
+  const launchSideChat = Effect.fn("WorkItemService.launchSideChat")(function* (
+    execution: WorkItemExecution & { readonly sideChatOf: ThreadId },
+    commandId: CommandId,
+    title: string,
+    createdBy: "user" | "agent",
+  ) {
+    yield* threads.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make(`${commandId}:fork`),
+      sourceThreadId: execution.sideChatOf,
+      targetThreadId: execution.threadId,
+      sourcePoint: { type: "latest_stable" },
+      sideChat: true,
+      interactionMode: execution.interactionMode,
+      title,
+      createdBy,
+      creationSource: "server",
+    });
+    yield* threads.dispatch({
+      type: "thread.runtime-mode.set",
+      commandId: CommandId.make(`${commandId}:runtime-mode`),
+      threadId: execution.threadId,
+      runtimeMode: execution.runtimeMode,
+    });
+    yield* threads.dispatch({
+      type: "message.dispatch",
+      commandId,
+      threadId: execution.threadId,
+      messageId: MessageId.make(`work-item:${execution.id}`),
+      text: execution.prompt,
+      attachments: [],
+      modelSelection: execution.modelSelection,
+      dispatchMode: { type: "start_immediately" },
+      createdBy,
+      creationSource: "server",
+    });
+    return {
+      projection: yield* threads.getThreadRecords(execution.threadId, [
+        "runs",
+        "checkpointScopes",
+        "checkpoints",
+      ]),
+    };
+  });
+
   const runPending = Effect.fn("WorkItemService.drain")(function* () {
     yield* effects.withPermits(1)(
       Effect.gen(function* () {
@@ -520,31 +565,37 @@ const make = Effect.gen(function* () {
                             message: "The calling agent thread is unavailable.",
                           }),
                         )
-                      : launches
-                          .launch({
-                            commandId: CommandId.make(row.command_id),
-                            threadId: execution.threadId,
-                            projectId: item.projectId,
-                            title: item.title,
-                            modelSelection: execution.modelSelection,
-                            runtimeMode: execution.runtimeMode,
-                            interactionMode: execution.interactionMode,
-                            workspaceStrategy: execution.workspaceStrategy,
-                            createdBy: caller === null ? "user" : "agent",
-                            creationSource: "server",
-                            initialMessage: {
-                              messageId: MessageId.make(`work-item:${execution.id}`),
-                              text: execution.prompt,
-                              attachments: [],
-                            },
-                          })
-                          .pipe(
-                            Effect.mapError(persistenceError),
-                            Effect.provideService(
-                              DispatchModeLimit,
-                              effectiveCallerLimits(savedLimits, caller),
-                            ),
+                      : (execution.sideChatOf === undefined
+                          ? launches.launch({
+                              commandId: CommandId.make(row.command_id),
+                              threadId: execution.threadId,
+                              projectId: item.projectId,
+                              title: item.title,
+                              modelSelection: execution.modelSelection,
+                              runtimeMode: execution.runtimeMode,
+                              interactionMode: execution.interactionMode,
+                              workspaceStrategy: execution.workspaceStrategy,
+                              createdBy: caller === null ? "user" : "agent",
+                              creationSource: "server",
+                              initialMessage: {
+                                messageId: MessageId.make(`work-item:${execution.id}`),
+                                text: execution.prompt,
+                                attachments: [],
+                              },
+                            })
+                          : launchSideChat(
+                              { ...execution, sideChatOf: execution.sideChatOf },
+                              CommandId.make(row.command_id),
+                              item.title,
+                              caller === null ? "user" : "agent",
+                            )
+                        ).pipe(
+                          Effect.mapError(persistenceError),
+                          Effect.provideService(
+                            DispatchModeLimit,
+                            effectiveCallerLimits(savedLimits, caller),
                           ),
+                        ),
                   );
                   if (result._tag === "Success") {
                     const run = result.success.projection.runs.toSorted(
@@ -918,7 +969,15 @@ const make = Effect.gen(function* () {
                     message:
                       "This task already has the maximum of 100 executions. Create a follow-up task.",
                   });
-                for (const participant of input.participants)
+                for (const participant of input.participants) {
+                  if (participant.sideChatOf !== undefined) {
+                    const source = yield* threads.getThreadShell(participant.sideChatOf);
+                    if (source === null || source.projectId !== item.projectId)
+                      return yield* new WorkItemError({
+                        code: "invalid_request",
+                        message: "Choose a side chat source in the task project.",
+                      });
+                  }
                   executions.push({
                     id: WorkItemExecutionId.make(yield* randomUuidV4),
                     workItemId: item.id,
@@ -944,6 +1003,7 @@ const make = Effect.gen(function* () {
                     createdAt: now,
                     updatedAt: now,
                   });
+                }
               }
               const frozenExecutions = executions.map((execution) => ({
                 ...execution,

@@ -63,6 +63,7 @@ export const WorkItemExecution = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
+  sideChatOf: Schema.optional(ThreadId),
   specRevision: Revision,
   specSnapshot: WorkItemSpecification,
   deliveryRevision: Schema.optional(Revision),
@@ -184,6 +185,7 @@ export const WorkItemParticipant = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
+  sideChatOf: Schema.optional(ThreadId),
 });
 export type WorkItemParticipant = typeof WorkItemParticipant.Type;
 export const WorkItemCommandInput = Schema.Union([

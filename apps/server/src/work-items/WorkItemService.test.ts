@@ -16,6 +16,7 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ServerCommand,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -109,7 +110,8 @@ function setup(
   const projections = new Map<ThreadId, OrchestrationV2ThreadProjection>();
   const launched: Array<Parameters<ThreadLaunch.ThreadLaunchService["Service"]["launch"]>[0]> = [];
   const stopped: ThreadId[] = [];
-  const failures = { shell: false, records: false, launch: false };
+  const dispatched = new Map<CommandId, OrchestrationV2ServerCommand>();
+  const failures = { shell: false, records: false, launch: false, dispatchReply: false };
   const dependencies = Layer.mergeAll(
     Layer.mock(ThreadSearch.ThreadSearch)({
       latestMessagePreview: () => Effect.succeed(candidatePreview.slice(0, 500)),
@@ -218,7 +220,40 @@ function setup(
           return { type: "no_active_run" };
         }),
       dispatch: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          if (dispatched.has(input.commandId)) return { sequence: 1, storedEvents: [] };
+          dispatched.set(input.commandId, input);
+          if (input.type === "thread.fork") {
+            const source = projections.get(input.sourceThreadId)!;
+            projections.set(input.targetThreadId, {
+              ...projection(input.targetThreadId),
+              thread: {
+                ...source.thread,
+                id: input.targetThreadId,
+                lineage: {
+                  ...source.thread.lineage,
+                  parentThreadId: input.sourceThreadId,
+                  relationshipToParent: "fork",
+                  sideChat: input.sideChat,
+                },
+              },
+              runs: [],
+            });
+          }
+          if (input.type === "message.dispatch") {
+            const current = projections.get(input.threadId)!;
+            projections.set(input.threadId, {
+              ...current,
+              runs: projection(input.threadId).runs.map((run) => ({
+                ...run,
+                userMessageId: input.messageId,
+              })),
+            });
+            if (failures.dispatchReply)
+              return yield* new Orchestrator.OrchestratorProjectionError({
+                threadId: input.threadId,
+              });
+          }
           if (input.type === "thread.stop") {
             stopped.push(input.threadId);
             const current = projections.get(input.threadId);
@@ -263,7 +298,7 @@ function setup(
     Layer.provide(NodeCrypto.layer),
     Layer.provideMerge(Sqlite.layerMemory),
   );
-  return { layer, dependencies, projections, launched, stopped, failures, events };
+  return { layer, dependencies, projections, launched, stopped, failures, events, dispatched };
 }
 
 const create = (service: WorkItems.WorkItemService["Service"], suffix = "create") =>
@@ -484,7 +519,8 @@ it.effect(
         threadId,
         source,
       });
-      test.failures.launch = true;
+      assert.equal(first.item.executions[0]?.sideChatOf, threadId);
+      test.failures.dispatchReply = true;
       yield* service.drain();
       const repeated = yield* automation.createIssue({
         commandId: command("create-issue-remount"),
@@ -495,7 +531,22 @@ it.effect(
       assert.equal(first.item.id, repeated.item.id);
       assert.equal(first.item.executions[0]?.id, repeated.item.executions[0]?.id);
       assert.equal((yield* service.get(first.item.id)).executions.length, 1);
-      assert.equal(test.launched.length, 1);
+      assert.equal(test.launched.length, 0);
+      const execution = (yield* service.get(first.item.id)).executions[0]!;
+      const sideChat = test.projections.get(execution.threadId)!;
+      assert.equal(sideChat.thread.lineage.sideChat, true);
+      assert.equal(sideChat.thread.lineage.parentThreadId, threadId);
+      assert.equal(
+        sideChat.thread.worktreePath,
+        test.projections.get(threadId)!.thread.worktreePath,
+      );
+      assert.equal(sideChat.runs.length, 1);
+      assert.equal(sideChat.runs[0]?.id, execution.runId);
+      assert.equal(test.projections.get(threadId)!.runs.length, 1);
+      assert.equal(
+        [...test.dispatched.values()].filter((entry) => entry.type === "message.dispatch").length,
+        1,
+      );
       const refused = yield* Effect.result(
         automation.createIssue({
           commandId: command("bad-destination"),
@@ -507,6 +558,33 @@ it.effect(
     }).pipe(Effect.provide(layer), Effect.scoped);
   },
 );
+
+it.effect("rejects unavailable side chat sources and sources outside the task project", () => {
+  const test = setup();
+  const otherId = ThreadId.make("other-project");
+  const other = projection(otherId);
+  test.projections.set(otherId, {
+    ...other,
+    thread: { ...other.thread, projectId: ProjectId.make("other") },
+  });
+  return Effect.gen(function* () {
+    const service = yield* WorkItems.WorkItemService;
+    const { item } = yield* create(service);
+    for (const sideChatOf of [ThreadId.make("missing"), otherId]) {
+      const refused = yield* Effect.result(
+        service.mutate({
+          type: "start",
+          commandId: command(sideChatOf),
+          id: item.id,
+          specRevision: 1,
+          participants: [{ ...participant, sideChatOf }],
+        }),
+      );
+      assert.equal(refused._tag, "Failure");
+    }
+    assert.equal((yield* service.get(item.id)).executions.length, 0);
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
 
 it.effect(
   "deduplicates the same dispatch while permitting parallel agents and stopping only one",

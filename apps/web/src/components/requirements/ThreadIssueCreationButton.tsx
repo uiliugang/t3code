@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   CommandId,
   type EnvironmentId,
@@ -15,6 +16,8 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
+import { useRightPanelStore } from "../../rightPanelStore";
+import { waitForThreadShell } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { IssueSelect } from "./IssueSelect";
@@ -50,6 +53,11 @@ export function ThreadIssueCreationButton({
       : null,
   );
   const options = sources.data?.[0]?.sources ?? [];
+  const execution = task.data?.item?.executions.at(-1);
+  const openSideChat = async (sideChatId: ThreadId) => {
+    if (await waitForThreadShell(scopeThreadRef(environmentId, sideChatId)))
+      useRightPanelStore.getState().openSideChat({ environmentId, threadId }, sideChatId);
+  };
   const run = async (source: IssueSource) => {
     setBusy(true);
     setFailed(false);
@@ -61,6 +69,8 @@ export function ThreadIssueCreationButton({
     if (result._tag === "Success") {
       setItemId(result.value.item.id);
       setChoosing(false);
+      const execution = result.value.item.executions.at(-1);
+      if (execution?.sideChatOf !== undefined) await openSideChat(execution.threadId);
     } else setFailed(true);
   };
   if (config?.workItemDelivery !== true) return null;
@@ -80,11 +90,15 @@ export function ThreadIssueCreationButton({
     return (
       <div className="space-y-2 text-xs text-muted-foreground" role="status">
         {t("Preparing issue creation")}
-        {task.data?.item?.executions.at(-1) ? (
+        {execution?.sideChatOf !== undefined ? (
+          <Button size="xs" variant="outline" onClick={() => void openSideChat(execution.threadId)}>
+            {t("Open conversation")}
+          </Button>
+        ) : execution ? (
           <Link
             className="block text-primary underline"
             to="/$environmentId/$threadId"
-            params={{ environmentId, threadId: task.data.item.executions.at(-1)!.threadId }}
+            params={{ environmentId, threadId: execution.threadId }}
           >
             {t("Open conversation")}
           </Link>
