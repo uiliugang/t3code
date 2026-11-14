@@ -129,6 +129,7 @@ const claudeAdapter = {
 
 interface HarnessOptions {
   readonly workspace?: ThreadWorkspaceRevision;
+  readonly prepareWorkspace?: WorkspaceProvisioner.WorkspaceProvisioner["Service"]["prepare"];
   readonly closeTerminal?: TerminalManager.TerminalManager["Service"]["close"];
   readonly adapters?: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]>;
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
@@ -194,12 +195,14 @@ function makeHarness(options: HarnessOptions = {}) {
     options.workspace === undefined
       ? Layer.empty
       : Layer.mock(WorkspaceProvisioner.WorkspaceProvisioner)({
-          prepare: () =>
-            Effect.succeed({
-              workspace: options.workspace!,
-              completion: Effect.void,
-              cancel: Effect.void,
-            }),
+          prepare:
+            options.prepareWorkspace ??
+            (() =>
+              Effect.succeed({
+                workspace: options.workspace!,
+                completion: Effect.void,
+                cancel: Effect.void,
+              })),
         }),
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
@@ -2719,6 +2722,8 @@ it.effect.each([false, true])(
     Effect.gen(function* () {
       const branchNameStarted = yield* Deferred.make<void>();
       const allowBranchName = yield* Deferred.make<void>();
+      const preparationStarted = yield* Deferred.make<void>();
+      const allowPreparation = yield* Deferred.make<void>();
       const workspace = workspaceFixture({ projectId });
       const temporaryWorkspace = {
         ...workspace,
@@ -2729,7 +2734,20 @@ it.effect.each([false, true])(
       };
       const harness = makeHarness({
         serverSettings: { branchNamePrefix: "t3" },
-        ...(group ? { workspace: temporaryWorkspace } : {}),
+        ...(group
+          ? {
+              workspace: temporaryWorkspace,
+              prepareWorkspace: () =>
+                Deferred.succeed(preparationStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(allowPreparation)),
+                  Effect.as({
+                    workspace: temporaryWorkspace,
+                    completion: Effect.void,
+                    cancel: Effect.void,
+                  }),
+                ),
+            }
+          : {}),
         generateBranchName: () =>
           Deferred.succeed(branchNameStarted, undefined).pipe(
             Effect.andThen(Deferred.await(allowBranchName)),
@@ -2783,8 +2801,23 @@ it.effect.each([false, true])(
             workspace: { type: "worktree", baseRef: "main" },
           }),
         );
-        yield* Deferred.await(branchNameStarted);
         const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+        if (group) {
+          yield* Deferred.await(preparationStarted);
+          assert.equal(
+            (yield* tracker.get(launched.threadId))?.stages.find((stage) => stage.id === "naming")
+              ?.status,
+            "pending",
+          );
+          assert.equal(harness.generateBranchName.mock.calls.length, 0);
+          yield* Deferred.succeed(allowPreparation, undefined);
+        }
+        yield* Deferred.await(branchNameStarted);
+        assert.equal(
+          (yield* tracker.get(launched.threadId))?.stages.find((stage) => stage.id === "naming")
+            ?.status,
+          "running",
+        );
         if (!group) {
           yield* tracker.stream(launched.threadId).pipe(
             Stream.filter(

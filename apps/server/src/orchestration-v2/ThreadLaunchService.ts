@@ -593,7 +593,7 @@ const make = Effect.gen(function* () {
         yield* setupTracker.stageStatus(
           threadId,
           "naming",
-          shouldNameBranch ? "running" : "skipped",
+          shouldNameBranch ? "pending" : "skipped",
         );
         const prepared = yield* workspaceProvisioner.value
           .prepare({
@@ -605,8 +605,12 @@ const make = Effect.gen(function* () {
           })
           .pipe(
             Effect.mapError(mapError(input, "provision-worktree", threadId)),
-            Effect.tapError((error) =>
-              setupTracker.finish(threadId, "failed", failureDetail(error)),
+            Effect.onError((cause) =>
+              setupTracker.finish(
+                threadId,
+                Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
+                Cause.hasInterruptsOnly(cause) ? null : failureDetail(Cause.squash(cause)),
+              ),
             ),
           );
         let naming: Fiber.Fiber<unknown> | null = null;
@@ -622,6 +626,7 @@ const make = Effect.gen(function* () {
             })
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
           if (shouldNameBranch && initialMessage !== undefined) {
+            yield* setupTracker.stageStatus(threadId, "naming", "running");
             naming = yield* generateBranchNameFor(project.workspaceRoot, initialMessage).pipe(
               Effect.flatMap((name) =>
                 Effect.forEach(
