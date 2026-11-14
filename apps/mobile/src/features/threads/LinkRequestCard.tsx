@@ -305,7 +305,7 @@ function LinkRequestSheet(props: {
         <View className="gap-1">
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
             {t(
-              "Agents here can then launch, message and wait on threads there. It appears in that machine's Connections, where it can be revoked.",
+              "Agents here can then launch, message and wait on threads there. It appears under Authorized clients in that machine's Sharing & access, where it can be revoked.",
             )}
           </Text>
           {item.url !== undefined && target.kind === "machine" ? (
@@ -388,7 +388,7 @@ function LinkRequestSheet(props: {
         {useExisting ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
             {t(
-              "This environment is already linked to {machine}. The agent can use that link; change its access in Settings → Connections.",
+              "This environment is already linked to {machine}. The agent can use that link as it is; change its access in Settings → Environments.",
               { machine: targetName },
             )}
           </Text>
@@ -410,7 +410,7 @@ function LinkRequestSheet(props: {
                 />
                 <Text className="font-sans text-xs text-foreground-muted">
                   {t(
-                    "Create a link on {machine}: Settings → Connections → Create link, then paste its code here.",
+                    "Create a link on {machine}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.",
                     { machine: targetName },
                   )}
                 </Text>

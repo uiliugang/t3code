@@ -534,7 +534,10 @@ export function BranchToolbarBranchSelector({
     )
       return;
 
-    if (selectionTarget.reuseExistingWorktree) {
+    if (
+      selectionTarget.reuseExistingWorktree &&
+      !(selectionTarget.staysInActiveCheckout && canWriteSourceControl)
+    ) {
       setIsBranchMenuOpen(false);
       onComposerFocusRequest?.();
       runBranchAction(() =>

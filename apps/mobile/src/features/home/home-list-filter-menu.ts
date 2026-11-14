@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 
@@ -13,6 +14,7 @@ export interface HomeListFilterMenuProject {
 }
 
 export function buildHomeListFilterMenuItems(props: {
+  readonly t: UiTranslator;
   readonly environments: ReadonlyArray<HomeListFilterMenuEnvironment>;
   readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
   readonly selectedEnvironmentId: EnvironmentId | null;
@@ -23,12 +25,12 @@ export function buildHomeListFilterMenuItems(props: {
   const items: AppBarMenuItem[] = [
     {
       id: "environment",
-      title: "Environment",
+      title: props.t("Environment"),
       items: [
         {
           id: "environment:all",
-          title: "All environments",
-          subtitle: "Show threads from every environment",
+          title: props.t("All environments"),
+          subtitle: props.t("Show threads from every environment"),
           selected: props.selectedEnvironmentId === null,
           onPress: () => props.onEnvironmentChange(null),
         },
@@ -45,12 +47,12 @@ export function buildHomeListFilterMenuItems(props: {
   if (props.projects.length > 0) {
     items.push({
       id: "project",
-      title: "Project",
+      title: props.t("Project"),
       items: [
         {
           id: "project:all",
-          title: "All projects",
-          subtitle: "Show threads from every project",
+          title: props.t("All projects"),
+          subtitle: props.t("Show threads from every project"),
           selected: props.selectedProjectKey === null,
           onPress: () => props.onProjectChange(null),
         },

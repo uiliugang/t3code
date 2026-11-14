@@ -170,7 +170,7 @@ serve(40);
 // The launch's POSIX bootstrap without the account login shell around it, so the
 // test machine's login profile cannot move HOME.
 const launchStateKey = (command: ChildProcess.Command) =>
-  /exec sh -s -- (\S+)"/u.exec(commandArgs(command).join(" "))?.[1];
+  /exec sh -s -- ([^"]+)"/u.exec(commandArgs(command).join(" "))?.[1];
 
 // Runs the remote half of an SSH launch as a local shell
 // whose HOME is the given directory. Every launch after the first starts once
@@ -205,13 +205,14 @@ const localRemoteShellLayer = (home: string) =>
 
 describe("ssh tunnel scripts", () => {
   it.live.each([
-    { kind: "managed", downloadFails: false },
-    { kind: "external", downloadFails: false },
-    { kind: "managed", downloadFails: true },
-    { kind: "external", downloadFails: true },
+    { kind: "managed", downloadFails: false, renamed: false },
+    { kind: "external", downloadFails: false, renamed: false },
+    { kind: "managed", downloadFails: true, renamed: false },
+    { kind: "external", downloadFails: true, renamed: false },
+    { kind: "managed", downloadFails: false, renamed: true },
   ])(
-    "updates managed servers and leaves external servers running ($kind, $downloadFails)",
-    ({ kind, downloadFails }) =>
+    "updates managed servers and leaves external servers running ($kind, $downloadFails, renamed=$renamed)",
+    ({ kind, downloadFails, renamed }) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -223,8 +224,9 @@ describe("ssh tunnel scripts", () => {
           port: null,
         });
         const state = `${home}/.t3/ssh-launch/${stateKey}`;
+        const previousState = renamed ? `${state}-previous` : state;
         const runtime = `${home}/.t3/runtime/versions/1.2.4`;
-        yield* fs.makeDirectory(state, { recursive: true });
+        yield* fs.makeDirectory(previousState, { recursive: true });
         yield* fs.makeDirectory(runtime, { recursive: true });
         const previous = yield* spawner.spawn(
           ChildProcess.make(process.execPath, [
@@ -237,24 +239,26 @@ describe("ssh tunnel scripts", () => {
             "3773",
           ]),
         );
-        yield* fs.writeFileString(`${state}/pid`, kind === "managed" ? String(previous.pid) : "");
-        yield* fs.writeFileString(`${state}/port`, "3773");
-        yield* fs.writeFileString(`${state}/managed`, kind);
-        yield* fs.writeFileString(`${state}/run-t3.sh`, "previous runner\n");
+        yield* fs.writeFileString(
+          `${previousState}/pid`,
+          kind === "managed" ? String(previous.pid) : "",
+        );
+        yield* fs.writeFileString(`${previousState}/port`, "3773");
+        yield* fs.writeFileString(`${previousState}/managed`, kind);
+        yield* fs.writeFileString(`${previousState}/run-t3.sh`, "previous runner\n");
+        yield* fs.writeFileString(`${previousState}/launcher`, "a".repeat(32));
         if (downloadFails) {
           yield* fs.writeFileString(`${state}/pinned-runner.sh`, "previous runner\n");
           yield* fs.chmod(`${state}/pinned-runner.sh`, 0o700);
         }
         yield* fs.writeFileString(`${runtime}/.install-complete`, "1.2.4");
-        yield* fs.writeFileString(
-          `${runtime}/t3`,
-          `#!/bin/sh
+        const runtimeScript = (version: string) => `#!/bin/sh
 case "$1" in
-  --version) ${downloadFails ? "exit 1" : "echo 1.2.4"} ;;
+  --version) ${downloadFails ? "exit 1" : `echo ${version}`} ;;
   __ssh-helper)
     case "$2" in
       runtime-port)
-        if [ "$(cat '${state}/managed')" = managed ]; then
+        if [ -s '${state}/pid' ]; then
           echo "$(cat '${state}/pid') 3773"
         else
           echo '${previous.pid} 3773'
@@ -265,21 +269,23 @@ case "$1" in
   serve) exec '${process.execPath}' -e 'setInterval(() => {}, 1000)' "$@" ;;
   auth) echo '{"credential":"pair-token"}' ;;
 esac
-`,
-        );
+`;
+        yield* fs.writeFileString(`${runtime}/t3`, runtimeScript("1.2.4"));
         yield* fs.chmod(`${runtime}/t3`, 0o700);
         const launchScript = yield* captureRemoteScript({
           archiveVersion: "1.2.4",
           replaceExistingServer: true,
         });
         const child = yield* spawner.spawn(
-          ChildProcess.make("sh", ["-s", "--", stateKey], {
+          ChildProcess.make("sh", ["-s", "--", stateKey, "a".repeat(32)], {
             env: { HOME: home },
             stdin: { stream: Stream.make(new TextEncoder().encode(launchScript)) },
           }),
         );
         const exitCode = yield* child.exitCode;
-        const spawnedPid = (yield* fs.readFileString(`${state}/pid`)).trim();
+        const spawnedPid = (yield* fs
+          .readFileString(`${state}/pid`)
+          .pipe(Effect.orElseSucceed(() => ""))).trim();
         if (spawnedPid && spawnedPid !== String(previous.pid)) {
           yield* Effect.addFinalizer(() =>
             Effect.sync(() => {
@@ -292,6 +298,7 @@ esac
           );
         }
         const rejected = downloadFails || kind === "external";
+        let currentState = state;
         assert.equal(exitCode, rejected ? 1 : 0);
         assert.equal(yield* previous.isRunning, rejected);
         if (kind === "external" && !downloadFails) {
@@ -306,17 +313,23 @@ esac
           const olderRuntime = `${home}/.t3/runtime/versions/1.2.3`;
           yield* fs.makeDirectory(olderRuntime, { recursive: true });
           yield* fs.writeFileString(`${olderRuntime}/.install-complete`, "1.2.3");
-          yield* fs.writeFileString(`${olderRuntime}/t3`, "#!/bin/sh\necho 1.2.3\n");
+          yield* fs.writeFileString(`${olderRuntime}/t3`, runtimeScript("1.2.3"));
           yield* fs.chmod(`${olderRuntime}/t3`, 0o700);
           const reconnect = yield* captureRemoteScript({ archiveVersion: "1.2.3" });
+          const reconnectKey = renamed ? `${stateKey}-again` : stateKey;
+          currentState = `${home}/.t3/ssh-launch/${reconnectKey}`;
           const reconnected = yield* spawner.spawn(
-            ChildProcess.make("sh", ["-s", "--", stateKey], {
+            ChildProcess.make("sh", ["-s", "--", reconnectKey, "a".repeat(32)], {
               env: { HOME: home },
               stdin: { stream: Stream.make(new TextEncoder().encode(reconnect)) },
             }),
           );
           assert.equal(yield* reconnected.exitCode, 0);
-          assert.equal(yield* fs.readFileString(`${state}/pid`), installedPid);
+          assert.equal(yield* fs.readFileString(`${currentState}/pid`), installedPid);
+          assert.equal(
+            yield* fs.readFileString(`${currentState}/pinned-runner.sh`),
+            yield* fs.readFileString(`${state}/pinned-runner.sh`),
+          );
           const pairingScript = yield* captureRemoteScript({ archiveVersion: "1.2.3" }, true);
           const paired = yield* spawner.spawn(
             ChildProcess.make("sh", ["-s"], {
@@ -326,7 +339,7 @@ esac
           );
           assert.equal(yield* paired.exitCode, 0);
           const runner = yield* spawner.spawn(
-            ChildProcess.make(`${state}/run-t3.sh`, ["--version"], { env: { HOME: home } }),
+            ChildProcess.make(`${currentState}/run-t3.sh`, ["--version"], { env: { HOME: home } }),
           );
           const chunks = yield* Stream.runCollect(runner.stdout);
           assert.equal(
@@ -337,7 +350,7 @@ esac
           );
           assert.equal(yield* runner.exitCode, 0);
         }
-        const pid = (yield* fs.readFileString(`${state}/pid`)).trim();
+        const pid = (yield* fs.readFileString(`${currentState}/pid`)).trim();
         if (pid && pid !== String(previous.pid)) {
           yield* Effect.sync(() => process.kill(Number(pid), "SIGTERM"));
         }
@@ -345,8 +358,12 @@ esac
           assert.equal(yield* fs.readFileString(`${state}/run-t3.sh`), "previous runner\n");
           assert.equal(yield* fs.readFileString(`${state}/pinned-runner.sh`), "previous runner\n");
         } else if (kind === "managed") {
-          assert.equal((yield* fs.readFileString(`${state}/managed`)).trim(), "managed");
+          assert.equal((yield* fs.readFileString(`${currentState}/managed`)).trim(), "managed");
           assert.notEqual(pid, String(previous.pid));
+          if (renamed) {
+            assert.equal((yield* fs.readFileString(`${previousState}/managed`)).trim(), "external");
+            assert.isFalse(yield* fs.exists(`${previousState}/pid`));
+          }
         }
       }).pipe(
         Effect.provide(
@@ -1690,7 +1707,7 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
         const remoteArgs =
           stateKey === undefined
             ? command.args.slice(command.args.indexOf("--") + 2)
-            : ["sh", "-s", "--", stateKey];
+            : ["sh", "-s", "--", ...stateKey.split(" ")];
         return realSpawner.spawn(
           ChildProcess.make("setsid", ["-w", ...remoteArgs], {
             ...command.options,
@@ -1766,6 +1783,90 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
         `the launcher kept ${kind} as its running server`,
       );
       assert.isTrue(yield* isRunning(pid));
+    }).pipe(
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, FetchHttpClient.layer)),
+    ),
+  );
+
+  it.live("an update replaces the managed server after its connection is renamed", () =>
+    Effect.gen(function* () {
+      const { fs, home, fakeServer, sshAsLocalShell, stateDir } =
+        yield* prepare("an unrelated process");
+      const updatedServer = `${home}/fake-t3-next.cjs`;
+      yield* fs.writeFileString(updatedServer, FAKE_SERVER);
+      const renamed = { ...target, alias: "devbox-renamed" };
+      const launch = (
+        launchTarget: typeof renamed,
+        nodeScriptPath: string,
+        launcherId: string | null = "a".repeat(32),
+      ) =>
+        SshTunnel.launchOrReuseRemoteServer(
+          launchTarget,
+          undefined,
+          { nodeScriptPath },
+          launcherId,
+        ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, sshAsLocalShell));
+      const runtimePid = fs
+        .readFileString(`${home}/.t3/userdata/server-runtime.json`)
+        .pipe(Effect.map((runtime) => Number(JSON.parse(runtime).pid)));
+      const launchedPids: Array<number> = [];
+      yield* Effect.addFinalizer(() =>
+        Effect.forEach(launchedPids, (pid) =>
+          Effect.sync(() => {
+            try {
+              process.kill(pid, "SIGKILL");
+            } catch {}
+          }),
+        ),
+      );
+
+      assert.equal((yield* launch(target, fakeServer)).remoteServerKind, "managed");
+      const originalPid = yield* runtimePid;
+      launchedPids.push(originalPid);
+
+      // Another desktop on another version shares the server; it must not take it over.
+      const otherDesktop = yield* launch(
+        { ...target, alias: "devbox-other" },
+        updatedServer,
+        "b".repeat(32),
+      );
+      assert.equal(otherDesktop.remoteServerKind, "external");
+      assert.isTrue(yield* isRunning(originalPid), "another desktop replaced the server");
+
+      const afterRename = yield* launch(renamed, fakeServer);
+      assert.equal(yield* runtimePid, originalPid, "renaming alone restarted the server");
+      assert.equal(
+        yield* fs.readFileString(`${stateDir}/managed`),
+        "external\n",
+        "the old alias still owns the server, so its disconnect would stop it",
+      );
+      const afterUpdate = yield* launch(renamed, updatedServer);
+      launchedPids.push(yield* runtimePid);
+      assert.deepEqual(
+        [afterRename.remoteServerKind, afterUpdate.remoteServerKind],
+        ["managed", "managed"],
+      );
+      assert.isFalse(
+        yield* isRunning(originalPid),
+        "the update left the server launched under the old alias running",
+      );
+
+      // A rename and an update in one reconnect still replace the server.
+      const updatedPid = yield* runtimePid;
+      const renamedAndUpdated = yield* launch({ ...target, alias: "devbox-again" }, fakeServer);
+      launchedPids.push(yield* runtimePid);
+      assert.equal(renamedAndUpdated.remoteServerKind, "managed");
+      assert.isFalse(yield* isRunning(updatedPid), "a rename with an update kept the old server");
+
+      // A server that a launch without an ID started under a reused key is not this desktop's.
+      const again = { ...target, alias: "devbox-again" };
+      process.kill(yield* runtimePid, "SIGKILL");
+      assert.equal((yield* launch(again, fakeServer, null)).remoteServerKind, "managed");
+      const unownedPid = yield* runtimePid;
+      launchedPids.push(unownedPid);
+      const final = yield* launch({ ...target, alias: "devbox-final" }, updatedServer);
+      assert.equal(final.remoteServerKind, "external");
+      assert.isTrue(yield* isRunning(unownedPid), "a stale launcher ID claimed another's server");
     }).pipe(
       Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, FetchHttpClient.layer)),
     ),
