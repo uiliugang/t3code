@@ -617,6 +617,7 @@ export function projectMutationFailureMessage(
     return error.cause.message;
   }
   return error._tag === "ProjectNotEmptyError" ||
+    error._tag === "ProjectInvalidError" ||
     error._tag === "ProjectWorkspaceRootChangeBlockedError"
     ? error.message
     : "Failed to mutate project.";
@@ -2879,6 +2880,8 @@ export const layerWsRpc = (
               ),
             ),
         [WS_METHODS.pullRequestsSubscribeRefreshes]: () => pullRequests.subscribeRefreshes,
+        [WS_METHODS.pullRequestsSubscribeLinkedThreadRefreshes]: () =>
+          pullRequests.subscribeLinkedThreadRefreshes,
         [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
           withPullRequestViewer(input, pullRequests.reviewerCandidates(input)),
         [WS_METHODS.pullRequestsRequestReviewers]: (input) =>
@@ -3262,6 +3265,11 @@ export const layerWsRpc = (
           workspaceAccess.validate({ cwd: input.path }).pipe(
             Effect.andThen(workspaceAccess.run(input, gitWorkflow.removeWorktree(input))),
             Effect.tap(() => refreshGitStatus(input.cwd)),
+            Effect.tap(() =>
+              vcsStatusBroadcaster
+                .refreshLocalStatus(input.path)
+                .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
+            ),
           ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           workspaceAccess

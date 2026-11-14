@@ -109,7 +109,7 @@ function LinkedEnvironmentRow({
   const forget = async () => {
     const confirmed = await (requestConfirmDialog(
       t(
-        "Forget {environment}? Agents here stop working there. Revoke “T3 Code · …” in that environment’s Connections to end the session there too.",
+        "Forget {environment}? Agents here stop working there. Revoke “T3 Code · …” in that environment’s Sharing & access to end the session there too.",
         { environment: link.label },
       ),
       { variant: "destructive" },
@@ -293,7 +293,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
           <DialogTitle>{t("Link an environment")}</DialogTitle>
           <DialogDescription>
             {t(
-              "Agents here can then launch, message and wait on threads there. It appears in that environment's Connections, where it can be revoked.",
+              "Agents here can then launch, message and wait on threads there. It appears under Authorized clients in that environment's Sharing & access, where it can be revoked.",
             )}
           </DialogDescription>
         </DialogHeader>
@@ -357,7 +357,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                   onChange={(event) => setPairingCode(event.target.value)}
                   placeholder={
                     machine === null
-                      ? t("From that environment’s Connections, or t3 pair there")
+                      ? t("From Sharing & access there, or t3 pair")
                       : t("Paste the code")
                   }
                   disabled={busy}
@@ -368,7 +368,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                 {machine !== null ? (
                   <span className="block text-xs text-muted-foreground">
                     {t(
-                      "Create a link on {environment}: Settings → Connections → Create link, then paste its code here.",
+                      "Create a link on {environment}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.",
                       { environment: machine.label },
                     )}
                   </span>

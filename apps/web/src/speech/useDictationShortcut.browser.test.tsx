@@ -1,10 +1,19 @@
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { createRef, type RefObject } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { render } from "../../test/render";
+import { __setClientSettingsForTests } from "../hooks/useSettings";
 import { useDictationShortcut, type DictationKeyHandlers } from "./useDictationShortcut";
 
-vi.mock("../hooks/useSettings", () => ({ useClientSettings: () => "hold" }));
+function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, voiceShortcutMode: "hold" });
+  return {
+    [Symbol.dispose]() {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    },
+  };
+}
 
 type ShortcutInput = Parameters<typeof useDictationShortcut>[0];
 
@@ -53,6 +62,7 @@ function actions(available: boolean) {
 }
 
 it("leaves the browser shortcut alone when dictation is off", async () => {
+  using _settings = setup();
   const speech = actions(false);
   await using _screen = await render(<Probe speech={speech} />);
   expect(press()).toBe(true);
@@ -60,6 +70,7 @@ it("leaves the browser shortcut alone when dictation is off", async () => {
 });
 
 it("stops on a new press when the OS omitted keyup, but ignores autorepeat", async () => {
+  using _settings = setup();
   const speech = actions(true);
   await using screen = await render(<Probe speech={speech} />);
   expect(press()).toBe(false);
@@ -74,6 +85,7 @@ it("stops on a new press when the OS omitted keyup, but ignores autorepeat", asy
 });
 
 it("finishes a released hold after startup even if the chord was pressed again while preparing", async () => {
+  using _settings = setup();
   const speech = actions(true);
   let finishStart!: () => void;
   const startup = new Promise<void>((resolve) => {
@@ -103,6 +115,7 @@ const recording = () => ({
 });
 
 it("lets Escape in another dictation editor reach that editor instead of canceling the recording", async () => {
+  using _settings = setup();
   const speech = recording();
   const commentRef = createRef<HTMLTextAreaElement>();
   const editorEscape = vi.fn();
@@ -135,6 +148,7 @@ it("lets Escape in another dictation editor reach that editor instead of canceli
 });
 
 it("lets Escape in another editor of the recording editor's dialog reach that editor", async () => {
+  using _settings = setup();
   const speech = recording();
   const replyRef = createRef<HTMLTextAreaElement>();
   const otherReplyRef = createRef<HTMLTextAreaElement>();
@@ -156,6 +170,7 @@ it("lets Escape in another editor of the recording editor's dialog reach that ed
 });
 
 it("cancels the recording on Escape outside other shown dictation editors", async () => {
+  using _settings = setup();
   const speech = recording();
   const reviewRef = createRef<HTMLTextAreaElement>();
   const commentRef = createRef<HTMLTextAreaElement>();
@@ -190,6 +205,7 @@ it.each([
 ])(
   "routes Escape relayed from the preview guest to the preview when %s",
   async (_name, previewRecords) => {
+    using _settings = setup();
     const composer = previewRecords ? actions(true) : recording();
     const preview = previewRecords ? recording() : actions(true);
     let relayed: DictationKeyHandlers | undefined;

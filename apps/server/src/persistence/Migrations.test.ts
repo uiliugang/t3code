@@ -6,8 +6,14 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
+import { EventId } from "@t3tools/contracts";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import {
+  workspaceFixture,
+  workspaceThreadFixture,
+} from "../orchestration-v2/testkit/workspaceFixtures.ts";
 
 const v2Migrations = migrationManifest.filter(([id]) => id >= 55);
 const newerMigrationId = Math.max(...migrationManifest.map(([id]) => id)) + 1;
@@ -69,7 +75,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99])(
+  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100])(
     "upgrades a database at exactly %s",
     (id) =>
       Effect.gen(function* () {
@@ -120,6 +126,23 @@ describe("runMigrations", () => {
             "orchestration_v2_projection_turn_items_active_run_idx",
           ],
         );
+        yield* Effect.gen(function* () {
+          const store = yield* ProjectionStore.ProjectionStoreV2;
+          const thread = workspaceThreadFixture(workspaceFixture());
+          yield* store.apply({
+            id: EventId.make("migration-shell-thread"),
+            type: "thread.created",
+            threadId: thread.id,
+            occurredAt: thread.createdAt,
+            payload: thread,
+          });
+          const snapshot = yield* store.getShellSnapshot();
+          assert.deepStrictEqual(
+            snapshot.threads.map(({ id }) => id),
+            [thread.id],
+          );
+          assert.deepStrictEqual(snapshot.threads[0]?.workspace, thread.workspace);
+        }).pipe(Effect.provide(ProjectionStore.layer));
         assert.deepStrictEqual(yield* runMigrations(), []);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

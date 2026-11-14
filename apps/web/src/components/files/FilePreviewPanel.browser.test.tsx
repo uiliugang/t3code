@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
   file: null as ProjectReadFileResult | null,
   optimistic: null as ProjectReadFileResult | null,
   writeFile: vi.fn(),
+  assetUrl: { _tag: "Loading" } as import("~/assets/assetUrls").AssetUrlState,
+  mintUrl: vi.fn<() => Promise<string | null>>(),
 }));
 
 vi.mock(import("@t3tools/client-runtime/state/runtime"), async (original) => ({
@@ -57,6 +59,15 @@ vi.mock(import("~/hooks/useTheme"), async (original) => ({
 }));
 vi.mock(import("~/hooks/useWorkspaceMutationRefresh"), () => ({
   useWorkspaceMutationRefresh: vi.fn(),
+}));
+vi.mock(import("~/assets/assetUrls"), async (original) => ({
+  ...(await original()),
+  useAssetUrlRefresh: () => state.mintUrl,
+  useAssetUrlState: () => state.assetUrl,
+}));
+// The Word engine compiles a large WebAssembly bundle; these tests only need the URL it loads.
+vi.mock(import("./OfficeFilePreview"), () => ({
+  OfficeFilePreview: ({ src }: { src: string }) => <div data-testid="office-preview">{src}</div>,
 }));
 vi.mock(import("./FileBreadcrumbs"), () => ({ FileBreadcrumbs: () => <></> }));
 vi.mock(import("./FileBrowserPanel"), () => ({
@@ -109,6 +120,9 @@ function setup(renderMarkdown: boolean | null = null) {
   if (renderMarkdown === null) localStorage.removeItem(keys[1]!);
   else localStorage.setItem(keys[1]!, JSON.stringify(renderMarkdown));
   state.optimistic = null;
+  state.assetUrl = { _tag: "Loading" };
+  let mints = 0;
+  state.mintUrl.mockReset().mockImplementation(async () => `/assets/report.docx?mint=${++mints}`);
   state.writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   return {
     [Symbol.dispose]() {
@@ -141,10 +155,21 @@ function markdownPreview(
     byteLength: truncated ? 1_200_000 : 32,
     truncated,
   };
-  return filePreview(relativePath, revealLine, revealRequestId);
+  return filePreview(relativePath, { revealLine, revealRequestId });
 }
 
-function filePreview(relativePath: string, revealLine: number | null = null, revealRequestId = 0) {
+function filePreview(
+  relativePath: string,
+  {
+    revealLine = null,
+    revealRequestId = 0,
+    workspaceMutationId = null,
+  }: {
+    revealLine?: number | null;
+    revealRequestId?: number;
+    workspaceMutationId?: string | null;
+  } = {},
+) {
   return (
     <FilePreviewPanel
       environmentId={environmentId}
@@ -163,9 +188,20 @@ function filePreview(relativePath: string, revealLine: number | null = null, rev
       folderTrail={undefined}
       onPendingChange={vi.fn()}
       selectedFilePending={false}
-      workspaceMutationId={null}
+      workspaceMutationId={workspaceMutationId}
     />
   );
+}
+
+function documentPreview(workspaceMutationId: string, fileRevision: string) {
+  state.file = null;
+  state.assetUrl = {
+    _tag: "Success",
+    url: "/assets/report.docx",
+    expiresAt: Number.MAX_SAFE_INTEGER,
+    fileRevision,
+  };
+  return filePreview("report.docx", { workspaceMutationId });
 }
 
 function deepActiveElement() {
@@ -341,6 +377,65 @@ describe("rendered Markdown task saves", () => {
     await expect
       .element(screen.getByRole("button", { name: "Show rendered markdown", exact: true }))
       .toBeVisible();
+  });
+});
+
+describe("workspace document previews", () => {
+  it("keeps an unchanged document loaded when another workspace change lands", async () => {
+    using _settings = setup();
+    await using screen = await render(documentPreview("mutation-1", "revision-1"));
+    const preview = screen.getByTestId("office-preview");
+    await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
+    const loaded = preview.element();
+
+    await screen.rerender(documentPreview("mutation-2", "revision-1"));
+
+    expect(state.mintUrl, "an unchanged document re-minted its URL").toHaveBeenCalledOnce();
+    expect(screen.container.contains(loaded), "an unchanged document was remounted").toBe(true);
+  });
+
+  it("keeps an unchanged document mounted while its revision check reloads", async () => {
+    using _settings = setup();
+    await using screen = await render(documentPreview("mutation-1", "revision-1"));
+    const preview = screen.getByTestId("office-preview");
+    await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
+    const loaded = preview.element();
+
+    state.assetUrl = { _tag: "Loading" };
+    await screen.rerender(filePreview("report.docx", { workspaceMutationId: "mutation-1" }));
+    await screen.rerender(documentPreview("mutation-1", "revision-1"));
+
+    expect(
+      state.mintUrl,
+      "a reloading revision check re-minted the document URL",
+    ).toHaveBeenCalledOnce();
+    expect(
+      screen.container.contains(loaded),
+      "a reloading revision check remounted the document",
+    ).toBe(true);
+  });
+
+  it("reloads the document when its URL can no longer be minted", async () => {
+    using _settings = setup();
+    await using screen = await render(documentPreview("mutation-1", "revision-1"));
+    const preview = screen.getByTestId("office-preview");
+    await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
+
+    state.assetUrl = { _tag: "Failure" };
+    await screen.rerender(filePreview("report.docx", { workspaceMutationId: "mutation-2" }));
+
+    await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=2");
+  });
+
+  it("loads the new bytes when the document itself changes", async () => {
+    using _settings = setup();
+    await using screen = await render(documentPreview("mutation-1", "revision-1"));
+    const preview = screen.getByTestId("office-preview");
+    await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=1");
+
+    await screen.rerender(documentPreview("mutation-2", "revision-2"));
+
+    await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=2");
   });
 });
 
