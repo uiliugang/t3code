@@ -45,7 +45,7 @@ const stream = (tool: boolean, complete = true) =>
 
 it.effect("checks optional model listing without sending a billable inference request", () =>
   Effect.gen(function* () {
-    for (const status of [200, 403, 404, 405, 401, 429, 500]) {
+    for (const status of [200, 403, 404, 405, 400, 401, 422, 429, 500]) {
       let initialized = false;
       const result = yield* validateClaudeEndpoint(
         config,
@@ -76,20 +76,32 @@ it.effect("checks optional model listing without sending a billable inference re
           assert.strictEqual(result.success.authenticated, status === 200);
       } else {
         assert.strictEqual(result._tag, "Failure");
-        if (result._tag === "Failure") assert.notInclude(result.failure.message, "secret");
+        if (result._tag === "Failure") {
+          assert.notInclude(result.failure.message, "secret");
+          if (status === 400 || status === 422) {
+            assert.include(result.failure.message, String(status));
+            assert.include(result.failure.message, "model");
+            assert.notInclude(result.failure.message, "Anthropic protocol");
+          }
+        }
       }
     }
   }),
 );
 
-it.effect(
-  "tests the native tool round trip with exact model IDs and the selected auth header",
-  () =>
+it.effect.each(["anthropic", "openai"] as const)(
+  "tests the %s tool round trip with exact model IDs and the selected auth header",
+  (protocol) =>
     Effect.gen(function* () {
       let requests = 0;
       const result = yield* validateClaudeEndpoint(
         config,
-        { ...environment, ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_API_KEY: "api-key" },
+        {
+          ...environment,
+          T3_CLAUDE_API_FORMAT: protocol,
+          ANTHROPIC_AUTH_TOKEN: "",
+          ANTHROPIC_API_KEY: "api-key",
+        },
         { instanceId, check: "model", model: "CaseSensitive" },
         Effect.void,
       ).pipe(
@@ -105,7 +117,17 @@ it.effect(
               if (request.body._tag === "Uint8Array") {
                 const body = new TextDecoder().decode(request.body.body);
                 assert.include(body, '"model":"CaseSensitive"');
-                if (requests === 1) assert.include(body, '"tool_use_id":"echo_123"');
+                if (requests === 0)
+                  assert.include(
+                    body,
+                    protocol === "openai"
+                      ? '"tool_choice":{"type":"auto"}'
+                      : '"tool_choice":{"type":"tool","name":"t3_echo"}',
+                  );
+                else {
+                  assert.include(body, '"tool_use_id":"echo_123"');
+                  assert.include(body, '"tool_choice":{"type":"none"}');
+                }
               }
               return HttpClientResponse.fromWeb(
                 request,
