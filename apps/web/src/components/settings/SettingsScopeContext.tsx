@@ -55,11 +55,11 @@ function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
   );
 }
 
-function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironment: boolean) {
+function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, selectEnvironment: boolean) {
   const groups = useSettingsProjectGroups();
   const { environments: availableEnvironments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const search = singleEnvironment
+  const search = selectEnvironment
     ? selectSingleEnvironmentScope(
         rawSearch,
         resolveSettingsScope(rawSearch, groups, availableEnvironments),
@@ -108,13 +108,18 @@ export function SettingsScopeProvider({
   onChange: (next: SettingsScopeSearch) => void;
   children: ReactNode;
 }) {
-  const resolved = useResolvedSettingsScope(search, singleEnvironment);
+  const [hasSelectedAllEnvironments, setHasSelectedAllEnvironments] = useState(false);
+  const defaultEnvironment = !hasSelectedAllEnvironments && !search.project && !search.checkout;
+  const resolved = useResolvedSettingsScope(search, singleEnvironment || defaultEnvironment);
   const [projectTypeFilter, setProjectTypeFilter] = useState<ProjectTypeFilter>("all");
   const value = {
     ...resolved,
     singleEnvironment,
     deviceOnly,
-    selectScope: onChange,
+    selectScope: (next: SettingsScopeSearch) => {
+      if (!next.machine) setHasSelectedAllEnvironments(true);
+      onChange(next);
+    },
     projectTypeFilter,
     setProjectTypeFilter,
   };
