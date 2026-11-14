@@ -67,9 +67,10 @@ function EnvironmentPickerRow(props: {
   const { diagnosis, state } = useConnectionDiagnosis(props.environmentId, presentation);
   const { onReconnectEnvironment } = useRemoteConnections();
   const connection = presentation?.connection;
-  const status =
-    diagnosis?.headline ??
-    (connection ? t(environmentStatusText({ ...connection, error: null })) : t("Offline"));
+  const status = connection?.awaitingApproval
+    ? environmentStatusText(connection, t)
+    : (diagnosis?.headline ??
+      (connection ? environmentStatusText({ ...connection, error: null }, t) : t("Offline")));
   return (
     <View className={cn("bg-grouped-card", !props.isLast && "border-b border-border-subtle")}>
       <View className="flex-row items-center">

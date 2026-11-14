@@ -744,14 +744,11 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(() => fail("target")));
         yield* SubscriptionRef.update(state, (value) => ({
           ...value,
-          targets: available
-            .filter((thread) => thread.archivedAt === null)
-            .slice(0, 500)
-            .map((thread) => ({
-              threadId: thread.id,
-              projectId: thread.projectId,
-              title: thread.title,
-            })),
+          targets: available.slice(0, 500).map((thread) => ({
+            threadId: thread.id,
+            projectId: thread.projectId,
+            title: thread.title,
+          })),
         }));
         yield* publish();
         return SubscriptionRef.changes(state);

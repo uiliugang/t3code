@@ -463,6 +463,10 @@
       "types": "./src/threadPullRequests.ts",
       "default": "./src/threadPullRequests.ts"
     },
+    "./state/requirement-board": {
+      "types": "./src/state/requirementBoard.ts",
+      "default": "./src/state/requirementBoard.ts"
+    },
     "./work-item": {
       "types": "./src/workItem.ts",
       "default": "./src/workItem.ts"

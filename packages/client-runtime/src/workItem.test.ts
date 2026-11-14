@@ -14,6 +14,7 @@ import {
   selectWorkItemResultIds,
   deliveryStages,
   requirementGroup,
+  mergeRequirementEntries,
 } from "./workItem.ts";
 
 it("keeps testing unverified after merge and only completes after a successful platform sync", () => {
@@ -164,4 +165,74 @@ it("reuses a failed dispatch identity but keeps an explicit additional dispatch 
     "intent-a",
   );
   expect(afterSuccess.input.commandId).toBe("after-success");
+});
+
+it("merges issue sources and local tasks without duplicating tracked issues", () => {
+  const projectId = ProjectId.make("project");
+  const local = { ...task(), executionCount: 1, activeExecutionCount: 1 };
+  const issue = {
+    id: "12",
+    url: "https://github.com/org/repo/issues/12",
+    title: "External issue",
+    state: "Open",
+    stateCategory: "todo" as const,
+    type: "Issue",
+    assignees: [],
+    priority: "",
+    updatedAt: local.updatedAt,
+  };
+  const result = {
+    groups: [
+      {
+        source: { provider: "github" as const, host: "github.com", scope: "org/repo" },
+        projectIds: [projectId],
+        issues: [issue],
+        hasMore: false,
+      },
+    ],
+    failures: [],
+  };
+  const tracked = {
+    ...local,
+    id: WorkItemId.make("tracked"),
+    issue: {
+      provider: "github" as const,
+      host: "github.com",
+      repository: "org/repo",
+      number: "12",
+      url: issue.url,
+    },
+  };
+  const meituan = {
+    groups: [
+      {
+        ...result.groups[0]!,
+        source: { provider: "meituan" as const, host: "mep.sankuai.com", scope: "123" },
+        issues: [
+          { ...issue, url: "https://mep.sankuai.com/ones/123/12", title: "ONES requirement" },
+        ],
+      },
+    ],
+    failures: [],
+  };
+  expect(mergeRequirementEntries([result, meituan], [local, tracked], new Map())).toHaveLength(3);
+  const entries = mergeRequirementEntries([result, result], [local, tracked], new Map());
+  expect(entries.map((entry) => entry.key).sort()).toEqual([issue.url, "local:task"].sort());
+  expect(entries.find((entry) => entry.kind === "local")?.group).toBe("todo");
+  expect(mergeRequirementEntries([], [local], new Map(), { source: "github" })).toEqual([]);
+  expect(
+    mergeRequirementEntries([result], [local], new Map(), { source: "local" }).map(
+      (entry) => entry.key,
+    ),
+  ).toEqual(["local:task"]);
+  expect(mergeRequirementEntries([], [local], new Map(), { query: "LOGIN" })).toHaveLength(1);
+  expect(mergeRequirementEntries([], [local], new Map(), { query: "missing" })).toEqual([]);
+  expect(
+    mergeRequirementEntries([result], [{ ...local, archived: true }], new Map(), {
+      archived: true,
+    }).map((entry) => entry.key),
+  ).toEqual(["local:task"]);
+  expect(
+    mergeRequirementEntries([], [{ ...local, status: "in_review" }], new Map())[0]?.group,
+  ).toBe("active");
 });

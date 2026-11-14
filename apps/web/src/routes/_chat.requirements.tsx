@@ -1,10 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { EnvironmentId, ProjectId, IssueProvider } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, IssueProvider, WorkItemId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { RequirementsPage } from "../components/requirements/RequirementsPage";
 
 const Search = Schema.Struct({
   provider: Schema.optionalKey(IssueProvider),
+  source: Schema.optionalKey(Schema.Literals(["all", "meituan", "github", "local"])),
+  issueProvider: Schema.optionalKey(IssueProvider),
+  workItemId: Schema.optionalKey(WorkItemId),
+  archived: Schema.optionalKey(Schema.Boolean),
   environmentId: Schema.optionalKey(EnvironmentId),
   projectId: Schema.optionalKey(ProjectId),
   assignee: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),

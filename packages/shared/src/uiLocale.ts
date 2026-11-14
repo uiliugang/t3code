@@ -9,6 +9,109 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "This computer is off": "此计算机已关闭",
+  "No computer connected": "尚未连接计算机",
+  "Turn it back on, or connect a different computer.": "重新开启此计算机，或连接另一台计算机。",
+  "Your agents run on your computer.": "代理在你的计算机上运行。",
+  "Your agents run on your computer. Start T3 Code there first.":
+    "代理在你的计算机上运行。请先在计算机上启动 T3 Code。",
+  "Open Environments": "打开环境",
+  "Signed in": "已登录",
+  "Waiting for your computer…": "正在等待你的计算机…",
+  "Add pairing link": "添加配对链接",
+  "Run on your computer:": "在你的计算机上运行：",
+  "Or download the desktop app": "或下载桌面应用",
+  "Retry T3 Connect": "重试 T3 Connect",
+  "Browser authorization": "浏览器授权",
+  "Connecting your terminal": "正在连接你的终端",
+  "Redirecting to authorize T3 Connect for your CLI…": "正在跳转，为命令行授权 T3 Connect…",
+  "Sign in to continue authorizing T3 Connect for your CLI.": "登录以继续为命令行授权 T3 Connect。",
+  "Authorization request": "授权请求",
+  "This connect link is incomplete": "此连接链接不完整",
+  "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.":
+    "链接缺少授权请求。请在终端中重新运行 `t3 connect`，并打开新生成的链接。",
+  "Could not load sign-in": "无法加载登录",
+  "T3 Connect sign-in did not load. Check your connection, then try again.":
+    "T3 Connect 登录未能加载。请检查网络连接后重试。",
+  "Mesh your devices together. Publish this environment and connect the rest, all in one place.":
+    "将你的设备连接在一起。在此发布当前环境并连接其他设备。",
+  "Don't show this again": "不再显示",
+  "Not now": "暂时不用",
+  "Connect devices": "连接设备",
+  "Publish this environment": "发布此环境",
+  "Make this environment available to your other devices through T3 Connect.":
+    "通过 T3 Connect 让你的其他设备访问此环境。",
+  "Send activity from this environment to your mobile clients for push notifications and Live Activities.":
+    "将此环境的活动发送到移动客户端，用于推送通知和实时活动。",
+  "No other environments are published to your account yet. Publish one from another device and it will show up here.":
+    "你的账户尚未发布其他环境。在另一台设备上发布环境后，即可在此看到。",
+  "T3 Connect enabled": "已启用 T3 Connect",
+  "This environment is available to your other devices through T3 Connect.":
+    "你的其他设备现在可以通过 T3 Connect 访问此环境。",
+  "This environment publishes agent activity to your mobile clients.":
+    "此环境会向你的移动客户端发布代理活动。",
+  "Waiting on a subagent": "正在等待一个子代理",
+  "Waiting on {count} subagents": "正在等待 {count} 个子代理",
+
+  "Custom CSS": "自定义 CSS",
+  "Clear CSS": "清除 CSS",
+  "Ln {line}, Col {column}": "第 {line} 行，第 {column} 列",
+  "Tab indents. Shift+Tab unindents. Press Escape, then Tab to leave.":
+    "按 Tab 缩进，按 Shift+Tab 取消缩进。先按 Escape 再按 Tab 离开编辑器。",
+  "Tab moves to the next control.": "按 Tab 移到下一个控件。",
+  "Saved with this theme and included when you export it. Web and desktop only. Rules that load remote files are ignored.":
+    "CSS 随主题保存并包含在导出文件中，仅适用于网页和桌面端。加载远程文件的规则会被忽略。",
+  "“{theme}” has different custom CSS. Use the same CSS or pick another name.":
+    "“{theme}”包含不同的自定义 CSS。请使用相同的 CSS，或选择其他名称。",
+  "A device wants to connect to {environment}": "有设备请求连接 {environment}",
+  "{device}. Approve only if it shows code {code}.":
+    "{device}。仅当该设备显示验证码 {code} 时批准。",
+  "Could not revoke the device": "无法撤销此设备的访问权限",
+  "T3 Connect devices": "T3 Connect 设备",
+  "Waiting for approval": "等待批准",
+  "{device}. Approve only if the device in front of you shows this code.":
+    "{device}。仅当你面前的设备显示此验证码时批准。",
+  "Trusted since {time}": "自 {time} 起受信任",
+  "Revoke {device}?": "撤销 {device} 的访问权限？",
+  "No device has connected through T3 Connect yet.": "尚无设备通过 T3 Connect 连接。",
+  "Approval for new devices is off, so a revoked device signed in to your T3 Connect account can connect again on its own.":
+    "新设备审批已关闭，因此已登录你的 T3 Connect 账号的设备即使被撤销访问权限，也能自行重新连接。",
+  "Require approval for new devices": "新设备连接前需批准",
+  "The device has to be approved here before it can connect again.":
+    "此设备需要在这里获批后才能重新连接。",
+  "Unknown device": "未知设备",
+  "this device": "此设备",
+  "Revoke all other clients?": "撤销所有其他客户端的访问权限？",
+  "{host} is waiting for someone to approve this device": "{host} 正在等待批准此设备",
+  "On a device already connected to {host}, open Settings > Sharing & access and approve the device showing {code}.":
+    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问权限”，批准显示验证码 {code} 的设备。",
+  "On a device already connected to {host}, open Settings > Sharing & access and approve this device.":
+    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问权限”并批准此设备。",
+  "Or run `t3 auth connect-device approve {code}` on {host}.":
+    "也可以在 {host} 上运行 `t3 auth connect-device approve {code}`。",
+  "Waiting for approval on the host": "等待主机批准",
+  "Waiting for approval on the host. Code: {code}": "等待主机批准，验证码：{code}",
+  "Retry sign-in": "重试登录",
+  "Devices that sign in to your T3 Connect account wait until someone already connected here approves them.":
+    "登录你的 T3 Connect 账号的新设备，需要由已连接到此处的设备批准后才能连接。",
+  "Require approval for new T3 Connect devices": "新 T3 Connect 设备连接需批准",
+  "Your session does not have permission to manage access.": "当前会话没有管理访问权限的权限。",
+  "Waiting for {environment} to approve this device": "等待 {environment} 批准此设备",
+  "Video unavailable. {detail}": "视频不可用。{detail}",
+  "This connection cannot read host files. Pair again with a new link to view it.":
+    "此连接没有读取主机文件的权限。请使用新的配对链接重新连接后查看。",
+  "Play {name}": "播放 {name}",
+  "Opening share sheet...": "正在打开分享面板...",
+  "Approve this device?": "批准此设备？",
+  "{device} wants to connect to {environment} through T3 Connect. It shows code {code}. Approve it only if that code matches.":
+    "{device} 希望通过 T3 Connect 连接到 {environment}。设备显示的验证码为 {code}。请仅在验证码一致时批准。",
+  "{browser} on {os}": "{os} 上的 {browser}",
+  "A new device": "新设备",
+  "Request no longer waiting": "请求已结束等待",
+  "It expired or was answered elsewhere.": "请求已过期或已在其他位置处理。",
+  "The request is still waiting. Try again.": "请求仍在等待处理，请重试。",
+  "Could not deny the device": "无法拒绝此设备",
+  "Could not approve the device": "无法批准此设备",
   "Search ignored files": "搜索忽略的文件",
   "No ignored files match.": "没有匹配的忽略文件。",
   " Search to find the rest.": " 可通过搜索查找其余文件。",
@@ -528,6 +631,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Pair WeChat and send an activation message first.": "请先配对微信，再向机器人发送激活消息。",
   "Another WeChat operation is running. Try again shortly.": "有其他微信操作正在进行，请稍后重试。",
   "Requirements board": "需求看板",
+  "All sources": "全部来源",
+  "No matching work items.": "没有符合条件的需求或任务。",
   "Development stage": "开发",
   Testing: "测试",
   Release: "发布",
@@ -5946,7 +6051,17 @@ const zhCN: Readonly<Record<string, string>> = {
   "{project} to start": "{project}以开始",
   "Add a project to start": "添加项目以开始",
   "or start without a project": "或直接开始，无需项目",
+  "Remove themes from “{collection}”?": "移除“{collection}”中的主题？",
+  "Remove “{theme}”?": "移除“{theme}”？",
+  "Select the variants you want to remove. You can restore them by importing the extension again.":
+    "选择要移除的变体。再次导入扩展即可恢复。",
+  "You can bring it back anytime by importing its JSON file.": "随时导入其 JSON 文件即可恢复。",
+  "Remove theme": "移除主题",
 };
+
+export function hasUiTranslation(message: string): boolean {
+  return Object.hasOwn(zhCN, message);
+}
 
 export function translateUi(
   locale: UiLocale,

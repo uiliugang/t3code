@@ -62,6 +62,7 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
 
 const mockEventSink = (implementation: Partial<EventSink.EventSinkV2["Service"]>) =>
   Layer.mock(EventSink.EventSinkV2)({
@@ -1125,7 +1126,12 @@ it.effect(
     }).pipe(Effect.provide(layerRunExecutionTest)),
 );
 
-it.effect("starts the provider when checkpoint baseline capture fails", () =>
+it.effect.each([
+  { workspace: false, forked: false },
+  { workspace: false, forked: true },
+  { workspace: true, forked: false },
+  { workspace: true, forked: true },
+])("handles checkpoint baseline capture failure with %j", ({ workspace, forked }) =>
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread:run-execution-baseline-failure");
     const runId = RunId.make("run:run-execution-baseline-failure");
@@ -1138,6 +1144,7 @@ it.effect("starts the provider when checkpoint baseline capture fails", () =>
     const rootNodeId = NodeId.make("node:run-execution-baseline-failure");
     const checkpointScope = {
       id: CheckpointScopeId.make("checkpoint-scope:run-execution-baseline-failure"),
+      ...(workspace ? { workspace: workspaceFixture() } : {}),
     } as OrchestrationV2CheckpointScope;
     const providerStarts = yield* Ref.make(0);
     const writes = yield* Ref.make<
@@ -1163,6 +1170,11 @@ it.effect("starts the provider when checkpoint baseline capture fails", () =>
           }),
           layerTurnItemPositionsTest,
           mockEventSink({
+            writeIfRunCurrent: (input) =>
+              Ref.update(writes, (current) => [
+                ...current,
+                { events: input.events, effects: input.effects ?? [] },
+              ]).pipe(Effect.as({ committed: true, storedEvents: [] })),
             writeWithEffects: (input) =>
               Ref.update(writes, (current) => [
                 ...current,
@@ -1181,20 +1193,26 @@ it.effect("starts the provider when checkpoint baseline capture fails", () =>
 
     yield* Effect.gen(function* () {
       const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
+      const appThread = rootAppThread(threadId);
+      const run = {
+        id: runId,
+        threadId,
+        ordinal: 1,
+        providerInstanceId,
+      } as OrchestrationV2Run;
+      const baseline = forked
+        ? yield* runExecution.forkBaseline({ appThread, run, checkpointScope })
+        : undefined;
       yield* runExecution.startRootRun({
         commandId: CommandId.make("command:run-execution-baseline-failure"),
-        appThread: rootAppThread(threadId),
+        appThread,
+        ...(baseline === undefined ? {} : { baseline }),
         providerSessionId,
         session: {
           events: Stream.never,
           startTurn: () => Ref.update(providerStarts, (count) => count + 1),
         } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime,
-        run: {
-          id: runId,
-          threadId,
-          ordinal: 1,
-          providerInstanceId,
-        } as OrchestrationV2Run,
+        run,
         rootNode: { id: rootNodeId } as OrchestrationV2ExecutionNode,
         checkpointScope,
         providerThread: {
@@ -1229,7 +1247,7 @@ it.effect("starts the provider when checkpoint baseline capture fails", () =>
       });
     }).pipe(Effect.provide(layerTest));
 
-    assert.equal(yield* Ref.get(providerStarts), 1);
+    assert.equal(yield* Ref.get(providerStarts), workspace ? 0 : 1);
 
     const events = (yield* Ref.get(writes)).flatMap((write) => [...write.events]);
     const failedEvent = events.find(
@@ -1239,11 +1257,103 @@ it.effect("starts the provider when checkpoint baseline capture fails", () =>
           event.type === "node.updated") &&
         event.payload.status === "failed",
     );
-    assert.isUndefined(failedEvent);
+    assert.equal(failedEvent !== undefined, workspace);
     const errorItem = events.find(
       (event) => event.type === "turn-item.updated" && event.payload.type === "error",
     );
-    assert.isUndefined(errorItem);
+    assert.equal(errorItem !== undefined, workspace);
+  }),
+);
+
+it.effect("prompts the provider only after a forked baseline capture finishes", () =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread:run-execution-forked-baseline");
+    const runId = RunId.make("run:run-execution-forked-baseline");
+    const attemptId = RunAttemptId.make("attempt:run-execution-forked-baseline");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const checkpointScope = {
+      id: CheckpointScopeId.make("checkpoint-scope:run-execution-forked-baseline"),
+    } as OrchestrationV2CheckpointScope;
+    const run = { id: runId, threadId, ordinal: 1, providerInstanceId } as OrchestrationV2Run;
+    const order = yield* Ref.make<ReadonlyArray<string>>([]);
+    const layerTest = RunExecutionService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          McpAppModelContext.layerEmpty,
+          PreviewAgentActivity.layer,
+          Layer.mock(CheckpointService.CheckpointServiceV2)({
+            captureBaseline: () =>
+              Effect.sleep("1 second").pipe(
+                Effect.andThen(Ref.update(order, (current) => [...current, "baseline"])),
+              ),
+          }),
+          layerTurnItemPositionsTest,
+          mockEventSink({}),
+          IdAllocator.layer,
+          ThreadCommandExecutor.layer,
+          Layer.mock(ProviderEventIngestor.ProviderEventIngestorV2)({
+            ingestNormalized: () => Effect.succeed([]),
+          }),
+          ServerSettings.layerTest(),
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
+      const baseline = yield* runExecution.forkBaseline({
+        appThread: rootAppThread(threadId),
+        run,
+        checkpointScope,
+      });
+      const started = yield* runExecution
+        .startRootRun({
+          commandId: CommandId.make("command:run-execution-forked-baseline"),
+          appThread: rootAppThread(threadId),
+          providerSessionId: ProviderSessionId.make("session:run-execution-forked-baseline"),
+          session: {
+            events: Stream.never,
+            startTurn: () => Ref.update(order, (current) => [...current, "prompt"]),
+          } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime,
+          run,
+          rootNode: {
+            id: NodeId.make("node:run-execution-forked-baseline"),
+          } as OrchestrationV2ExecutionNode,
+          checkpointScope,
+          providerThread: {
+            id: ProviderThreadId.make("provider-thread:run-execution-forked-baseline"),
+            driver,
+          } as OrchestrationV2ProviderThread,
+          attempt: { id: attemptId, providerTurnId: null } as OrchestrationV2RunAttempt,
+          attemptId,
+          baseline,
+          providerTurnOrdinal: 1,
+          message: {
+            messageId: MessageId.make("message:run-execution-forked-baseline"),
+            text: "Wait for the baseline.",
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+          modelSelection: { instanceId: providerInstanceId, model: "gpt-5.4" },
+          runtimePolicy: {
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: process.cwd(),
+            approvalPolicy: "never",
+            sandboxPolicy: {
+              type: "readOnly",
+              access: { type: "fullAccess" },
+              networkAccess: false,
+            },
+          },
+        })
+        .pipe(Effect.forkChild);
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.join(started);
+    }).pipe(Effect.provide(layerTest));
+
+    assert.deepEqual(yield* Ref.get(order), ["baseline", "prompt"]);
   }),
 );
 

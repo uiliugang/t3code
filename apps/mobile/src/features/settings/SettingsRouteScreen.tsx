@@ -297,12 +297,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
         serverPage("SettingsSkills", "doc.text", "Skills"),
         serverPage("SettingsThreads", "text.bubble", "Threads"),
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
-        {
-          id: "work-items-board",
-          icon: "checkmark.circle",
-          label: "Task board",
-          onPress: () => navigation.navigate("WorkItems"),
-        },
       ],
     },
     {

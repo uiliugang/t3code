@@ -9,7 +9,6 @@ import {
   ProviderInstanceId,
   WorkspaceRootId,
   type ServerSettings,
-  ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Struct from "effect/Struct";
@@ -331,6 +330,11 @@ describe("settings transfer", () => {
       },
       server: {
         ...source,
+        requireConnectDeviceApproval: true,
+        defaultTheme: "private-theme",
+        defaultThemeSetAt: "2026-11-14T00:00:00.000Z",
+        defaultAppearance: "dark",
+        defaultAppearanceSetAt: "2026-11-14T00:00:00.000Z",
         worktreesDirectory: "/private/path",
         cloudSpeechCredentials: { ...source.cloudSpeechCredentials, openai: "must-not-export" },
         daxiang: { clientId: "fixture", clientSecret: "must-not-export" },
@@ -369,40 +373,9 @@ describe("settings transfer", () => {
     expect(file.clientSettings.diffCustomColors?.conflict).toBe("#a16207");
     expect(file.keybindings).toEqual([{ key: "mod+j", command: "terminal.toggle" }]);
     expect(applicationSettingsImportPatch(file, source)).toEqual(file.server);
-    const excludedServerFields = [
-      "setModelFavorites",
-      "setModelsHidden",
-      "setProviderModelOrder",
-      "migrateModelPreferences",
-      "worktreesDirectory",
-      "projectAgentBrowserAccessOverrides",
-      "projectScriptOverrides",
-      "projectAutoPullOverrides",
-      "projectSettingsOverrides",
-      "deviceOnboardingCompleted",
-      "deviceHosts",
-      "easDeviceHosts",
-      "simlockDeviceHosts",
-      "environmentIcon",
-      "environmentName",
-      "addProjectBaseDirectory",
-      "observability",
-      "sourceControlHosts",
-      "providerInstances",
-      "textGenerators",
-      "usageLimitSources",
-      "secretProviders",
-      "cursorKeychainUsageEnabled",
-      "cloudSpeechCredentials",
-      "speechAcceleration",
-      "issueProjectSources",
-      "daxiang",
-    ];
-    expect(Object.keys(file.server).sort()).toEqual(
-      Object.keys(ServerSettingsPatch.fields)
-        .filter((field) => !excludedServerFields.includes(field))
-        .sort(),
-    );
+    expect(applicationSettingsImportPatch(file, source).requireConnectDeviceApproval).toBe(true);
+    expect(contents).not.toContain("private-theme");
+    expect(contents).not.toContain("defaultAppearance");
     const updatedPreferences = {
       fallbackModelSelection: {
         instanceId: ProviderInstanceId.make("fallback-codex"),

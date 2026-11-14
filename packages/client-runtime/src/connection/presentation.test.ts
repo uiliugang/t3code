@@ -1,3 +1,4 @@
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
@@ -13,7 +14,12 @@ import {
   RelayConnectionTarget,
   type SupervisorConnectionState,
 } from "./model.ts";
-import { environmentMcpUrl, presentConnectionState } from "./presentation.ts";
+import {
+  connectionStatusText,
+  connectionStatusTitle,
+  environmentMcpUrl,
+  presentConnectionState,
+} from "./presentation.ts";
 
 const TARGET = new BearerConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -155,6 +161,33 @@ describe("connection presentation", () => {
       error: "Disconnected.",
       traceId: "trace-1",
     });
+    const awaitingApproval = presentConnectionState(
+      supervisorState({
+        phase: "backoff",
+        attempt: 1,
+        retryAt: 1,
+        lastFailure: new ConnectionTransientError({
+          reason: "approval-pending",
+          detail: "Approve this device on Mac mini. It shows code K7QM-2XFD.",
+          verificationCode: "K7QM-2XFD",
+          traceId: "trace-2",
+        }),
+      }),
+    );
+    expect(awaitingApproval).toEqual({
+      phase: "reconnecting",
+      error: "Approve this device on Mac mini. It shows code K7QM-2XFD.",
+      traceId: "trace-2",
+      awaitingApproval: true,
+      verificationCode: "K7QM-2XFD",
+    });
+    expect(connectionStatusText(awaitingApproval)).toBe(
+      "Waiting for approval on the host. Code: K7QM-2XFD",
+    );
+    expect(connectionStatusText(awaitingApproval, translateUi.bind(null, "zh-CN"))).toBe(
+      "等待主机批准，验证码：K7QM-2XFD",
+    );
+    expect(connectionStatusTitle(awaitingApproval)).toBe("Waiting for approval");
   });
 
   it("preserves an explicitly available environment while offline", () => {

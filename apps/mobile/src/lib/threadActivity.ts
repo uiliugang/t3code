@@ -74,6 +74,7 @@ import type { McpAppReference } from "@t3tools/shared/mcpApp";
 import {
   compactDynamicToolOutput,
   htmlRenderFromToolItem,
+  sentMessageFromToolItem,
   mcpAppFromToolItem,
 } from "@t3tools/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
@@ -186,6 +187,13 @@ type RawThreadFeedEntry =
       readonly render: HtmlRenderReference;
     }
   | {
+      readonly type: "sent-message";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly text: string;
+    }
+  | {
       readonly type: "mcp-app";
       readonly id: string;
       readonly createdAt: string;
@@ -203,7 +211,7 @@ export type ThreadFeedEntry = ThreadFeedEntryContent & {
 };
 
 type ThreadFeedEntryContent =
-  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" }>
+  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "sent-message" | "mcp-app" }>
   | {
       readonly type: "activity-group";
       readonly id: string;
@@ -252,6 +260,7 @@ type ThreadFeedEntryContent =
       readonly createdAt: string;
       readonly runId: RunId | null;
       readonly label?: string;
+      readonly waitingOnSubagents?: number;
       /** Shown instead of "Thinking" while the provider has not started a turn. */
       readonly providerStartingLabel?: string;
     };
@@ -1101,7 +1110,10 @@ function feedEntryFoldRunId(entry: ThreadFeedEntry, runlessKey: RunId | null): R
   if (entry.type === "message") {
     return entry.message.role === "assistant" ? (entry.message.runId ?? runlessKey) : null;
   }
-  return entry.type === "activity-group" || entry.type === "html-render" || entry.type === "mcp-app"
+  return entry.type === "activity-group" ||
+    entry.type === "html-render" ||
+    entry.type === "sent-message" ||
+    entry.type === "mcp-app"
     ? (entry.runId ?? runlessKey)
     : null;
 }
@@ -1231,6 +1243,7 @@ function deriveThreadFeedRunFolds(
             entry.id !== terminalAssistantId &&
             !(entry.type === "message" && retainedAnswerIds.has(entry.message.id)) &&
             entry.type !== "html-render" &&
+            entry.type !== "sent-message" &&
             entry.type !== "mcp-app" &&
             entry.id !== visibleCompactionId &&
             !(
@@ -1823,12 +1836,14 @@ export function deriveThreadFeedPresentation(
           row.activities[0]?.projectedItem.item.status === "running"),
     )
   ) {
+    const waitingOn = activeRunId === null ? 0 : runningSubagentsAtRunTail(feed, activeRunId);
     result.push(
       thinkingRow(
         activeWorkStartedAt,
         activeRunId,
         zen ? liveAnswerPreview(feed) : null,
         latestRun?.providerStartingLabel,
+        waitingOn,
       ),
     );
   }
@@ -1935,16 +1950,31 @@ function isWorkLogFeedRow(row: ThreadFeedEntry | undefined): boolean {
 
 const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
+/** Reads the feed before tool visibility filters it, so hidden newer parent work still counts. */
+function runningSubagentsAtRunTail(feed: ReadonlyArray<ThreadFeedEntry>, runId: RunId): number {
+  let running = 0;
+  for (let index = feed.length - 1; index >= 0; index -= 1) {
+    const entry = feed[index]!;
+    if (entry.type !== "activity-group" || entry.runId !== runId) break;
+    const items = entry.activities.map((activity) => activity.projectedItem.item);
+    if (items.some((item) => item.type !== "subagent")) break;
+    running += items.filter(isLiveSubagentTurnItem).length;
+  }
+  return running;
+}
+
 function thinkingRow(
   createdAt: string,
   runId: RunId | null,
   label: string | null,
   providerStartingLabel: string | undefined,
+  waitingOnSubagents: number,
 ) {
   if (
     cachedThinkingRow?.createdAt !== createdAt ||
     cachedThinkingRow.runId !== runId ||
     (cachedThinkingRow.label ?? null) !== label ||
+    (cachedThinkingRow.waitingOnSubagents ?? 0) !== waitingOnSubagents ||
     cachedThinkingRow.providerStartingLabel !== providerStartingLabel
   ) {
     cachedThinkingRow = {
@@ -1953,6 +1983,7 @@ function thinkingRow(
       createdAt,
       runId,
       ...(label === null ? {} : { label }),
+      ...(waitingOnSubagents > 0 ? { waitingOnSubagents } : {}),
       ...(providerStartingLabel === undefined ? {} : { providerStartingLabel }),
     };
   }
@@ -2442,6 +2473,23 @@ export function buildThreadFeed(
         createdAt,
         runId: item.runId,
         render,
+      };
+      projectedEntriesCache.set(row, { attemptId, entries: [entry] });
+      entries.push(entry);
+      entryRows.push(index);
+      continue;
+    }
+    const sentMessage =
+      item.type === "dynamic_tool" && item.status === "completed"
+        ? sentMessageFromToolItem(item)
+        : undefined;
+    if (sentMessage !== undefined) {
+      const entry: RawThreadFeedEntry = {
+        type: "sent-message",
+        id: `sent-message:${row.visibility}:${row.sourceThreadId}:${row.sourceItemId}`,
+        createdAt,
+        runId: item.runId,
+        text: sentMessage,
       };
       projectedEntriesCache.set(row, { attemptId, entries: [entry] });
       entries.push(entry);
