@@ -82,6 +82,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Could not revoke the device": "无法撤销此设备的访问权限",
   "T3 Connect devices": "T3 Connect 设备",
   "Waiting for approval": "等待批准",
+  "Failed to connect. Reconnecting... Reason: {error}": "连接失败，正在重新连接… 原因：{error}",
+  "Connection failed. Reason: {error}": "连接失败，原因：{error}",
   "{device}. Approve only if the device in front of you shows this code.":
     "{device}。仅当你面前的设备显示此验证码时批准。",
   "Trusted since {time}": "自 {time} 起受信任",

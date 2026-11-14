@@ -91,11 +91,11 @@ export function connectionStatusText(
 ): string {
   switch (connection.phase) {
     case "available":
-      return "Available";
+      return t("Available");
     case "offline":
-      return "Offline";
+      return t("Offline");
     case "connecting":
-      return "Connecting...";
+      return t("Connecting...");
     case "reconnecting":
       if (connection.awaitingApproval) {
         return connection.verificationCode
@@ -105,27 +105,30 @@ export function connectionStatusText(
           : t("Waiting for approval on the host");
       }
       return connection.error
-        ? `Failed to connect. Reconnecting... Reason: ${connection.error}`
-        : "Reconnecting...";
+        ? t("Failed to connect. Reconnecting... Reason: {error}", { error: connection.error })
+        : t("Reconnecting...");
     case "connected":
-      return "Connected";
+      return t("Connected");
     case "unsupported":
-      return "Client not supported";
+      return t("Client not supported");
     case "error":
       return connection.error
-        ? `Connection failed. Reason: ${connection.error}`
-        : "Connection failed";
+        ? t("Connection failed. Reason: {error}", { error: connection.error })
+        : t("Connection failed");
   }
 }
 
-export function connectionStatusTitle(connection: EnvironmentConnectionPresentation): string {
+export function connectionStatusTitle(
+  connection: EnvironmentConnectionPresentation,
+  t: UiTranslator = translateUi.bind(null, "en"),
+): string {
   if (connection.awaitingApproval) {
-    return "Waiting for approval";
+    return t("Waiting for approval");
   }
   if (connection.phase === "reconnecting" && connection.error) {
-    return "Failed to connect. Reconnecting...";
+    return t("Failed to connect. Reconnecting...");
   }
-  return connectionStatusText({ ...connection, error: null });
+  return connectionStatusText({ ...connection, error: null }, t);
 }
 
 /**
