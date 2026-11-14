@@ -521,18 +521,16 @@ export function RequirementBoard({
                 {error}
               </p>
             ))}
-            {data.issuePages
-              .flatMap((page) => page.failures)
-              .map((failure) => (
-                <p
-                  key={`${failure.projectId}:${failure.reason}`}
-                  role="alert"
-                  className="mb-3 text-sm text-destructive"
-                >
-                  {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
-                  {t(failure.reason)}
-                </p>
-              ))}
+            {data.failures.map((failure) => (
+              <p
+                key={`${failure.projectId}:${failure.reason}`}
+                role="alert"
+                className="mb-3 text-sm text-destructive"
+              >
+                {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
+                {t(failure.reason)}
+              </p>
+            ))}
             {data.isPending && !entries.length ? (
               <p className="py-8 text-sm text-muted-foreground">{t("Loading...")}</p>
             ) : !entries.length ? (

@@ -8,6 +8,7 @@ import type {
   WorkItemListResult,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Array from "effect/Array";
 import * as Data from "effect/Data";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { mergeWorkItemPages, type RequirementSource } from "../workItem.ts";
@@ -106,6 +107,10 @@ export function createRequirementBoardAtoms(queries: {
       }
       return {
         issuePages,
+        failures: Array.dedupeWith(
+          issuePages.flatMap((page) => page.failures),
+          (left, right) => left.projectId === right.projectId && left.reason === right.reason,
+        ),
         items: mergeWorkItemPages(itemPages),
         candidates: itemPages[0]?.candidates ?? [],
         nextCursor,

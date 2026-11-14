@@ -86,6 +86,18 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     expect(
       registry.get(board(new RequirementBoardKey({ ...key, archived: true }))).issuePages,
     ).toEqual([]);
+    const repeatedFailure = { projectId: item.projectId, reason: "Source unavailable" };
+    const duplicateBoard = createRequirementBoardAtoms({
+      issues: () =>
+        Atom.make(
+          AsyncResult.success<typeof IssueListResult.Type>({
+            groups: [],
+            failures: [repeatedFailure],
+          }),
+        ),
+      workItemsLive: () => first,
+    });
+    expect(registry.get(duplicateBoard(key)).failures).toEqual([repeatedFailure]);
     for (const source of ["github", "meituan"] as const) {
       for (const archived of [false, true]) {
         expect(
