@@ -16,12 +16,22 @@ export interface TextGeneratorConnection {
   readonly label: string;
 }
 
+const TokenParameter = Schema.Literals(["max_tokens", "max_completion_tokens"]);
+type TokenParameter = typeof TokenParameter.Type;
+const decodeTokenParameter = Schema.decodeUnknownOption(TokenParameter);
+
 /** Why a model API call failed, worded for the person who configured it. */
 export class TextGeneratorRequestError extends Schema.TaggedError<
   TextGeneratorRequestError,
   { readonly brand: unique symbol }
 >()("TextGeneratorRequestError", {
   detail: Schema.String,
+  tokenParameterIssue: Schema.optional(
+    Schema.Struct({
+      parameter: TokenParameter,
+      kind: Schema.Literals(["unsupported", "rejected"]),
+    }),
+  ),
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
@@ -46,7 +56,11 @@ const LIST_MODELS_TIMEOUT = "25 seconds";
 const MAX_MODEL_PAGES = 10;
 
 const ApiErrorBody = Schema.Struct({
-  error: Schema.Struct({ message: Schema.String }),
+  error: Schema.Struct({
+    message: Schema.String,
+    code: Schema.optional(Schema.Unknown),
+    param: Schema.optional(Schema.Unknown),
+  }),
 });
 const decodeApiErrorBody = Schema.decodeUnknownOption(ApiErrorBody);
 
@@ -87,11 +101,19 @@ const sendJson = Effect.fn("TextGenerator.sendJson")(function* <S extends Schema
   );
   const body = yield* response.json.pipe(Effect.orElseSucceed((): unknown => undefined));
   if (response.status < 200 || response.status >= 300) {
-    const message = decodeApiErrorBody(body).pipe((option) =>
-      option._tag === "Some" ? option.value.error.message : undefined,
+    const error = decodeApiErrorBody(body).pipe((option) =>
+      option._tag === "Some" ? option.value.error : undefined,
     );
+    const parameter = decodeTokenParameter(error?.param);
     return yield* new TextGeneratorRequestError({
-      detail: describeStatus(label, response.status, message),
+      detail: describeStatus(label, response.status, error?.message),
+      tokenParameterIssue:
+        response.status === 400 && parameter._tag === "Some"
+          ? {
+              parameter: parameter.value,
+              kind: error?.code === "unsupported_parameter" ? "unsupported" : "rejected",
+            }
+          : undefined,
     });
   }
   return yield* Schema.decodeUnknownEffect(schema)(body).pipe(
@@ -133,20 +155,86 @@ const ChatCompletion = Schema.Struct({
       message: Schema.Struct({ content: Schema.NullOr(Schema.String) }),
     }),
   ),
+  usage: Schema.optional(Schema.Unknown),
 });
+const decodeTokenUsage = Schema.decodeUnknownOption(
+  Schema.Struct({
+    prompt_tokens: Schema.optional(Schema.Int),
+    completion_tokens: Schema.optional(Schema.Int),
+    completion_tokens_details: Schema.optional(
+      Schema.Struct({ reasoning_tokens: Schema.optional(Schema.Int) }),
+    ),
+  }),
+);
 const OpenAIModelList = Schema.Struct({
   data: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.optional(Schema.String) })),
 });
 
 const openAICompatible: TextGeneratorDriver = {
   kind: "openaiCompatible",
-  generate: (connection, model, prompt) => {
+  generate: Effect.fn("TextGenerator.openAICompatible.generate")(function* (
+    connection: TextGeneratorConnection,
+    model: string,
+    prompt: string,
+  ) {
     const { label } = connection;
-    let request = HttpClientRequest.post(endpoint(connection, "/chat/completions")).pipe(
-      HttpClientRequest.bodyJsonUnsafe({ model, messages: [{ role: "user", content: prompt }] }),
-    );
-    if (connection.apiKey) request = HttpClientRequest.bearerToken(request, connection.apiKey);
-    return sendJson(label, request, ChatCompletion).pipe(
+    let tokenParameter: TokenParameter | undefined = "max_tokens";
+    const complete = Effect.fn("TextGenerator.openAICompatible.complete")(function* (
+      maxTokens: number,
+    ) {
+      const send = (parameter: typeof tokenParameter) => {
+        let request = HttpClientRequest.post(endpoint(connection, "/chat/completions")).pipe(
+          HttpClientRequest.bodyJsonUnsafe({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            ...(parameter === undefined ? {} : { [parameter]: maxTokens }),
+          }),
+        );
+        if (connection.apiKey) request = HttpClientRequest.bearerToken(request, connection.apiKey);
+        return sendJson(label, request, ChatCompletion);
+      };
+      const completion = yield* send(tokenParameter).pipe(
+        Effect.catchTags({
+          TextGeneratorRequestError: (error) => {
+            if (
+              tokenParameter !== "max_tokens" ||
+              error.tokenParameterIssue?.kind !== "unsupported" ||
+              error.tokenParameterIssue.parameter !== tokenParameter
+            ) {
+              return Effect.fail(error);
+            }
+            tokenParameter = "max_completion_tokens";
+            return send(tokenParameter);
+          },
+        }),
+        Effect.catchTags({
+          TextGeneratorRequestError: (error) => {
+            if (
+              tokenParameter === undefined ||
+              error.tokenParameterIssue?.parameter !== tokenParameter
+            ) {
+              return Effect.fail(error);
+            }
+            tokenParameter = undefined;
+            return send(tokenParameter);
+          },
+        }),
+      );
+      const usage = decodeTokenUsage(completion.usage);
+      yield* Effect.annotateCurrentSpan({
+        ...(tokenParameter === undefined ? {} : { "text_generation.max_tokens": maxTokens }),
+        "text_generation.token_parameter": tokenParameter ?? "provider_default",
+        "text_generation.finish_reason": completion.choices[0]?.finish_reason ?? "unknown",
+        ...(usage._tag === "Some" ? { "text_generation.usage": usage.value } : {}),
+      });
+      return completion;
+    });
+    return yield* complete(8192).pipe(
+      Effect.filterOrElse(
+        (completion) =>
+          completion.choices[0]?.finish_reason !== "length" || tokenParameter === undefined,
+        () => complete(16384),
+      ),
       Effect.flatMap((completion) => {
         const choice = completion.choices[0];
         const text = choice?.message.content?.trim();
@@ -161,7 +249,7 @@ const openAICompatible: TextGeneratorDriver = {
       }),
       withTimeout(label, GENERATE_TIMEOUT),
     );
-  },
+  }),
   listModels: (connection) => {
     const { label } = connection;
     let request = HttpClientRequest.get(endpoint(connection, "/models"));

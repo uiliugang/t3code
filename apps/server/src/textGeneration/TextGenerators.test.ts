@@ -6,10 +6,14 @@ import {
   type TextGeneratorConfig,
 } from "@t3tools/contracts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import { TestClock } from "effect/testing";
 import { expect, vi } from "vite-plus/test";
 
 import * as ServerSettings from "../serverSettings.ts";
@@ -134,6 +138,230 @@ it.effect.each([
       run!(request).pipe(Effect.provideService(FetchHttpClient.Fetch, upstream)),
     );
     expect(failure.detail).toMatch(/rejected the API key: Incorrect API key provided$/);
+    expect(upstream).toHaveBeenCalledTimes(2);
+
+    upstream.mockResolvedValueOnce(
+      Response.json(
+        { error: { message: "Invalid messages", code: "invalid_value", param: "messages" } },
+        { status: 400 },
+      ),
+    );
+    const invalidInput = yield* Effect.flip(
+      run!(request).pipe(Effect.provideService(FetchHttpClient.Fetch, upstream)),
+    );
+    expect(invalidInput.detail).toMatch(/HTTP 400: Invalid messages$/);
+    expect(upstream).toHaveBeenCalledTimes(3);
+  }),
+);
+
+it.effect.each([
+  { scenario: "a small gateway default", truncatedReplies: 0, succeeds: true },
+  { scenario: "reasoning exhausting the first budget", truncatedReplies: 1, succeeds: true },
+  { scenario: "both output budgets exhausted", truncatedReplies: 2, succeeds: false },
+])("generates PR content with $scenario", ({ truncatedReplies, succeeds }) =>
+  Effect.gen(function* () {
+    const budgets: number[] = [];
+    const expected = { title: "Fix update settings", body: "## Summary\nWrap long update errors." };
+    const upstream = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      budgets.push(body.max_tokens);
+      const truncated = !body.max_tokens || budgets.length <= truncatedReplies;
+      return Response.json({
+        choices: [
+          {
+            finish_reason: truncated ? "length" : "stop",
+            message: { content: truncated ? null : JSON.stringify(expected) },
+          },
+        ],
+        usage: { prompt_tokens: 200, completion_tokens: 8192 },
+      });
+    });
+    const generators = yield* TextGenerators.TextGenerators.pipe(Effect.provide(layer({})));
+    const run = yield* generators.runner(ID);
+    const result = yield* run!({
+      ...request,
+      operation: "generatePrContent",
+      outputSchema: Schema.Struct({ title: Schema.String, body: Schema.String }),
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, upstream), Effect.result);
+    if (succeeds) {
+      expect(result).toEqual(Result.succeed(expected));
+    } else {
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") expect(result.failure.detail).toContain("output limit");
+    }
+    expect(budgets).toEqual(truncatedReplies === 0 ? [8192] : [8192, 16384]);
+  }),
+);
+
+it.effect.each(["length", "rejected-budget"])(
+  "keeps the output retry within the original generation deadline: %s",
+  (trigger) =>
+    Effect.gen(function* () {
+      const firstStarted = yield* Deferred.make<void>();
+      const secondStarted = yield* Deferred.make<void>();
+      const firstReply = Promise.withResolvers<Response>();
+      const secondReply = Promise.withResolvers<Response>();
+      const upstream = vi.fn<typeof fetch>(() => {
+        if (upstream.mock.calls.length === 1) {
+          Deferred.doneUnsafe(firstStarted, Effect.void);
+          return firstReply.promise;
+        }
+        Deferred.doneUnsafe(secondStarted, Effect.void);
+        return secondReply.promise;
+      });
+      const generators = yield* TextGenerators.TextGenerators.pipe(Effect.provide(layer({})));
+      const run = yield* generators.runner(ID);
+      const generation = yield* run!(request).pipe(
+        Effect.provideService(FetchHttpClient.Fetch, upstream),
+        Effect.result,
+        Effect.forkChild,
+      );
+      yield* Deferred.await(firstStarted);
+      yield* TestClock.adjust("1 minute");
+      firstReply.resolve(
+        trigger === "length"
+          ? Response.json({ choices: [{ finish_reason: "length", message: { content: null } }] })
+          : Response.json(
+              {
+                error: {
+                  message: "max_tokens exceeds the output limit",
+                  code: "invalid_value",
+                  param: "max_tokens",
+                },
+              },
+              { status: 400 },
+            ),
+      );
+      yield* Effect.raceFirst(Deferred.await(secondStarted), Fiber.await(generation));
+      expect(upstream).toHaveBeenCalledTimes(2);
+      yield* TestClock.adjust("1 minute");
+      const result = yield* Fiber.join(generation);
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) expect(result.failure.detail).toContain("took too long");
+      secondReply.resolve(Response.json({}));
+    }),
+);
+
+it.effect.each([
+  {
+    scenario: "a 4096-token model",
+    parameter: "max_tokens",
+    limit: 4096,
+    truncated: false,
+    defaultFinish: "stop",
+    budgets: [8192, null],
+  },
+  {
+    scenario: "a reasoning API with a 4096-token limit",
+    parameter: "max_completion_tokens",
+    limit: 4096,
+    truncated: false,
+    defaultFinish: "stop",
+    budgets: [8192, 8192, null],
+  },
+  {
+    scenario: "a model rejecting the increased budget",
+    parameter: "max_tokens",
+    limit: 8192,
+    truncated: true,
+    defaultFinish: "stop",
+    budgets: [8192, 16384, null],
+  },
+  {
+    scenario: "a truncated provider default",
+    parameter: "max_tokens",
+    limit: 4096,
+    truncated: false,
+    defaultFinish: "length",
+    budgets: [8192, null],
+  },
+] as const)("respects output limits for $scenario", (fixture) =>
+  Effect.gen(function* () {
+    const budgets: Array<number | null> = [];
+    const expected = { title: "Fix settings" };
+    const upstream = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      budgets.push(body.max_tokens ?? body.max_completion_tokens ?? null);
+      const wrongParameter =
+        fixture.parameter === "max_completion_tokens" && body.max_tokens !== undefined;
+      const budget = body[fixture.parameter];
+      if (wrongParameter || budget > fixture.limit) {
+        return Response.json(
+          {
+            error: {
+              message: "Token parameter rejected",
+              code: wrongParameter ? "unsupported_parameter" : "invalid_value",
+              param: wrongParameter ? "max_tokens" : fixture.parameter,
+            },
+          },
+          { status: 400 },
+        );
+      }
+      const finishReason =
+        budget === undefined ? fixture.defaultFinish : fixture.truncated ? "length" : "stop";
+      return Response.json({
+        choices: [{ finish_reason: finishReason, message: { content: JSON.stringify(expected) } }],
+      });
+    });
+    const generators = yield* TextGenerators.TextGenerators.pipe(Effect.provide(layer({})));
+    const run = yield* generators.runner(ID);
+    const result = yield* run!(request).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, upstream),
+      Effect.result,
+    );
+    if (fixture.defaultFinish === "stop") {
+      expect(result).toEqual(Result.succeed(expected));
+    } else {
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) expect(result.failure.detail).toContain("output limit");
+    }
+    expect(budgets).toEqual(fixture.budgets);
+  }),
+);
+
+it.effect("uses the supported output budget parameter for reasoning APIs", () =>
+  Effect.gen(function* () {
+    const budgets: Array<{ max_tokens?: number; max_completion_tokens?: number }> = [];
+    const upstream = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      budgets.push({
+        ...(body.max_tokens === undefined ? {} : { max_tokens: body.max_tokens }),
+        ...(body.max_completion_tokens === undefined
+          ? {}
+          : { max_completion_tokens: body.max_completion_tokens }),
+      });
+      if (body.max_tokens !== undefined) {
+        return Response.json(
+          {
+            error: {
+              message: "Use max_completion_tokens instead.",
+              code: "unsupported_parameter",
+              param: "max_tokens",
+            },
+          },
+          { status: 400 },
+        );
+      }
+      return Response.json({
+        choices: [
+          {
+            finish_reason: budgets.length < 3 ? "length" : "stop",
+            message: { content: '{"title":"Fix update settings"}' },
+          },
+        ],
+      });
+    });
+    const generators = yield* TextGenerators.TextGenerators.pipe(Effect.provide(layer({})));
+    const run = yield* generators.runner(ID);
+    const result = yield* run!(request).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, upstream),
+    );
+    expect(result).toEqual({ title: "Fix update settings" });
+    expect(budgets).toEqual([
+      { max_tokens: 8192 },
+      { max_completion_tokens: 8192 },
+      { max_completion_tokens: 16384 },
+    ]);
   }),
 );
 

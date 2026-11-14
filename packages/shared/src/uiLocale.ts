@@ -2227,6 +2227,14 @@ const zhCN: Readonly<Record<string, string>> = {
   "View diagnostics": "查看诊断",
   App: "应用",
   "Current version of the application.": "应用当前版本。",
+  "Automatic updates are not available because no update feed is configured.":
+    "未配置更新源，无法自动更新。",
+  "Automatic updates are only available in packaged production builds.":
+    "自动更新仅适用于打包后的正式版本。",
+  "Automatic updates are not available in this build.": "此版本不支持自动更新。",
+  "Could not check for updates. View the latest release or try again.":
+    "无法检查更新，请查看最新版本或重试。",
+  "Latest: v{version}": "最新版本：v{version}",
   Legal: "法律信息",
   "How we handle your data, including the anonymous usage data T3 Code collects.":
     "了解我们如何处理你的数据，包括 T3 Code 收集的匿名使用数据。",

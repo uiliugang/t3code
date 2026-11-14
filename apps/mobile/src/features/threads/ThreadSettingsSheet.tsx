@@ -2,6 +2,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
   getPromptControlledTraits,
   getTraitSelectChange,
+  isReasoningControl,
 } from "@t3tools/client-runtime/model-traits";
 import * as Dialog from "../../components/ui/Dialog";
 import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
@@ -1132,7 +1133,7 @@ function ThreadSettingsChoiceContent(props: {
         ? {
             rows: selectableChoices(activeDescriptor).map((choice) => ({
               id: choice.id,
-              label: t(choice.label),
+              label: isReasoningControl(activeDescriptor) ? choice.label : t(choice.label),
               description: choice.description === undefined ? undefined : t(choice.description),
               disabled: false,
               selected:

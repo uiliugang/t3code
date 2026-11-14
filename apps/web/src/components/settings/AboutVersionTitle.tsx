@@ -26,8 +26,8 @@ export function AboutVersionTitle() {
   });
 
   return (
-    <span className="inline-flex items-baseline gap-2">
-      <span>{t("Version")}</span>
+    <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <span className="shrink-0">{t("Version")}</span>
       <code className="text-2xs font-medium">
         <Tooltip>
           <TooltipTrigger

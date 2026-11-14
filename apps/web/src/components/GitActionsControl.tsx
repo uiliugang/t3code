@@ -1715,6 +1715,9 @@ export default function GitActionsControl({
                   SourceControlIcon={SourceControlIcon}
                   className={THREAD_DETAILS_PANEL_ICON_CLASS}
                 />
+                <span className={cn("truncate", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
+                  {t(quickAction.label)}
+                </span>
               </TooltipTrigger>
               <TooltipPopup side="top">{t(quickAction.label)}</TooltipPopup>
             </Tooltip>

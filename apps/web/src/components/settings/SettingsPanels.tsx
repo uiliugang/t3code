@@ -137,7 +137,13 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useEnvironmentQuery } from "~/state/query";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 
-function ManualAppUpdate({ macArm64 }: { readonly macArm64: boolean }) {
+function ManualAppUpdate({
+  macArm64,
+  description,
+}: {
+  readonly macArm64: boolean;
+  readonly description: string;
+}) {
   const t = useUiTranslation();
   const release = useEnvironmentQuery(githubReleaseAtom("latest"));
   const version = release.data?.version;
@@ -148,26 +154,39 @@ function ManualAppUpdate({ macArm64 }: { readonly macArm64: boolean }) {
       ? `${repositoryUrl}/download/v${version}/T3-Code-${version}-arm64.dmg`
       : (getDesktopUpdateReleaseUrl(version ?? null) ?? `${repositoryUrl}/latest`);
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <span className="text-xs text-muted-foreground" role="status">
-        {release.error ?? (version ? `${t("Latest")}: v${version}` : null)}
-      </span>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={release.isPending}
-        onClick={() => refreshGitHubRelease(appAtomRegistry, "latest")}
-      >
-        {t(release.isPending ? "Checking…" : "Check for Updates")}
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        render={<a href={downloadUrl} target="_blank" rel="noreferrer" />}
-      >
-        {t(newer ? "Download latest release" : "View latest release")}
-      </Button>
-    </div>
+    <SettingsRow
+      id={searchableSetting("app-version").id}
+      title={<AboutVersionTitle />}
+      description={description}
+      status={
+        <span role="status">
+          {release.error
+            ? t("Could not check for updates. View the latest release or try again.")
+            : version
+              ? t("Latest: v{version}", { version })
+              : null}
+        </span>
+      }
+      control={
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={release.isPending}
+            onClick={() => refreshGitHubRelease(appAtomRegistry, "latest")}
+          >
+            {t(release.isPending ? "Checking…" : "Check for Updates")}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            render={<a href={downloadUrl} target="_blank" rel="noreferrer" />}
+          >
+            {t(newer ? "Download latest release" : "View latest release")}
+          </Button>
+        </div>
+      }
+    />
   );
 }
 
@@ -357,21 +376,22 @@ function AboutVersionSection() {
 
   return (
     <>
-      <SettingsRow
-        id={searchableSetting("app-version").id}
-        title={<AboutVersionTitle />}
-        description={description}
-        managed={updatesDenial}
-        control={
-          manualDownload ? (
-            <ManualAppUpdate
-              macArm64={
-                hasDesktopBridge &&
-                updateState?.hostArch === "arm64" &&
-                isMacPlatform(navigator.platform)
-              }
-            />
-          ) : (
+      {manualDownload ? (
+        <ManualAppUpdate
+          description={description}
+          macArm64={
+            hasDesktopBridge &&
+            updateState?.hostArch === "arm64" &&
+            isMacPlatform(navigator.platform)
+          }
+        />
+      ) : (
+        <SettingsRow
+          id={searchableSetting("app-version").id}
+          title={<AboutVersionTitle />}
+          description={description}
+          managed={updatesDenial}
+          control={
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -387,9 +407,9 @@ function AboutVersionSection() {
               />
               {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
             </Tooltip>
-          )
-        }
-      />
+          }
+        />
+      )}
       {hasDesktopBridge ? (
         <SettingsRow
           {...searchableSetting("update-track")}
