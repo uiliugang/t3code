@@ -5,6 +5,7 @@ import {
 } from "@t3tools/contracts";
 import {
   cliReleaseIndexPageUrl,
+  CLI_RELEASES_PAGE_URL,
   newestCliReleaseVersion,
   npmReleaseDatabaseMigration,
 } from "@t3tools/shared/cliRelease";
@@ -75,30 +76,51 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
   const http = yield* HttpClient.HttpClient;
   const githubCache = yield* Cache.make({
     capacity: 32,
-    timeToLive: Duration.minutes(1),
-    lookup: Effect.fn("NpmRelease.lookupGitHub")(function* (spec: string) {
-      for (let page = 1; page <= 10; page++) {
-        const releases = yield* http.get(cliReleaseIndexPageUrl(page)).pipe(
-          Effect.flatMap(HttpClientResponse.filterStatusOk),
-          Effect.flatMap((response) => response.text),
-          Effect.flatMap(decodeReleases),
-          Effect.timeout(Duration.seconds(15)),
-          Effect.mapError(
-            () =>
-              new ServerNpmReleaseError({ reason: "Could not read this fork's GitHub releases." }),
-          ),
-        );
-        const version =
-          spec === "latest" || spec === "nightly"
-            ? newestCliReleaseVersion(releases, spec === "latest" ? "stable" : "nightly")
-            : releases
-                .find((release) => !release.draft && release.tag_name === `v${spec}`)
-                ?.tag_name.slice(1);
-        if (version !== undefined) return { version };
-        if (releases.length === 0) break;
-      }
-      return null;
-    }),
+    timeToLive: Duration.hours(1),
+    lookup: Effect.fn("NpmRelease.lookupGitHub")(
+      function* (spec: string) {
+        for (let page = 1; page <= 10; page++) {
+          const releases = yield* http.get(cliReleaseIndexPageUrl(page)).pipe(
+            Effect.flatMap((response) =>
+              spec === "latest" && (response.status === 403 || response.status === 429)
+                ? Effect.succeed(null)
+                : HttpClientResponse.filterStatusOk(response).pipe(
+                    Effect.flatMap((response) => response.text),
+                    Effect.flatMap(decodeReleases),
+                  ),
+            ),
+            Effect.timeout(Duration.seconds(15)),
+          );
+          if (releases === null) {
+            // The public latest-release redirect does not consume GitHub's REST API quota.
+            const latest = yield* http
+              .head(`${CLI_RELEASES_PAGE_URL}/latest`)
+              .pipe(
+                Effect.flatMap(HttpClientResponse.filterStatusOk),
+                Effect.timeout(Duration.seconds(15)),
+              );
+            const prefix = `${CLI_RELEASES_PAGE_URL}/tag/v`;
+            const version = latest.url.startsWith(prefix) ? latest.url.slice(prefix.length) : "";
+            if (!/^\d+\.\d+\.\d+$/.test(version)) {
+              return yield* new ServerNpmReleaseError({ reason: "Invalid latest release URL." });
+            }
+            return { version };
+          }
+          const version =
+            spec === "latest" || spec === "nightly"
+              ? newestCliReleaseVersion(releases, spec === "latest" ? "stable" : "nightly")
+              : releases
+                  .find((release) => !release.draft && release.tag_name === `v${spec}`)
+                  ?.tag_name.slice(1);
+          if (version !== undefined) return { version };
+          if (releases.length === 0) break;
+        }
+        return null;
+      },
+      Effect.mapError(
+        () => new ServerNpmReleaseError({ reason: "Could not read this fork's GitHub releases." }),
+      ),
+    ),
   });
   const lookupPublic = Effect.fn("NpmRelease.lookupPublic")(function* (spec: string) {
     const unreachable = new ServerNpmReleaseError({

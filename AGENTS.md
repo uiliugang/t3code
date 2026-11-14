@@ -209,6 +209,12 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 - Our users drive agents all day and notice a dropped frame, a lying spinner, and a stale label. No continuously repainting animations; they peg the GPU on high-refresh displays.
 - If a rule here fights the task in front of you, say so loudly and get a human sign-off before breaking it.
 
+## Enforced behavior constraints
+
+| Rule                                                                                                                     | Enforcement                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Give each GitHub release page, including its response body, and the `/latest` fallback an independent 15-second timeout. | [`npmRelease.test.ts`](apps/server/src/cloud/npmRelease.test.ts): `gives each GitHub request its own timeout` and `bounds GitHub request ... with one timeout`, run by `vp test run apps/server/src/cloud/npmRelease.test.ts` and CI's `test_server` job. |
+
 ## Additional tips
 
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.

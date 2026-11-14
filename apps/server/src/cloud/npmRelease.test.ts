@@ -108,7 +108,7 @@ const spawnFailure = () =>
     }),
   );
 
-it.effect("checks fork releases without consulting npm", () =>
+it.effect("checks fork releases without consulting npm and caches the result for one hour", () =>
   Effect.gen(function* () {
     const urls: string[] = [];
     const service = yield* makeService(
@@ -135,6 +135,170 @@ it.effect("checks fork releases without consulting npm", () =>
     expect(urls).toEqual([
       "https://api.github.com/repos/uiliugang/t3code/releases?per_page=100&page=1",
     ]);
+    yield* TestClock.adjust({ minutes: 59, seconds: 59 });
+    expect(yield* service.get({ spec: "latest", source: "github" })).toEqual({ version: "0.0.3" });
+    expect(urls).toHaveLength(1);
+    yield* TestClock.adjust("1 second");
+    expect(yield* service.get({ spec: "latest", source: "github" })).toEqual({ version: "0.0.3" });
+    expect(urls).toHaveLength(2);
+  }),
+);
+
+it.effect.each([
+  { path: "pagination", outcome: "success" },
+  { path: "pagination", outcome: "timeout" },
+  { path: "fallback", outcome: "success" },
+  { path: "fallback", outcome: "timeout" },
+])("gives each GitHub request its own timeout: $path / $outcome", (fixture) =>
+  Effect.gen(function* () {
+    const started = yield* Queue.unbounded<string>();
+    const respond = yield* Queue.unbounded<void>();
+    const completed = yield* Deferred.make<void>();
+    const service = yield* makeService(
+      () => Effect.die("fork releases must not consult npm"),
+      HttpClient.make((request) =>
+        Effect.gen(function* () {
+          yield* Queue.offer(started, request.url);
+          yield* Queue.take(respond);
+          const firstPage = request.url.endsWith("page=1");
+          const response = new Response(
+            JSON.stringify(
+              firstPage
+                ? Array.from({ length: 100 }, () => ({
+                    tag_name: "v0.0.13-nightly.20261114.1",
+                    prerelease: true,
+                  }))
+                : [{ tag_name: "v0.0.12" }],
+            ),
+            { status: firstPage && fixture.path === "fallback" ? 403 : 200 },
+          );
+          if (!firstPage && fixture.path === "fallback") {
+            Object.defineProperty(response, "url", {
+              value: "https://github.com/uiliugang/t3code/releases/tag/v0.0.12",
+            });
+          }
+          return HttpClientResponse.fromWeb(request, response);
+        }),
+      ),
+    );
+    const lookup = yield* service.get({ spec: "latest", source: "github" }).pipe(
+      Effect.result,
+      Effect.tap(() => Deferred.succeed(completed, undefined)),
+      Effect.forkChild,
+    );
+    expect(yield* Queue.take(started)).toContain("page=1");
+    yield* TestClock.adjust("8 seconds");
+    yield* Queue.offer(respond, undefined);
+    expect(yield* Queue.take(started)).toContain(
+      fixture.path === "fallback" ? "/releases/latest" : "page=2",
+    );
+    if (fixture.outcome === "success") {
+      yield* TestClock.adjust("8 seconds");
+      yield* Queue.offer(respond, undefined);
+      expect(yield* Fiber.join(lookup)).toEqual(Result.succeed({ version: "0.0.12" }));
+    } else {
+      yield* TestClock.adjust("14 seconds");
+      expect(yield* Deferred.isDone(completed)).toBe(false);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Deferred.isDone(completed)).toBe(true);
+      expect(Result.isFailure(yield* Fiber.join(lookup))).toBe(true);
+    }
+  }),
+);
+
+it.effect.each(["headers", "body"])("bounds GitHub request %s with one timeout", (stage) =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const headers = yield* Deferred.make<void>();
+    const completed = yield* Deferred.make<void>();
+    const service = yield* makeService(
+      () => Effect.die("fork releases must not consult npm"),
+      HttpClient.make((request) =>
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(
+            stage === "headers"
+              ? Effect.never
+              : Deferred.await(headers).pipe(
+                  Effect.as(
+                    HttpClientResponse.fromWeb(request, new Response(new ReadableStream())),
+                  ),
+                ),
+          ),
+        ),
+      ),
+    );
+    const lookup = yield* service.get({ spec: "latest", source: "github" }).pipe(
+      Effect.result,
+      Effect.tap(() => Deferred.succeed(completed, undefined)),
+      Effect.forkChild,
+    );
+    yield* Deferred.await(started);
+    if (stage === "body") {
+      yield* TestClock.adjust("8 seconds");
+      yield* Deferred.succeed(headers, undefined);
+    }
+    yield* TestClock.adjust(stage === "body" ? "6 seconds" : "14 seconds");
+    expect(yield* Deferred.isDone(completed)).toBe(false);
+    yield* TestClock.adjust("1 second");
+    expect(yield* Deferred.isDone(completed)).toBe(true);
+    expect(Result.isFailure(yield* Fiber.join(lookup))).toBe(true);
+  }),
+);
+
+it.effect.each([403, 429])("checks the latest release when GitHub returns %s", (status) =>
+  Effect.gen(function* () {
+    const service = yield* makeService(
+      () => Effect.die("fork releases must not consult npm"),
+      HttpClient.make((request) => {
+        const response = request.url.startsWith("https://api.github.com/")
+          ? new Response('{"message":"API rate limit exceeded"}', { status })
+          : new Response(null);
+        if (request.url === "https://github.com/uiliugang/t3code/releases/latest") {
+          Object.defineProperty(response, "url", {
+            value: "https://github.com/uiliugang/t3code/releases/tag/v0.0.12",
+          });
+        }
+        return Effect.succeed(HttpClientResponse.fromWeb(request, response));
+      }),
+    );
+    expect(yield* service.get({ spec: "latest", source: "github" })).toEqual({
+      version: "0.0.12",
+    });
+  }),
+);
+
+it.effect.each([
+  "https://github.com/uiliugang/t3code/releases/tag/v0.0.12-nightly.20261113.1",
+  "https://github.com/another/fork/releases/tag/v0.0.12",
+  "https://github.com/uiliugang/t3code/releases",
+])("rejects an unexpected latest-release destination: %s", (url) =>
+  Effect.gen(function* () {
+    let requests = 0;
+    const service = yield* makeService(
+      () => Effect.die("fork releases must not consult npm"),
+      HttpClient.make((request) => {
+        requests++;
+        const response = new Response(null, {
+          status: request.url.startsWith("https://api.github.com/") ? 403 : 200,
+        });
+        Object.defineProperty(response, "url", { value: url });
+        return Effect.succeed(HttpClientResponse.fromWeb(request, response));
+      }),
+    );
+    const result = yield* service.get({ spec: "latest", source: "github" }).pipe(Effect.result);
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) expect(result.failure.message).not.toContain("npm registry");
+    expect(requests).toBe(2);
+    yield* TestClock.adjust({ minutes: 59, seconds: 59 });
+    expect(yield* service.get({ spec: "latest", source: "github" }).pipe(Effect.result)).toEqual(
+      result,
+    );
+    expect(requests).toBe(2);
+    yield* TestClock.adjust("1 second");
+    expect(yield* service.get({ spec: "latest", source: "github" }).pipe(Effect.result)).toEqual(
+      result,
+    );
+    expect(requests).toBe(4);
   }),
 );
 

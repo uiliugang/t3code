@@ -996,7 +996,7 @@ export class ServerNpmReleaseError extends Schema.TaggedError<ServerNpmReleaseEr
   { reason: Schema.String },
 ) {
   override get message(): string {
-    return `Could not check the configured npm registry: ${this.reason}`;
+    return `Could not check releases: ${this.reason}`;
   }
 }
 
