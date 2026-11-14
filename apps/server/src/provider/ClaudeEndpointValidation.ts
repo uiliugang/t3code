@@ -100,7 +100,7 @@ export const validateClaudeEndpoint = Effect.fn("ClaudeEndpointValidation.valida
                 ? "BA rate limit reached (429). Try again later."
                 : status >= 500
                   ? "BA is unavailable (server error)."
-                  : "BA rejected the request. Check its Anthropic protocol support.",
+                  : `BA rejected the request (${status}). Check the exact model ID, request parameters, and selected API protocol.`,
       ),
     );
   };
@@ -224,7 +224,11 @@ export const validateClaudeEndpoint = Effect.fn("ClaudeEndpointValidation.valida
       max_tokens: 256,
       stream: true,
       tools,
-      tool_choice: { type: "tool", name: "t3_echo" },
+      // OpenAI thinking models can reject forced tool choices.
+      tool_choice:
+        environment.T3_CLAUDE_API_FORMAT === "openai"
+          ? { type: "auto" }
+          : { type: "tool", name: "t3_echo" },
       messages,
     });
     const calls = first.blocks.filter((entry) => entry.block.type === "tool_use");
@@ -279,7 +283,7 @@ export const validateClaudeEndpoint = Effect.fn("ClaudeEndpointValidation.valida
       isSetupError(cause)
         ? cause
         : fail(
-            "BA check failed: network, malformed response, or incomplete stream. Check Anthropic protocol support.",
+            "BA check failed: network, malformed response, or incomplete stream. Check the selected API protocol.",
           ),
     ),
     Effect.scoped,
