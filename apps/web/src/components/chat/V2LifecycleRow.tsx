@@ -610,7 +610,6 @@ export function ModelSwitchRow(props: {
   readonly environmentId: EnvironmentId;
   readonly modelSwitch: OrchestrationV2ModelSwitch;
 }) {
-  const t = useUiTranslation();
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(props.environmentId)) ??
     EMPTY_SERVER_PROVIDERS;
@@ -620,9 +619,7 @@ export function ModelSwitchRow(props: {
     const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
     const model = provider?.models.find((candidate) => candidate.slug === selection.model);
     const modelName = model ? getTriggerDisplayModelName(model, provider?.driver) : selection.model;
-    return [change.modelChanged ? modelName : null, effort ? t(effort) : null]
-      .filter(Boolean)
-      .join(" ");
+    return [change.modelChanged ? modelName : null, effort].filter(Boolean).join(" ");
   };
   const { from, to } = props.modelSwitch;
   return (

@@ -54,7 +54,7 @@ export function ComposerModelControl(props: {
         t("Model and reasoning settings"),
         label,
         badge?.showBadge ? badge.displayName : null,
-        t(summary),
+        summary,
       ]
         .filter(Boolean)
         .join(", ")}
@@ -106,7 +106,7 @@ export function ComposerModelControl(props: {
             }
             numberOfLines={1}
           >
-            {t(summary)}
+            {summary}
           </Text>
         ) : undefined
       }
