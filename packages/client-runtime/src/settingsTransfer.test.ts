@@ -386,6 +386,7 @@ describe("settings transfer", () => {
       remoteBranchDisplayDays: 45,
       hideMergedRemoteBranches: false,
       autoDeleteMergedBranches: true,
+      worktreeSharedDependencies: false,
       speechModelId: "fixture-model",
       speechModelUnloadTimeout: "min_5" as const,
       speechProjectCustomWords: [{ term: "T3", aliases: ["tee three"] }],

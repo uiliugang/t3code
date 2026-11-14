@@ -315,6 +315,7 @@ export default defineConfig({
       "t3code/no-test-timeout-or-unreasoned-skip": "error",
       "t3code/no-rpc-permission-bypass": ["error", { allowRawClientAccess: true }],
       "t3code/no-runtime-cleanup-bypass": "error",
+      "t3code/no-worktree-dependency-policy-bypass": "error",
       "t3code/no-unscoped-has": "error",
       "t3code/no-wall-clock-in-tests": "error",
       "t3code/namespace-node-imports": "error",

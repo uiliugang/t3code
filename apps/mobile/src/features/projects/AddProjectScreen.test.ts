@@ -50,7 +50,10 @@ function loadRouters() {
   const requireNavigation = NodeModule.createRequire(
     NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
   );
-  return requireNavigation("@react-navigation/routers") as {
+  const requireFromCore = NodeModule.createRequire(
+    requireNavigation.resolve("@react-navigation/core/package.json"),
+  );
+  return requireFromCore("@react-navigation/routers") as {
     StackRouter: typeof import("@react-navigation/native").StackRouter;
     StackActions: typeof import("@react-navigation/native").StackActions;
     CommonActions: typeof import("@react-navigation/native").CommonActions;

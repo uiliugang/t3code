@@ -1659,8 +1659,8 @@ const zhCN: Readonly<Record<string, string>> = {
     "显示此环境中与会话关联的 worktree。已不存在的目录单独展示，普通工作文件夹不计入。",
   "Worktree metadata is missing. Files in this directory were retained.":
     "工作树元数据已不存在，此目录中的剩余文件已保留。",
-  "Could not inspect this checkout. Check repository access and retry.":
-    "无法检查此工作目录，请检查仓库访问权限后重试。",
+  "Could not inspect this checkout. Check the server logs and retry.":
+    "无法检查此工作目录，请查看服务端日志后重试。",
   "Some working directories are missing and have no cleanup snapshot.":
     "部分工作目录已不存在，且没有清理快照。",
   "The working directory no longer exists. Thread history is kept.":
@@ -2214,6 +2214,9 @@ const zhCN: Readonly<Record<string, string>> = {
   "New threads": "新会话",
   Submodules: "子模块",
   "Start from remote": "从远程分支开始",
+  "Shared dependencies": "共享依赖",
+  "Share pnpm packages across worktrees while keeping dependency versions independent. Applies to setup scripts and new terminals; reinstall dependencies to change existing worktrees.":
+    "在工作树之间共享 pnpm 依赖包，各自保留独立的依赖版本。对初始化脚本和新终端生效；现有工作树需重新安装依赖才能切换。",
   "Add project starts in": "添加项目的起始目录",
   "Unpin confirmation": "取消置顶前确认",
   "Archive confirmation": "归档前确认",

@@ -17,7 +17,10 @@ import {
 const requireNavigation = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
 );
-const { StackRouter } = requireNavigation("@react-navigation/routers") as {
+const requireFromCore = NodeModule.createRequire(
+  requireNavigation.resolve("@react-navigation/core/package.json"),
+);
+const { StackRouter } = requireFromCore("@react-navigation/routers") as {
   StackRouter: typeof import("@react-navigation/native").StackRouter;
 };
 

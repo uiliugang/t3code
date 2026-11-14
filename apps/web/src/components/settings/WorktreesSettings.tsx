@@ -61,6 +61,45 @@ function StartFromRemoteRow() {
   );
 }
 
+function SharedDependenciesRow() {
+  const t = useUiTranslation();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["worktreeSharedDependencies"]}
+      {...searchableSetting("worktree-shared-dependencies")}
+      description={t(
+        "Share pnpm packages across worktrees while keeping dependency versions independent. Applies to setup scripts and new terminals; reinstall dependencies to change existing worktrees.",
+      )}
+      resetAction={
+        settings.worktreeSharedDependencies !==
+        DEFAULT_UNIFIED_SETTINGS.worktreeSharedDependencies ? (
+          <SettingResetButton
+            label={t("Shared dependencies")}
+            onClick={() =>
+              updateSettings({
+                worktreeSharedDependencies: DEFAULT_UNIFIED_SETTINGS.worktreeSharedDependencies,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <ScopedSwitch
+          settingKeys={["worktreeSharedDependencies"]}
+          checked={settings.worktreeSharedDependencies}
+          onCheckedChange={(checked) =>
+            updateSettings({ worktreeSharedDependencies: Boolean(checked) })
+          }
+          aria-label={t("Shared dependencies")}
+        />
+      }
+    />
+  );
+}
+
 export function WorktreesSettingsPanel() {
   const t = useUiTranslation();
   const { scope } = useSettingsScope();
@@ -72,6 +111,7 @@ export function WorktreesSettingsPanel() {
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
         <MainBranchOnlyRow />
+        <SharedDependenciesRow />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
           <WorktreeSubmodulesRow />
         </AdvancedSettings>

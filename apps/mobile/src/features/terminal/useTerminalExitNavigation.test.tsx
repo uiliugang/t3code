@@ -10,8 +10,11 @@ vi.mock("@react-navigation/native", async () => {
   const requireNavigation = createRequire(
     createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
   );
+  const requireFromCore = createRequire(
+    requireNavigation.resolve("@react-navigation/core/package.json"),
+  );
   return {
-    StackActions: requireNavigation("@react-navigation/routers").StackActions,
+    StackActions: requireFromCore("@react-navigation/routers").StackActions,
     useNavigation: () => harness.navigation,
   };
 });
@@ -21,7 +24,10 @@ import { useTerminalExitNavigation } from "./useTerminalExitNavigation";
 const requireNavigation = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
 );
-const { StackRouter, StackActions, CommonActions } = requireNavigation(
+const requireFromCore = NodeModule.createRequire(
+  requireNavigation.resolve("@react-navigation/core/package.json"),
+);
+const { StackRouter, StackActions, CommonActions } = requireFromCore(
   "@react-navigation/routers",
 ) as {
   StackRouter: typeof import("@react-navigation/native").StackRouter;

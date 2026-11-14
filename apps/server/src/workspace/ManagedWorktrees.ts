@@ -16,6 +16,7 @@ import {
   type WorktreeKeepWhen,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { unquoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -335,6 +336,46 @@ const make = Effect.gen(function* () {
       managedRoots: yield* roots(),
     };
   });
+  const hasSubmoduleFiles = Effect.fn("ManagedWorktrees.hasSubmoduleFiles")(function* (
+    identity: WorkspaceCheckoutIdentity,
+  ) {
+    let protectedFiles = yield* fs.exists(path.join(identity.gitDir, "modules"));
+    yield* git.execute({
+      operation: "ManagedWorktrees.submodules",
+      cwd: identity.checkoutRoot,
+      args: ["ls-files", "--stage"],
+      maxOutputBytes: 64 * 1024,
+      appendTruncationMarker: true,
+      keepLineCallbacksAfterTruncation: true,
+      progress: {
+        onStdoutLine: (line) => {
+          if (protectedFiles || !line.startsWith("160000 ")) return Effect.void;
+          const relative = unquoteGitPatchPath(line.slice(line.indexOf("\t") + 1));
+          const directory = path.resolve(identity.checkoutRoot, relative);
+          // Uninitialized gitlinks may be empty; status omits local files placed inside them.
+          return fs.realPath(directory).pipe(
+            Effect.flatMap((real) =>
+              real !== directory || relative.includes("\uFFFD")
+                ? Effect.succeed(true)
+                : fs.readDirectory(real).pipe(Effect.map((names) => names.length > 0)),
+            ),
+            Effect.catchIf(
+              (error) => error.reason._tag === "NotFound",
+              () => Effect.succeed(relative.includes("\uFFFD")),
+            ),
+            Effect.orElseSucceed(() => true),
+            Effect.tap((present) =>
+              Effect.sync(() => {
+                if (present) protectedFiles = true;
+              }),
+            ),
+            Effect.asVoid,
+          );
+        },
+      },
+    });
+    return protectedFiles;
+  });
   const inspect = Effect.fn("ManagedWorktrees.inspect")(function* (
     group: Group,
     context: Effect.Success<ReturnType<typeof inspectionContext>>,
@@ -427,10 +468,11 @@ const make = Effect.gen(function* () {
               "status",
               "--porcelain",
               "-z",
-              "--untracked-files=all",
+              "--untracked-files=normal",
               "--ignored",
               "--ignore-submodules=none",
             ],
+            appendTruncationMarker: true,
           });
           if (status.stdoutTruncated)
             reason ??= "The status output was truncated; this worktree was retained.";
@@ -454,21 +496,17 @@ const make = Effect.gen(function* () {
             ref: `refs/t3/worktree-cleanup/${group.id}/${identities.length}`,
             removed: false,
           });
-          const submodules = yield* git.execute({
-            operation: "ManagedWorktrees.submodules",
-            cwd: checkout,
-            args: ["ls-files", "--stage"],
-          });
-          if (
-            submodules.stdoutTruncated ||
-            submodules.stdout.split("\n").some((line) => line.startsWith("160000 "))
-          )
+          if (yield* hasSubmoduleFiles(identity))
             reason ??= "Worktrees containing submodules must be cleaned manually.";
         }).pipe(Effect.result);
         if (checked._tag === "Failure") {
           resource.inspection = "unavailable";
           inspectionFailed = true;
-          reason = "Could not inspect this checkout. Check repository access and retry.";
+          reason = "Could not inspect this checkout. Check the server logs and retry.";
+          yield* Effect.logWarning("Worktree inspection failed", {
+            checkout,
+            error: checked.failure,
+          });
         }
       } else if (previous) {
         identities.push(previous);
@@ -687,10 +725,11 @@ const make = Effect.gen(function* () {
                       "status",
                       "--porcelain",
                       "-z",
-                      "--untracked-files=all",
+                      "--untracked-files=normal",
                       "--ignored",
                       "--ignore-submodules=none",
                     ],
+                    appendTruncationMarker: true,
                   });
                   if (
                     status.stdoutTruncated ||
@@ -719,6 +758,10 @@ const make = Effect.gen(function* () {
                   )
                     return yield* new ManagedWorktreeError({
                       detail: "The branch or commit changed during cleanup.",
+                    });
+                  if (yield* hasSubmoduleFiles(resource.identity))
+                    return yield* new ManagedWorktreeError({
+                      detail: "Worktrees containing submodules must be cleaned manually.",
                     });
                   if (options?.keepWhen === "tracked-changes")
                     yield* git.execute({

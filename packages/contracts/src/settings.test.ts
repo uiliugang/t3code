@@ -159,6 +159,7 @@ describe("storage cleanup settings", () => {
   it("uses the configured cleanup defaults and preserves explicit opt-outs", () => {
     expect(decodeServerSettings({}).autoDeleteMergedBranches).toBe(true);
     expect(decodeServerSettings({}).newWorktreesMainBranchOnly).toBe(true);
+    expect(decodeServerSettings({}).worktreeSharedDependencies).toBe(true);
     expect(decodeServerSettings({}).remoteBranchDisplayDays).toBe(21);
     expect(decodeServerSettings({}).hideMergedRemoteBranches).toBe(true);
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
@@ -174,6 +175,7 @@ describe("storage cleanup settings", () => {
     });
     const overrides = {
       autoDeleteMergedBranches: false,
+      worktreeSharedDependencies: false,
       storageCleanup: {
         worktreeOnMerge: false,
         worktreeOnDelete: false,
@@ -191,6 +193,7 @@ describe("storage cleanup settings", () => {
     const branchPolicy = {
       autoDeleteMergedBranches: true,
       newWorktreesMainBranchOnly: false,
+      worktreeSharedDependencies: false,
       remoteBranchDisplayDays: 0,
       hideMergedRemoteBranches: false,
     };

@@ -51,6 +51,7 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   cwd: Schema.NullOr(Schema.String),
   workspace: Schema.optional(ThreadWorkspaceRevision),
+  environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
   /**

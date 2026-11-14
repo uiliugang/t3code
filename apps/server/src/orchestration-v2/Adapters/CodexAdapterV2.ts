@@ -1505,6 +1505,12 @@ function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      ...Object.fromEntries(
+        Object.entries(input.runtimePolicy?.environment ?? {}).map(([key, value]) => [
+          `shell_environment_policy.set.${key}`,
+          value,
+        ]),
+      ),
       [`shell_environment_policy.set.${RESOURCE_OWNER_ENV}`]: resourceOwner(input.stateDir),
       ...(input.runtimePolicy?.workspace === undefined
         ? {}

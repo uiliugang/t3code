@@ -890,6 +890,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["git submodule init recursive top-level none worktree t3.json"],
   },
   {
+    id: "worktree-shared-dependencies",
+    title: "Shared dependencies",
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["pnpm node_modules global virtual store disk space shared 共享 依赖 磁盘 空间"],
+  },
+  {
     id: "start-from-origin",
     title: "Start from remote",
     to: "/settings/worktrees",

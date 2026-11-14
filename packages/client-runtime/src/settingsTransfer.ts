@@ -109,6 +109,7 @@ const applicationServerSettingsTransferPolicy = {
   hideMergedRemoteBranches: "portable",
   autoDeleteMergedBranches: "portable",
   worktreeSubmodules: "portable",
+  worktreeSharedDependencies: "portable",
   addProjectBaseDirectory: "local",
   ghqCloneLayout: "portable",
   textGenerationModelSelection: "portable",
