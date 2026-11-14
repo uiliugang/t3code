@@ -1,6 +1,6 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
 import type { StaticScreenProps } from "@react-navigation/native";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   EnvironmentId,
   ProjectId,
@@ -8,16 +8,22 @@ import {
   BranchIssueError,
   type IssueProvider,
   type IssueMetadataInput,
+  CommandId,
+  type WorkItemCommandInput,
+  type WorkItemId,
+  type WorkItemSource,
+  type ThreadId,
+  type WorkItemListInput,
 } from "@t3tools/contracts";
-import { useState } from "react";
+import { useContext, useRef, useState } from "react";
 import * as Schema from "effect/Schema";
-import { Linking, View, Pressable } from "react-native";
+import { Linking, View, Pressable, ScrollView } from "react-native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { useProjects } from "../../state/entities";
+import { useProjects, useThreadShell, useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -32,13 +38,28 @@ import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 import { ProjectTag, Disclosure, useRequirementGroups } from "./RequirementPrimitives";
 import { DraftFillButton } from "./DraftFillButton";
 import { Menu } from "../../components/ui/Menu";
-import { IconButton } from "../../components/ui/IconButton";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import {
   DELIVERY_PROGRESS_LABELS,
   REQUIREMENT_GROUPS,
-  requirementGroup,
+  mergeRequirementEntries,
+  prepareWorkItemCommandRetry,
+  type RequirementEntry,
+  type RequirementSource,
 } from "@t3tools/client-runtime/work-item";
+
+import {
+  createRequirementBoardAtoms,
+  RequirementBoardKey,
+} from "@t3tools/client-runtime/state/requirement-board";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import * as Dialog from "../../components/ui/Dialog";
+import {
+  TaskEditor,
+  TaskDetail,
+  CandidateCard,
+  type WorkItemsRouteParams,
+} from "../work-items/WorkItemsScreen";
 
 type Target = {
   environmentId: EnvironmentId;
@@ -49,316 +70,606 @@ type Target = {
 const isBranchIssueError = Schema.is(BranchIssueError);
 const isIssueError = Schema.is(IssueError);
 
-export function RequirementsScreen() {
+const boardAtoms = createRequirementBoardAtoms({
+  issues: sourceControlEnvironment.issues,
+  workItemsLive: serverEnvironment.workItemsLive,
+});
+
+export function RequirementsScreen({ route }: StaticScreenProps<WorkItemsRouteParams | undefined>) {
+  const { environments } = useEnvironments();
+  const [chosenEnvironment, setEnvironment] = useState(route.params?.environmentId ?? null);
+  const environmentId = chosenEnvironment ?? environments[0]?.environmentId;
+  const t = useUiTranslation();
+  return environmentId ? (
+    <UnifiedRequirementBoard
+      key={`${environmentId}:${route.params?.sourceMessageId ?? route.params?.itemId ?? ""}`}
+      environmentId={environmentId}
+      onEnvironment={setEnvironment}
+      initial={
+        route.params?.environmentId && route.params.environmentId !== environmentId
+          ? undefined
+          : route.params
+      }
+    />
+  ) : (
+    <SettingsScreen title={t("Requirements board")}>
+      <Text>{t("Connect an environment and add a project to use the task board.")}</Text>
+    </SettingsScreen>
+  );
+}
+
+function UnifiedRequirementBoard({
+  environmentId,
+  onEnvironment,
+  initial,
+}: {
+  environmentId: EnvironmentId;
+  onEnvironment: (id: EnvironmentId) => void;
+  initial: WorkItemsRouteParams | undefined;
+}) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const registry = useContext(RegistryContext);
   const { environments } = useEnvironments();
-  const [selectedEnvironment, setEnvironment] = useState<EnvironmentId | null>(null);
-  const environmentId = selectedEnvironment ?? environments[0]?.environmentId ?? null;
-  const allProjects = useProjects();
-  const projects = allProjects.filter(
-    (project) => project.environmentId === environmentId && !project.isScratch,
+  const projects = useProjects().filter(
+    (project) =>
+      project.environmentId === environmentId && !project.isScratch && project.archivedAt === null,
   );
-  const [provider, setProvider] = useState<IssueProvider>("meituan");
-  const [projectId, setProjectId] = useState<ProjectId | null>(null);
+  const sourceThread = useThreadShell(
+    initial?.sourceThreadId ? scopeThreadRef(environmentId, initial.sourceThreadId) : null,
+  );
+  const [source, setSource] = useState<RequirementSource>("all");
+  const [projectId, setProjectId] = useState<ProjectId | null>(
+    initial?.projectId ?? sourceThread?.projectId ?? null,
+  );
   const [assignee, setAssignee] = useState("me");
   const [queryText, setQueryText] = useState("");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const { collapsed, toggle } = useRequirementGroups();
-  const result = useEnvironmentQuery(
-    environmentId
-      ? sourceControlEnvironment.issues({
-          environmentId,
-          input: { provider, assignee, query, page, ...(projectId ? { projectId } : {}) },
-        })
-      : null,
+  const [archived, setArchived] = useState(false);
+  const [view, setView] = useState<"list" | "board">("list");
+  const [pagination, setPagination] = useState<{
+    key: string;
+    page: number;
+    cursors: ReadonlyArray<WorkItemListInput["cursor"]>;
+  }>({ key: "", page: 1, cursors: [undefined] });
+  const filterKey = JSON.stringify([environmentId, source, projectId, assignee, query, archived]);
+  if (pagination.key !== filterKey)
+    setPagination({ key: filterKey, page: 1, cursors: [undefined] });
+  const config = useEnvironmentServerConfig(environmentId);
+  const data = useAtomValue(
+    boardAtoms(
+      new RequirementBoardKey({
+        environmentId,
+        source,
+        projectId,
+        assignee,
+        query,
+        archived,
+        localSupported: config?.workItems === true,
+        page: pagination.key === filterKey ? pagination.page : 1,
+        cursors: pagination.key === filterKey ? pagination.cursors : [undefined],
+      }),
+    ),
   );
-  const peopleProject = projectId ?? result.data?.groups[0]?.projectIds[0];
-  const people = useEnvironmentQuery(
-    environmentId && peopleProject
-      ? sourceControlEnvironment.issuePeople({
-          environmentId,
-          input: {
-            projectId: peopleProject,
-            provider,
-            query: "",
-            scope: result.data?.groups.find((group) => group.projectIds.includes(peopleProject))
-              ?.source.scope,
-          },
-        })
-      : null,
-  );
-  const assigneeOptions = [
-    ...new Map(
-      [
-        ...(people.data ?? []),
-        ...(result.data?.groups.flatMap((group) =>
-          group.issues.flatMap((issue) => issue.assignees),
-        ) ?? []),
-      ].map((person) => [person.value, person]),
-    ).values(),
-  ];
-  const allowed = useAtomValue(sourceControlEnvironment.createIssue.permissionAtom(environmentId));
-  const entries =
-    result.data?.groups.flatMap((group) =>
-      group.issues.map((issue) => ({
-        issue,
-        projectId: group.projectIds[0],
-        scope: group.source.scope,
-      })),
-    ) ?? [];
   const tracked = useAtomValue(
     serverEnvironment.issueWorkItems(
       environmentId,
-      entries.map(({ issue }) => issue.url),
+      data.issuePages.flatMap((page) =>
+        page.groups.flatMap((group) => group.issues.map((issue) => issue.url)),
+      ),
     ),
   );
+  const entries = mergeRequirementEntries(data.issuePages, data.items, tracked, {
+    source,
+    query,
+    archived,
+  });
+  const { collapsed, toggle } = useRequirementGroups();
+  const canCreateIssue = useAtomValue(
+    sourceControlEnvironment.createIssue.permissionAtom(environmentId),
+  );
+  const canOperate = useAtomValue(serverEnvironment.mutateWorkItem.permissionAtom(environmentId));
+  const canDiscover = useAtomValue(
+    serverEnvironment.discoverWorkItems.permissionAtom(environmentId),
+  );
+  const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
+  const discover = useAtomCommand(serverEnvironment.discoverWorkItems, { reportFailure: false });
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const retries = useRef(new Map<string, CommandId>());
+  const [selectedId, setSelectedId] = useState<WorkItemId | null>(initial?.itemId ?? null);
+  const sourceRef = initial?.sourceThreadId
+    ? {
+        threadId: initial.sourceThreadId,
+        title: initial.sourceTitle ?? sourceThread?.title ?? "Chat",
+        ...(initial.sourceMessageId ? { messageId: initial.sourceMessageId } : {}),
+      }
+    : undefined;
+  const [creating, setCreating] = useState<{
+    projectId: ProjectId;
+    source?: WorkItemSource;
+    description: string;
+  } | null>(() => {
+    const project = initial?.projectId ?? sourceThread?.projectId ?? projects[0]?.id;
+    return initial?.sourceText && project
+      ? {
+          projectId: project,
+          ...(sourceRef ? { source: sourceRef } : {}),
+          description: initial.sourceText,
+        }
+      : null;
+  });
+  const detail = useEnvironmentQuery(
+    selectedId && config?.workItems === true
+      ? serverEnvironment.workItemsLive({ environmentId, input: { id: selectedId } })
+      : null,
+  );
+  const listOffset = useRef(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const showItem = (id: WorkItemId) => {
+    setScrollOffset(0);
+    setSelectedId(id);
+  };
+  const back = () => {
+    setCreating(null);
+    setSelectedId(null);
+    setScrollOffset(listOffset.current);
+  };
+  const refresh = () => {
+    for (const atom of data.atoms) registry.refresh(atom);
+  };
+  const run = async (input: WorkItemCommandInput) => {
+    if (pending.current || !canOperate) return null;
+    const request = prepareWorkItemCommandRetry(input, retries.current);
+    pending.current = true;
+    setBusy(true);
+    const response = await mutate({ environmentId, input: request.input }).finally(() => {
+      pending.current = false;
+      setBusy(false);
+    });
+    if (response._tag === "Failure") {
+      Dialog.alert(t("Could not update task"), String(squashAtomCommandFailure(response)));
+      return null;
+    }
+    retries.current.delete(request.key);
+    return response.value.item;
+  };
+  const scan = async (dismissThreadId?: ThreadId) => {
+    if (pending.current || !canDiscover || !projectId || config?.workItemDiscovery !== true) return;
+    pending.current = true;
+    setBusy(true);
+    const result = await discover({
+      environmentId,
+      input: { projectId, ...(dismissThreadId ? { dismissThreadId } : {}) },
+    }).finally(() => {
+      pending.current = false;
+      setBusy(false);
+    });
+    if (result._tag === "Failure")
+      Dialog.alert(t("Could not scan chats"), String(squashAtomCommandFailure(result)));
+    refresh();
+  };
+  const createLocal = (project: ProjectId, source?: WorkItemSource, description = "") => {
+    setScrollOffset(0);
+    setCreating({ projectId: project, ...(source ? { source } : {}), description });
+  };
+  const open = (entry: RequirementEntry) => {
+    if (entry.kind === "local") showItem(entry.item.id);
+    else
+      navigation.navigate("IssueDetail", {
+        environmentId,
+        projectId: entry.projectId,
+        provider: entry.provider,
+        id: entry.issue.id,
+        scope: entry.scope,
+      });
+  };
+  const people = [
+    ...new Map(
+      data.issuePages
+        .flatMap((page) =>
+          page.groups.flatMap((group) => group.issues.flatMap((issue) => issue.assignees)),
+        )
+        .map((person) => [person.value, person]),
+    ).values(),
+  ];
+  const renderRow = (entry: RequirementEntry) => (
+    <Pressable
+      key={entry.key}
+      accessibilityRole="button"
+      onPress={() => open(entry)}
+      className={
+        view === "board"
+          ? "gap-2 rounded-lg border border-border-subtle p-3"
+          : "gap-2 border-b border-border-subtle py-3"
+      }
+    >
+      <View className="flex-row items-start gap-3">
+        <Text className="min-w-0 flex-1 text-base font-t3-medium">{entry.title}</Text>
+        {entry.priority ? (
+          <Text className="text-xs text-foreground-muted">{entry.priority}</Text>
+        ) : null}
+      </View>
+      <View className="flex-row flex-wrap items-center gap-2">
+        <ProjectTag
+          title={
+            projects.find((project) => project.id === entry.projectId)?.title ?? entry.projectId
+          }
+        />
+        <Text className="text-xs text-foreground-muted">
+          {entry.kind === "local"
+            ? t("Local work item")
+            : `${entry.provider === "github" ? "GitHub" : "ONES"} #${entry.issue.id}`}
+        </Text>
+        {entry.kind === "local" ? (
+          <Text className="text-xs text-foreground-muted">
+            {entry.item.activeExecutionCount} {t("Active agents")}
+          </Text>
+        ) : (
+          <Text className="text-xs text-foreground-muted">
+            {entry.issue.assignees.map((person) => person.label).join(", ") || t("Unassigned")}
+          </Text>
+        )}
+      </View>
+      <View className="flex-row flex-wrap items-center gap-3">
+        {entry.summary && entry.summary.requiredPullRequests > 0 ? (
+          <Text className="text-xs text-foreground-muted">
+            PR {entry.summary.mergedPullRequests}/{entry.summary.requiredPullRequests}
+          </Text>
+        ) : null}
+        <Text
+          className={
+            entry.group === "attention" ? "text-xs text-danger" : "text-xs text-foreground-muted"
+          }
+        >
+          {entry.summary
+            ? t(
+                entry.summary.synced && entry.summary.progress === "delivery_complete"
+                  ? "Completed"
+                  : DELIVERY_PROGRESS_LABELS[entry.summary.progress],
+              )
+            : entry.kind === "local"
+              ? t(entry.state)
+              : entry.state}
+        </Text>
+      </View>
+    </Pressable>
+  );
+  const renderGroup = (group: (typeof REQUIREMENT_GROUPS)[number]) => {
+    const rows = entries.filter((entry) => entry.group === group.key);
+    if (!rows.length) return null;
+    return (
+      <View key={group.key} style={view === "board" ? { width: 280 } : undefined}>
+        <Disclosure
+          title={t(group.label)}
+          count={rows.length}
+          open={!collapsed.includes(group.key)}
+          onToggle={() => toggle(group.key)}
+        >
+          {rows.map(renderRow)}
+        </Disclosure>
+      </View>
+    );
+  };
   return (
     <SettingsScreen title={t("Requirements board")}>
-      <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
-        <View className="flex-row items-center gap-1">
-          <View className="min-w-0 flex-1">
-            <AppTextInput
-              accessibilityLabel={t("Search title or number")}
-              placeholder={t("Search title or number")}
-              value={queryText}
-              onChangeText={setQueryText}
-              onSubmitEditing={() => {
-                setQuery(queryText);
-                setPage(1);
-              }}
-              returnKeyType="search"
+      <ScreenScrollView
+        key={creating ? "create" : (selectedId ?? "list")}
+        className="flex-1"
+        contentContainerClassName="gap-4 px-5 pb-12"
+        contentOffset={{ x: 0, y: scrollOffset }}
+        scrollEventThrottle={100}
+        onScroll={(event) => {
+          if (!creating && !selectedId) listOffset.current = event.nativeEvent.contentOffset.y;
+        }}
+      >
+        {creating ? (
+          <TaskEditor
+            environmentId={environmentId}
+            projectId={creating.projectId}
+            source={creating.source}
+            initialDescription={creating.description}
+            item={null}
+            disabled={!canOperate || busy}
+            run={run}
+            onCancel={back}
+            onSaved={(item) => {
+              setCreating(null);
+              showItem(item.id);
+            }}
+          />
+        ) : selectedId ? (
+          detail.data?.item ? (
+            <TaskDetail
+              key={selectedId}
+              item={detail.data.item}
+              environmentId={environmentId}
+              disabled={!canOperate || busy || Boolean(detail.error)}
+              busy={busy}
+              run={run}
+              onBack={back}
             />
-          </View>
-          <Menu
-            title={t("Filters")}
-            actions={[
-              {
-                id: "environment",
-                title: t("Environment"),
-                subactions: environments.map((env) => ({
-                  id: "env:" + env.environmentId,
-                  title: env.label,
-                  state: env.environmentId === environmentId ? ("on" as const) : ("off" as const),
-                })),
-              },
-              {
-                id: "source",
-                title: t("Issue source"),
-                subactions: [
+          ) : (
+            <View className="gap-3">
+              <Button label={t("Back")} onPress={back} />
+              <Text className={detail.error ? "text-danger" : "text-foreground-muted"}>
+                {detail.error ?? t(detail.isPending ? "Loading..." : "Task not found.")}
+              </Text>
+            </View>
+          )
+        ) : (
+          <>
+            <View className="flex-row items-center gap-1">
+              <View className="min-w-0 flex-1">
+                <AppTextInput
+                  accessibilityLabel={t("Search title or number")}
+                  placeholder={t("Search title or number")}
+                  value={queryText}
+                  onChangeText={setQueryText}
+                  onSubmitEditing={() => setQuery(queryText)}
+                  returnKeyType="search"
+                />
+              </View>
+              <Menu
+                title={t("Filters")}
+                actions={[
                   {
-                    id: "source:meituan",
+                    id: "environment",
+                    title: t("Environment"),
+                    subactions: environments.map((env) => ({
+                      id: `env:${env.environmentId}`,
+                      title: env.label,
+                      state:
+                        env.environmentId === environmentId ? ("on" as const) : ("off" as const),
+                    })),
+                  },
+                  {
+                    id: "source",
+                    title: t("Issue source"),
+                    subactions: [
+                      {
+                        id: "source:all",
+                        title: t("All sources"),
+                        state: source === "all" ? "on" : "off",
+                      },
+                      {
+                        id: "source:meituan",
+                        title: "MEP ONES",
+                        state: source === "meituan" ? "on" : "off",
+                      },
+                      {
+                        id: "source:github",
+                        title: "GitHub Issues",
+                        state: source === "github" ? "on" : "off",
+                      },
+                      {
+                        id: "source:local",
+                        title: t("Local work items"),
+                        state: source === "local" ? "on" : "off",
+                      },
+                    ],
+                  },
+                  {
+                    id: "project",
+                    title: t("Project"),
+                    subactions: [
+                      {
+                        id: "project:",
+                        title: t("All projects"),
+                        state: !projectId ? ("on" as const) : ("off" as const),
+                      },
+                      ...projects.map((project) => ({
+                        id: `project:${project.id}`,
+                        title: project.title,
+                        state: projectId === project.id ? ("on" as const) : ("off" as const),
+                      })),
+                    ],
+                  },
+                  ...(source !== "local"
+                    ? [
+                        {
+                          id: "assignee",
+                          title: t("Assignee"),
+                          subactions: [
+                            { value: "me", label: t("Assigned to me") },
+                            { value: "all", label: t("All assignees") },
+                            { value: "unassigned", label: t("Unassigned") },
+                            ...people.filter(
+                              (person) => !["me", "all", "unassigned"].includes(person.value),
+                            ),
+                          ].map((person) => ({
+                            id: `assignee:${person.value}`,
+                            title: person.label,
+                            state: assignee === person.value ? ("on" as const) : ("off" as const),
+                          })),
+                        },
+                      ]
+                    : []),
+                  { id: "archived", title: t("Show archived"), state: archived ? "on" : "off" },
+                  {
+                    id: "scan",
+                    title: t("Scan chats"),
+                    attributes: {
+                      disabled:
+                        !projectId || !canDiscover || config?.workItemDiscovery !== true || busy,
+                    },
+                  },
+                  { id: "refresh", title: t("Refresh issues") },
+                  { id: "settings", title: t("Issue management") },
+                ]}
+                onPressAction={({ nativeEvent }) => {
+                  const id = nativeEvent.event;
+                  if (id.startsWith("env:")) onEnvironment(EnvironmentId.make(id.slice(4)));
+                  if (id.startsWith("project:"))
+                    setProjectId(id.slice(8) ? ProjectId.make(id.slice(8)) : null);
+                  if (id.startsWith("source:")) {
+                    setSource(id.slice(7) as RequirementSource);
+                    setAssignee("me");
+                  }
+                  if (id.startsWith("assignee:")) setAssignee(id.slice(9));
+                  if (id === "archived") setArchived(!archived);
+                  if (id === "scan") void scan();
+                  if (id === "refresh") refresh();
+                  if (id === "settings") navigation.navigate("SettingsRequirements");
+                }}
+              >
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("Filters")}
+                  className="size-12 items-center justify-center"
+                >
+                  <SymbolView
+                    name="line.3.horizontal.decrease"
+                    size={22}
+                    tintColorClassName="accent-foreground"
+                  />
+                </Pressable>
+              </Menu>
+              <Menu
+                title={t("View")}
+                actions={[
+                  { id: "list", title: t("List view"), state: view === "list" ? "on" : "off" },
+                  { id: "board", title: t("Board view"), state: view === "board" ? "on" : "off" },
+                ]}
+                onPressAction={({ nativeEvent }) =>
+                  setView(nativeEvent.event === "board" ? "board" : "list")
+                }
+              >
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("View")}
+                  className="size-12 items-center justify-center"
+                >
+                  <SymbolView
+                    name={view === "list" ? "list.number" : "square.grid.2x2"}
+                    size={22}
+                    tintColorClassName="accent-foreground"
+                  />
+                </Pressable>
+              </Menu>
+              <Menu
+                title={t("New")}
+                actions={[
+                  {
+                    id: "new:meituan",
                     title: "MEP ONES",
-                    state: provider === "meituan" ? "on" : "off",
+                    attributes: { disabled: !canCreateIssue || !projects.length },
                   },
                   {
-                    id: "source:github",
-                    title: "GitHub Issues",
-                    state: provider === "github" ? "on" : "off",
+                    id: "new:github",
+                    title: "GitHub Issue",
+                    attributes: { disabled: !canCreateIssue || !projects.length },
                   },
-                  { id: "source:local", title: t("Local work items") },
-                ],
-              },
-              {
-                id: "project",
-                title: t("Project"),
-                subactions: [
                   {
-                    id: "project:",
-                    title: t("All projects"),
-                    state: projectId === null ? ("on" as const) : ("off" as const),
+                    id: "new:local",
+                    title: t("Local work item"),
+                    subactions: projects.map((project) => ({
+                      id: `local:${project.id}`,
+                      title: project.title,
+                      attributes: { disabled: !canOperate || config?.workItems !== true },
+                    })),
                   },
-                  ...projects.map((project) => ({
-                    id: "project:" + project.id,
-                    title: project.title,
-                    state: project.id === projectId ? ("on" as const) : ("off" as const),
-                  })),
-                ],
-              },
-              {
-                id: "assignee",
-                title: t("Assignee"),
-                subactions: [
-                  { value: "me", label: t("Assigned to me") },
-                  { value: "all", label: t("All assignees") },
-                  { value: "unassigned", label: t("Unassigned") },
-                  ...assigneeOptions.filter(
-                    (person) => !["me", "all", "unassigned"].includes(person.value),
-                  ),
-                ].map((person) => ({
-                  id: "assignee:" + person.value,
-                  title: person.label,
-                  state: person.value === assignee ? ("on" as const) : ("off" as const),
-                })),
-              },
-              { id: "refresh", title: t("Refresh issues") },
-              { id: "settings", title: t("Issue management") },
-            ]}
-            onPressAction={(event) => {
-              const id = event.nativeEvent.event;
-              if (id.startsWith("env:")) {
-                setEnvironment(EnvironmentId.make(id.slice(4)));
-                setProjectId(null);
-              }
-              if (id.startsWith("project:"))
-                setProjectId(id.slice(8) ? ProjectId.make(id.slice(8)) : null);
-              if (id.startsWith("assignee:")) setAssignee(id.slice(9));
-              if (id === "source:local")
-                navigation.navigate("WorkItems", {
-                  ...(environmentId ? { environmentId } : {}),
-                  ...(projectId ? { projectId } : {}),
-                });
-              if (id === "source:github" || id === "source:meituan")
-                setProvider(id === "source:github" ? "github" : "meituan");
-              if (id === "refresh") result.refresh();
-              if (id === "settings") navigation.navigate("SettingsRequirements");
-              setPage(1);
-            }}
-          >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("Filters")}
-              className="size-12 items-center justify-center"
-            >
-              <SymbolView
-                name="line.3.horizontal.decrease"
-                size={22}
-                tintColorClassName="accent-foreground"
-              />
-            </Pressable>
-          </Menu>
-          <IconButton
-            icon="plus"
-            accessibilityLabel={t("New issue")}
-            disabled={!allowed || !environmentId || !projects.length}
-            onPress={() => {
-              const project = projects.find((entry) => entry.id === projectId) ?? projects[0];
-              if (environmentId && project)
-                navigation.navigate("IssueCreate", {
-                  environmentId,
-                  projectId: project.id,
-                  provider,
-                });
-            }}
-          />
-        </View>
-        <Text className="text-xs text-foreground-muted">
-          {provider === "github" ? "GitHub Issues" : "MEP ONES"} ·{" "}
-          {projects.find((project) => project.id === projectId)?.title ?? t("All projects")} ·{" "}
-          {assigneeOptions.find((person) => person.value === assignee)?.label ??
-            t(
-              assignee === "me"
-                ? "Assigned to me"
-                : assignee === "all"
-                  ? "All assignees"
-                  : "Unassigned",
+                ]}
+                onPressAction={({ nativeEvent }) => {
+                  const id = nativeEvent.event;
+                  if (id.startsWith("local:")) createLocal(ProjectId.make(id.slice(6)));
+                  else if (id === "new:github" || id === "new:meituan") {
+                    const project = projects.find((entry) => entry.id === projectId) ?? projects[0];
+                    if (project)
+                      navigation.navigate("IssueCreate", {
+                        environmentId,
+                        projectId: project.id,
+                        provider: id === "new:github" ? "github" : "meituan",
+                      });
+                  }
+                }}
+              >
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("New")}
+                  className="size-12 items-center justify-center"
+                >
+                  <SymbolView name="plus" size={22} tintColorClassName="accent-foreground" />
+                </Pressable>
+              </Menu>
+            </View>
+            <Text className="text-xs text-foreground-muted">
+              {source === "all"
+                ? t("All sources")
+                : source === "local"
+                  ? t("Local work items")
+                  : source === "github"
+                    ? "GitHub Issues"
+                    : "MEP ONES"}{" "}
+              · {projects.find((project) => project.id === projectId)?.title ?? t("All projects")}
+              {archived ? ` · ${t("Show archived")}` : ""}
+            </Text>
+            {[...new Set(data.errors)].map((error) => (
+              <Text key={error} className="text-danger">
+                {error}
+              </Text>
+            ))}
+            {data.issuePages
+              .flatMap((page) => page.failures)
+              .map((failure) => (
+                <Text key={`${failure.projectId}:${failure.reason}`} className="text-danger">
+                  {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
+                  {t(failure.reason)}
+                </Text>
+              ))}
+            {data.isPending && !entries.length ? (
+              <Text>{t("Loading...")}</Text>
+            ) : !entries.length ? (
+              <Text className="text-foreground-muted">{t("No matching work items.")}</Text>
+            ) : null}
+            {view === "list" ? (
+              REQUIREMENT_GROUPS.map(renderGroup)
+            ) : (
+              <ScrollView
+                horizontal
+                contentContainerStyle={{ gap: 20 }}
+                showsHorizontalScrollIndicator
+              >
+                {REQUIREMENT_GROUPS.map(renderGroup)}
+              </ScrollView>
             )}
-        </Text>
-        {result.error ? <Text className="text-danger">{result.error}</Text> : null}
-        {result.data?.failures.map((failure) => (
-          <Text key={failure.projectId} className="text-danger">
-            {t(failure.reason)}
-          </Text>
-        ))}
-        {result.isPending ? <Text>{t("Loading...")}</Text> : null}
-        {REQUIREMENT_GROUPS.map((group) => {
-          const rows = entries.filter(
-            ({ issue }) =>
-              requirementGroup(issue.stateCategory, tracked.get(issue.url)?.deliverySummary) ===
-              group.key,
-          );
-          if (!rows.length) return null;
-          return (
-            <Disclosure
-              key={group.key}
-              title={t(group.label)}
-              count={rows.length}
-              open={!collapsed.includes(group.key)}
-              onToggle={() => toggle(group.key)}
-            >
-              {rows.map(({ issue, projectId: itemProject, scope }) => {
-                const summary = tracked.get(issue.url)?.deliverySummary;
-                return (
-                  <Pressable
-                    key={issue.url}
-                    accessibilityRole="button"
-                    onPress={() => {
-                      if (environmentId && itemProject)
-                        navigation.navigate("IssueDetail", {
-                          environmentId,
-                          projectId: itemProject,
-                          provider,
-                          id: issue.id,
-                          scope,
-                        });
-                    }}
-                    className="gap-2 border-b border-border-subtle py-3"
-                  >
-                    <View className="flex-row items-start gap-3">
-                      <Text className="min-w-0 flex-1 text-base font-t3-medium">{issue.title}</Text>
-                      {issue.priority ? (
-                        <Text className="text-xs text-foreground-muted">{issue.priority}</Text>
-                      ) : null}
-                    </View>
-                    <View className="flex-row flex-wrap items-center gap-2">
-                      <ProjectTag
-                        title={
-                          projects.find((project) => project.id === itemProject)?.title ??
-                          itemProject ??
-                          t("Project")
-                        }
-                      />
-                      <Text className="text-xs text-foreground-muted">#{issue.id}</Text>
-                      <Text className="text-xs text-foreground-muted">
-                        {issue.assignees.map((person) => person.label).join(", ") ||
-                          t("Unassigned")}
-                      </Text>
-                    </View>
-                    <View className="flex-row flex-wrap items-center gap-3">
-                      {summary && summary.requiredPullRequests > 0 ? (
-                        <Text className="text-xs text-foreground-muted">
-                          PR {summary.mergedPullRequests}/{summary.requiredPullRequests}
-                        </Text>
-                      ) : null}
-                      <Text
-                        className={
-                          group.key === "attention"
-                            ? "text-xs text-danger"
-                            : "text-xs text-foreground-muted"
-                        }
-                      >
-                        {summary
-                          ? t(
-                              summary.synced && summary.progress === "delivery_complete"
-                                ? "Completed"
-                                : DELIVERY_PROGRESS_LABELS[summary.progress],
-                            )
-                          : issue.state}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </Disclosure>
-          );
-        })}
-        {!result.isPending && !result.data?.groups.some((group) => group.issues.length) ? (
-          <Text className="text-foreground-muted">{t("No matching issues.")}</Text>
-        ) : null}
-        <View className="flex-row flex-wrap gap-3">
-          <Button
-            label={t("Previous")}
-            disabled={page === 1 || result.isPending}
-            onPress={() => setPage(page - 1)}
-          />
-          <Button
-            label={t("Next")}
-            disabled={!result.data?.groups.some((group) => group.hasMore) || result.isPending}
-            onPress={() => setPage(page + 1)}
-          />
-          <Button label={t("Refresh issues")} icon="arrow.clockwise" onPress={result.refresh} />
-        </View>
+            {data.moreIssues || data.nextCursor ? (
+              <Button
+                label={t("Load more")}
+                disabled={data.isPending}
+                onPress={() =>
+                  setPagination((previous) => ({
+                    ...previous,
+                    page: data.moreIssues ? previous.page + 1 : previous.page,
+                    cursors: data.nextCursor
+                      ? [...previous.cursors, data.nextCursor]
+                      : previous.cursors,
+                  }))
+                }
+              />
+            ) : null}
+            {data.candidates.length && (source === "all" || source === "local") ? (
+              <View className="gap-3">
+                <Text className="text-sm font-t3-semibold">{t("Discovered tasks")}</Text>
+                {data.candidates.map((candidate) => (
+                  <CandidateCard
+                    key={candidate.id}
+                    candidate={candidate}
+                    disabled={!canOperate || busy}
+                    onCreate={() =>
+                      createLocal(
+                        candidate.projectId,
+                        { threadId: candidate.id, title: candidate.title },
+                        candidate.description,
+                      )
+                    }
+                    onIgnore={() => void scan(candidate.id)}
+                  />
+                ))}
+              </View>
+            ) : null}
+          </>
+        )}
       </ScreenScrollView>
     </SettingsScreen>
   );

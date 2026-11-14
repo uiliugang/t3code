@@ -31,7 +31,7 @@ export function WorkItemMessageAction(props: {
       hitSlop={8}
       className="size-7 items-center justify-center"
       onPress={() =>
-        navigation.navigate("WorkItems", {
+        navigation.navigate("Requirements", {
           environmentId: props.environmentId,
           sourceThreadId: props.threadId,
           sourceMessageId: props.messageId,

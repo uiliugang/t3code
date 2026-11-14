@@ -45,7 +45,7 @@ export function ThreadHeader(props: {
     : [];
   if (props.onOpenTaskBoard) {
     actions.push({
-      accessibilityLabel: t("Task board"),
+      accessibilityLabel: t("Requirements board"),
       icon: "checkmark.circle",
       onPress: props.onOpenTaskBoard,
     });

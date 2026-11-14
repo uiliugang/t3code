@@ -3,7 +3,7 @@ import { RequirementDeliveryPanel } from "../requirements/RequirementDeliveryPan
 import { DraftFillButton } from "../requirements/DraftFillButton";
 import { ProjectTag } from "../requirements/ProjectTag";
 import { useNavigate } from "@tanstack/react-router";
-import { useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import {
   CommandId,
   type EnvironmentId,
@@ -17,48 +17,30 @@ import {
   type WorkItemExecutionId,
   type WorkItemParticipant,
   type WorkItemSource,
-  type WorkItemListInput,
 } from "@t3tools/contracts";
 import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   buildWorkItemContinuePrompt,
   selectWorkItemResultIds,
-  mergeWorkItemPages,
   prepareWorkItemCommandRetry,
   workItemExecutionIsActive,
   WORK_ITEM_STATUS_LABELS,
 } from "@t3tools/client-runtime/work-item";
+import { ArchiveIcon, PlusIcon, XIcon, EllipsisIcon, PencilIcon } from "lucide-react";
+import { randomUUID } from "../../lib/utils";
+import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useProjects, useQuietThreadShell } from "../../state/entities";
+import { serverEnvironment } from "../../state/server";
+import { useEnvironmentQuery } from "../../state/query";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { useComposerDraftStore } from "../../composerDraftStore";
+import { Button } from "../ui/button";
+import { toastManager } from "../ui/toast";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  ArchiveIcon,
-  ArrowLeftIcon,
-  PlusIcon,
-  SearchIcon,
-  XIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  ListIcon,
-  LayoutGridIcon,
-  SlidersHorizontalIcon,
-  EllipsisIcon,
-  PencilIcon,
-} from "lucide-react";
-import { randomUUID } from "../../lib/utils";
-import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
-import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { useEnvironment } from "../../state/environments";
-import { useProjects, useQuietThreadShell } from "../../state/entities";
-import { serverEnvironment } from "../../state/server";
-import { formatEnvironmentQueryError } from "../../state/query";
-import * as Data from "effect/Data";
-import { useEnvironmentQuery } from "../../state/query";
-import { AsyncResult, Atom } from "effect/reactivity";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { useComposerDraftStore } from "../../composerDraftStore";
-import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Badge } from "../ui/badge";
@@ -73,75 +55,16 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
-import { toastManager } from "../ui/toast";
-import {
-  Menu,
-  MenuTrigger,
-  MenuPopup,
-  MenuItem,
-  MenuSub,
-  MenuSubTrigger,
-  MenuSubPopup,
-  MenuCheckboxItem,
-} from "../ui/menu";
-import { useLocalStorage } from "../../hooks/useLocalStorage";
-import * as Schema from "effect/Schema";
+import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
 
-const CollapsedWorkItemGroups = Schema.Array(Schema.String);
+import type { RequirementsSearch } from "../../routes/_chat.requirements";
 
-const STATUSES = ["todo", "in_progress", "in_review", "done"] as const;
 const commandId = () => CommandId.make(randomUUID());
 const textLines = (text: string) =>
   text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-
-class WorkItemPagesKey extends Data.Class<{
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId | null;
-  readonly cursors: ReadonlyArray<WorkItemListInput["cursor"]>;
-  readonly enabled: boolean;
-}> {}
-
-const workItemPagesAtom = Atom.family((key: WorkItemPagesKey) =>
-  Atom.make((get) => {
-    const empty = {
-      data: null,
-      error: null,
-      isPending: false,
-      dataUpdatedAt: 0,
-      nextCursor: null,
-    };
-    if (!key.enabled) return empty;
-    const results = key.cursors.map((cursor) =>
-      get(
-        serverEnvironment.workItemsLive({
-          environmentId: key.environmentId,
-          input: {
-            ...(key.projectId ? { projectId: key.projectId } : {}),
-            ...(cursor ? { cursor } : {}),
-          },
-        }),
-      ),
-    );
-    const values = results.map((result) => AsyncResult.getOrElse(result, () => null));
-    const items = mergeWorkItemPages(values.flatMap((value) => (value ? [value] : [])));
-    const first = values[0];
-    const last = values.at(-1);
-    const failure = results.find((result) => result._tag === "Failure");
-    return {
-      data: first ? { items, candidates: first.candidates } : null,
-      error: failure ? formatEnvironmentQueryError(failure.cause) : null,
-      isPending: results.some((result) => result.waiting),
-      dataUpdatedAt: Math.max(
-        0,
-        ...results.map((result) => (result._tag === "Success" ? result.timestamp : 0)),
-      ),
-      nextCursor: last?.nextCursor ?? null,
-    };
-  }),
-);
 
 function WorkItemSelect(props: {
   label: string;
@@ -173,103 +96,75 @@ function WorkItemSelect(props: {
   );
 }
 
+const RequirementBoard = lazy(() =>
+  import("../requirements/RequirementsPage").then((module) => ({
+    default: module.RequirementBoard,
+  })),
+);
+
 export function ThreadWorkItemsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
   const thread = useQuietThreadShell(threadRef);
+  const key = `${threadRef.environmentId}:${thread?.projectId ?? ""}`;
+  const [selection, setSelection] = useState<{ key: string; search: RequirementsSearch }>({
+    key,
+    search: {},
+  });
+  if (selection.key !== key) setSelection({ key, search: {} });
+  const search = selection.key === key ? selection.search : {};
   return thread ? (
-    <WorkItemsBoard
-      environmentId={threadRef.environmentId}
-      key={`${threadRef.environmentId}:${thread.projectId}`}
-      initialProjectId={thread.projectId}
-      threadRef={threadRef}
-      compact
-    />
+    <Suspense fallback={null}>
+      <RequirementBoard
+        key={`${threadRef.environmentId}:${thread.projectId}`}
+        environmentId={threadRef.environmentId}
+        search={{ ...search, projectId: thread.projectId }}
+        compact
+        updateSearch={(patch) =>
+          setSelection((previous) => ({
+            key,
+            search: Object.fromEntries(
+              Object.entries({ ...previous.search, ...patch }).filter(
+                ([, value]) => value !== undefined,
+              ),
+            ) as RequirementsSearch,
+          }))
+        }
+      />
+    </Suspense>
   ) : null;
 }
 
-export function WorkItemsBoard({
+export function WorkItemDetailPanel({
   environmentId,
-  initialProjectId,
-  threadRef,
-  compact = false,
-  localOnly = false,
-  filterItems,
+  id,
+  close,
 }: {
   environmentId: EnvironmentId;
-  initialProjectId?: ProjectId | undefined;
-  threadRef?: ScopedThreadRef | undefined;
-  compact?: boolean;
-  localOnly?: boolean;
-  filterItems?: ReactNode;
+  id: WorkItem["id"];
+  close: () => void;
 }) {
   const t = useUiTranslation();
-  const projects = useProjects().filter(
-    (project) => project.environmentId === environmentId && project.archivedAt === null,
+  const query = useEnvironmentQuery(
+    serverEnvironment.workItemsLive({ environmentId, input: { id } }),
   );
-  const [chosenProject, setChosenProject] = useState(initialProjectId);
-  const projectId = chosenProject ?? projects[0]?.id;
-  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const supported = config?.workItems === true;
-  const pageKey = `${environmentId}:${projectId ?? ""}`;
-  const [pagination, setPagination] = useState<{
-    key: string;
-    cursors: ReadonlyArray<WorkItemListInput["cursor"]>;
-  }>({ key: pageKey, cursors: [undefined] });
-  if (pagination.key !== pageKey) setPagination({ key: pageKey, cursors: [undefined] });
-  const query = useAtomValue(
-    workItemPagesAtom(
-      new WorkItemPagesKey({
-        environmentId,
-        projectId: projectId ?? null,
-        cursors: pagination.cursors,
-        enabled: supported && pagination.key === pageKey,
-      }),
-    ),
-  );
-  const environment = useEnvironment(environmentId);
-  const permitted = useAtomValue(serverEnvironment.mutateWorkItem.permissionAtom(environmentId));
-  const canOperate = permitted && environment?.connection.phase === "connected";
+  const item = query.data?.item;
+  const allowed = useAtomValue(serverEnvironment.mutateWorkItem.permissionAtom(environmentId));
   const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
-  const discover = useAtomCommand(serverEnvironment.discoverWorkItems, { reportFailure: false });
-  const [draggedItem, setDraggedItem] = useState<WorkItemSummary | null>(null);
-  const [search, setSearch] = useState("");
-  const [archived, setArchived] = useState(false);
-  const [view, setView] = useState<"list" | "board">("list");
-  const [collapsed, setCollapsed] = useLocalStorage<ReadonlyArray<string>, ReadonlyArray<string>>(
-    "work-items.collapsed",
-    ["done"],
-    CollapsedWorkItemGroups,
-  );
-  const [selectedId, setSelectedId] = useState<WorkItem["id"] | null>(null);
-  const [editor, setEditor] = useState<{ item?: WorkItem; candidate?: WorkItemCandidate } | null>(
-    null,
-  );
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const pending = useRef(false);
-  const retryCommands = useRef(new Map<string, CommandId>());
+  const retries = useRef(new Map<string, CommandId>());
+  const openThread = useNewThreadHandler();
   const navigate = useNavigate();
-  const openNewThread = useNewThreadHandler();
-  const selectedQuery = useEnvironmentQuery(
-    supported && selectedId
-      ? serverEnvironment.workItemsLive({ environmentId, input: { id: selectedId } })
-      : null,
-  );
-  const selected = selectedQuery.data?.item;
-  const filtered = (query.data?.items ?? []).filter(
-    (item) =>
-      item.archived === archived &&
-      (!localOnly || item.issue === undefined) &&
-      `${item.title}\n${item.description}`.toLowerCase().includes(search.toLowerCase()),
-  );
   const run = async (input: WorkItemCommandInput, intent?: string) => {
-    if (pending.current || !canOperate || !supported) return false;
-    const request = prepareWorkItemCommandRetry(input, retryCommands.current, intent);
+    if (pending.current || !allowed) return false;
+    const request = prepareWorkItemCommandRetry(input, retries.current, intent);
     pending.current = true;
     setBusy(true);
     const result = await mutate({ environmentId, input: request.input }).finally(() => {
       pending.current = false;
       setBusy(false);
     });
-    if (result._tag === "Failure") {
+    if (result._tag !== "Success") {
       if (!isAtomCommandInterrupted(result))
         toastManager.add({
           type: "error",
@@ -278,43 +173,25 @@ export function WorkItemsBoard({
         });
       return false;
     }
-    retryCommands.current.delete(request.key);
+    retries.current.delete(request.key);
     return true;
   };
-  const discoverTasks = async (dismissThreadId?: WorkItemCandidate["id"]) => {
-    if (!projectId || pending.current || !canOperate) return;
-    pending.current = true;
-    setBusy(true);
-    const result = await discover({
-      environmentId,
-      input: { projectId, ...(dismissThreadId ? { dismissThreadId } : {}) },
-    }).finally(() => {
-      pending.current = false;
-      setBusy(false);
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
-      toastManager.add({
-        type: "error",
-        title: t("Could not discover tasks"),
-        description: String(squashAtomCommandFailure(result)),
-      });
-  };
-  const continueTask = async (item: WorkItem, newConversation = false) => {
-    const sourceThreadId =
-      item.sources[0]?.threadId ?? item.executions.at(-1)?.threadId ?? threadRef?.threadId;
+  const continueTask = async (newConversation = false) => {
+    if (!item) return;
+    const sourceThreadId = item.sources[0]?.threadId ?? item.executions.at(-1)?.threadId;
     const opened =
       newConversation || !sourceThreadId
-        ? await openNewThread(scopeProjectRef(environmentId, item.projectId))
+        ? await openThread(scopeProjectRef(environmentId, item.projectId))
         : null;
-    if ((newConversation || !sourceThreadId) && !opened) return;
     const target =
       opened?.draftId ?? (sourceThreadId ? scopeThreadRef(environmentId, sourceThreadId) : null);
-    if (!target) return;
+    if (((newConversation || !sourceThreadId) && !opened) || !target) return;
     const drafts = useComposerDraftStore.getState();
-    const previous = drafts.getComposerDraft(target)?.prompt ?? "";
     drafts.setPrompt(
       target,
-      [previous, buildWorkItemContinuePrompt(item)].filter(Boolean).join("\n\n"),
+      [drafts.getComposerDraft(target)?.prompt ?? "", buildWorkItemContinuePrompt(item)]
+        .filter(Boolean)
+        .join("\n\n"),
     );
     if (!opened && sourceThreadId)
       void navigate({
@@ -322,331 +199,45 @@ export function WorkItemsBoard({
         params: { environmentId, threadId: sourceThreadId },
       });
   };
-  if (!supported)
-    return (
-      <div className="p-5 text-sm text-muted-foreground">
-        {t("Update this environment to use the task board.")}
-      </div>
-    );
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" data-task-board>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-3">
-        {selectedId ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label={t("Back to tasks")}
-            onClick={() => setSelectedId(null)}
-          >
-            <ArrowLeftIcon />
-            {t("Back")}
-          </Button>
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <Input
-            aria-label={t("Search tasks")}
-            placeholder={t("Search tasks")}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            size="sm"
-          />
-        </div>
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t("Filters")}
-                title={t("Filters")}
-              />
-            }
-          >
-            <SlidersHorizontalIcon />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            {filterItems}
-            <MenuSub>
-              <MenuSubTrigger>{t("Project")}</MenuSubTrigger>
-              <MenuSubPopup>
-                {projects.map((project) => (
-                  <MenuItem
-                    key={project.id}
-                    onClick={() => {
-                      setChosenProject(project.id);
-                      setSelectedId(null);
-                    }}
-                  >
-                    {project.title}
-                  </MenuItem>
-                ))}
-              </MenuSubPopup>
-            </MenuSub>
-            <MenuCheckboxItem checked={archived} onCheckedChange={setArchived}>
-              {t("Archived")}
-            </MenuCheckboxItem>
-            <MenuItem
-              disabled={!projectId || !canOperate || busy || config?.workItemDiscovery !== true}
-              onClick={() => void discoverTasks()}
-            >
-              <SearchIcon />
-              {t("Discover")}
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
-        {!compact ? (
-          <Menu>
-            <MenuTrigger
-              render={
-                <Button size="icon-sm" variant="ghost" aria-label={t("View")} title={t("View")} />
-              }
-            >
-              {view === "list" ? <ListIcon /> : <LayoutGridIcon />}
-            </MenuTrigger>
-            <MenuPopup align="end">
-              <MenuItem onClick={() => setView("list")}>
-                <ListIcon />
-                {t("List view")}
-              </MenuItem>
-              <MenuItem onClick={() => setView("board")}>
-                <LayoutGridIcon />
-                {t("Board view")}
-              </MenuItem>
-            </MenuPopup>
-          </Menu>
-        ) : null}
-        <Button
-          size="sm"
-          disabled={!projectId || !canOperate || busy}
-          onClick={() => setEditor({})}
-        >
-          <PlusIcon />
-          {t("New task")}
+    <aside className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border/60 md:max-w-[440px]">
+      <div className="flex justify-end border-b border-border/60 p-2">
+        <Button size="icon-sm" variant="ghost" aria-label={t("Close")} onClick={close}>
+          <XIcon />
         </Button>
       </div>
-      {query.dataUpdatedAt > 0 ? (
-        <p className="px-3 pt-2 text-xs text-muted-foreground">
-          {t("Last synchronized: {time}", {
-            time: new Date(query.dataUpdatedAt).toLocaleTimeString(),
-          })}
-        </p>
-      ) : null}
       {query.error ? (
-        <p role="alert" className="border-b border-border p-3 text-sm text-destructive">
+        <p role="alert" className="p-4 text-sm text-destructive">
           {query.error}
         </p>
-      ) : null}
-      {query.isPending && !query.data ? (
-        <p className="p-4 text-sm text-muted-foreground">{t("Loading tasks…")}</p>
-      ) : null}
-      <div className="flex min-h-0 flex-1">
-        <div
-          className={
-            "min-h-0 min-w-0 flex-1 overflow-auto px-5 py-3 " + (selectedId ? "max-md:hidden" : "")
-          }
-        >
-          <div
-            className={
-              compact || view === "list"
-                ? "space-y-4"
-                : "grid auto-cols-[minmax(240px,1fr)] grid-flow-col gap-4 overflow-x-auto"
-            }
-          >
-            {STATUSES.filter(
-              (status) => view === "board" || filtered.some((item) => item.status === status),
-            ).map((status) => (
-              <section
-                key={status}
-                className="min-w-0"
-                aria-label={t(WORK_ITEM_STATUS_LABELS[status])}
-                onDragOver={(event) => {
-                  if (
-                    draggedItem &&
-                    (status === "todo" || status === "in_progress") &&
-                    draggedItem.status !== status
-                  )
-                    event.preventDefault();
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const item = draggedItem;
-                  setDraggedItem(null);
-                  if (
-                    item &&
-                    (status === "todo" || status === "in_progress") &&
-                    item.status !== status
-                  )
-                    void run({
-                      type: "move",
-                      commandId: commandId(),
-                      id: item.id,
-                      expectedVersion: item.version,
-                      status,
-                    });
-                }}
-              >
-                <button
-                  type="button"
-                  aria-expanded={!collapsed.includes(status)}
-                  onClick={() =>
-                    setCollapsed((previous) =>
-                      previous.includes(status)
-                        ? previous.filter((value) => value !== status)
-                        : [...previous, status],
-                    )
-                  }
-                  className="flex min-h-11 w-full items-center gap-2 text-left text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  {collapsed.includes(status) ? (
-                    <ChevronRightIcon className="size-3.5 text-muted-foreground" />
-                  ) : (
-                    <ChevronDownIcon className="size-3.5 text-muted-foreground" />
-                  )}
-                  {t(WORK_ITEM_STATUS_LABELS[status])}
-                  <span className="text-muted-foreground">
-                    {filtered.filter((item) => item.status === status).length}
-                  </span>
-                </button>
-                <div
-                  hidden={collapsed.includes(status)}
-                  className={view === "board" ? "space-y-2" : "divide-y divide-border/50"}
-                >
-                  {filtered
-                    .filter((item) => item.status === status)
-                    .map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedId(item.id)}
-                        draggable={
-                          canOperate &&
-                          !busy &&
-                          !item.archived &&
-                          (item.status === "todo" || item.status === "in_progress")
-                        }
-                        onDragStart={() => setDraggedItem(item)}
-                        onDragEnd={() => setDraggedItem(null)}
-                        aria-current={selectedId === item.id ? "true" : undefined}
-                        className={`w-full rounded-md p-3 text-left outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selectedId === item.id ? "bg-accent" : ""} ${view === "board" ? "border border-border/70" : ""}`}
-                      >
-                        <span className="mb-2 flex items-start gap-2">
-                          <span className="min-w-0 flex-1 break-words text-sm font-medium">
-                            {item.title}
-                          </span>
-                          <span className="text-xs text-muted-foreground">{item.priority}</span>
-                        </span>
-                        <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <ProjectTag
-                            title={
-                              projects.find((project) => project.id === item.projectId)?.title ??
-                              item.projectId
-                            }
-                          />
-                          <span>{t("Local work item")}</span>
-                          <span>{t("{count} agents", { count: item.executionCount })}</span>
-                          {item.activeExecutionCount > 0 ? <span>{t("Running")}</span> : null}
-                        </span>
-                      </button>
-                    ))}
-                </div>
-              </section>
-            ))}
-          </div>
-          {query.nextCursor ? (
-            <div className="mt-4 flex justify-center">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={query.isPending}
-                onClick={() => {
-                  const cursor = query.nextCursor;
-                  if (cursor)
-                    setPagination((previous) => ({
-                      ...previous,
-                      cursors: [...previous.cursors, cursor],
-                    }));
-                }}
-              >
-                {t("Load more tasks")}
-              </Button>
-            </div>
-          ) : null}
-          {filtered.length === 0 && query.data ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {t("No tasks yet. Create a task or discover work from conversations.")}
-            </p>
-          ) : null}
-          {(query.data?.candidates.length ?? 0) > 0 ? (
-            <section className="mt-6 space-y-2">
-              <h2 className="text-sm font-medium">{t("Discovered conversations")}</h2>
-              {query.data?.candidates.map((candidate) => (
-                <div
-                  key={candidate.id}
-                  className="flex items-center gap-3 border-b border-border/50 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{candidate.title}</p>
-                    <p className="line-clamp-2 text-xs text-muted-foreground">
-                      {candidate.description}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!canOperate || busy}
-                    onClick={() => setEditor({ candidate })}
-                  >
-                    {t("Add task")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={!canOperate || busy}
-                    onClick={() => void discoverTasks(candidate.id)}
-                  >
-                    {t("Ignore")}
-                  </Button>
-                </div>
-              ))}
-            </section>
-          ) : null}
-        </div>
-        {selectedId ? (
-          <aside className="flex min-h-0 min-w-0 flex-1 border-l border-border/60 md:max-w-[440px]">
-            {selected ? (
-              <WorkItemDetails
-                key={selected.id}
-                item={selected}
-                deliverySummary={selectedQuery.data?.items[0]?.deliverySummary}
-                environmentId={environmentId}
-                busy={busy}
-                canOperate={canOperate}
-                run={run}
-                edit={() => setEditor({ item: selected })}
-                continueTask={(newConversation) => void continueTask(selected, newConversation)}
-              />
-            ) : (
-              <p className="p-4 text-sm text-muted-foreground">
-                {selectedQuery.error ?? t("Loading task…")}
-              </p>
-            )}
-          </aside>
-        ) : null}
-      </div>
-      {editor && projectId ? (
+      ) : item ? (
+        <WorkItemDetails
+          key={item.id}
+          item={item}
+          deliverySummary={query.data?.items[0]?.deliverySummary}
+          environmentId={environmentId}
+          busy={busy}
+          canOperate={allowed}
+          run={run}
+          edit={() => setEditing(true)}
+          continueTask={(newConversation) => void continueTask(newConversation)}
+        />
+      ) : (
+        <p className="p-4 text-sm text-muted-foreground">
+          {t(query.isPending ? "Loading task…" : "Task not found.")}
+        </p>
+      )}
+      {editing && item ? (
         <WorkItemEditor
           environmentId={environmentId}
-          key={editor.item?.id ?? editor.candidate?.id ?? "new"}
-          original={editor.item}
-          candidate={editor.candidate}
-          threadRef={threadRef}
-          projectId={projectId}
+          projectId={item.projectId}
+          original={item}
           busy={busy}
           run={run}
-          close={() => setEditor(null)}
+          close={() => setEditing(false)}
         />
       ) : null}
-    </section>
+    </aside>
   );
 }
 

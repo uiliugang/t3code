@@ -1030,7 +1030,7 @@ function ThreadRouteContent(
                 onOpenTaskBoard={
                   selectedThread
                     ? () =>
-                        navigation.navigate("WorkItems", {
+                        navigation.navigate("Requirements", {
                           environmentId: selectedThread.environmentId,
                           projectId: selectedThread.projectId,
                           sourceThreadId: selectedThread.id,

@@ -1,4 +1,3 @@
-import { WorkItemsScreen } from "./features/work-items/WorkItemsScreen";
 import { isDraftThreadRoute } from "./features/threads/thread-route-state";
 import { ComponentCatalogScreen } from "./features/development/ComponentCatalogScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
@@ -170,9 +169,9 @@ const SEARCH_SHEET_ROUTE = sheetRoute({ detent: 0.75, android: "card", itemStyle
 
 const SETTINGS_SCREENS = {
   WorkItems: createNativeStackScreen({
-    screen: WorkItemsScreen,
+    screen: RequirementsScreen,
     linking: "tasks",
-    options: settingsPage("Local work items"),
+    options: settingsPage("Requirements board"),
   }),
   SettingsRequirements: createNativeStackScreen({
     screen: RequirementsSettingsScreen,
