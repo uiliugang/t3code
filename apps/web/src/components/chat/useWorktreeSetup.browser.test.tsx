@@ -46,22 +46,32 @@ function setup() {
   };
 }
 
-function SetupProgress({ grouped }: { grouped: boolean }) {
+function SetupProgress({
+  grouped,
+  preparing = false,
+  unbound = false,
+}: {
+  grouped: boolean;
+  preparing?: boolean;
+  unbound?: boolean;
+}) {
   const ref = threadRef;
   const activeThread = {
     id: ref.threadId,
-    worktreePath: grouped ? null : "/isolated/primary",
-    workspace: {
-      mode: "isolated" as const,
-      id: WorkspaceRevisionId.make("workspace"),
-      projectId: ProjectId.make("project"),
-      sourceProjectVersion: 1,
-      previousRevisionId: null,
-      primaryRootId: WorkspaceRootId.make("primary"),
-      resources: [],
-      bindings: [],
-      createdAt: "2026-11-02T00:00:00.000Z",
-    },
+    worktreePath: grouped || unbound ? null : "/isolated/primary",
+    workspace: unbound
+      ? undefined
+      : {
+          mode: "isolated" as const,
+          id: WorkspaceRevisionId.make("workspace"),
+          projectId: ProjectId.make("project"),
+          sourceProjectVersion: 1,
+          previousRevisionId: null,
+          primaryRootId: WorkspaceRootId.make("primary"),
+          resources: [],
+          bindings: [],
+          createdAt: "2026-11-02T00:00:00.000Z",
+        },
   };
   const { worktreeSetup, blocksSend } = useWorktreeSetup({
     routeThreadRef: ref,
@@ -70,7 +80,7 @@ function SetupProgress({ grouped }: { grouped: boolean }) {
     threadRef: ref,
     serverProjection: null,
     activityRun: null,
-    localPreparing: false,
+    localPreparing: preparing,
     sendQueuesBehindSetup: false,
     followUpSent: false,
   });
@@ -89,3 +99,13 @@ it.each([true, false])(
     await expect.element(screen.getByRole("status")).toHaveTextContent("running:ready");
   },
 );
+
+it("receives the final setup state after an unbound workspace stops preparing", async () => {
+  setup();
+  state.snapshot = { ...state.snapshot!, stages: [] };
+  await using screen = await render(<SetupProgress grouped={false} preparing unbound />);
+  await expect.element(screen.getByRole("status")).toHaveTextContent("running:blocked");
+  state.snapshot = { ...state.snapshot!, phase: "failed", sequence: 2 };
+  await screen.rerender(<SetupProgress grouped={false} unbound />);
+  await expect.element(screen.getByRole("status")).toHaveTextContent("failed:ready");
+});

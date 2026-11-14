@@ -4,6 +4,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
+  GitCommandError,
   ProjectId,
   ThreadId,
   WorkspaceRootId,
@@ -210,6 +211,7 @@ it.live(
       const sql = yield* SqlClient.SqlClient;
       const temp = yield* fs.makeTempDirectoryScoped({ prefix: "workspace-group-test-" });
       const fail = yield* Ref.make(true);
+      const failFetch = yield* Ref.make(false);
       const setupBranches = yield* Ref.make<string[]>([]);
       const checkoutModes = yield* Ref.make<Array<boolean | undefined>>([]);
       const generatedBranch = "lg/fix-group-branches";
@@ -282,6 +284,21 @@ it.live(
         Layer.provide(
           Layer.succeed(GitVcsDriver.GitVcsDriver, {
             ...git,
+            fetchWorktreeBaseCommit: (input) =>
+              Ref.getAndSet(failFetch, false).pipe(
+                Effect.flatMap((fail) =>
+                  fail
+                    ? Effect.fail(
+                        new GitCommandError({
+                          operation: "GitVcsDriver.fetchRemote",
+                          command: "git",
+                          cwd: input.cwd,
+                          detail: "Git command timed out.",
+                        }),
+                      )
+                    : git.fetchWorktreeBaseCommit(input),
+                ),
+              ),
             createWorktree: (input, options) =>
               Ref.update(checkoutModes, (modes) => [...modes, options?.fastCheckout]).pipe(
                 Effect.andThen(git.createWorktree(input, options)),
@@ -330,6 +347,23 @@ it.live(
           })
           .pipe(Effect.flip);
         assert.include(invalidBase.message, "main or master");
+        assert.lengthOf(yield* sql`SELECT * FROM workspace_preparations`, 0);
+        yield* Ref.set(failFetch, true);
+        const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+        yield* tracker.begin({
+          threadId: input.threadId,
+          branch: null,
+          baseRef: "main",
+          stages: ["fetch", "checkout"],
+          fiber: null,
+        });
+        const fetchError = yield* provisioner.prepare(input).pipe(Effect.flip);
+        assert.include(fetchError.message, "Git command timed out.");
+        assert.equal(
+          (yield* tracker.get(input.threadId))?.stages.find((stage) => stage.id === "fetch")
+            ?.status,
+          "failed",
+        );
         assert.lengthOf(yield* sql`SELECT * FROM workspace_preparations`, 0);
         const error = yield* provisioner.prepare(input).pipe(Effect.flip);
         assert.include(error.message, "Setup failed");
