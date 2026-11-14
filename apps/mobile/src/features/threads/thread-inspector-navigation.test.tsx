@@ -20,8 +20,11 @@ vi.mock("@react-navigation/native", async () => {
   const requireNavigation = createRequire(
     createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
   );
+  const requireFromCore = createRequire(
+    requireNavigation.resolve("@react-navigation/core/package.json"),
+  );
   return {
-    StackActions: requireNavigation("@react-navigation/routers").StackActions,
+    StackActions: requireFromCore("@react-navigation/routers").StackActions,
     useNavigation: () => ({ dispatch: harness.dispatch, getState: harness.getState }),
     useRoute: () => harness.getRoute(),
   };
@@ -33,7 +36,10 @@ import { useOpenLinkedThread } from "./useOpenLinkedThread";
 const requireNavigation = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
 );
-const { StackRouter, StackActions } = requireNavigation("@react-navigation/routers") as {
+const requireFromCore = NodeModule.createRequire(
+  requireNavigation.resolve("@react-navigation/core/package.json"),
+);
+const { StackRouter, StackActions } = requireFromCore("@react-navigation/routers") as {
   StackRouter: typeof import("@react-navigation/native").StackRouter;
   StackActions: typeof import("@react-navigation/native").StackActions;
 };
