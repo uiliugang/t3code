@@ -1,4 +1,5 @@
 import * as DateTime from "effect/DateTime";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -237,12 +238,13 @@ export function liveWorkEntryLabel(
   entry: WorkLogEntry,
   workspaceRoot: string | undefined,
   active: boolean,
+  t: UiTranslator,
 ) {
   const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);
   if (entry.itemType === "reasoning") {
     return (
       entry.detail?.trim().replace(/\s+/g, " ") ||
-      (status === "inProgress" ? "Thinking" : "Thought")
+      t(status === "inProgress" ? "Thinking" : "Thought")
     );
   }
   const toolPresentation = resolveWorkEntryToolPresentation({
@@ -252,17 +254,17 @@ export function liveWorkEntryLabel(
   if (toolPresentation) return toolPresentation.displayName;
   const command = entry.command?.trim();
   if (command) {
-    const verb =
+    const message =
       status === "inProgress"
-        ? "Running"
+        ? "Running {command}"
         : status === "failed"
-          ? "Failed"
+          ? "Failed {command}"
           : status === "declined"
-            ? "Declined"
+            ? "Declined {command}"
             : status === "stopped"
-              ? "Stopped"
-              : "Ran";
-    return `${verb} ${commandProgramName(command) ?? "command"}`;
+              ? "Stopped {command}"
+              : "Ran {command}";
+    return t(message, { command: commandProgramName(command) ?? t("command") });
   }
   return workEntryDisplayLabel(entry, workspaceRoot);
 }

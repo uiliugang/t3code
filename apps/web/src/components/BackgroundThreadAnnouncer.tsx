@@ -1,6 +1,8 @@
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { isListedThreadLineage } from "@t3tools/contracts";
+import { translateUi } from "@t3tools/shared/uiLocale";
+import { getClientSettings } from "../hooks/useSettings";
 import type { AnyRouter } from "@tanstack/react-router";
 import type { AtomRegistry } from "effect/reactivity";
 
@@ -56,7 +58,12 @@ export function startBackgroundThreadAnnouncements(
         snoozed: effectiveSnoozed(thread, { now }),
       });
     }
-    const next = nextBackgroundThreadAnnouncement(memory, snapshots, openThreadKey);
+    const next = nextBackgroundThreadAnnouncement(
+      memory,
+      snapshots,
+      openThreadKey,
+      (message, values) => translateUi(getClientSettings().uiLanguage, message, values),
+    );
     memory = next.memory;
     if (next.announcement !== null) backgroundThreadLiveRegion.announce(next.announcement);
   };

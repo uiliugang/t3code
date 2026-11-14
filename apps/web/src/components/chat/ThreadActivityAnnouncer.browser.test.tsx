@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act, fakeTimers, render } from "../../../test/render";
 import type { TimelineEntry } from "../../session-logic";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
+import { __setClientSettingsForTests, getClientSettings } from "../../hooks/useSettings";
 
 const run = RunId.make("run-1");
 const at = "2026-01-01T00:00:00.000Z";
@@ -60,8 +61,33 @@ const regions = (container: HTMLElement) => {
   return { detail: detail!, status: status! };
 };
 
+function setup() {
+  const original = getClientSettings();
+  __setClientSettingsForTests({ ...original, uiLanguage: "en" });
+  return { [Symbol.dispose]: () => __setClientSettingsForTests(original) };
+}
+
 describe("ThreadActivityAnnouncer", () => {
+  it("speaks new requests in the current language after switching both ways", async () => {
+    const original = getClientSettings();
+    using _settings = { [Symbol.dispose]: () => __setClientSettingsForTests(original) };
+    __setClientSettingsForTests({ ...original, uiLanguage: "zh-CN" });
+    // The announcer reads no route.
+    await using screen = await render(announcer({}), { router: false });
+    const { status } = regions(screen.container);
+    for (const [language, requestId, text] of [
+      ["zh-CN", "request-1", "需要批准"],
+      ["en", "request-2", "Needs approval"],
+      ["zh-CN", "request-3", "需要批准"],
+    ] as const) {
+      await act(() => __setClientSettingsForTests({ ...original, uiLanguage: language }));
+      await screen.rerender(announcer({ status: "approval", requestId }));
+      await expect.element(status).toHaveTextContent(text);
+    }
+  });
+
   it("drops a waiting step once the agent has moved on", async () => {
+    using _settings = setup();
     // The announcer reads no route.
     await using screen = await render(announcer({ status: "idle", runStatus: "completed" }), {
       router: false,
@@ -83,6 +109,7 @@ describe("ThreadActivityAnnouncer", () => {
   });
 
   it("holds a waiting step while the thread's detail is behind, then reads it", async () => {
+    using _settings = setup();
     // The announcer reads no route.
     await using screen = await render(announcer({ status: "idle", runStatus: "completed" }), {
       router: false,
@@ -107,6 +134,7 @@ describe("ThreadActivityAnnouncer", () => {
   });
 
   it("keeps a message beside the status that follows it, then reads the newest step", async () => {
+    using _settings = setup();
     // The announcer reads no route.
     await using screen = await render(announcer({ status: "idle", runStatus: "completed" }), {
       router: false,
@@ -137,6 +165,7 @@ describe("ThreadActivityAnnouncer", () => {
   });
 
   it("reads a status that lands with a message as the message's last sentence", async () => {
+    using _settings = setup();
     // The announcer reads no route.
     await using screen = await render(announcer({ status: "idle", runStatus: "completed" }), {
       router: false,

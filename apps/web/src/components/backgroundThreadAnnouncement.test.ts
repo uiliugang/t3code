@@ -1,6 +1,7 @@
 import { RunId, RuntimeRequestId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi, type UiLocale } from "@t3tools/shared/uiLocale";
 
 import {
   type BackgroundThreadMemory,
@@ -39,11 +40,17 @@ function speak(
     readonly threads: ReadonlyArray<BackgroundThreadSnapshot>;
     readonly open?: string;
   }>,
+  locale: UiLocale = "en",
 ) {
   let memory: BackgroundThreadMemory = new Map();
   const spoken: string[] = [];
   for (const frame of frames) {
-    const result = nextBackgroundThreadAnnouncement(memory, frame.threads, frame.open ?? null);
+    const result = nextBackgroundThreadAnnouncement(
+      memory,
+      frame.threads,
+      frame.open ?? null,
+      (message, values) => translateUi(locale, message, values),
+    );
     memory = result.memory;
     if (result.announcement !== null) spoken.push(result.announcement);
   }
@@ -69,6 +76,16 @@ describe("nextBackgroundThreadAnnouncement", () => {
       "Failed: Fix login redirect",
       "Stopped: Fix login redirect",
     ]);
+    expect(
+      speak(
+        [
+          { threads: [login()] },
+          { threads: [login({ request: "approval" })] },
+          { threads: [login({ runStatus: "completed" })] },
+        ],
+        "zh-CN",
+      ),
+    ).toEqual(["需要批准: Fix login redirect", "完成: Fix login redirect"]);
   });
 
   it("announces each run's ending once", () => {

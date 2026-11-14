@@ -7,6 +7,7 @@ import type { TurnDetailMemory } from "./turnDetailAnnouncement";
 import { memo, useEffect, useRef } from "react";
 
 import { useLiveRegion } from "../../hooks/useLiveRegion";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 import { nextThreadAnnouncement } from "@t3tools/client-runtime/state/thread-activity-announcement";
 import { nextTurnDetailAnnouncement, NO_TURN_DETAIL, turnDetail } from "./turnDetailAnnouncement";
@@ -56,6 +57,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
   readonly entries: ReadonlyArray<TimelineEntry>;
   readonly workspaceRoot: string | undefined;
 }) {
+  const t = useUiTranslation();
   const { regionRef, announce, clear } = useLiveRegion();
   const {
     regionRef: detailRegionRef,
@@ -113,13 +115,17 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
     });
     // A new level starts from what the turn already holds, so raising it mid-turn replays nothing.
     const previousDetail = previous?.level === level ? previous.detail : null;
-    const detail = nextTurnDetailAnnouncement(previousDetail, {
-      ...(level === "status"
-        ? NO_TURN_DETAIL
-        : turnDetail(entries, workspaceRoot, previousDetail?.tailId ?? null)),
-      level,
-      status,
-    });
+    const detail = nextTurnDetailAnnouncement(
+      previousDetail,
+      {
+        ...(level === "status"
+          ? NO_TURN_DETAIL
+          : turnDetail(entries, workspaceRoot, previousDetail?.tailId ?? null, t)),
+        level,
+        status,
+      },
+      t,
+    );
     memoryRef.current = { threadKey, level, memory: turn.memory, detail: detail.memory };
     if (previous === null) {
       step.quietUntil = 0;
@@ -131,11 +137,11 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       // NVDA reads two regions written in the same frame in either order, so a
       // status that lands with a message is read as its last sentence.
       const text = asOneAnnouncement(
-        turn.announcement === null ? detail.messages : [...detail.messages, turn.announcement],
+        turn.announcement === null ? detail.messages : [...detail.messages, t(turn.announcement)],
       );
       write(text, holdAfter(text));
     } else if (turn.announcement !== null) {
-      announce(turn.announcement);
+      announce(t(turn.announcement));
       step.quietUntil = Math.max(step.quietUntil, Date.now() + ACTIVITY_GAP_MS);
     }
     // A waiting label is stale once its step is over or the level no longer reads steps.
@@ -158,6 +164,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
     // The next run takes the label over; after an unmount nothing is left to speak it.
     return () => clearTimeout(timer);
   }, [
+    t,
     threadKey,
     status,
     requestId,

@@ -24,6 +24,9 @@ describe("UI translations", () => {
     ["Check out", "检出"],
     ["Reviewing", "待我评审"],
     ["Newest first", "最新优先"],
+    ["Needs approval", "需要批准"],
+    ["Needs your input", "需要你输入"],
+    ["Stopped", "已停止"],
   ])("translates settings and action text: %s", (message, translated) => {
     expect(translateUi("zh-CN", message)).toBe(translated);
     expect(translateUi("en", message)).toBe(message);

@@ -33,6 +33,8 @@ on:
       - .github/workflows/fork-release.yml
       - .github/scripts/android-release.init.gradle
       - apps/mobile/app.config.ts
+      - apps/mobile/metro.config.js
+      - pnpm-workspace.yaml
       - scripts/build-desktop-artifact.ts
 
 permissions:

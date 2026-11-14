@@ -269,6 +269,7 @@ catalogs:
       version: 11.0.5
 
 overrides:
+  '@expo/cli': 58.1.19
   react-native-image-viewing: 0.2.2
   mdast-util-math: 3.0.0
   micromark-extension-llm-math: 3.1.0
@@ -369,6 +370,7 @@ patchedDependencies:
   '@clerk/expo-native-components@0.4.4': 7a808b92da8460750b85818552e13be3fb73d111691c7db76965970351e124e4
   '@cursor/sdk@1.2.0': 57f502128bf6accd976963b126e227c86a45d815a53a8dc450461beae3bed4a4
   '@effect/vitest@4.1.2': 299510b71c36537a832a67e9d160a5f112a5f326a29e95c41cb45fc8234e47c7
+  '@expo/cli@58.1.19': 7f88add03000b6a1c91f0ce767874418fe839dc8251e4cab8947f5932aee67c0
   '@expo/image-utils@0.12.6': 142c2d105900edff20ac92017ad755a761563b119f1b4544356ff76c5a6b1978
   '@expo/ui@58.0.27': 9f2547678939f4ec78fe45163b6455aad63d3c80353d7e0cc783f6a61a7ccc2f
   '@ff-labs/fff-node@0.11.0': 3be7107340e5f388114da259637828cd47f2b32eb8ae572440715c4e38cffe6e
@@ -17216,7 +17218,7 @@ snapshots:
 
   '@expo-google-fonts/material-symbols@0.4.38': {}
 
-  '@expo/cli@58.1.19(ca484ecdc0fc4bb37a0db948451b9a92)':
+  '@expo/cli@58.1.19(patch_hash=7f88add03000b6a1c91f0ce767874418fe839dc8251e4cab8947f5932aee67c0)(ca484ecdc0fc4bb37a0db948451b9a92)':
     dependencies:
       2g: 1.0.1(typescript@6.0.3)
       '@expo/code-signing-certificates': 0.0.7
@@ -22493,7 +22495,7 @@ snapshots:
   expo@58.0.23(546582cc920d0097a02265c21b792644):
     dependencies:
       '@babel/runtime': 7.29.7
-      '@expo/cli': 58.1.19(ca484ecdc0fc4bb37a0db948451b9a92)
+      '@expo/cli': 58.1.19(patch_hash=7f88add03000b6a1c91f0ce767874418fe839dc8251e4cab8947f5932aee67c0)(ca484ecdc0fc4bb37a0db948451b9a92)
       '@expo/config': 58.0.11(supports-color@8.1.1)(typescript@6.0.3)
       '@expo/config-plugins': 58.0.12(supports-color@8.1.1)(typescript@6.0.3)
       '@expo/devtools': 58.0.2(@types/react@19.3.0)(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)

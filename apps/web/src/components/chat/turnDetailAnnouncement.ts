@@ -1,5 +1,6 @@
 import type { RunId, ScreenReaderAnnouncements } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 import type { TimelineEntry, WorkLogEntry } from "../../session-logic";
 import {
@@ -42,11 +43,14 @@ function cutText(text: string, maxLength: number): string | null {
 }
 
 // On screen these labels are a path or a query beside an icon.
-function withVerb(work: WorkLogEntry, label: string) {
-  if (work.itemType === "file_change") return `Editing ${label}`;
+function withVerb(work: WorkLogEntry, label: string, t: UiTranslator) {
+  if (work.itemType === "file_change") return t("Editing {label}", { label });
   if (work.itemType !== "file_search" && work.itemType !== "web_search") return label;
   if (/^search(?:ed|ing)?\s/i.test(label)) return label;
-  return `${work.itemType === "web_search" ? "Searching the web for" : "Searching for"} ${label}`;
+  return t(
+    work.itemType === "web_search" ? "Searching the web for {label}" : "Searching for {label}",
+    { label },
+  );
 }
 
 type MessageEntry = Extract<TimelineEntry, { kind: "message" }>;
@@ -65,14 +69,18 @@ function completedBeforeSuperseded(entry: MessageEntry) {
   );
 }
 
-function stepLabel(work: WorkLogEntry, workspaceRoot: string | undefined): string | null {
+function stepLabel(
+  work: WorkLogEntry,
+  workspaceRoot: string | undefined,
+  t: UiTranslator,
+): string | null {
   // Reasoning text is never read out.
-  if (work.itemType === "reasoning") return "Thinking";
+  if (work.itemType === "reasoning") return t("Thinking");
   const status = work.toolLifecycleStatus;
   if (status === "failed" || status === "declined" || status === "stopped") return null;
-  const label = liveWorkEntryLabel(work, workspaceRoot, true).replace(/\s+/g, " ").trim();
+  const label = liveWorkEntryLabel(work, workspaceRoot, true, t).replace(/\s+/g, " ").trim();
   if (label === "") return null;
-  const spoken = withVerb(work, label);
+  const spoken = withVerb(work, label, t);
   const cut = cutText(spoken, ACTIVITY_MAX_LENGTH);
   return cut === null ? spoken : `${cut}…`;
 }
@@ -86,6 +94,7 @@ export function turnDetail(
   entries: ReadonlyArray<TimelineEntry>,
   workspaceRoot: string | undefined,
   knownTailId: string | null,
+  t: UiTranslator,
 ): TurnDetail {
   const messages: TurnMessage[] = [];
   // Runs and attempts the agent kept working in after the entry being looked at.
@@ -106,7 +115,7 @@ export function turnDetail(
     if (entry.kind === "work") {
       const work = entry.entry;
       if (work.sourceActivityKind === "context-compaction") {
-        activity ??= work.toolLifecycleStatus === "inProgress" ? work.label : null;
+        activity ??= work.toolLifecycleStatus === "inProgress" ? t(work.label) : null;
         continue;
       }
       // Notices, todo lists and checkpoints sit beside the turn's steps without being one.
@@ -114,7 +123,7 @@ export function turnDetail(
       markContinued(entry, work.runId ?? null);
       // A request is spoken as the thread's status; once answered, the step it was for goes on.
       if (work.itemType === "approval_request" || work.itemType === "user_input_request") continue;
-      if (activity === undefined) activity = stepLabel(work, workspaceRoot);
+      if (activity === undefined) activity = stepLabel(work, workspaceRoot, t);
       continue;
     }
     if (entry.kind === "message" && entry.message.role !== "assistant") continue;
@@ -173,6 +182,7 @@ const MESSAGE_AUTHOR = "T3 Code";
 export function nextTurnDetailAnnouncement(
   previous: TurnDetailMemory | null,
   next: TurnDetailSnapshot,
+  t: UiTranslator,
 ): {
   readonly memory: TurnDetailMemory;
   readonly messages: ReadonlyArray<string>;
@@ -201,7 +211,7 @@ export function nextTurnDetailAnnouncement(
         const cut = cutText(message.text, MESSAGE_MAX_LENGTH);
         return cut === null
           ? markdownPlainText(message.text)
-          : `${markdownPlainText(cut)} More in the thread.`;
+          : `${markdownPlainText(cut)} ${t("More in the thread.")}`;
       })
       .filter((text) => text !== "")
       .map((text) => `${MESSAGE_AUTHOR}: ${text}`),

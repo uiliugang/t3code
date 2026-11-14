@@ -8,6 +8,7 @@ import type { ClientSettings } from "@t3tools/contracts/settings";
 import { DIFF_COLOR_PRESETS } from "@t3tools/contracts/settings";
 import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
@@ -168,6 +169,7 @@ function startDocumentTitle(router: AppRouter): void {
               scopeProjectRef(thread.environmentId, thread.projectId),
             ),
           );
+    const threadStatus = thread === null ? null : resolveWindowTitleThreadStatus(thread);
     const title = resolveWindowTitle({
       appDisplayName: resolveServerBackedAppDisplayName({
         baseName: APP_BASE_NAME,
@@ -180,7 +182,10 @@ function startDocumentTitle(router: AppRouter): void {
       threadTitle: thread?.title ?? null,
       ...(getClientSettings().screenReaderWindowTitle && {
         screenReader: {
-          threadStatus: thread === null ? null : resolveWindowTitleThreadStatus(thread),
+          threadStatus:
+            threadStatus === null
+              ? null
+              : translateUi(getClientSettings().uiLanguage, threadStatus),
         },
       }),
       desktop: isElectron,

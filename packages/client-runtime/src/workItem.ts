@@ -118,28 +118,29 @@ export function mergeRequirementEntries(
         }
       }
   }
-  if (!options.source || options.source === "all" || options.source === "local") {
-    const query = options.query?.trim().toLowerCase() ?? "";
-    for (const item of items) {
-      if (
-        item.issue ||
-        item.archived !== Boolean(options.archived) ||
-        !`${item.title}\n${item.description}`.toLowerCase().includes(query)
-      )
-        continue;
-      entries.set(`local:${item.id}`, {
-        key: `local:${item.id}`,
-        kind: "local",
-        item,
-        title: item.title,
-        projectId: item.projectId,
-        priority: item.priority,
-        state: WORK_ITEM_STATUS_LABELS[item.status],
-        updatedAt: item.updatedAt,
-        group: requirementGroup(item.status, item.deliverySummary),
-        summary: item.deliverySummary,
-      });
-    }
+  const query = options.query?.trim().toLowerCase() ?? "";
+  for (const item of items) {
+    if (
+      (item.issue && entries.has(item.issue.url)) ||
+      (options.source &&
+        options.source !== "all" &&
+        options.source !== (item.issue?.provider ?? "local")) ||
+      item.archived !== Boolean(options.archived) ||
+      !`${item.title}\n${item.description}`.toLowerCase().includes(query)
+    )
+      continue;
+    entries.set(`local:${item.id}`, {
+      key: `local:${item.id}`,
+      kind: "local",
+      item,
+      title: item.title,
+      projectId: item.projectId,
+      priority: item.priority,
+      state: WORK_ITEM_STATUS_LABELS[item.status],
+      updatedAt: item.updatedAt,
+      group: requirementGroup(item.status, item.deliverySummary),
+      summary: item.deliverySummary,
+    });
   }
   return [...entries.values()].sort(
     (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.key.localeCompare(b.key),

@@ -457,8 +457,12 @@ export function applicationSettingsImportPatch(
       ];
     }),
   );
+  const server =
+    file.server.requireConnectDeviceApproval === target.requireConnectDeviceApproval
+      ? Struct.omit(file.server, ["requireConnectDeviceApproval"])
+      : file.server;
   return {
-    ...file.server,
+    ...server,
     ...(Object.keys(providerInstances).length > 0
       ? { providerInstances: { ...target.providerInstances, ...providerInstances } }
       : {}),

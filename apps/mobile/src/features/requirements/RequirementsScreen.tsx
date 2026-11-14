@@ -609,14 +609,12 @@ function UnifiedRequirementBoard({
                 {error}
               </Text>
             ))}
-            {data.issuePages
-              .flatMap((page) => page.failures)
-              .map((failure) => (
-                <Text key={`${failure.projectId}:${failure.reason}`} className="text-danger">
-                  {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
-                  {t(failure.reason)}
-                </Text>
-              ))}
+            {data.failures.map((failure) => (
+              <Text key={`${failure.projectId}:${failure.reason}`} className="text-danger">
+                {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
+                {t(failure.reason)}
+              </Text>
+            ))}
             {data.isPending && !entries.length ? (
               <Text>{t("Loading...")}</Text>
             ) : !entries.length ? (

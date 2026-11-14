@@ -1,6 +1,7 @@
 import { MessageId, RunAttemptId, RunId, type ScreenReaderAnnouncements } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
+import { translateUi } from "@t3tools/shared/uiLocale";
 
 import type { TimelineAttempt, TimelineEntry, WorkLogEntry } from "../../session-logic";
 import {
@@ -12,6 +13,8 @@ import {
 } from "./turnDetailAnnouncement";
 
 const run = RunId.make("run-1");
+const english = (message: string, values?: Parameters<typeof translateUi>[2]) =>
+  translateUi("en", message, values);
 const at = "2026-01-01T00:00:00.000Z";
 
 function message(
@@ -149,12 +152,27 @@ describe("turnDetail", () => {
       activity: null,
     },
   ])("names $name", ({ entries, activity }) => {
-    expect(turnDetail(entries, undefined, null).activity).toBe(activity);
+    expect(turnDetail(entries, undefined, null, english).activity).toBe(activity);
   });
 
   it("cuts a long step without splitting an emoji", () => {
     const edit = work("edit", { itemType: "file_change", changedFiles: [`${"a".repeat(111)}😀z`] });
-    expect(turnDetail([prompt, edit], undefined, null).activity).not.toMatch(/[\uD800-\uDFFF]/u);
+    expect(turnDetail([prompt, edit], undefined, null, english).activity).not.toMatch(
+      /[\uD800-\uDFFF]/u,
+    );
+    const chinese = (message: string, values?: Parameters<typeof translateUi>[2]) =>
+      translateUi("zh-CN", message, values);
+    expect(turnDetail([prompt, command("git")], undefined, null, chinese).activity).toBe(
+      "正在运行 git",
+    );
+    expect(
+      turnDetail(
+        [prompt, work("edit", { itemType: "file_change", changedFiles: ["search.ts"] })],
+        undefined,
+        null,
+        chinese,
+      ).activity,
+    ).toBe("正在编辑 search.ts");
   });
 
   it.each<{
@@ -219,7 +237,7 @@ describe("turnDetail", () => {
       finished: [],
     },
   ])("counts $name as finished", ({ entries, finished }) => {
-    const { messages } = turnDetail(entries, undefined, null);
+    const { messages } = turnDetail(entries, undefined, null, english);
     expect(messages.filter((spoken) => spoken.finished).map((spoken) => spoken.text)).toEqual(
       finished,
     );
@@ -238,7 +256,7 @@ describe("turnDetail", () => {
       command("git"),
     ];
     expect(
-      turnDetail(entries, undefined, knownTailId).messages.map((spoken) => spoken.fresh),
+      turnDetail(entries, undefined, knownTailId, english).messages.map((spoken) => spoken.fresh),
     ).toEqual(fresh);
   });
 });
@@ -260,7 +278,7 @@ function speak(level: ScreenReaderAnnouncements, frames: ReadonlyArray<Frame>) {
   let memory: TurnDetailMemory | null = null;
   const spoken: string[] = [];
   for (const next of frames) {
-    const result = nextTurnDetailAnnouncement(memory, { ...next, level, tailId: null });
+    const result = nextTurnDetailAnnouncement(memory, { ...next, level, tailId: null }, english);
     memory = result.memory;
     spoken.push(...result.messages);
     if (result.activity !== null) spoken.push(result.activity);

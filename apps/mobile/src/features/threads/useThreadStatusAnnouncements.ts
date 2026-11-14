@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 import { AccessibilityInfo } from "react-native";
 
 import { useAppActive } from "../../lib/appState";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
   nextThreadActivitySnapshot,
   type ThreadActivityInput,
@@ -32,6 +33,7 @@ export function useThreadStatusAnnouncements({
   /** See isDetailBehindShell. */
   readonly detailBehind: boolean;
 }) {
+  const t = useUiTranslation();
   // A retained route stays mounted under the screen above it; it speaks only while shown,
   // and starts from a silent baseline when it is shown again.
   const focused = useIsFocused();
@@ -66,11 +68,12 @@ export function useThreadStatusAnnouncements({
     // Queued, like the web's polite region, so VoiceOver doesn't cut off what it is reading.
     if (next.announcement !== null) {
       AccessibilityInfo.announceForAccessibilityWithOptions(
-        subject === null ? next.announcement : `${next.announcement}: ${subject}`,
+        subject === null ? t(next.announcement) : `${t(next.announcement)}: ${subject}`,
         { queue: true },
       );
     }
   }, [
+    t,
     activeKey,
     subject,
     detailBehind,

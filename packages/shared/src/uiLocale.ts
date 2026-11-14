@@ -9,6 +9,19 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Needs approval": "需要批准",
+  "Needs your input": "需要你输入",
+  Stopped: "已停止",
+  Thought: "已思考",
+  "Running {command}": "正在运行 {command}",
+  "Ran {command}": "已运行 {command}",
+  "Failed {command}": "运行失败 {command}",
+  "Declined {command}": "已拒绝 {command}",
+  "Stopped {command}": "已停止 {command}",
+  "Editing {label}": "正在编辑 {label}",
+  "Searching for {label}": "正在搜索 {label}",
+  "Searching the web for {label}": "正在联网搜索 {label}",
+  "More in the thread.": "更多内容见会话。",
   "This computer is off": "此计算机已关闭",
   "No computer connected": "尚未连接计算机",
   "Turn it back on, or connect a different computer.": "重新开启此计算机，或连接另一台计算机。",
