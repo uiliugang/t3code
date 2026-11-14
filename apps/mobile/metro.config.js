@@ -19,9 +19,55 @@ const escapedWorkspaceRoot = workspaceRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"
 const generatedDeviceStreamRoot = path.join(__dirname, ".generated", "device-stream");
 const generatedPreviewStreamRoot = path.join(__dirname, ".generated", "preview-stream");
 
-config.watchFolders = [...new Set([...(config.watchFolders ?? []), workspaceRoot])];
+const nodeModulesRoot = fs.realpathSync(path.join(workspaceRoot, "node_modules"));
+// pnpm 12 stores JSON in .modules.yaml; its store path is relative to the physical modules directory.
+const { virtualStoreDir } = JSON.parse(
+  fs.readFileSync(path.join(nodeModulesRoot, ".modules.yaml"), "utf8"),
+);
+const virtualStoreRoot = path.resolve(nodeModulesRoot, virtualStoreDir);
+if (
+  path.parse(workspaceRoot).root.toLowerCase() !== path.parse(virtualStoreRoot).root.toLowerCase()
+) {
+  throw new Error("Metro requires the workspace and pnpm virtual store on the same volume.");
+}
+let serverRoot = workspaceRoot;
+while (path.relative(serverRoot, virtualStoreRoot).split(path.sep)[0] === "..") {
+  serverRoot = path.dirname(serverRoot);
+}
+config.watchFolders = [
+  ...new Set([...(config.watchFolders ?? []), workspaceRoot, virtualStoreRoot]),
+];
+const workspaceUrlPrefix = path.relative(serverRoot, workspaceRoot).split(path.sep).join("/");
+if (workspaceUrlPrefix) {
+  const rewriteRequestUrl = config.server.rewriteRequestUrl;
+  const mobileUrlPrefix = `/${path.relative(workspaceRoot, __dirname).split(path.sep).join("/")}/`;
+  // Lazy module URLs must not escape their root through browser-normalized .. segments.
+  config.server = {
+    ...config.server,
+    unstable_serverRoot: serverRoot,
+    rewriteRequestUrl(input) {
+      const rewritten = rewriteRequestUrl(input);
+      const url = new URL(rewritten, "http://metro.invalid");
+      if (url.pathname.startsWith(mobileUrlPrefix)) {
+        url.pathname = `/${workspaceUrlPrefix}${url.pathname}`;
+      }
+      return rewritten.startsWith("/") ? url.pathname + url.search + url.hash : url.href;
+    },
+  };
+}
+const resolveRequest = config.resolver.resolveRequest;
 config.resolver = {
   ...config.resolver,
+  resolveRequest(context, moduleName, platform) {
+    // Expo exports resolve workspace-relative entries without the HTTP URL rewrite.
+    const entry =
+      workspaceUrlPrefix &&
+      path.resolve(context.originModulePath) === serverRoot &&
+      moduleName.startsWith("./apps/mobile/")
+        ? path.resolve(workspaceRoot, moduleName)
+        : moduleName;
+    return (resolveRequest ?? context.resolveRequest)(context, entry, platform);
+  },
   blockList: [
     ...(Array.isArray(config.resolver?.blockList)
       ? config.resolver.blockList

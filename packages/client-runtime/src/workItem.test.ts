@@ -197,6 +197,7 @@ it("merges issue sources and local tasks without duplicating tracked issues", ()
     id: WorkItemId.make("tracked"),
     issue: {
       provider: "github" as const,
+      id: issue.id,
       host: "github.com",
       repository: "org/repo",
       number: "12",
@@ -220,6 +221,26 @@ it("merges issue sources and local tasks without duplicating tracked issues", ()
   expect(entries.map((entry) => entry.key).sort()).toEqual([issue.url, "local:task"].sort());
   expect(entries.find((entry) => entry.kind === "local")?.group).toBe("todo");
   expect(mergeRequirementEntries([], [local], new Map(), { source: "github" })).toEqual([]);
+  expect(
+    mergeRequirementEntries([], [{ ...tracked, archived: true }], new Map(), {
+      archived: true,
+    }).map((entry) => entry.key),
+  ).toEqual(["local:tracked"]);
+  expect(mergeRequirementEntries([], [tracked], new Map()).map((entry) => entry.key)).toEqual([
+    "local:tracked",
+  ]);
+  expect(
+    mergeRequirementEntries([], [{ ...tracked, archived: true }], new Map(), {
+      archived: true,
+      source: "github",
+    }).map((entry) => entry.key),
+  ).toEqual(["local:tracked"]);
+  expect(
+    mergeRequirementEntries([], [{ ...tracked, archived: true }], new Map(), {
+      archived: true,
+      source: "meituan",
+    }),
+  ).toEqual([]);
   expect(
     mergeRequirementEntries([result], [local], new Map(), { source: "local" }).map(
       (entry) => entry.key,

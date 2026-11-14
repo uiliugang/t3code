@@ -89,7 +89,7 @@ export function createRequirementBoardAtoms(queries: {
           }
         }
       }
-      if (key.localSupported && (key.source === "all" || key.source === "local")) {
+      if (key.localSupported) {
         for (const cursor of key.cursors) {
           const result = read(
             queries.workItemsLive({

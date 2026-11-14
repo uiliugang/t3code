@@ -86,6 +86,13 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     expect(
       registry.get(board(new RequirementBoardKey({ ...key, archived: true }))).issuePages,
     ).toEqual([]);
+    for (const source of ["github", "meituan"] as const) {
+      for (const archived of [false, true]) {
+        expect(
+          registry.get(board(new RequirementBoardKey({ ...key, source, archived }))).items,
+        ).toEqual([{ ...item, version: 2, status: "in_progress" }]);
+      }
+    }
     registry.set(
       second,
       AsyncResult.success({

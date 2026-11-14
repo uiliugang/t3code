@@ -9,6 +9,8 @@ import {
   ProviderInstanceId,
   WorkspaceRootId,
   type ServerSettings,
+  requiredScopesForServerSettingsPatch,
+  AuthSettingsWriteScope,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Struct from "effect/Struct";
@@ -208,7 +210,9 @@ describe("settings transfer", () => {
     ).toMatchObject({ customModels: [], binaryPath: "/destination/codex" });
     const legacy = { ...restored };
     delete legacy.providerModels;
-    expect(applicationSettingsImportPatch(legacy, target)).toEqual(restored.server);
+    expect(applicationSettingsImportPatch(legacy, target)).toEqual(
+      Struct.omit(restored.server, ["requireConnectDeviceApproval"]),
+    );
     const custom = ProviderInstanceId.make("custom-codex");
     const customFile = createApplicationSettingsFile({
       clientSettings: {},
@@ -374,6 +378,18 @@ describe("settings transfer", () => {
     expect(file.keybindings).toEqual([{ key: "mod+j", command: "terminal.toggle" }]);
     expect(applicationSettingsImportPatch(file, source)).toEqual(file.server);
     expect(applicationSettingsImportPatch(file, source).requireConnectDeviceApproval).toBe(true);
+    const sameApprovalTarget = { ...source, requireConnectDeviceApproval: true };
+    expect(applicationSettingsImportPatch(file, sameApprovalTarget)).toEqual(
+      Struct.omit(file.server, ["requireConnectDeviceApproval"]),
+    );
+    expect(applicationSettingsImportPatch(file, sameApprovalTarget)).not.toHaveProperty(
+      "requireConnectDeviceApproval",
+    );
+    expect(
+      requiredScopesForServerSettingsPatch(
+        applicationSettingsImportPatch(file, sameApprovalTarget),
+      ),
+    ).toEqual([AuthSettingsWriteScope]);
     expect(contents).not.toContain("private-theme");
     expect(contents).not.toContain("defaultAppearance");
     const updatedPreferences = {
@@ -462,7 +478,7 @@ describe("settings transfer", () => {
       keybindings: [],
     });
     expect(applicationSettingsImportPatch(implicitProviderFile, implicitProviderSettings)).toEqual(
-      implicitProviderFile.server,
+      Struct.omit(implicitProviderFile.server, ["requireConnectDeviceApproval"]),
     );
     for (const id of ["acpRegistry", "uninstalledDriver"]) {
       const driver = ProviderDriverKind.make(id);
