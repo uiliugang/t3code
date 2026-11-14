@@ -146,6 +146,9 @@ overrides:
   # The dbus-next patch drops usocket from the package, but pnpm resolves from the
   # registry manifest, so the edge has to be cut here as well.
   "dbus-next>usocket": "-"
+  # This runtime's ranges drift apart without a lockfile; the preset peers on exactly rc.24.
+  "@alchemy.run/cloudflare-runtime@2.0.0-beta.85>@cloudflare/unenv-preset": 2.16.2
+  "@alchemy.run/cloudflare-runtime@2.0.0-beta.85>unenv": 2.0.0-rc.24
   # The SDK always receives the user's Claude executable, so its bundled binaries are unused.
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64": "-"
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-x64": "-"
