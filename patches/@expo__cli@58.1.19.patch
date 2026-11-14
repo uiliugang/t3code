@@ -1,0 +1,12 @@
+diff --git a/build/src/export/embed/exportEmbedAsync.js b/build/src/export/embed/exportEmbedAsync.js
+--- a/build/src/export/embed/exportEmbedAsync.js
++++ b/build/src/export/embed/exportEmbedAsync.js
+@@ -415,7 +415,7 @@ async function createMetroServerAndBundleRequestAsync(projectRoot, options) {
+     const directBundleOptions = (0, _metroOptions.getMetroDirectBundleOptionsForExpoConfig)(projectRoot, exp, {
+         splitChunks: false,
+         // TODO(@kitten): This currently has to match a filename exactly
+-        mainModuleName: (0, _paths().convertEntryPointToRelative)(projectRoot, options.entryFile, null),
++        mainModuleName: _path().default.resolve(projectRoot, options.entryFile),
+         platform: options.platform,
+         minify: options.minify,
+         mode: options.dev ? 'development' : 'production',

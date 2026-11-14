@@ -104,6 +104,7 @@ catalog:
 overrides:
   # Pin every patched package, including transitive dependencies, so lockfile-free
   # release installs cannot drift past the patch. Update these with patchedDependencies.
+  "@expo/cli": 58.1.19
   react-native-image-viewing: 0.2.2
   mdast-util-math: 3.0.0
   micromark-extension-llm-math: 3.1.0
@@ -264,6 +265,8 @@ packageExtensions:
       vite-plus: "catalog:"
 
 patchedDependencies:
+  # expo-updates must retain the real entry when Metro's URL root includes the global store.
+  "@expo/cli@58.1.19": patches/@expo__cli@58.1.19.patch
   "@expo/image-utils@0.12.6": patches/@expo__image-utils@0.12.6.patch
   react-native-image-viewing@0.2.2: patches/react-native-image-viewing@0.2.2.patch
   mdast-util-math@3.0.0: patches/mdast-util-math@3.0.0.patch

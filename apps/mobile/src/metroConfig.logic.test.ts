@@ -50,3 +50,41 @@ it("keeps external lazy modules and the app entry reachable through Metro URLs",
     NodePath.join(mobileRoot, "index.ts"),
   );
 });
+
+it("keeps expo-updates assets on the real entry when Metro has a different URL root", async () => {
+  const sdk: {
+    createMetroServerAndBundleRequestAsync: (
+      root: string,
+      options: {
+        platform: string;
+        entryFile: string;
+        dev: boolean;
+        minify: boolean;
+        maxWorkers: number;
+      },
+    ) => Promise<{
+      server: { end: () => Promise<void> };
+      bundleRequest: { entryFile: string };
+    }>;
+  } = requireFromMobile("expo/internal/unstable-expo-updates-cli-exports");
+  const config: { projectRoot: string; server: { unstable_serverRoot?: string } } =
+    await requireFromMobile("./metro.config.js");
+  const entry = NodePath.join(mobileRoot, "index.ts");
+  const { server, bundleRequest } = await sdk.createMetroServerAndBundleRequestAsync(mobileRoot, {
+    platform: "android",
+    entryFile: entry,
+    dev: false,
+    minify: false,
+    maxWorkers: 1,
+  });
+  try {
+    expect(
+      NodePath.resolve(
+        config.server.unstable_serverRoot ?? config.projectRoot,
+        bundleRequest.entryFile,
+      ),
+    ).toBe(entry);
+  } finally {
+    await server.end();
+  }
+});
