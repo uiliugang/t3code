@@ -6,6 +6,10 @@ import type {
   WorkItemExecutionId,
   DeliverySummary,
   IssueProvider,
+  Issue,
+  IssueListResult,
+  ProjectId,
+  WorkItemSummary,
 } from "@t3tools/contracts";
 
 export function deliveryStages(provider: IssueProvider, summary?: DeliverySummary) {
@@ -61,6 +65,85 @@ export function requirementGroup(status: string, summary?: DeliverySummary): Req
   if (status === "done") return "done";
   if (status === "todo") return "todo";
   return "active";
+}
+
+export type RequirementSource = "all" | IssueProvider | "local";
+
+type RequirementEntryBase = {
+  key: string;
+  title: string;
+  projectId: ProjectId;
+  priority: string;
+  state: string;
+  group: RequirementGroup;
+  updatedAt: string;
+  summary: DeliverySummary | undefined;
+};
+export type RequirementEntry = RequirementEntryBase &
+  (
+    | { kind: "issue"; issue: Issue; provider: IssueProvider; scope: string }
+    | { kind: "local"; item: WorkItemSummary }
+  );
+
+export function mergeRequirementEntries(
+  issuePages: ReadonlyArray<typeof IssueListResult.Type>,
+  items: ReadonlyArray<WorkItemSummary>,
+  tracked: ReadonlyMap<string, WorkItemSummary>,
+  options: { source?: RequirementSource; query?: string; archived?: boolean } = {},
+): ReadonlyArray<RequirementEntry> {
+  const entries = new Map<string, RequirementEntry>();
+  if (!options.archived && options.source !== "local") {
+    for (const page of issuePages)
+      for (const group of page.groups) {
+        if (options.source && options.source !== "all" && options.source !== group.source.provider)
+          continue;
+        const projectId = group.projectIds[0];
+        if (!projectId) continue;
+        for (const issue of group.issues) {
+          const summary = tracked.get(issue.url)?.deliverySummary;
+          entries.set(issue.url, {
+            key: issue.url,
+            kind: "issue",
+            title: issue.title,
+            projectId,
+            priority: issue.priority,
+            state: issue.state,
+            updatedAt: issue.updatedAt,
+            group: requirementGroup(issue.stateCategory, summary),
+            summary,
+            issue,
+            provider: group.source.provider,
+            scope: group.source.scope,
+          });
+        }
+      }
+  }
+  if (!options.source || options.source === "all" || options.source === "local") {
+    const query = options.query?.trim().toLowerCase() ?? "";
+    for (const item of items) {
+      if (
+        item.issue ||
+        item.archived !== Boolean(options.archived) ||
+        !`${item.title}\n${item.description}`.toLowerCase().includes(query)
+      )
+        continue;
+      entries.set(`local:${item.id}`, {
+        key: `local:${item.id}`,
+        kind: "local",
+        item,
+        title: item.title,
+        projectId: item.projectId,
+        priority: item.priority,
+        state: WORK_ITEM_STATUS_LABELS[item.status],
+        updatedAt: item.updatedAt,
+        group: requirementGroup(item.status, item.deliverySummary),
+        summary: item.deliverySummary,
+      });
+    }
+  }
+  return [...entries.values()].sort(
+    (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.key.localeCompare(b.key),
+  );
 }
 
 export function pullRequestLabel(url: string): string {

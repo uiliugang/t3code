@@ -528,6 +528,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Pair WeChat and send an activation message first.": "请先配对微信，再向机器人发送激活消息。",
   "Another WeChat operation is running. Try again shortly.": "有其他微信操作正在进行，请稍后重试。",
   "Requirements board": "需求看板",
+  "All sources": "全部来源",
+  "No matching work items.": "没有符合条件的需求或任务。",
   "Development stage": "开发",
   Testing: "测试",
   Release: "发布",

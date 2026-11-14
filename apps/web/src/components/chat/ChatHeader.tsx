@@ -44,7 +44,7 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
-import { useRightPanelStore } from "../../rightPanelStore";
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "../ui/button";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { serverEnvironment } from "../../state/server";
@@ -89,6 +89,7 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
+  const navigate = useNavigate();
   const t = useUiTranslation();
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(activeThreadEnvironmentId));
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
@@ -419,7 +420,15 @@ export const ChatHeader = memo(function ChatHeader({
                 size="icon-xs"
                 variant="ghost"
                 aria-label={t("Requirements board")}
-                onClick={() => useRightPanelStore.getState().open(activeThreadRef, "tasks")}
+                onClick={() =>
+                  void navigate({
+                    to: "/requirements",
+                    search: {
+                      environmentId: activeThreadEnvironmentId,
+                      ...(activeProject ? { projectId: activeProject.id } : {}),
+                    },
+                  })
+                }
               />
             }
           >

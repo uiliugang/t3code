@@ -41,8 +41,8 @@ the same preferences under **Settings → Appearance → Linked issues**.
 
 ## Manage requirements
 
-Open **Requirements board** to browse MEP ONES work items or GitHub Issues, filter by project
-and assignee, and open details. **Settings → Code → Issue management** automatically uses the
+Open **Requirements board** to browse MEP ONES work items, GitHub Issues, and local tasks
+together. Filter by source or project, filter external issues by assignee, and open details. **Settings → Code → Issue management** automatically uses the
 project's GitHub repository and discovers MEP spaces from the ten most recent Meituan Code pull
 requests and their linked branches. Filter projects and environments, then select projects to
 detect again, set a manual override, or restore automatic associations. Enter multiple MEP space
@@ -79,7 +79,7 @@ state needs your confirmation.
 Delivery exceptions and synchronization failures remain visible for review. A rollback does not
 automatically reopen an issue; confirm reopening in its delivery details. Use **Refresh delivery**
 to retry synchronization. Older environments retain issue browsing without automatic tracking.
-Choose **Local work items** for [work without an external issue](task-board.md).
+Use **New → Local work item** for [work without an external issue](task-board.md).
 
 ## Review turn changes
 

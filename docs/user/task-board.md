@@ -1,12 +1,16 @@
-# Manage local work items
+# Manage requirements and local tasks
 
-Open **Requirements board**, choose **Local work items**, then choose an environment and project.
+Open **Requirements board** to see MEP ONES, GitHub Issues, and local tasks together.
+Use the source, environment, and project filters to narrow the same board, and switch between
+list and board views. **New** lets you create an external issue or a local task in a project.
 Existing tasks keep their conversations, execution history, review results, and archive state.
-Create a local task when there is no external issue to track. **Discover** finds recent
-conversations you can turn into local tasks without starting an agent or changing the conversation.
+Create a local task when there is no external issue to track. To discover recent conversations,
+select a project and choose **Filters → Scan chats**. You can turn a conversation into a local task
+without starting an agent or changing the conversation.
 
-Local work items track To do, In progress, In review, and Done. Search within the selected project
-and show archived tasks when needed. For MEP ONES and GitHub Issues, use
+The board groups all sources by delivery progress. Local tasks awaiting review appear under
+In progress and keep their In review label. Search within the selected project and show archived
+local tasks when needed. For MEP ONES and GitHub Issues, use
 [automatic delivery tracking](source-control.md#manage-requirements).
 
 ## Assign agents

@@ -1,11 +1,5 @@
-import { useAtomValue } from "@effect/atom-react";
 import { DraftFillButton } from "../requirements/DraftFillButton";
-import {
-  ProjectTag,
-  Disclosure,
-  useRequirementGroups,
-} from "../requirements/RequirementPrimitives";
-import type { StaticScreenProps } from "@react-navigation/native";
+import { ProjectTag, Disclosure } from "../requirements/RequirementPrimitives";
 import {
   CommandId,
   EnvironmentId,
@@ -19,10 +13,8 @@ import {
   type WorkItemCommandInput,
   type WorkItemExecutionId,
   type WorkItemId,
-  type WorkItemListInput,
   type WorkItemParticipant,
   type WorkItemSource,
-  type WorkItemStatus,
 } from "@t3tools/contracts";
 import {
   buildWorkItemContinuePrompt,
@@ -30,28 +22,17 @@ import {
   workItemExecutionIsActive,
   WORK_ITEM_STATUS_LABELS,
 } from "@t3tools/client-runtime/work-item";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useRef, useState, type ReactNode } from "react";
-import { View, Pressable } from "react-native";
-import { Menu } from "../../components/ui/Menu";
-import { SymbolView } from "../../components/ui/AppSymbol";
-import { IconButton } from "../../components/ui/IconButton";
+import { useState, type ReactNode } from "react";
+import { View } from "react-native";
 
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import * as Dialog from "../../components/ui/Dialog";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
-import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { buildModelOptions } from "../../lib/modelOptions";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { uuidv4 } from "../../lib/uuid";
-import { useEnvironmentServerConfig, useProjects, useThreadShell } from "../../state/entities";
-import { useEnvironments } from "../../state/environments";
-import { useEnvironmentQuery } from "../../state/query";
-import { serverEnvironment } from "../../state/server";
-import { useAtomCommand } from "../../state/use-atom-command";
+import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
 import {
   appendComposerDraftText,
   createNewTaskDraft,
@@ -60,19 +41,18 @@ import {
 } from "../../state/use-composer-drafts";
 import { IssuePicker } from "../requirements/IssuePicker";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
-import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
-type WorkItemsRouteParams = {
+export type WorkItemsRouteParams = {
   readonly environmentId?: EnvironmentId;
   readonly projectId?: ProjectId;
   readonly sourceThreadId?: ThreadId;
   readonly sourceTitle?: string;
   readonly sourceMessageId?: string;
   readonly sourceText?: string;
+  readonly itemId?: WorkItemId;
 };
 
-const STATUSES: ReadonlyArray<WorkItemStatus> = ["todo", "in_progress", "in_review", "done"];
 const commandId = () => CommandId.make(uuidv4());
 const lines = (text: string) =>
   text
@@ -120,410 +100,9 @@ function Field(props: {
   );
 }
 
-export function WorkItemsScreen({ route }: StaticScreenProps<WorkItemsRouteParams | undefined>) {
-  const t = useUiTranslation();
-  const { environments } = useEnvironments();
-  const allProjects = useProjects().filter((project) => project.archivedAt === null);
-  const [selectedEnvironment, setEnvironment] = useState(route.params?.environmentId ?? null);
-  const environmentId = selectedEnvironment ?? environments[0]?.environmentId ?? null;
-  const projects = allProjects.filter((project) => project.environmentId === environmentId);
-  const sourceThread = useThreadShell(
-    route.params?.environmentId && route.params.sourceThreadId
-      ? scopeThreadRef(route.params.environmentId, route.params.sourceThreadId)
-      : null,
-  );
-  const [selectedProject, setProject] = useState<ProjectId | null>(null);
-  const targetProject = selectedProject ?? route.params?.projectId ?? sourceThread?.projectId;
-  const project = projects.find((entry) => entry.id === targetProject) ?? projects[0];
-  const source =
-    route.params?.environmentId === environmentId &&
-    (route.params.projectId ?? sourceThread?.projectId) === project?.id &&
-    route.params.sourceThreadId
-      ? {
-          threadId: route.params.sourceThreadId,
-          title: route.params.sourceTitle ?? "Chat",
-          ...(route.params.sourceMessageId ? { messageId: route.params.sourceMessageId } : {}),
-        }
-      : undefined;
-
-  return (
-    <SettingsScreen title={t("Local work items")}>
-      <View className="flex-row items-center gap-2 px-5">
-        {project ? (
-          <View className="min-w-0 flex-1">
-            <ProjectTag title={project.title} />
-          </View>
-        ) : null}
-        {environments.length > 1 ? (
-          <IssuePicker
-            icon="desktopcomputer"
-            label={t("Environment")}
-            value={environmentId ?? ""}
-            options={environments.map((entry) => ({
-              value: entry.environmentId,
-              label: entry.label,
-            }))}
-            onChange={(value) => {
-              setEnvironment(EnvironmentId.make(value));
-              setProject(null);
-            }}
-          />
-        ) : null}
-        <IssuePicker
-          icon="folder"
-          label={t("Project")}
-          value={project?.id ?? ""}
-          options={projects.map((entry) => ({ value: entry.id, label: entry.title }))}
-          onChange={(value) => setProject(ProjectId.make(value))}
-          disabled={projects.length === 0}
-        />
-      </View>
-      {environmentId && project ? (
-        <ProjectWorkItems
-          key={`${environmentId}:${project.id}:${source?.threadId ?? ""}:${source?.messageId ?? ""}`}
-          environmentId={environmentId}
-          projectId={project.id}
-          source={source}
-          sourceText={source ? route.params?.sourceText : undefined}
-        />
-      ) : (
-        <View className="p-5">
-          <Text className="text-foreground-muted">
-            {t("Connect an environment and add a project to use the task board.")}
-          </Text>
-        </View>
-      )}
-    </SettingsScreen>
-  );
-}
-
-function ProjectWorkItems(props: {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
-  readonly source: WorkItemSource | undefined;
-  readonly sourceText?: string;
-}) {
-  const t = useUiTranslation();
-  const { environmentId, projectId } = props;
-  const { collapsed, toggle } = useRequirementGroups();
-  const project = useProjects().find(
-    (entry) => entry.environmentId === environmentId && entry.id === projectId,
-  );
-  const config = useEnvironmentServerConfig(environmentId);
-  const supported = config?.workItems === true;
-  const [selectedId, setSelectedId] = useState<WorkItemId | null>(null);
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const listOffset = useRef(0);
-  const showItem = (id: WorkItemId) => {
-    setScrollOffset(0);
-    setSelectedId(id);
-  };
-  const showList = () => {
-    setScrollOffset(listOffset.current);
-    setSelectedId(null);
-  };
-  const [cursorHistory, setCursorHistory] = useState<
-    ReadonlyArray<NonNullable<WorkItemListInput["cursor"]>>
-  >([]);
-  const cursor = cursorHistory.at(-1);
-  const result = useEnvironmentQuery(
-    supported
-      ? serverEnvironment.workItemsLive({
-          environmentId,
-          input: { projectId, ...(cursor ? { cursor } : {}) },
-        })
-      : null,
-  );
-  const canDiscover = useAtomValue(
-    serverEnvironment.discoverWorkItems.permissionAtom(environmentId),
-  );
-  const discoverySupported = config?.workItemDiscovery === true;
-  const canOperate = useAtomValue(serverEnvironment.mutateWorkItem.permissionAtom(environmentId));
-  const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
-  const discover = useAtomCommand(serverEnvironment.discoverWorkItems, { reportFailure: false });
-  const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
-  const retry = useRef<{ readonly key: string; readonly id: CommandId } | null>(null);
-  const [creating, setCreating] = useState<{
-    readonly source?: WorkItemSource;
-    readonly description: string;
-  } | null>(props.sourceText ? { source: props.source, description: props.sourceText } : null);
-  const showEditor = (draft: NonNullable<typeof creating>) => {
-    setScrollOffset(0);
-    setCreating(draft);
-  };
-  const [status, setStatus] = useState("all");
-  const [archived, setArchived] = useState(false);
-  const [query, setQuery] = useState("");
-  const detail = useEnvironmentQuery(
-    supported && selectedId
-      ? serverEnvironment.workItemsLive({ environmentId, input: { projectId, id: selectedId } })
-      : null,
-  );
-  const selected = detail.data?.item;
-  const available = canOperate && !busy && result.error === null;
-
-  const run = async (input: WorkItemCommandInput): Promise<WorkItem | null> => {
-    if (pending.current || !canOperate || result.error !== null) return null;
-    pending.current = true;
-    setBusy(true);
-    const key = JSON.stringify({ ...input, commandId: undefined });
-    const next = {
-      ...input,
-      commandId: retry.current?.key === key ? retry.current.id : input.commandId,
-    };
-    const response = await mutate({ environmentId, input: next }).finally(() => {
-      pending.current = false;
-      setBusy(false);
-    });
-    if (response._tag === "Failure") {
-      retry.current = { key, id: next.commandId };
-      Dialog.alert(t("Could not update task"), String(squashAtomCommandFailure(response)));
-      return null;
-    }
-    retry.current = null;
-    return response.value.item;
-  };
-
-  const scan = async (dismissThreadId?: ThreadId) => {
-    if (pending.current || !canDiscover || !discoverySupported || result.error !== null) return;
-    pending.current = true;
-    setBusy(true);
-    const response = await discover({
-      environmentId,
-      input: { projectId, ...(dismissThreadId ? { dismissThreadId } : {}) },
-    }).finally(() => {
-      pending.current = false;
-      setBusy(false);
-    });
-    if (response._tag === "Failure") {
-      Dialog.alert(t("Could not scan chats"), String(squashAtomCommandFailure(response)));
-    }
-    result.refresh();
-  };
-
-  if (!supported) {
-    return (
-      <View className="p-5">
-        <Text className="text-foreground-muted">
-          {t("Update this environment to use the task board.")}
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <ScreenScrollView
-      key={creating !== null ? "create" : (selectedId ?? "list")}
-      className="flex-1"
-      contentContainerClassName="gap-4 px-5 pb-12"
-      contentOffset={{ x: 0, y: scrollOffset }}
-      scrollEventThrottle={100}
-      onScroll={(event) => {
-        if (selectedId === null && creating === null)
-          listOffset.current = event.nativeEvent.contentOffset.y;
-      }}
-    >
-      {result.error ? <Text className="text-danger">{result.error}</Text> : null}
-      {result.isPending && !result.data ? <Text>{t("Loading...")}</Text> : null}
-      {creating !== null ? (
-        <TaskEditor
-          environmentId={environmentId}
-          projectId={projectId}
-          source={creating.source}
-          initialDescription={creating.description}
-          item={null}
-          disabled={!available}
-          run={run}
-          onCancel={() => {
-            setCreating(null);
-            showList();
-          }}
-          onSaved={(item) => {
-            setCreating(null);
-            showItem(item.id);
-          }}
-        />
-      ) : selectedId !== null ? (
-        selected ? (
-          <TaskDetail
-            item={selected}
-            environmentId={environmentId}
-            disabled={!available}
-            busy={busy}
-            run={run}
-            onBack={showList}
-          />
-        ) : (
-          <View className="gap-3">
-            <Button label={t("Back to tasks")} onPress={showList} />
-            <Text className={detail.error ? "text-danger" : "text-foreground-muted"}>
-              {detail.error ?? (detail.isPending ? t("Loading...") : t("Task not found."))}
-            </Text>
-          </View>
-        )
-      ) : (
-        <>
-          <View className="flex-row items-center gap-1">
-            <View className="min-w-0 flex-1">
-              <AppTextInput
-                accessibilityLabel={t("Search current page")}
-                placeholder={t("Search current page")}
-                value={query}
-                onChangeText={setQuery}
-              />
-            </View>
-            <Menu
-              title={t("Filters")}
-              actions={[
-                {
-                  id: "status",
-                  title: t("Status"),
-                  subactions: [
-                    {
-                      id: "status:all",
-                      title: t("All statuses"),
-                      state: status === "all" ? ("on" as const) : ("off" as const),
-                    },
-                    ...STATUSES.map((entry) => ({
-                      id: "status:" + entry,
-                      title: t(WORK_ITEM_STATUS_LABELS[entry]),
-                      state: status === entry ? ("on" as const) : ("off" as const),
-                    })),
-                  ],
-                },
-                { id: "archived", title: t("Show archived"), state: archived ? "on" : "off" },
-                {
-                  id: "scan",
-                  title: t("Scan chats"),
-                  attributes: {
-                    disabled: !canDiscover || !discoverySupported || busy || result.error !== null,
-                  },
-                },
-                ...(props.source
-                  ? [
-                      {
-                        id: "from-chat",
-                        title: t("Create from this chat"),
-                        attributes: { disabled: !available },
-                      },
-                    ]
-                  : []),
-              ]}
-              onPressAction={(event) => {
-                const id = event.nativeEvent.event;
-                if (id.startsWith("status:")) setStatus(id.slice(7));
-                if (id === "archived") setArchived(!archived);
-                if (id === "scan") void scan();
-                if (id === "from-chat") showEditor({ source: props.source, description: "" });
-              }}
-            >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("Filters")}
-                className="size-12 items-center justify-center"
-              >
-                <SymbolView
-                  name="line.3.horizontal.decrease"
-                  size={22}
-                  tintColorClassName="accent-foreground"
-                />
-              </Pressable>
-            </Menu>
-            <IconButton
-              icon="plus"
-              accessibilityLabel={t("New task")}
-              disabled={!available}
-              onPress={() => showEditor({ description: "" })}
-            />
-          </View>
-          {STATUSES.map((group) => {
-            const items = (result.data?.items ?? []).filter(
-              (item) =>
-                !item.issue &&
-                item.archived === archived &&
-                item.status === group &&
-                (status === "all" || item.status === status) &&
-                (item.title + "\n" + item.description).toLowerCase().includes(query.toLowerCase()),
-            );
-            if (!items.length) return null;
-            return (
-              <Disclosure
-                key={group}
-                title={t(WORK_ITEM_STATUS_LABELS[group])}
-                count={items.length}
-                open={!collapsed.includes("local:" + group)}
-                onToggle={() => toggle("local:" + group)}
-              >
-                {items.map((item) => (
-                  <Pressable
-                    key={item.id}
-                    accessibilityRole="button"
-                    onPress={() => showItem(item.id)}
-                    className="gap-2 border-b border-border-subtle py-3"
-                  >
-                    <View className="flex-row gap-3">
-                      <Text className="min-w-0 flex-1 text-base font-t3-medium">{item.title}</Text>
-                      <Text className="text-xs text-foreground-muted">{item.priority}</Text>
-                    </View>
-                    <View className="flex-row flex-wrap items-center gap-2">
-                      <ProjectTag title={project?.title ?? projectId} />
-                      <Text className="text-xs text-foreground-muted">{t("Local work item")}</Text>
-                      <Text className="text-xs text-foreground-muted">
-                        {item.activeExecutionCount} {t("Active agents")}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </Disclosure>
-            );
-          })}
-          {!result.isPending &&
-          !(result.data?.items ?? []).some((item) => item.archived === archived) ? (
-            <Text className="text-foreground-muted">{t("No tasks yet.")}</Text>
-          ) : null}
-          <View className="flex-row flex-wrap gap-3">
-            <Button
-              label={t("Previous page")}
-              disabled={cursorHistory.length === 0 || result.isPending}
-              onPress={() => setCursorHistory((current) => current.slice(0, -1))}
-            />
-            <Button
-              label={t("Next page")}
-              disabled={!result.data?.nextCursor || result.isPending}
-              onPress={() => {
-                const next = result.data?.nextCursor;
-                if (next) setCursorHistory((current) => [...current, next]);
-              }}
-            />
-          </View>
-          {(result.data?.candidates ?? []).length ? (
-            <Section title={t("Discovered tasks")}>
-              {result.data?.candidates.map((candidate) => (
-                <CandidateCard
-                  key={candidate.id}
-                  candidate={candidate}
-                  disabled={!available || !canDiscover || !discoverySupported}
-                  onCreate={() =>
-                    showEditor({
-                      source: { threadId: candidate.id, title: candidate.title },
-                      description: candidate.description,
-                    })
-                  }
-                  onIgnore={() => void scan(candidate.id)}
-                />
-              ))}
-            </Section>
-          ) : null}
-        </>
-      )}
-    </ScreenScrollView>
-  );
-}
-
 type RunCommand = (input: WorkItemCommandInput) => Promise<WorkItem | null>;
 
-function TaskEditor(props: {
+export function TaskEditor(props: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
   readonly source?: WorkItemSource;
@@ -643,7 +222,7 @@ function TaskEditor(props: {
   );
 }
 
-function CandidateCard(props: {
+export function CandidateCard(props: {
   readonly candidate: WorkItemCandidate;
   readonly disabled: boolean;
   readonly onCreate: () => void;
@@ -664,7 +243,7 @@ function CandidateCard(props: {
   );
 }
 
-function TaskDetail(props: {
+export function TaskDetail(props: {
   readonly item: WorkItem;
   readonly environmentId: EnvironmentId;
   readonly disabled: boolean;
