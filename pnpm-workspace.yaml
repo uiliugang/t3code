@@ -222,6 +222,13 @@ overrides:
   "@vercel/config>zod": 4.6.7
 
 packageExtensions:
+  # Electron comes from the host app; shared stores need the peer edge to resolve it.
+  "electron-updater@6.8.9":
+    peerDependencies:
+      electron: "*"
+    peerDependenciesMeta:
+      electron:
+        optional: true
   # The tarball's web sources import React types from its isolated package directory.
   "react-native-enriched-markdown@1.2.0-t3.18":
     peerDependencies:
