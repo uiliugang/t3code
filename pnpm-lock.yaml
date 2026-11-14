@@ -360,7 +360,7 @@ overrides:
   '@vercel/routing-utils>path-to-regexp': 6.3.0
   '@vercel/config>zod': 4.6.7
 
-packageExtensionsChecksum: sha256-47dEiaX2+3XXSvzB+5VFdDl81J08ImtgW6pCf3n06c0=
+packageExtensionsChecksum: sha256-DkrgSY9hSktQStGfXPLOqYCm2KqRiPI13poo3BY/CME=
 
 pnpmfileChecksum: sha256-h8NLkl2dhhbQKbAHnoo4rQ3tYV96igLQxJ7la6dsbSc=
 
@@ -1437,7 +1437,7 @@ importers:
     devDependencies:
       '@alchemy.run/test':
         specifier: 'catalog:'
-        version: 2.0.0-beta.85(patch_hash=29c0539ea71d9cc372f0b16558640599beb9bc609605feb2a493da268d72713e)(af1de4b06242ebdcf1e714306679e6db)
+        version: 2.0.0-beta.85(patch_hash=29c0539ea71d9cc372f0b16558640599beb9bc609605feb2a493da268d72713e)(443948d14cd84351a8eb0c87f5bb728c)
       '@cloudflare/workers-types':
         specifier: ^4.20260601.1
         version: 4.20260604.1
@@ -15518,19 +15518,93 @@ snapshots:
       '@effect/sql-pg': 4.1.2(effect@4.1.3)
       pg: 8.23.0
 
-  '@alchemy.run/test@2.0.0-beta.85(patch_hash=29c0539ea71d9cc372f0b16558640599beb9bc609605feb2a493da268d72713e)(af1de4b06242ebdcf1e714306679e6db)':
+  '@alchemy.run/test@2.0.0-beta.85(patch_hash=29c0539ea71d9cc372f0b16558640599beb9bc609605feb2a493da268d72713e)(443948d14cd84351a8eb0c87f5bb728c)':
     dependencies:
       '@effect/platform-bun': 4.1.2(bufferutil@4.1.0)(effect@4.1.3)(utf-8-validate@6.0.6)
       effect: 4.1.3
+      vite-plus: 1.4.0(@astrojs/compiler-rs@0.5.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(typescript@6.0.3))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.64.1)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
     optionalDependencies:
       '@effect/vitest': 4.1.2(patch_hash=299510b71c36537a832a67e9d160a5f112a5f326a29e95c41cb45fc8234e47c7)(@astrojs/compiler-rs@0.5.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(typescript@6.0.3))(bufferutil@4.1.0)(effect@4.1.3)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.64.1)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
       alchemy: 2.0.0-beta.85(patch_hash=07cc8c7e14b3b9af143ddd40a059f117c27e55139fbf20bd5dde2eb30509cedd)(@effect/platform-bun@4.1.2(bufferutil@4.1.0)(effect@4.1.3)(utf-8-validate@6.0.6))(@effect/platform-node@4.1.2(bufferutil@4.1.0)(effect@4.1.3)(redis@6.2.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(@types/ws@8.18.2)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(yaml@2.9.0))(effect@4.1.3)(react-devtools-core@6.1.5(bufferutil@4.1.0)(utf-8-validate@6.0.6))(ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       vitest: 5.0.5(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(yaml@2.9.0))(@volar/typescript@2.4.28(typescript@6.0.3))(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(yaml@2.9.0)
     transitivePeerDependencies:
+      - '@arethetypeswrong/core'
+      - '@astrojs/compiler-rs'
+      - '@edge-runtime/vm'
+      - '@opentelemetry/api'
+      - '@types/arethetypeswrong__core'
+      - '@types/astrojs__compiler-rs'
       - '@types/bufferutil'
+      - '@types/edge-runtime__vm'
+      - '@types/esbuild'
+      - '@types/happy-dom'
+      - '@types/jiti'
+      - '@types/jsdom'
+      - '@types/less'
+      - '@types/msw'
+      - '@types/node'
+      - '@types/opentelemetry__api'
+      - '@types/oxlint-tsgolint'
+      - '@types/picomatch'
+      - '@types/playwright'
+      - '@types/publint'
+      - '@types/sass'
+      - '@types/sass-embedded'
+      - '@types/stylus'
+      - '@types/sugarss'
+      - '@types/svelte'
+      - '@types/terser'
+      - '@types/testing-library__dom'
+      - '@types/tsx'
+      - '@types/typescript'
+      - '@types/typescript__native-preview'
+      - '@types/unplugin-unused'
+      - '@types/unrun'
       - '@types/utf-8-validate'
+      - '@types/vite'
+      - '@types/vite-plus'
+      - '@types/vitejs__devtools'
+      - '@types/vitest__browser-playwright'
+      - '@types/vitest__browser-preview'
+      - '@types/vitest__browser-webdriverio'
+      - '@types/vitest__coverage-istanbul'
+      - '@types/vitest__coverage-v8'
+      - '@types/vitest__ui'
+      - '@types/volar__typescript'
+      - '@types/vue-tsc'
+      - '@types/vue__language-core'
+      - '@types/yaml'
+      - '@typescript/native-preview'
+      - '@vitejs/devtools'
+      - '@vitest/browser-playwright'
+      - '@vitest/browser-webdriverio'
+      - '@vitest/coverage-istanbul'
+      - '@vitest/coverage-v8'
+      - '@vitest/ui'
+      - '@volar/typescript'
+      - '@vue/language-core'
       - bufferutil
+      - esbuild
+      - happy-dom
+      - jiti
+      - jsdom
+      - less
+      - msw
+      - playwright
+      - publint
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - svelte
+      - terser
+      - tsx
+      - typescript
+      - unplugin-unused
+      - unrun
       - utf-8-validate
+      - vue-tsc
+      - yaml
 
   '@anthropic-ai/claude-agent-sdk@0.3.321(@anthropic-ai/sdk@0.93.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(@types/express@5.0.6)(supports-color@8.1.1)(zod@4.6.7))(zod@4.6.7)':
     dependencies:
