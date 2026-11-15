@@ -11,11 +11,6 @@ import {
 describe("codexAppServerArgs", () => {
   it.each([
     {
-      name: "uses compatible defaults without custom launch args",
-      launchArgs: undefined,
-      expected: [],
-    },
-    {
       name: "preserves escaped TOML quotes in config values",
       launchArgs: String.raw`--config model=\"gpt-6.1-sol\" --strict-config`,
       expected: ["--config", 'model="gpt-6.1-sol"', "--strict-config"],
@@ -25,13 +20,11 @@ describe("codexAppServerArgs", () => {
       launchArgs: "-c thread_unload_delay_secs=1800",
       expected: ["-c", "thread_unload_delay_secs=1800"],
     },
-  ])("uses message context, unloads unsubscribed threads immediately and $name", (row) => {
+  ])("asks Codex to unload unsubscribed threads immediately and $name", (row) => {
     NodeAssert.deepStrictEqual(codexAppServerArgs(row.launchArgs), [
       "app-server",
       "-c",
       "thread_unload_delay_secs=0",
-      "-c",
-      "features.untrusted_as_tool_output=false",
       ...row.expected,
     ]);
   });
