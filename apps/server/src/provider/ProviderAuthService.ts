@@ -225,7 +225,7 @@ export const makeProviderAuthService = Effect.gen(function* () {
           return yield* new ProviderSetupError({
             instanceId: input.instanceId,
             operation: "validate",
-            detail: "Enable a Claude BYOK instance before testing.",
+            detail: "Enable an API key connection before testing.",
           });
         const cancelled = yield* Deferred.make<void>();
         const result = yield* Effect.acquireUseRelease(

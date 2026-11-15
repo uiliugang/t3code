@@ -1867,9 +1867,11 @@ export class ServerSettingsError extends Schema.TaggedError<
   managedBy: Schema.optional(Schema.String),
   /** For `use-disallowed-provider`: the provider's name as users know it. */
   providerLabel: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
+    if (this.detail) return this.detail;
     if (this.operation === "remove-provider-resources") {
       return "The provider was removed, but some managed resources could not be cleaned up.";
     }

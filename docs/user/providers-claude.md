@@ -24,7 +24,7 @@ Add another Claude instance in **Settings > Providers**:
 | Claude Work     | `claude`    | Leave empty            |
 | Claude Personal | `claude`    | `~/.claude_personal`   |
 
-On mobile, tap **Add Claude account** in **Settings > Providers** and enter a name and the
+On mobile, tap **Add Claude Code** in **Settings > Providers**, then edit the account's
 config folder. The login itself still happens on the environment's machine.
 
 An empty config-directory setting uses Claude Code's normal configuration. The
@@ -111,7 +111,9 @@ row in the thread; open it to see every step.
 
 ## Custom API providers
 
-Choose **Claude > Claude · BYOK** when adding a provider in **Settings > Providers**.
+Add **Claude** in **Settings > Providers**, then select **API Key** as its connection method.
+Account and API connections keep their own saved settings and credentials; switching back
+restores them. Save or revert pending edits before switching.
 Select **Anthropic Messages** or **OpenAI Chat Completions**, enter the service's base
 URL, and add its exact, case-sensitive model IDs. For Chat Completions, include the
 API prefix (for example, `https://api.example.com/v1`); T3 Code runs a local protocol
@@ -119,12 +121,12 @@ converter on the environment automatically. Both credential choices use Bearer
 authentication upstream in this mode. Anthropic mode supports Bearer Token or API Key
 (`x-api-key`). Credentials are stored
 on the selected environment; secret references are supported on web and desktop.
-The preset creates an isolated Claude config directory and lists only your models.
+The API connection uses an isolated Claude config directory and lists only your models.
 Install Claude Code on the environment or choose its executable under **Runtime**.
 
 Save connection changes before checking them. **Check connection** initializes Claude
 Code and tries the optional model-list endpoint without inference. An unavailable list
-leaves authentication unverified. **Test model & tools** sends two requests, uses API
+leaves authentication unverified. **Test model & tools** beside each model sends two requests, uses API
 credits, and checks streamed output and an echo tool round trip. Neither check proves
 that every Claude Code feature is supported by your service.
 
@@ -135,7 +137,7 @@ models. Removing a selected model requires choosing another before sending. Use 
 instance for a different BA service rather than moving an existing conversation.
 
 On mobile, **Settings > Providers** also supports creating, editing, disabling, and
-checking BYOK instances. The mobile tool check uses the first configured model.
+checking API connections. Choose the model to test beside its name.
 
 Chat Completions mode supports text, images, streamed responses, and function tool
 calls. The upstream model must support function calling. Anthropic-specific server

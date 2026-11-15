@@ -140,11 +140,11 @@ MOA 免登可用时会自动使用；也可在 **Settings → Source control →
 
 ### 使用 Claude BYOK 和自定义模型
 
-在 **Settings → Providers** 添加 **Claude → Claude · BYOK**，填写服务商的 Anthropic base URL，选择 Bearer Token 或 API Key，添加准确且区分大小写的模型 ID。
+在 **Settings → Providers** 添加 **Claude**，创建后将连接方式切换为 **API 密钥**，填写服务商地址、协议和凭据，添加准确且区分大小写的模型 ID。账号与 API 连接分别保存配置，切回时恢复。
 
-服务必须兼容 **Anthropic Messages API**；仅支持 OpenAI Chat Completions 的地址不能直接使用。服务端仍需安装 Claude Code，或指定其可执行文件。
+服务支持 **Anthropic Messages API** 或 **OpenAI Chat Completions**，请选择对应协议。服务端仍需安装 Claude Code，或指定其可执行文件。
 
-保存后先执行 **Check connection**；需要验证实际推理和工具调用时再执行 **Test model & tools**，后者会发送请求并产生 API 用量。密钥保存在所选环境，远程场景中的 `localhost` 指服务端机器。
+保存后先执行 **Check connection**；需要验证实际推理和工具调用时，在对应模型旁执行 **Test model & tools**，后者会发送请求并产生 API 用量。密钥保存在所选环境，远程场景中的 `localhost` 指服务端机器。
 
 详见 [Claude 账号、自定义 API 与 BYOK](./docs/user/providers-claude.md)。
 

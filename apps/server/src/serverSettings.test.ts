@@ -73,6 +73,190 @@ it.effect("removes a default provider across reloads and restores it on upsert",
   ),
 );
 
+it.effect("keeps each provider connection and secret independent across switches and reloads", () =>
+  Effect.gen(function* () {
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+    const fs = yield* FileSystem.FileSystem;
+    const serverConfig = yield* ServerConfig.ServerConfig;
+    for (const driver of ["codex", "claudeAgent"]) {
+      const instanceId = ProviderInstanceId.make(`${driver}_connections`);
+      const original = {
+        driver: ProviderDriverKind.make(driver),
+        config: {
+          ...(driver === "codex"
+            ? { connectionMode: "existing", runtimeSource: "local", setupMode: "existing" }
+            : {}),
+          homePath: "/original/account",
+          customModels: ["CaseSensitive"],
+        },
+        environment: [{ name: "TOKEN", value: "account-secret", sensitive: true }],
+      };
+      yield* service.updateProviderInstance({
+        operation: "create",
+        instanceId,
+        instance: original,
+      });
+      const byok = yield* service.updateProviderInstance({
+        operation: "switch-connection",
+        instanceId,
+        connectionMode: "byok",
+        expectedConnectionMode: "existing",
+      });
+      assert.isDefined(byok.providerInstances[instanceId]);
+      assert.deepStrictEqual(byok.providerInstances[instanceId]!.environment, []);
+      assert.deepInclude(byok.providerInstances[instanceId]!.connectionProfiles?.existing?.config, {
+        homePath: "/original/account",
+      });
+      yield* service.updateProviderInstance({
+        operation: "upsert",
+        instanceId,
+        instance: {
+          ...byok.providerInstances[instanceId]!,
+          config: {
+            ...(byok.providerInstances[instanceId]!.config as object),
+            customModels: ["ApiModel"],
+          },
+          environment: [{ name: "TOKEN", value: "api-secret", sensitive: true }],
+        },
+      });
+      const restored = yield* service.updateProviderInstance({
+        operation: "switch-connection",
+        instanceId,
+        connectionMode: "existing",
+        expectedConnectionMode: "byok",
+      });
+      assert.deepInclude(restored.providerInstances[instanceId]!.config, original.config);
+      assert.equal(
+        restored.providerInstances[instanceId]!.environment?.[0]?.value,
+        "account-secret",
+      );
+      assert.equal(
+        restored.providerInstances[instanceId]!.connectionProfiles?.byok?.environment?.[0]?.value,
+        "api-secret",
+      );
+      const { connectionProfiles: _profiles, ...olderClient } =
+        restored.providerInstances[instanceId]!;
+      const renamed = yield* service.updateProviderInstance({
+        operation: "upsert",
+        instanceId,
+        instance: { ...olderClient, displayName: "Renamed" },
+      });
+      assert.isDefined(renamed.providerInstances[instanceId]!.connectionProfiles?.byok);
+      for (const profiles of [undefined, {}]) {
+        const current = yield* service.getSettings;
+        const fullSave = yield* service.updateSettings({
+          providerInstances: {
+            ...current.providerInstances,
+            [instanceId]: {
+              ...olderClient,
+              displayName: "Renamed",
+              ...(profiles ? { connectionProfiles: profiles } : {}),
+            },
+          },
+        });
+        assert.deepStrictEqual(
+          fullSave.providerInstances[instanceId]!.connectionProfiles,
+          current.providerInstances[instanceId]!.connectionProfiles,
+        );
+        yield* Effect.flip(
+          service.updateSettings({
+            providerInstances: {
+              ...fullSave.providerInstances,
+              [instanceId]: byok.providerInstances[instanceId]!,
+            },
+          }),
+        );
+      }
+      yield* Effect.flip(
+        service.updateProviderInstance({
+          operation: "switch-connection",
+          instanceId,
+          connectionMode: "existing",
+          expectedConnectionMode: "byok",
+        }),
+      );
+      yield* Effect.flip(
+        service.updateProviderInstance({
+          operation: "upsert",
+          instanceId,
+          instance: byok.providerInstances[instanceId]!,
+        }),
+      );
+      const again = yield* service.updateProviderInstance({
+        operation: "switch-connection",
+        instanceId,
+        connectionMode: "byok",
+        expectedConnectionMode: "existing",
+      });
+      assert.equal(again.providerInstances[instanceId]!.environment?.[0]?.value, "api-secret");
+      assert.deepInclude(again.providerInstances[instanceId]!.config, {
+        customModels: ["ApiModel"],
+      });
+      assert.equal(again.providerInstances[instanceId]!.displayName, "Renamed");
+      if (driver === "codex") {
+        const chatgpt = yield* service.updateProviderInstance({
+          operation: "switch-connection",
+          instanceId,
+          connectionMode: "chatgpt",
+          expectedConnectionMode: "byok",
+        });
+        assert.deepStrictEqual(chatgpt.providerInstances[instanceId]!.environment, []);
+        const back = yield* service.updateProviderInstance({
+          operation: "switch-connection",
+          instanceId,
+          connectionMode: "byok",
+          expectedConnectionMode: "chatgpt",
+        });
+        assert.equal(back.providerInstances[instanceId]!.environment?.[0]?.value, "api-secret");
+      }
+      const client = ServerSettingsModule.redactServerSettingsForClient(again, {
+        secretReferences: true,
+      });
+      assert.notInclude(JSON.stringify(client), "account-secret");
+      assert.notInclude(JSON.stringify(client), "api-secret");
+    }
+    const disk = yield* fs.readFileString(serverConfig.settingsPath);
+    assert.notInclude(disk, "account-secret");
+    assert.notInclude(disk, "api-secret");
+    assert.include(disk, "connectionProfiles");
+    const legacyId = ProviderInstanceId.make("legacy_codex");
+    yield* service.updateProviderInstance({
+      operation: "create",
+      instanceId: legacyId,
+      instance: { driver: ProviderDriverKind.make("codex") },
+    });
+    const legacyByok = yield* service.updateProviderInstance({
+      operation: "switch-connection",
+      instanceId: legacyId,
+      expectedConnectionMode: "existing",
+      connectionMode: "byok",
+    });
+    yield* service.updateProviderInstance({
+      operation: "upsert",
+      instanceId: legacyId,
+      instance: {
+        ...legacyByok.providerInstances[legacyId]!,
+        config: { connectionMode: "byok", setupMode: "existing", runtimeSource: "managed" },
+      },
+    });
+    const legacyRestored = yield* service.updateProviderInstance({
+      operation: "switch-connection",
+      instanceId: legacyId,
+      expectedConnectionMode: "byok",
+      connectionMode: "existing",
+    });
+    assert.deepInclude(legacyRestored.providerInstances[legacyId]!.config, {
+      runtimeSource: "local",
+    });
+  }).pipe(
+    Effect.provide(
+      layerServerSettings().pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
 const layerServerSettings = (policy?: ManagedPolicyDocument) =>
   ServerSettingsModule.layer.pipe(
     Layer.provide(ServerSecretStore.layer),

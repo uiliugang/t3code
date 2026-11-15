@@ -9,6 +9,56 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "{model}: Testing model and tools...": "{model}：正在测试模型与工具调用…",
+  "Save or revert your changes before switching connections.":
+    "请先保存或还原修改，再切换连接方式。",
+  "Check cancelled.": "测试已取消。",
+  "This provider does not support that connection method.": "此提供商不支持该连接方式。",
+  "The connection changed on another device. Refresh and try again.":
+    "连接已在另一设备上变更，请刷新后重试。",
+  "Use the connection selector to change the connection method. Refresh and try again.":
+    "请通过连接方式选择器切换连接，刷新后重试。",
+  "Finish or cancel sign-in before changing the provider connection.":
+    "请先完成或取消登录，再切换连接方式。",
+
+  "Choose a connection method after creating the provider. Each method keeps its own settings.":
+    "创建后可切换连接方式，各方式独立保存配置。",
+  "How connection methods work": "连接方式说明",
+  "Claude account / existing CLI": "Claude 账户 / 已有 CLI",
+  "T3 manages your ChatGPT sign-in. Requests use your account's Codex allowance.":
+    "由 T3 管理 ChatGPT 登录，请求使用账户对应的 Codex 额度。",
+  "Configured Codex CLI": "已配置的 Codex CLI",
+  "Configured service": "已配置的服务",
+  "Uses the login and configuration in your Codex home. This can be a ChatGPT account or an API service.":
+    "沿用 Codex 配置目录中的登录与设置，可连接 ChatGPT 账户或 API 服务。",
+  "Uses this connection's saved URL and key. The service must support the Responses API and bills its usage.":
+    "使用此连接保存的地址与密钥。服务须支持 Responses API，用量由该服务计费。",
+  "Uses your existing Claude Code login and configuration. Sign in through the CLI on this environment.":
+    "沿用已有的 Claude Code 登录与配置；请在当前环境中使用 CLI 登录。",
+  "Uses this connection's saved URL, key and protocol. Supports Anthropic Messages and OpenAI Chat Completions.":
+    "使用此连接保存的地址、密钥与协议，支持 Anthropic Messages 和 OpenAI Chat Completions。",
+  "Each connection keeps its own configuration and credentials. Switching back restores what you saved.":
+    "各连接方式独立保存配置和凭据，切回时自动恢复。",
+  "Request path": "请求路径",
+  "Cancel model test": "取消模型测试",
+  "{action}: {model}": "{action}：{model}",
+  "Save and enable this connection before testing models.": "请先保存并启用此连接，再测试模型。",
+  "Test this model and its tools. Sends two requests and uses API credits.":
+    "测试此模型及工具调用，发送两次请求并使用 API 额度。",
+  "Testing model and tools...": "正在测试模型与工具调用…",
+  "Could not switch connection. Try again.": "无法切换连接，请重试。",
+  "Switching connection...": "正在切换连接…",
+  "API connection": "API 连接",
+  "Choose a connection method after creating this provider. Each method keeps its own configuration.":
+    "创建后可切换连接方式，各方式独立保存配置。",
+  "Enable an API key connection before testing.": "请先启用 API 密钥连接再测试。",
+  "Add Codex": "添加 Codex",
+  "Add Claude Code": "添加 Claude Code",
+  "{count} favorites": "已收藏 {count} 个",
+  "Hidden from picker": "不在模型选择器中显示",
+  "Disable all": "全部禁用",
+  "Enable all": "全部启用",
+
   "Could not inspect all nested repositories.": "无法完整检查目录内的嵌套仓库，请检查目录后重试。",
   "This folder contains repositories. Select them separately before cleaning the parent folder.":
     "此目录包含仓库。请单独勾选并清理内部仓库，再清理父目录。",

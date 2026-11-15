@@ -64,59 +64,62 @@ it.effect("never sends an unconfigured model to the endpoint", () =>
 
 it.effect("keeps the exact model and complete tool output through the Responses round trip", () =>
   Effect.gen(function* () {
-    const output = [
-      { type: "reasoning", id: "reasoning", encrypted_content: "opaque", summary: [] },
-      {
-        type: "function_call",
-        id: "call",
-        call_id: "call-1",
-        name: "t3_check",
-        arguments: '{"value":"t3-byok"}',
-      },
-    ];
-    const requests: Array<Record<string, unknown>> = [];
-    const result = yield* validateCodexEndpoint(
-      { instanceId, check: "model", model: "CaseSensitive" },
-      config,
-      {
-        T3_CODEX_BASE_URL: "https://api.test/team/v1",
-        T3_CODEX_API_KEY: "key",
-      },
-    ).pipe(
-      Effect.provideService(
-        HttpClient.HttpClient,
-        HttpClient.make((request) => {
-          assert.strictEqual(request.url, "https://api.test/team/v1/responses");
-          assert.strictEqual(request.method, "POST");
-          assert.strictEqual(request.body._tag, "Uint8Array");
-          if (request.body._tag !== "Uint8Array") return Effect.die("Missing JSON body");
-          const body = JSON.parse(new TextDecoder().decode(request.body.body)) as Record<
-            string,
-            unknown
-          >;
-          requests.push(body);
-          assert.strictEqual(body.model, "CaseSensitive");
-          assert.strictEqual(body.store, false);
-          return Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              Response.json({
-                id: "response",
-                output:
-                  requests.length === 1
-                    ? output
-                    : [{ type: "message", content: [{ type: "output_text", text: "ok" }] }],
-              }),
-            ),
-          );
-        }),
-      ),
-    );
-    assert.isTrue(result.authenticated);
-    assert.strictEqual(requests.length, 2);
-    assert.deepEqual(requests[1]?.input, [
-      ...output,
-      { type: "function_call_output", call_id: "call-1", output: "ok" },
-    ]);
+    for (const discovered of [false, true]) {
+      const output = [
+        { type: "reasoning", id: "reasoning", encrypted_content: "opaque", summary: [] },
+        {
+          type: "function_call",
+          id: "call",
+          call_id: "call-1",
+          name: "t3_check",
+          arguments: '{"value":"t3-byok"}',
+        },
+      ];
+      const requests: Array<Record<string, unknown>> = [];
+      const result = yield* validateCodexEndpoint(
+        { instanceId, check: "model", model: "CaseSensitive" },
+        discovered ? { ...config, customModels: [] } : config,
+        {
+          T3_CODEX_BASE_URL: "https://api.test/team/v1",
+          T3_CODEX_API_KEY: "key",
+        },
+        discovered ? ["CaseSensitive"] : [],
+      ).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            assert.strictEqual(request.url, "https://api.test/team/v1/responses");
+            assert.strictEqual(request.method, "POST");
+            assert.strictEqual(request.body._tag, "Uint8Array");
+            if (request.body._tag !== "Uint8Array") return Effect.die("Missing JSON body");
+            const body = JSON.parse(new TextDecoder().decode(request.body.body)) as Record<
+              string,
+              unknown
+            >;
+            requests.push(body);
+            assert.strictEqual(body.model, "CaseSensitive");
+            assert.strictEqual(body.store, false);
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  id: "response",
+                  output:
+                    requests.length === 1
+                      ? output
+                      : [{ type: "message", content: [{ type: "output_text", text: "ok" }] }],
+                }),
+              ),
+            );
+          }),
+        ),
+      );
+      assert.isTrue(result.authenticated);
+      assert.strictEqual(requests.length, 2);
+      assert.deepEqual(requests[1]?.input, [
+        ...output,
+        { type: "function_call_output", call_id: "call-1", output: "ok" },
+      ]);
+    }
   }),
 );

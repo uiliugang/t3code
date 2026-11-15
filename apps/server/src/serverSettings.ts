@@ -29,6 +29,10 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
+import {
+  providerConnectionMode,
+  switchProviderConnection,
+} from "./provider/providerConnectionProfiles.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -183,14 +187,38 @@ function withoutUnknownSecretProviderConfigs(
   ) as ServerSettings["secretProviders"];
 }
 
+function connectionInstance(
+  settings: ServerSettings,
+  instanceId: ProviderInstanceId,
+): ProviderInstanceConfig | undefined {
+  if (settings.removedProviderInstances?.includes(instanceId)) return undefined;
+  return (
+    settings.providerInstances[instanceId] ??
+    (instanceId === "codex" || instanceId === "claudeAgent"
+      ? { driver: ProviderDriverKind.make(instanceId) }
+      : undefined)
+  );
+}
+
 export function applyProviderInstanceMutation(
   settings: ServerSettings,
   mutation: ProviderInstanceMutation,
 ): ServerSettings {
   const providerInstances = { ...settings.providerInstances };
   const removedIds = new Set(settings.removedProviderInstances);
-  if (mutation.operation === "upsert" || mutation.operation === "create") {
-    providerInstances[mutation.instanceId] = mutation.instance;
+  if (mutation.operation === "switch-connection") {
+    const instance = connectionInstance(settings, mutation.instanceId)!;
+    providerInstances[mutation.instanceId] = switchProviderConnection(
+      instance,
+      mutation.instanceId,
+      mutation.connectionMode,
+    );
+  } else if (mutation.operation === "upsert" || mutation.operation === "create") {
+    const profiles = providerInstances[mutation.instanceId]?.connectionProfiles;
+    providerInstances[mutation.instanceId] = {
+      ...mutation.instance,
+      ...(profiles ? { connectionProfiles: profiles } : {}),
+    };
     removedIds.delete(mutation.instanceId);
   } else {
     delete providerInstances[mutation.instanceId];
@@ -252,7 +280,33 @@ function ensureProviderInstanceMutationAllowed(
   settings: ServerSettings,
   mutation: ProviderInstanceMutation,
   settingsPath: string,
+  allowConnectionSwitch = false,
 ): Effect.Effect<void, ServerSettingsError> {
+  const before = connectionInstance(settings, mutation.instanceId);
+  const connectionError =
+    mutation.operation === "switch-connection"
+      ? !before ||
+        !["codex", "claudeAgent"].includes(before.driver) ||
+        (before.driver === "claudeAgent" && mutation.connectionMode === "chatgpt")
+        ? "This provider does not support that connection method."
+        : providerConnectionMode(before) !== mutation.expectedConnectionMode
+          ? "The connection changed on another device. Refresh and try again."
+          : undefined
+      : !allowConnectionSwitch &&
+          mutation.operation === "upsert" &&
+          before?.connectionProfiles &&
+          (before.driver !== mutation.instance.driver ||
+            providerConnectionMode(before) !== providerConnectionMode(mutation.instance))
+        ? "Use the connection selector to change the connection method. Refresh and try again."
+        : undefined;
+  if (connectionError)
+    return Effect.fail(
+      new ServerSettingsError({
+        settingsPath,
+        operation: "write-file",
+        detail: connectionError,
+      }),
+    );
   if (
     mutation.operation === "create" &&
     Object.hasOwn(settings.providerInstances, mutation.instanceId)
@@ -1257,6 +1311,7 @@ const make = Effect.gen(function* () {
     patch: ServerSettingsPatch,
     update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
     validateOnly = false,
+    connectionSwitchInstanceId?: ProviderInstanceId,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
     writeSemaphore.withPermits(1)(
       Effect.gen(function* () {
@@ -1272,11 +1327,15 @@ const make = Effect.gen(function* () {
         // a removed provider's reference is cleared below rather than restored by persistence.
         const updated = withEchoedSecretReferences(current, yield* update(current));
         for (const [id, instance] of Object.entries(updated.providerInstances)) {
-          if (instance.driver === "codex")
+          if (
+            instance.driver === "codex" ||
+            current.providerInstances[ProviderInstanceId.make(id)]?.connectionProfiles
+          )
             yield* ensureProviderInstanceMutationAllowed(
               current,
               { operation: "upsert", instanceId: ProviderInstanceId.make(id), instance },
               settingsPath,
+              connectionSwitchInstanceId === id,
             );
         }
         // Vet before secrets: a variable the policy hides from clients is not one they removed.
@@ -1453,10 +1512,16 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
-          const patched = applyServerSettingsPatch(current, patch);
+          const patched = applyServerSettingsPatch(
+            mutation.operation === "switch-connection"
+              ? yield* materializeSettingsSecrets(current)
+              : current,
+            patch,
+          );
           return applyProviderInstanceMutation(patched, mutation);
         }),
       validateOnly,
+      mutation.operation === "switch-connection" ? mutation.instanceId : undefined,
     );
 
   return {

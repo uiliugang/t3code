@@ -543,7 +543,15 @@ export function applyServerSettingsPatch(
       ? { backgroundActivity: backgroundActivityPatch }
       : {}),
     ...(patch.providerInstances !== undefined
-      ? { providerInstances: patch.providerInstances }
+      ? {
+          providerInstances: Object.fromEntries(
+            Object.entries(patch.providerInstances).map(([id, instance]) => {
+              const profiles =
+                current.providerInstances[ProviderInstanceId.make(id)]?.connectionProfiles;
+              return [id, { ...instance, ...(profiles ? { connectionProfiles: profiles } : {}) }];
+            }),
+          ),
+        }
       : {}),
     ...(patch.worktreesDirectory !== undefined &&
     patch.worktreesDirectory !== current.worktreesDirectory

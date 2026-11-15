@@ -1,3 +1,4 @@
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
@@ -1109,14 +1110,45 @@ function OnboardingCodexSetup({
   const changeMode = (setupMode: "managed" | "existing") => {
     // "Use existing CLI" also opens a terminal to install or sign in to the CLI.
     onUseCliChange(setupMode === "existing");
-    const unchanged = mode === setupMode && provider.enabled;
+    const connectionMode = setupMode === "managed" ? "chatgpt" : "existing";
+    const unchanged =
+      (serverConfig.environment.capabilities.providerConnectionProfiles
+        ? codexConnectionMode(config) === connectionMode
+        : mode === setupMode) && provider.enabled;
     if (unchanged || !readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
     // One-instance upsert keeps a provider another client added in the meantime.
-    void persistProviderInstance({
-      operation: "upsert",
-      instanceId,
-      instance: { ...instance, enabled: true, config: { ...config, enabled: true, setupMode } },
-    }).then((result) => {
+    void (async () => {
+      let current = instance;
+      if (
+        serverConfig.environment.capabilities.providerConnectionProfiles &&
+        codexConnectionMode(config) !== connectionMode
+      ) {
+        const switched = await persistProviderInstance({
+          operation: "switch-connection",
+          instanceId,
+          connectionMode,
+          expectedConnectionMode: codexConnectionMode(config),
+        });
+        if (switched._tag === "Failure") return switched;
+        current = switched.value.providerInstances[instanceId] ?? instance;
+      }
+      return persistProviderInstance({
+        operation: "upsert",
+        instanceId,
+        instance: {
+          ...current,
+          enabled: true,
+          config: {
+            ...(current.config as object),
+            enabled: true,
+            setupMode,
+            ...(serverConfig.environment.capabilities.providerConnectionProfiles
+              ? { connectionMode }
+              : {}),
+          },
+        },
+      });
+    })().then((result) => {
       if (result._tag === "Failure") {
         onUseCliChange(false);
         if (!isAtomCommandInterrupted(result)) {

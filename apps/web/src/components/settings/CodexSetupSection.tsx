@@ -110,6 +110,8 @@ interface CodexSetupSectionProps {
 
 export function CodexSetupSection(props: CodexSetupSectionProps) {
   const t = useUiTranslation();
+  const supportsConnections = useAtomValue(serverEnvironment.configValueAtom(props.environmentId))
+    ?.environment.capabilities?.providerConnectionProfiles;
   const [requested, setRequested] = useState(false);
   // A policy that owns Codex's launch settings also rules out ChatGPT's own runtime.
   const codexLocks = managedInstanceLocks(
@@ -212,6 +214,7 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
       <ManagedCodexSetup
         key={`${props.environmentId}:${props.instanceId}`}
         {...props}
+        allowExistingCli={props.presentation === "onboarding" || !supportsConnections}
         autoStart={requested || props.autoStart === true}
         onAutoStartConsumed={() => {
           setRequested(false);

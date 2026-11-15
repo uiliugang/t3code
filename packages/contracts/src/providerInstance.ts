@@ -71,6 +71,14 @@ export type ResolvedProviderInstanceEnvironment = ReadonlyArray<
   Omit<ProviderInstanceEnvironmentVariable, "value"> & { readonly value: string }
 >;
 
+export const ProviderConnectionMode = Schema.Literals(["chatgpt", "existing", "byok"]);
+export type ProviderConnectionMode = typeof ProviderConnectionMode.Type;
+
+const ProviderConnectionProfile = Schema.Struct({
+  config: Schema.optionalKey(Schema.Unknown),
+  environment: Schema.optionalKey(ProviderInstanceEnvironment),
+});
+
 /** Drivers decode their own config; unknown-driver envelopes round-trip verbatim across versions. */
 export const ProviderInstanceConfig = Schema.Struct({
   driver: ProviderDriverKind,
@@ -79,10 +87,17 @@ export const ProviderInstanceConfig = Schema.Struct({
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
   config: Schema.optionalKey(Schema.Unknown),
+  connectionProfiles: Schema.optionalKey(Schema.Record(Schema.String, ProviderConnectionProfile)),
 });
 export type ProviderInstanceConfig = typeof ProviderInstanceConfig.Type;
 
 export const ProviderInstanceMutation = Schema.Union([
+  Schema.Struct({
+    operation: Schema.Literal("switch-connection"),
+    instanceId: ProviderInstanceId,
+    connectionMode: ProviderConnectionMode,
+    expectedConnectionMode: ProviderConnectionMode,
+  }),
   Schema.Struct({
     operation: Schema.Literal("create"),
     instanceId: ProviderInstanceId,

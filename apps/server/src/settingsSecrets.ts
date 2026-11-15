@@ -97,13 +97,13 @@ export function mapSettingsSecrets(
     return next;
   };
 
-  return mapSecretFieldGroups(settings, mapFields, (instanceId, environment) =>
+  return mapSecretFieldGroups(settings, mapFields, (instanceId, environment, connection) =>
     environment.map((variable) => {
       const { valueRedacted: _omit, ...rest } = variable;
       // A secret reference is not itself secret; storage sees the value cleared.
       const reference = typeof variable.value === "string" ? undefined : variable.value;
       const result = map({
-        secretName: `provider-env-${encode(instanceId)}-${encode(variable.name)}`,
+        secretName: `provider-env-${encode(instanceId)}${connection === undefined ? "" : `-connection-${encode(connection)}`}-${encode(variable.name)}`,
         kind: "environment",
         value: typeof variable.value === "string" ? variable.value : "",
         redacted: reference === undefined && variable.valueRedacted === true,
@@ -156,10 +156,11 @@ export function mapSettingsSecretValues(
 function mapSecretFieldGroups(
   settings: ServerSettings,
   mapFields: SecretFieldsMapper,
-  mapEnvironment: (instanceId: string, environment: ProviderEnvironment) => ProviderEnvironment = (
-    _instanceId,
-    environment,
-  ) => environment,
+  mapEnvironment: (
+    instanceId: string,
+    environment: ProviderEnvironment,
+    connection?: string,
+  ) => ProviderEnvironment = (_instanceId, environment) => environment,
 ): ServerSettings {
   const providerInstances = Object.fromEntries(
     Object.entries(settings.providerInstances).map(([instanceId, instance]) => {
@@ -181,6 +182,33 @@ function mapSecretFieldGroups(
             : {}),
           ...(instance.environment
             ? { environment: mapEnvironment(instanceId, instance.environment) }
+            : {}),
+          ...(instance.connectionProfiles
+            ? {
+                connectionProfiles: Object.fromEntries(
+                  Object.entries(instance.connectionProfiles).map(([mode, profile]) => [
+                    mode,
+                    {
+                      ...profile,
+                      ...(profile.config !== null &&
+                      typeof profile.config === "object" &&
+                      !Array.isArray(profile.config)
+                        ? {
+                            config: mapFields(
+                              profile.config as Record<string, unknown>,
+                              providerSecretFields.get(instance.driver) ?? [],
+                              (field, serverHost) =>
+                                `provider-config-${encode(instanceId)}-connection-${encode(mode)}-${encode(instance.driver)}-${encode(field)}${serverHost === null ? "" : `-${encode(serverHost)}`}`,
+                            ),
+                          }
+                        : {}),
+                      ...(profile.environment
+                        ? { environment: mapEnvironment(instanceId, profile.environment, mode) }
+                        : {}),
+                    },
+                  ]),
+                ),
+              }
             : {}),
         },
       ];
@@ -282,18 +310,9 @@ export function withoutRemovedSecretProviderReferences(
   if (removed.size === 0) return next;
   const isRemoved = (value: unknown) => isSecretReference(value) && removed.has(value.provider);
   const fields = mapSettingsSecretValues(next, (value) => (isRemoved(value) ? "" : value));
-  return {
-    ...fields,
-    providerInstances: Object.fromEntries(
-      Object.entries(fields.providerInstances).map(([instanceId, instance]) => [
-        instanceId,
-        instance.environment?.some((variable) => isRemoved(variable.value))
-          ? {
-              ...instance,
-              environment: instance.environment.filter((variable) => !isRemoved(variable.value)),
-            }
-          : instance,
-      ]),
-    ),
-  };
+  return mapSecretFieldGroups(
+    fields,
+    (values) => ({ ...values }),
+    (_instanceId, environment) => environment.filter((variable) => !isRemoved(variable.value)),
+  );
 }

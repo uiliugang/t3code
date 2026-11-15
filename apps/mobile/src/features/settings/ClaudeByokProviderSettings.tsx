@@ -12,6 +12,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstanceConfig,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import {
   CLAUDE_BYOK_LABEL,
@@ -32,11 +33,16 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { SettingsTarget } from "./settings-environment-filter";
+import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
 
 export function ClaudeByokProviderSettings({
   environment,
   driver = "claudeAgent",
+  allowCreate = true,
+  providers = [],
 }: {
+  readonly allowCreate?: boolean;
+  readonly providers?: ReadonlyArray<ServerProvider>;
   readonly driver?: "claudeAgent" | "codex";
   readonly environment: SettingsTarget;
 }) {
@@ -62,6 +68,7 @@ export function ClaudeByokProviderSettings({
           environment={environment}
           instanceId={ProviderInstanceId.make(instanceId)}
           instance={instance}
+          provider={providers.find((provider) => provider.instanceId === instanceId)}
         />
       ))}
       {adding ? (
@@ -71,13 +78,13 @@ export function ClaudeByokProviderSettings({
           instanceId={ProviderInstanceId.make(id)}
           onClose={() => setAdding(false)}
         />
-      ) : (
+      ) : allowCreate ? (
         <ControlPill
           label={t("Add {name}", { name: label })}
           variant="pill"
           onPress={() => setAdding(true)}
         />
-      )}
+      ) : null}
     </View>
   );
 }
@@ -87,12 +94,14 @@ function ClaudeByokEditor({
   environment,
   instanceId,
   instance,
+  provider,
   onClose,
 }: {
   readonly environment: SettingsTarget;
   readonly driver: "claudeAgent" | "codex";
   readonly instanceId: ProviderInstanceId;
   readonly instance?: ProviderInstanceConfig;
+  readonly provider?: ServerProvider | undefined;
   readonly onClose?: () => void;
 }) {
   const t = useUiTranslation();
@@ -148,8 +157,8 @@ function ClaudeByokEditor({
   const fingerprint = JSON.stringify(instance);
   const dirty =
     !instance ||
-    name !== instance.displayName ||
-    enabled !== instance.enabled ||
+    name !== (instance.displayName ?? label) ||
+    enabled !== (instance.enabled ?? true) ||
     JSON.stringify(draft) !== JSON.stringify(instance.environment ?? []) ||
     ids.join(",") !== models.map((model) => model.slug).join(",");
   const valid =
@@ -190,12 +199,12 @@ function ClaudeByokEditor({
       />
     </View>
   );
-  const check = async (kind: "connection" | "model") => {
+  const check = async (kind: "connection" | "model", model?: string) => {
     setChecking(true);
     setPending(true);
     const result = await validate({
       environmentId,
-      input: { instanceId, check: kind, ...(kind === "model" ? { model: ids[0] } : {}) },
+      input: { instanceId, check: kind, ...(model ? { model } : {}) },
     });
     setPending(false);
     setChecking(false);
@@ -203,15 +212,28 @@ function ClaudeByokEditor({
     setFeedback({
       fingerprint,
       message:
-        result._tag === "Success"
+        (model ? `${model}: ` : "") +
+        (result._tag === "Success"
           ? result.value.message
           : failure instanceof Error
             ? failure.message
-            : t("Check failed."),
+            : t("Check failed.")),
     });
   };
   return (
     <View className="gap-3">
+      {provider ? (
+        <ClaudeInstallationControls
+          environment={environment}
+          provider={provider}
+          connectionDisabled={dirty || pending}
+        />
+      ) : null}
+      {provider && dirty ? (
+        <Text textRole="footnote" className="text-foreground-muted">
+          {t("Save or revert your changes before switching connections.")}
+        </Text>
+      ) : null}
       {instance ? (
         <ControlPill
           label={instance.displayName ?? label}
@@ -251,9 +273,7 @@ function ClaudeByokEditor({
               />
             </Menu>
           ) : null}
-          {field(codex ? "API base URL" : "BA base URL", url, (value) =>
-            setDraft(variable(draft, baseName, value)),
-          )}
+          {field("API base URL", url, (value) => setDraft(variable(draft, baseName, value)))}
           {!codex ? (
             <Menu
               actions={[
@@ -292,6 +312,31 @@ function ClaudeByokEditor({
             true,
           )}
           {field("Model IDs", modelIds, setModelIds)}
+          {instance ? (
+            <View className="gap-2">
+              <Text textRole="footnote" className="text-foreground-muted">
+                {t("Test this model and its tools. Sends two requests and uses API credits.")}
+              </Text>
+              {models.map((model) => (
+                <View
+                  key={model.slug}
+                  className="flex-row flex-wrap items-center justify-between gap-2"
+                >
+                  <Text className="shrink text-foreground">{model.name}</Text>
+                  <ControlPill
+                    label={t("Test model & tools")}
+                    accessibilityLabel={t("{action}: {model}", {
+                      action: t("Test model & tools"),
+                      model: model.slug,
+                    })}
+                    variant="pill"
+                    disabled={disabled || dirty || !enabled || !valid || !canTest}
+                    onPress={() => void check("model", model.slug)}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
           <View className="flex-row items-center justify-between">
             <Text className="text-foreground">{t("Enabled")}</Text>
             <Switch
@@ -397,13 +442,6 @@ function ClaudeByokEditor({
               variant="pill"
               disabled={disabled || dirty || !enabled || !canCheck}
               onPress={() => void check("connection")}
-            />
-            <ControlPill
-              label={t("Test model & tools")}
-              accessibilityLabel={t("Test first model and tools, uses API credits")}
-              variant="pill"
-              disabled={disabled || dirty || !enabled || !valid || !canTest}
-              onPress={() => void check("model")}
             />
             {checking ? (
               <ControlPill
