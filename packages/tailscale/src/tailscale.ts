@@ -1,3 +1,5 @@
+import * as NodeNet from "node:net";
+
 import { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
@@ -195,21 +197,9 @@ function normalizeMagicDnsName(status: TailscaleStatusJson): string | null {
 }
 
 export function isTailscaleIpv4Address(address: string): boolean {
-  const parts = address.split(".");
-  if (parts.length !== 4) {
-    return false;
-  }
-  const [first, second, third, fourth] = parts.map((part) => Number.parseInt(part, 10));
-  if (
-    first === undefined ||
-    second === undefined ||
-    third === undefined ||
-    fourth === undefined ||
-    [first, second, third, fourth].some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  ) {
-    return false;
-  }
-  return first === 100 && second >= 64 && second <= 127;
+  if (!NodeNet.isIPv4(address)) return false;
+  const [first, second] = address.split(".", 2).map(Number);
+  return first === 100 && second !== undefined && second >= 64 && second <= 127;
 }
 
 export const parseTailscaleStatus = (

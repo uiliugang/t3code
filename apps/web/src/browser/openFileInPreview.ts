@@ -20,7 +20,6 @@ import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRunti
 import {
   applyPreviewServerSnapshot,
   readThreadPreviewState,
-  rememberPreviewUrl,
   setActivePreviewTab,
   updatePreviewServerSnapshot,
 } from "~/previewStateStore";
@@ -91,7 +90,6 @@ export async function openUrlInPreview<E>(input: {
     },
   });
   return mapAtomCommandResult(result, (snapshot) => {
-    rememberPreviewUrl(threadRef, input.url);
     if (input.background) {
       updatePreviewServerSnapshot(threadRef, snapshot);
       // Restore focus unless the user picked a tab while opening this one.

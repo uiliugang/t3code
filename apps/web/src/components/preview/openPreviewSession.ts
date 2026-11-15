@@ -13,7 +13,7 @@ import { AsyncResult } from "effect/reactivity";
 import { resolveBrowserDefaults } from "~/browser/browserDefaults";
 import { BrowserSettingsReadError, isBrowserSettingsReadError } from "~/browser/openFileInPreview";
 import { previewRuntimeFor } from "~/browser/previewRuntime";
-import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
+import { applyPreviewServerSnapshot } from "~/previewStateStore";
 
 interface OpenPreviewSessionInput<E> {
   openPreview: (input: {
@@ -55,11 +55,5 @@ export async function openPreviewSession<E>(
   }
   const snapshot = result.value;
   applyPreviewServerSnapshot(input.threadRef, snapshot);
-  if (input.url !== undefined) {
-    rememberPreviewUrl(
-      input.threadRef,
-      snapshot.navStatus._tag === "Idle" ? input.url : snapshot.navStatus.url,
-    );
-  }
   return result;
 }

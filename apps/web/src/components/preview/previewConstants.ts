@@ -1,5 +1,3 @@
-export const PREVIEW_RECENT_URL_LIMIT = 10;
-
 export const PREVIEW_ERROR_CODE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   ERR_NAME_NOT_RESOLVED: "DNS address could not be found",
   ERR_NAME_RESOLUTION_FAILED: "DNS address could not be found",

@@ -37,11 +37,7 @@ import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerD
 import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
 import { ensureLocalApi } from "~/localApi";
 import { getClientSettings } from "~/hooks/useSettings";
-import {
-  rememberPreviewUrl,
-  updatePreviewServerSnapshot,
-  useThreadPreviewState,
-} from "~/previewStateStore";
+import { updatePreviewServerSnapshot, useThreadPreviewState } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
 import {
@@ -259,12 +255,10 @@ export function PreviewView({
     if (isServerTab && serverSurfaceRef.current) {
       if (serverInputDisabled) return null;
       serverSurfaceRef.current.navigate(resolvedUrl);
-      rememberPreviewUrl(threadRef, resolvedUrl);
       return activeProfileId;
     }
     if (runtimeTabId && previewBridge) {
       await previewBridge.navigate(runtimeTabId, resolvedUrl);
-      rememberPreviewUrl(threadRef, resolvedUrl);
       focusPreviewPage(runtimeTabId);
       return activeProfileId;
     }

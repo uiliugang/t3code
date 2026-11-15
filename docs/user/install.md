@@ -10,23 +10,21 @@ launch T3 Code and configure providers afterwards.
 
 ## Command line
 
+Install the fork's CLI on an Apple Silicon Mac or on x64/arm64 Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install.sh | sh
 ```
 
-On Windows, in PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install.ps1 | iex
-```
+The fork does not publish Windows CLI archives. On Windows, use the upstream
+package or [run from source](../../README.md#从源码运行本分支) for the fork's changes.
 
 This installs the `t3` binary to `~/.local/bin`. If that folder is not on your
 `PATH` yet, the installer says so and, for zsh, bash on Linux, and fish, prints
-a command to add it. On Windows, `t3` works in the same PowerShell window right
-away; add the folder to your `PATH` for new windows. If a `t3` that the
-installer or the desktop app did not create is already there, it leaves that
-one alone and stops. Set `T3CODE_CHANNEL=nightly` to install the nightly train, or
-`T3CODE_VERSION` to pin an exact version.
+a command to add it. If a `t3` that the installer or the desktop app did not
+create is already there, it leaves that one alone and stops. Set `T3CODE_VERSION`
+to pin an exact published version. The fork's release workflow publishes stable
+builds only.
 
 | Task                                  | Command                                                                 |
 | ------------------------------------- | ----------------------------------------------------------------------- |
@@ -52,14 +50,13 @@ listed below distribute the upstream version, which does not include this fork's
 To try upstream T3 Code once without installing it, run `npx t3@latest` instead (needs
 Node.js for `npx`). It offers to install the `t3` command first. If you say no,
 it asks again at the next minor release, and `npx t3 install` installs it later.
-`npx t3` always runs the version npm picked, even when a `t3` is installed. On
-the nightly train, run your installed `t3` (for example `t3 connect`), not
-`npx t3`, which runs the latest stable release.
+`npx t3` always runs the version npm picked, even when the fork's `t3` is installed.
+To use the fork, run the installed `t3` instead (for example `t3 connect`).
 
 ### Intel Macs
 
-There is no `t3` executable for Intel Macs (the desktop app is available). To
-run a server there, build it from source with `vp`, which provides the Node version it needs
+The fork does not publish Intel Mac binaries. To run a server there, build it
+from source with `vp`, which provides the Node version it needs
 ([Install vp](../operations/development.md#first-checkout)):
 
 ```bash
@@ -73,8 +70,10 @@ update it with `git pull` and a rebuild.
 
 ## Desktop app
 
-Download a release from [GitHub Releases](https://github.com/pingdotgg/t3code/releases),
-or use a package manager:
+Download the fork's Apple Silicon DMG, Linux AppImage/DEB, or Android arm64 APK
+from [the fork's GitHub Releases](https://github.com/uiliugang/t3code/releases).
+For upstream builds, including Windows and Intel Macs, use
+[upstream GitHub Releases](https://github.com/pingdotgg/t3code/releases) or a package manager:
 
 | Platform           | Install                                                      |
 | ------------------ | ------------------------------------------------------------ |

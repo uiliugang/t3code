@@ -58,23 +58,28 @@ export function reconcileEnvFile(
   entries: Readonly<Record<string, string>>,
 ): string {
   const lines = contents === "" ? [] : contents.replace(/\n$/u, "").split("\n");
-  const assignment = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/u;
+  const assignment = /^\s*(?:export\s+)?([^#=\s][^=]*?)\s*=\s*(.*)$/u;
   const pending = new Map(Object.entries(entries));
   const out: string[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
     const match = assignment.exec(line);
     const name = match?.[1];
-    if (match === null || name === undefined || !(name in entries)) {
+    if (match === null || name === undefined) {
       out.push(line);
       continue;
     }
-    // Multiline assignments end at their closing quote; parseEnv consumes only the opening line if it is unclosed.
+    const start = index;
+    // Skip quoted bodies even for unrelated keys: a line in the body can look like an assignment.
     const rawValue = match[2] ?? "";
     const quote = /^(['"`])/u.exec(rawValue)?.[1];
     if (quote !== undefined && !closesQuote(rawValue, quote)) {
       const closing = lines.findIndex((candidate, at) => at > index && candidate.includes(quote));
       if (closing !== -1) index = closing;
+    }
+    if (!Object.hasOwn(entries, name)) {
+      for (let at = start; at <= index; at += 1) out.push(lines[at]!);
+      continue;
     }
     const value = pending.get(name);
     if (value !== undefined) {

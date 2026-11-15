@@ -9,6 +9,7 @@ import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeUtil from "node:util";
 
 import { PublishClientConfig, reconcileEnvFile, tokenDigest } from "./clientConfig.ts";
 
@@ -37,6 +38,15 @@ describe("reconcileEnvFile", () => {
   it("replaces a quoted multi-line value whole", () => {
     expect(reconcileEnvFile('A="one\ntwo"\nKEEP=1\n', { A: "new" })).toBe("A=new\nKEEP=1\n");
     expect(reconcileEnvFile("A='x'\nKEEP=1\n", { A: "new" })).toBe("A=new\nKEEP=1\n");
+    expect(reconcileEnvFile('KEEP="one\nA=example\ntwo"\n', { A: "new" })).toBe(
+      'KEEP="one\nA=example\ntwo"\nA=new\n',
+    );
+    for (const name of ["KEEP.DOT", "KEEP-DASH", "1KEEP", "KEEP KEY"]) {
+      const existing = `${name}="one\nA=example\ntwo"\nA=old\n`;
+      const updated = reconcileEnvFile(existing, { A: "new" });
+      expect(updated).toBe(`${name}="one\nA=example\ntwo"\nA=new\n`);
+      expect(NodeUtil.parseEnv(updated)).toEqual({ ...NodeUtil.parseEnv(existing), A: "new" });
+    }
   });
 
   it("keeps later lines when a quoted value never closes", () => {

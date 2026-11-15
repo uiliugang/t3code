@@ -1,6 +1,6 @@
 # T3 Code 增强版
 
-[![Fork macOS and Android release](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml/badge.svg)](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml)
+[![Fork macOS, Linux and Android release](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml/badge.svg)](https://github.com/uiliugang/t3code/actions/workflows/fork-release.yml)
 
 基于 [pingdotgg/t3code](https://github.com/pingdotgg/t3code) 的个人增强分支，面向中文使用、多仓库协同开发和美团内部研发流程。在上游 Web、Electron 桌面端和 React Native 移动端架构之上，扩展需求管理、代码平台集成、Skills 管理和模型配置。
 
@@ -33,19 +33,19 @@
 | Git 与 Worktree | 默认限制新 Worktree 基于 main/master，保护主分支；合并后安全快进本地主分支，可选清理已合并分支和 Worktree；支持按组手动清理和重建。                                       |
 | 配置迁移        | 导入、导出客户端偏好、主题、快捷键、模型配置及项目设置；可在另一环境克隆仓库并恢复项目或工作区分组，查看进度和重试失败导入。                                              |
 | 日常体验        | 可选预测下一条用户消息；优化 Markdown 默认预览、Diff 文件类型筛选、变更预览和用量展示。                                                                                   |
-| 连接与发行      | 改善 SSH 环境运行时下载失败时的中转回退；增加本分支 macOS Apple Silicon DMG 和 Android APK 构建发布流程。                                                                 |
+| 连接与发行      | 改善 SSH 环境运行时下载失败时的中转回退；为本分支构建和发布 macOS Apple Silicon、Linux 和 Android 安装包。                                                                |
 
 ## 安装与启动
 
 ### 使用本分支构建包
 
-查看 [本分支 Releases](https://github.com/uiliugang/t3code/releases) 中实际可用的附件。仓库提供 macOS Apple Silicon（arm64）DMG 和独立 Android APK 的构建流程；尚未发布的版本可从源码启动。
+查看 [本分支 Releases](https://github.com/uiliugang/t3code/releases) 中的 macOS Apple Silicon（arm64）DMG、Linux x64/arm64 AppImage 与 DEB、macOS arm64 和 Linux x64/arm64 CLI，以及 Android arm64 APK。没有对应安装包的平台可从源码运行。
 
-- macOS 包采用 ad hoc 签名，未经过 Apple 公证，首次打开可能需要在系统安全设置中明确允许。
-- Android 使用独立包名 `com.uiliugang.t3code`。
-- 本分支构建关闭桌面自动更新和上游 Android OTA 更新，请从本仓库获取后续版本。
+- macOS 包采用 ad hoc 签名，未经过 Apple 公证，首次打开可能需要在系统安全设置中明确允许。通过「设置 → 关于」可查找新版安装包，不会自动安装。
+- Linux AppImage 和 DEB 支持应用内更新。仍关闭更新功能的旧版需要先手动安装一次新版。
+- Android 使用独立包名 `com.uiliugang.t3code`。通过本仓库的 APK 更新，安装前需要确认；不接收上游 Android OTA 更新。
 
-上游的 `npx t3@latest`、官网安装脚本、应用商店和包管理器安装入口分发的是上游版本，不保证包含这里列出的增强。
+上游的 `npx t3@latest`、应用商店和包管理器入口分发的是上游版本，不包含本分支的增强。要安装本分支的 CLI，请使用[本仓库的安装脚本](docs/user/install.md#command-line)。
 
 #### macOS 提示无法验证应用
 
