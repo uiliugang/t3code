@@ -1078,7 +1078,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
   );
 
   // A backend behind a custom model may refuse the built-in default.
-  it.effect("falls back to the thread default when it is a custom model on that instance", () =>
+  it.effect("keeps custom-model options out of automatic text generation", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const claude = ProviderInstanceId.make("claudeAgent");
@@ -1094,24 +1094,32 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         },
       };
 
+      const defaultModelSelection = {
+        instanceId: claude,
+        model: "z-ai/glm-5.3-flash",
+        options: [
+          { id: "thinking", value: false },
+          { id: "effort", value: "max" },
+        ],
+      };
       const custom = yield* serverSettings.updateSettings({
         providerInstances,
-        defaultModelSelection: {
-          instanceId: claude,
-          model: "z-ai/glm-5.3-flash",
-          options: [{ id: "thinking", value: false }],
-        },
+        defaultModelSelection,
       });
       assert.deepEqual(custom.textGenerationModelSelection, {
         instanceId: claude,
         model: "z-ai/glm-5.3-flash",
-        options: [{ id: "thinking", value: false }],
       });
+      assert.deepEqual(custom.defaultModelSelection, defaultModelSelection);
 
       const builtIn = yield* serverSettings.updateSettings({
         defaultModelSelection: { instanceId: claude, model: "claude-fable-5-1" },
       });
       assert.equal(builtIn.textGenerationModelSelection.model, "claude-haiku-5-5");
+      const explicit = yield* serverSettings.updateSettings({
+        textGenerationModelSelection: defaultModelSelection,
+      });
+      assert.deepEqual(explicit.textGenerationModelSelection, defaultModelSelection);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
