@@ -1,7 +1,8 @@
 import { createContext, useContext } from "react";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId } from "@t3tools/contracts";
+import type { SettingsFile } from "@t3tools/client-runtime/settings-transfer";
 import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
@@ -87,6 +88,22 @@ it("switches the transfer environment and recovers when that environment disconn
   await expect
     .element(screen.getByRole("button", { name: "Environment scope: Server" }))
     .toBeVisible();
+  const backup = {
+    format: "t3-code-settings",
+    version: 1,
+    scope: "application",
+    clientSettings: {},
+    server: {},
+    keybindings: [],
+    providers: {},
+  } satisfies SettingsFile;
+  await userEvent.upload(
+    screen.container.querySelector<HTMLInputElement>('input[type="file"]')!,
+    new File([JSON.stringify(backup)], "settings.json", { type: "application/json" }),
+  );
+  await expect
+    .element(page.getByRole("dialog", { name: "Import settings into Server?" }))
+    .toBeVisible();
   await screen.rerender(
     view(
       environments.map((entry) =>
@@ -99,6 +116,7 @@ it("switches the transfer environment and recovers when that environment disconn
     .not.toBeInTheDocument();
   await expect.element(screen.getByText("Laptop", { exact: true })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Export" })).toBeVisible();
+  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   await screen.rerender(
     view(
       environments.map((entry) =>
@@ -110,6 +128,11 @@ it("switches the transfer environment and recovers when that environment disconn
     .element(screen.getByRole("button", { name: /^Environment scope:/ }))
     .not.toBeInTheDocument();
   await expect.element(screen.getByText("Laptop", { exact: true })).toBeVisible();
+  await screen.rerender(view(environments));
+  await expect
+    .element(screen.getByRole("button", { name: "Environment scope: Server" }))
+    .toBeVisible();
+  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   await screen.rerender(view([]));
   await expect.element(screen.getByRole("button", { name: "Export" })).not.toBeInTheDocument();
   await expect
