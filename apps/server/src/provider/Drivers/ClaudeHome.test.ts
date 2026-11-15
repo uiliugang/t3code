@@ -125,6 +125,31 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
           KEEP: "1",
         });
 
+        const inheritedApi = {
+          ...host,
+          ANTHROPIC_BASE_URL: "https://host.test",
+          ANTHROPIC_API_KEY: "host-key",
+          ANTHROPIC_AUTH_TOKEN: "host-token",
+        };
+        const isolated = yield* mergeClaudeProcessEnvironment(
+          { homePath, customModelsOnly: true },
+          [],
+          inheritedApi,
+        );
+        expect(isolated.ANTHROPIC_API_KEY).toBeUndefined();
+        expect(isolated.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+        expect(isolated.ANTHROPIC_BASE_URL).toBeUndefined();
+        expect(
+          (yield* mergeClaudeProcessEnvironment({ homePath }, [], inheritedApi)).ANTHROPIC_API_KEY,
+        ).toBe("host-key");
+        expect(
+          (yield* mergeClaudeProcessEnvironment(
+            { homePath, customModelsOnly: true },
+            [{ name: "ANTHROPIC_API_KEY", value: "own-key", sensitive: true }],
+            inheritedApi,
+          )).ANTHROPIC_API_KEY,
+        ).toBe("own-key");
+
         for (const protocol of ["anthropic", "openai"]) {
           const configured = [
             ...instance,

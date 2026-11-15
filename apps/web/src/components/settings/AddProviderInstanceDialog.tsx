@@ -175,6 +175,9 @@ export function AddProviderInstanceDialog({
   const supportsCodexByok =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.environment.capabilities
       ?.codexByok === true;
+  const supportsConnectionProfiles =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.environment.capabilities
+      ?.providerConnectionProfiles === true;
   const secretSources = useSecretSources(environmentId);
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
   const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
@@ -245,6 +248,8 @@ export function AddProviderInstanceDialog({
       label,
       existingIds,
     );
+  const unified = supportsConnectionProfiles && (driver === "codex" || driver === "claudeAgent");
+  const steps = unified ? ADD_PROVIDER_WIZARD_STEPS.slice(0, 2) : ADD_PROVIDER_WIZARD_STEPS;
   const driverSettingsFields = deriveProviderSettingsFields(driverOption);
   const instanceIdError = validateInstanceId(instanceId, existingIds, t);
   const showInstanceIdError = hasAttemptedSubmit && instanceIdError !== null;
@@ -330,7 +335,7 @@ export function AddProviderInstanceDialog({
               instanceIdError,
               selectionError: acpSelectionError,
             })
-        : resolveWizardNavigation(wizardStep, requestedStep, ADD_PROVIDER_WIZARD_STEPS.length, {
+        : resolveWizardNavigation(wizardStep, requestedStep, steps.length, {
             instanceIdError,
           }),
     );
@@ -415,8 +420,11 @@ export function AddProviderInstanceDialog({
     )
       return;
 
-    const config =
-      driver === "codex"
+    const config = unified
+      ? driver === "codex"
+        ? { connectionMode: "chatgpt", runtimeSource: "auto", setupMode: "managed" }
+        : { customModelsOnly: false }
+      : driver === "codex"
         ? { ...configByDriver[driver], setupMode: "existing" }
         : isByok
           ? { ...configByDriver[driver], homePath: `~/.claude-t3/${instanceId}` }
@@ -504,6 +512,7 @@ export function AddProviderInstanceDialog({
               currentStep={wizardStep}
               summaries={wizardStepSummaries}
               instanceIdError={instanceIdError}
+              steps={steps}
               disabled={isSaving || isPreparingRegistryAgent}
               onNavigation={applyWizardNavigation}
             />
@@ -532,7 +541,15 @@ export function AddProviderInstanceDialog({
                   aria-labelledby="add-instance-driver-label"
                 />
                 <MultipleAccountsNote environmentId={environmentId} driver={driver} />
-                {driver === "claudeAgent" || (driver === "codex" && supportsCodexByok) ? (
+                {unified ? (
+                  <p className="py-2 text-xs text-muted-foreground">
+                    {t(
+                      "Choose a connection method after creating the provider. Each method keeps its own settings.",
+                    )}
+                  </p>
+                ) : null}
+                {!unified &&
+                (driver === "claudeAgent" || (driver === "codex" && supportsCodexByok)) ? (
                   <RadioGroup
                     aria-label={t("Connection method")}
                     value={isByok ? "byok" : "subscription"}
@@ -786,7 +803,7 @@ export function AddProviderInstanceDialog({
                 />
               </SettingsGroup>
 
-              {isByok ? (
+              {unified ? null : isByok ? (
                 <SettingsGroup variant="plain" className={cn(wizardStep !== 2 && "hidden")}>
                   <ByokFields
                     environment={localEnvironment}
@@ -865,7 +882,7 @@ export function AddProviderInstanceDialog({
               >
                 {t(wizardStep === 0 ? "Cancel" : "Back")}
               </Button>
-              {wizardStep === 0 && driver === "codex" && !isByok ? (
+              {!unified && wizardStep === 0 && driver === "codex" && !isByok ? (
                 <>
                   <Button variant="outline" size="sm" onClick={() => navigateToStep(1)}>
                     {t("Configure manually")}
@@ -877,7 +894,7 @@ export function AddProviderInstanceDialog({
                     />
                   )}
                 </>
-              ) : wizardStep < (isAcpRegistry ? 1 : 2) ? (
+              ) : wizardStep < (isAcpRegistry || unified ? 1 : 2) ? (
                 <Button
                   size="sm"
                   disabled={isPreparingRegistryAgent}

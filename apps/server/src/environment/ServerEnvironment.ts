@@ -253,6 +253,7 @@ export const make = Effect.gen(function* () {
       projectProviderInstanceOverrides: true,
       providerInstanceDeletion: true,
       codexByok: true,
+      providerConnectionProfiles: true,
       threadSnooze: true,
       threadForceStop: true,
       environmentThemes: true,

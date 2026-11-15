@@ -1,3 +1,4 @@
+import { ProviderModelTestButton, ProviderModelTestResult } from "./ProviderModelChecks";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import {
   ArrowDownIcon,
@@ -392,15 +393,13 @@ export function ProviderModelsSection({
                 )
               }
             >
-              {allBuiltInModelsHidden ? "Enable all" : "Disable all"}
+              {t(allBuiltInModelsHidden ? "Enable all" : "Disable all")}
             </Button>
           ) : null}
           <span className="text-xs text-muted-foreground">
             {t(models.length === 1 ? "{count} model" : "{count} models", { count: models.length })}
-            {favoriteCount > 0
-              ? ` · ${favoriteCount} favorite${favoriteCount === 1 ? "" : "s"}`
-              : ""}
-            {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ""}
+            {favoriteCount > 0 ? ` · ${t("{count} favorites", { count: favoriteCount })}` : ""}
+            {hiddenCount > 0 ? ` · ${t("{count} hidden", { count: hiddenCount })}` : ""}
           </span>
           {onSyncModels ? (
             <Tooltip>
@@ -461,15 +460,16 @@ export function ProviderModelsSection({
           return (
             <div key={`${instanceId}:${model.slug}:group`}>
               {startsGroup && favoriteCount > 0 && group === "favorite"
-                ? groupLabel("Favorites", index === 0)
+                ? groupLabel(t("Favorites"), index === 0)
                 : null}
               {startsGroup && favoriteCount > 0 && group === "visible"
-                ? groupLabel("All", index === 0)
+                ? groupLabel(t("All"), index === 0)
                 : null}
               {startsGroup && group === "hidden"
-                ? groupLabel("Hidden from picker", index === 0)
+                ? groupLabel(t("Hidden from picker"), index === 0)
                 : null}
               {renderRow(model)}
+              <ProviderModelTestResult slug={model.slug} />
               {editingEntry ? (
                 <CustomModelEditor
                   key={`${instanceId}:${model.slug}:editor`}
@@ -589,7 +589,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
     <div
       data-model-slug={model.slug}
       className={cn(
-        "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/30",
+        "grid min-h-8 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/30",
         isHidden && "opacity-50",
       )}
     >
@@ -644,6 +644,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
         ) : null}
       </span>
       <span className="flex shrink-0 items-center justify-end gap-0.5">
+        <ProviderModelTestButton slug={model.slug} />
         {!isHidden && !isFiltering ? (
           <>
             <Tooltip>

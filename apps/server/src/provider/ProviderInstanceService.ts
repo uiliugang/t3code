@@ -1,3 +1,4 @@
+import { providerConnectionConfigurations } from "./providerConnectionProfiles.ts";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
 import { codexRuntimeSource } from "@t3tools/shared/codexByok";
@@ -143,21 +144,25 @@ const make = Effect.gen(function* () {
     instanceId: ProviderInstanceId,
     entry: ProviderInstanceConfig,
   ) {
-    const environment = yield* mergeProviderInstanceEnvironment(entry.environment);
     const roots = yield* ownedRoots;
-    const candidates = [
-      path.join(config.stateDir, "providers", entry.driver, instanceId),
-      path.join(config.stateDir, "provider-auth", instanceId),
-      configString(entry, "homePath"),
-      configString(entry, "shadowHomePath"),
-      entry.driver === "codex"
-        ? environment.CODEX_HOME
-        : entry.driver === "claudeAgent"
-          ? environment.CLAUDE_CONFIG_DIR
-          : undefined,
-    ];
+    const candidates = yield* Effect.forEach(providerConnectionConfigurations(entry), (profile) =>
+      Effect.gen(function* () {
+        const environment = yield* mergeProviderInstanceEnvironment(profile.environment);
+        return [
+          path.join(config.stateDir, "providers", entry.driver, instanceId),
+          path.join(config.stateDir, "provider-auth", instanceId),
+          configString(profile, "homePath"),
+          configString(profile, "shadowHomePath"),
+          entry.driver === "codex"
+            ? environment.CODEX_HOME
+            : entry.driver === "claudeAgent"
+              ? environment.CLAUDE_CONFIG_DIR
+              : undefined,
+        ];
+      }),
+    );
     const directories = new Set<string>();
-    for (const value of candidates) {
+    for (const value of candidates.flat()) {
       if (!value) continue;
       const directory = yield* canonical(absolute(value));
       if (roots.some((root) => directory !== root && contains(root, directory)))
@@ -267,7 +272,7 @@ const make = Effect.gen(function* () {
       .withSettingsSnapshot((current) =>
         Effect.gen(function* () {
           const instances = deriveProviderInstanceConfigMap(current);
-          const entries = Object.values(instances);
+          const entries = Object.values(instances).flatMap(providerConnectionConfigurations);
           const references: string[] = [];
           const pathVariables = new Set([
             "HOME",
@@ -286,7 +291,9 @@ const make = Effect.gen(function* () {
               (variable) => pathVariables.has(variable.name) && typeof variable.value !== "string",
             ),
           );
-          for (const [rawId, entry] of Object.entries(instances)) {
+          for (const [rawId, entry] of Object.entries(instances).flatMap(([id, instance]) =>
+            providerConnectionConfigurations(instance).map((profile) => [id, profile] as const),
+          )) {
             references.push(...(yield* directoriesFor(ProviderInstanceId.make(rawId), entry)));
             for (const key of ["binaryPath", "commandPath", "homePath", "shadowHomePath"]) {
               const value = configString(entry, key);
@@ -428,6 +435,40 @@ const make = Effect.gen(function* () {
     patch: ServerSettingsPatch = {},
   ) {
     if (mutation.operation !== "delete") {
+      if (mutation.operation === "switch-connection") {
+        yield* settings.validateProviderInstanceMutation(mutation, patch);
+        const instance = yield* registry.getInstance(mutation.instanceId);
+        if (instance?.auth) {
+          const state = yield* instance.auth.subscribe("provider-settings").pipe(Stream.runHead);
+          if (
+            Option.isSome(state) &&
+            ["starting", "waiting", "verifying"].includes(state.value.phase)
+          )
+            return yield* new ServerSettingsError({
+              operation: "write-file",
+              settingsPath: config.settingsPath,
+              detail: "Finish or cancel sign-in before changing the provider connection.",
+            });
+        }
+        return yield* sessions
+          .withInstanceClosed(
+            mutation.instanceId,
+            settings.updateProviderInstance(mutation, patch),
+            true,
+          )
+          .pipe(
+            Effect.mapError((cause) =>
+              isSettingsError(cause)
+                ? cause
+                : new ServerSettingsError({
+                    operation: "stop-provider-sessions",
+                    settingsPath: config.settingsPath,
+                    providerInstanceId: mutation.instanceId,
+                    cause,
+                  }),
+            ),
+          );
+      }
       if (mutation.operation === "upsert" && mutation.instance.driver === "codex") {
         const before = deriveProviderInstanceConfigMap(yield* settings.getSettings)[
           mutation.instanceId

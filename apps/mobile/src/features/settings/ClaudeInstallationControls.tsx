@@ -1,3 +1,4 @@
+import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import { codexConnectionMode, codexRuntimeSource } from "@t3tools/shared/codexByok";
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@t3tools/contracts";
@@ -14,9 +15,11 @@ import type { SettingsTarget } from "./settings-environment-filter";
 export function ClaudeInstallationControls({
   environment,
   provider,
+  connectionDisabled = false,
 }: {
   readonly environment: SettingsTarget;
   readonly provider: ServerProvider;
+  readonly connectionDisabled?: boolean;
 }) {
   const t = useUiTranslation();
   const instance = {
@@ -27,7 +30,12 @@ export function ClaudeInstallationControls({
     instance?.config !== null && typeof instance?.config === "object" ? instance.config : {};
   const codex = provider.driver === "codex";
   const source = codexRuntimeSource(config);
-  const connection = codexConnectionMode(config);
+  const connection = codex
+    ? codexConnectionMode(config)
+    : isClaudeByok(config)
+      ? "byok"
+      : "existing";
+  const profiles = environment.serverConfig.environment.capabilities?.providerConnectionProfiles;
   const managed = codex
     ? codexRuntimeSource(config) === "managed"
     : "setupMode" in config && config.setupMode === "managed";
@@ -57,43 +65,60 @@ export function ClaudeInstallationControls({
     state?.phase === "downloading" || state?.phase === "extracting" || state?.phase === "verifying";
   return (
     <View className="gap-2 border-t border-border-subtle px-4 py-3">
-      {codex ? (
+      {codex || profiles ? (
         <View className="flex-row flex-wrap items-center justify-between gap-2">
           <Text textRole="body">{t("Connection method")}</Text>
           <Menu
             actions={[
-              {
-                id: "chatgpt",
-                title: t("ChatGPT account"),
-                state: connection === "chatgpt" ? "on" : "off",
-              },
+              ...(codex
+                ? [
+                    {
+                      id: "chatgpt",
+                      title: t("ChatGPT account"),
+                      state: connection === "chatgpt" ? ("on" as const) : ("off" as const),
+                    },
+                  ]
+                : []),
               {
                 id: "existing",
-                title: t("Use existing CLI"),
+                title: t(codex ? "Use existing CLI" : "Claude account / existing CLI"),
                 state: connection === "existing" ? "on" : "off",
               },
               { id: "byok", title: t("API Key"), state: connection === "byok" ? "on" : "off" },
             ]}
             onPressAction={({ nativeEvent }) => {
               const mode = nativeEvent.event;
-              if (!canMutate || active || !["chatgpt", "existing", "byok"].includes(mode)) return;
+              if (
+                !canMutate ||
+                connectionDisabled ||
+                active ||
+                (mode !== "chatgpt" && mode !== "existing" && mode !== "byok")
+              )
+                return;
               void mutate({
                 environmentId,
                 input: {
                   patch: {},
-                  providerInstanceMutation: {
-                    operation: "upsert",
-                    instanceId: provider.instanceId,
-                    instance: {
-                      ...instance,
-                      config: {
-                        ...config,
+                  providerInstanceMutation: profiles
+                    ? {
+                        operation: "switch-connection",
+                        instanceId: provider.instanceId,
                         connectionMode: mode,
-                        runtimeSource: source,
-                        setupMode: mode === "chatgpt" ? "managed" : "existing",
+                        expectedConnectionMode: connection,
+                      }
+                    : {
+                        operation: "upsert",
+                        instanceId: provider.instanceId,
+                        instance: {
+                          ...instance,
+                          config: {
+                            ...config,
+                            connectionMode: mode,
+                            runtimeSource: source,
+                            setupMode: mode === "chatgpt" ? "managed" : "existing",
+                          },
+                        },
                       },
-                    },
-                  },
                 },
               });
             }}
@@ -104,9 +129,11 @@ export function ClaudeInstallationControls({
                   ? "ChatGPT account"
                   : connection === "byok"
                     ? "API Key"
-                    : "Use existing CLI",
+                    : codex
+                      ? "Use existing CLI"
+                      : "Claude account / existing CLI",
               )}
-              disabled={!canMutate || active}
+              disabled={!canMutate || active || connectionDisabled}
             />
           </Menu>
         </View>

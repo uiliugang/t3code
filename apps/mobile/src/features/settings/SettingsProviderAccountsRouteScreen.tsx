@@ -34,6 +34,7 @@ import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActi
 import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { AddProviderConnection } from "./AddProviderConnection";
 import { AddClaudeAccount, ClaudeAccount } from "./ClaudeAccounts";
 import { CLAUDE_DRIVER } from "./claude-accounts";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
@@ -108,6 +109,8 @@ function EnvironmentProviders({
       : isClaudeByok(
           environment.serverConfig.settings.providerInstances[provider.instanceId]?.config,
         );
+  const unified =
+    environment.serverConfig.environment.capabilities?.providerConnectionProfiles === true;
   const accounts = providers.filter((provider) => canManageProvider(provider) && !isByok(provider));
   // Claude has no in-app sign-in; each account is its own instance on a signed-in config folder.
   const claudeAccounts = providers.filter(
@@ -120,20 +123,32 @@ function EnvironmentProviders({
   );
   return (
     <>
-      {canAddClaude ? <ClaudeByokProviderSettings environment={environment} /> : null}
+      {canAddClaude ? (
+        <ClaudeByokProviderSettings
+          environment={environment}
+          allowCreate={!unified}
+          providers={providers}
+        />
+      ) : null}
       {environment.serverConfig.environment.capabilities?.codexByok &&
       isManagedDriverAllowed(
         environment.serverConfig.managedPolicy,
         ProviderDriverKind.make("codex"),
       ) ? (
-        <ClaudeByokProviderSettings environment={environment} driver="codex" />
+        <ClaudeByokProviderSettings
+          environment={environment}
+          driver="codex"
+          allowCreate={!unified}
+          providers={providers}
+        />
       ) : null}
       {providers
         .filter(
           (provider) =>
-            provider.driver === CLAUDE_DRIVER ||
-            (provider.driver === "codex" &&
-              environment.serverConfig.environment.capabilities?.codexByok),
+            !isByok(provider) &&
+            ((provider.driver === CLAUDE_DRIVER && canManageProvider(provider)) ||
+              (provider.driver === "codex" &&
+                environment.serverConfig.environment.capabilities?.codexByok)),
         )
         .map((provider) => (
           <ClaudeInstallationControls
@@ -169,7 +184,11 @@ function EnvironmentProviders({
       {claudeAccounts.map((provider) => (
         <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider} />
       ))}
-      {canAddClaude ? <AddClaudeAccount environment={environment} /> : null}
+      {unified ? (
+        <AddProviderConnection environment={environment} />
+      ) : canAddClaude ? (
+        <AddClaudeAccount environment={environment} />
+      ) : null}
       <RemoveProvider environment={environment} providers={providers} />
     </>
   );

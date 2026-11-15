@@ -2,6 +2,8 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   type ProviderInstanceConfig,
+  ProviderDriverKind,
+  ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import type { ReactNode } from "react";
@@ -15,11 +17,42 @@ const { mutate, Children } = vi.hoisted(() => ({
   mutate: vi.fn(),
   Children: ({ children }: { children?: ReactNode }) => children,
 }));
-vi.mock("react-native", () => ({ View: Children }));
+vi.mock("react-native", () => ({
+  View: Children,
+  TextInput: ({
+    value,
+    onChangeText,
+    accessibilityLabel,
+  }: {
+    value: string;
+    onChangeText: (value: string) => void;
+    accessibilityLabel: string;
+  }) => (
+    <input
+      aria-label={accessibilityLabel}
+      value={value}
+      onInput={(event) => onChangeText(event.currentTarget.value)}
+      readOnly
+    />
+  ),
+  Switch: () => null,
+}));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
 vi.mock("../../components/ui/ControlPill", () => ({
-  ControlPill: ({ label }: { label: string }) => <span>{label}</span>,
+  ControlPill: ({
+    label,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onPress?: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
 }));
 vi.mock("../../components/ui/Menu", () => ({
   Menu: ({
@@ -53,11 +86,109 @@ vi.mock("../../state/server", () => ({
     cancelProviderInstall: { permissionAtom: () => null },
     removeProviderInstallation: { permissionAtom: () => null },
     providerInstallState: () => null,
+    validateProviderEndpoint: { permissionAtom: () => null },
   },
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => mutate }));
 
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
+import { AddProviderConnection } from "./AddProviderConnection";
+import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
+
+it("keeps API edits until they are reverted before switching the Claude connection", () => {
+  mutate.mockReset().mockResolvedValue({ _tag: "Success" });
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const instanceId = ProviderInstanceId.make("claude_test");
+  const instance: ProviderInstanceConfig = {
+    driver: ProviderDriverKind.make("claudeAgent"),
+    displayName: "Test connection",
+    config: { customModelsOnly: true, customModels: ["model"] },
+    environment: [
+      { name: "ANTHROPIC_BASE_URL", value: "https://saved.test", sensitive: false },
+      { name: "ANTHROPIC_API_KEY", value: "", sensitive: true, valueRedacted: true },
+    ],
+  };
+  const provider = { instanceId, driver: instance.driver } as ServerProvider;
+  const environment = {
+    environmentId: EnvironmentId.make("local"),
+    serverConfig: {
+      environment: { capabilities: { providerConnectionProfiles: true } },
+      settings: { ...DEFAULT_SERVER_SETTINGS, providerInstances: { [instanceId]: instance } },
+    },
+  } as SettingsTarget;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const click = (name: string) =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === name)!
+      .click();
+  try {
+    act(() =>
+      root.render(
+        <ClaudeByokProviderSettings
+          environment={environment}
+          providers={[provider]}
+          allowCreate={false}
+        />,
+      ),
+    );
+    act(() => click("Test connection"));
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="API base URL"]')!;
+    act(() => {
+      input.value = "https://draft.test";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => click("Claude account / existing CLI"));
+    expect(mutate).not.toHaveBeenCalled();
+    expect(input.value).toBe("https://draft.test");
+    act(() => click("Revert"));
+    expect(input.value).toBe("https://saved.test");
+    act(() => click("Claude account / existing CLI"));
+    expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation).toEqual({
+      operation: "switch-connection",
+      instanceId,
+      connectionMode: "existing",
+      expectedConnectionMode: "byok",
+    });
+  } finally {
+    act(() => root.unmount());
+  }
+});
+
+it.each(["codex", "claudeAgent"])(
+  "adds %s without replacing its implicit default",
+  async (driver) => {
+    mutate.mockReset().mockResolvedValue({ _tag: "Success" });
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      const environment = {
+        environmentId: EnvironmentId.make("local"),
+        serverConfig: { settings: DEFAULT_SERVER_SETTINGS },
+      } as SettingsTarget;
+      act(() => root.render(<AddProviderConnection environment={environment} />));
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find(
+            (button) =>
+              button.textContent === (driver === "codex" ? "Add Codex" : "Add Claude Code"),
+          )!
+          .click(),
+      );
+      await act(async () =>
+        [...container.querySelectorAll("button")]
+          .find((button) => button.textContent === "Add")!
+          .click(),
+      );
+      expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation.instanceId).toBe(
+        `${driver}_2`,
+      );
+    } finally {
+      act(() => root.unmount());
+    }
+  },
+);
 
 it.each([
   { name: "implicit default", instance: undefined },
@@ -79,6 +210,7 @@ it.each([
     const environment = {
       environmentId,
       serverConfig: {
+        environment: { capabilities: {} },
         settings: {
           ...DEFAULT_SERVER_SETTINGS,
           providerInstances: instance ? { [instanceId]: instance } : {},

@@ -3,7 +3,7 @@ import { CodexByokFields } from "./CodexByokFields";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
-import { CheckIcon, FlaskConicalIcon, PlugIcon, SaveIcon, Undo2Icon, XIcon } from "lucide-react";
+import { CheckIcon, PlugIcon, SaveIcon, Undo2Icon, XIcon } from "lucide-react";
 import { resolveProviderInstanceEnabled } from "@t3tools/contracts";
 import type {
   EnvironmentId,
@@ -19,7 +19,6 @@ import {
   readClaudeByokAuthMode,
   withClaudeByokVariable,
 } from "@t3tools/shared/claudeByok";
-import { readCustomModelEntries } from "@t3tools/shared/model";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -93,7 +92,7 @@ export function ClaudeByokFields({
         }
       />
       <SettingsRow
-        title={t("BA base URL")}
+        title={t("API base URL")}
         status={
           error ? (
             <span role="alert" className="text-destructive">
@@ -103,7 +102,7 @@ export function ClaudeByokFields({
         }
         control={
           <Input
-            aria-label={t("BA base URL")}
+            aria-label={t("API base URL")}
             size="sm"
             value={url}
             disabled={disabled}
@@ -174,7 +173,11 @@ export function ProviderByokSettings({
   environmentId,
   readOnly,
   secretSources,
+  onDirtyChange,
+  onSaved,
 }: {
+  readonly onDirtyChange?: (dirty: boolean) => void;
+  readonly onSaved?: () => void;
   readonly instance: ProviderInstanceConfig;
   readonly instanceId: ProviderInstanceId;
   readonly environmentId: EnvironmentId;
@@ -192,14 +195,6 @@ export function ProviderByokSettings({
     message: string;
     success: boolean;
   } | null>(null);
-  const models = readCustomModelEntries(
-    typeof instance.config === "object" &&
-      instance.config !== null &&
-      "customModels" in instance.config
-      ? instance.config.customModels
-      : [],
-  );
-  const [testModel, setTestModel] = useState(models[0]?.slug ?? "");
   const fingerprint = JSON.stringify([instance.config, instance.environment]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(instance.environment ?? []);
   const codex = instance.driver === "codex";
@@ -217,18 +212,12 @@ export function ProviderByokSettings({
       check: "connection",
     }),
   );
-  const canCheckModel = useAtomValue(
-    serverEnvironment.validateProviderEndpoint.permissionAtom(environmentId, {
-      instanceId,
-      check: "model",
-    }),
-  );
-  const check = async (kind: "connection" | "model") => {
+  const check = async () => {
     setRunning(true);
     setFeedback(null);
     const result = await runCheck({
       environmentId,
-      input: { instanceId, check: kind, ...(kind === "model" ? { model: testModel } : {}) },
+      input: { instanceId, check: "connection" },
     });
     setRunning(false);
     const failure = result._tag === "Failure" ? squashAtomCommandFailure(result) : null;
@@ -271,6 +260,8 @@ export function ProviderByokSettings({
     setSaving(false);
     if (result._tag === "Success") {
       setDraft(result.value.providerInstances[instanceId]?.environment ?? []);
+      onDirtyChange?.(false);
+      onSaved?.();
     } else {
       const failure = squashAtomCommandFailure(result);
       setSaveError(failure instanceof Error ? failure.message : "Save failed. Try again.");
@@ -282,6 +273,7 @@ export function ProviderByokSettings({
         environment={draft}
         onChange={(next) => {
           setDraft(next);
+          onDirtyChange?.(JSON.stringify(next) !== JSON.stringify(instance.environment ?? []));
           setFeedback(null);
           setSaveError(null);
         }}
@@ -307,6 +299,7 @@ export function ProviderByokSettings({
               disabled={!dirty || readOnly || busy}
               onClick={() => {
                 setDraft(instance.environment ?? []);
+                onDirtyChange?.(false);
                 setFeedback(null);
                 setSaveError(null);
               }}
@@ -332,54 +325,11 @@ export function ProviderByokSettings({
             size="sm"
             variant="outline"
             disabled={unavailable || busy || !canCheckConnection}
-            onClick={() => void check("connection")}
+            onClick={() => void check()}
           >
             <PlugIcon />
             {t("Check connection")}
           </Button>
-        }
-      />
-      <SettingsRow
-        title={t("Model & tools")}
-        control={
-          <div className="flex w-full min-w-0 flex-wrap gap-2">
-            <div className="min-w-0 flex-1">
-              <Select
-                value={models.some((model) => model.slug === testModel) ? testModel : null}
-                disabled={busy || readOnly}
-                onValueChange={(value) => {
-                  setTestModel(value ?? "");
-                  setFeedback(null);
-                }}
-              >
-                <SelectTrigger size="sm" aria-label={t("BYOK test model")}>
-                  <SelectValue placeholder={t("Select model")} />
-                </SelectTrigger>
-                <SelectPopup>
-                  {models.map((model) => (
-                    <SelectItem key={model.slug} value={model.slug}>
-                      {model.name ?? model.slug}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={
-                unavailable ||
-                busy ||
-                !canCheckModel ||
-                !models.some((model) => model.slug === testModel)
-              }
-              title={t("Sends two model requests and uses API credits")}
-              onClick={() => void check("model")}
-            >
-              <FlaskConicalIcon />
-              {t("Test model & tools")}
-            </Button>
-          </div>
         }
       />
       {running ? (

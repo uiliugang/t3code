@@ -336,22 +336,33 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("provider removal
     () =>
       run(
         Effect.gen(function* () {
-          const f = yield* fixture({
-            instances: (directory) => ({
-              [id]: { driver: codex, config: { setupMode: "managed" } },
-              [otherId]: {
-                driver: codex,
-                enabled: false,
-                config: { setupMode: "managed", homePath: directory },
-              },
-            }),
-          });
-          yield* f.service.update({ operation: "delete", instanceId: id });
-          assert.isTrue(yield* f.fs.exists(f.directory));
-          assert.isTrue(yield* f.fs.exists(f.runtime));
-          yield* f.service.update({ operation: "delete", instanceId: otherId });
-          assert.isFalse(yield* f.fs.exists(f.directory));
-          assert.isFalse(yield* f.fs.exists(f.runtime));
+          for (const inactive of [false, true]) {
+            const f = yield* fixture({
+              instances: (directory) => ({
+                [id]: { driver: codex, config: { setupMode: "managed" } },
+                [otherId]: {
+                  driver: codex,
+                  enabled: false,
+                  config: inactive
+                    ? { connectionMode: "byok", setupMode: "existing" }
+                    : { setupMode: "managed", homePath: directory },
+                  ...(inactive
+                    ? {
+                        connectionProfiles: {
+                          chatgpt: { config: { setupMode: "managed", homePath: directory } },
+                        },
+                      }
+                    : {}),
+                },
+              }),
+            });
+            yield* f.service.update({ operation: "delete", instanceId: id });
+            assert.isTrue(yield* f.fs.exists(f.directory));
+            assert.isTrue(yield* f.fs.exists(f.runtime));
+            yield* f.service.update({ operation: "delete", instanceId: otherId });
+            assert.isFalse(yield* f.fs.exists(f.directory));
+            assert.isFalse(yield* f.fs.exists(f.runtime));
+          }
         }),
       ),
   );

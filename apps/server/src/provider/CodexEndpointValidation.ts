@@ -38,6 +38,7 @@ export const validateCodexEndpoint = Effect.fn("CodexEndpointValidation.validate
   input: ProviderEndpointValidateInput,
   config: CodexSettings,
   environment: NodeJS.ProcessEnv,
+  availableModels: ReadonlyArray<string> = [],
 ) {
   const fail = (detail: string) =>
     new ProviderSetupError({
@@ -86,7 +87,8 @@ export const validateCodexEndpoint = Effect.fn("CodexEndpointValidation.validate
     const model = input.model;
     if (
       !model ||
-      !readCustomModelEntries(config.customModels).some((entry) => entry.slug === model)
+      (!availableModels.includes(model) &&
+        !readCustomModelEntries(config.customModels).some((entry) => entry.slug === model))
     )
       return yield* fail("Select a configured model.");
     const raw = yield* request("/responses", {

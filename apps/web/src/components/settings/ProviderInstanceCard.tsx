@@ -1,8 +1,5 @@
-import {
-  codexConnectionMode,
-  CODEX_BYOK_LABEL,
-  CODEX_BYOK_ENVIRONMENT_NAMES,
-} from "@t3tools/shared/codexByok";
+import { ProviderModelChecks } from "./ProviderModelChecks";
+import { codexConnectionMode, CODEX_BYOK_ENVIRONMENT_NAMES } from "@t3tools/shared/codexByok";
 import { CodexConnectionSettings } from "./CodexConnectionSettings";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { Spinner } from "~/components/ui/spinner";
@@ -949,6 +946,20 @@ export function ProviderInstanceCard({
         : (rest as ProviderInstanceConfig),
     );
   };
+  const connectionFingerprint = JSON.stringify([
+    instance.driver,
+    instance.driver === "codex"
+      ? codexConnectionMode(instance.config)
+      : isClaudeByok(instance.config),
+    instance.environment,
+  ]);
+  const [connectionDraft, setConnectionDraft] = useState({
+    fingerprint: connectionFingerprint,
+    dirty: false,
+  });
+  const connectionDirty =
+    connectionDraft.fingerprint === connectionFingerprint && connectionDraft.dirty;
+  const [checkRevision, setCheckRevision] = useState(0);
   const isByok =
     instance.driver === "claudeAgent"
       ? isClaudeByok(instance.config)
@@ -1321,6 +1332,27 @@ export function ProviderInstanceCard({
     </>
   );
 
+  const modelsSection = (
+    <ProviderModelsSection
+      canManageCustomModels={!readOnly}
+      canWritePreferences={canWriteSettings}
+      instanceId={instanceId}
+      driverKind={driverKind}
+      models={modelsForDisplay}
+      customModels={customModels}
+      hiddenModels={hiddenModels}
+      favoriteModels={favoriteModels}
+      modelOrder={modelOrder}
+      onChange={updateCustomModels}
+      onHiddenModelsChange={onHiddenModelsChange}
+      onFavoriteModelsChange={onFavoriteModelsChange}
+      onToggleFavorite={onToggleFavorite}
+      onModelOrderChange={onModelOrderChange}
+      onSyncModels={onSyncModels}
+      isSyncingModels={isSyncingModels}
+    />
+  );
+
   const runtimeFields = driverOption ? (
     <ProviderSettingsForm
       definition={driverOption}
@@ -1380,19 +1412,30 @@ export function ProviderInstanceCard({
         />
       </SettingsSection>
 
-      {instance.driver === "codex" && environmentId ? (
+      {(instance.driver === "codex" || instance.driver === "claudeAgent") && environmentId ? (
         <CodexConnectionSettings
+          codex={instance.driver === "codex"}
           environmentId={environmentId}
           instanceId={instanceId}
           config={instance.config}
-          disabled={readOnly || !!instanceLocks?.configKeys.size}
+          disabled={
+            readOnly ||
+            connectionDirty ||
+            !!instanceLocks?.configKeys.size ||
+            !!instanceLocks?.wholeEnvironment ||
+            !!instanceLocks?.environmentNames.size
+          }
           onChange={updateConfig}
         />
       ) : null}
       {isByok && environmentId ? (
-        <SettingsSection title={instance.driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL}>
+        <SettingsSection title={t("API connection")}>
           <ProviderByokSettings
-            key={JSON.stringify(instance.environment)}
+            onDirtyChange={(dirty) =>
+              setConnectionDraft({ fingerprint: connectionFingerprint, dirty })
+            }
+            onSaved={() => setCheckRevision((value) => value + 1)}
+            key={connectionFingerprint}
             instance={instance}
             instanceId={instanceId}
             environmentId={environmentId}
@@ -1516,29 +1559,24 @@ export function ProviderInstanceCard({
                 "Model preferences and custom models are saved on the selected environment and shared across connected devices.",
               )}
             </p>
-            <ProviderModelsSection
-              canManageCustomModels={!readOnly}
-              canWritePreferences={canWriteSettings}
-              instanceId={instanceId}
-              driverKind={driverKind}
-              models={modelsForDisplay}
-              customModels={customModels}
-              hiddenModels={hiddenModels}
-              favoriteModels={favoriteModels}
-              modelOrder={modelOrder}
-              onChange={updateCustomModels}
-              onHiddenModelsChange={onHiddenModelsChange}
-              onFavoriteModelsChange={onFavoriteModelsChange}
-              onToggleFavorite={onToggleFavorite}
-              onModelOrderChange={onModelOrderChange}
-              onSyncModels={onSyncModels}
-              isSyncingModels={isSyncingModels}
-            />
+            {isByok && environmentId ? (
+              <ProviderModelChecks
+                key={`${environmentId}:${instanceId}`}
+                fingerprint={JSON.stringify([instance.config, instance.environment, checkRevision])}
+                environmentId={environmentId}
+                instanceId={instanceId}
+                disabled={readOnly || connectionDirty || !enabled}
+              >
+                {modelsSection}
+              </ProviderModelChecks>
+            ) : (
+              modelsSection
+            )}
           </div>
         </SettingsSection>
       ) : null}
     </>
   );
 }
-import { CLAUDE_BYOK_LABEL, isClaudeByok } from "@t3tools/shared/claudeByok";
+import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import { ProviderByokSettings, CLAUDE_BYOK_ENVIRONMENT_NAMES } from "./ClaudeByokSettings";

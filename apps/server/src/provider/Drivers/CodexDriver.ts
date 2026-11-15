@@ -564,7 +564,15 @@ export const CodexDriver: ProviderDriver<
       ...(byok
         ? {
             validateEndpoint: (input: import("@t3tools/contracts").ProviderEndpointValidateInput) =>
-              validateCodexEndpoint(input, config, processEnv).pipe(
+              snapshot.getSnapshot.pipe(
+                Effect.flatMap((provider) =>
+                  validateCodexEndpoint(
+                    input,
+                    config,
+                    processEnv,
+                    provider.models.map((model) => model.slug),
+                  ),
+                ),
                 Effect.provideService(HttpClient.HttpClient, httpClient),
               ),
           }
