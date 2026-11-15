@@ -311,6 +311,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const settings = yield* ServerSettings.ServerSettingsService;
   const digest = yield* Digest.Digest;
   const lifecycleLock = yield* Semaphore.make(1);
+  const openingDevices = new Set<{ readonly hostId: DeviceHostId }>();
   const readDeviceSettings = settings.getSettings.pipe(
     Effect.map((value) => ({
       enabled: value.enableDeviceSupport,
@@ -900,6 +901,18 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       );
       return session;
     },
+    (effect, input) =>
+      Effect.acquireUseRelease(
+        lifecycleLock.withPermit(
+          Effect.sync(() => {
+            const opening = { hostId: input.hostId ?? LOCAL_DEVICE_HOST_ID };
+            openingDevices.add(opening);
+            return opening;
+          }),
+        ),
+        () => effect,
+        (opening) => Effect.sync(() => void openingDevices.delete(opening)),
+      ),
   );
 
   const refreshAfterShutdown = (ready: DeviceReadiness) =>
@@ -935,6 +948,12 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     const closing = yield* lifecycleLock.withPermit(
       Effect.gen(function* () {
         const { state } = yield* SynchronizedRef.get(stateRef);
+        // Android changes ids while booting; keep claims retryable until host opens finish.
+        if (
+          expectedSession &&
+          [...openingDevices].some(({ hostId }) => hostId === expectedSession.hostId)
+        )
+          return [];
         const closing = state.sessions.filter(
           (session) =>
             session.threadId === input.threadId &&
@@ -962,18 +981,48 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           yield* host.releaseAgentSession(name, session.deviceId);
           released.push(session);
         }
+        if (shouldClose && !(yield* shouldClose)) return [];
         if (input.shutdown) yield* releaseLaunchers(ending);
-        if (input.shutdown) {
-          for (const session of closing) {
-            const ready = yield* currentReadiness(session.hostId);
-            if (!ready)
-              return yield* new DeviceHostUnavailableError({
-                hostId: session.hostId,
-                reason: "Device host is not running. Reconnect before retrying close.",
+        const shutdownTargets = input.shutdown
+          ? closing
+          : expectedSession
+            ? released.filter(
+                (session) =>
+                  !state.sessions.some(
+                    (peer) =>
+                      !released.includes(peer) &&
+                      peer.hostId === session.hostId &&
+                      peer.deviceId === session.deviceId,
+                  ),
+              )
+            : [];
+        for (const session of shutdownTargets) {
+          const ready = yield* currentReadiness(session.hostId);
+          if (!ready)
+            return yield* new DeviceHostUnavailableError({
+              hostId: session.hostId,
+              reason: "Device host is not running. Reconnect before retrying close.",
+            });
+          if (expectedSession) {
+            const listing = yield* fetchDevices(ready);
+            if (
+              listing.incompletePlatforms.includes(session.platform) ||
+              (session.platform === "android" && listing.androidDiscoveryIncomplete)
+            )
+              return yield* new DeviceOperationError({
+                operation: "shutdown",
+                reason: "request_failed",
+                cause: new Error("Device discovery is incomplete."),
               });
-            yield* shutdownDevice(ready, session.deviceId, session.platform);
+            const device = listing.devices.find((device) => device.id === session.deviceId);
+            if (!device?.booted || device.physical) continue;
+            if (shouldClose && !(yield* shouldClose)) return [];
+            yield* releaseLaunchers([session]);
           }
+          if (shouldClose && !(yield* shouldClose)) return [];
+          yield* shutdownDevice(ready, session.deviceId, session.platform);
         }
+        if (shouldClose && !(yield* shouldClose)) return [];
         yield* publish((current) => ({
           ...current,
           sessions: current.sessions.filter((session) => !released.includes(session)),

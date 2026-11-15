@@ -45,7 +45,10 @@ The screen is interactive: click and drag to touch, type while the screen is
 focused, and use the toolbar for Home, Back, and Recents on Android, rotate on
 iOS, and power off. Close the tab to stop watching; the device keeps running
 unless you power it off. Closed tabs stay closed after a reload. To watch the
-device again, choose it from **+ → Device**.
+device again, choose it from **+ → Device**. Ending a thread also shuts down its
+simulators and emulators when no other thread in the same environment has them
+open. Physical devices stay powered on. If a device is opening or shutdown fails,
+automatic cleanup retries later.
 
 Choose **3D view** to inspect supported devices while the live screen stays
 interactive. On iPhone Duo, use the fold and stance controls to change its

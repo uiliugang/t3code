@@ -119,7 +119,7 @@ const fixture = Effect.fn("fixture")(function* (
     readonly endsDevices?: boolean;
     readonly routesStreams?: boolean;
     readonly onClose?: Effect.Effect<"ok" | "missing" | "reject" | "http_error" | "malformed">;
-    readonly onPlatformAvailability?: Effect.Effect<void>;
+    readonly onEncoderCheck?: Effect.Effect<void>;
   } = {},
 ) {
   const settings = yield* Ref.make(DEFAULT_SERVER_SETTINGS);
@@ -231,7 +231,7 @@ const fixture = Effect.fn("fixture")(function* (
   const run = (command: string) =>
     command === "emulator"
       ? Effect.succeed({ code: 0, stdout: "Pixel_API_35\n", stderr: "" })
-      : Ref.get(encoderResult);
+      : (options.onEncoderCheck ?? Effect.void).pipe(Effect.andThen(Ref.get(encoderResult)));
   const ready: DeviceHost.DeviceHostReady = {
     nodePath: process.execPath,
     hub: { origin: "http://device.test" },
@@ -275,10 +275,7 @@ const fixture = Effect.fn("fixture")(function* (
       hubInstalled: true,
       agentDeviceInstalled: false,
     })),
-    platformAvailability: (platform) =>
-      (options.onPlatformAvailability ?? Effect.void).pipe(
-        Effect.as({ platform, available: true }),
-      ),
+    platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
     ensureReady: (onPhase) =>
       Effect.gen(function* () {
         if (runtimeFailure && runtimeFailure._tag !== "AgentDeviceStartError")
@@ -1931,8 +1928,10 @@ describe("agent session release on close", () => {
       yield* restarted.service.closeRetired(recorded[0]!, Effect.succeed(false));
       expect(restarted.closedSessions).toHaveLength(0);
       expect((yield* restarted.service.state).sessions).toEqual(recorded);
-      yield* restarted.service.close({ threadId });
+      yield* restarted.service.closeRetired(recorded[0]!, Effect.succeed(true));
       expect(restarted.closedSessions).toHaveLength(1);
+      expect(restarted.starts).toEqual([]);
+      expect(restarted.agentStarts).toEqual([]);
       expect(yield* Ref.get(persisted)).toEqual([]);
       expect((yield* restarted.service.state).sessions).toEqual([]);
     }),
@@ -1944,32 +1943,45 @@ describe("agent session release on close", () => {
     deviceId = "Pixel_API_35",
   ) => service.open({ threadId, deviceId, platform: "android" });
 
-  it.effect("releases only the caller's session, keeps the device booted, and is idempotent", () =>
-    Effect.gen(function* () {
-      const { service, closedSessions, requests } = yield* fixture();
-      yield* service.configure({ enabled: true, agentAccessEnabled: true });
-      const threadId = ThreadId.make("closing");
-      const other = ThreadId.make("other");
-      const session = yield* openClaim(service, threadId);
-      yield* openClaim(service, other, session.deviceId);
-      yield* service.close({ threadId, deviceId: session.deviceId });
-      yield* service.close({ threadId, deviceId: session.deviceId });
-      const name = yield* agentDeviceSession(threadId, session.hostId, session.deviceId).pipe(
-        Effect.provide(NodeCrypto.layer),
-      );
-      expect(closedSessions).toEqual([
-        {
-          jsonrpc: "2.0",
-          id: name,
-          method: "agent_device.command",
-          params: { command: "close", session: name, positionals: [], flags: {} },
-        },
-      ]);
-      const state = yield* service.state;
-      expect(state.sessions.map((entry) => entry.threadId)).toEqual([other]);
-      expect(state.devices.find((entry) => entry.id === session.deviceId)?.booted).toBe(true);
-      expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
-    }),
+  it.effect.each(["close", "retired"] as const)(
+    "%s releases only the caller's session while another thread uses the device",
+    (operation) =>
+      Effect.gen(function* () {
+        const { service, closedSessions, requests } = yield* fixture();
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        const threadId = ThreadId.make("closing");
+        const other = ThreadId.make("other");
+        const session = yield* openClaim(service, threadId);
+        const otherSession = yield* openClaim(service, other, session.deviceId);
+        const close =
+          operation === "retired"
+            ? service.closeRetired(session, Effect.succeed(true))
+            : service.close({ threadId, deviceId: session.deviceId });
+        yield* close;
+        yield* close;
+        const name = yield* agentDeviceSession(threadId, session.hostId, session.deviceId).pipe(
+          Effect.provide(NodeCrypto.layer),
+        );
+        expect(closedSessions).toEqual([
+          {
+            jsonrpc: "2.0",
+            id: name,
+            method: "agent_device.command",
+            params: { command: "close", session: name, positionals: [], flags: {} },
+          },
+        ]);
+        const state = yield* service.state;
+        expect(state.sessions.map((entry) => entry.threadId)).toEqual([other]);
+        expect(state.devices.find((entry) => entry.id === session.deviceId)?.booted).toBe(true);
+        expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
+        if (operation === "retired") {
+          yield* service.closeRetired(otherSession, Effect.succeed(true));
+          yield* service.closeRetired(otherSession, Effect.succeed(true));
+          expect((yield* service.state).sessions).toEqual([]);
+          expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(1);
+          expect((yield* service.state).devices.some((device) => device.booted)).toBe(false);
+        }
+      }),
   );
 
   it.effect.each(["reject", "http_error", "malformed"] as const)(
@@ -2020,10 +2032,129 @@ describe("agent session release on close", () => {
     }),
   );
 
-  it.effect("retries shutdown after the first attempt already released the agent session", () =>
+  it.effect.each(["shutdown", "retired"] as const)(
+    "%s retries shutdown after the first attempt already released the agent session",
+    (operation) =>
+      Effect.gen(function* () {
+        let released = false;
+        const { service, connection } = yield* fixture(
+          Effect.void,
+          undefined,
+          false,
+          undefined,
+          false,
+          undefined,
+          {
+            onClose: Effect.sync(() => {
+              const result = released ? "missing" : "ok";
+              released = true;
+              return result;
+            }),
+          },
+        );
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        const threadId = ThreadId.make("retry-shutdown");
+        const session = yield* openClaim(service, threadId);
+        const close =
+          operation === "retired"
+            ? service.closeRetired(session, Effect.succeed(true))
+            : service.close({ threadId, shutdown: true });
+        connection.failShutdown = true;
+        expect(Exit.isFailure(yield* Effect.exit(close))).toBe(true);
+        expect((yield* service.state).sessions).toHaveLength(1);
+        connection.failShutdown = false;
+        yield* close;
+        expect((yield* service.state).sessions).toHaveLength(0);
+      }),
+  );
+
+  it.effect.each(["ios", "android"] as const)(
+    "retiring a %s device powers off only a running virtual device",
+    (platform) =>
+      Effect.gen(function* () {
+        const { service, devices, requests } = yield* fixture();
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        for (const [physical, booted] of [
+          [true, true],
+          [false, false],
+          [false, true],
+        ] as const) {
+          const deviceId = `device-${physical}-${booted}`;
+          devices.push({
+            id: deviceId,
+            name: deviceId,
+            version: "test",
+            platform,
+            physical,
+            booted,
+          });
+          const session = yield* service.open({
+            threadId: ThreadId.make(deviceId),
+            deviceId,
+            platform,
+            boot: false,
+          });
+          yield* service.closeRetired(session, Effect.succeed(true));
+          expect((yield* service.state).sessions).toEqual([]);
+          expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(
+            !physical && booted ? 1 : 0,
+          );
+        }
+      }),
+  );
+
+  it.effect.each([false, true])(
+    "defers retirement while another thread is opening the device, cancelled=%s",
+    (cancelled) =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const finish = yield* Deferred.make<void>();
+        let opening = false;
+        const { service, requests } = yield* fixture(
+          Effect.void,
+          undefined,
+          false,
+          undefined,
+          false,
+          undefined,
+          {
+            onEncoderCheck: Effect.gen(function* () {
+              if (!opening) return;
+              yield* Deferred.succeed(entered, undefined);
+              yield* Deferred.await(finish);
+            }),
+          },
+        );
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        const session = yield* openClaim(service, ThreadId.make("retiring"));
+        opening = true;
+        const other = yield* openClaim(service, ThreadId.make("opening"), session.deviceId).pipe(
+          Effect.forkChild,
+        );
+        yield* Deferred.await(entered);
+        yield* service.closeRetired(session, Effect.succeed(true));
+        expect((yield* service.state).sessions).toEqual([session]);
+        expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
+        if (cancelled) {
+          yield* Fiber.interrupt(other);
+          yield* service.closeRetired(session, Effect.succeed(true));
+        } else {
+          yield* Deferred.succeed(finish, undefined);
+          const otherSession = yield* Fiber.join(other);
+          yield* service.closeRetired(session, Effect.succeed(true));
+          expect((yield* service.state).sessions).toEqual([otherSession]);
+          expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
+          yield* service.closeRetired(otherSession, Effect.succeed(true));
+        }
+        expect((yield* service.state).sessions).toEqual([]);
+        expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(1);
+      }),
+  );
+
+  it.effect("does not shut down a device when its thread resumes during agent release", () =>
     Effect.gen(function* () {
-      let released = false;
-      const { service, connection } = yield* fixture(
+      const retired = yield* Ref.make(true);
+      const { service, requests } = yield* fixture(
         Effect.void,
         undefined,
         false,
@@ -2031,24 +2162,50 @@ describe("agent session release on close", () => {
         false,
         undefined,
         {
-          onClose: Effect.sync(() => {
-            const result = released ? "missing" : "ok";
-            released = true;
-            return result;
-          }),
+          onClose: Ref.set(retired, false).pipe(Effect.as("ok" as const)),
         },
       );
       yield* service.configure({ enabled: true, agentAccessEnabled: true });
-      const threadId = ThreadId.make("retry-shutdown");
-      yield* openClaim(service, threadId);
-      connection.failShutdown = true;
-      expect(Exit.isFailure(yield* Effect.exit(service.close({ threadId, shutdown: true })))).toBe(
-        true,
-      );
-      expect((yield* service.state).sessions).toHaveLength(1);
-      connection.failShutdown = false;
-      yield* service.close({ threadId, shutdown: true });
-      expect((yield* service.state).sessions).toHaveLength(0);
+      const session = yield* openClaim(service, ThreadId.make("resumed"));
+      yield* service.closeRetired(session, Ref.get(retired));
+      expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
+      expect((yield* service.state).sessions).toEqual([session]);
+    }),
+  );
+
+  it.effect("retains retirement records when discovery is incomplete or the hub is offline", () =>
+    Effect.gen(function* () {
+      const { service, connection, discoveryErrors, requests, devices } = yield* fixture();
+      const simulator = {
+        id: "iphone",
+        name: "iPhone",
+        version: "iOS 26",
+        platform: "ios",
+        booted: true,
+        physical: false,
+      } as const;
+      devices.push(simulator);
+      yield* service.configure({ enabled: true, agentAccessEnabled: true });
+      const session = yield* service.open({
+        threadId: ThreadId.make("discovery-retry"),
+        deviceId: simulator.id,
+        platform: simulator.platform,
+      });
+      const retire = service.closeRetired(session, Effect.succeed(true));
+      connection.online = false;
+      expect(Exit.isFailure(yield* Effect.exit(retire))).toBe(true);
+      expect((yield* service.state).sessions).toEqual([session]);
+      connection.online = true;
+      devices.length = 0;
+      yield* Ref.set(discoveryErrors, [{ message: simctlMessage }]);
+      expect(Exit.isFailure(yield* Effect.exit(retire))).toBe(true);
+      expect((yield* service.state).sessions).toEqual([session]);
+      expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
+      yield* Ref.set(discoveryErrors, []);
+      devices.push(simulator);
+      yield* retire;
+      expect((yield* service.state).sessions).toEqual([]);
+      expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(1);
     }),
   );
 
@@ -2077,24 +2234,30 @@ describe("agent session release on close", () => {
     }),
   );
 
-  it.effect("retains an SSH record during reconnect and releases it on retry", () =>
-    Effect.gen(function* () {
-      const { service, connection, closedSessions, agentStarts } = yield* fixture();
-      connection.kind = "ssh";
-      yield* service.configure({ enabled: true, agentAccessEnabled: true });
-      const threadId = ThreadId.make("ssh-reconnect");
-      yield* openClaim(service, threadId);
-      const starts = agentStarts.length;
-      connection.online = false;
-      expect(Exit.isFailure(yield* Effect.exit(service.close({ threadId })))).toBe(true);
-      expect((yield* service.state).sessions).toHaveLength(1);
-      expect(closedSessions).toHaveLength(0);
-      expect(agentStarts).toHaveLength(starts);
-      connection.online = true;
-      yield* service.close({ threadId });
-      expect((yield* service.state).sessions).toHaveLength(0);
-      expect(closedSessions).toHaveLength(1);
-    }),
+  it.effect.each(["close", "retired"] as const)(
+    "%s retains an SSH record during reconnect and releases it on retry",
+    (operation) =>
+      Effect.gen(function* () {
+        const { service, connection, closedSessions, agentStarts } = yield* fixture();
+        connection.kind = "ssh";
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        const threadId = ThreadId.make("ssh-reconnect");
+        const session = yield* openClaim(service, threadId);
+        const close =
+          operation === "retired"
+            ? service.closeRetired(session, Effect.succeed(true))
+            : service.close({ threadId });
+        const starts = agentStarts.length;
+        connection.online = false;
+        expect(Exit.isFailure(yield* Effect.exit(close))).toBe(true);
+        expect((yield* service.state).sessions).toHaveLength(1);
+        expect(closedSessions).toHaveLength(0);
+        expect(agentStarts).toHaveLength(starts);
+        connection.online = true;
+        yield* close;
+        expect((yield* service.state).sessions).toHaveLength(0);
+        expect(closedSessions).toHaveLength(1);
+      }),
   );
   it.effect("releases peer claims before a close shuts down", () =>
     Effect.gen(function* () {
@@ -2117,53 +2280,65 @@ describe("agent session release on close", () => {
     }),
   );
 
-  it.effect("publishes a reopened session only after the old claim is released and removed", () =>
-    Effect.gen(function* () {
-      const entered = yield* Queue.unbounded<void>();
-      const releasing = yield* Deferred.make<void>();
-      const finish = yield* Deferred.make<void>();
-      const { service } = yield* fixture(
-        Effect.void,
-        undefined,
-        false,
-        undefined,
-        false,
-        undefined,
-        {
-          onClose: Effect.gen(function* () {
-            yield* Deferred.succeed(releasing, undefined);
-            yield* Deferred.await(finish);
-            return "ok" as const;
-          }),
-          onPlatformAvailability: Queue.offer(entered, undefined),
-        },
-      );
-      yield* service.configure({ enabled: true, agentAccessEnabled: true });
-      const threadId = ThreadId.make("reopen");
-      const session = yield* openClaim(service, threadId);
-      yield* Queue.take(entered);
-      const publications = yield* service.subscribe;
-      const closing = yield* service.close({ threadId }).pipe(Effect.forkChild);
-      yield* Deferred.await(releasing);
-      const opening = yield* openClaim(service, threadId, session.deviceId).pipe(Effect.forkChild);
-      yield* Queue.take(entered);
-      const retired = yield* Ref.make(true);
-      const staleCleanup = yield* service
-        .closeRetired(session, Ref.get(retired))
-        .pipe(Effect.forkChild({ startImmediately: true }));
-      yield* Ref.set(retired, false);
-      yield* Deferred.succeed(finish, undefined);
-      yield* Fiber.join(closing);
-      const reopened = yield* Fiber.join(opening);
-      yield* Fiber.join(staleCleanup);
-      expect((yield* service.state).sessions).toEqual([reopened]);
-      const published = (yield* PubSub.takeAll(publications))
-        .map(({ sessions }) =>
-          sessions.includes(session) ? "old" : sessions.includes(reopened) ? "reopened" : "none",
-        )
-        .filter((label, index, labels) => label !== labels[index - 1]);
-      expect(published).toEqual(["none", "reopened"]);
-    }),
+  it.effect.each(["close", "retired"] as const)(
+    "%s publishes a reopened session only after the old claim is released and removed",
+    (operation) =>
+      Effect.gen(function* () {
+        const releasing = yield* Deferred.make<void>();
+        const finish = yield* Deferred.make<void>();
+        const { service, requests } = yield* fixture(
+          Effect.void,
+          undefined,
+          false,
+          undefined,
+          false,
+          undefined,
+          {
+            onClose: Effect.gen(function* () {
+              yield* Deferred.succeed(releasing, undefined);
+              yield* Deferred.await(finish);
+              return "ok" as const;
+            }),
+          },
+        );
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        const threadId = ThreadId.make("reopen");
+        const session = yield* openClaim(service, threadId);
+        const publications = yield* service.subscribe;
+        const closing = yield* (
+          operation === "retired"
+            ? service.closeRetired(session, Effect.succeed(true))
+            : service.close({ threadId })
+        ).pipe(Effect.forkChild);
+        yield* Deferred.await(releasing);
+        const opening = yield* openClaim(
+          service,
+          threadId,
+          operation === "retired" ? "Pixel_API_35" : session.deviceId,
+        ).pipe(Effect.forkChild({ startImmediately: true }));
+        const retired = yield* Ref.make(true);
+        const staleCleanup = yield* service
+          .closeRetired(session, Ref.get(retired))
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Ref.set(retired, false);
+        yield* Deferred.succeed(finish, undefined);
+        yield* Fiber.join(closing);
+        const reopened = yield* Fiber.join(opening);
+        yield* Fiber.join(staleCleanup);
+        expect((yield* service.state).sessions).toEqual([reopened]);
+        const published = (yield* PubSub.takeAll(publications))
+          .map(({ sessions }) =>
+            sessions.includes(session) ? "old" : sessions.includes(reopened) ? "reopened" : "none",
+          )
+          .filter((label, index, labels) => label !== labels[index - 1]);
+        expect(published).toEqual(
+          operation === "retired" ? ["old", "none", "reopened"] : ["none", "reopened"],
+        );
+        expect((yield* service.state).devices.some((device) => device.booted)).toBe(true);
+        expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(
+          operation === "retired" ? 1 : 0,
+        );
+      }),
   );
 });
 
