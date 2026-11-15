@@ -100,12 +100,10 @@ export const makeSkillCopy = Effect.gen(function* () {
     (effect, _pkg, workKey) =>
       effect.pipe(Effect.onError(() => discard(workKey).pipe(Effect.ignore))),
   );
-  const apply = Effect.fn("SkillCopy.apply")(function* (input: {
-    directory: string;
-    name: string;
-    workKey: string;
-    digest: string;
-  }) {
+  const apply = Effect.fn("SkillCopy.apply")(function* <E>(
+    input: { directory: string; name: string; workKey: string; digest: string },
+    commit: Effect.Effect<void, E>,
+  ) {
     const directory = yield* destination(input.directory);
     const source = path.join(root, input.workKey);
     const pkg = yield* packages.inspect(source);
@@ -136,6 +134,15 @@ export const makeSkillCopy = Effect.gen(function* () {
               existing._tag === "Some" ? fs.rename(backup, target) : Effect.void,
             ),
           );
+        yield* commit.pipe(
+          Effect.tapError(() =>
+            fs
+              .remove(target, { recursive: true, force: true })
+              .pipe(
+                Effect.andThen(existing._tag === "Some" ? fs.rename(backup, target) : Effect.void),
+              ),
+          ),
+        );
       }),
     );
     yield* fs.remove(backup, { recursive: true, force: true }).pipe(Effect.ignore);

@@ -3,6 +3,8 @@ import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
@@ -94,6 +96,9 @@ describe("SkillManager", () => {
         yield* install;
         const skill = (yield* manager.snapshot).skills[0]!;
         const pkg = yield* manager.exportSkill({ id: skill.id });
+        expect(pkg).toMatchObject({
+          origin: { source: { id: "local", kind: "local" }, locator: source, skill: "" },
+        });
         expect(pkg.files.find((file) => file.path === "script.sh")?.mode).toBe(0o744);
         expect(
           (yield* manager.previewCopy({ directory: destination, names: [pkg.name] })).entries[0]
@@ -150,9 +155,14 @@ describe("SkillManager", () => {
                 )
               : fs.rename(from, to),
         });
-        yield* failing.copy({ directory: destination, package: pkg });
+        const beforeFailure = yield* failing.snapshot;
+        yield* failing.copy({
+          directory: destination,
+          package: { ...pkg, origin: { ...pkg.origin!, locator: "failed-copy-source" } },
+        });
         yield* failing.drain;
         expect((yield* failing.snapshot).jobs?.at(-1)?.status).toBe("failed");
+        expect((yield* failing.snapshot).copiedOrigins).toEqual(beforeFailure.copiedOrigins);
         expect(yield* fs.readFileString(`${destination}/review/restore.txt`)).toBe(
           "restore on failure",
         );
@@ -160,7 +170,7 @@ describe("SkillManager", () => {
   );
   it.effect("persists managed location detachment before replacing its link", () =>
     Effect.gen(function* () {
-      const { fs, manager, install, sql, restart } = yield* harness;
+      const { fs, source, manager, install, sql, restart } = yield* harness;
       const destination = yield* fs.makeTempDirectoryScoped({ prefix: "t3-copy-managed-" });
       yield* install;
       const skill = (yield* manager.snapshot).skills[0]!;
@@ -188,6 +198,205 @@ describe("SkillManager", () => {
       const recovered = yield* restart;
       expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
       expect((yield* fs.lstat(`${destination}/review`)).type).toBe("Directory");
+      yield* fs.writeFileString(`${source}/script.sh`, "second");
+      const replacement = yield* recovered.exportSkill({ path: source });
+      yield* sql`CREATE TRIGGER reject_copy_origin BEFORE UPDATE ON skill_catalog WHEN json_extract(NEW.payload, '$.copiedOrigins[0].origin.locator') = 'replacement-upstream' BEGIN SELECT RAISE(ABORT, 'fixture'); END`;
+      yield* recovered.copy({
+        directory: destination,
+        package: { ...replacement, origin: { ...pkg.origin!, locator: "replacement-upstream" } },
+      });
+      yield* recovered.drain;
+      expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("failed");
+      expect(yield* fs.readFileString(`${destination}/review/script.sh`)).toBe("first");
+      expect((yield* recovered.exportSkill({ path: `${destination}/review` })).origin).toEqual(
+        pkg.origin,
+      );
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+  it.effect(
+    "retains copied update sources through restart, re-export and adoption without replacing destination sources",
+    () =>
+      Effect.gen(function* () {
+        const { manager, source, install, restart } = yield* harness;
+        const destination = yield* harness;
+        yield* install;
+        const installed = (yield* manager.snapshot).skills[0]!;
+        const pkg = yield* manager.exportSkill({ id: installed.id });
+        const origin = {
+          source: {
+            id: "community",
+            label: "Team registry",
+            kind: "skills" as const,
+            enabled: true,
+            registry: "https://registry.example.test",
+          },
+          locator: "https://github.com/example/team-skills",
+          skill: "review",
+        };
+        yield* destination.manager.copy({
+          directory: destination.target,
+          package: { ...pkg, origin },
+        });
+        yield* destination.manager.drain;
+        const recovered = yield* destination.restart;
+        const snapshot = yield* recovered.snapshot;
+        const copied = snapshot.discovered.find((entry) => entry.name === pkg.name)!;
+        expect(copied.origin).toMatchObject({ locator: origin.locator, skill: origin.skill });
+        expect(copied.origin?.sourceId).not.toBe("community");
+        const imported = snapshot.sources.find((entry) => entry.id === copied.origin?.sourceId)!;
+        expect(imported).toMatchObject({
+          ...origin.source,
+          id: copied.origin!.sourceId,
+          executable: "",
+        });
+        expect(snapshot.sources.find((entry) => entry.id === "community")?.registry).toBe(
+          "https://registry.npmjs.org",
+        );
+        yield* recovered.copy({ directory: destination.target, package: { ...pkg, origin } });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).sources).toHaveLength(snapshot.sources.length);
+        const exported = yield* recovered.exportSkill({ path: copied.path });
+        expect(exported.origin).toEqual({
+          ...origin,
+          source: { ...origin.source, id: imported.id },
+        });
+        yield* recovered.mutate({ type: "source.remove", sourceId: imported.id });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).jobs?.at(-1)?.reason).toBe("conflict");
+        yield* destination.fs.remove(`${destination.target}/${pkg.name}`, { recursive: true });
+        yield* recovered.mutate({ type: "refresh" });
+        yield* recovered.mutate({ type: "source.remove", sourceId: imported.id });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("completed");
+        expect((yield* recovered.snapshot).copiedOrigins).toEqual([]);
+        yield* recovered.copy({ directory: destination.target, package: exported });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).sources).toHaveLength(snapshot.sources.length);
+        const preview = yield* recovered.inspect({ type: "adopt", path: copied.path });
+        expect(preview.origin).toEqual(copied.origin);
+        yield* recovered.mutate({
+          type: "adopt",
+          mode: "takeover",
+          path: copied.path,
+          digest: preview.digest,
+          targetIds: ["fixture"],
+          policy: "notify",
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]).toMatchObject({
+          sourceId: imported.id,
+          locator: origin.locator,
+          requestedSkill: "review",
+          snapshotOnly: false,
+          status: "ready",
+        });
+        const { origin: _origin, ...legacy } = pkg;
+        yield* recovered.copy({ directory: destination.target, package: legacy });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).copiedOrigins).toEqual([]);
+        expect((yield* recovered.exportSkill({ path: copied.path })).origin).toBeUndefined();
+        expect((yield* manager.exportSkill({ path: source })).origin).toBeUndefined();
+        expect((yield* (yield* restart).exportSkill({ id: installed.id })).origin).toEqual(
+          pkg.origin,
+        );
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+  it.effect("recovers copied origins after interruption without rewriting files while busy", () =>
+    Effect.gen(function* () {
+      const { fs, source, target, manager, busy, restart, sql } = yield* harness;
+      const pkg = yield* manager.exportSkill({ path: source });
+      const origin = {
+        source: {
+          id: "local",
+          kind: "local" as const,
+          label: "Local import",
+          enabled: true,
+          registry: "",
+        },
+        locator: source,
+        skill: "",
+      };
+      yield* Ref.set(busy, true);
+      yield* manager.copy({ directory: target, package: { ...pkg, origin } });
+      yield* manager.drain;
+      const snapshot = yield* manager.snapshot;
+      yield* fs.makeDirectory(target, { recursive: true });
+      yield* fs.copy(source, `${target}/review`);
+      const payload = yield* encodeCatalog({
+        ...snapshot,
+        jobs: snapshot.jobs!.map((job) => ({ ...job, status: "running" })),
+      });
+      yield* sql`UPDATE skill_catalog SET payload = ${payload} WHERE id = 1`;
+      const recovered = yield* restart;
+      expect((yield* recovered.snapshot).jobs?.at(-1)).toMatchObject({
+        status: "failed",
+        reason: "interrupted",
+      });
+      expect((yield* recovered.exportSkill({ path: `${target}/review` })).origin).toEqual(origin);
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+      yield* fs.writeFileString(`${target}/review/script.sh`, "unreplaced content");
+      yield* sql`UPDATE skill_catalog SET payload = ${payload} WHERE id = 1`;
+      const unchanged = yield* restart;
+      expect((yield* unchanged.exportSkill({ path: `${target}/review` })).origin).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+  it.effect("serializes directory export with copied content and origin replacement", () =>
+    Effect.gen(function* () {
+      const { fs, source, target, manager, restartWithFileSystem } = yield* harness;
+      const pkg = yield* manager.exportSkill({ path: source });
+      const replacing = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const reading = yield* Ref.make(0);
+      const observe = yield* Ref.make(false);
+      const destination = `${target}/review`;
+      const concurrent = yield* restartWithFileSystem({
+        ...fs,
+        rename: (from, to) =>
+          from.endsWith("/prepared")
+            ? Deferred.succeed(replacing, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.andThen(fs.rename(from, to)),
+              )
+            : fs.rename(from, to),
+        realPath: (file) =>
+          Ref.get(observe).pipe(
+            Effect.flatMap((observing) =>
+              observing && file === destination ? Ref.update(reading, (n) => n + 1) : Effect.void,
+            ),
+            Effect.andThen(fs.realPath(file)),
+          ),
+      });
+      const origin = {
+        source: {
+          id: "local",
+          kind: "local" as const,
+          label: "Local import",
+          enabled: true,
+          registry: "",
+        },
+        locator: source,
+        skill: "",
+      };
+      yield* concurrent.copy({ directory: target, package: { ...pkg, origin } });
+      yield* Deferred.await(replacing);
+      yield* Ref.set(observe, true);
+      const exported = yield* Effect.forkScoped(concurrent.exportSkill({ path: destination }), {
+        startImmediately: true,
+      });
+      const inspected = yield* Effect.forkScoped(
+        concurrent.inspect({ type: "adopt", path: destination }),
+        { startImmediately: true },
+      );
+      const reads = yield* Ref.get(reading);
+      yield* Effect.sync(() => expect(reads).toBe(0)).pipe(
+        Effect.ensuring(Deferred.succeed(release, undefined)),
+      );
+      expect((yield* Fiber.join(exported)).origin).toEqual(origin);
+      expect(yield* Fiber.join(inspected)).toMatchObject({
+        digest: pkg.digest,
+        origin: { sourceId: "local", locator: source },
+      });
+      yield* concurrent.drain;
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
   it.effect("rejects corrupt or escaping copies before replacing destination files", () =>

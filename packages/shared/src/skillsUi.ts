@@ -67,6 +67,7 @@ export function skillRows(
   search = "",
   filter: SkillFilter = "all",
   showExternal = false,
+  sourceId: string | null = null,
 ) {
   const managed = data.skills.map((skill) => ({
     kind: "managed" as const,
@@ -83,6 +84,13 @@ export function skillRows(
       skill,
     }));
   const rows = [...managed, ...discovered];
+  const rowSource = (row: (typeof rows)[number]) =>
+    row.kind === "managed" ? row.skill.sourceId : (row.skill.origin?.sourceId ?? "");
+  const sourceCounts: Record<string, number> = Object.create(null);
+  for (const row of rows) {
+    const id = rowSource(row);
+    sourceCounts[id] = (sourceCounts[id] ?? 0) + 1;
+  }
   const counts = {
     all: rows.length,
     managed: managed.length,
@@ -93,6 +101,7 @@ export function skillRows(
   const needle = search.trim().toLocaleLowerCase();
   return {
     counts,
+    sourceCounts,
     hiddenExternal: showExternal ? 0 : data.discovered.filter((skill) => skill.external).length,
     rows: rows
       .filter((row) => {
@@ -116,6 +125,7 @@ export function skillRows(
               ];
         return (
           words.join(" ").toLocaleLowerCase().includes(needle) &&
+          (sourceId === null || rowSource(row) === sourceId) &&
           (filter === "all" ||
             (filter === "unmanaged"
               ? row.kind === "discovered" && !row.skill.external

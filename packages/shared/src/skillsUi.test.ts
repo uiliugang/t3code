@@ -116,6 +116,41 @@ describe("skill management views", () => {
     expect(skillRows(snapshot, "", "all", true).rows).toHaveLength(3);
     expect(skillRows(snapshot, "external").rows).toHaveLength(0);
     expect(skillRows(snapshot, "external", "all", true).rows).toHaveLength(1);
+    const sourced = {
+      ...snapshot,
+      discovered: snapshot.discovered.map((entry) =>
+        entry.name === "local"
+          ? {
+              ...entry,
+              origin: {
+                sourceId: "community",
+                locator: "owner/repo",
+                skill: "local",
+                evidence: "git",
+              },
+            }
+          : entry,
+      ),
+    };
+    expect(skillRows(sourced, "", "all", false, "local").rows.map((row) => row.name)).toEqual([
+      "review",
+    ]);
+    expect(skillRows(sourced, "", "all", false, "community").rows.map((row) => row.name)).toEqual([
+      "local",
+    ]);
+    expect(skillRows(sourced, "", "managed", false, "community").rows).toHaveLength(0);
+    expect(skillRows(sourced, "missing", "all", false, "community").rows).toHaveLength(0);
+    expect(skillRows(sourced, "", "all", false, "").rows).toHaveLength(0);
+    expect(skillRows(sourced, "", "all", true, "").rows.map((row) => row.name)).toEqual([
+      "external",
+    ]);
+    const inheritedId = {
+      ...snapshot,
+      skills: [{ ...skill, sourceId: "constructor" }],
+      discovered: [],
+    };
+    expect(skillRows(inheritedId).sourceCounts["constructor"]).toBe(1);
+    expect(skillRows(inheritedId, "", "all", false, "constructor").rows).toHaveLength(1);
   });
 
   it("groups a package by its source while retaining independent children", () => {
