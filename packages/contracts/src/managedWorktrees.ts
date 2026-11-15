@@ -70,6 +70,27 @@ export const ManagedWorktreeResult = Schema.Struct({
   detail: Schema.String,
 });
 export type ManagedWorktreeResult = typeof ManagedWorktreeResult.Type;
+
+export const ResidualWorktree = Schema.Struct({
+  ...ManagedWorktreeTarget.fields,
+  path: Schema.String,
+  kind: Schema.Literals(["worktree", "folder", "repository"]),
+  bytes: Schema.NullOr(Schema.Number),
+  threads: Schema.Array(
+    Schema.Struct({ id: ThreadId, title: Schema.String, deleted: Schema.Boolean }),
+  ),
+  reason: Schema.NullOr(Schema.String),
+});
+export type ResidualWorktree = typeof ResidualWorktree.Type;
+export const ResidualWorktreesListResult = Schema.Struct({
+  directories: Schema.Array(ResidualWorktree),
+  results: Schema.Array(ManagedWorktreeResult),
+});
+export type ResidualWorktreesListResult = typeof ResidualWorktreesListResult.Type;
+export const ResidualWorktreesRemoveInput = Schema.Struct({
+  targets: ManagedWorktreesRemoveInput.fields.targets,
+});
+export type ResidualWorktreesRemoveInput = typeof ResidualWorktreesRemoveInput.Type;
 export class ManagedWorktreeError extends Schema.TaggedError<
   ManagedWorktreeError,
   { readonly brand: unique symbol }

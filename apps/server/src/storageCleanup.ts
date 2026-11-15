@@ -1119,6 +1119,7 @@ const make = Effect.gen(function* () {
     });
     const worktreePathReason = Effect.fn("StorageCleanup.worktreePathReason")(function* (
       worktreePath: string,
+      allowMissingMetadata = false,
     ) {
       // Allow symlinked parents, never a symlinked worktree directory.
       const realPath = yield* fs.realPath(worktreePath);
@@ -1127,20 +1128,41 @@ const make = Effect.gen(function* () {
         return "worktree is a symbolic link";
       if (!roots.some((root) => inside(root, realPath)))
         return "outside the managed worktree folder";
-      if (
-        (yield* fs.stat(path.join(worktreePath, ".git")).pipe(
-          Effect.catchIf(
-            (error) => error.reason._tag === "NotFound",
-            () => Effect.succeed(null),
-          ),
-        ))?.type !== "File"
-      )
+      const metadata = yield* fs.stat(path.join(worktreePath, ".git")).pipe(
+        Effect.catchIf(
+          (error) => error.reason._tag === "NotFound",
+          () => Effect.succeed(null),
+        ),
+      );
+      if (metadata?.type !== "File" && !(allowMissingMetadata && metadata === null))
         return "worktree metadata is missing; files were retained";
       return null;
     });
     const worktreeLockReason = Effect.fn("StorageCleanup.worktreeLockReason")(function* (
       worktreePath: string,
+      repositoryCwd?: string,
     ) {
+      if (repositoryCwd !== undefined && !(yield* fs.exists(path.join(worktreePath, ".git")))) {
+        const registrations = yield* git.execute({
+          operation: "StorageCleanup.worktreeLock",
+          cwd: repositoryCwd,
+          args: ["worktree", "list", "--porcelain", "-z"],
+        });
+        if (registrations.stdoutTruncated) return "worktree registrations could not be inspected";
+        const record = registrations.stdout
+          .split("\0\0")
+          .find((entry) =>
+            entry
+              .split("\0")
+              .some(
+                (line) =>
+                  line.startsWith("worktree ") && pathKey(line.slice(9)) === pathKey(worktreePath),
+              ),
+          );
+        return record?.split("\0").some((line) => line === "locked" || line.startsWith("locked "))
+          ? "worktree is locked"
+          : null;
+      }
       const gitDirectory = (yield* git.execute({
         operation: "StorageCleanup.worktreeLock",
         cwd: worktreePath,
@@ -1159,7 +1181,7 @@ const make = Effect.gen(function* () {
       decodeCleanupThread(row.payload_json).pipe(
         Effect.map((thread) => ({ ...thread, workspaceRoot: row.workspaceRoot })),
       ),
-    )).filter((thread) => thread.worktreePath !== null && thread.branch !== null);
+    )).filter((thread) => thread.worktreePath !== null);
     const snapshot = yield* readThreads();
     const threadsById = new Map(snapshot.threads.map((thread) => [thread.id, thread]));
     const refreshedDefaultRefs = new Map<string, Set<string>>();
@@ -1838,6 +1860,58 @@ const make = Effect.gen(function* () {
             )
           );
         });
+        if (deleted) {
+          const deletionPathReason = Effect.fnUntraced(function* () {
+            if (!scratch) return yield* worktreePathReason(worktreePath, true);
+            const parent = yield* fs.realPath(path.dirname(worktreePath));
+            return (yield* fs.realPath(worktreePath)) ===
+              path.join(parent, path.basename(worktreePath))
+              ? null
+              : "folder is a symbolic link";
+          });
+          const pathReason = yield* deletionPathReason();
+          if (pathReason !== null) return keep(pathReason);
+          const inspection = yield* measureWorktree(worktreePath);
+          return yield* withWorkspaceLease(
+            worktreePath,
+            Effect.gen(function* () {
+              const pathReason = yield* deletionPathReason();
+              if (pathReason !== null) return keep(pathReason);
+              const blocked = yield* blockedSinceCheck();
+              if (blocked !== null) return keep(blocked);
+              if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
+              if (!scratch) {
+                const lockReason = yield* worktreeLockReason(
+                  worktreePath,
+                  thread.projectWorkspaceRoot ?? project.workspaceRoot,
+                );
+                if (lockReason !== null) return keep(lockReason);
+              }
+              if (!scratch && (yield* fs.exists(path.join(worktreePath, ".git")))) {
+                if (yield* branchChanged(worktreePath, thread.branch))
+                  return keep("repository or branch changed");
+                const repository = yield* worktreeRepository(worktreePath);
+                yield* removeLinkedWorktree({
+                  operation: "StorageCleanup.cleanupGit",
+                  cwd: repository,
+                  worktreePath,
+                  force: true,
+                  execute: git.execute,
+                  run: (args) => cleanupGit(repository, [...args], "git worktree remove"),
+                });
+              } else {
+                yield* fs.remove(worktreePath, { recursive: true });
+              }
+              entries.push({
+                ...entry,
+                outcome: "removed",
+                reason: sentence(removalReason),
+                bytes: inspection.bytes,
+              });
+              yield* gitManager.invalidateStatus(project.workspaceRoot);
+            }),
+          );
+        }
         if (scratch) {
           const threadIds = group.map((member) => member.id);
           const blocked =

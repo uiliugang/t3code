@@ -13,6 +13,8 @@ import {
 } from "./workItem.ts";
 import { WechatError, WechatMutation, WechatSendInput, WechatState } from "./wechat.ts";
 import {
+  ResidualWorktreesListResult,
+  ResidualWorktreesRemoveInput,
   ManagedWorktreeError,
   ManagedWorktreeGroup,
   ManagedWorktreeResult,
@@ -571,6 +573,8 @@ export const WS_METHODS = {
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
   workspaceRecovery: "workspace.recovery",
+  managedWorktreesListResiduals: "managedWorktrees.listResiduals",
+  managedWorktreesRemoveResiduals: "managedWorktrees.removeResiduals",
   managedWorktreesList: "managedWorktrees.list",
   managedWorktreesRemove: "managedWorktrees.remove",
   managedWorktreesRestore: "managedWorktrees.restore",
@@ -1916,6 +1920,16 @@ const WsWorkspaceRecoveryRpc = Rpc.make(WS_METHODS.workspaceRecovery, {
   error: Schema.Union([WorkspaceRecoveryError, EnvironmentAuthorizationError]),
 });
 
+const WsManagedWorktreesListResidualsRpc = Rpc.make(WS_METHODS.managedWorktreesListResiduals, {
+  payload: Schema.Struct({}),
+  success: ResidualWorktreesListResult,
+  error: Schema.Union([ManagedWorktreeError, EnvironmentAuthorizationError]),
+});
+const WsManagedWorktreesRemoveResidualsRpc = Rpc.make(WS_METHODS.managedWorktreesRemoveResiduals, {
+  payload: ResidualWorktreesRemoveInput,
+  success: Schema.Array(ManagedWorktreeResult),
+  error: Schema.Union([ManagedWorktreeError, EnvironmentAuthorizationError]),
+});
 const WsManagedWorktreesListRpc = Rpc.make(WS_METHODS.managedWorktreesList, {
   payload: ManagedWorktreesListInput,
   success: Schema.Array(ManagedWorktreeGroup),
@@ -2663,6 +2677,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
   WsWorkspaceRecoveryRpc,
+  WsManagedWorktreesListResidualsRpc,
+  WsManagedWorktreesRemoveResidualsRpc,
   WsManagedWorktreesListRpc,
   WsManagedWorktreesRemoveRpc,
   WsManagedWorktreesRestoreRpc,

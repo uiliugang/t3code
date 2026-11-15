@@ -234,6 +234,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.vcsSwitchRef]: "vcs",
   [WS_METHODS.vcsInit]: "vcs",
   [WS_METHODS.workspaceRecovery]: "workspace",
+  [WS_METHODS.managedWorktreesListResiduals]: "workspace",
+  [WS_METHODS.managedWorktreesRemoveResiduals]: "workspace",
   [WS_METHODS.managedWorktreesList]: "workspace",
   [WS_METHODS.managedWorktreesRemove]: "workspace",
   [WS_METHODS.managedWorktreesRestore]: "workspace",

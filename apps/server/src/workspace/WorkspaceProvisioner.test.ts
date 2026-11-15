@@ -424,13 +424,10 @@ it.live(
             managedRoots: [yield* fs.realPath(temp)],
             isOccupied: () => Effect.succeed(false),
           };
-          const blocked = yield* cleanup.remove(cleanupInput).pipe(Effect.flip);
-          assert.include(blocked.message, "local files");
-          for (const resource of workspace.resources)
-            assert.isTrue(yield* fs.exists(resource.checkoutRoot));
-          yield* fs.remove(path.join(prepared, "keep.txt"));
-          for (const resource of workspace.resources)
-            yield* fs.remove(path.join(resource.checkoutRoot, "setup.txt"));
+          for (const resource of workspace.resources) {
+            yield* fs.writeFileString(path.join(resource.checkoutRoot, ".gitignore"), ".env\n");
+            yield* fs.writeFileString(path.join(resource.checkoutRoot, ".env"), "LOCAL_TEST=1\n");
+          }
           const childRoot = path.join(workspace.resources[1]!.checkoutRoot, "src");
           yield* fs.makeDirectory(childRoot);
           const linkedRoot = path.join(temp, "linked-backend");
@@ -459,6 +456,22 @@ it.live(
           assert.include(occupied.message, "open terminal");
           for (const resource of workspace.resources)
             assert.isTrue(yield* fs.exists(resource.checkoutRoot));
+          const lockedRoot = workspace.resources[1]!.checkoutRoot;
+          yield* git.execute({
+            operation: "test",
+            cwd: roots[1]!.sourcePath,
+            args: ["worktree", "lock", lockedRoot],
+          });
+          const locked = yield* cleanup.remove(cleanupInput).pipe(Effect.flip);
+          assert.include(locked.message, "locked");
+          for (const resource of workspace.resources)
+            assert.isTrue(yield* fs.exists(resource.checkoutRoot));
+          yield* git.execute({
+            operation: "test",
+            cwd: roots[1]!.sourcePath,
+            args: ["worktree", "unlock", lockedRoot],
+          });
+          yield* fs.remove(path.join(prepared, ".git"));
           yield* cleanup.remove(cleanupInput);
           yield* cleanup.remove(cleanupInput);
           for (const resource of workspace.resources)

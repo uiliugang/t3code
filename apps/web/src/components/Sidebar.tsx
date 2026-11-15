@@ -2508,6 +2508,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             [
               t(count === 1 ? "Delete {count} thread?" : "Delete {count} threads?", { count }),
               t("This permanently clears conversation history for these threads."),
+              t(
+                "When worktree cleanup on deletion is enabled, unused managed worktrees and all their local files are also permanently deleted.",
+              ),
             ].join("\n"),
             { variant: "destructive" },
           ),
@@ -2875,6 +2878,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   [
                     t('Delete thread "{title}"?', { title: thread.title }),
                     t("This permanently clears conversation history for this thread."),
+                    t(
+                      "When worktree cleanup on deletion is enabled, unused managed worktrees and all their local files are also permanently deleted.",
+                    ),
                   ].join("\n"),
                   { variant: "destructive" },
                 ),

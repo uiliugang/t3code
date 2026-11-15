@@ -103,8 +103,12 @@ Automatic group cleanup follows each project's cleanup rules, including merged b
 unchanged worktrees, and retention after a task settles or becomes inactive. Every repository
 and linked task must qualify before the group is removed. Active work, local changes, open
 terminals, and unfinished recovery retain the group; idle provider sessions are released when
-cleanup is ready. **Delete worktrees with deleted threads** also removes eligible deleted groups.
-Branches and thread history are retained. Failed preparations remain available for inspection.
+cleanup is ready. **Delete worktrees with deleted threads** permanently removes unused managed
+working directories, including uncommitted changes, untracked files and ignored files. This also
+removes their leftover files if the Git worktree metadata is missing. Shared or borrowed checkouts,
+project roots, locked worktrees and active resources remain protected. Other automatic cleanup
+rules keep their configured local-file protection. Branches and commits are retained.
+Failed preparations remain available for inspection.
 
 To free disk space manually, open **Settings > Worktrees > Local worktrees**. Select individual
 worktrees or complete multi-repository groups within a project, then confirm cleanup. A group
@@ -417,8 +421,13 @@ server waits for sessions and terminals to stop and retries skipped worktrees af
 Existing prompts for deleting a worktree manually remain available when this policy is off.
 
 Choose **Delete now** to run the enabled rules immediately. The latest results show which
-worktrees were removed or kept and why, plus any failures. The Worktrees page also shows recent results since the server started, with missing directories kept separately as history. Ordinary working folders are excluded from the worktree list; directories with missing Git metadata are retained for inspection.
-Results also list folders in the worktree folder that no thread uses, with their sizes; cleanup never removes them, so remove them manually if you want.
+worktrees were removed or kept and why, plus any failures. The Worktrees page also shows recent results since the server started, with missing directories kept separately as history. Ordinary working folders and directories with missing Git metadata can be inspected through **Clean historical leftovers**.
+
+Use **Clean historical leftovers** on the Worktrees page to review unused managed folders and scratch directories on that environment. Each entry shows its full path, associated threads, estimated disk usage, and any reason it cannot be removed. Select folders individually and confirm once to permanently delete all their source files, local changes, ignored files, and caches. Selecting an independent repository also deletes its own Git history. No backup or trash copy is created. Directory age alone never triggers this cleanup.
+
+Repositories inside a leftover folder are listed separately. Select and clean those repositories before removing their parent folder; repositories with dependent worktrees remain protected. A source repository that cannot be inspected blocks its associated directories while unrelated leftovers remain available for cleanup.
+
+The server checks references and running resources again before deleting. Project checkouts and directories referenced by existing threads or their history remain protected. Close occupying terminals or finish pending tasks, refresh the list, and retry failed items. Successful removals and failure reasons remain visible in the results.
 
 The inactive and settled retention periods also apply to the folders of
 [threads without a project](./thread-sidebar.md#start-without-a-project). Those folders are not

@@ -14,6 +14,7 @@ import type {
 import { ChevronRightIcon, RefreshCwIcon, RotateCcwIcon, Trash2Icon, CopyIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { ResidualWorktreesSettings } from "./ResidualWorktreesSettings";
 import { CleanupResults } from "./StorageSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useEnvironmentQuery } from "../../state/query";
@@ -251,6 +252,9 @@ function EnvironmentWorktrees({
   supportsReports: boolean;
 }) {
   const t = useUiTranslation();
+  const supportsResiduals =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.environment.capabilities
+      .residualWorktreeCleanup === true;
   const { groups: projectGroups } = useSettingsScope();
   const query = useEnvironmentQuery(
     serverEnvironment.managedWorktrees({ environmentId, input: projectIds ? { projectIds } : {} }),
@@ -401,6 +405,7 @@ function EnvironmentWorktrees({
       {!query.isPending && !query.error && rows.length === 0 ? (
         <p className="py-2 text-xs text-muted-foreground">{t("No managed worktrees")}</p>
       ) : null}
+      {supportsResiduals ? <ResidualWorktreesSettings environmentId={environmentId} /> : null}
       {supportsReports ? (
         <Collapsible>
           <CollapsibleTrigger className="group flex min-h-11 w-full flex-wrap items-center justify-between gap-2 border-y border-border/50 py-2 text-left text-xs text-muted-foreground">
@@ -642,7 +647,7 @@ export function ManagedWorktreesSettings() {
     <SettingsSection id="local-worktrees" title={t("Local worktrees")}>
       <p className="px-4 py-3 text-xs text-muted-foreground">
         {t(
-          "Manage working directories linked to threads. Branches and thread history are kept when you clean a directory here.",
+          "Manage thread worktrees and historical leftovers. Review each cleanup confirmation for what will be deleted.",
         )}
       </p>
       {connectedEnvironments.map((environment) => (

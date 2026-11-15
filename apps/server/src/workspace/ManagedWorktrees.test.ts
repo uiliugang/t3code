@@ -9,8 +9,10 @@ import {
   OrchestrationV2AppThread,
   ThreadId,
   type ThreadWorkspaceRevision,
+  type TerminalSummary,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -36,6 +38,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as ManagedWorktrees from "./ManagedWorktrees.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts";
 
 const infrastructure = Layer.mergeAll(
   GitVcsDriver.layer,
@@ -133,6 +136,7 @@ const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
   const rejectBinding = yield* Ref.make(false);
   const sessionLive = yield* Ref.make(false);
   const sessionBusy = yield* Ref.make(false);
+  const openTerminals = yield* Ref.make<ReadonlyArray<TerminalSummary>>([]);
   const layer = ManagedWorktrees.layer.pipe(
     Layer.provide(Layer.succeed(HostProcess.Platform, "darwin")),
     Layer.provide(
@@ -145,7 +149,10 @@ const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
         }),
         Layer.mock(TerminalManager.TerminalManager)({
           subscribeMetadata: (listener) =>
-            listener({ type: "snapshot", terminals: [] }).pipe(Effect.as(() => {})),
+            Ref.get(openTerminals).pipe(
+              Effect.flatMap((terminals) => listener({ type: "snapshot", terminals })),
+              Effect.as(() => {}),
+            ),
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
           isLive: () => Ref.get(sessionLive),
@@ -203,9 +210,321 @@ const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
     rejectBinding,
     sessionLive,
     sessionBusy,
+    openTerminals,
     layer,
   };
 });
+
+it.live(
+  "cleans selected residual directories after rechecking ownership and directory identity",
+  () =>
+    Effect.gen(function* () {
+      const context = yield* fixture();
+      const { fs, path, temp, resources, thread, persist, git } = context;
+      const stale = resources[0]!.checkoutRoot;
+      const linked = resources[1]!.checkoutRoot;
+      yield* persist({ ...thread, deletedAt: thread.createdAt });
+      yield* fs.remove(path.join(stale, ".git"));
+      for (const root of [stale, linked]) {
+        yield* fs.writeFileString(path.join(root, "file.txt"), "local changes");
+        yield* fs.writeFileString(path.join(root, "notes.txt"), "untracked");
+        yield* fs.writeFileString(path.join(root, ".env"), "ignored");
+      }
+      const independent = path.join(temp, "worktrees", "legacy", "independent");
+      const scratch = path.join(temp, "state", "scratch", "legacy");
+      const direct = path.join(temp, "worktrees", "direct-leftover");
+      for (const root of [independent, scratch, direct]) {
+        yield* fs.makeDirectory(root, { recursive: true });
+        yield* fs.writeFileString(path.join(root, "notes.txt"), "local files");
+      }
+      yield* fs.makeDirectory(path.join(direct, "cache"));
+      yield* git.execute({ operation: "test", cwd: independent, args: ["init"] });
+      yield* Effect.gen(function* () {
+        const service = yield* ManagedWorktrees.ManagedWorktrees;
+        const { directories: rows } = yield* service.listResiduals;
+        const target = (root: string) => {
+          const row = rows.find((row) => row.path === root);
+          assert.isDefined(row);
+          assert.isNull(row!.reason);
+          return { id: row!.id, fingerprint: row!.fingerprint };
+        };
+        assert.strictEqual(rows.find((row) => row.path === independent)?.kind, "repository");
+        const targets = [stale, linked, independent, scratch, direct].map(target);
+        // A newly attached live thread must invalidate the earlier inspection.
+        yield* persist({ ...thread, id: ThreadId.make("shared") });
+        const blocked = yield* service.removeResiduals({ targets: targets.slice(0, 2) });
+        assert.isTrue(blocked.every((result) => result.outcome !== "removed"));
+        assert.isTrue(yield* fs.exists(stale));
+        yield* persist({ ...thread, id: ThreadId.make("shared"), deletedAt: thread.createdAt });
+        const { directories: refreshed } = yield* service.listResiduals;
+        const result = yield* service.removeResiduals({
+          targets: refreshed
+            .filter((row) => [stale, linked, independent, scratch, direct].includes(row.path))
+            .map(({ id, fingerprint }) => ({ id, fingerprint })),
+        });
+        assert.strictEqual(result.length, 5);
+        assert.isTrue(result.every((entry) => entry.outcome === "removed"));
+        for (const root of [stale, linked, independent, scratch, direct])
+          assert.isFalse(yield* fs.exists(root));
+        assert.isTrue(yield* fs.exists(context.workspace.bindings[0]!.sourcePathAtBind));
+        const branch = yield* git.execute({
+          operation: "test",
+          cwd: context.workspace.bindings[1]!.sourcePathAtBind,
+          args: [
+            "show-ref",
+            "--verify",
+            `refs/heads/${context.workspace.bindings[1]!.launchBranch}`,
+          ],
+        });
+        assert.isTrue(branch.stdout.length > 0);
+        assert.isTrue(
+          (yield* service.removeResiduals({ targets })).every(
+            (entry) => entry.outcome === "skipped",
+          ),
+        );
+      }).pipe(Effect.provide(context.layer));
+    }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live.each([
+  "locked",
+  "missing-metadata-lock",
+  "project",
+  "preparation",
+  "replaced",
+  "symlink",
+  "repository-dependency",
+  "terminal-cwd",
+  "terminal-worktree",
+  "running-task",
+  "provider-session",
+  "history",
+  "pinned-project-path",
+] as const)("retains residual directories when inspection becomes unsafe: %s", (scenario) =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { fs, path, temp, resources, thread, persist, git, sql } = context;
+    yield* persist({ ...thread, deletedAt: thread.createdAt });
+    let root = resources[0]!.checkoutRoot;
+    if (scenario === "repository-dependency") {
+      root = path.join(temp, "worktrees", "legacy", "standalone");
+      yield* fs.makeDirectory(path.dirname(root), { recursive: true });
+      yield* git.execute({
+        operation: "test",
+        cwd: temp,
+        args: ["clone", context.workspace.bindings[0]!.sourcePathAtBind, root],
+      });
+    }
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const target = (yield* service.listResiduals).directories.find((row) => row.path === root)!;
+      assert.isNull(target.reason);
+      if (scenario === "locked" || scenario === "missing-metadata-lock") {
+        yield* git.execute({
+          operation: "test",
+          cwd: context.workspace.bindings[0]!.sourcePathAtBind,
+          args: ["worktree", "lock", root],
+        });
+        if (scenario === "missing-metadata-lock") yield* fs.remove(path.join(root, ".git"));
+      } else if (scenario === "project") {
+        yield* sql`UPDATE projection_projects SET workspace_root = ${root}`;
+      } else if (scenario === "preparation") {
+        yield* sql`INSERT INTO workspace_preparations (thread_id, payload_json) VALUES ('preparing', ${JSON.stringify({ resources: [{ path: root }] })})`;
+      } else if (scenario === "terminal-cwd" || scenario === "terminal-worktree") {
+        yield* Ref.set(context.openTerminals, [
+          {
+            threadId: thread.id,
+            terminalId: "occupied",
+            status: "running",
+            pid: 1,
+            exitCode: null,
+            exitSignal: null,
+            hasRunningSubprocess: false,
+            label: "Terminal",
+            updatedAt: "2026-11-15T00:00:00Z",
+            cwd: scenario === "terminal-cwd" ? root : temp,
+            worktreePath: scenario === "terminal-worktree" ? root : null,
+          },
+        ]);
+      } else if (scenario === "running-task") {
+        yield* Ref.update(context.projection, (current) => ({
+          ...current,
+          runs: [{ status: "running" } as (typeof current.runs)[number]],
+        }));
+      } else if (scenario === "provider-session") {
+        const payload = JSON.stringify({
+          id: "session-1",
+          driver: "codex",
+          providerInstanceId: "codex",
+          status: "ready",
+          cwd: root,
+          model: null,
+          createdAt: "2026-10-28T00:00:00Z",
+          updatedAt: "2026-10-28T00:00:00Z",
+          lastError: null,
+        });
+        yield* sql`INSERT INTO orchestration_v2_projection_provider_sessions (provider_session_id, provider, status, updated_at, payload_json) VALUES ('session-1', 'codex', 'ready', 'now', ${payload})`;
+        yield* Ref.set(context.sessionLive, true);
+      } else if (scenario === "history" || scenario === "pinned-project-path") {
+        yield* persist({
+          ...thread,
+          id: ThreadId.make("history-thread"),
+          workspace: undefined,
+          worktreePath: null,
+          ...(scenario === "pinned-project-path" ? { projectWorkspaceRoot: root } : {}),
+        });
+        if (scenario === "history") {
+          const payload = JSON.stringify({ cwd: root });
+          yield* sql`INSERT INTO orchestration_v2_projection_checkpoint_scopes (scope_id, thread_id, node_id, kind, ordinal_within_parent, advances_app_run_count, created_at, payload_json) VALUES ('history', 'history-thread', 'node', 'root', 0, 0, 'now', ${payload})`;
+        }
+      } else if (scenario === "repository-dependency") {
+        yield* git.execute({
+          operation: "test",
+          cwd: root,
+          args: ["worktree", "add", "--detach", path.join(temp, "dependent")],
+        });
+      } else {
+        yield* fs.rename(root, `${root}-previous`);
+        if (scenario === "symlink") yield* fs.symlink(`${root}-previous`, root);
+        else {
+          yield* fs.makeDirectory(root);
+          yield* fs.writeFileString(path.join(root, "file.txt"), "replacement files");
+        }
+      }
+      const [result] = yield* service.removeResiduals({ targets: [target] });
+      assert.strictEqual(result!.outcome, scenario === "symlink" ? "skipped" : "failed");
+      assert.isTrue(yield* fs.exists(root));
+      assert.isTrue(result!.detail.length > 0);
+      if (scenario === "locked") {
+        yield* git.execute({
+          operation: "test",
+          cwd: context.workspace.bindings[0]!.sourcePathAtBind,
+          args: ["worktree", "unlock", root],
+        });
+        const refreshed = (yield* service.listResiduals).directories.find(
+          (row) => row.path === root,
+        )!;
+        assert.strictEqual(
+          (yield* service.removeResiduals({ targets: [refreshed] }))[0]!.outcome,
+          "removed",
+        );
+      }
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("lists nested repositories separately and protects their dependent worktrees", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { fs, path, temp, git, workspace } = context;
+    const container = path.join(temp, "state", "scratch", "container");
+    const repository = path.join(container, "repo");
+    const dependent = path.join(temp, "dependent");
+    yield* fs.makeDirectory(container, { recursive: true });
+    yield* fs.writeFileString(path.join(container, "notes.txt"), "keep until selected");
+    yield* git.execute({
+      operation: "test",
+      cwd: temp,
+      args: ["clone", workspace.bindings[0]!.sourcePathAtBind, repository],
+    });
+    yield* git.execute({
+      operation: "test",
+      cwd: repository,
+      args: ["worktree", "add", "--detach", dependent],
+    });
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const { directories } = yield* service.listResiduals;
+      const parent = directories.find((row) => row.path === container)!;
+      const child = directories.find((row) => row.path === repository)!;
+      assert.isNotNull(parent.reason);
+      assert.isDefined(child);
+      assert.strictEqual(child.kind, "repository");
+      assert.include(child.reason!, "depend");
+      assert.isTrue(
+        (yield* service.removeResiduals({ targets: [parent, child] })).every(
+          (row) => row.outcome === "failed",
+        ),
+      );
+      assert.isTrue(yield* fs.exists(path.join(repository, ".git")));
+      yield* git.execute({
+        operation: "test",
+        cwd: repository,
+        args: ["worktree", "remove", dependent],
+      });
+      const refreshed = (yield* service.listResiduals).directories.find(
+        (row) => row.path === repository,
+      )!;
+      assert.isNull(refreshed.reason);
+      assert.strictEqual(
+        (yield* service.removeResiduals({ targets: [refreshed] }))[0]!.outcome,
+        "removed",
+      );
+      assert.isTrue(yield* fs.exists(path.join(container, "notes.txt")));
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("isolates broken source registrations from unrelated scratch cleanup", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { fs, path, temp, workspace, resources, persist, thread } = context;
+    yield* persist({ ...thread, deletedAt: thread.createdAt });
+    const scratch = path.join(temp, "state", "scratch", "unrelated");
+    yield* fs.makeDirectory(scratch, { recursive: true });
+    const source = workspace.bindings[0]!.sourcePathAtBind;
+    yield* fs.rename(path.join(source, ".git"), path.join(source, ".git-saved"));
+    yield* fs.writeFileString(path.join(source, ".git"), `gitdir: ${path.join(temp, "missing")}\n`);
+    yield* fs.remove(path.join(resources[0]!.checkoutRoot, ".git"));
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const rows = (yield* service.listResiduals).directories;
+      assert.isNotNull(rows.find((row) => row.path === resources[0]!.checkoutRoot)!.reason);
+      const target = rows.find((row) => row.path === scratch)!;
+      assert.isNull(target.reason);
+      assert.strictEqual(
+        (yield* service.removeResiduals({ targets: [target] }))[0]!.outcome,
+        "removed",
+      );
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("does not hold the directory lease while waiting for checkout cleanup", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const root = context.resources[0]!.checkoutRoot;
+    yield* context.persist({ ...context.thread, deletedAt: context.thread.createdAt });
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const target = (yield* service.listResiduals).directories.find((row) => row.path === root)!;
+      yield* withWorkspaceLease(
+        `checkout:${root}`,
+        Effect.gen(function* () {
+          const cleanup = yield* Effect.forkChild(service.removeResiduals({ targets: [target] }), {
+            startImmediately: true,
+          });
+          const available = yield* Effect.forkChild(
+            withWorkspaceLease(root, Effect.succeed("available")),
+            { startImmediately: true },
+          );
+          assert.strictEqual(available.pollUnsafe()?._tag, "Success");
+          yield* Fiber.interrupt(cleanup);
+        }),
+      );
+    }).pipe(
+      Effect.provide(context.layer),
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.make({
+          ...context.fs,
+          realPath: (target) =>
+            target === root ? Effect.succeed(root) : context.fs.realPath(target),
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
 
 it.live("releases idle providers only for eligible automatic cleanup and retains busy groups", () =>
   Effect.gen(function* () {

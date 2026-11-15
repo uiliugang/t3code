@@ -1444,6 +1444,15 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:wechat:send",
       tag: WS_METHODS.wechatSend,
     }),
+    residualWorktrees: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:managed-worktrees:list-residuals",
+      tag: WS_METHODS.managedWorktreesListResiduals,
+    }),
+    removeResidualWorktrees: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:managed-worktrees:remove-residuals",
+      tag: WS_METHODS.managedWorktreesRemoveResiduals,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
     managedWorktrees: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:managed-worktrees:list",
       tag: WS_METHODS.managedWorktreesList,

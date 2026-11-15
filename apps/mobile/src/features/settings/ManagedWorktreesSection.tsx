@@ -21,6 +21,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ResidualWorktreesSection } from "./ResidualWorktreesSection";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { useOpenLinkedThread } from "../threads/useOpenLinkedThread";
@@ -34,6 +35,9 @@ function WorktreeList({
 }) {
   const t = useUiTranslation();
   const openThread = useOpenLinkedThread();
+  const supportsResiduals =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.environment.capabilities
+      .residualWorktreeCleanup === true;
   const query = useEnvironmentQuery(
     serverEnvironment.managedWorktrees({ environmentId, input: projectIds ? { projectIds } : {} }),
   );
@@ -141,6 +145,7 @@ function WorktreeList({
   };
   return (
     <View className="gap-2 p-3">
+      {supportsResiduals ? <ResidualWorktreesSection environmentId={environmentId} /> : null}
       <Button
         label={t("Refresh")}
         icon="arrow.clockwise"
