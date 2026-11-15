@@ -13,7 +13,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 import * as WorkItems from "../../../work-items/WorkItemService.ts";
 import * as Threads from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Invocation from "../../McpInvocationContext.ts";
@@ -35,7 +35,9 @@ export const WorkItemToolkit = Toolkit.make(
       "Issue side chats only: metadata reads fields; create links its result; recover links an uncertain URL. Never blindly retry; code stays read-only.",
     parameters: WorkItemIssueInput,
     success: WorkItemIssueResult,
-  }).annotate(Tool.Destructive, true),
+  })
+    .annotate(McpSchema.EnabledWhen, Invocation.hiddenFromOutsideClients)
+    .annotate(Tool.Destructive, true),
   Tool.make("work_item_link_issue", {
     ...shared,
     description:
@@ -140,12 +142,16 @@ export const WorkItemToolkit = Toolkit.make(
       "Report progress, evidence and unresolved issues for your own execution and specRevision. Reporting does not accept the task.",
     parameters: report.mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
-  }).annotate(Tool.Destructive, false),
+  })
+    .annotate(McpSchema.EnabledWhen, Invocation.hiddenFromOutsideClients)
+    .annotate(Tool.Destructive, false),
   Tool.make("work_item_submit", {
     ...shared,
     description:
       "Submit your execution for user selection/review while peers continue. Finished runs, plans and claimed tests do not mean user acceptance.",
     parameters: report.mapFields(Struct.omit(["type", "submitted"])),
     success: WorkItemMutationResult,
-  }).annotate(Tool.Destructive, false),
+  })
+    .annotate(McpSchema.EnabledWhen, Invocation.hiddenFromOutsideClients)
+    .annotate(Tool.Destructive, false),
 );

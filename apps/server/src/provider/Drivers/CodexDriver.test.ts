@@ -54,6 +54,7 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 import * as PortScanner from "../../preview/PortScanner.ts";
 import * as ProviderCredentialStore from "../ProviderCredentialStore.ts";
 import * as ProviderHostLive from "../ProviderHostLive.ts";
+import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 
 const layerDeps = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-codex-driver-maintenance-",
@@ -636,6 +637,108 @@ it.layer(layerTest)("CodexDriver", (it) => {
           expect(snapshot.message).toBe(key ? "Fixture runtime missing" : "Enter an API key.");
         }
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn)),
+  );
+
+  it.effect("releases a managed skills helper before releasing its runtime lease", () =>
+    Effect.gen(function* () {
+      let helpers = 0;
+      const unleasedHelpers: number[] = [];
+      const installation = yield* CodexInstallation.CodexInstallation;
+      const decodeRequest = Schema.decodeUnknownEffect(
+        Schema.fromJsonString(
+          Schema.Struct({ id: Schema.optionalKey(Schema.Number), method: Schema.String }),
+        ),
+      );
+      const spawner = ChildProcessSpawner.make(() =>
+        Effect.gen(function* () {
+          const output = yield* Effect.acquireRelease(
+            Queue.unbounded<Uint8Array>(),
+            Queue.shutdown,
+          );
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              helpers += 1;
+            }),
+            () =>
+              Effect.sync(() => {
+                helpers -= 1;
+              }),
+          );
+          return ChildProcessSpawner.makeHandle({
+            pid: ChildProcessSpawner.ProcessId(1),
+            exitCode: Effect.never,
+            isRunning: Effect.succeed(true),
+            kill: () => Effect.void,
+            unref: Effect.succeed(Effect.void),
+            stdin: Sink.forEach((chunk: Uint8Array) =>
+              Effect.gen(function* () {
+                const { id, method } = yield* decodeRequest(new TextDecoder().decode(chunk)).pipe(
+                  Effect.orDie,
+                );
+                if (id === undefined) return Effect.void;
+                const result =
+                  method === "initialize"
+                    ? {
+                        userAgent: "codex/1.0.0",
+                        codexHome: "/home",
+                        platformFamily: "unix",
+                        platformOs: "linux",
+                      }
+                    : { data: [] };
+                return yield* Queue.offer(
+                  output,
+                  new TextEncoder().encode(`${JSON.stringify({ id, result })}\n`),
+                );
+              }),
+            ),
+            stdout: Stream.fromQueue(output),
+            stderr: Stream.empty,
+            all: Stream.empty,
+            getInputFd: () => Sink.drain,
+            getOutputFd: () => Stream.empty,
+          });
+        }),
+      );
+      const instance = yield* CodexDriver.create({
+        instanceId: ProviderInstanceId.make("managed-skills-lease"),
+        displayName: undefined,
+        enabled: true,
+        environment: [],
+        config: {
+          ...CodexDriver.defaultConfig(),
+          connectionMode: "existing",
+          runtimeSource: "managed",
+        },
+      }).pipe(
+        Effect.updateService(ProviderHost.ProviderHost, (host) => ({
+          ...host,
+          awaitServerReady: Effect.never,
+        })),
+        Effect.provideService(CodexInstallation.CodexInstallation, {
+          ...installation,
+          acquire: () =>
+            Effect.acquireRelease(
+              Effect.succeed({
+                executablePath: "/managed/codex",
+                managedVersionDirectory: "/managed",
+                source: "managed" as const,
+                version: "1.0.0",
+              }),
+              () =>
+                Effect.sync(() => {
+                  unleasedHelpers.push(helpers);
+                }),
+            ),
+        }),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      const snapshot = yield* instance.snapshotForCwd!(process.cwd()).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      expect(snapshot.skills).toEqual([]);
+      expect(unleasedHelpers.length).toBeGreaterThan(0);
+      expect(unleasedHelpers.every((count) => count === 0)).toBe(true);
+    }),
   );
 
   it.effect("isolates BYOK credentials, home and endpoint continuation from native Codex", () =>

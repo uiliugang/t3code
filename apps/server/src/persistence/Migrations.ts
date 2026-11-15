@@ -121,6 +121,8 @@ import Migration0106 from "./Migrations/106_TurnItemMessageOrdinalIndex.ts";
 
 import Migration0107 from "./Migrations/107_AuthSessionProofKeyIndex.ts";
 
+import Migration0108 from "./Migrations/108_TurnItemInlineWorkOutput.ts";
+
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
@@ -230,6 +232,7 @@ const migrationEntries = [
   [105, "ProviderTurnAttemptIndex", Migration0105],
   [106, "TurnItemMessageOrdinalIndex", Migration0106],
   [107, "AuthSessionProofKeyIndex", Migration0107],
+  [108, "TurnItemInlineWorkOutput", Migration0108],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

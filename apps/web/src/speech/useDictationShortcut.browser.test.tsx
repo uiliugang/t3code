@@ -6,8 +6,8 @@ import { render } from "../../test/render";
 import { __setClientSettingsForTests } from "../hooks/useSettings";
 import { useDictationShortcut, type DictationKeyHandlers } from "./useDictationShortcut";
 
-function setup() {
-  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, voiceShortcutMode: "hold" });
+function setup(mode: "hold" | "auto" | "toggle" = "hold") {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, voiceShortcutMode: mode });
   return {
     [Symbol.dispose]() {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
@@ -105,6 +105,29 @@ it("finishes a released hold after startup even if the chord was pressed again w
   expect(speech.start).toHaveBeenCalledOnce();
   expect(speech.stop).toHaveBeenCalledOnce();
 });
+
+it.each([
+  { mode: "hold", heldMs: 0, stops: 1 },
+  { mode: "auto", heldMs: 300, stops: 1 },
+  { mode: "auto", heldMs: 299, stops: 0 },
+] as const)(
+  "ends a $mode press held $heldMs ms when a chord modifier is released without the letter keyup",
+  async ({ mode, heldMs, stops }) => {
+    using _settings = setup(mode);
+    const speech = actions(true);
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    await using _screen = await render(<Probe speech={speech} />);
+    using clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    press();
+    clock.mockReturnValue(heldMs);
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", code: "AltLeft" }));
+    await speech.start.mock.results[0]?.value;
+    expect(speech.stop).not.toHaveBeenCalled();
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "Meta", code: "MetaLeft" }));
+    await speech.start.mock.results[0]?.value;
+    expect(speech.stop).toHaveBeenCalledTimes(stops);
+  },
+);
 
 const escape = () =>
   new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true });

@@ -9,6 +9,24 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Sampling on demand": "按需采样",
+  "Syncing messages…": "正在同步消息…",
+  "Loading messages…": "正在加载消息…",
+  "Queued message not updated": "未更新排队消息",
+  "A queued message can't move to a side chat. Remove /side or /btw to save it.":
+    "排队消息不能移至侧边对话。请移除 /side 或 /btw 后保存。",
+  "Diff too large to display. Tap to load it.": "差异较大，点击加载。",
+  "Diff too large to display here.": "差异较大，无法在此显示。",
+  "Loading diff…": "正在加载差异…",
+  "Couldn't load this diff. Tap to try again.": "无法加载差异，点击重试。",
+  "Couldn't load this diff.": "无法加载差异。",
+  "No text diff for this file.": "此文件没有文本差异。",
+  "Diff too large to display.": "差异较大，无法直接显示。",
+  "Load diff": "加载差异",
+  "Hourly processed tokens by provider": "各提供商每小时处理的令牌数",
+  "Hourly cost by provider": "各提供商每小时费用",
+  "Daily processed tokens by provider": "各提供商每日处理的令牌数",
+  "Daily cost by provider": "各提供商每日费用",
   "{model}: Testing model and tools...": "{model}：正在测试模型与工具调用…",
   "Save or revert your changes before switching connections.":
     "请先保存或还原修改，再切换连接方式。",

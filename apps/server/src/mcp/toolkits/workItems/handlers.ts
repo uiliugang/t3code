@@ -4,6 +4,7 @@ import * as WorkItems from "../../../work-items/WorkItemService.ts";
 import { executionIsActive } from "../../../work-items/decide.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { assertTargetWithinLimits, readCaller, unavailable } from "../../threadAccess.ts";
+import { resolveRuntimeMode, resolveInteractionMode } from "../../delegatedTaskModes.ts";
 import { WorkItemToolkit } from "./tools.ts";
 import * as DeliveryAutomation from "../../../work-items/DeliveryAutomationService.ts";
 
@@ -11,8 +12,10 @@ const mutate = Effect.fn("WorkItemMcp.mutate")(function* (input: WorkItemCommand
   const context = yield* readCaller();
   const service = yield* WorkItems.WorkItemService;
   if (input.type === "start") {
-    for (const participant of input.participants)
-      yield* assertTargetWithinLimits(context.limits, participant);
+    for (const participant of input.participants) {
+      yield* resolveRuntimeMode(context.limits.runtimeMode, participant.runtimeMode);
+      yield* resolveInteractionMode(context.limits.interactionMode, participant.interactionMode);
+    }
   }
   if (input.type === "stop") {
     const item = yield* service.get(input.id).pipe(Effect.mapError(unavailable));
@@ -21,7 +24,10 @@ const mutate = Effect.fn("WorkItemMcp.mutate")(function* (input: WorkItemCommand
       const target = yield* context.threads
         .getThreadShell(execution.threadId)
         .pipe(Effect.mapError(unavailable));
-      yield* assertTargetWithinLimits(context.limits, target ?? execution);
+      yield* assertTargetWithinLimits(
+        context.limits,
+        target ?? { ...execution, id: execution.threadId },
+      );
     }
   }
   if (context.caller !== undefined) {

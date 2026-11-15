@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off processEnvInEffect:off - fixtures need real paths, the process resource list and the live environment.
 import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
@@ -60,7 +60,7 @@ describe("SpawnWorker", () => {
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const literal = "quote' \" $HOME; * & %PATH%";
-      const cwd = NodeOS.tmpdir();
+      const cwd = yield* Effect.promise(() => NodeFSP.realpath(NodeOS.tmpdir()));
       const script = `
         const fs = require('node:fs');
         const input = fs.readFileSync(0, 'utf8');
@@ -82,7 +82,7 @@ describe("SpawnWorker", () => {
           { concurrency: "unbounded" },
         );
         expect(stdout).toBe(
-          JSON.stringify(["stdin value", NodePath.resolve(cwd), "inherited value", literal]) +
+          JSON.stringify(["stdin value", cwd, "inherited value", literal]) +
             "\n" +
             "a".repeat(1024 * 1024),
         );
@@ -135,6 +135,38 @@ describe("SpawnWorker", () => {
       const healthy = yield* spawner.spawn(node("process.stdout.write('ok')"));
       expect(yield* text(healthy.stdout)).toBe("ok");
       expect(yield* healthy.exitCode).toBe(0);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("a short child's output ends while a sibling launched beside it still runs", () =>
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const untilStdin =
+        "process.stdout.write('ready');process.stdin.once('data',()=>process.exit(0))";
+      // Workers that own a child stay alive, as beside a running agent, so each round's two
+      // launches land on two warm workers at once.
+      yield* Effect.all(
+        Array.from({ length: 4 }, () =>
+          Effect.gen(function* () {
+            const holder = yield* spawner.spawn(node(untilStdin));
+            expect(yield* holder.stdout.pipe(Stream.take(1), text)).toBe("ready");
+          }),
+        ),
+        { concurrency: "unbounded" },
+      );
+      for (let round = 0; round < 20; round++) {
+        const [sibling, output] = yield* Effect.all(
+          [
+            spawner.spawn(node(untilStdin, [], { stdin: { stream: Stream.never } })),
+            spawner
+              .spawn(node("process.stdout.write('ok')"))
+              .pipe(Effect.flatMap((child) => text(child.stdout))),
+          ],
+          { concurrency: "unbounded" },
+        );
+        expect(output).toBe("ok");
+        expect(yield* sibling.isRunning).toBe(true);
+      }
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 

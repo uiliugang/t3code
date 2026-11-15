@@ -1,3 +1,4 @@
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import type { ResourceTelemetryProcess, ResourceTelemetrySourceStatus } from "@t3tools/contracts";
 
 export function processIdentityKey(process: Pick<ResourceTelemetryProcess, "identity">): string {
@@ -18,6 +19,8 @@ export function visibleResourceTelemetryProcesses(
   const hidden = new Set<string>();
   const hideDescendants = (pid: number): void => {
     for (const child of childrenByParent.get(pid) ?? []) {
+      // Depth 0 rows are their own roots, e.g. the server launched by Electron main.
+      if (child.depth === 0) continue;
       const key = processIdentityKey(child);
       if (hidden.has(key)) continue;
       hidden.add(key);
@@ -67,4 +70,16 @@ export function formatCpuTime(seconds: number): string {
   const shortMinutes = format(seconds / 60);
   if (Number(shortMinutes) < 60) return `${shortMinutes}m`;
   return `${(seconds / 3_600).toFixed(2).replace(/\.0+$/, "")}h`;
+}
+
+export function formatSamplingStatus(intervalMs: number, t: UiTranslator): string {
+  if (intervalMs <= 0) return t("Sampling on demand");
+  const seconds = intervalMs / 1_000;
+  const interval =
+    intervalMs < 1_000
+      ? `${Math.round(intervalMs)} ms`
+      : t(seconds === 1 ? "{count} second" : "{count} seconds", {
+          count: seconds.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+        });
+  return t("Sampling every {interval}", { interval });
 }

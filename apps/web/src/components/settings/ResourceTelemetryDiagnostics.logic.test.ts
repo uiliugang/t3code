@@ -1,3 +1,4 @@
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { ResourceTelemetryProcess } from "@t3tools/contracts";
@@ -5,6 +6,7 @@ import * as DateTime from "effect/DateTime";
 
 import {
   formatCpuTime,
+  formatSamplingStatus,
   visibleResourceTelemetryProcesses,
 } from "./ResourceTelemetryDiagnostics.logic";
 
@@ -48,6 +50,16 @@ describe("visibleResourceTelemetryProcesses", () => {
       processes[3],
     ]);
   });
+
+  it("keeps a root row visible when its launcher is collapsed", () => {
+    const processes = [process(1, 10, 0), process(2, 1, 1), process(10, 0, 0), process(11, 10, 1)];
+
+    expect(visibleResourceTelemetryProcesses(processes, new Set(["10:10000"]))).toEqual([
+      processes[0],
+      processes[1],
+      processes[2],
+    ]);
+  });
 });
 
 describe("formatCpuTime", () => {
@@ -58,5 +70,15 @@ describe("formatCpuTime", () => {
       "1h",
       "1h",
     ]);
+  });
+});
+
+describe("formatSamplingStatus", () => {
+  it("reads an idle interval as on demand rather than every 0 ms", () => {
+    expect(
+      [0, 500, 2_000].map((intervalMs) =>
+        formatSamplingStatus(intervalMs, (message, values) => translateUi("en", message, values)),
+      ),
+    ).toEqual(["Sampling on demand", "Sampling every 500 ms", "Sampling every 2 seconds"]);
   });
 });
