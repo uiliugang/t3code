@@ -37,6 +37,73 @@ const makeGuest = ({
 };
 
 describe("preview guest input", () => {
+  it.each([
+    { params: {}, encoded: "guest-png" },
+    { params: { format: "png" }, encoded: "guest-png" },
+    { params: { format: "jpeg" }, encoded: "guest-jpeg-80" },
+    { params: { format: "jpeg", quality: 65 }, encoded: "guest-jpeg-65" },
+  ])("captures an occluded guest viewport with $params", async ({ params, encoded }) => {
+    const guest = {
+      hostWebContents: {},
+      capturePage: async () => ({
+        isEmpty: () => false,
+        toPNG: () => Buffer.from("guest-png"),
+        toJPEG: (quality: number) => Buffer.from(`guest-jpeg-${quality}`),
+      }),
+    };
+    const debuggerApi = {
+      sendCommand: async () => {
+        throw new Error("The occluded guest has no CDP screenshot surface.");
+      },
+    };
+    const result = await sendPageCommand(
+      guest as unknown as Electron.WebContents,
+      debuggerApi as unknown as Electron.Debugger,
+      "Page.captureScreenshot",
+      params,
+    );
+    expect(result).toEqual({ data: Buffer.from(encoded).toString("base64") });
+  });
+
+  it("rejects an empty native capture without returning invalid image data", async () => {
+    const guest = {
+      hostWebContents: {},
+      capturePage: async () => ({ isEmpty: () => true }),
+    };
+    await expect(
+      sendPageCommand(
+        guest as unknown as Electron.WebContents,
+        { sendCommand: async () => ({}) } as unknown as Electron.Debugger,
+        "Page.captureScreenshot",
+        {},
+      ),
+    ).rejects.toThrow("The preview page returned an empty screenshot.");
+  });
+
+  it.each([
+    { params: {}, sessionId: "child-frame", guest: true },
+    { params: { clip: { x: 0, y: 0, width: 10, height: 10, scale: 1 } }, guest: true },
+    { params: { format: "webp" }, guest: true },
+    { params: { fromSurface: false }, guest: true },
+    { params: { format: "jpeg", quality: 101 }, guest: true },
+    { params: {}, guest: false },
+  ])("preserves CDP screenshot options for $params in $sessionId", async (input) => {
+    const sendCommand = vi.fn(async () => ({ data: "cdp-image" }));
+    const result = await sendPageCommand(
+      (input.guest ? { hostWebContents: {} } : {}) as Electron.WebContents,
+      { sendCommand } as unknown as Electron.Debugger,
+      "Page.captureScreenshot",
+      input.params,
+      input.sessionId,
+    );
+    expect(result).toEqual({ data: "cdp-image" });
+    expect(sendCommand.mock.calls).toEqual([
+      input.sessionId === undefined
+        ? ["Page.captureScreenshot", input.params]
+        : ["Page.captureScreenshot", input.params, input.sessionId],
+    ]);
+  });
+
   it("types into an unfocused guest's own page, not the app's focused field", async () => {
     const guest = makeGuest({ focused: false });
     await guest.send("Input.insertText", { text: "pairing-code" });
