@@ -11,6 +11,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as YAML from "yaml";
 import { SkillManagerError, type SkillSource } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 import { resolveCommandPath, resolveSpawnCommand, setWindowsPath } from "@t3tools/shared/shell";
 import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
@@ -174,7 +175,15 @@ const make = Effect.gen(function* () {
       const spec = source.kind === "skills" ? "skills@1.7.4" : "@mtfe/mtskills@9.6.0";
       yield* run(
         "npm",
-        ["install", "--prefix", directory, "--no-audit", "--no-fund", spec],
+        [
+          "install",
+          "--prefix",
+          directory,
+          "--no-audit",
+          "--no-fund",
+          spec,
+          ...(source.kind === "skills" ? officialNpmRegistryArgs("skills") : []),
+        ],
         directory,
         source.registry,
       );
@@ -286,7 +295,7 @@ const make = Effect.gen(function* () {
     yield* run(
       binary,
       !source.executable && source.kind === "skills"
-        ? ["--no-install", "skills", "--version"]
+        ? [...officialNpmRegistryArgs("skills"), "--no-install", "skills", "--version"]
         : ["--version"],
       config.stateDir,
       source.registry,
@@ -330,7 +339,9 @@ const make = Effect.gen(function* () {
         ];
         yield* run(
           input.source.executable || "npx",
-          input.source.executable ? args : ["--yes", "skills@1.7.4", ...args],
+          input.source.executable
+            ? args
+            : [...officialNpmRegistryArgs("skills"), "--yes", "skills@1.7.4", ...args],
           input.staging,
           input.source.registry,
         );

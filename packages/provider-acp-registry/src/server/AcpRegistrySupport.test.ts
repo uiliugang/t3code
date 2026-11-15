@@ -512,6 +512,8 @@ describe("AcpRegistrySupport", () => {
       const npmCommands = yield* fileSystem.readFileString(toolchain.logPath);
       expect(npmCommands.match(/^install --global /gmu)).toHaveLength(1);
       expect(npmCommands).toContain("install --global @example/acp@V1.2.3");
+      expect(npmCommands).toContain("--registry=https://registry.npmjs.org/");
+      expect(npmCommands).toContain("--@example:registry=https://registry.npmjs.org/");
     }).pipe(
       Effect.scoped,
       Effect.provide(

@@ -261,6 +261,8 @@ export const layer = Layer.effect(
                       .fetchWorktreeBaseCommit({
                         cwd: root.sourcePath,
                         refName: baseRef,
+                        onProgress: (fetchProgress) =>
+                          tracker.stage(input.threadId, "fetch", { fetchProgress }),
                       })
                       .pipe(
                         Effect.tapError((error) =>

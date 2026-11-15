@@ -4,6 +4,7 @@ import {
   type WorktreeSetupStage,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { worktreeFetchLabel } from "@t3tools/client-runtime/worktree-setup";
 import {
   CheckIcon,
   CircleAlertIcon,
@@ -23,6 +24,7 @@ import { MiddleTruncate } from "../ui/middle-truncate";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { cn } from "~/lib/utils";
 import { useNowSecond } from "~/hooks/useNowSecond";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { WorkLogRow } from "./WorkLog";
 
 interface WorktreeSetupCardProps {
@@ -169,8 +171,11 @@ function StageRow({
   setupEndedAt: string | null;
   scriptName: string | null;
 }) {
+  const t = useUiTranslation();
+  const fetchLabel = worktreeFetchLabel(stage, t);
   const label =
-    stage.id === "setup-script" && scriptName ? scriptName : worktreeSetupStageLabel(stage.id);
+    fetchLabel ??
+    (stage.id === "setup-script" && scriptName ? scriptName : t(worktreeSetupStageLabel(stage.id)));
   const running = stage.status === "running";
   const trailing =
     stage.status === "pending"
@@ -179,9 +184,14 @@ function StageRow({
         ? (stage.detail ?? "skipped")
         : stage.id === "checkout" && running && stage.percent !== null
           ? `${stage.percent}%`
-          : stage.detail;
+          : stage.detail === null
+            ? null
+            : stage.id === "fetch"
+              ? t(stage.detail)
+              : stage.detail;
   return (
     <WorkLogRow
+      wrapLabel={fetchLabel !== null}
       data-worktree-setup-stage={stage.id}
       data-worktree-setup-status={stage.status}
       icon={
@@ -192,7 +202,11 @@ function StageRow({
       label={
         <span
           ref={running ? observeVisibleAnimation : undefined}
-          className={cn("relative block truncate", stageRowClassName(stage.status))}
+          className={cn(
+            "relative block",
+            fetchLabel ? "whitespace-normal break-words" : "truncate",
+            stageRowClassName(stage.status),
+          )}
         >
           {label}
           {running ? <ShimmerOverlay>{label}</ShimmerOverlay> : null}
@@ -320,6 +334,7 @@ export function WorktreeSetupCard({
 }: WorktreeSetupCardProps & {
   embedded?: boolean;
 }) {
+  const t = useUiTranslation();
   const running = snapshot.phase === "running";
   const [detailsOpen, setDetailsOpen] = useState(false);
   const setupStage = snapshot.stages.find((stage) => stage.id === "setup-script");
@@ -355,7 +370,7 @@ export function WorktreeSetupCard({
       )}
 
       {snapshot.phase === "failed" && snapshot.error ? (
-        <p className="mt-1 ml-8 text-xs text-muted-foreground">{snapshot.error}</p>
+        <p className="mt-1 ml-8 text-xs text-muted-foreground">{t(snapshot.error)}</p>
       ) : null}
 
       <div className="mt-0.5 ml-[calc(--spacing(6)+2px-(--spacing(2)-1px))] flex flex-wrap items-center gap-0.5">
@@ -367,24 +382,24 @@ export function WorktreeSetupCard({
           onClick={() => setDetailsOpen((open) => !open)}
         >
           {detailsOpen ? <ChevronDownIcon aria-hidden /> : <ChevronRightIcon aria-hidden />}
-          Details
+          {t("Details")}
         </Button>
         {showTerminal ? (
           <Button type="button" size="xs" variant="ghost-muted" onClick={onOpenTerminal}>
             <TerminalIcon aria-hidden />
-            Open terminal
+            {t("Open terminal")}
           </Button>
         ) : null}
         {onWorkLocally ? (
           <Button type="button" size="xs" variant="ghost-muted" onClick={onWorkLocally}>
             <LaptopIcon aria-hidden />
-            Work locally
+            {t("Work locally")}
           </Button>
         ) : null}
         {onCancel && running ? (
           <Button type="button" size="xs" variant="ghost-muted" onClick={onCancel}>
             <XIcon aria-hidden />
-            Cancel
+            {t("Cancel")}
           </Button>
         ) : null}
       </div>

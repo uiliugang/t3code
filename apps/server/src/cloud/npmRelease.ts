@@ -10,6 +10,7 @@ import {
   npmReleaseDatabaseMigration,
 } from "@t3tools/shared/cliRelease";
 import { resolveCommandPath } from "@t3tools/shared/shell";
+import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -143,7 +144,7 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
     capacity: 32,
     timeToLive: Duration.minutes(1),
     lookup: Effect.fn("NpmRelease.lookup")(function* (spec: string) {
-      // Without npm there is no configured registry to honor, so use the public one.
+      // Without npm, query the same registry through the server's HTTP client.
       const npmPath = yield* resolveCommandPath("npm");
       if (npmPath === null) return yield* lookupPublic(spec);
       const output = yield* npmPermits
@@ -151,7 +152,15 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
           runner.run({
             command: npmPath,
             // Named fields keep the output small; the full package document grows with every release.
-            args: ["view", "--global", "--json", `t3@${spec}`, "version", "t3code"],
+            args: [
+              "view",
+              "--global",
+              "--json",
+              `t3@${spec}`,
+              "version",
+              "t3code",
+              ...officialNpmRegistryArgs("t3"),
+            ],
             timeout: Duration.seconds(15),
             maxOutputBytes: 256 * 1024,
           }),

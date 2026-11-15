@@ -135,6 +135,10 @@
       "types": "./src/shell.ts",
       "import": "./src/shell.ts"
     },
+    "./npmRegistry": {
+      "types": "./src/npmRegistry.ts",
+      "import": "./src/npmRegistry.ts"
+    },
     "./envTrampoline": {
       "types": "./src/envTrampoline.ts",
       "import": "./src/envTrampoline.ts"

@@ -2136,6 +2136,234 @@ it.effect("retries a fetch that lost a ref update to another Git process", () =>
   ),
 );
 
+it.effect.each([
+  {
+    name: "connection reset",
+    errors: [
+      "fatal: unable to access 'https://example.com/repo': Recv failure: Connection reset by peer",
+    ],
+    attempts: 2,
+    succeeds: true,
+  },
+  {
+    name: "persistent network failure",
+    errors: Array(3).fill(
+      "fatal: unable to access 'https://example.com/repo': Could not resolve host: example.com",
+    ),
+    attempts: 3,
+    succeeds: false,
+  },
+  {
+    name: "mixed reference and network failures",
+    errors: [
+      "error: cannot lock ref 'refs/remotes/origin/main'",
+      "fatal: unable to access 'https://example.com/repo': Connection timed out",
+      "error: cannot lock ref 'refs/remotes/origin/main'",
+    ],
+    attempts: 3,
+    succeeds: false,
+  },
+  {
+    name: "authentication",
+    errors: ["fatal: Authentication failed for 'https://example.com/repo'"],
+    attempts: 1,
+    succeeds: false,
+  },
+  {
+    name: "permission",
+    errors: [
+      "fatal: unable to access 'https://example.com/repo': The requested URL returned error: 403",
+    ],
+    attempts: 1,
+    succeeds: false,
+  },
+  {
+    name: "certificate",
+    errors: [
+      "fatal: unable to access 'https://example.com/repo': SSL certificate problem: unable to get local issuer certificate",
+    ],
+    attempts: 1,
+    succeeds: false,
+  },
+  {
+    name: "disk failure",
+    errors: ["fatal: write error: No space left on device"],
+    attempts: 1,
+    succeeds: false,
+  },
+  {
+    name: "unwritable lock file",
+    errors: [
+      "fatal: Unable to create '/repo/.git/refs/remotes/origin/main.lock': Permission denied",
+    ],
+    attempts: 1,
+    succeeds: false,
+  },
+  {
+    name: "unknown failure",
+    errors: ["remote: connection reset by peer\nfatal: unexpected error"],
+    attempts: 1,
+    succeeds: false,
+  },
+] as const)("bounds worktree base recovery for $name", (scenario) =>
+  Effect.gen(function* () {
+    const events: string[] = [];
+    let attempts = 0;
+    const spawner = ChildProcessSpawner.make((command) => {
+      if (!ChildProcess.isStandardCommand(command) || command.args[0] !== "fetch")
+        return Effect.succeed(makeSuccessfulHandle("a".repeat(40)));
+      return Effect.acquireRelease(
+        Effect.sync(() => {
+          attempts++;
+          events.push(`start:${attempts}`);
+          const stderr = scenario.errors[attempts - 1];
+          return stderr === undefined
+            ? makeSuccessfulHandle("")
+            : makeFailedHandle(`${stderr}\nhttps://user:secret-fetch-token@example.com/private`);
+        }),
+        () =>
+          Effect.sync(() => {
+            events.push(`stop:${attempts}`);
+          }),
+      );
+    });
+    const driver = yield* makeGitVcsDriverCore().pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+    const fetching = yield* driver
+      .fetchWorktreeBaseCommit({
+        cwd: yield* makeTmpDir(),
+        refName: "origin/main",
+        remote: { remoteName: "origin", branchName: "main" },
+      })
+      .pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
+    yield* TestClock.adjust("10 seconds");
+    const result = yield* Fiber.join(fetching);
+    assert.equal(attempts, scenario.attempts);
+    assert.equal(Result.isSuccess(result), scenario.succeeds);
+    assert.deepEqual(
+      events,
+      Array.from({ length: scenario.attempts }, (_, i) => [
+        `start:${i + 1}`,
+        `stop:${i + 1}`,
+      ]).flat(),
+    );
+    if (Result.isFailure(result))
+      assert.notInclude(yield* encodeGitCommandError(result.failure), "secret-fetch-token");
+    else assert.equal(result.success?.commitSha, "a".repeat(40));
+  }).pipe(
+    Effect.provide(
+      layerServerConfig.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
+it.effect.each(["stalled", "cancel-connection", "cancel-backoff", "progress", "budget"] as const)(
+  "handles a worktree base fetch that is %s without leaving its process running",
+  (scenario) =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const finished = yield* Deferred.make<void>();
+      const retrying = yield* Deferred.make<void>();
+      const output = yield* Queue.unbounded<string, Cause.Done>();
+      const progressEvents: number[] = [];
+      let attempts = 0;
+      let stopped = 0;
+      const spawner = ChildProcessSpawner.make((command) => {
+        if (!ChildProcess.isStandardCommand(command) || command.args[0] !== "fetch")
+          return Effect.succeed(makeSuccessfulHandle("a".repeat(40)));
+        assert.equal(command.options.env?.GIT_HTTP_LOW_SPEED_LIMIT, "1");
+        assert.equal(command.options.env?.GIT_HTTP_LOW_SPEED_TIME, "30");
+        assert.include(command.args, "--progress");
+        return Effect.acquireRelease(
+          Effect.sync(() => {
+            attempts++;
+            return ChildProcessSpawner.makeHandle({
+              ...makeSuccessfulHandle(""),
+              exitCode: Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(finished)),
+                Effect.as(ChildProcessSpawner.ExitCode(0)),
+              ),
+              stderr: Stream.fromQueue(output).pipe(Stream.encodeText),
+            });
+          }),
+          () =>
+            Effect.sync(() => {
+              stopped++;
+            }),
+        );
+      });
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      const fetching = yield* driver
+        .fetchWorktreeBaseCommit({
+          cwd: yield* makeTmpDir(),
+          refName: "origin/main",
+          remote: { remoteName: "origin", branchName: "main" },
+          onProgress: (progress) =>
+            Effect.sync(() => {
+              progressEvents.push(progress.attempt);
+            }).pipe(
+              Effect.andThen(
+                progress.attempt === 2 ? Deferred.succeed(retrying, undefined) : Effect.void,
+              ),
+              Effect.asVoid,
+            ),
+        })
+        .pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(started);
+      if (scenario === "progress" || scenario === "budget") {
+        for (let count = 1; count <= (scenario === "progress" ? 4 : 15); count++) {
+          yield* Queue.offer(
+            output,
+            `Receiving objects: 10% (1/10), ${count}.00 KiB | 1.00 KiB/s\r`,
+          );
+          yield* TestClock.adjust("20 seconds");
+        }
+        if (scenario === "progress") {
+          yield* Deferred.succeed(finished, undefined);
+          yield* Queue.end(output);
+        }
+      } else if (scenario === "stalled") {
+        yield* Queue.offer(output, "remote: still alive\n");
+        yield* TestClock.adjust("100 seconds");
+      } else {
+        if (scenario === "cancel-backoff") {
+          yield* TestClock.adjust("30 seconds");
+          yield* Deferred.await(retrying);
+        }
+        yield* Fiber.interrupt(fetching);
+        yield* TestClock.adjust("6 minutes");
+        assert.equal(attempts, 1);
+        assert.equal(stopped, 1);
+        assert.isTrue(Exit.isFailure(yield* Fiber.await(fetching)));
+        return;
+      }
+      const result = yield* Fiber.join(fetching);
+      assert.equal(stopped, attempts);
+      assert.equal(attempts, scenario === "stalled" ? 3 : 1);
+      assert.deepEqual(progressEvents, scenario === "stalled" ? [1, 2, 3] : [1]);
+      if (scenario === "progress") assert.isTrue(Result.isSuccess(result));
+      else {
+        assert.isTrue(Result.isFailure(result));
+        if (Result.isFailure(result))
+          assert.include(
+            result.failure.detail,
+            scenario === "budget" ? "five-minute" : "stopped receiving data",
+          );
+      }
+    }).pipe(
+      Effect.provide(
+        layerServerConfig.pipe(
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
+);
+
 it.effect("does not fetch for status when the branch tracks a local branch", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -8868,6 +9096,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           commitSha: remoteHead,
           remoteRefName: "upstream/release",
         });
+        assert.deepEqual(
+          yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "refs/heads/stable" }),
+          fetched,
+        );
         yield* git(cwd, ["update-ref", "-d", "refs/remotes/upstream/release"]);
         assert.deepEqual(
           yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "upstream/release" }),
@@ -8878,6 +9110,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           commitSha: localHead,
           remoteRefName: "origin/stable",
         });
+        assert.deepEqual(
+          yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "refs/heads/stable" }),
+          { commitSha: localHead, remoteRefName: "origin/stable" },
+        );
         assert.equal(yield* git(cwd, ["rev-parse", "stable"]), localHead);
 
         const path = yield* Path.Path;
@@ -8931,7 +9167,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           yield* git(cwd, ["rev-parse", "refs/remotes/origin/release"]),
           yield* git(cwd, ["rev-parse", "HEAD"]),
         );
-        assert.isNull(yield* driver.fetchWorktreeBaseCommit({ cwd, refName: initialBranch }));
+        const error = yield* driver
+          .fetchWorktreeBaseCommit({ cwd, refName: initialBranch })
+          .pipe(Effect.flip);
+        assert.include(error.detail, "remote base branch no longer exists");
+        assert.equal(error.reason, "ref_not_found");
         yield* git(cwd, ["remote", "remove", "origin"]);
         assert.isNull(yield* driver.fetchWorktreeBaseCommit({ cwd, refName: initialBranch }));
       }),
@@ -8974,7 +9214,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const head = yield* git(cwd, ["rev-parse", "HEAD"]);
         const driver = yield* GitVcsDriver.GitVcsDriver;
 
-        assert.isNull(yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "unpublished" }));
+        assert.include(
+          (yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "unpublished" }).pipe(Effect.flip))
+            .detail,
+          "remote base branch no longer exists",
+        );
         assert.deepEqual(
           yield* driver.fetchWorktreeBaseCommit({
             cwd,

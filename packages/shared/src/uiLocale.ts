@@ -59,6 +59,29 @@ const zhCN: Readonly<Record<string, string>> = {
   "Disable all": "全部禁用",
   "Enable all": "全部启用",
 
+  "The selected remote base branch no longer exists. Select another base branch or turn off Start from remote to use a local branch.":
+    "所选远端基线分支已不存在。请选择其他基线分支，或关闭“从远端开始”以使用本地分支。",
+  "Fetching {ref}": "正在拉取 {ref}",
+  "No progress; retrying {ref} ({attempt}/{maxAttempts})":
+    "无进展，正在重试 {ref}（{attempt}/{maxAttempts}）",
+  "Connection failed; retrying {ref} ({attempt}/{maxAttempts})":
+    "连接失败，正在重试 {ref}（{attempt}/{maxAttempts}）",
+  "Reference busy; retrying {ref} ({attempt}/{maxAttempts})":
+    "引用被占用，正在重试 {ref}（{attempt}/{maxAttempts}）",
+  "Git stopped receiving data from the remote. Check the server's network connection, then retry.":
+    "Git 长时间未收到远端数据。请检查服务器的网络连接后重试。",
+  "Git fetch exceeded its five-minute recovery limit. Check the server's network connection, then retry.":
+    "Git 拉取已达到 5 分钟恢复时限。请检查服务器的网络连接后重试。",
+  "Git could not reach the remote. Check the server's network connection and remote host, then retry.":
+    "Git 无法连接远端。请检查服务器的网络连接及远端主机后重试。",
+  "Git could not authenticate with the remote. Check Git credentials or SSH access on the server, then retry.":
+    "Git 远端认证失败。请检查服务器上的 Git 凭据或 SSH 权限后重试。",
+  "Git could not verify the remote certificate or SSH host key. Check the server's trust configuration, then retry.":
+    "Git 无法验证远端证书或 SSH 主机密钥。请检查服务器的信任配置后重试。",
+  "Git could not access the remote repository. Check the remote URL and repository permissions on the server.":
+    "Git 无法访问远端仓库。请检查服务器上的远端地址和仓库权限。",
+  "Git could not update a local reference. Another Git operation or a stale lock may be blocking the fetch; check the repository on the server, then retry.":
+    "Git 无法更新本地引用。其他 Git 操作或残留锁可能阻止了拉取；请检查服务器上的仓库后重试。",
   "Could not inspect all nested repositories.": "无法完整检查目录内的嵌套仓库，请检查目录后重试。",
   "This folder contains repositories. Select them separately before cleaning the parent folder.":
     "此目录包含仓库。请单独勾选并清理内部仓库，再清理父目录。",
@@ -99,6 +122,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Directory and all local files permanently deleted.": "目录及全部本地文件已彻底删除。",
   "Directory is no longer a cleanup candidate. Refresh the list.":
     "此目录已不再是清理候选，请刷新列表。",
+  "Update providers": "更新当前环境",
+  "Update all environments": "更新全部环境",
+  "Check all environments": "检查全部环境",
+  "Refreshing providers": "正在检查提供商",
   "Expo Simulators": "Expo 模拟器",
   "Expo project": "Expo 项目",
   "Expo Simulators needs a paid Expo account. A session runs for up to 115 minutes and stops early when it is idle for the idle minutes, so idle minutes must be less than session minutes.":
@@ -1919,8 +1946,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "worktree location": "工作树位置",
   "Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the T3 home folder.":
     "新工作树的存放目录，可位于任意磁盘，例如 D:\\worktrees 或 ~/worktrees。已有工作树的位置不变。留空则使用 T3 主目录。",
-  "Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.":
-    "使用基准分支所跟踪远程分支的最新提交，即使两者名称不同。未设置跟踪分支时，使用 origin 上的同名分支；远程分支不存在时，使用本地分支。",
+  "Uses the latest commit of the base branch’s tracked remote branch, or the same-named branch on origin. If that remote branch is missing, new worktree creation stops. Turn this off to use a local branch.":
+    "使用基准分支所跟踪远程分支的最新提交；未设置跟踪分支时，使用 origin 上的同名分支。远程分支不存在时，新工作树创建会停止。关闭此选项可使用本地分支。",
   "Start new worktrees from remote by default": "默认从远程分支创建新工作树",
   "new worktrees start from remote": "从远程分支创建新工作树",
   "How new worktrees in this project populate git submodules.":

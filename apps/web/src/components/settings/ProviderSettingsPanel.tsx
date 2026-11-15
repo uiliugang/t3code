@@ -217,19 +217,25 @@ const providerCardHeightClassName =
 
 function ProviderSettingsPlaceholder({
   deviceTabs,
+  headerAction,
   icon,
   title,
   description,
   children,
 }: {
   readonly deviceTabs?: ReactNode;
+  readonly headerAction?: ReactNode;
   readonly icon: ReactNode;
   readonly title: string;
   readonly description: string;
   readonly children?: ReactNode;
 }) {
   return (
-    <SettingsSection {...searchableSetting("providers")} variant="plain">
+    <SettingsSection
+      {...searchableSetting("providers")}
+      variant="plain"
+      headerAction={headerAction}
+    >
       {deviceTabs ? (
         <div className="flex min-h-11 min-w-0 items-center px-3 sm:px-4">{deviceTabs}</div>
       ) : null}
@@ -257,10 +263,12 @@ function EnvironmentUnavailablePlaceholder({
   environment,
   access,
   deviceTabs,
+  headerAction,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly access: Exclude<ProviderEnvironmentAccess, { kind: "editable" | "read-only" }>;
   readonly deviceTabs?: ReactNode;
+  readonly headerAction?: ReactNode;
 }) {
   const t = useUiTranslation();
   const isLoading = access.kind === "loading";
@@ -279,6 +287,7 @@ function EnvironmentUnavailablePlaceholder({
   return (
     <ProviderSettingsPlaceholder
       deviceTabs={deviceTabs}
+      headerAction={headerAction}
       icon={
         <EnvironmentMachineIcon kind={resolveEnvironmentMachineKind(environment.serverConfig)} />
       }
@@ -302,6 +311,8 @@ interface ProviderSettingsTarget {
   readonly scoped?: boolean;
   readonly environmentIds?: readonly EnvironmentId[];
   readonly projectIds?: readonly ProjectId[];
+  readonly projectIdsByEnvironment?: Readonly<Record<EnvironmentId, readonly ProjectId[]>>;
+  readonly headerAction?: ReactNode;
 }
 
 export function ProviderSettingsPanel(target: ProviderSettingsTarget) {
@@ -453,7 +464,12 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
               ? target.instanceId
               : undefined
           }
-          projectIds={target.projectIds ?? []}
+          projectIds={
+            target.projectIdsByEnvironment?.[selectedEnvironment.environmentId] ??
+            target.projectIds ??
+            []
+          }
+          headerAction={target.headerAction}
         />
       ) : null}
     </>
@@ -465,11 +481,13 @@ function RemoteSessionGatedProviderSettings({
   deviceTabs,
   targetInstanceId,
   projectIds,
+  headerAction,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly deviceTabs?: ReactNode;
   readonly targetInstanceId?: ProviderInstanceId | undefined;
   readonly projectIds: readonly ProjectId[];
+  readonly headerAction?: ReactNode;
 }) {
   const sessionState = useEnvironmentSessionState(environment.environmentId);
   const operateAccess = resolveRemoteOperateAccess({
@@ -484,6 +502,7 @@ function RemoteSessionGatedProviderSettings({
       deviceTabs={deviceTabs}
       targetInstanceId={targetInstanceId}
       projectIds={projectIds}
+      headerAction={headerAction}
     />
   );
 }
@@ -494,12 +513,14 @@ function AccessGatedProviderSettings({
   deviceTabs,
   targetInstanceId,
   projectIds,
+  headerAction,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly operateAccess: ProviderOperateAccess;
   readonly deviceTabs?: ReactNode;
   readonly targetInstanceId?: ProviderInstanceId | undefined;
   readonly projectIds: readonly ProjectId[];
+  readonly headerAction?: ReactNode;
 }) {
   const access = classifyProviderEnvironmentAccess({
     connectionPhase: environment.connection.phase,
@@ -512,6 +533,7 @@ function AccessGatedProviderSettings({
         environment={environment}
         access={access}
         deviceTabs={deviceTabs}
+        headerAction={headerAction}
       />
     );
   }
@@ -523,6 +545,7 @@ function AccessGatedProviderSettings({
       deviceTabs={deviceTabs}
       targetInstanceId={targetInstanceId}
       projectIds={projectIds}
+      headerAction={headerAction}
     />
   );
 }
@@ -537,6 +560,7 @@ export function EnvironmentProviderSettings({
   deviceTabs,
   targetInstanceId,
   projectIds = NO_PROJECT_IDS,
+  headerAction,
 }: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
@@ -544,6 +568,7 @@ export function EnvironmentProviderSettings({
   readonly targetInstanceId?: ProviderInstanceId | undefined;
   readonly projectIds?: readonly ProjectId[];
   readonly readOnly?: boolean;
+  readonly headerAction?: ReactNode;
 }) {
   const t = useUiTranslation();
   const settings = useEnvironmentSettings(environmentId);
@@ -996,34 +1021,36 @@ export function EnvironmentProviderSettings({
           ) : null
         }
         headerAction={
-          // The ghost button's padding would inset its label, so pull the text to the card edge.
-          <div className="-me-2 flex min-w-0 items-center gap-2">
-            <ProviderUpdatesAction />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="xs"
-                    variant="ghost-muted"
-                    disabled={isRefreshingProviders || !canRefreshProviders}
-                    aria-busy={isRefreshingProviders}
-                    onClick={() => void refreshProviders()}
-                  >
-                    <RefreshIcon refreshing={isRefreshingProviders} />
-                    <span className="sr-only">{t("Refresh provider status")}</span>
-                    <span className="hidden min-w-0 truncate sm:inline">
-                      {isRefreshingProviders ? (
-                        "Refreshing providers"
-                      ) : (
-                        <ProviderLastChecked environmentId={environmentId} />
-                      )}
-                    </span>
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">{t("Refresh provider status")}</TooltipPopup>
-            </Tooltip>
-          </div>
+          headerAction ?? (
+            // The ghost button's padding would inset its label, so pull the text to the card edge.
+            <div className="-me-2 flex min-w-0 items-center gap-2">
+              <ProviderUpdatesAction environmentIds={[environmentId]} />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="xs"
+                      variant="ghost-muted"
+                      disabled={isRefreshingProviders || !canRefreshProviders}
+                      aria-busy={isRefreshingProviders}
+                      onClick={() => void refreshProviders()}
+                    >
+                      <RefreshIcon refreshing={isRefreshingProviders} />
+                      <span className="sr-only">{t("Refresh provider status")}</span>
+                      <span className="hidden min-w-0 truncate sm:inline">
+                        {isRefreshingProviders ? (
+                          t("Refreshing providers")
+                        ) : (
+                          <ProviderLastChecked environmentId={environmentId} />
+                        )}
+                      </span>
+                    </Button>
+                  }
+                />
+                <TooltipPopup side="top">{t("Refresh provider status")}</TooltipPopup>
+              </Tooltip>
+            </div>
+          )
         }
       >
         {deviceTabs ? (

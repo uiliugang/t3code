@@ -6,6 +6,14 @@ import { WorktreeSetupCard } from "./WorktreeSetupCard";
 
 const NOW = new Date("2026-10-26T12:00:10.000Z");
 
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return {
+    useUiTranslation: () => (message: string, values?: Record<string, string | number>) =>
+      translateUi("en", message, values),
+  };
+});
+
 function snapshot(overrides: Partial<WorktreeSetupSnapshot>): WorktreeSetupSnapshot {
   return {
     threadId: ThreadId.make("thread-1"),

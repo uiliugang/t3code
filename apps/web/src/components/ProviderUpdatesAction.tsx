@@ -1,4 +1,8 @@
-import { AuthProvidersManageScope, PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
+import {
+  AuthProvidersManageScope,
+  PROVIDER_DISPLAY_NAMES,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -10,6 +14,8 @@ import { useEnvironmentProviders, useEnvironments } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
 import { useEnvironmentsWithScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { RefreshIcon } from "./ui/refresh-icon";
 import {
   canOneClickUpdateProviderCandidate,
   collectProviderUpdateCandidates,
@@ -22,24 +28,31 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 // `refreshModels` always drops the server's hour-long latest-version cache. `modelCatalogOnly`
 // drops it only when the model manifest changed.
-export function useCheckProviderUpdates() {
+export function useCheckProviderUpdates(environmentIds?: readonly EnvironmentId[]) {
   const { environments } = useEnvironments();
-  const manageableIds = useEnvironmentsWithScope(environments, AuthProvidersManageScope);
+  const selectedEnvironments = environments.filter(
+    (environment) =>
+      environmentIds === undefined || environmentIds.includes(environment.environmentId),
+  );
+  const manageableIds = useEnvironmentsWithScope(selectedEnvironments, AuthProvidersManageScope);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const inFlight = useRef<Promise<void> | null>(null);
 
-  const check = async (quiet: boolean) => {
+  const check = async (quiet: boolean, reloadSecrets?: boolean) => {
     const failures = await Promise.all(
-      environments
+      selectedEnvironments
         .filter(
           (environment) =>
             environment.connection.phase === "connected" &&
             manageableIds.has(environment.environmentId),
         )
         .map(async ({ environmentId, label }) => {
-          const result = await refreshProviders({ environmentId, input: { refreshModels: true } });
+          const result = await refreshProviders({
+            environmentId,
+            input: { refreshModels: true, ...(reloadSecrets ? { reloadSecrets } : {}) },
+          });
           if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return [];
           const error = squashAtomCommandFailure(result);
           return [`${label}: ${error instanceof Error ? error.message : "Refresh failed."}`];
@@ -57,9 +70,12 @@ export function useCheckProviderUpdates() {
   };
 
   // A repeat click must not start a second model rediscovery while one is running.
-  return ({ quiet = false }: { readonly quiet?: boolean } = {}) => {
+  return ({
+    quiet = false,
+    reloadSecrets,
+  }: { readonly quiet?: boolean; readonly reloadSecrets?: boolean } = {}) => {
     if (inFlight.current) return inFlight.current;
-    const running = check(quiet).finally(() => {
+    const running = check(quiet, reloadSecrets).finally(() => {
       inFlight.current = null;
     });
     inFlight.current = running;
@@ -67,14 +83,18 @@ export function useCheckProviderUpdates() {
   };
 }
 
-export function useProviderUpdates() {
+export function useProviderUpdates(environmentIds?: readonly EnvironmentId[]) {
   const { environments } = useEnvironments();
-  const manageableIds = useEnvironmentsWithScope(environments, AuthProvidersManageScope);
+  const selectedEnvironments = environments.filter(
+    (environment) =>
+      environmentIds === undefined || environmentIds.includes(environment.environmentId),
+  );
+  const manageableIds = useEnvironmentsWithScope(selectedEnvironments, AuthProvidersManageScope);
   const providersByEnvironment = useEnvironmentProviders();
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
-  const machines = environments.flatMap((environment) => {
+  const machines = selectedEnvironments.flatMap((environment) => {
     const providers = providersByEnvironment.get(environment.environmentId) ?? [];
     if (
       environment.connection.phase !== "connected" ||
@@ -120,8 +140,15 @@ export function useProviderUpdates() {
   return { machines, updateAll };
 }
 
-export function ProviderUpdatesAction() {
-  const { machines, updateAll } = useProviderUpdates();
+export function ProviderUpdatesAction({
+  environmentIds,
+  allEnvironments = false,
+}: {
+  readonly environmentIds: readonly EnvironmentId[];
+  readonly allEnvironments?: boolean;
+}) {
+  const t = useUiTranslation();
+  const { machines, updateAll } = useProviderUpdates(environmentIds);
   const pending = useRef(false);
   const [isPending, setIsPending] = useState(false);
   if (machines.length === 0 && !isPending) {
@@ -147,7 +174,9 @@ export function ProviderUpdatesAction() {
             disabled={isPending}
             onClick={() => void handleUpdate()}
           >
-            {isPending ? "Updating…" : "Update all"}
+            {isPending
+              ? t("Updating…")
+              : t(allEnvironments ? "Update all environments" : "Update providers")}
           </Button>
         }
       />
@@ -162,5 +191,47 @@ export function ProviderUpdatesAction() {
         ))}
       </TooltipPopup>
     </Tooltip>
+  );
+}
+
+export function ProviderEnvironmentActions({
+  environmentIds,
+}: {
+  readonly environmentIds: readonly EnvironmentId[];
+}) {
+  const t = useUiTranslation();
+  const { environments } = useEnvironments();
+  const manageableIds = useEnvironmentsWithScope(environments, AuthProvidersManageScope);
+  const canCheck = environments.some(
+    (environment) =>
+      environmentIds.includes(environment.environmentId) &&
+      environment.connection.phase === "connected" &&
+      manageableIds.has(environment.environmentId),
+  );
+  const check = useCheckProviderUpdates(environmentIds);
+  const pending = useRef(false);
+  const [isPending, setIsPending] = useState(false);
+  const handleCheck = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setIsPending(true);
+    await settlePromise(() => check({ reloadSecrets: true }));
+    pending.current = false;
+    setIsPending(false);
+  };
+  return (
+    <div className="-me-2 flex min-w-0 flex-col items-end gap-1 @min-[40rem]/providers:flex-row @min-[40rem]/providers:items-center @min-[40rem]/providers:gap-2">
+      <ProviderUpdatesAction environmentIds={environmentIds} allEnvironments />
+      <Button
+        size="xs"
+        variant="ghost-muted"
+        disabled={isPending || !canCheck}
+        aria-busy={isPending}
+        onClick={() => void handleCheck()}
+      >
+        <RefreshIcon refreshing={isPending} />
+        {t(isPending ? "Refreshing providers" : "Check all environments")}
+      </Button>
+    </div>
   );
 }

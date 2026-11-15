@@ -3,6 +3,7 @@ import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 
 import { ProviderSettingsPanel } from "../components/settings/ProviderSettingsPanel";
 import { useSettingsScope } from "../components/settings/SettingsScopeContext";
+import { ProviderEnvironmentActions } from "../components/ProviderUpdatesAction";
 
 function SettingsProvidersRoute() {
   const target = Route.useSearch();
@@ -16,18 +17,35 @@ function SettingsProvidersRoute() {
       </p>
     );
   }
+  const singleEnvironment =
+    scope.kind === "environment" ||
+    scope.kind === "checkout" ||
+    (scope.kind === "project" && scope.environmentId !== null);
+  const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
   return (
     <ProviderSettingsPanel
       environmentId={environment.environmentId}
+      environmentIds={scope.environmentIds}
       {...(target.instanceId ? { instanceId: target.instanceId } : {})}
-      projectIds={
-        scope.kind === "project" || scope.kind === "checkout"
-          ? scope.members
-              .filter((member) => member.environmentId === environment.environmentId)
-              .map((member) => member.id)
-          : []
-      }
-      scoped
+      projectIdsByEnvironment={Object.fromEntries(
+        scope.environmentIds.map((environmentId) => [
+          environmentId,
+          members
+            .filter((member) => member.environmentId === environmentId)
+            .map((member) => member.id),
+        ]),
+      )}
+      {...(!singleEnvironment
+        ? {
+            headerAction: (
+              <ProviderEnvironmentActions
+                key={scope.environmentIds.join("\n")}
+                environmentIds={scope.environmentIds}
+              />
+            ),
+          }
+        : {})}
+      scoped={singleEnvironment}
     />
   );
 }

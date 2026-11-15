@@ -915,7 +915,11 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
       : row.summary;
     return (
       <WorkLogPressable
-        accessibilityLabel={warning ? label : `${row.summary}: ${failureItem.failure.message}`}
+        accessibilityLabel={
+          warning
+            ? label
+            : `${row.summary}: ${failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE ? t(failureItem.failure.message) : failureItem.failure.message}`
+        }
         accessibilityHint={t("Long press to copy.")}
         onLongPress={() => props.onCopyRow(row.id, row.getCopyText())}
       >
@@ -956,7 +960,9 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
           </View>
           {!warning ? (
             <Text selectable className="ml-7 text-sm text-foreground">
-              {failureItem.failure.message}
+              {failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE
+                ? t(failureItem.failure.message)
+                : failureItem.failure.message}
             </Text>
           ) : null}
           {failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE &&

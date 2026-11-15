@@ -14,6 +14,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { buildRemoteNodeEnvScript } from "@t3tools/ssh/tunnel";
 import { satisfiesSemverRange } from "@t3tools/shared/semver";
+import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
@@ -505,7 +506,7 @@ const NODE_PTY_BUILD_SCRIPT = (linuxServerDir: string) =>
     `cd ${shellQuote(linuxServerDir)}`,
     `pkg_dir=$(node -p "require('node:path').dirname(require.resolve('node-pty/package.json'))")`,
     `cd "$pkg_dir"`,
-    "npx --yes node-gyp rebuild",
+    `npx --yes ${officialNpmRegistryArgs("node-gyp").join(" ")} node-gyp rebuild`,
     `node -e 'require("node-pty")'`,
   ].join("\n");
 
