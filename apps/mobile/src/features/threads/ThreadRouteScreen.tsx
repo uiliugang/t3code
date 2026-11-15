@@ -1022,8 +1022,8 @@ function ThreadRouteContent(
   );
   const inspectorHeader = props.inspectorPresentation ? (
     <ThreadInspectorHeader
-      title={selectedThread?.title ?? "Thread"}
-      subtitle={threadSyncLabel ?? undefined}
+      title={selectedThread?.title ?? t("Thread")}
+      subtitle={threadSyncLabel === null ? undefined : t(threadSyncLabel)}
       {...props.inspectorPresentation}
     />
   ) : null;
@@ -1062,7 +1062,7 @@ function ThreadRouteContent(
                     : undefined
                 }
                 title={selectedThread.title}
-                subtitle={threadSyncLabel ?? headerSubtitle}
+                subtitle={threadSyncLabel === null ? headerSubtitle : t(threadSyncLabel)}
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}
                 inspectorMode={inspectorMode}
