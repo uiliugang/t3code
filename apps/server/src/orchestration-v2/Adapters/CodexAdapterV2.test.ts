@@ -2025,6 +2025,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               "tools.update_plan.enabled": true,
               mcp_optional_startup_grace_ms: 10_000,
               "features.concurrent_reasoning_summaries": true,
+              "features.untrusted_as_tool_output": false,
               "shell_environment_policy.set.T3CODE_THREAD_ID": `thread-${scenario}`,
               "shell_environment_policy.set.PNPM_CONFIG_VIRTUAL_STORE_TYPE": mode,
               "mcp_servers.t3-code": {
@@ -3103,6 +3104,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     Effect.gen(function* () {
       const nativeThreadId = "context-thread";
       const nativeTurnId = "context-turn";
+      const appContext = [{ key: "mcp_app_context", text: "untrusted app context" }];
       // An explicit Standard must reach Codex, or Codex falls back to Daybreak.
       const modelSelection = {
         ...CODEX_TEST_MODEL_SELECTION,
@@ -3113,6 +3115,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         codexInput: [{ type: "text", text: "work" }],
         runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
         modelSelection,
+        appContext,
         hasT3Mcp: true,
         cyberAccess: { defaultProgram: "daybreakBlue" },
       });
@@ -3162,11 +3165,25 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               method: "thread/inject_items",
               params: {
                 threadId: nativeThreadId,
-                items: Object.entries(params.additionalContext ?? {}).map(([key, entry]) => ({
-                  type: "message",
-                  role: "developer",
-                  content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
-                })),
+                items: [
+                  ...Object.entries(params.additionalContext ?? {})
+                    .filter(([, entry]) => entry.kind === "application")
+                    .map(([key, entry]) => ({
+                      type: "message",
+                      role: "developer",
+                      content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
+                    })),
+                  {
+                    type: "message",
+                    role: "user",
+                    content: [
+                      {
+                        type: "input_text",
+                        text: "<external_mcp_app_context>untrusted app context</external_mcp_app_context>",
+                      },
+                    ],
+                  },
+                ],
               },
             },
           },
@@ -3233,6 +3250,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           text: "work",
         }),
         modelSelection,
+        appContext,
       });
       yield* harness.firstTerminal;
       yield* Deferred.await(restoreRequested);
