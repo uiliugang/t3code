@@ -17,11 +17,24 @@ import {
   parseComposerContextHref,
 } from "@t3tools/shared/composerContextReferences";
 import { hasThreadLinks, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+import {
+  assistantCitationLabel,
+  parseAssistantCitationHref,
+} from "@t3tools/shared/assistantCitations";
 
 export function enrichedContextLinkPresentation(
   href: string,
   records?: ReadonlyArray<ComposerContextRecord>,
 ): { accent?: string; icon: ContextChipIconRef; label?: string } | undefined {
+  const citation = parseAssistantCitationHref(href);
+  if (citation) {
+    const presentation = contextChipPresentation("response");
+    return {
+      accent: presentation.accent,
+      icon: contextChipIcon(presentation, ""),
+      label: assistantCitationLabel(citation),
+    };
+  }
   const reference = parseComposerContextHref(href);
   if (!reference) return undefined;
   const record = records?.find((candidate) => candidate.contextId === reference.contextId);

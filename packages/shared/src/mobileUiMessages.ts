@@ -1,4 +1,13 @@
 export const mobileUiMessages: Readonly<Record<string, string>> = {
+  Cite: "引用",
+  "Cite formula": "引用公式",
+  "Reply to this response": "引用这条回复",
+  "Quoted text": "引用文字",
+  "Open source message": "查看原消息",
+  "Selection is too long to cite": "所选文字过长，无法引用",
+  "Shorten selection": "请缩短所选文字",
+  "Could not add reference": "无法添加引用",
+  "Remove a context item and try again.": "请移除一个上下文项后重试。",
   "Show threads from every environment": "显示所有环境中的会话",
   "Show threads from every project": "显示所有项目中的会话",
   "App updates": "应用更新",

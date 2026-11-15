@@ -4,6 +4,7 @@ import {
   type ServerProviderSkill,
 } from "@t3tools/contracts";
 import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   collectComposerContextReferences,
@@ -61,6 +62,31 @@ const annotation = {
 };
 
 describe("mobile composer context", () => {
+  it("treats assistant citations as one chip without parsing skills or mentions inside the quote", () => {
+    const citation = serializeAssistantCitation({
+      version: 1,
+      environmentId: "environment-1" as never,
+      threadId: "thread-1" as never,
+      messageId: "message-1" as never,
+      text: "检查 @src $skill 😀",
+      start: 0,
+      end: 18,
+      prefix: "",
+      suffix: "",
+    });
+    const value = `前文 ${citation} 后文`;
+    expect(
+      composerContextEditorTokens(value, collectComposerInlineTokens(value), new Map()),
+    ).toEqual([
+      expect.objectContaining({
+        type: "citation",
+        source: citation,
+        value: "检查 @src $skill 😀",
+        start: 3,
+        end: 3 + citation.length,
+      }),
+    ]);
+  });
   it("rejects a malformed record instead of allowing the wire decoder to drop its payload", () => {
     expect(
       composerContextSendBlockReason({

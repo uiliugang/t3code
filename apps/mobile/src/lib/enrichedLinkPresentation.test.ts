@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ComposerContextId, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { formatAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import {
   enrichedLinkVariantPattern,
+  enrichedContextLinkPresentation,
   buildEnrichedModelReferences,
   enrichedModelLinkRegex,
   enrichedModelReference,
@@ -13,6 +15,23 @@ import {
 } from "./enrichedLinkPresentation";
 
 describe("Enriched link presentation", () => {
+  it("keeps sent citations as readable source links without requiring a context record", () => {
+    const href = formatAssistantCitationHref({
+      version: 1,
+      environmentId: "environment-1" as never,
+      threadId: "thread-1" as never,
+      messageId: "message-1" as never,
+      text: "中文引用 😀",
+      start: 0,
+      end: 7,
+      prefix: "",
+      suffix: "",
+    });
+    expect(enrichedContextLinkPresentation(href, [])).toMatchObject({
+      label: "中文引用 😀",
+      icon: { kind: "chip", name: "message-circle" },
+    });
+  });
   it("recognizes file-shaped code without turning commands or URLs into links", () => {
     for (const path of [
       "src/app.tsx",
