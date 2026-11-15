@@ -1,3 +1,4 @@
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import {
   providerInstanceConfigEnabledFlag,
   ProviderInstanceId,
@@ -475,7 +476,8 @@ const makeReconcile = <R>(input: {
         } else {
           builtUnavailable.set(
             instanceId,
-            entry.driver === "claudeAgent" && isClaudeByok(entry.config)
+            (entry.driver === "claudeAgent" && isClaudeByok(entry.config)) ||
+              (entry.driver === "codex" && codexConnectionMode(entry.config) === "byok")
               ? { ...result.snapshot, customModelsOnly: true }
               : result.snapshot,
           );

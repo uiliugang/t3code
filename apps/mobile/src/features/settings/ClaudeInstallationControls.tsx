@@ -1,3 +1,4 @@
+import { codexConnectionMode, codexRuntimeSource } from "@t3tools/shared/codexByok";
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@t3tools/contracts";
 import { View } from "react-native";
@@ -24,7 +25,12 @@ export function ClaudeInstallationControls({
   };
   const config =
     instance?.config !== null && typeof instance?.config === "object" ? instance.config : {};
-  const managed = "setupMode" in config && config.setupMode === "managed";
+  const codex = provider.driver === "codex";
+  const source = codexRuntimeSource(config);
+  const connection = codexConnectionMode(config);
+  const managed = codex
+    ? codexRuntimeSource(config) === "managed"
+    : "setupMode" in config && config.setupMode === "managed";
   const environmentId = environment.environmentId;
   const target = { environmentId, input: { instanceId: provider.instanceId } };
   const installation = useEnvironmentQuery(
@@ -51,19 +57,91 @@ export function ClaudeInstallationControls({
     state?.phase === "downloading" || state?.phase === "extracting" || state?.phase === "verifying";
   return (
     <View className="gap-2 border-t border-border-subtle px-4 py-3">
+      {codex ? (
+        <View className="flex-row flex-wrap items-center justify-between gap-2">
+          <Text textRole="body">{t("Connection method")}</Text>
+          <Menu
+            actions={[
+              {
+                id: "chatgpt",
+                title: t("ChatGPT account"),
+                state: connection === "chatgpt" ? "on" : "off",
+              },
+              {
+                id: "existing",
+                title: t("Use existing CLI"),
+                state: connection === "existing" ? "on" : "off",
+              },
+              { id: "byok", title: t("API Key"), state: connection === "byok" ? "on" : "off" },
+            ]}
+            onPressAction={({ nativeEvent }) => {
+              const mode = nativeEvent.event;
+              if (!canMutate || active || !["chatgpt", "existing", "byok"].includes(mode)) return;
+              void mutate({
+                environmentId,
+                input: {
+                  patch: {},
+                  providerInstanceMutation: {
+                    operation: "upsert",
+                    instanceId: provider.instanceId,
+                    instance: {
+                      ...instance,
+                      config: {
+                        ...config,
+                        connectionMode: mode,
+                        runtimeSource: source,
+                        setupMode: mode === "chatgpt" ? "managed" : "existing",
+                      },
+                    },
+                  },
+                },
+              });
+            }}
+          >
+            <ControlPill
+              label={t(
+                connection === "chatgpt"
+                  ? "ChatGPT account"
+                  : connection === "byok"
+                    ? "API Key"
+                    : "Use existing CLI",
+              )}
+              disabled={!canMutate || active}
+            />
+          </Menu>
+        </View>
+      ) : null}
       <View className="flex-row flex-wrap items-center justify-between gap-2">
         <Text textRole="body" className="shrink text-foreground">
           {t("{name} installation", { name: provider.displayName ?? "Claude" })}
         </Text>
         <Menu
           actions={[
-            { id: "existing", title: t("Use local installation"), state: managed ? "off" : "on" },
+            ...(codex
+              ? [
+                  {
+                    id: "auto",
+                    title: t("Automatic"),
+                    state: source === "auto" ? ("on" as const) : ("off" as const),
+                  },
+                ]
+              : []),
+            {
+              id: "existing",
+              title: t("Use local installation"),
+              state: (codex ? source === "local" : !managed) ? "on" : "off",
+            },
             { id: "managed", title: t("Managed by T3"), state: managed ? "on" : "off" },
           ]}
           onPressAction={({ nativeEvent }) => {
             if (!canMutate || active) return;
             const setupMode = nativeEvent.event;
-            if (setupMode !== "existing" && setupMode !== "managed") return;
+            if (
+              setupMode !== "existing" &&
+              setupMode !== "managed" &&
+              !(codex && setupMode === "auto")
+            )
+              return;
             void mutate({
               environmentId,
               input: {
@@ -71,14 +149,31 @@ export function ClaudeInstallationControls({
                 providerInstanceMutation: {
                   operation: "upsert",
                   instanceId: provider.instanceId,
-                  instance: { ...instance, config: { ...config, setupMode } },
+                  instance: {
+                    ...instance,
+                    config: codex
+                      ? {
+                          ...config,
+                          connectionMode: codexConnectionMode(config),
+                          runtimeSource: setupMode === "existing" ? "local" : setupMode,
+                          setupMode:
+                            codexConnectionMode(config) === "chatgpt" ? "managed" : "existing",
+                        }
+                      : { ...config, setupMode },
+                  },
                 },
               },
             });
           }}
         >
           <ControlPill
-            label={t(managed ? "Managed by T3" : "Use local installation")}
+            label={t(
+              codex && source === "auto"
+                ? "Automatic"
+                : managed
+                  ? "Managed by T3"
+                  : "Use local installation",
+            )}
             disabled={!canMutate || active}
           />
         </Menu>
@@ -106,8 +201,14 @@ export function ClaudeInstallationControls({
             ) : (
               <>
                 <ControlPill
-                  label={t(provider.installed ? "Update Claude" : "Install Claude")}
-                  disabled={!canStart || !provider.setup?.canInstall}
+                  label={t(
+                    codex
+                      ? "Install / update"
+                      : provider.installed
+                        ? "Update Claude"
+                        : "Install Claude",
+                  )}
+                  disabled={!canStart || (!codex && !provider.setup?.canInstall)}
                   onPress={() => void start(target)}
                 />
                 {state?.canRemove ? (

@@ -433,6 +433,7 @@ const layerTestNodeServices = Layer.mergeAll(
   }),
   Layer.mock(CodexInstallation.CodexInstallation)({
     managedDirectory: "unused-managed-installation",
+    startManaged: Effect.die("Unexpected managed installation"),
   }),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
   Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {

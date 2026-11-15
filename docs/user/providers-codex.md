@@ -37,6 +37,26 @@ with the instance's Codex configuration and variables. In **Settings → Provide
 use **Sync models from provider** after the service's available models change.
 Manually added models and their options are kept when you sync.
 
+## Use an API key
+
+In **Settings → Providers → Add provider**, choose **Codex → API Key**. Enter the
+service's Responses API base URL, an API key (or a secret reference), and the exact
+model IDs supplied by that service. Keep any path prefix such as `/v1`; do not
+include `/responses`. T3 stores the key as a secret and isolates this connection
+from your CLI and ChatGPT login.
+
+**Check connection** requests the model list without generating tokens. A successful
+check does not prove inference access. **Test model** makes a small, billable Responses
+API tool round trip and runs only when you choose it. Services without a model-list
+endpoint can still be configured with manually entered model IDs.
+
+**Connection method** chooses credentials; **Runtime source** chooses the executable.
+Changing only the runtime source keeps the current connection. Instances on the same
+environment share one T3-managed Codex installation and its updates, while keeping
+their credentials and BYOK state separate. Claude installations are shared separately.
+This does not share agent processes across accounts. Finish or stop active turns and
+sign-in before changing connection settings.
+
 ## Allow more time for provider checks
 
 If an authenticated Codex installation reports “Timed out while checking Codex

@@ -1067,6 +1067,13 @@ export const layer: Layer.Layer<
               cause: `Native fork transfer ${nativeForkTransfer.id} has no source provider execution.`,
             });
           }
+          if (session.validateThreadConnection) {
+            const connection = yield* session
+              .validateThreadConnection(sourceProviderThread)
+              .pipe(Effect.result);
+            if (connection._tag === "Failure")
+              return yield* loadFromProvider(Effect.fail(connection.failure));
+          }
           // Providers refuse to fork a busy thread, so a source that started a turn after
           // dispatch planned this fork gets the portable context dispatch gives a busy source.
           const sourceBusy = sourceProjection.runs.some(
@@ -1101,6 +1108,8 @@ export const layer: Layer.Layer<
               }),
             );
             if (forked._tag === "Success") return forked.success;
+            if (forked.failure._tag === "ProviderAdapterConnectionMismatchError")
+              return yield* loadFromProvider(Effect.fail(forked.failure));
             if (input.willRetry === true) return yield* forked.failure;
             if (!(yield* isCurrentAttemptInStatus("starting"))) return undefined;
             // Retries are spent (e.g. the source's native session is gone): start fresh with portable history.
@@ -1247,6 +1256,13 @@ export const layer: Layer.Layer<
             handoff.delivery?.nativeThreadId === providerThread.nativeThreadRef?.nativeId &&
             handoff.delivery?.status === "pending",
         );
+        if (session.validateThreadConnection) {
+          const connection = yield* session
+            .validateThreadConnection(providerThread)
+            .pipe(Effect.result);
+          if (connection._tag === "Failure")
+            return yield* loadFromProvider(Effect.fail(connection.failure));
+        }
         const resumed = yield* Effect.result(
           uncertainDelivery
             ? Effect.fail(
@@ -1320,11 +1336,11 @@ export const layer: Layer.Layer<
         resumedHandoffContext = undefined;
         resumedRetryHandoff = [];
         if (!(yield* isCurrentAttemptInStatus("starting"))) return undefined;
-        // Another client is still writing to the native thread. A fresh
-        // session here would silently split the conversation from it.
+        // Recovery must not split a live native thread or send its history to another connection.
         if (
           resumed._tag === "Failure" &&
-          resumed.failure._tag === "ProviderAdapterThreadInUseError"
+          (resumed.failure._tag === "ProviderAdapterThreadInUseError" ||
+            resumed.failure._tag === "ProviderAdapterConnectionMismatchError")
         ) {
           return yield* loadFromProvider(Effect.fail(resumed.failure));
         }

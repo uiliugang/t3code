@@ -1733,6 +1733,16 @@ it.effect("ProviderSessionManagerV2 still idles out a session releaseUnlessBusy 
         runtimePolicy,
       });
 
+      const change = yield* manager
+        .withInstanceClosed(
+          modelSelection.instanceId,
+          Effect.die("Must not change a busy provider"),
+          true,
+        )
+        .pipe(Effect.result);
+      assert.equal(change._tag, "Failure");
+      assert.isTrue(yield* manager.isLive(providerSessionId));
+
       assert.isFalse(
         yield* manager.releaseUnlessBusy({
           providerSessionId,

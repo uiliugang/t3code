@@ -70,6 +70,7 @@ it.live.each(
       };
       const layerInstaller = Layer.mock(CodexInstallation.CodexInstallation)({
         managedDirectory: "/isolated/tools/codex",
+        startManaged: Effect.die("Unexpected managed installation"),
         resolve: () => Effect.succeed(executable),
         acquire: () =>
           Effect.gen(function* () {

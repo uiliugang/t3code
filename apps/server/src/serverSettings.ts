@@ -265,6 +265,38 @@ function ensureProviderInstanceMutationAllowed(
       }),
     );
   }
+  if (
+    (mutation.operation === "upsert" || mutation.operation === "create") &&
+    mutation.instance.driver === "codex"
+  ) {
+    const previous = settings.providerInstances[mutation.instanceId]?.config;
+    const next = mutation.instance.config;
+    const read = (value: unknown, key: string) =>
+      value && typeof value === "object" ? Reflect.get(value, key) : undefined;
+    const mode = read(next, "connectionMode");
+    const legacy = read(next, "setupMode");
+    const dropped = ["connectionMode", "runtimeSource"].some(
+      (key) => read(previous, key) !== undefined && read(next, key) === undefined,
+    );
+    const conflict =
+      mode !== undefined &&
+      legacy !== undefined &&
+      legacy !== (mode === "chatgpt" ? "managed" : "existing");
+    const args = read(next, "launchArgs");
+    if (dropped || conflict || (mode === "byok" && typeof args === "string" && args.trim())) {
+      return Effect.fail(
+        new ServerSettingsError({
+          settingsPath,
+          operation: "write-file",
+          cause: new Error(
+            dropped || conflict
+              ? "This client cannot safely update the Codex connection. Refresh or upgrade it."
+              : "Remove launch arguments before using Codex BYOK; the connection controls its API routing.",
+          ),
+        }),
+      );
+    }
+  }
   return Effect.void;
 }
 
@@ -1239,6 +1271,14 @@ const make = Effect.gen(function* () {
         // An older client echoes a reference as the redacted marker; restore it before vetting so
         // a removed provider's reference is cleared below rather than restored by persistence.
         const updated = withEchoedSecretReferences(current, yield* update(current));
+        for (const [id, instance] of Object.entries(updated.providerInstances)) {
+          if (instance.driver === "codex")
+            yield* ensureProviderInstanceMutationAllowed(
+              current,
+              { operation: "upsert", instanceId: ProviderInstanceId.make(id), instance },
+              settingsPath,
+            );
+        }
         // Vet before secrets: a variable the policy hides from clients is not one they removed.
         const vetted = managed.vetWrite(current, yield* normalizeServerSettings(updated), patch);
         if (vetted._tag === "Locked") {

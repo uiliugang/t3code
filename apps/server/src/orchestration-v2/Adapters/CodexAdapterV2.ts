@@ -1,3 +1,4 @@
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import { pipe } from "effect/Function";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
@@ -949,6 +950,7 @@ function providerThreadFromCodexThread(input: {
     readonly updatedAt: number;
   };
   readonly forkedFrom?: OrchestrationV2ProviderThread["forkedFrom"];
+  readonly connectionKey?: string | undefined;
 }): OrchestrationV2ProviderThread {
   return {
     id: input.idAllocator.derive.providerThread({
@@ -971,6 +973,7 @@ function providerThreadFromCodexThread(input: {
     lastRunOrdinal: null,
     handoffIds: [],
     forkedFrom: input.forkedFrom ?? null,
+    ...(input.connectionKey ? { nativeMetadata: { codexConnectionKey: input.connectionKey } } : {}),
     createdAt: codexTimestamp(input.thread.createdAt),
     updatedAt: codexTimestamp(input.thread.updatedAt),
   };
@@ -1029,6 +1032,7 @@ function providerGoalFromCodex(goal: CodexThreadGoal): OrchestrationV2ProviderGo
   };
 }
 
+const isConnectionMismatch = Schema.is(ProviderAdapter.ProviderAdapterConnectionMismatchError);
 const providerGoalsEqual = Schema.toEquivalence(Schema.NullOr(OrchestrationV2ProviderGoal));
 
 function describeCodexGoal(goal: OrchestrationV2ProviderGoal): string {
@@ -1824,7 +1828,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
   { instanceId, environment, enabled, config }: ProviderAdapterDriverCreateInput<CodexSettings>,
   hooks: Pick<
     CodexAdapterV2Options,
-    "onUsageLimits" | "resolveRuntime" | "compatibility" | "models"
+    "onUsageLimits" | "resolveRuntime" | "compatibility" | "models" | "connectionKey"
   > = {},
 ) {
   const clientFactory = yield* CodexAppServerClientFactory;
@@ -1867,6 +1871,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
     serverConfig,
     continuationRequests,
     watchCommandStops: portDiscovery.watchAgentCommandStops,
+    connectionKey: homeLayout.continuationKey,
     ...hooks,
   });
 });
@@ -1874,6 +1879,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
 export interface CodexAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
   readonly settings: CodexSettings;
+  readonly connectionKey?: string | undefined;
   readonly environment: NodeJS.ProcessEnv;
   readonly clientFactory: CodexAppServerClientFactoryShape;
   readonly onUsageLimits?: ManagedServerProvider["applyUsageLimits"];
@@ -1905,6 +1911,22 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
     threadId === null ? Effect.undefined : mcpSessions.read(threadId);
   const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
   const continuationRequests = adapterOptions.continuationRequests;
+  const validateConnection = (thread: OrchestrationV2ProviderThread) => {
+    const saved = thread.nativeMetadata?.codexConnectionKey;
+    const current = adapterOptions.connectionKey;
+    return current &&
+      ((saved && saved !== current) ||
+        (!saved && codexConnectionMode(adapterOptions.settings) === "byok"))
+      ? Effect.fail(
+          new ProviderAdapter.ProviderAdapterConnectionMismatchError({
+            driver: CODEX_PROVIDER,
+            providerThreadId: thread.id,
+            detail:
+              "This thread belongs to a different Codex connection. Switch back to its original connection or start a new thread.",
+          }),
+        )
+      : Effect.void;
+  };
 
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: adapterOptions.instanceId,
@@ -3252,6 +3274,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               driver: CODEX_PROVIDER,
               providerInstanceId: input.context.input.modelSelection.instanceId,
               providerSessionId: input.context.providerThread.providerSessionId,
+              ...(adapterOptions.connectionKey
+                ? { nativeMetadata: { codexConnectionKey: adapterOptions.connectionKey } }
+                : {}),
               appThreadId: childThreadId,
               ownerNodeId: null,
               nativeThreadRef: {
@@ -7432,7 +7457,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               hasT3Mcp: mcpSession !== undefined,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
-              omitServiceTier: adapterOptions.resolveRuntime !== undefined,
+              omitServiceTier: codexConnectionMode(adapterOptions.settings) === "chatgpt",
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
               ...(configuredReasoningSummary === undefined ? {} : { configuredReasoningSummary }),
             });
@@ -7769,6 +7794,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ownerNodeId: null,
                   providerSessionId: input.providerSessionId,
                   providerInstanceId: adapterOptions.instanceId,
+                  connectionKey: adapterOptions.connectionKey,
                   thread: response.thread,
                 }),
               ),
@@ -7781,8 +7807,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   }),
               ),
             ),
+          validateThreadConnection: validateConnection,
           resumeThread: Effect.fn("CodexAdapterV2.resumeThread")(
             function* (threadInput) {
+              yield* validateConnection(threadInput.providerThread);
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
               const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
               const resume = resumeNativeThread(nativeThreadId, {
@@ -7808,6 +7836,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 providerSessionId: input.providerSessionId,
                 providerInstanceId: adapterOptions.instanceId,
                 status: "idle",
+                nativeMetadata: {
+                  ...threadInput.providerThread.nativeMetadata,
+                  ...(adapterOptions.connectionKey
+                    ? { codexConnectionKey: adapterOptions.connectionKey }
+                    : {}),
+                },
                 nativeThreadRef: {
                   driver: CODEX_PROVIDER,
                   nativeId: response.thread.id,
@@ -7820,19 +7854,21 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             (effect, threadInput) =>
               effect.pipe(
                 Effect.mapError((cause) =>
-                  isCodexActiveWriterError(cause)
-                    ? new ProviderAdapter.ProviderAdapterThreadInUseError({
-                        driver: CODEX_PROVIDER,
-                        providerThreadId: threadInput.providerThread.id,
-                        detail: CODEX_THREAD_IN_USE_MESSAGE,
-                        cause,
-                      })
-                    : new ProviderAdapter.ProviderAdapterResumeThreadError({
-                        driver: CODEX_PROVIDER,
-                        providerSessionId: input.providerSessionId,
-                        providerThreadId: threadInput.providerThread.id,
-                        cause,
-                      }),
+                  isConnectionMismatch(cause)
+                    ? cause
+                    : isCodexActiveWriterError(cause)
+                      ? new ProviderAdapter.ProviderAdapterThreadInUseError({
+                          driver: CODEX_PROVIDER,
+                          providerThreadId: threadInput.providerThread.id,
+                          detail: CODEX_THREAD_IN_USE_MESSAGE,
+                          cause,
+                        })
+                      : new ProviderAdapter.ProviderAdapterResumeThreadError({
+                          driver: CODEX_PROVIDER,
+                          providerSessionId: input.providerSessionId,
+                          providerThreadId: threadInput.providerThread.id,
+                          cause,
+                        }),
                 ),
               ),
           ),
@@ -8669,6 +8705,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ),
           forkThread: Effect.fn("CodexAdapterV2.forkThread")(
             function* (threadInput) {
+              yield* validateConnection(threadInput.sourceProviderThread);
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
               const fork = client.request("thread/fork", {
@@ -8700,13 +8737,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     }),
                   ),
                 ),
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderAdapter.ProviderAdapterForkThreadError({
-                      driver: CODEX_PROVIDER,
-                      providerThreadId: threadInput.sourceProviderThread.id,
-                      cause,
-                    }),
+                Effect.mapError((cause) =>
+                  isConnectionMismatch(cause)
+                    ? cause
+                    : new ProviderAdapter.ProviderAdapterForkThreadError({
+                        driver: CODEX_PROVIDER,
+                        providerThreadId: threadInput.sourceProviderThread.id,
+                        cause,
+                      }),
                 ),
               );
               let forkedThread = response.thread;
@@ -8741,6 +8779,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 ownerNodeId: threadInput.ownerNodeId ?? null,
                 providerSessionId: input.providerSessionId,
                 providerInstanceId: adapterOptions.instanceId,
+                connectionKey: adapterOptions.connectionKey,
                 thread: forkedThread,
                 forkedFrom: {
                   providerThreadId: threadInput.sourceProviderThread.id,

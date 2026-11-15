@@ -1,3 +1,4 @@
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import type {
   ChatGptHandoffState,
   ProviderAuthState,
@@ -5,12 +6,7 @@ import type {
 } from "@t3tools/contracts";
 
 export function readCodexSetupMode(config: unknown): "managed" | "existing" {
-  return config !== null &&
-    typeof config === "object" &&
-    "setupMode" in config &&
-    config.setupMode === "managed"
-    ? "managed"
-    : "existing";
+  return codexConnectionMode(config) === "chatgpt" ? "managed" : "existing";
 }
 
 const RUNNING_INSTALL_PHASES = new Set(["downloading", "extracting", "verifying"]);

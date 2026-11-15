@@ -175,6 +175,19 @@ it.effect.each(["0.156.0", "0.156.1", "0.156.2", "0.157.0"])(
       expect((yield* h.installation.state).source).toBe("local");
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+it.effect("honors managed selection even when a compatible local runtime exists", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness({ local: { version: "0.156.1" } });
+    yield* h.installation.startManaged;
+    expect((yield* terminalState(h.installation)).phase).toBe("succeeded");
+    expect((yield* h.installation.resolve("managed")).source).toBe("managed");
+    expect((yield* h.installation.resolve("local")).executablePath).toBe(h.localBinaryPath);
+    expect(h.downloads()).toBe(1);
+    yield* h.installation.acquire("managed").pipe(Effect.scoped);
+    expect(yield* h.fs.exists(h.localBinaryPath)).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
 it.effect.each([
   { version: "0.128.9" },
   { version: "0.145.0" },

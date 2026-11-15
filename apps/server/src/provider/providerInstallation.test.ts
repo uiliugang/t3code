@@ -1,6 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
+  DEFAULT_SERVER_SETTINGS,
+  type ServerSettings as ServerSettingsValue,
   ProviderDriverKind,
   ProviderInstanceId,
   SecretProviderId,
@@ -9,6 +11,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -64,6 +67,9 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     instance?: ProviderInstance;
     settings?: Parameters<typeof ServerSettings.layerTest>[0];
     secretValue?: string | undefined;
+    settingsRef?: SubscriptionRef.SubscriptionRef<ServerSettingsValue>;
+    rebuilding?: boolean;
+    policy?: Parameters<typeof ServerSettings.layerTest>[1];
   } = {},
 ) {
   const calls: string[] = [];
@@ -90,9 +96,15 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
       state: Effect.succeed(state),
       changes: Stream.succeed(state),
     }),
-    ServerSettings.layerTest(input.settings),
+    input.settingsRef
+      ? Layer.mock(ServerSettings.ServerSettingsService)({
+          getSettings: SubscriptionRef.get(input.settingsRef),
+          subscribeChanges: Effect.succeed(SubscriptionRef.changes(input.settingsRef)),
+        })
+      : ServerSettings.layerTest(input.settings, input.policy),
     Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-      getInstance: (id) => Effect.succeed(id === configured.instanceId ? configured : undefined),
+      getInstance: (id) =>
+        Effect.succeed(!input.rebuilding && id === configured.instanceId ? configured : undefined),
       listInstances: Effect.succeed([configured]),
     }),
     Layer.mock(ProviderRegistry.ProviderRegistry)({
@@ -104,6 +116,21 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     }),
     Layer.mock(CodexInstallation.CodexInstallation)({
       managedDirectory: "/unused-managed-codex",
+      resolve: (source, binaryPath) =>
+        source === "managed"
+          ? Effect.fail(
+              new CodexInstallation.CodexInstallationError({
+                operation: "resolve",
+                detail: "No managed runtime",
+              }),
+            )
+          : Effect.succeed({
+              source: "local" as const,
+              version: "0.169.0",
+              executablePath: binaryPath ?? "/custom/codex",
+              managedVersionDirectory: null,
+            }),
+      startManaged: Effect.die("Unexpected managed installation"),
       start: Effect.sync(() => {
         calls.push("codex-start");
         return { ...state, driver: ProviderDriverKind.make("codex") };
@@ -114,7 +141,13 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
           return { ...state, driver: ProviderDriverKind.make("codex") };
         }),
       state: Effect.succeed({ ...state, driver: ProviderDriverKind.make("codex") }),
-      changes: Stream.succeed({ ...state, driver: ProviderDriverKind.make("codex") }),
+      changes: Stream.succeed({
+        ...state,
+        driver: ProviderDriverKind.make("codex"),
+        source: "local",
+        installedVersion: "0.169.0",
+        executablePath: "/path/codex",
+      }),
       checkForUpdate: Effect.void,
       remove: (paths) =>
         Effect.sync(() => {
@@ -276,6 +309,116 @@ describe("provider installation routing", () => {
           expectedChecks > 0 ? ["start", "start", "refresh"] : ["start", "start"],
         );
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.each([
+    { source: "local", rebuilding: false },
+    { source: "managed", rebuilding: false },
+    { source: "local", rebuilding: true },
+    { source: "managed", rebuilding: true },
+  ] as const)(
+    "projects the selected $source runtime for ChatGPT sign-in while rebuilding=$rebuilding",
+    ({ source, rebuilding }) =>
+      Effect.gen(function* () {
+        const kind = ProviderDriverKind.make("codex");
+        const id = ProviderInstanceId.make("codex");
+        const harness = yield* makeHarness({
+          instance: instance(kind, id),
+          rebuilding,
+          settings: {
+            providerInstances: {
+              [id]: {
+                driver: kind,
+                config: {
+                  connectionMode: "chatgpt",
+                  runtimeSource: source,
+                  binaryPath: "/custom/codex",
+                  setupMode: "managed",
+                },
+              },
+            },
+          },
+        });
+        const observed = Array.from(
+          yield* Stream.runCollect(harness.router.subscribe({ instanceId: id })),
+        )[0];
+        assert.equal(observed?.installedVersion, source === "local" ? "0.169.0" : null);
+        assert.equal(observed?.executablePath, source === "local" ? "/custom/codex" : null);
+        if (source === "local") {
+          const start = yield* harness.router.start({ instanceId: id }).pipe(Effect.result);
+          assert.equal(start._tag, "Failure");
+        }
+        assert.deepEqual(harness.calls, []);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "updates one installation subscription when the runtime source and local path change",
+    () =>
+      Effect.gen(function* () {
+        const kind = ProviderDriverKind.make("codex");
+        const id = ProviderInstanceId.make("codex");
+        const current = (source: "local" | "managed", binaryPath: string): ServerSettingsValue => ({
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [id]: {
+              driver: kind,
+              config: {
+                connectionMode: "chatgpt",
+                runtimeSource: source,
+                setupMode: "managed",
+                binaryPath,
+              },
+            },
+          },
+        });
+        const settingsRef = yield* SubscriptionRef.make(current("local", "/first/codex"));
+        const first = yield* Deferred.make<void>();
+        const second = yield* Deferred.make<void>();
+        const harness = yield* makeHarness({ instance: instance(kind, id), settingsRef });
+        const observed = yield* harness.router.subscribe({ instanceId: id }).pipe(
+          Stream.tap((value) =>
+            value.executablePath === "/first/codex"
+              ? Deferred.succeed(first, undefined)
+              : Deferred.succeed(second, undefined),
+          ),
+          Stream.take(3),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Deferred.await(first);
+        yield* SubscriptionRef.set(settingsRef, current("managed", "/first/codex"));
+        yield* Deferred.await(second);
+        yield* SubscriptionRef.set(settingsRef, current("local", "/second/codex"));
+        assert.deepEqual(
+          Array.from(yield* Fiber.join(observed)).map((value) => value.executablePath),
+          ["/first/codex", null, "/second/codex"],
+        );
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects installation operations for a policy-disabled configured driver", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        rebuilding: true,
+        policy: {
+          organization: "Example",
+          lockedSettings: [],
+          limits: { providers: { allowedDrivers: [ProviderDriverKind.make("codex")] } },
+        },
+      });
+      const requests = [
+        harness.router.start({ instanceId }).pipe(Effect.asVoid),
+        harness.router.remove({ instanceId }).pipe(Effect.asVoid),
+        harness.router.cancel({ instanceId, operationId: "test-operation" }).pipe(Effect.asVoid),
+        Stream.runCollect(harness.router.subscribe({ instanceId })).pipe(Effect.asVoid),
+      ];
+      for (const request of requests) {
+        const error = yield* request.pipe(Effect.flip);
+        assert.include(error.detail, "Example");
+      }
+      assert.deepEqual(harness.calls, []);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("keeps external installs manual without hiding shared install status", () =>

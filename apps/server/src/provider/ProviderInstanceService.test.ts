@@ -100,6 +100,7 @@ const fixture = Effect.fn("ProviderInstanceService.test.fixture")(function* (inp
     }),
     Layer.mock(CodexInstallation.CodexInstallation)({
       managedDirectory: runtime,
+      startManaged: Effect.die("Unexpected managed installation"),
       remove: () =>
         Effect.gen(function* () {
           assert.isTrue(reconciled);
@@ -176,6 +177,43 @@ const fixture = Effect.fn("ProviderInstanceService.test.fixture")(function* (inp
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("provider removal", (it) => {
   const run = <A, E, R>(test: Effect.Effect<A, E, R>) =>
     test.pipe(Effect.provide(Config.layerTest(process.cwd(), { prefix: "t3-provider-removal-" })));
+
+  it.effect("does not close sessions for redacted secrets when editing presentation", () =>
+    run(
+      Effect.gen(function* () {
+        const environment = [{ name: "T3_CODEX_API_KEY", value: "stored-key", sensitive: true }];
+        const f = yield* fixture({
+          instances: () => ({
+            [id]: {
+              driver: codex,
+              config: { connectionMode: "byok", runtimeSource: "managed", setupMode: "existing" },
+              environment,
+            },
+          }),
+          failSessionClose: true,
+        });
+        const before = (yield* f.settings.getSettings).providerInstances[id]!;
+        yield* f.service.update({
+          operation: "upsert",
+          instanceId: id,
+          instance: {
+            ...before,
+            displayName: "Renamed",
+            environment: [{ ...environment[0]!, value: "", valueRedacted: true }],
+          },
+        });
+        assert.isFalse(yield* f.sessionsClosed);
+        const replacement = yield* f.service
+          .update({
+            operation: "upsert",
+            instanceId: id,
+            instance: { ...before, environment: [{ ...environment[0]!, value: "rotated-key" }] },
+          })
+          .pipe(Effect.result);
+        assert.equal(replacement._tag, "Failure");
+      }),
+    ),
+  );
 
   it.effect("deletes unused managed homes, runtimes and both ChatGPT credential records", () =>
     run(

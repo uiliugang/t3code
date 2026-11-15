@@ -1,3 +1,10 @@
+import {
+  codexConnectionMode,
+  codexRuntimeSource,
+  codexByokUrlError,
+  withCodexByokVariable,
+  CODEX_BYOK_LABEL,
+} from "@t3tools/shared/codexByok";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { Switch, TextInput, View } from "react-native";
@@ -28,21 +35,29 @@ import type { SettingsTarget } from "./settings-environment-filter";
 
 export function ClaudeByokProviderSettings({
   environment,
+  driver = "claudeAgent",
 }: {
+  readonly driver?: "claudeAgent" | "codex";
   readonly environment: SettingsTarget;
 }) {
   const t = useUiTranslation();
+  const label = driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL;
   const [adding, setAdding] = useState(false);
   const instances = Object.entries(environment.serverConfig.settings.providerInstances).filter(
-    ([, instance]) => instance.driver === "claudeAgent" && isClaudeByok(instance.config),
+    ([, instance]) =>
+      instance.driver === driver &&
+      (driver === "codex"
+        ? codexConnectionMode(instance.config) === "byok"
+        : isClaudeByok(instance.config)),
   );
   const existing = new Set(Object.keys(environment.serverConfig.settings.providerInstances));
-  let id = "claude_byok";
-  for (let suffix = 2; existing.has(id); suffix++) id = `claude_byok_${suffix}`;
+  let id = `${driver}_byok`;
+  for (let suffix = 2; existing.has(id); suffix++) id = `${driver}_byok_${suffix}`;
   return (
     <View className="gap-3 p-4">
       {instances.map(([instanceId, instance]) => (
         <ClaudeByokEditor
+          driver={driver}
           key={`${instanceId}:${JSON.stringify(instance.environment)}`}
           environment={environment}
           instanceId={ProviderInstanceId.make(instanceId)}
@@ -51,13 +66,14 @@ export function ClaudeByokProviderSettings({
       ))}
       {adding ? (
         <ClaudeByokEditor
+          driver={driver}
           environment={environment}
           instanceId={ProviderInstanceId.make(id)}
           onClose={() => setAdding(false)}
         />
       ) : (
         <ControlPill
-          label={t("Add {name}", { name: CLAUDE_BYOK_LABEL })}
+          label={t("Add {name}", { name: label })}
           variant="pill"
           onPress={() => setAdding(true)}
         />
@@ -67,21 +83,26 @@ export function ClaudeByokProviderSettings({
 }
 
 function ClaudeByokEditor({
+  driver,
   environment,
   instanceId,
   instance,
   onClose,
 }: {
   readonly environment: SettingsTarget;
+  readonly driver: "claudeAgent" | "codex";
   readonly instanceId: ProviderInstanceId;
   readonly instance?: ProviderInstanceConfig;
   readonly onClose?: () => void;
 }) {
   const t = useUiTranslation();
+  const codex = driver === "codex";
+  const label = codex ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL;
+  const variable = codex ? withCodexByokVariable : withClaudeByokVariable;
   const environmentId = environment.environmentId;
   const [expanded, setExpanded] = useState(!instance);
   const [draft, setDraft] = useState(instance?.environment ?? []);
-  const [name, setName] = useState(instance?.displayName ?? CLAUDE_BYOK_LABEL);
+  const [name, setName] = useState(instance?.displayName ?? label);
   const config =
     typeof instance?.config === "object" && instance.config !== null ? instance.config : {};
   const models = readCustomModelEntries("customModels" in config ? config.customModels : []);
@@ -111,9 +132,10 @@ function ClaudeByokEditor({
   );
   const protocol = readClaudeByokProtocol(draft);
   const mode = readClaudeByokAuthMode(draft);
-  const credentialName = claudeByokAuthVariable(mode);
+  const credentialName = codex ? "T3_CODEX_API_KEY" : claudeByokAuthVariable(mode);
+  const baseName = codex ? "T3_CODEX_BASE_URL" : "ANTHROPIC_BASE_URL";
   const credential = draft.find((entry) => entry.name === credentialName);
-  const urlValue = draft.find((entry) => entry.name === "ANTHROPIC_BASE_URL")?.value;
+  const urlValue = draft.find((entry) => entry.name === baseName)?.value;
   const url = typeof urlValue === "string" ? urlValue : "";
   const ids = [
     ...new Set(
@@ -131,7 +153,7 @@ function ClaudeByokEditor({
     JSON.stringify(draft) !== JSON.stringify(instance.environment ?? []) ||
     ids.join(",") !== models.map((model) => model.slug).join(",");
   const valid =
-    !claudeByokUrlError(url.trim()) &&
+    !(codex ? codexByokUrlError(url.trim()) : claudeByokUrlError(url.trim())) &&
     ids.length > 0 &&
     !!credential &&
     (credential.valueRedacted ||
@@ -192,7 +214,7 @@ function ClaudeByokEditor({
     <View className="gap-3">
       {instance ? (
         <ControlPill
-          label={instance.displayName ?? CLAUDE_BYOK_LABEL}
+          label={instance.displayName ?? label}
           variant="pill"
           onPress={() => setExpanded(!expanded)}
         />
@@ -200,69 +222,73 @@ function ClaudeByokEditor({
       {expanded ? (
         <>
           {field("Display name", name, setName)}
-          <Menu
-            actions={[
-              {
-                id: "anthropic",
-                title: "Anthropic Messages",
-                state: protocol === "anthropic" ? "on" : "off",
-              },
-              {
-                id: "openai",
-                title: "OpenAI Chat Completions",
-                state: protocol === "openai" ? "on" : "off",
-              },
-            ]}
-            onPressAction={(event) => {
-              const value = event.nativeEvent.event;
-              if (!disabled && (value === "anthropic" || value === "openai")) {
-                setDraft(withClaudeByokVariable(draft, CLAUDE_BYOK_PROTOCOL_VARIABLE, value));
-                setFeedback(null);
-              }
-            }}
-          >
-            <ControlPill
-              label={protocol === "openai" ? "OpenAI Chat Completions" : "Anthropic Messages"}
-              variant="pill"
-              disabled={disabled}
-            />
-          </Menu>
-          {field("BA base URL", url, (value) =>
-            setDraft(withClaudeByokVariable(draft, "ANTHROPIC_BASE_URL", value)),
+          {!codex ? (
+            <Menu
+              actions={[
+                {
+                  id: "anthropic",
+                  title: "Anthropic Messages",
+                  state: protocol === "anthropic" ? "on" : "off",
+                },
+                {
+                  id: "openai",
+                  title: "OpenAI Chat Completions",
+                  state: protocol === "openai" ? "on" : "off",
+                },
+              ]}
+              onPressAction={(event) => {
+                const value = event.nativeEvent.event;
+                if (!disabled && (value === "anthropic" || value === "openai")) {
+                  setDraft(withClaudeByokVariable(draft, CLAUDE_BYOK_PROTOCOL_VARIABLE, value));
+                  setFeedback(null);
+                }
+              }}
+            >
+              <ControlPill
+                label={protocol === "openai" ? "OpenAI Chat Completions" : "Anthropic Messages"}
+                variant="pill"
+                disabled={disabled}
+              />
+            </Menu>
+          ) : null}
+          {field(codex ? "API base URL" : "BA base URL", url, (value) =>
+            setDraft(variable(draft, baseName, value)),
           )}
-          <Menu
-            actions={[
-              { id: "bearer", title: "Bearer Token", state: mode === "bearer" ? "on" : "off" },
-              {
-                id: "apiKey",
-                title: protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)",
-                state: mode === "apiKey" ? "on" : "off",
-              },
-            ]}
-            onPressAction={(event) => {
-              const value = event.nativeEvent.event;
-              if (!disabled && (value === "bearer" || value === "apiKey")) {
-                setDraft(withClaudeByokVariable(draft, claudeByokAuthVariable(value), ""));
-                setFeedback(null);
-              }
-            }}
-          >
-            <ControlPill
-              label={
-                mode === "bearer"
-                  ? "Bearer Token"
-                  : protocol === "openai"
-                    ? "API Key (Bearer)"
-                    : "API Key (x-api-key)"
-              }
-              variant="pill"
-              disabled={disabled}
-            />
-          </Menu>
+          {!codex ? (
+            <Menu
+              actions={[
+                { id: "bearer", title: "Bearer Token", state: mode === "bearer" ? "on" : "off" },
+                {
+                  id: "apiKey",
+                  title: protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)",
+                  state: mode === "apiKey" ? "on" : "off",
+                },
+              ]}
+              onPressAction={(event) => {
+                const value = event.nativeEvent.event;
+                if (!disabled && (value === "bearer" || value === "apiKey")) {
+                  setDraft(withClaudeByokVariable(draft, claudeByokAuthVariable(value), ""));
+                  setFeedback(null);
+                }
+              }}
+            >
+              <ControlPill
+                label={
+                  mode === "bearer"
+                    ? "Bearer Token"
+                    : protocol === "openai"
+                      ? "API Key (Bearer)"
+                      : "API Key (x-api-key)"
+                }
+                variant="pill"
+                disabled={disabled}
+              />
+            </Menu>
+          ) : null}
           {field(
-            "BA credential",
+            codex ? "API Key" : "BA credential",
             typeof credential?.value === "string" ? credential.value : "",
-            (value) => setDraft(withClaudeByokVariable(draft, credentialName, value)),
+            (value) => setDraft(variable(draft, credentialName, value)),
             true,
           )}
           {field("Model IDs", modelIds, setModelIds)}
@@ -300,13 +326,23 @@ function ClaudeByokEditor({
                         instanceId,
                         instance: {
                           ...instance,
-                          driver: ProviderDriverKind.make("claudeAgent"),
+                          driver: ProviderDriverKind.make(driver),
                           displayName: name,
                           enabled,
                           config: {
                             ...config,
-                            customModelsOnly: true,
-                            ...(!instance ? { homePath: `~/.claude-t3/${instanceId}` } : {}),
+                            ...(codex
+                              ? {
+                                  connectionMode: "byok",
+                                  setupMode: "existing",
+                                  runtimeSource: codexRuntimeSource(
+                                    instance?.config ?? { runtimeSource: "managed" },
+                                  ),
+                                }
+                              : {
+                                  customModelsOnly: true,
+                                  ...(!instance ? { homePath: `~/.claude-t3/${instanceId}` } : {}),
+                                }),
                             customModels: ids.map((slug) =>
                               toCustomModelSetting(
                                 models.find((model) => model.slug === slug) ?? {
@@ -350,7 +386,7 @@ function ClaudeByokEditor({
                   return;
                 }
                 setDraft(instance.environment ?? []);
-                setName(instance.displayName ?? CLAUDE_BYOK_LABEL);
+                setName(instance.displayName ?? label);
                 setEnabled(instance.enabled ?? true);
                 setModelIds(models.map((model) => model.slug).join(", "));
                 setFeedback(null);

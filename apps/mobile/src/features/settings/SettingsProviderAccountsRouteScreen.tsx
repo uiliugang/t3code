@@ -1,3 +1,4 @@
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import * as Dialog from "../../components/ui/Dialog";
 import {
@@ -7,6 +8,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthProvidersManageScope,
+  ProviderDriverKind,
   isManagedDriverAllowed,
   type ProviderAuthResponse,
   type ServerProvider,
@@ -99,7 +101,13 @@ function EnvironmentProviders({
 }) {
   const t = useUiTranslation();
   const isByok = (provider: ServerProvider) =>
-    isClaudeByok(environment.serverConfig.settings.providerInstances[provider.instanceId]?.config);
+    provider.driver === "codex"
+      ? codexConnectionMode(
+          environment.serverConfig.settings.providerInstances[provider.instanceId]?.config,
+        ) === "byok"
+      : isClaudeByok(
+          environment.serverConfig.settings.providerInstances[provider.instanceId]?.config,
+        );
   const accounts = providers.filter((provider) => canManageProvider(provider) && !isByok(provider));
   // Claude has no in-app sign-in; each account is its own instance on a signed-in config folder.
   const claudeAccounts = providers.filter(
@@ -113,8 +121,20 @@ function EnvironmentProviders({
   return (
     <>
       {canAddClaude ? <ClaudeByokProviderSettings environment={environment} /> : null}
+      {environment.serverConfig.environment.capabilities?.codexByok &&
+      isManagedDriverAllowed(
+        environment.serverConfig.managedPolicy,
+        ProviderDriverKind.make("codex"),
+      ) ? (
+        <ClaudeByokProviderSettings environment={environment} driver="codex" />
+      ) : null}
       {providers
-        .filter((provider) => provider.driver === CLAUDE_DRIVER)
+        .filter(
+          (provider) =>
+            provider.driver === CLAUDE_DRIVER ||
+            (provider.driver === "codex" &&
+              environment.serverConfig.environment.capabilities?.codexByok),
+        )
         .map((provider) => (
           <ClaudeInstallationControls
             key={provider.instanceId}

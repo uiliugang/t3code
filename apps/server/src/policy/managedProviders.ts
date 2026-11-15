@@ -63,7 +63,10 @@ const PIN_BYPASS_FIELDS: ReadonlyMap<
   ProviderDriverKind,
   Readonly<Record<string, unknown>>
 > = new Map<ProviderDriverKind, Readonly<Record<string, unknown>>>([
-  [ProviderDriverKind.make("codex"), { setupMode: "existing" }],
+  [
+    ProviderDriverKind.make("codex"),
+    { setupMode: "existing", connectionMode: "existing", runtimeSource: "local" },
+  ],
   [ProviderDriverKind.make("opencode"), { serverUrl: "" }],
 ]);
 

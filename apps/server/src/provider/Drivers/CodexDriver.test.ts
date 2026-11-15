@@ -70,6 +70,7 @@ const layerDeps = ServerConfig.layerTest(process.cwd(), {
   Layer.provideMerge(
     Layer.mock(CodexInstallation.CodexInstallation)({
       managedDirectory: "unused-managed-installation",
+      startManaged: Effect.die("Unexpected managed installation"),
       changes: Stream.empty,
     }),
   ),
@@ -211,7 +212,10 @@ it.layer(layerTest)("CodexDriver", (it) => {
           instanceId,
           displayName: "Restored account",
           enabled: true,
-          environment: [{ name: "OPENAI_API_KEY", value: "ambient-key", sensitive: true }],
+          environment: [
+            { name: "OPENAI_API_KEY", value: "ambient-key", sensitive: true },
+            { name: "T3_CODEX_API_KEY", value: "inactive-byok-key", sensitive: true },
+          ],
           config: { ...CodexDriver.defaultConfig(), setupMode: "managed", homePath: sharedHome },
         }).pipe(
           Effect.provideService(
@@ -228,6 +232,7 @@ it.layer(layerTest)("CodexDriver", (it) => {
             CodexInstallation.CodexInstallation.of({
               ...installation,
               managedDirectory: "unused-managed-installation",
+              startManaged: Effect.die("Unexpected managed installation"),
               resolve: () =>
                 Ref.get(installedVersion).pipe(
                   Effect.map((version) => ({ ...executable, version })),
@@ -329,6 +334,7 @@ it.layer(layerTest)("CodexDriver", (it) => {
         expect(launch.settings.launchArgs).toContain("__managed-chatgpt-token");
         expect(launch.settings.launchArgs).not.toContain("dummy-owned-access");
         expect(launch.environment.OPENAI_API_KEY).toBeUndefined();
+        expect(launch.environment.T3_CODEX_API_KEY).toBeUndefined();
         expect(launch.environment.CODEX_HOME).toBe(launch.settings.homePath);
         const before = yield* instance.auth!.subscribe("test-owner").pipe(Stream.runHead);
         expect(Option.getOrThrow(before).phase).toBe("idle");
@@ -592,6 +598,113 @@ it.layer(layerTest)("CodexDriver", (it) => {
           }).status,
         ).not.toBe("behind_latest");
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn)),
+  );
+
+  it.effect(
+    "publishes a recoverable setup status when a BYOK key or managed runtime is missing",
+    () =>
+      Effect.gen(function* () {
+        for (const key of ["", "configured-key"]) {
+          const installation = yield* CodexInstallation.CodexInstallation;
+          const instance = yield* CodexDriver.create({
+            instanceId: ProviderInstanceId.make("byok-setup"),
+            displayName: "BYOK",
+            enabled: true,
+            environment: [
+              { name: "T3_CODEX_BASE_URL", value: "https://api.test/v1", sensitive: false },
+              { name: "T3_CODEX_API_KEY", value: key, sensitive: true },
+            ],
+            config: {
+              ...CodexDriver.defaultConfig(),
+              connectionMode: "byok",
+              runtimeSource: "managed",
+            },
+          }).pipe(
+            Effect.provideService(CodexInstallation.CodexInstallation, {
+              ...installation,
+              acquire: () =>
+                Effect.fail(
+                  new CodexInstallation.CodexInstallationError({
+                    operation: "resolve",
+                    detail: "Fixture runtime missing",
+                  }),
+                ),
+            }),
+          );
+          const snapshot = yield* instance.snapshot.refresh;
+          expect(snapshot.installed).toBe(false);
+          expect(snapshot.message).toBe(key ? "Fixture runtime missing" : "Enter an API key.");
+        }
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn)),
+  );
+
+  it.effect("isolates BYOK credentials, home and endpoint continuation from native Codex", () =>
+    Effect.gen(function* () {
+      const launches: Array<
+        Parameters<CodexAdapterV2.CodexAppServerClientFactoryShape["open"]>[0]
+      > = [];
+      const instanceId = ProviderInstanceId.make("isolated-byok");
+      const identities: Array<string> = [];
+      for (const endpoint of ["https://one.test/v1", "https://two.test/custom/v1"]) {
+        const instance = yield* CodexDriver.create({
+          instanceId,
+          displayName: "BYOK",
+          enabled: false,
+          environment: [
+            { name: "T3_CODEX_BASE_URL", value: endpoint, sensitive: false },
+            { name: "T3_CODEX_API_KEY", value: "owned-key", sensitive: true },
+            { name: "OPENAI_API_KEY", value: "wrong-key", sensitive: true },
+            { name: "CODEX_HOME", value: "/unrelated/home", sensitive: false },
+          ],
+          config: {
+            ...CodexDriver.defaultConfig(),
+            connectionMode: "byok",
+            runtimeSource: "local",
+            binaryPath: "/selected/codex",
+            homePath: "/unrelated/config",
+          },
+        }).pipe(
+          Effect.provideService(
+            CodexAdapterV2.CodexAppServerClientFactory,
+            CodexAdapterV2.CodexAppServerClientFactory.of({
+              open: (launch) =>
+                Effect.sync(() => launches.push(launch)).pipe(
+                  Effect.andThen(Effect.die("Stop after launch capture")),
+                ),
+            }),
+          ),
+        );
+        identities.push(instance.continuationIdentity.continuationKey);
+        expect(instance.auth).toBeUndefined();
+        expect(instance.consumeResetCredit).toBeUndefined();
+        yield* instance.orchestrationAdapter
+          .openSession({
+            threadId: ThreadId.make("byok-thread"),
+            providerSessionId: ProviderSessionId.make("byok-session"),
+            modelSelection: { instanceId, model: "CaseSensitive" },
+            runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              cwd: (yield* ServerConfig.ServerConfig).stateDir,
+            }),
+          })
+          .pipe(Effect.scoped, Effect.exit);
+      }
+      expect(identities[0]).not.toBe(identities[1]);
+      expect(launches).toHaveLength(2);
+      for (const launch of launches) {
+        expect(launch.settings.binaryPath).toBe("/selected/codex");
+        expect(launch.settings.homePath).toContain(
+          NodePath.join("providers", "codex", instanceId, "byok"),
+        );
+        expect(launch.environment.CODEX_HOME).toBe(launch.settings.homePath);
+        expect(launch.environment.T3_CODEX_API_KEY).toBe("owned-key");
+        expect(launch.environment.OPENAI_API_KEY).toBeUndefined();
+        expect(launch.environment.ACCESS_TOKEN).toBeUndefined();
+        expect(launch.settings.launchArgs).toContain("t3_byok");
+        expect(launch.settings.launchArgs).not.toContain("owned-key");
+      }
+    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn)),
   );
 
   it.effect("uses each instance's environment CODEX_HOME for continuation", () =>
