@@ -782,10 +782,14 @@ describe("ThreadTitleRegenerationService", () => {
           sourceThreadId: sideChatId,
           targetThreadId: threadId,
           sourcePoint: { type: "run", runId },
+          isolateWorkspace: true,
           title: "Side fork",
           createdBy: "user",
           creationSource: "web",
         });
+        const fork = yield* threads.getThreadRecords(threadId, []);
+        assert.isUndefined(fork.thread.lineage.sideChat);
+        assert.isTrue(fork.thread.lineage.isolatedWorkspace);
         const requestId = yield* armRegeneration({ command: "side:request", threadId });
         yield* titleRegeneration.execute({ threadId, requestId, kind: { type: "regenerate" } });
         const call = harness.generateThreadTitle.mock.calls[0]?.[0];
