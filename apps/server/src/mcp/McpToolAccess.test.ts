@@ -123,6 +123,7 @@ const ProbeToolkit = Toolkit.make(
   Tool.make("reads", probe),
   Tool.make("reads_as_caller", probe),
   Tool.make("acts_as_caller", probe),
+  Tool.make("issue_creation", probe),
   Tool.make("writes", probe),
   Tool.make("writes_with_capability", probe),
   Tool.make("writes_threads", {
@@ -143,6 +144,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   reads: McpToolAccess.reads(() => ran),
   reads_as_caller: McpToolAccess.readsAsCaller(() => ran),
   acts_as_caller: McpToolAccess.actsAsCaller(() => ran),
+  issue_creation: McpToolAccess.issueCreation(() => ran),
   writes: McpToolAccess.writes(() => ran),
   writes_with_capability: McpToolAccess.writesWithCapability(() => ran),
   writes_threads: McpToolAccess.writesThreads(
@@ -256,6 +258,9 @@ it.effect.each([
   ["reads", supervisedClient, {}, "ran"],
   ["reads", readOnlyClient, {}, "ran"],
   ["reads", threadCaller(sideChatThreadId), {}, "ran"],
+  ["issue_creation", threadCaller(sideChatThreadId), {}, "ran"],
+  ["issue_creation", readOnlyClient, {}, "thread_credential_required"],
+  ["issue_creation", ended, {}, "parent_not_active"],
   ["writes", threadCaller(sideChatThreadId), {}, "capability_denied"],
   ["starts_threads", threadCaller(sideChatThreadId), {}, "capability_denied"],
   ["writes_environment", threadCaller(sideChatThreadId), {}, "capability_denied"],

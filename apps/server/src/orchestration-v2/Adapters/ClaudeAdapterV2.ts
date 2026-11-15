@@ -2364,7 +2364,8 @@ export function claudeMcpQueryOverrides(input: {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
   const mcpAllowedTools = input.readOnlySandbox
-    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
+    ? // This operation authorizes a task and destination server-side without granting local writes.
+      [...CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS, "mcp__t3-code__work_item_issue"]
     : [CLAUDE_T3_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),

@@ -161,6 +161,20 @@ export const reads = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>)
 export const readsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => requireThreadCaller.pipe(Effect.flatMap(() => handle(params))), undefined);
 
+// The service must authorize the exact issue-creation execution and destination.
+export const issueCreation = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
+  declare(
+    (params: P) =>
+      requireThreadCaller.pipe(
+        Effect.andThen(refuseReadOnlyClient),
+        Effect.andThen(readCaller()),
+        Effect.tap(assertLiveCaller),
+        Effect.tap((caller) => assertNotLinked(caller, "create an external issue")),
+        Effect.flatMap(() => handle(params)),
+      ),
+    undefined,
+  );
+
 export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare(
     (params: P) =>

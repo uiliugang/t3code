@@ -5,6 +5,12 @@ import {
   IssueSource,
   type WorkItemCreateIssueInput,
   WorkItemError,
+  WorkItemIssueInput,
+  WorkItemIssueResult,
+  BranchIssueRef,
+  IssueError,
+  ThreadId,
+  parseBranchIssueUrl,
   type WorkItemMutationResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -15,12 +21,18 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
 import * as Issues from "../sourceControl/IssueService.ts";
 import * as WorkItems from "./WorkItemService.ts";
+import * as Providers from "../provider/ProviderInstanceRegistry.ts";
+import { orchestrationV2WorktreePending } from "@t3tools/shared/orchestrationV2ThreadError";
 
 const decodeItemJson = Schema.decodeEffect(Schema.fromJsonString(WorkItem));
 const encodeSourceJson = Schema.encodeEffect(Schema.fromJsonString(IssueSource));
 const encodeCommandJson = Schema.encodeEffect(Schema.fromJsonString(WorkItemCommandInput));
 const decodeCommandJson = Schema.decodeEffect(Schema.fromJsonString(WorkItemCommandInput));
 const isWorkItemError = Schema.is(WorkItemError);
+const isIssueError = Schema.is(IssueError);
+const decodeSourceJson = Schema.decodeEffect(Schema.fromJsonString(IssueSource));
+const decodeIssueJson = Schema.decodeEffect(Schema.fromJsonString(BranchIssueRef));
+const encodeIssueJson = Schema.encodeEffect(Schema.fromJsonString(BranchIssueRef));
 
 export class DeliveryAutomationService extends Context.Service<
   DeliveryAutomationService,
@@ -28,6 +40,10 @@ export class DeliveryAutomationService extends Context.Service<
     readonly createIssue: (
       input: WorkItemCreateIssueInput,
     ) => Effect.Effect<WorkItemMutationResult, WorkItemError>;
+    readonly issueAction: (
+      input: WorkItemIssueInput,
+      callerThreadId: ThreadId,
+    ) => Effect.Effect<typeof WorkItemIssueResult.Type, WorkItemError>;
   }
 >()("t3/work-items/DeliveryAutomationService") {}
 
@@ -38,6 +54,7 @@ export const layer = Layer.effect(
     const threads = yield* Threads.ThreadManagementService;
     const issues = yield* Issues.IssueService;
     const sql = yield* SqlClient.SqlClient;
+    const providers = yield* Providers.ProviderInstanceRegistry;
     const createIssue = Effect.fn("DeliveryAutomationService.createIssue")(
       function* (input: WorkItemCreateIssueInput) {
         const thread = yield* threads.getThreadShell(input.threadId);
@@ -73,6 +90,33 @@ export const layer = Layer.effect(
               message: "This creation identifier belongs to another conversation.",
             });
         } else {
+          const parentId = thread.lineage.sideChat
+            ? (thread.lineage.parentThreadId ?? thread.id)
+            : thread.id;
+          const parent = yield* threads.getThreadRecords(parentId, ["runs"]);
+          if (
+            parent.thread.lineage.sideChat ||
+            parent.thread.lineage.relationshipToParent === "subagent" ||
+            parent.thread.delegatedFrom
+          )
+            return yield* new WorkItemError({
+              code: "invalid_request",
+              message: "Create issues from a top-level conversation.",
+            });
+          if (orchestrationV2WorktreePending(parent.thread.worktreePath, parent.runs))
+            return yield* new WorkItemError({
+              code: "invalid_request",
+              message: "Wait for the conversation's worktree to finish preparing, then try again.",
+            });
+          const instance = yield* providers.getInstance(thread.modelSelection.instanceId);
+          const capabilities = instance
+            ? yield* instance.orchestrationAdapter.getCapabilities()
+            : undefined;
+          if (capabilities?.runtimePolicy.supportsReadOnly !== true)
+            return yield* new WorkItemError({
+              code: "invalid_request",
+              message: "Choose a provider that supports read-only side chats, then try again.",
+            });
           const records = yield* threads.getThreadRecords(input.threadId, ["messages"]);
           const context = records.messages
             .filter((message) => !message.streaming)
@@ -103,10 +147,14 @@ export const layer = Layer.effect(
               runtimeMode: thread.runtimeMode,
               interactionMode: "default",
               workspaceStrategy: { type: "root" },
-              assignment: `The user clicked Create issue for the source conversation ${input.threadId}. Create one external issue using ONLY this configured destination: ${sourceJson}. Use the source conversation snapshot in the goal to prepare title, description and acceptance criteria. Ask only for missing required fields. Reuse an existing issue if a previous creation may have succeeded; never blindly retry an uncertain external write. Use the platform's existing CLI/skill. After creation, call work_item_link_issue for work item ${item.id} with its canonical issue identity, reading latest version first. This work item already links the user's original conversation; do not create a second task. Do not modify code or start development.`,
+              sideChatOf: thread.lineage.sideChat
+                ? (thread.lineage.parentThreadId ?? thread.id)
+                : thread.id,
+              assignment: `Create one external issue for this conversation using ONLY ${sourceJson}. Use work_item_issue with id ${item.id}: metadata reads the required subtype and fields; create submits the draft and links it automatically. Ask only for missing required fields. If creation is uncertain, check the platform and use recover with its canonical URL; never blindly retry. This side chat remains read-only for code. Do not use a CLI, modify code, start development, or create another task.`,
             },
           ],
         };
+        yield* sql`INSERT OR IGNORE INTO work_item_delivery_actions (work_item_id, scope_revision, kind, payload_json) VALUES (${item.id}, 0, 'issue_source', ${sourceJson})`;
         yield* sql`INSERT OR IGNORE INTO work_item_delivery_actions (work_item_id, scope_revision, kind, payload_json) VALUES (${item.id}, 0, 'create_issue', ${yield* encodeCommandJson(start)})`;
         const action = yield* sql<{
           payload_json: string;
@@ -128,6 +176,101 @@ export const layer = Layer.effect(
             }),
       ),
     );
-    return { createIssue };
+    const issueAction = Effect.fn("DeliveryAutomationService.issueAction")(
+      function* (input: WorkItemIssueInput, callerThreadId: ThreadId) {
+        const item = yield* items.get(input.id);
+        if (!item.executions.some((entry) => entry.threadId === callerThreadId && entry.sideChatOf))
+          return yield* new WorkItemError({
+            code: "invalid_request",
+            message: "Use the issue creation side chat assigned to this task.",
+          });
+        const rows = yield* sql<{
+          payload_json: string;
+        }>`SELECT payload_json FROM work_item_delivery_actions WHERE work_item_id = ${item.id} AND scope_revision = 0 AND kind = 'issue_source'`;
+        if (!rows[0])
+          return yield* new WorkItemError({
+            code: "invalid_request",
+            message: "This task has no issue creation authorization.",
+          });
+        const source = yield* decodeSourceJson(rows[0].payload_json);
+        const target = {
+          projectId: item.projectId,
+          provider: source.provider,
+          scope: source.scope,
+          host: source.host,
+        };
+        const action = input.action;
+        if (action.operation === "metadata")
+          return yield* issues.metadata({ ...action, ...target });
+        if (item.delivery?.issue) return { item };
+        let issue: BranchIssueRef;
+        const created = yield* sql<{
+          payload_json: string;
+        }>`SELECT payload_json FROM work_item_delivery_actions WHERE work_item_id = ${item.id} AND scope_revision = 0 AND kind = 'issue_created'`;
+        if (created[0]) issue = yield* decodeIssueJson(created[0].payload_json);
+        else {
+          if (action.operation === "recover") {
+            const parsed = parseBranchIssueUrl(action.url);
+            if (
+              !parsed ||
+              parsed.provider !== source.provider ||
+              parsed.repository !== source.scope ||
+              new URL(parsed.url).hostname !== source.host
+            )
+              return yield* new WorkItemError({
+                code: "invalid_request",
+                message: "Use an issue URL from this task's configured destination.",
+              });
+            yield* issues.read({ ...target, id: parsed.id });
+            issue = parsed;
+          } else {
+            const claimed = yield* sql<{
+              work_item_id: string;
+            }>`INSERT OR IGNORE INTO work_item_delivery_actions (work_item_id, scope_revision, kind, payload_json) VALUES (${item.id}, 0, 'issue_create_attempt', '{}') RETURNING work_item_id`;
+            if (!claimed[0])
+              return yield* new WorkItemError({
+                code: "execution",
+                message:
+                  "Creation may have succeeded. Check the platform and recover its canonical URL; do not create again.",
+              });
+            const result = yield* issues.create({ ...action, ...target }).pipe(
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  if (error.reason !== "outcome-unknown")
+                    yield* sql`DELETE FROM work_item_delivery_actions WHERE work_item_id = ${item.id} AND scope_revision = 0 AND kind = 'issue_create_attempt'`;
+                  return yield* error;
+                }),
+              ),
+            );
+            issue = {
+              provider: source.provider,
+              repository: source.scope,
+              id: result.id,
+              url: result.url,
+            };
+          }
+          yield* sql`INSERT OR IGNORE INTO work_item_delivery_actions (work_item_id, scope_revision, kind, payload_json) VALUES (${item.id}, 0, 'issue_created', ${yield* encodeIssueJson(issue)})`;
+        }
+        return yield* items.mutate({
+          type: "link_issue",
+          commandId: CommandId.make(`issue-created:${item.id}:${issue.id}`),
+          id: item.id,
+          expectedVersion: (yield* items.get(item.id)).version,
+          issue,
+        });
+      },
+      Effect.mapError((cause) =>
+        isWorkItemError(cause)
+          ? cause
+          : new WorkItemError({
+              code: "execution",
+              message: isIssueError(cause)
+                ? `${cause.message}${cause.fields ? ` ${JSON.stringify(cause.fields)}` : ""}`
+                : "Could not complete issue creation.",
+              cause,
+            }),
+      ),
+    );
+    return { createIssue, issueAction };
   }),
 );

@@ -160,7 +160,9 @@ export const make = Effect.gen(function* () {
     const resolved = yield* projectSources(input.projectId);
     const sources = resolved.sources.filter(
       (source) =>
-        source.provider === input.provider && (!input.scope || source.scope === input.scope),
+        source.provider === input.provider &&
+        (!input.scope || source.scope === input.scope) &&
+        (!input.host || source.host === input.host),
     );
     for (const source of sources) {
       if (

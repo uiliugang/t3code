@@ -5,6 +5,7 @@ import { executionIsActive } from "../../../work-items/decide.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { assertTargetWithinLimits, readCaller, unavailable } from "../../threadAccess.ts";
 import { WorkItemToolkit } from "./tools.ts";
+import * as DeliveryAutomation from "../../../work-items/DeliveryAutomationService.ts";
 
 const mutate = Effect.fn("WorkItemMcp.mutate")(function* (input: WorkItemCommandInput) {
   const context = yield* readCaller();
@@ -50,6 +51,20 @@ const mutate = Effect.fn("WorkItemMcp.mutate")(function* (input: WorkItemCommand
 });
 
 export const layer = McpToolAccess.toLayer(WorkItemToolkit, {
+  work_item_issue: McpToolAccess.issueCreation((input) =>
+    Effect.gen(function* () {
+      const { scope } = yield* readCaller();
+      const service = yield* DeliveryAutomation.DeliveryAutomationService;
+      return yield* service
+        .issueAction(input, scope.thread!.threadId)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({ code: "invalid_request", message: error.message }),
+          ),
+        );
+    }),
+  ),
   work_item_link_issue: McpToolAccess.writes((input) => mutate({ ...input, type: "link_issue" })),
   work_item_associate_issue: McpToolAccess.writes((input) =>
     Effect.gen(function* () {

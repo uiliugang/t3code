@@ -6,6 +6,7 @@ import {
   CheckpointRef,
   CheckpointScopeId,
   EventId,
+  EnvironmentId,
   MessageId,
   NodeId,
   ProjectId,
@@ -13,9 +14,11 @@ import {
   ProviderInstanceId,
   RunId,
   RuntimeRequestId,
+  IssueError,
   type OrchestrationV2Run,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ServerCommand,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -41,6 +44,8 @@ import { workspaceThreadFixture } from "../orchestration-v2/testkit/workspaceFix
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import * as Providers from "../provider/ProviderInstanceRegistry.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 
 const projectId = ProjectId.make("project:tasks");
 const now = "2026-11-09T01:00:00.000Z";
@@ -109,8 +114,24 @@ function setup(
   const projections = new Map<ThreadId, OrchestrationV2ThreadProjection>();
   const launched: Array<Parameters<ThreadLaunch.ThreadLaunchService["Service"]["launch"]>[0]> = [];
   const stopped: ThreadId[] = [];
-  const failures = { shell: false, records: false, launch: false };
+  const dispatched = new Map<CommandId, OrchestrationV2ServerCommand>();
+  const failures = {
+    shell: false,
+    records: false,
+    launch: false,
+    dispatchReply: false,
+    unsupported: false,
+  };
   const dependencies = Layer.mergeAll(
+    Layer.mock(Providers.ProviderInstanceRegistry)({
+      getInstance: () =>
+        Effect.succeed({
+          orchestrationAdapter: {
+            getCapabilities: () =>
+              Effect.succeed({ runtimePolicy: { supportsReadOnly: !failures.unsupported } }),
+          },
+        } as unknown as ProviderInstance),
+    }),
     Layer.mock(ThreadSearch.ThreadSearch)({
       latestMessagePreview: () => Effect.succeed(candidatePreview.slice(0, 500)),
     }),
@@ -218,7 +239,40 @@ function setup(
           return { type: "no_active_run" };
         }),
       dispatch: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          if (dispatched.has(input.commandId)) return { sequence: 1, storedEvents: [] };
+          dispatched.set(input.commandId, input);
+          if (input.type === "thread.fork") {
+            const source = projections.get(input.sourceThreadId)!;
+            projections.set(input.targetThreadId, {
+              ...projection(input.targetThreadId),
+              thread: {
+                ...source.thread,
+                id: input.targetThreadId,
+                lineage: {
+                  ...source.thread.lineage,
+                  parentThreadId: input.sourceThreadId,
+                  relationshipToParent: "fork",
+                  sideChat: input.sideChat,
+                },
+              },
+              runs: [],
+            });
+          }
+          if (input.type === "message.dispatch") {
+            const current = projections.get(input.threadId)!;
+            projections.set(input.threadId, {
+              ...current,
+              runs: projection(input.threadId).runs.map((run) => ({
+                ...run,
+                userMessageId: input.messageId,
+              })),
+            });
+            if (failures.dispatchReply)
+              return yield* new Orchestrator.OrchestratorProjectionError({
+                threadId: input.threadId,
+              });
+          }
           if (input.type === "thread.stop") {
             stopped.push(input.threadId);
             const current = projections.get(input.threadId);
@@ -263,7 +317,7 @@ function setup(
     Layer.provide(NodeCrypto.layer),
     Layer.provideMerge(Sqlite.layerMemory),
   );
-  return { layer, dependencies, projections, launched, stopped, failures, events };
+  return { layer, dependencies, projections, launched, stopped, failures, events, dispatched };
 }
 
 const create = (service: WorkItems.WorkItemService["Service"], suffix = "create") =>
@@ -479,12 +533,63 @@ it.effect(
     return Effect.gen(function* () {
       const automation = yield* DeliveryAutomation.DeliveryAutomationService;
       const service = yield* WorkItems.WorkItemService;
+      test.failures.unsupported = true;
+      const unsupported = yield* Effect.result(
+        automation.createIssue({ commandId: command("unsupported"), threadId, source }),
+      );
+      assert.equal(unsupported._tag, "Failure");
+      assert.equal((yield* service.list({ projectId })).items.length, 0);
+      test.failures.unsupported = false;
+      const ready = test.projections.get(threadId)!;
+      for (const blocked of [
+        {
+          ...ready,
+          thread: {
+            ...ready.thread,
+            lineage: { ...ready.thread.lineage, relationshipToParent: "subagent" as const },
+          },
+        },
+        {
+          ...ready,
+          thread: {
+            ...ready.thread,
+            delegatedFrom: {
+              environmentId: EnvironmentId.make("remote"),
+              threadId: ThreadId.make("remote-parent"),
+              title: "Remote parent",
+            },
+          },
+        },
+      ]) {
+        test.projections.set(threadId, blocked);
+        const refused = yield* Effect.result(
+          automation.createIssue({ commandId: command("blocked-parent"), threadId, source }),
+        );
+        assert.equal(refused._tag, "Failure");
+        assert.equal((yield* service.list({ projectId })).items.length, 0);
+      }
+      test.projections.set(threadId, {
+        ...ready,
+        thread: { ...ready.thread, worktreePath: null },
+        runs: ready.runs.map((run) => ({
+          ...run,
+          status: "preparing",
+          workspacePreparation: { type: "worktree", baseRef: "main" },
+        })),
+      });
+      const preparing = yield* Effect.result(
+        automation.createIssue({ commandId: command("preparing"), threadId, source }),
+      );
+      assert.equal(preparing._tag, "Failure");
+      assert.equal((yield* service.list({ projectId })).items.length, 0);
+      test.projections.set(threadId, ready);
       const first = yield* automation.createIssue({
         commandId: command("create-issue"),
         threadId,
         source,
       });
-      test.failures.launch = true;
+      assert.equal(first.item.executions[0]?.sideChatOf, threadId);
+      test.failures.dispatchReply = true;
       yield* service.drain();
       const repeated = yield* automation.createIssue({
         commandId: command("create-issue-remount"),
@@ -495,7 +600,22 @@ it.effect(
       assert.equal(first.item.id, repeated.item.id);
       assert.equal(first.item.executions[0]?.id, repeated.item.executions[0]?.id);
       assert.equal((yield* service.get(first.item.id)).executions.length, 1);
-      assert.equal(test.launched.length, 1);
+      assert.equal(test.launched.length, 0);
+      const execution = (yield* service.get(first.item.id)).executions[0]!;
+      const sideChat = test.projections.get(execution.threadId)!;
+      assert.equal(sideChat.thread.lineage.sideChat, true);
+      assert.equal(sideChat.thread.lineage.parentThreadId, threadId);
+      assert.equal(
+        sideChat.thread.worktreePath,
+        test.projections.get(threadId)!.thread.worktreePath,
+      );
+      assert.equal(sideChat.runs.length, 1);
+      assert.equal(sideChat.runs[0]?.id, execution.runId);
+      assert.equal(test.projections.get(threadId)!.runs.length, 1);
+      assert.equal(
+        [...test.dispatched.values()].filter((entry) => entry.type === "message.dispatch").length,
+        1,
+      );
       const refused = yield* Effect.result(
         automation.createIssue({
           commandId: command("bad-destination"),
@@ -507,6 +627,170 @@ it.effect(
     }).pipe(Effect.provide(layer), Effect.scoped);
   },
 );
+
+it.effect(
+  "authorizes only the assigned side chat and never repeats an uncertain external creation",
+  () => {
+    const test = setup();
+    const threadId = ThreadId.make("issue-action-source");
+    test.projections.set(threadId, projection(threadId));
+    const source = { provider: "github", host: "github.com", scope: "acme/app" } as const;
+    let creates = 0;
+    let failure: "outcome-unknown" | "unavailable" | null = "outcome-unknown";
+    const layer = DeliveryAutomation.layer.pipe(
+      Layer.provide(test.dependencies),
+      Layer.provide(
+        Layer.mock(Issues.IssueService)({
+          sources: () =>
+            Effect.succeed([
+              { projectId, repository: "acme/app", sources: [source], manual: true },
+            ]),
+          metadata: () => Effect.succeed({ subtypes: [], fields: [] }),
+          read: () =>
+            Effect.succeed({
+              id: "42",
+              url: "https://github.com/acme/app/issues/42",
+              title: "Issue",
+              body: "",
+              bodyFormat: "markdown",
+              state: "OPEN",
+              stateCategory: "todo",
+              type: "REQUIREMENT",
+              assignees: [],
+              priority: "",
+              updatedAt: now,
+              transitions: [],
+            }),
+          create: () =>
+            Effect.gen(function* () {
+              creates++;
+              if (failure) return yield* new IssueError({ operation: "create", reason: failure });
+              return {
+                id: String(41 + creates),
+                url: `https://github.com/acme/app/issues/${41 + creates}`,
+                title: "Issue",
+                body: "",
+                bodyFormat: "markdown",
+                state: "OPEN",
+                stateCategory: "todo",
+                type: "REQUIREMENT",
+                assignees: [],
+                priority: "",
+                updatedAt: now,
+                transitions: [],
+              };
+            }),
+        }),
+      ),
+      Layer.provideMerge(test.layer),
+    );
+    return Effect.gen(function* () {
+      const automation = yield* DeliveryAutomation.DeliveryAutomationService;
+      const { item } = yield* automation.createIssue({
+        commandId: command("authorized-create"),
+        threadId,
+        source,
+      });
+      const sideChatId = item.executions[0]!.threadId;
+      const action = {
+        operation: "create",
+        type: "REQUIREMENT",
+        subtype: "",
+        title: "Issue",
+        body: "From conversation",
+        assignees: [],
+        fields: {},
+      } as const;
+      const denied = yield* Effect.result(
+        automation.issueAction({ id: item.id, action }, threadId),
+      );
+      assert.equal(denied._tag, "Failure");
+      assert.equal(creates, 0);
+      const metadata = yield* automation.issueAction(
+        { id: item.id, action: { operation: "metadata", type: "REQUIREMENT", subtype: "" } },
+        sideChatId,
+      );
+      assert.deepEqual(metadata, { subtypes: [], fields: [] });
+      const failed = yield* Effect.result(
+        automation.issueAction({ id: item.id, action }, sideChatId),
+      );
+      assert.equal(failed._tag, "Failure");
+      failure = null;
+      const retry = yield* Effect.result(
+        automation.issueAction({ id: item.id, action }, sideChatId),
+      );
+      assert.equal(retry._tag, "Failure");
+      assert.equal(creates, 1);
+      const wrongSource = yield* Effect.result(
+        automation.issueAction(
+          {
+            id: item.id,
+            action: { operation: "recover", url: "https://github.com/other/app/issues/42" },
+          },
+          sideChatId,
+        ),
+      );
+      assert.equal(wrongSource._tag, "Failure");
+      const recovered = yield* automation.issueAction(
+        {
+          id: item.id,
+          action: { operation: "recover", url: "https://github.com/acme/app/issues/42" },
+        },
+        sideChatId,
+      );
+      assert.isTrue("item" in recovered);
+      if ("item" in recovered) assert.equal(recovered.item.delivery?.issue.id, "42");
+      yield* automation.issueAction({ id: item.id, action }, sideChatId);
+      assert.equal(creates, 1);
+      const nextId = ThreadId.make("issue-action-next");
+      test.projections.set(nextId, projection(nextId));
+      const next = yield* automation.createIssue({
+        commandId: command("issue-next"),
+        threadId: nextId,
+        source,
+      });
+      const nextSideChat = next.item.executions[0]!.threadId;
+      failure = "unavailable";
+      const unavailable = yield* Effect.result(
+        automation.issueAction({ id: next.item.id, action }, nextSideChat),
+      );
+      assert.equal(unavailable._tag, "Failure");
+      failure = null;
+      const completed = yield* automation.issueAction({ id: next.item.id, action }, nextSideChat);
+      assert.isTrue("item" in completed);
+      if ("item" in completed) assert.equal(completed.item.delivery?.issue.id, "44");
+      yield* automation.issueAction({ id: next.item.id, action }, nextSideChat);
+      assert.equal(creates, 3);
+    }).pipe(Effect.provide(layer), Effect.scoped);
+  },
+);
+
+it.effect("rejects unavailable side chat sources and sources outside the task project", () => {
+  const test = setup();
+  const otherId = ThreadId.make("other-project");
+  const other = projection(otherId);
+  test.projections.set(otherId, {
+    ...other,
+    thread: { ...other.thread, projectId: ProjectId.make("other") },
+  });
+  return Effect.gen(function* () {
+    const service = yield* WorkItems.WorkItemService;
+    const { item } = yield* create(service);
+    for (const sideChatOf of [ThreadId.make("missing"), otherId]) {
+      const refused = yield* Effect.result(
+        service.mutate({
+          type: "start",
+          commandId: command(sideChatOf),
+          id: item.id,
+          specRevision: 1,
+          participants: [{ ...participant, sideChatOf }],
+        }),
+      );
+      assert.equal(refused._tag, "Failure");
+    }
+    assert.equal((yield* service.get(item.id)).executions.length, 0);
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
 
 it.effect(
   "deduplicates the same dispatch while permitting parallel agents and stopping only one",

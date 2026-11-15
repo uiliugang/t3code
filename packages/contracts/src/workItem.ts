@@ -15,7 +15,7 @@ import { OrchestrationV2ThreadLaunchWorkspaceStrategy } from "./orchestrationV2.
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
 import { WorkItemDelivery, DeliveryScope, DeliverySummary } from "./workItemDelivery.ts";
 import { BranchIssueRef } from "./branchIssues.ts";
-import { IssueSource } from "./issues.ts";
+import { IssueSource, IssueCreateInput, IssueMetadataInput, IssueMetadata } from "./issues.ts";
 
 export const WorkItemId = TrimmedNonEmptyString.pipe(Schema.brand("WorkItemId"));
 export type WorkItemId = typeof WorkItemId.Type;
@@ -63,6 +63,7 @@ export const WorkItemExecution = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
+  sideChatOf: Schema.optional(ThreadId),
   specRevision: Revision,
   specSnapshot: WorkItemSpecification,
   deliveryRevision: Schema.optional(Revision),
@@ -184,8 +185,28 @@ export const WorkItemParticipant = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
+  sideChatOf: Schema.optional(ThreadId),
 });
 export type WorkItemParticipant = typeof WorkItemParticipant.Type;
+export const WorkItemIssueInput = Schema.Struct({
+  id: WorkItemId,
+  action: Schema.Union([
+    Schema.Struct({
+      operation: Schema.Literal("metadata"),
+      ...IssueMetadataInput.mapFields(
+        ({ projectId: _p, provider: _v, scope: _s, host: _h, ...fields }) => fields,
+      ).fields,
+    }),
+    Schema.Struct({
+      operation: Schema.Literal("create"),
+      ...IssueCreateInput.mapFields(
+        ({ projectId: _p, provider: _v, scope: _s, host: _h, ...fields }) => fields,
+      ).fields,
+    }),
+    Schema.Struct({ operation: Schema.Literal("recover"), url: TrimmedNonEmptyString }),
+  ]),
+});
+export type WorkItemIssueInput = typeof WorkItemIssueInput.Type;
 export const WorkItemCommandInput = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("create"),
@@ -310,6 +331,7 @@ export const WorkItemCommandInput = Schema.Union([
 ]);
 export type WorkItemCommandInput = typeof WorkItemCommandInput.Type;
 export const WorkItemMutationResult = Schema.Struct({ item: WorkItem });
+export const WorkItemIssueResult = Schema.Union([WorkItemMutationResult, IssueMetadata]);
 export type WorkItemMutationResult = typeof WorkItemMutationResult.Type;
 export const WorkItemDiscoverInput = Schema.Struct({
   projectId: ProjectId,

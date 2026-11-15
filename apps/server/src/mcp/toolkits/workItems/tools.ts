@@ -7,6 +7,9 @@ import {
   WorkItemMutationResult,
   BranchIssueRef,
   ThreadId,
+  WorkItemParticipant,
+  WorkItemIssueInput,
+  WorkItemIssueResult,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
@@ -14,6 +17,7 @@ import { Tool, Toolkit } from "effect/ai";
 import * as WorkItems from "../../../work-items/WorkItemService.ts";
 import * as Threads from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Invocation from "../../McpInvocationContext.ts";
+import * as DeliveryAutomation from "../../../work-items/DeliveryAutomationService.ts";
 
 const dependencies = [
   Invocation.McpInvocationContext,
@@ -24,17 +28,25 @@ const shared = { dependencies, failure: OrchestratorMcpFailure, failureMode: "re
 const [create, update, start, stop, report] = WorkItemCommandInput.members;
 
 export const WorkItemToolkit = Toolkit.make(
+  Tool.make("work_item_issue", {
+    ...shared,
+    dependencies: [...dependencies, DeliveryAutomation.DeliveryAutomationService],
+    description:
+      "Issue side chats only: metadata reads fields; create links its result; recover links an uncertain URL. Never blindly retry; code stays read-only.",
+    parameters: WorkItemIssueInput,
+    success: WorkItemIssueResult,
+  }).annotate(Tool.Destructive, true),
   Tool.make("work_item_link_issue", {
     ...shared,
     description:
-      "Attach a created external issue to this existing local work item. Use the canonical platform URL and current expectedVersion. Preserve its source conversations; do not create a duplicate task.",
+      "Link an existing issue using its canonical URL and current expectedVersion. Keep source conversations; never duplicate the task.",
     parameters: WorkItemCommandInput.members[10].mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_associate_issue", {
     ...shared,
     description:
-      "Associate the current conversation with its delivery issue. References are not automatically delivery goals. Reuse the existing issue record across conversations. Never create duplicate task cards for the same issue.",
+      "Associate only the calling conversation's delivery goal, not references. Reuse its issue record across conversations; never duplicate issue cards.",
     parameters: Schema.Struct({
       issue: BranchIssueRef,
       threadId: Schema.optional(ThreadId),
@@ -45,42 +57,41 @@ export const WorkItemToolkit = Toolkit.make(
   Tool.make("work_item_update_delivery_scope", {
     ...shared,
     description:
-      "Record every necessary PR and changed service/deployment target for this issue. revision for a service is the exact delivery PR URL exposed by MCM. Updating invalidates scope confirmation. Exclude replaced PRs explicitly. Ask the user if ownership or coverage is uncertain.",
+      "Record ALL required PRs and changed services/targets. A service revision is its delivery PR URL from MCM. Updates invalidate confirmation. Explicitly exclude replaced PRs; ask about uncertain ownership or coverage.",
     parameters: WorkItemCommandInput.members[11].mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_confirm_delivery_scope", {
     ...shared,
     description:
-      "Confirm only the current complete delivery scope after identifying ALL necessary PRs and changed services. Do not confirm partial or uncertain scope. T3 then tracks PRs, creates MCM plans after all required PRs merge, and closes the external issue only when its platform-specific delivery condition is met.",
+      "Confirm only the complete, current scope with ALL required PRs and services; ask about uncertainty. T3 tracks merges, prepares MCM plans after all PRs merge, and closes the issue only after its platform's delivery condition.",
     parameters: WorkItemCommandInput.members[12].mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_report_release", {
     ...shared,
     description:
-      "Associate MCM plan identifiers with this delivery. T3 verifies service, environment and delivery PR against MCM; this report cannot declare a deployment successful. Reuse existing plans, never create duplicates after an uncertain response. Creation does not authorize submission, approval or execution.",
+      "Link MCM plan IDs. T3 verifies service, environment and delivery PR; reporting never proves deployment success. Reuse plans after uncertain replies. Creating a plan does not authorize submission, approval or execution.",
     parameters: WorkItemCommandInput.members[13].mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_report_delivery_exception", {
     ...shared,
     description:
-      "Report verified rollback, deployment reversal or missing necessary delivery. T3 flags the exception for the user. Never reopen the external issue without the user's confirmation.",
+      "Report verified rollback, reversal or missing delivery for the user. Reopening an issue requires user confirmation.",
     parameters: WorkItemCommandInput.members[14].mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_list", {
     ...shared,
     description:
-      "List project task cards and their independent agent executions. Omit projectId for the calling thread's project.",
+      "List project tasks and agent executions; projectId defaults to the caller's project.",
     parameters: WorkItemListInput.mapFields(Struct.omit(["issueUrls"])),
     success: WorkItemListResult,
   }).annotate(Tool.Readonly, true),
   Tool.make("work_item_get", {
     ...shared,
-    description:
-      "Read a task, its current specification revision, acceptance criteria, sources, and each agent's result.",
+    description: "Read a task's revision, criteria, sources and agent results.",
     parameters: Schema.Struct({
       id: WorkItem.fields.id,
       projectId: Schema.optional(WorkItem.fields.projectId),
@@ -90,22 +101,28 @@ export const WorkItemToolkit = Toolkit.make(
   Tool.make("work_item_create", {
     ...shared,
     description:
-      "Create a project task with the user's goal, constraints and acceptance criteria. Does not start an agent. Reuse commandId after a lost reply.",
+      "Create a project task with the user's goal, constraints and criteria, without starting an agent. Reuse commandId after a lost reply.",
     parameters: create.mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_update", {
     ...shared,
     description:
-      "Edit a task using its expectedVersion. Changes apply to future executions; running agents retain their specification snapshot. Do not expand the user's scope.",
+      "Use expectedVersion to edit future executions; running agents retain their snapshot. Preserve user scope.",
     parameters: update.mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_start", {
     ...shared,
     description:
-      "Dispatch explicitly requested participants to one task. Different providers or models may work concurrently, each in its own thread and checkout. Preserve the specification revision and reuse commandId when retrying the same dispatch.",
-    parameters: start.mapFields(Struct.omit(["type"])),
+      "Start only requested participants with the current specRevision. Each gets its own thread/checkout; providers/models may run concurrently. Retry with the same commandId.",
+    parameters: start.mapFields(({ type: _type, participants: _participants, ...fields }) => ({
+      ...fields,
+      participants: Schema.Array(WorkItemParticipant.mapFields(Struct.omit(["sideChatOf"]))).check(
+        Schema.isMinLength(1),
+        Schema.isMaxLength(20),
+      ),
+    })),
     success: WorkItemMutationResult,
   })
     .annotate(Tool.Destructive, true)
@@ -113,21 +130,21 @@ export const WorkItemToolkit = Toolkit.make(
   Tool.make("work_item_stop", {
     ...shared,
     description:
-      "Stop one execution by executionId, or all executions of this task when omitted. Other tasks are unaffected; stopping one participant leaves its peers running.",
+      "Stop executionId, or all this task's executions if omitted. Leave other tasks and unselected peers running.",
     parameters: stop.mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, true),
   Tool.make("work_item_report", {
     ...shared,
     description:
-      "Report progress or a deliverable only for your own execution thread and its specification revision. Preserve evidence and unresolved issues. Reporting does not accept the task.",
+      "Report progress, evidence and unresolved issues for your own execution and specRevision. Reporting does not accept the task.",
     parameters: report.mapFields(Struct.omit(["type"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, false),
   Tool.make("work_item_submit", {
     ...shared,
     description:
-      "Submit your execution's result for selection and user review. Other participants may continue. A finished run, plan, or self-reported test pass never means the user has accepted the task.",
+      "Submit your execution for user selection/review while peers continue. Finished runs, plans and claimed tests do not mean user acceptance.",
     parameters: report.mapFields(Struct.omit(["type", "submitted"])),
     success: WorkItemMutationResult,
   }).annotate(Tool.Destructive, false),
