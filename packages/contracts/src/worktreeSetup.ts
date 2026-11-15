@@ -28,6 +28,14 @@ export const WorktreeSetupStageStatus = Schema.Literals([
 ]);
 export type WorktreeSetupStageStatus = typeof WorktreeSetupStageStatus.Type;
 
+export const WorktreeFetchProgress = Schema.Struct({
+  remoteRefName: TrimmedNonEmptyString,
+  attempt: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })),
+  maxAttempts: Schema.Literal(3),
+  retryReason: Schema.NullOr(Schema.Literals(["network", "timeout", "ref-lock"])),
+});
+export type WorktreeFetchProgress = typeof WorktreeFetchProgress.Type;
+
 export const WorktreeSetupStage = Schema.Struct({
   id: WorktreeSetupStageId,
   status: WorktreeSetupStageStatus,
@@ -36,6 +44,7 @@ export const WorktreeSetupStage = Schema.Struct({
   percent: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 }))),
   detail: Schema.NullOr(Schema.String.check(Schema.isMaxLength(WORKTREE_SETUP_DETAIL_MAX_LENGTH))),
   tail: Schema.Array(Schema.String.check(Schema.isMaxLength(WORKTREE_SETUP_TAIL_LINE_MAX_LENGTH))),
+  fetchProgress: Schema.optional(WorktreeFetchProgress),
 });
 export type WorktreeSetupStage = typeof WorktreeSetupStage.Type;
 

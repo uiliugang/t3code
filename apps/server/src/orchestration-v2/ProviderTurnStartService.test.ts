@@ -1881,12 +1881,16 @@ effectIt.effect(
         "deleted",
         "remote-merged",
         "detached",
+        "remote-missing",
+        "remote-unreachable",
         "detached-without-main",
       ] as const) {
-        yield* fileSystem.remove(worktreePath, { recursive: true });
-        if (scenario !== "retained" && scenario !== "leftover") {
-          yield* git(workspaceRoot, ["worktree", "prune"]);
-          yield* git(workspaceRoot, ["branch", "-D", "feature/restore"]);
+        if (scenario !== "detached-without-main") {
+          yield* fileSystem.remove(worktreePath, { recursive: true });
+          if (scenario !== "retained" && scenario !== "leftover") {
+            yield* git(workspaceRoot, ["worktree", "prune"]);
+            yield* git(workspaceRoot, ["branch", "-D", "feature/restore"]);
+          }
         }
         if (scenario === "detached" || scenario === "detached-without-main") {
           yield* git(workspaceRoot, ["switch", "--detach"]);
@@ -1902,6 +1906,23 @@ effectIt.effect(
             "refs/heads/project-current:refs/heads/main",
           ]);
           expectedBase = projectTip;
+        }
+        if (scenario === "remote-missing") {
+          yield* git(path.join(root, "remote.git"), [
+            "--git-dir=.",
+            "update-ref",
+            "-d",
+            "refs/heads/main",
+          ]);
+          expectedBase = mainTip;
+        }
+        if (scenario === "remote-unreachable") {
+          yield* git(workspaceRoot, [
+            "remote",
+            "set-url",
+            "origin",
+            path.join(root, "missing-remote.git"),
+          ]);
         }
         if (scenario === "detached-without-main") {
           yield* git(workspaceRoot, ["branch", "-D", "main"]);
@@ -1944,14 +1965,20 @@ effectIt.effect(
           expect(yield* fileSystem.readFileString(path.join(worktreePath, "notes.txt"))).toBe(
             "keep",
           );
-        } else if (scenario === "detached-without-main") {
+        } else if (scenario === "detached-without-main" || scenario === "remote-unreachable") {
           expect(harness.open).not.toHaveBeenCalled();
           expect(harness.startRootRun).not.toHaveBeenCalled();
           expect(harness.projection().runs.at(-1)?.status).toBe("failed");
           expect(harness.projection().turnItems).toMatchObject([
             {
               type: "error",
-              failure: { message: expect.stringContaining("no permitted base branch") },
+              failure: {
+                message: expect.stringContaining(
+                  scenario === "remote-unreachable"
+                    ? "Could not recreate the worktree"
+                    : "no permitted base branch",
+                ),
+              },
             },
           ]);
           expect(yield* fileSystem.exists(worktreePath)).toBe(false);

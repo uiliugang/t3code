@@ -1,4 +1,7 @@
-import type { OrchestrationV2ProviderFailureClass } from "@t3tools/contracts";
+import {
+  ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
+  type OrchestrationV2ProviderFailureClass,
+} from "@t3tools/contracts";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
   CHATGPT_WORKSPACE_ADMIN_REQUEST,
@@ -6,6 +9,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { memo } from "react";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
@@ -80,7 +84,10 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   errorCode?: string | null;
   onDismiss?: () => void;
 }) {
+  const t = useUiTranslation();
   if (!error) return null;
+  const message =
+    errorCode === ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE ? t(error) : error;
   const workspaceLimit = errorCode === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE;
   const chatGptLimit = workspaceLimit || errorCode === CHATGPT_USAGE_LIMIT_CODE;
   const variant = errorClass === "usage_limit" || chatGptLimit ? "warning" : "error";
@@ -105,7 +112,7 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
               ) : null}
             </div>
           ) : (
-            <ExpandableText text={error} collapsedText={getThreadErrorBannerMessage(error)} />
+            <ExpandableText text={message} collapsedText={getThreadErrorBannerMessage(message)} />
           )}
         </AlertDescription>
         {(chatGptLimit || onDismiss) && (

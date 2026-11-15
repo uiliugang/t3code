@@ -339,6 +339,14 @@ branches: enabled uses the latest `origin/main` or `origin/master`, falling back
 branch when the remote branch is missing; disabled uses the local branch. Existing development
 branches stay selected. If fetching or switching fails, the task stops before the agent starts.
 
+For **New worktree**, fetching the remote base retries temporary connection failures up to three
+times within five minutes. The setup card shows the branch and retry attempt; you can cancel
+while it reconnects. If recovery fails, restore the connection and retry the preparation.
+A fetch with no changing Git progress for 30 seconds is restarted. A remote that stays silent
+while preparing its data can also reach this limit.
+A missing remote branch stops preparation without using its cached commit. To intentionally
+start from a local branch, turn off **Start from remote** and select that local branch.
+
 The Projects category, under Code, holds the project's name, icon, actions,
 checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's

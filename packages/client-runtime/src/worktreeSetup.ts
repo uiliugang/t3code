@@ -1,4 +1,22 @@
-import type { OrchestrationV2Run, WorktreeSetupSnapshot } from "@t3tools/contracts";
+import type {
+  OrchestrationV2Run,
+  WorktreeSetupSnapshot,
+  WorktreeSetupStage,
+} from "@t3tools/contracts";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
+
+export function worktreeFetchLabel(stage: WorktreeSetupStage, t: UiTranslator): string | null {
+  if (stage.id !== "fetch" || stage.status !== "running" || !stage.fetchProgress) return null;
+  const { remoteRefName, attempt, maxAttempts, retryReason } = stage.fetchProgress;
+  if (retryReason === null) return t("Fetching {ref}", { ref: remoteRefName });
+  const message =
+    retryReason === "timeout"
+      ? "No progress; retrying {ref} ({attempt}/{maxAttempts})"
+      : retryReason === "network"
+        ? "Connection failed; retrying {ref} ({attempt}/{maxAttempts})"
+        : "Reference busy; retrying {ref} ({attempt}/{maxAttempts})";
+  return t(message, { ref: remoteRefName, attempt, maxAttempts });
+}
 
 export function resolveVisibleWorktreeSetup(input: {
   live: WorktreeSetupSnapshot | null;

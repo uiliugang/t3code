@@ -6,6 +6,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
   DEFAULT_SERVER_SETTINGS,
+  GitCommandError,
   type ChatAttachment,
   type MessageId,
   type ModelSelection,
@@ -235,10 +236,19 @@ export class ThreadLaunchService extends Context.Service<
 >()("t3/orchestration-v2/ThreadLaunchService") {}
 
 const isThreadLaunchError = Schema.is(ThreadLaunchError);
+const isWorkspacePreparationError = Schema.is(WorkspaceProvisioner.WorkspacePreparationError);
+const isGitCommandError = Schema.is(GitCommandError);
 
 function failureDetail(error: unknown): string {
   if (isThreadLaunchError(error)) {
     const cause = error.cause;
+    const gitError = isWorkspacePreparationError(cause) ? cause.cause : cause;
+    if (
+      isGitCommandError(gitError) &&
+      (gitError.operation === "GitVcsDriver.fetchRemote" ||
+        gitError.operation === "GitVcsDriver.fetchWorktreeBaseCommit")
+    )
+      return gitError.detail;
     const detail = cause instanceof Error ? cause.message : String(cause);
     return `Workspace preparation failed during ${error.operation.replaceAll("-", " ")}: ${detail}`;
   }
@@ -479,7 +489,10 @@ const make = Effect.gen(function* () {
           })
           .pipe(
             Effect.map((base) => ({ fetchFailed: false as const, base })),
-            Effect.orElseSucceed(() => ({ fetchFailed: true as const, base: null })),
+            Effect.catchTags({
+              GitCommandError: (error) =>
+                Effect.succeed({ fetchFailed: error.reason !== "ref_not_found", base: null }),
+            }),
           );
         if (remoteBase.base !== null) {
           return {
@@ -487,8 +500,7 @@ const make = Effect.gen(function* () {
             baseRefName: `refs/remotes/${remoteBase.base.remoteRefName}`,
           };
         }
-        // A completed fetch that found no branch means the branch is gone and its
-        // tracking ref is stale; only a failed fetch can fall back to it.
+        // A missing remote branch invalidates its tracking ref even when fetch failed.
         if (remoteBase.fetchFailed) {
           const trackingRef = `refs/remotes/${remoteName}/${defaultBranch}`;
           if (yield* git.hasCommit({ cwd, refName: trackingRef })) {
@@ -905,8 +917,15 @@ const make = Effect.gen(function* () {
               cwd: project.workspaceRoot,
               refName: input.workspaceStrategy.baseRef,
               remote,
+              onProgress: (fetchProgress) =>
+                setupTracker.stage(threadId, "fetch", { fetchProgress }),
             })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+            .pipe(
+              Effect.tapError((error) =>
+                setupTracker.stageStatus(threadId, "fetch", "failed", error.detail),
+              ),
+              Effect.mapError(mapError(input, "provision-worktree", threadId)),
+            );
           if (remoteBase !== null) {
             startRef = remoteBase.commitSha;
             baseRefName = `refs/remotes/${remoteBase.remoteRefName}`;

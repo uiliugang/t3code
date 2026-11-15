@@ -286,6 +286,15 @@ it.live(
             ...git,
             fetchWorktreeBaseCommit: (input) =>
               Ref.getAndSet(failFetch, false).pipe(
+                Effect.tap(
+                  () =>
+                    input.onProgress?.({
+                      remoteRefName: "origin/main",
+                      attempt: 3,
+                      maxAttempts: 3,
+                      retryReason: "network",
+                    }) ?? Effect.void,
+                ),
                 Effect.flatMap((fail) =>
                   fail
                     ? Effect.fail(
@@ -359,6 +368,11 @@ it.live(
         });
         const fetchError = yield* provisioner.prepare(input).pipe(Effect.flip);
         assert.include(fetchError.message, "Git command timed out.");
+        assert.equal(
+          (yield* tracker.get(input.threadId))?.stages.find((stage) => stage.id === "fetch")
+            ?.fetchProgress?.attempt,
+          3,
+        );
         assert.equal(
           (yield* tracker.get(input.threadId))?.stages.find((stage) => stage.id === "fetch")
             ?.status,
