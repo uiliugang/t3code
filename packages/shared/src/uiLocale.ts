@@ -9,6 +9,29 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "The selected remote base branch no longer exists. Select another base branch or turn off Start from remote to use a local branch.":
+    "所选远端基线分支已不存在。请选择其他基线分支，或关闭“从远端开始”以使用本地分支。",
+  "Fetching {ref}": "正在拉取 {ref}",
+  "No progress; retrying {ref} ({attempt}/{maxAttempts})":
+    "无进展，正在重试 {ref}（{attempt}/{maxAttempts}）",
+  "Connection failed; retrying {ref} ({attempt}/{maxAttempts})":
+    "连接失败，正在重试 {ref}（{attempt}/{maxAttempts}）",
+  "Reference busy; retrying {ref} ({attempt}/{maxAttempts})":
+    "引用被占用，正在重试 {ref}（{attempt}/{maxAttempts}）",
+  "Git stopped receiving data from the remote. Check the server's network connection, then retry.":
+    "Git 长时间未收到远端数据。请检查服务器的网络连接后重试。",
+  "Git fetch exceeded its five-minute recovery limit. Check the server's network connection, then retry.":
+    "Git 拉取已达到 5 分钟恢复时限。请检查服务器的网络连接后重试。",
+  "Git could not reach the remote. Check the server's network connection and remote host, then retry.":
+    "Git 无法连接远端。请检查服务器的网络连接及远端主机后重试。",
+  "Git could not authenticate with the remote. Check Git credentials or SSH access on the server, then retry.":
+    "Git 远端认证失败。请检查服务器上的 Git 凭据或 SSH 权限后重试。",
+  "Git could not verify the remote certificate or SSH host key. Check the server's trust configuration, then retry.":
+    "Git 无法验证远端证书或 SSH 主机密钥。请检查服务器的信任配置后重试。",
+  "Git could not access the remote repository. Check the remote URL and repository permissions on the server.":
+    "Git 无法访问远端仓库。请检查服务器上的远端地址和仓库权限。",
+  "Git could not update a local reference. Another Git operation or a stale lock may be blocking the fetch; check the repository on the server, then retry.":
+    "Git 无法更新本地引用。其他 Git 操作或残留锁可能阻止了拉取；请检查服务器上的仓库后重试。",
   "Could not inspect all nested repositories.": "无法完整检查目录内的嵌套仓库，请检查目录后重试。",
   "This folder contains repositories. Select them separately before cleaning the parent folder.":
     "此目录包含仓库。请单独勾选并清理内部仓库，再清理父目录。",

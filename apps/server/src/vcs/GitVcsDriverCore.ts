@@ -15,6 +15,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
+import * as Queue from "effect/Queue";
+import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -35,6 +37,7 @@ import {
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
   type VcsRef,
+  type WorktreeFetchProgress,
 } from "@t3tools/contracts";
 import {
   dedupeRemoteBranchesWithLocalMatches,
@@ -662,7 +665,30 @@ function isMissingWorktreeStderr(stderr: string): boolean {
 
 // Fetch stderr can carry credentials; persist only fixed diagnoses or generic failures.
 function fetchFailureDetail(stderr: string): string | undefined {
+  switch (fetchRetryReason(stderr)) {
+    case "timeout":
+      return "Git stopped receiving data from the remote. Check the server's network connection, then retry.";
+    case "network":
+      return "Git could not reach the remote. Check the server's network connection and remote host, then retry.";
+  }
   const lines = stderr.split(/\r?\n/).map((line) => line.trim());
+  if (
+    lines.some((line) =>
+      /^fatal: unable to access .+: (?:SSL certificate problem|server certificate verification failed|SSL peer certificate)/i.test(
+        line,
+      ),
+    ) ||
+    lines.some((line) => /^(?:Host key verification failed\.|fatal: .*certificate)/i.test(line))
+  ) {
+    return "Git could not verify the remote certificate or SSH host key. Check the server's trust configuration, then retry.";
+  }
+  if (
+    lines.some((line) =>
+      /^fatal: unable to access .+: The requested URL returned error: (?:401|403)\b/i.test(line),
+    )
+  ) {
+    return "Git could not authenticate with the remote. Check Git credentials or SSH access on the server, then retry.";
+  }
   if (
     lines.some((line) =>
       /^(?:fatal: (?:Authentication failed|could not read (?:Username|Password))\b|\S+: Permission denied \(publickey)/i.test(
@@ -671,15 +697,6 @@ function fetchFailureDetail(stderr: string): string | undefined {
     )
   ) {
     return "Git could not authenticate with the remote. Check Git credentials or SSH access on the server, then retry.";
-  }
-  if (
-    lines.some((line) =>
-      /^(?:(?:fatal: |ssh: )?Could not resolve host(?:name)?\b|fatal: unable to access .+: (?:Could not resolve host|Failed to connect)\b|ssh: connect to host \S+ port \d+: (?:Connection timed out|Connection refused|Network is unreachable)\b)/i.test(
-        line,
-      ),
-    )
-  ) {
-    return "Git could not reach the remote. Check the server's network connection and remote host, then retry.";
   }
   if (
     lines.some((line) =>
@@ -695,6 +712,45 @@ function fetchFailureDetail(stderr: string): string | undefined {
   }
   return undefined;
 }
+
+function fetchRetryReason(stderr: string): WorktreeFetchProgress["retryReason"] {
+  const lines = stderr.split(/\r?\n/).map((line) => line.trim());
+  if (
+    lines.some((line) =>
+      /^(?:fatal|error): .*\b(?:No space left on device|Read-only file system|Permission denied)\b/i.test(
+        line,
+      ),
+    )
+  )
+    return null;
+  if (
+    lines.some((line) =>
+      /^(?:fatal: (?:Authentication failed|could not read (?:Username|Password))\b|\S+: Permission denied|Host key verification failed\.|fatal: unable to access .+: (?:.*certificate|The requested URL returned error: (?:401|403)))/i.test(
+        line,
+      ),
+    )
+  )
+    return null;
+  if (
+    lines.some((line) =>
+      /^(?:fatal: unable to access .+: (?:Connection timed out|Operation timed out|Timeout was reached|Operation too slow)|error: RPC failed; curl 28\b|ssh: connect to host \S+ port \d+: Connection timed out)/i.test(
+        line,
+      ),
+    )
+  )
+    return "timeout";
+  if (
+    lines.some((line) =>
+      /^(?:(?:fatal: |ssh: )?Could not resolve host(?:name)?\b|fatal: unable to access .+: (?:Could not resolve (?:host|proxy)|Failed to connect|Recv failure: Connection reset|Send failure:|Connection reset|Empty reply from server)|error: RPC failed; curl (?:5|6|7|18|52|55|56)\b|ssh: (?:connect to host \S+ port \d+: (?:Connection refused|Network is unreachable)|Could not resolve hostname)|(?:fatal: )?(?:read|kex_exchange_identification): (?:read: )?Connection reset by peer)/i.test(
+        line,
+      ),
+    )
+  )
+    return "network";
+  return isRefLockFailure(stderr) ? "ref-lock" : null;
+}
+
+class FetchIdleTimeout extends Schema.TaggedError<FetchIdleTimeout>()("FetchIdleTimeout", {}) {}
 
 // Git 2.53+ reports ref races as fetching-ref failures; older versions say cannot lock ref.
 function isRefLockFailure(stderr: string): boolean {
@@ -5574,7 +5630,111 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { headCommit: input.targetCommit, moved: true, onTarget: true };
     });
 
-  const fetchRemote = Effect.fn("fetchRemote")(function* (input: GitVcsDriver.GitFetchRemoteInput) {
+  const fetchWorktreeBaseWithRecovery = Effect.fn("GitVcsDriver.fetchWorktreeBaseWithRecovery")(
+    function* (
+      input: GitVcsDriver.GitFetchRemoteInput & { refName: string },
+      args: readonly string[],
+      onProgress: ((progress: WorktreeFetchProgress) => Effect.Effect<void>) | undefined,
+    ) {
+      const startedAt = yield* Clock.currentTimeMillis;
+      let retryReason: WorktreeFetchProgress["retryReason"] = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        yield* (
+          onProgress?.({ remoteRefName: input.refName, attempt, maxAttempts: 3, retryReason }) ??
+            Effect.void
+        );
+        if (attempt > 1)
+          yield* Effect.sleep(
+            (attempt === 2 ? 1_000 : 3_000) + (yield* Random.nextIntBetween(0, 250)),
+          );
+        const progress = yield* Queue.make<void>({ capacity: 1, strategy: "sliding" });
+        let lastProgress = "";
+        const result = yield* Effect.raceFirst(
+          executeGitWithStableDiagnostics("GitVcsDriver.fetchRemote", input.cwd, args, {
+            env: {
+              ...STATUS_UPSTREAM_REFRESH_ENV,
+              GIT_HTTP_LOW_SPEED_LIMIT: "1",
+              GIT_HTTP_LOW_SPEED_TIME: "30",
+            },
+            timeoutMs: null,
+            allowNonZeroExit: true,
+            appendTruncationMarker: true,
+            keepLineCallbacksAfterTruncation: true,
+            progress: {
+              // Progress chunks share the enclosing fetch span.
+              onStderrLine: Effect.fnUntraced(function* (line: string) {
+                // Only changing object counts or received bytes reset the stall deadline, not remote chatter.
+                const match =
+                  /^(?:remote: )?((?:Enumerating|Counting|Compressing|Receiving|Resolving|Updating) (?:objects|deltas|files)):.*?(\d+)(?:% \((\d+)\/\d+\))?(?:, ([\d.]+ \w+i?B))?/.exec(
+                    line.trim(),
+                  );
+                if (!match) return;
+                const current = `${match[1]}:${match[3] ?? match[2]}:${match[4] ?? ""}`;
+                if (current === lastProgress) return;
+                lastProgress = current;
+                yield* Queue.offer(progress, undefined);
+              }),
+            },
+          }),
+          Queue.take(progress).pipe(
+            Effect.timeoutOrElse({
+              duration: "30 seconds",
+              orElse: () => Effect.fail(new FetchIdleTimeout()),
+            }),
+            Effect.forever,
+          ),
+        ).pipe(
+          Effect.map((result) => ({
+            result,
+            reason: result.exitCode === 0 ? null : fetchRetryReason(result.stderr),
+          })),
+          Effect.catchTags({
+            FetchIdleTimeout: () => Effect.succeed({ result: null, reason: "timeout" as const }),
+          }),
+        );
+        yield* addCurrentSpanEvent("git.fetch.attempt", {
+          attempt,
+          category: result.result?.exitCode === 0 ? "success" : (result.reason ?? "permanent"),
+          elapsedMs: (yield* Clock.currentTimeMillis) - startedAt,
+        });
+        if (result.result?.exitCode === 0 || result.reason === null || attempt === 3) {
+          if (result.result !== null) return result.result;
+          return yield* new GitCommandError({
+            ...gitCommandContext({ operation: "GitVcsDriver.fetchRemote", cwd: input.cwd, args }),
+            detail:
+              "Git stopped receiving data from the remote. Check the server's network connection, then retry.",
+          });
+        }
+        retryReason = result.reason;
+      }
+      return yield* Effect.die("Unreachable fetch attempt");
+    },
+    (effect, input) =>
+      effect.pipe(
+        Effect.timeoutOrElse({
+          duration: FETCH_REMOTE_TIMEOUT_MS,
+          orElse: () =>
+            Effect.fail(
+              new GitCommandError({
+                ...gitCommandContext({
+                  operation: "GitVcsDriver.fetchRemote",
+                  cwd: input.cwd,
+                  args: ["fetch"],
+                }),
+                detail:
+                  "Git fetch exceeded its five-minute recovery limit. Check the server's network connection, then retry.",
+              }),
+            ),
+        }),
+      ),
+  );
+
+  const fetchRemote = Effect.fn("fetchRemote")(function* (
+    input: GitVcsDriver.GitFetchRemoteInput,
+    recovery?: {
+      onProgress: ((progress: WorktreeFetchProgress) => Effect.Effect<void>) | undefined;
+    },
+  ) {
     const args = ["fetch", "--quiet", "--", input.remoteName];
     const options = {
       env: STATUS_UPSTREAM_REFRESH_ENV,
@@ -5585,6 +5745,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // poll, can win the race for a remote-tracking ref. The loser fails, but
     // the ref is free again by the time a rerun needs it, so retry once.
     const runFetch = (fetchArgs: readonly string[]) => {
+      if (recovery && input.refName !== undefined)
+        return fetchWorktreeBaseWithRecovery(
+          { ...input, refName: input.refName },
+          fetchArgs.map((arg) => (arg === "--quiet" ? "--progress" : arg)),
+          recovery.onProgress,
+        );
       const run = executeGitWithStableDiagnostics(
         "GitVcsDriver.fetchRemote",
         input.cwd,
@@ -5722,8 +5888,21 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const { remoteName, branchName } = target;
       const remoteRefName = `${remoteName}/${branchName}`;
       // A missing remote branch can leave a stale tracking ref; never resolve it.
-      if (!(yield* fetchRemote({ cwd: input.cwd, remoteName, refName: remoteRefName }))) {
-        return null;
+      if (
+        !(yield* fetchRemote(
+          { cwd: input.cwd, remoteName, refName: remoteRefName },
+          { onProgress: input.onProgress },
+        ))
+      ) {
+        return yield* new GitCommandError({
+          ...gitCommandContext({
+            operation: "GitVcsDriver.fetchWorktreeBaseCommit",
+            cwd: input.cwd,
+            args: ["fetch"],
+          }),
+          detail:
+            "The selected remote base branch no longer exists. Select another base branch or turn off Start from remote to use a local branch.",
+        });
       }
       const resolved = yield* executeGit(
         "GitVcsDriver.fetchWorktreeBaseCommit",

@@ -5,7 +5,10 @@ import {
   type WorktreeSetupSnapshot,
   type WorktreeSetupStage,
 } from "@t3tools/contracts";
-import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import {
+  worktreeSetupAgentStarted,
+  worktreeFetchLabel,
+} from "@t3tools/client-runtime/worktree-setup";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
@@ -235,7 +238,7 @@ function SetupDetailsSheet({
           ))}
         {snapshot.phase === "failed" && snapshot.error ? (
           <Text selectable className="ml-8 mt-2 text-xs text-danger-foreground">
-            {snapshot.error}
+            {t(snapshot.error)}
           </Text>
         ) : null}
         {canCancel ? (
@@ -280,10 +283,12 @@ function StageRow({
   animate?: boolean;
 }) {
   const t = useUiTranslation();
+  const fetchLabel = worktreeFetchLabel(stage, t);
   const label =
-    stage.id === "setup-script"
+    fetchLabel ??
+    (stage.id === "setup-script"
       ? (scriptName ?? t(worktreeSetupStageLabel(stage.id)))
-      : t(worktreeSetupStageLabel(stage.id));
+      : t(worktreeSetupStageLabel(stage.id)));
   const detail =
     stage.status === "pending"
       ? null
@@ -291,7 +296,11 @@ function StageRow({
         ? (stage.detail ?? t("skipped"))
         : stage.id === "checkout" && stage.status === "running" && stage.percent !== null
           ? `${stage.percent}%`
-          : stage.detail;
+          : stage.detail === null
+            ? null
+            : stage.id === "fetch"
+              ? t(stage.detail)
+              : stage.detail;
   return (
     <View
       accessibilityLabel={`${label}, ${t(stage.status)}`}
@@ -319,7 +328,7 @@ function StageRow({
           />
         )}
       </View>
-      {stage.status === "running" && animate ? (
+      {stage.status === "running" && animate && !fetchLabel ? (
         <ShimmeringWorkContent
           icon="clock"
           iconSubtleColor="transparent"
@@ -328,7 +337,7 @@ function StageRow({
         />
       ) : (
         <Text
-          numberOfLines={1}
+          numberOfLines={fetchLabel ? 2 : 1}
           className={
             stage.status === "failed"
               ? "flex-1 text-sm text-danger-foreground"

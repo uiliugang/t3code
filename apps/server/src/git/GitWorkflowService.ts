@@ -111,14 +111,7 @@ export class GitWorkflowService extends Context.Service<
       GitCommandError
     >;
     readonly resolveWorktreeBaseRemote: GitVcsDriver.GitVcsDriver["Service"]["resolveWorktreeBaseRemote"];
-    readonly fetchWorktreeBaseCommit: (input: {
-      readonly cwd: string;
-      readonly refName: string;
-      readonly remote?: GitVcsDriver.GitWorktreeBaseRemote;
-    }) => Effect.Effect<
-      { readonly commitSha: string; readonly remoteRefName: string } | null,
-      GitCommandError
-    >;
+    readonly fetchWorktreeBaseCommit: GitVcsDriver.GitVcsDriver["Service"]["fetchWorktreeBaseCommit"];
     readonly resolveDefaultBranchName: (
       cwd: string,
       remoteName: string,

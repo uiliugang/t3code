@@ -6,6 +6,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
   DEFAULT_SERVER_SETTINGS,
+  GitCommandError,
   type ChatAttachment,
   type MessageId,
   type ModelSelection,
@@ -235,10 +236,19 @@ export class ThreadLaunchService extends Context.Service<
 >()("t3/orchestration-v2/ThreadLaunchService") {}
 
 const isThreadLaunchError = Schema.is(ThreadLaunchError);
+const isWorkspacePreparationError = Schema.is(WorkspaceProvisioner.WorkspacePreparationError);
+const isGitCommandError = Schema.is(GitCommandError);
 
 function failureDetail(error: unknown): string {
   if (isThreadLaunchError(error)) {
     const cause = error.cause;
+    const gitError = isWorkspacePreparationError(cause) ? cause.cause : cause;
+    if (
+      isGitCommandError(gitError) &&
+      (gitError.operation === "GitVcsDriver.fetchRemote" ||
+        gitError.operation === "GitVcsDriver.fetchWorktreeBaseCommit")
+    )
+      return gitError.detail;
     const detail = cause instanceof Error ? cause.message : String(cause);
     return `Workspace preparation failed during ${error.operation.replaceAll("-", " ")}: ${detail}`;
   }
@@ -905,8 +915,15 @@ const make = Effect.gen(function* () {
               cwd: project.workspaceRoot,
               refName: input.workspaceStrategy.baseRef,
               remote,
+              onProgress: (fetchProgress) =>
+                setupTracker.stage(threadId, "fetch", { fetchProgress }),
             })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+            .pipe(
+              Effect.tapError((error) =>
+                setupTracker.stageStatus(threadId, "fetch", "failed", error.detail),
+              ),
+              Effect.mapError(mapError(input, "provision-worktree", threadId)),
+            );
           if (remoteBase !== null) {
             startRef = remoteBase.commitSha;
             baseRefName = `refs/remotes/${remoteBase.remoteRefName}`;

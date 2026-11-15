@@ -37,6 +37,7 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
   type WorktreeSubmodules,
+  type WorktreeFetchProgress,
 } from "@t3tools/contracts";
 import { isMissingExecutable } from "@t3tools/source-control-core/server/discovery";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -441,11 +442,14 @@ export class GitVcsDriver extends Context.Service<
       input: GitFetchWorktreeBaseCommitInput,
     ) => Effect.Effect<GitWorktreeBaseRemote | null, GitCommandError>;
     /**
-     * Fetches the configured upstream, explicit remote ref, or origin; null uses the local base.
+     * Fetches the configured upstream, explicit remote ref, or origin; null means no remote target.
      * A caller that already ran `resolveWorktreeBaseRemote` passes its result as `remote`.
      */
     readonly fetchWorktreeBaseCommit: (
-      input: GitFetchWorktreeBaseCommitInput & { readonly remote?: GitWorktreeBaseRemote },
+      input: GitFetchWorktreeBaseCommitInput & {
+        readonly remote?: GitWorktreeBaseRemote;
+        readonly onProgress?: (progress: WorktreeFetchProgress) => Effect.Effect<void>;
+      },
     ) => Effect.Effect<GitResolveRemoteTrackingCommitResult | null, GitCommandError>;
     readonly fetchRemoteBranch: (
       input: GitFetchRemoteBranchInput,

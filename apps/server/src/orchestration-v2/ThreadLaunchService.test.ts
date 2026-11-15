@@ -1725,7 +1725,11 @@ const withRealGitRepo = <A, E, R>(
     ),
   );
 
-const launchFromBase = (harness: ReturnType<typeof makeHarness>, baseRef: string) =>
+const launchFromBase = (
+  harness: ReturnType<typeof makeHarness>,
+  baseRef: string,
+  expectedStatus = "starting",
+) =>
   Effect.gen(function* () {
     const launches = yield* ThreadLaunch.ThreadLaunchService;
     const launched = yield* launches.launch(
@@ -1737,10 +1741,11 @@ const launchFromBase = (harness: ReturnType<typeof makeHarness>, baseRef: string
       }),
     );
     const projection = yield* preparationSettled(launched.threadId);
-    assert.equal(projection.runs[0]?.status, "starting");
+    assert.equal(projection.runs[0]?.status, expectedStatus);
+    return projection;
   }).pipe(Effect.provide(harness.layer));
 
-it.effect("re-bases a stored base that no longer exists on the remote default branch", () =>
+it.effect("fails without silently changing a deleted remote base to the default branch", () =>
   withRealGitRepo(({ directory, cwd, worktreePath, command, harness }) =>
     Effect.gen(function* () {
       const remote = `${directory}/remote.git`;
@@ -1749,13 +1754,15 @@ it.effect("re-bases a stored base that no longer exists on the remote default br
       yield* command(cwd, ["remote", "add", "origin", remote]);
       yield* command(cwd, ["push", "-u", "origin", "beta"]);
       yield* command(cwd, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/beta"]);
-      const remoteHead = (yield* command(cwd, ["rev-parse", "beta"])).stdout.trim();
       yield* command(cwd, ["checkout", "--detach"]);
       yield* command(cwd, ["commit", "--allow-empty", "-m", "local only"]);
 
-      // Tasks saved before the base followed the default branch still record "main".
-      yield* launchFromBase(harness(), "main");
-      assert.equal((yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim(), remoteHead);
+      const projection = yield* launchFromBase(harness(), "main", "failed");
+      assert.include(
+        projection.turnItems.find((item) => item.type === "error")?.failure.message ?? "",
+        "remote base branch no longer exists",
+      );
+      assert.isFalse(yield* (yield* FileSystem.FileSystem).exists(worktreePath));
     }),
   ),
 );
@@ -1803,7 +1810,18 @@ it.effect("skips a stale tracking ref when the remote reports the base branch is
 it.effect("fetches the origin base from the remote it already resolved", () => {
   let fetchInput: Deferred.Deferred<unknown> | null = null;
   const harness = makeHarness({
-    fetchWorktreeBaseCommit: (input) => Deferred.succeed(fetchInput!, input).pipe(Effect.as(null)),
+    fetchWorktreeBaseCommit: ({ onProgress, ...input }) =>
+      Deferred.succeed(fetchInput!, input).pipe(
+        Effect.andThen(
+          onProgress?.({
+            remoteRefName: "origin/main",
+            attempt: 2,
+            maxAttempts: 3,
+            retryReason: "network",
+          }) ?? Effect.void,
+        ),
+        Effect.as(null),
+      ),
   });
   return Effect.gen(function* () {
     fetchInput = yield* Deferred.make<unknown>();
@@ -1827,15 +1845,26 @@ it.effect("shows the fetch diagnosis when preparing a worktree from origin fails
   const detail =
     "Git could not authenticate with the remote. Check Git credentials or SSH access on the server, then retry.";
   const harness = makeHarness({
-    fetchWorktreeBaseCommit: () =>
-      Effect.fail(
-        new GitCommandError({
-          operation: "GitVcsDriver.fetchRemote",
-          command: "git",
-          cwd: project.workspaceRoot,
-          detail,
-          exitCode: 128,
-        }),
+    fetchWorktreeBaseCommit: ({ onProgress }) =>
+      (
+        onProgress?.({
+          remoteRefName: "origin/main",
+          attempt: 3,
+          maxAttempts: 3,
+          retryReason: "network",
+        }) ?? Effect.void
+      ).pipe(
+        Effect.andThen(
+          Effect.fail(
+            new GitCommandError({
+              operation: "GitVcsDriver.fetchRemote",
+              command: "git",
+              cwd: project.workspaceRoot,
+              detail,
+              exitCode: 128,
+            }),
+          ),
+        ),
       ),
   });
   return Effect.gen(function* () {
@@ -1863,12 +1892,15 @@ it.effect("shows the fetch diagnosis when preparing a worktree from origin fails
       projection.turnItems.find((item) => item.type === "command_execution")?.status,
       "failed",
     );
-    assert.include(
-      projection.turnItems.find((item) => item.type === "error")?.failure.message ?? "",
+    assert.equal(
+      projection.turnItems.find((item) => item.type === "error")?.failure.message,
       detail,
     );
     assert.equal(harness.createWorktree.mock.calls.length, 0);
     assert.equal(harness.runSetup.mock.calls.length, 0);
+    const setup = yield* (yield* WorktreeSetupTracker.WorktreeSetupTracker).get(launched.threadId);
+    assert.equal(setup?.stages.find((stage) => stage.id === "fetch")?.fetchProgress?.attempt, 3);
+    assert.equal(setup?.stages.find((stage) => stage.id === "fetch")?.status, "failed");
   }).pipe(Effect.provide(harness.layer));
 });
 
