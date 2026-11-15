@@ -1,4 +1,7 @@
 import { WorkItemMessageAction } from "../work-items/WorkItemMessageAction";
+import { mobileAssistantCitation, mobileResponseContext } from "../../lib/assistantCitations";
+import { requestThreadMessageJump } from "./threadMessageJump";
+import { searchableMessageSegments } from "@t3tools/shared/threadFindText";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
@@ -58,11 +61,17 @@ import {
   type MessageId,
   type OrchestrationV2ProjectedTurnItem,
   type RunId,
+  type AssistantCitation,
+  type ResponseContextRecord,
   type ScheduledTaskId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { ToolCallVisibility } from "@t3tools/contracts/settings";
-import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
+import {
+  assistantCitationLabel,
+  parseAssistantCitationHref,
+  renderAssistantCitationsAsText,
+} from "@t3tools/shared/assistantCitations";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import { hostedThreadLink, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
@@ -358,6 +367,7 @@ export interface ThreadFeedProps {
   readonly onIsAtEndChange?: (isAtEnd: boolean) => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
+  readonly onQuote?: ((quote: AssistantCitation | ResponseContextRecord) => void) | undefined;
 }
 
 const USER_MESSAGE_COPY_MENU_ACTIONS = [
@@ -1178,6 +1188,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly reply?: MarkdownLinkReply | undefined;
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   readonly renderImage: MarkdownImageRenderer;
+  readonly onCite?: ((text: string) => void) | undefined;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
 }) {
   const models = useModelMentions(props.environmentId, props.markdown);
@@ -1201,6 +1212,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
       renderImage={props.renderImage}
       skills={props.skills}
       models={models}
+      onCite={props.onCite}
     />
   );
 });
@@ -1214,6 +1226,7 @@ function AssistantMarkdownBlocks(props: {
   readonly linkHandlers: MarkdownLinkHandlers;
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   readonly renderImage: MarkdownImageRenderer;
+  readonly onCite?: ((text: string) => void) | undefined;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
   readonly models: ReturnType<typeof useModelMentions>;
 }) {
@@ -1266,6 +1279,7 @@ function AssistantMarkdownBlocks(props: {
           textStyle={props.markdownStyles.nativeTextStyle}
           {...props.linkHandlers}
           renderImage={props.renderImage}
+          onCite={props.onCite}
         />
       );
     });
@@ -1683,6 +1697,7 @@ function renderFeedEntry(
     ThreadFeedProps,
     | "environmentId"
     | "onUseArtifactTemplate"
+    | "onQuote"
     | "skills"
     | "dispatchingMessageId"
     | "onEditPendingMessage"
@@ -2223,7 +2238,7 @@ function renderFeedEntry(
                       value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
                     >
                       <UserMessageContent
-                        text={renderedText}
+                        text={presentation.text}
                         environmentId={props.environmentId}
                         context={message.context}
                         markdownStyles={styles}
@@ -2348,6 +2363,28 @@ function renderFeedEntry(
               onUseArtifactTemplate={props.onUseArtifactTemplate}
               renderImage={props.renderMarkdownImage}
               skills={props.skills}
+              onCite={
+                props.onQuote && !message.streaming
+                  ? (text) => {
+                      const citation = mobileAssistantCitation(
+                        {
+                          environmentId: props.environmentId,
+                          threadId: props.threadId,
+                          messageId: message.id,
+                        },
+                        text,
+                        searchableMessageSegments({
+                          role: "assistant",
+                          text: renderedText,
+                          streaming: false,
+                        })?.join(" "),
+                      );
+                      if (citation) props.onQuote?.(citation);
+                      else if (text.trim())
+                        Dialog.alert(t("Selection is too long to cite"), t("Shorten selection"));
+                    }
+                  : undefined
+              }
             />
           </MarkdownImageAvailableWidthContext>
         ) : null}
@@ -2364,13 +2401,16 @@ function renderFeedEntry(
           />
         ) : null}
         {showAssistantMeta ? (
-          <View className="mt-1 flex-row items-center gap-1">
+          <View className="mt-1 flex-row flex-wrap items-center gap-1">
             <WorkItemMessageAction
               environmentId={props.environmentId}
               threadId={props.threadId}
               messageId={message.id}
               threadTitle={props.threadTitle}
               text={renderedText}
+              buttonSize={props.replyActionSize.button}
+              iconSize={props.replyActionSize.icon}
+              tintColor={iconSubtleColor}
             />
             <CopyTextButton
               accessibilityLabel={t("Copy message")}
@@ -2388,6 +2428,37 @@ function renderFeedEntry(
                 projectedItem={message.projectedItem}
                 sourceTitle={props.threadTitle}
               />
+            ) : null}
+            {props.onQuote && message.projectedItem && renderedText.trim() ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Reply to this response")}
+                hitSlop={8}
+                style={{
+                  width: props.replyActionSize.button,
+                  height: props.replyActionSize.button,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onPress={() => {
+                  const response = mobileResponseContext(
+                    {
+                      environmentId: props.environmentId,
+                      threadId: props.threadId,
+                      messageId: message.id,
+                    },
+                    message.projectedItem!.sourceItemId,
+                    renderedText,
+                  );
+                  if (response) props.onQuote?.(response);
+                }}
+              >
+                <SymbolView
+                  name="arrow.uturn.backward"
+                  size={props.replyActionSize.icon}
+                  tintColor={iconSubtleColor}
+                />
+              </Pressable>
             ) : null}
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
@@ -2468,6 +2539,7 @@ type UserMessageContentProps = {
 function UserMessageContent(props: UserMessageContentProps) {
   const t = useUiTranslation();
   const [selected, setSelected] = useState<{ contextId: string; label: string } | null>(null);
+  const [selectedCitation, setSelectedCitation] = useState<AssistantCitation | null>(null);
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
   const { selectedThread } = useThreadSelection();
@@ -2478,6 +2550,11 @@ function UserMessageContent(props: UserMessageContentProps) {
     return `[${ref.label}${available ? "" : t(" (unavailable)")}](t3-context://v1/${ref.kind}/${ref.contextId})`;
   });
   const onLinkPress = (href: string) => {
+    const citation = parseAssistantCitationHref(href);
+    if (citation) {
+      setSelectedCitation(citation);
+      return;
+    }
     const reference = parseComposerContextHref(href);
     if (!reference) return props.linkHandlers.onLinkPress?.(href);
     const record = props.context?.records.find(
@@ -2563,13 +2640,29 @@ function UserMessageContent(props: UserMessageContentProps) {
             ),
         }}
       />
-      {selected ? (
+      {selected || selectedCitation ? (
         <ComposerContextSheet
-          label={selected.label}
+          label={selectedCitation ? assistantCitationLabel(selectedCitation) : selected!.label}
+          citation={selectedCitation ?? undefined}
           environmentId={props.environmentId}
           records={props.context?.records}
-          record={props.context?.records.find((record) => record.contextId === selected.contextId)}
-          onClose={() => setSelected(null)}
+          record={props.context?.records.find((record) => record.contextId === selected?.contextId)}
+          onOpenCitation={(citation) => {
+            setSelected(null);
+            setSelectedCitation(null);
+            requestThreadMessageJump(
+              scopedThreadKey(citation.environmentId, citation.threadId),
+              citation.messageId,
+            );
+            openLinkedThread({
+              environmentId: String(citation.environmentId),
+              threadId: String(citation.threadId),
+            });
+          }}
+          onClose={() => {
+            setSelected(null);
+            setSelectedCitation(null);
+          }}
         />
       ) : null}
     </>
@@ -3809,6 +3902,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
             onUseArtifactTemplate: props.onUseArtifactTemplate,
+            onQuote: props.onQuote,
             threadId: props.threadId,
             copiedRowId,
             expandedWorkRows,

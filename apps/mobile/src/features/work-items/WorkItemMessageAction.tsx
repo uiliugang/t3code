@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
-import { Pressable } from "react-native";
+import { Pressable, type ColorValue } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useUiTranslation } from "../../lib/useUiTranslation";
@@ -14,6 +14,9 @@ export function WorkItemMessageAction(props: {
   readonly messageId: MessageId;
   readonly threadTitle: string;
   readonly text: string;
+  readonly buttonSize?: number;
+  readonly iconSize?: number;
+  readonly tintColor?: ColorValue;
 }) {
   const t = useUiTranslation();
   const navigation = useNavigation();
@@ -30,6 +33,7 @@ export function WorkItemMessageAction(props: {
       disabled={!allowed}
       hitSlop={8}
       className="size-7 items-center justify-center"
+      style={{ width: props.buttonSize ?? 28, height: props.buttonSize ?? 28 }}
       onPress={() =>
         navigation.navigate("Requirements", {
           environmentId: props.environmentId,
@@ -40,7 +44,12 @@ export function WorkItemMessageAction(props: {
         })
       }
     >
-      <SymbolView name="checkmark.circle" size={14} tintColorClassName="accent-icon" />
+      <SymbolView
+        name="checkmark.circle"
+        size={props.iconSize ?? 14}
+        tintColor={props.tintColor}
+        tintColorClassName={props.tintColor ? undefined : "accent-icon"}
+      />
     </Pressable>
   );
 }

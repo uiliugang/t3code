@@ -51,6 +51,8 @@ import type {
   ServerConfig as T3ServerConfig,
   UsageLimitsReport,
   RunId,
+  AssistantCitation,
+  ResponseContextRecord,
 } from "@t3tools/contracts";
 import {
   appendCodexArtifactTemplateUsePrompt,
@@ -136,6 +138,7 @@ import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
 import { getComposerDraftSnapshot, setFreshSessionPending } from "../../state/use-composer-drafts";
+import { insertAssistantQuote } from "../../state/insert-assistant-quote";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import {
   ANDROID_READING_MAX_WIDTH,
@@ -1419,6 +1422,24 @@ function ThreadDetailBody(
     composerEditorRef.current?.blur();
   };
 
+  const handleQuote = async (quote: AssistantCitation | ResponseContextRecord) => {
+    const key = props.composerDraftKey;
+    if (!key || props.activePendingUserInput || props.activePendingApproval) return;
+    const result = await insertAssistantQuote({
+      draftKey: key,
+      quote,
+      flushPendingInput: async () => composerEditorRef.current?.flushPendingInput(),
+      signal: threadScope.current.signal,
+    });
+    if (result === "cancelled") return;
+    if (result === "full") {
+      Dialog.alert(t("Could not add reference"), t("Remove a context item and try again."));
+      return;
+    }
+    void Haptics.selectionAsync();
+    requestAnimationFrame(() => composerEditorRef.current?.focus());
+  };
+
   const handleUseArtifactTemplate = (template: CodexArtifactTemplate) => {
     const draftMessage =
       props.composerDraftKey === null ? "" : getComposerDraftSnapshot(props.composerDraftKey).text;
@@ -1557,6 +1578,13 @@ function ThreadDetailBody(
                   onIsAtEndChange={setIsAtEnd}
                   skills={selectedProviderSkills}
                   onUseArtifactTemplate={handleUseArtifactTemplate}
+                  onQuote={
+                    props.composerDraftKey &&
+                    !props.activePendingUserInput &&
+                    !props.activePendingApproval
+                      ? handleQuote
+                      : undefined
+                  }
                 />
               </ColumnWidth>
             </WorkspaceMutationIdProvider>

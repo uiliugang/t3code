@@ -6,6 +6,7 @@ import { SourceFileSurface } from "../features/files/SourceFileSurface";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import type {
   ComposerContextRecord,
+  AssistantCitation,
   ElementContextSource,
   EnvironmentId,
   ProjectId,
@@ -78,9 +79,32 @@ function ContextSource(props: { source: ElementContextSource | null }) {
   );
 }
 
+function CitationContext(props: {
+  citation: AssistantCitation;
+  onOpen?: ((citation: AssistantCitation) => void) | undefined;
+}) {
+  const t = useUiTranslation();
+  return (
+    <View className="gap-3">
+      <ContextField label={t("Quoted text")} value={props.citation.text} />
+      <ContextField label={t("Comment")} value={props.citation.comment} />
+      {props.onOpen ? (
+        <Button
+          label={t("Open source message")}
+          tone="secondary"
+          fullWidth
+          onPress={() => props.onOpen?.(props.citation)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 export function ComposerContextSheet(props: {
   readonly label: string;
   readonly record: ComposerContextRecord | undefined;
+  readonly citation?: AssistantCitation | undefined;
+  readonly onOpenCitation?: (citation: AssistantCitation) => void;
   readonly onClose: () => void;
   readonly onRemove?: () => void;
   readonly onOpenAttachment?: () => void;
@@ -212,11 +236,15 @@ export function ComposerContextSheet(props: {
           </Text>
         ) : null}
         {!record ? (
-          <Text className="text-foreground">
-            {t(
-              "Context unavailable. The reference was copied without its payload. Copy it again from the original message or remove it.",
-            )}
-          </Text>
+          props.citation ? (
+            <CitationContext citation={props.citation} onOpen={props.onOpenCitation} />
+          ) : (
+            <Text className="text-foreground">
+              {t(
+                "Context unavailable. The reference was copied without its payload. Copy it again from the original message or remove it.",
+              )}
+            </Text>
+          )
         ) : "payload" in record ? (
           <Text className="text-foreground">
             {t(
@@ -225,6 +253,9 @@ export function ComposerContextSheet(props: {
           </Text>
         ) : (
           <>
+            {record.kind === "response" ? (
+              <CitationContext citation={record.citation} onOpen={props.onOpenCitation} />
+            ) : null}
             {record.kind === "terminal" ? (
               <View
                 className="overflow-hidden rounded-xl"

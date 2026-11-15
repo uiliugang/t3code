@@ -28,6 +28,7 @@ import type { SelectableMarkdownTextProps } from "./SelectableMarkdownText.types
 
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { Menu } from "../components/ui/Menu";
+import { Button } from "../components/ui/Button";
 import { useEnrichedLinkVariants } from "./useEnrichedLinkVariants";
 import { useRetryingImageSource } from "./useRetryingImageSource";
 import * as Dialog from "../components/ui/Dialog";
@@ -180,6 +181,8 @@ function codeBlockElement(
   markdownStyle: MarkdownStyle,
   mathRenderingEnabled: boolean,
   scheme: HighlightScheme,
+  onCite: SelectableMarkdownTextProps["onCite"],
+  citeFormulaLabel: string,
 ): ReactElement | undefined {
   const renderer = codeFenceRenderer(block.language, mathRenderingEnabled);
   if (renderer.kind === "mermaid") {
@@ -189,17 +192,29 @@ function codeBlockElement(
   }
   if (renderer.kind === "math") {
     return block.isComplete ? (
-      <EnrichedMarkdownText
-        // A blank line would end the paragraph, and so the math, early.
-        markdown={`$$\n${block.code.replace(/\n\s*\n/g, "\n").trim()}\n$$`}
-        markdownStyle={markdownStyle}
-        md4cFlags={{ latexMath: true }}
-        containerStyle={{ flexShrink: 1, minWidth: 0 }}
-        flavor="github"
-        selectable
-        selectionColor={textStyle.selectionColor}
-        selectionHandleColor={textStyle.selectionHandleColor}
-      />
+      <View style={{ minWidth: 0 }}>
+        <EnrichedMarkdownText
+          // A blank line would end the paragraph, and so the math, early.
+          markdown={`$$\n${block.code.replace(/\n\s*\n/g, "\n").trim()}\n$$`}
+          markdownStyle={markdownStyle}
+          md4cFlags={{ latexMath: true }}
+          containerStyle={{ flexShrink: 1, minWidth: 0 }}
+          flavor="github"
+          selectable
+          selectionColor={textStyle.selectionColor}
+          selectionHandleColor={textStyle.selectionHandleColor}
+        />
+        {onCite ? (
+          <View style={{ alignSelf: "flex-end" }}>
+            <Button
+              label={citeFormulaLabel}
+              tone="text"
+              size="compact"
+              onPress={() => onCite(block.code)}
+            />
+          </View>
+        ) : null}
+      </View>
     ) : undefined;
   }
   if (renderer.kind === "highlight" && markdownStyle.codeBlock) {
@@ -378,6 +393,8 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
         baseMarkdownStyle,
         mathRenderingEnabled,
         themeAppearance,
+        props.onCite,
+        t("Cite formula"),
       ),
   };
   const resolveNativeImageSource = useRetryingImageSource(resolveImageSource);
@@ -423,6 +440,16 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           containerStyle={{ flexShrink: 1, minWidth: 0 }}
           flavor="github"
           selectable
+          contextMenuItems={
+            props.onCite
+              ? [
+                  {
+                    text: t("Cite"),
+                    onPress: ({ text }) => props.onCite?.(text),
+                  },
+                ]
+              : undefined
+          }
           selectionClipboard={selectionClipboard}
           selectionColor={props.textStyle.selectionColor}
           selectionHandleColor={props.textStyle.selectionHandleColor}

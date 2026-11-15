@@ -192,7 +192,11 @@ export function ComposerEditor({
             ? props.context?.records.find((record) => record.contextId === token.contextId)
             : undefined;
         const presentation = contextChipPresentation(
-          token.type === "context" ? token.kind : token.type,
+          token.type === "citation"
+            ? "response"
+            : token.type === "context"
+              ? token.kind
+              : token.type,
           record,
         );
         const icon = contextChipIcon(
@@ -201,7 +205,8 @@ export function ComposerEditor({
         );
         return {
           // Android taps only known token types; a model chip opens like a skill chip.
-          type: token.type === "model" ? "skill" : token.type,
+          type:
+            token.type === "citation" ? "context" : token.type === "model" ? "skill" : token.type,
           source: token.source,
           start: token.start,
           end: token.end,
@@ -217,7 +222,9 @@ export function ComposerEditor({
                 ? model.label
                 : token.type === "context"
                   ? `${token.label}${props.context?.records.some((record) => record.contextId === token.contextId) ? "" : " · unavailable"}`
-                  : basename(token.value),
+                  : token.type === "citation"
+                    ? token.value
+                    : basename(token.value),
           detail: token.type === "context" ? composerChipSizeSuffix(record) : "",
           iconUri: model ? modelChipIconUri(model) : contextChipIconUri(icon),
           tintsIcon: model ? modelChipIcon(model).tintsIcon : icon.kind === "chip",

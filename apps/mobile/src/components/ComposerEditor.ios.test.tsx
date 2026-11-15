@@ -10,6 +10,9 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
+import { insertAssistantQuote } from "../state/insert-assistant-quote";
+import { mobileResponseContext } from "../lib/assistantCitations";
 
 interface NativeEvent {
   readonly value: string;
@@ -124,8 +127,20 @@ vi.mock("../state/preferences", async () => {
   return { mobilePreferencesAtom: Atom.make({ _tag: "Initial" }) };
 });
 vi.mock("../lib/composerContextClipboard", () => ({ importComposerContextClipboard: vi.fn() }));
-vi.mock("../lib/useUniwindTheme", () => ({ useUniwindTheme: () => ({}) }));
-vi.mock("../lib/nativeComposerTheme", () => ({ createNativeComposerTheme: () => ({}) }));
+vi.mock("../lib/useUniwindTheme", () => ({
+  useUniwindTheme: () => ({
+    "--color-screen": "#ffffff",
+    "--color-user-bubble": "#ffffff",
+    "--color-user-bubble-foreground": "#171717",
+    "--color-thread-canvas": "#ffffff",
+    "--color-md-body": "#171717",
+    "--color-composer-surface": "#ffffff",
+    "--color-foreground": "#171717",
+  }),
+}));
+vi.mock("../lib/nativeComposerTheme", () => ({
+  createNativeComposerTheme: () => ({ text: "#171717" }),
+}));
 vi.mock("../lib/contextChipIconSource", () => ({ contextChipIconUri: () => "" }));
 vi.mock("../features/settings/appearance/useScaledTextRole", () => ({
   useComposerTextRole: () => ({ fontSize: 16, lineHeight: 22 }),
@@ -234,6 +249,7 @@ it("keeps a pending event from the previous native editor out of the selected dr
 async function renderFlushableComposer() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const editor = createRef<ComposerEditorHandle>();
+  setComposerDraftText(DRAFT_KEY, "");
   const root = createRoot(document.createElement("div"));
   await act(async () =>
     root.render(
@@ -261,6 +277,91 @@ it("sends the autocorrection the Send tap accepted, and its late event cannot re
     native.deliver!(lateCorrection);
   });
   expect(getComposerDraftSnapshot(DRAFT_KEY).text).toBe("");
+});
+
+it("preserves paths in an assistant citation chip's native label", async () => {
+  await using _screen = await renderFlushableComposer();
+  const text = "请检查 src/api/users.ts 和 /tmp/output";
+  const value = serializeAssistantCitation({
+    version: 1,
+    environmentId: "environment" as never,
+    threadId: "thread" as never,
+    messageId: "message" as never,
+    text,
+    start: 0,
+    end: text.length,
+    prefix: "",
+    suffix: "",
+  });
+  await act(async () => setComposerDraftText(DRAFT_KEY, value));
+  const document = JSON.parse(native.props!.controlledDocumentJson);
+  expect(JSON.parse(document.tokensJson)).toEqual([
+    expect.objectContaining({ type: "context", source: value, label: text }),
+  ]);
+});
+
+it.each(["selection", "response"] as const)(
+  "retains an inserted %s quote when the tap commits a pending native autocorrection",
+  async (kind) => {
+    await using screen = await renderFlushableComposer();
+    await act(async () => emit("Hello wrold"));
+    const lateCorrection = pend("Hello world");
+    const quote = {
+      version: 1 as const,
+      environmentId: "environment" as never,
+      threadId: "thread" as never,
+      messageId: "message" as never,
+      text: "Earlier answer",
+      start: 0,
+      end: 14,
+      prefix: "",
+      suffix: "",
+    };
+    await act(async () => {
+      await insertAssistantQuote({
+        draftKey: DRAFT_KEY,
+        quote:
+          kind === "selection" ? quote : mobileResponseContext(quote, "item" as never, quote.text)!,
+        flushPendingInput: () => screen.editor.current!.flushPendingInput(),
+        signal: new AbortController().signal,
+      });
+      native.deliver!(lateCorrection);
+    });
+    const draft = getComposerDraftSnapshot(DRAFT_KEY);
+    expect(draft.text).toMatch(/^Hello world /);
+    if (kind === "selection")
+      expect(draft.text).toBe(`Hello world ${serializeAssistantCitation(quote)} `);
+    else
+      expect(draft.context?.records).toEqual([
+        expect.objectContaining({ kind: "response", itemId: "item" }),
+      ]);
+  },
+);
+
+it("cancels quote insertion if its thread closes while native input is being flushed", async () => {
+  await using screen = await renderFlushableComposer();
+  await act(async () => emit("Keep this draft"));
+  const scope = new AbortController();
+  const response = mobileResponseContext(
+    {
+      environmentId: "environment" as never,
+      threadId: "thread" as never,
+      messageId: "message" as never,
+    },
+    "item" as never,
+    "Earlier answer",
+  )!;
+  await act(async () => {
+    const inserting = insertAssistantQuote({
+      draftKey: DRAFT_KEY,
+      quote: response,
+      flushPendingInput: () => screen.editor.current!.flushPendingInput(),
+      signal: scope.signal,
+    });
+    scope.abort();
+    expect(await inserting).toBe("cancelled");
+  });
+  expect(getComposerDraftSnapshot(DRAFT_KEY).text).toBe("Keep this draft");
 });
 
 it("does not flush past a paste whose event has not reached JS", async () => {

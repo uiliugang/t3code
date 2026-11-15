@@ -8,6 +8,12 @@ import { useEffect, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import {
+  assistantCitationLabel,
+  collectAssistantCitations,
+} from "@t3tools/shared/assistantCitations";
+import { scopedThreadKey } from "../lib/scopedEntities";
+import { requestThreadMessageJump } from "../features/threads/threadMessageJump";
 import { ComposerEditor as NativeComposerEditor } from "../native/T3ComposerEditor";
 import type { ComposerEditorProps as NativeComposerEditorProps } from "../native/T3ComposerEditor";
 import {
@@ -172,6 +178,9 @@ export function ComposerEditor({
   const selectedReference = selected
     ? collectComposerContextReferences(selected.source)[0]
     : undefined;
+  const selectedCitation = selected
+    ? collectAssistantCitations(selected.source)[0]?.citation
+    : undefined;
   const selectedSkillName = selected?.source.match(/^\p{Sc}(.+)$/u)?.[1];
   const selectedSkill = selectedSkillName
     ? props.skills?.find((skill) => skill.name === selectedSkillName)
@@ -229,10 +238,12 @@ export function ComposerEditor({
       {importing ? (
         <Text className="py-2 text-xs text-foreground-muted">{t("Copying context…")}</Text>
       ) : null}
-      {selected && (selectedReference || selectedSkill) ? (
+      {selected && (selectedReference || selectedSkill || selectedCitation) ? (
         <ComposerContextSheet
           label={
-            selectedReference?.label ??
+            (selectedCitation
+              ? assistantCitationLabel(selectedCitation)
+              : selectedReference?.label) ??
             selectedSkill?.displayName ??
             selectedSkill?.name ??
             t("Skill")
@@ -249,6 +260,18 @@ export function ComposerEditor({
                 }
               : undefined)
           }
+          citation={selectedCitation}
+          onOpenCitation={(citation) => {
+            setSelected(null);
+            requestThreadMessageJump(
+              scopedThreadKey(citation.environmentId, citation.threadId),
+              citation.messageId,
+            );
+            openLinkedThread({
+              environmentId: String(citation.environmentId),
+              threadId: String(citation.threadId),
+            });
+          }}
           {...(selectedSkill?.description ? { skillDescription: selectedSkill.description } : {})}
           {...(selectedSkill?.path && onOpenMention
             ? {

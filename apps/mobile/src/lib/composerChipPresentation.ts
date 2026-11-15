@@ -45,8 +45,7 @@ const CONTEXT_CHIP_PRESENTATIONS = {
   },
   // A machine: the record carries only its identity, so every machine wears one glyph.
   environment: { accent: "#3f9a4f", icon: "server" },
-  // An earlier response the message replies to. Mobile shows it as a plain labelled chip.
-  response: { accent: "#7f8793", icon: null },
+  response: { accent: "#7f8793", icon: "message-circle" },
 } as const satisfies Record<string, ContextChipPresentation>;
 
 const CHIP_CONTRAST = 5;
