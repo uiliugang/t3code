@@ -39,6 +39,7 @@ import * as ResetCreditCoordinator from "../resetCreditCoordinator.ts";
 import {
   checkCodexProviderStatus,
   makePendingCodexProvider,
+  makeCodexSkillsProbe,
   probeCodexSkillsForCwd,
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
@@ -451,6 +452,11 @@ export const CodexDriver: ProviderDriver<
       snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
       resolveRuntime,
     );
+    // Managed helpers must exit before the runtime lease allows their installation to be removed.
+    const probeSkills =
+      codexRuntimeSource(config) === "local"
+        ? yield* makeCodexSkillsProbe()
+        : probeCodexSkillsForCwd;
     const snapshotForCwd = (cwd: string) =>
       !effectiveConfig.enabled
         ? snapshot.getSnapshot
@@ -458,7 +464,7 @@ export const CodexDriver: ProviderDriver<
             snapshot.getSnapshot,
             resolveRuntime.pipe(
               Effect.flatMap((runtime) =>
-                probeCodexSkillsForCwd({
+                probeSkills({
                   binaryPath: runtime.config.binaryPath,
                   homePath: runtime.config.homePath,
                   launchArgs: resolveCodexLaunchArgs(
@@ -470,8 +476,8 @@ export const CodexDriver: ProviderDriver<
                 }),
               ),
               Effect.scoped,
-              Effect.timeout(resolveProviderProbeTimeoutMs("codex", 20_000, processEnv)),
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+              Effect.timeout(resolveProviderProbeTimeoutMs("codex", 20_000, processEnv)),
             ),
           ]).pipe(
             Effect.map(([machineSnapshot, skills]) => ({ ...machineSnapshot, skills })),

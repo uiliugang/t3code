@@ -3,6 +3,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import {
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
+  chunkTerminalWrite,
   DEFAULT_TERMINAL_ID,
   EnvironmentId,
   ThreadId,
@@ -627,15 +628,21 @@ function ThreadTerminal(props: {
       return false;
     }
 
-    const result = await writeTerminal({
-      environmentId: selectedThread.environmentId,
-      input: {
-        threadId: selectedThread.id,
-        terminalId,
-        data,
-      },
-    });
-    return result._tag === "Success";
+    // Android's IME delivers a system paste as one input, which can exceed one write.
+    const isSameShell = pasteSession.liveness();
+    for (const chunk of chunkTerminalWrite(data)) {
+      if (!isSameShell()) return false;
+      const result = await writeTerminal({
+        environmentId: selectedThread.environmentId,
+        input: {
+          threadId: selectedThread.id,
+          terminalId,
+          data: chunk,
+        },
+      });
+      if (result._tag !== "Success") return false;
+    }
+    return true;
   };
 
   const pasteText = async (readText: () => Promise<string>) => {
@@ -921,7 +928,7 @@ function ThreadTerminal(props: {
               title={t("No terminal sessions")}
               detail={t("Existing terminals will appear here when another client opens one.")}
             />
-          ) : !canOperateTerminal && terminal.error !== null ? (
+          ) : terminal.error !== null && (!canOperateTerminal || terminal.status === "error") ? (
             <EmptyState title={t("Terminal unavailable")} detail={terminal.error} />
           ) : (
             <>

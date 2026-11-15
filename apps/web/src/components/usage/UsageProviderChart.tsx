@@ -1,3 +1,4 @@
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import type { UsageProviderKind } from "@t3tools/contracts";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -289,7 +290,6 @@ function UsageChartPlot({
   loadingProviders,
   format,
   formatTooltipPeriod,
-  ariaLabel,
   children,
 }: {
   readonly periods: readonly string[];
@@ -299,7 +299,6 @@ function UsageChartPlot({
   readonly loadingProviders: ReadonlySet<UsageProviderKind>;
   readonly format: (value: number) => string;
   readonly formatTooltipPeriod: (period: string) => string;
-  readonly ariaLabel: string;
   readonly children: React.ReactNode;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -374,8 +373,7 @@ function UsageChartPlot({
         className="h-full w-full"
         viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
         preserveAspectRatio="none"
-        role="img"
-        aria-label={ariaLabel}
+        aria-hidden
       >
         {children}
         {hoverIndex === null ? null : (
@@ -419,6 +417,7 @@ export function UsageProviderChart({
   timeZone,
   hour12,
 }: UsageProviderChartProps) {
+  const t = useUiTranslation();
   const language = useClientSettings((settings) => settings.uiLanguage);
   const periods = resolution === "hour" ? hours : days;
   const totals: readonly (DailyTotals | HourlyTotals)[] = resolution === "hour" ? hourly : daily;
@@ -449,7 +448,7 @@ export function UsageProviderChart({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex gap-2">
-        <div className="relative h-56 w-14 shrink-0">
+        <div aria-hidden className="relative h-56 w-14 shrink-0">
           {scale.labeled
             ? scale.ticks.map((tick) => (
                 <span
@@ -471,7 +470,6 @@ export function UsageProviderChart({
           loadingProviders={loadingProviders}
           format={format}
           formatTooltipPeriod={formatTooltipPeriod}
-          ariaLabel={`${resolution === "hour" ? "Hourly" : "Daily"} ${metric === "tokens" ? "processed tokens" : "cost"} by provider`}
         >
           {scale.ticks.map((tick) => {
             const y = toY(tick);
@@ -513,7 +511,10 @@ export function UsageProviderChart({
         </UsageChartPlot>
       </div>
 
-      <div className="flex justify-between pl-16 text-3xs text-muted-foreground uppercase">
+      <div
+        aria-hidden
+        className="flex justify-between pl-16 text-3xs text-muted-foreground uppercase"
+      >
         <span>{periods[0] === undefined ? "" : formatPeriod(periods[0])}</span>
         <span>
           {periods[Math.floor(periods.length / 2)] === undefined
@@ -526,6 +527,48 @@ export function UsageProviderChart({
             : formatPeriod(periods[periods.length - 1] ?? "")}
         </span>
       </div>
+
+      {/* The plot and its axes are hover-only; this carries the same figures for screen readers. */}
+      <table className="sr-only">
+        <caption>
+          {t(
+            resolution === "hour"
+              ? metric === "tokens"
+                ? "Hourly processed tokens by provider"
+                : "Hourly cost by provider"
+              : metric === "tokens"
+                ? "Daily processed tokens by provider"
+                : "Daily cost by provider",
+          )}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">{t(resolution === "hour" ? "Hour" : "Day")}</th>
+            {providers.map((provider) => (
+              <th key={provider} scope="col">
+                {PROVIDER_PRESENTATION[provider].label}
+              </th>
+            ))}
+            {providers.length > 1 ? <th scope="col">{t("Total")}</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {periods.map((period, index) => {
+            const column = columns[index];
+            return (
+              <tr key={period}>
+                <th scope="row">{formatTooltipPeriod(period)}</th>
+                {providers.map((provider) => (
+                  <td key={provider}>
+                    {format(column?.bands.find((band) => band.provider === provider)?.value ?? 0)}
+                  </td>
+                ))}
+                {providers.length > 1 ? <td>{format(column?.total ?? 0)}</td> : null}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { useUiTranslation } from "../lib/useUiTranslation";
 import { useComposerAttachmentActions } from "./use-composer-attachment-actions";
 import * as Dialog from "../components/ui/Dialog";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -205,6 +206,7 @@ export function useThreadComposerState(input: {
     settings: { readonly runtimeMode: RuntimeMode; readonly modelSelection: ModelSelection },
   ) => Promise<boolean>;
 }) {
+  const t = useUiTranslation();
   const {
     selectedThread: selectedThreadShell,
     selectedThreadCreation,
@@ -492,6 +494,14 @@ export function useThreadComposerState(input: {
       Dialog.alert(
         "Too many attachments",
         `Remove attachments until there are at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.`,
+      );
+      return;
+    }
+    // A queued message stays in its thread, so saving `/side` would send it to main.
+    if (parseSideChatCommand(text)) {
+      Dialog.alert(
+        t("Queued message not updated"),
+        t("A queued message can't move to a side chat. Remove /side or /btw to save it."),
       );
       return;
     }

@@ -6,7 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { projectDisplayKind } from "@t3tools/shared/projectPresentation";
+import { formatProjectDisplayName, projectDisplayKind } from "@t3tools/shared/projectPresentation";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -22,6 +22,7 @@ import {
 } from "react";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { Badge } from "../ui/badge";
+import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
@@ -32,7 +33,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { ProjectLabel } from "../ProjectLabel";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -85,6 +86,8 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
+  const t = useUiTranslation();
+  const capitalizeProjectNames = useClientSettings((settings) => settings.capitalizeProjectNames);
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
@@ -276,12 +279,19 @@ export const ChatHeader = memo(function ChatHeader({
                   }
                 >
                   <ProjectFavicon project={activeProject} className="size-3.5" />
-                  <WorkspaceBreadcrumbText className="max-w-40">
-                    <ProjectLabel
-                      name={activeProjectName ?? activeProject.title}
-                      project={activeProject}
-                    />
-                  </WorkspaceBreadcrumbText>
+                  <MiddleTruncate
+                    data-slot="workspace-breadcrumb-text"
+                    value={
+                      activeProject.isScratch
+                        ? t("No project")
+                        : formatProjectDisplayName(
+                            activeProjectName ?? activeProject.title,
+                            capitalizeProjectNames,
+                          )
+                    }
+                    showTitle={false}
+                    variant="cap-aligned"
+                  />
                   {!activeProject.isScratch && projectDisplayKind(activeProject) === "group" ? (
                     <Badge variant="secondary" size="sm">
                       group
