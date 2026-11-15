@@ -1000,7 +1000,13 @@ const checkpointCleanupFixture = Effect.fn("test.checkpointCleanupFixture")(func
   })}`;
   const addThread = Effect.fn("test.addCheckpointThread")(function* (
     id: string,
-    options: { deleted?: boolean; archived?: boolean; source?: string; legacyOnly?: boolean } = {},
+    options: {
+      deleted?: boolean;
+      archived?: boolean;
+      source?: string;
+      legacyOnly?: boolean;
+      workspace?: ReturnType<typeof workspaceFixture>;
+    } = {},
   ) {
     const scopeId = CheckpointScopeId.make(`scope:${id}`);
     yield* sql`INSERT INTO orchestration_v2_projection_threads ${sql.insert({
@@ -1028,7 +1034,10 @@ const checkpointCleanupFixture = Effect.fn("test.checkpointCleanupFixture")(func
         ordinal_within_parent: 0,
         advances_app_run_count: 1,
         created_at: timestamp,
-        payload_json: JSON.stringify({ cwd: worktree }),
+        payload_json: JSON.stringify({
+          cwd: worktree,
+          ...(options.workspace ? { workspace: options.workspace } : {}),
+        }),
       })}`;
     const refs: string[] = options.legacyOnly
       ? [legacyCheckpointRef(id, 0)]
@@ -1038,13 +1047,20 @@ const checkpointCleanupFixture = Effect.fn("test.checkpointCleanupFixture")(func
           legacyCheckpointRef(id, 0),
         ];
     for (const ref of refs) yield* command(repo, ["update-ref", ref, "HEAD"]);
+    for (const resource of options.workspace?.resources ?? []) {
+      const ref = yield* checkpointRefForScopeOrdinal({
+        scopeId: CheckpointScopeId.make(`${scopeId}:resource:${resource.id}`),
+        ordinalWithinScope: 0,
+      });
+      yield* command(resource.checkoutRoot, ["update-ref", ref, "HEAD"]);
+    }
     return refs;
   });
-  const listRefs = () =>
+  const listRefs = (cwd = repo) =>
     git
       .execute({
         operation: "cleanup-test.list-checkpoints",
-        cwd: repo,
+        cwd,
         args: ["for-each-ref", "--format=%(refname)", "refs/t3/"],
         maxOutputBytes: 16 * 1024 * 1024,
       })
@@ -1053,25 +1069,40 @@ const checkpointCleanupFixture = Effect.fn("test.checkpointCleanupFixture")(func
 });
 
 describe("checkpoint ref cleanup", () => {
-  it.live("prunes refs owned by deleted threads after their worktree is removed", () =>
-    runCleanupTest(
-      Effect.gen(function* () {
-        const { service, repo, worktree, command, addThread, listRefs } =
-          yield* checkpointCleanupFixture();
-        yield* addThread("deleted", { deleted: true });
-        yield* addThread("imported-deleted", { deleted: true, legacyOnly: true });
-        const retained = [
-          ...(yield* addThread("active")),
-          ...(yield* addThread("archived", { archived: true })),
-          legacyCheckpointRef("unknown-owner", 0),
-        ];
-        yield* command(repo, ["update-ref", retained.at(-1)!, "HEAD"]);
-        yield* command(repo, ["pack-refs", "--all"]);
-        yield* command(repo, ["worktree", "remove", worktree]);
-        yield* service.runNow;
-        expect(yield* listRefs()).toEqual(retained.sort());
-      }).pipe(Effect.provide(Sqlite.layerMemory)),
-    ),
+  it.live.each([false, true])(
+    "prunes refs owned by deleted threads after their worktree is removed (multi-repository: %s)",
+    (multiRepository) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const { service, repo, worktree, command, addThread, listRefs } =
+            yield* checkpointCleanupFixture();
+          const fs = yield* FileSystem.FileSystem;
+          const secondary = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-secondary-" });
+          yield* command(repo, ["clone", "--no-hardlinks", repo, secondary]);
+          const workspace = workspaceFixture();
+          const resources = workspace.resources.map((resource, index) => ({
+            ...resource,
+            checkoutRoot: index === 0 ? worktree : secondary,
+            identity: { ...resource.identity, commonDir: `${index === 0 ? repo : secondary}/.git` },
+          }));
+          yield* addThread("deleted", {
+            deleted: true,
+            ...(multiRepository ? { workspace: { ...workspace, resources } } : {}),
+          });
+          yield* addThread("imported-deleted", { deleted: true, legacyOnly: true });
+          const retained = [
+            ...(yield* addThread("active")),
+            ...(yield* addThread("archived", { archived: true })),
+            legacyCheckpointRef("unknown-owner", 0),
+          ];
+          yield* command(repo, ["update-ref", retained.at(-1)!, "HEAD"]);
+          yield* command(repo, ["pack-refs", "--all"]);
+          yield* command(repo, ["worktree", "remove", worktree]);
+          yield* service.runNow;
+          expect(yield* listRefs()).toEqual(retained.sort());
+          expect(yield* listRefs(secondary)).toEqual([]);
+        }).pipe(Effect.provide(Sqlite.layerMemory)),
+      ),
   );
 
   it.live("keeps deleted fork ancestry while a live or archived descendant needs it", () =>

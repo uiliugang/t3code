@@ -29,6 +29,7 @@ const state = vi.hoisted(() => ({
   thread: null as ReturnType<typeof makeThreadFixture> | null,
   threadRef: null as ScopedThreadRef | null,
   previews: new Map<string | null, ResultAtom<ReviewDiffPreviewResult>>(),
+  patch: null as unknown as ResultAtom<ReviewDiffPreviewSource>,
   filePatches: new Map<string, ResultAtom<ReviewDiffPreviewSource>>(),
   diffFilesCollapsed: false,
   config: null as unknown as Atom.Atom<null>,
@@ -40,16 +41,20 @@ const state = vi.hoisted(() => ({
   checkpointDiff: null as { diff: string } | null,
 }));
 
-vi.mock("~/state/server", () => ({
-  serverEnvironment: { configValueAtom: () => state.config },
-}));
+vi.mock("~/state/server", async () => {
+  const Atom = await import("effect/reactivity/Atom");
+  return {
+    serverEnvironment: { configValueAtom: () => state.config },
+    themeServerEnvironmentThemesAtom: Atom.make(null),
+  };
+});
 vi.mock("~/state/review", () => ({
   reviewEnvironment: {
     diffPreview: ({ input }: { input: { baseRef?: string } }) =>
       state.previews.get(input.baseRef ?? null)!,
     branchCommits: () => state.commits,
     diffFilePatch: ({ input }: { input: { request: { file: { path: string } } } }) =>
-      state.filePatches.get(input.request.file.path)!,
+      state.filePatches.get(input.request.file.path) ?? state.patch,
     diffFileContents: {},
   },
 }));
@@ -69,7 +74,11 @@ vi.mock("~/state/entities", () => ({
 vi.mock("~/state/filesystem", () => ({
   useFilesystemReadAccess: () => ({ canReadFiles: true, isPending: false, error: null }),
 }));
-vi.mock("~/hooks/useThreadRouteTarget", () => ({ useThreadRouteRef: () => state.threadRef }));
+vi.mock("~/hooks/useThreadRouteTarget", () => ({
+  useThreadRouteRef: () => state.threadRef,
+  useThreadRouteTarget: () =>
+    state.threadRef ? { kind: "server", threadRef: state.threadRef } : null,
+}));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: ClientSettings) => unknown) =>
     select({
@@ -77,6 +86,11 @@ vi.mock("~/hooks/useSettings", () => ({
       uiLanguage: "en",
       diffFilesCollapsed: state.diffFilesCollapsed,
     }),
+  getClientSettings: () => ({
+    ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
+    diffFilesCollapsed: state.diffFilesCollapsed,
+  }),
   updateClientSettings: async () => {},
 }));
 vi.mock("~/hooks/useTheme", () => ({
@@ -93,18 +107,6 @@ vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => async () => {
 vi.mock("~/editorPreferences", () => ({ useOpenInPreferredEditor: () => async () => {} }));
 vi.mock("~/fileContextMenu", () => ({ useFileContextMenuHandler: () => () => {} }));
 vi.mock("~/browser/useOpenLink", () => ({ useOpenLink: () => async () => {} }));
-// The test drives comparison controls, without mounting virtualized diff viewers or their workers.
-vi.mock("./diffs/AnnotatableCodeView", () => ({
-  AnnotatableCodeView: ({ files }: { files: Array<{ filePath: string; collapsed: boolean }> }) => (
-    <div aria-label="Previewed diff">
-      {files.map((file) => (
-        <span key={file.filePath}>
-          {file.filePath}:{file.collapsed ? "collapsed" : "expanded"}
-        </span>
-      ))}
-    </div>
-  ),
-}));
 vi.mock("./diffs/DiffFileTree", () => ({
   DiffFileTree: ({
     entries,
@@ -122,6 +124,7 @@ vi.mock("./diffs/DiffFileTree", () => ({
     </nav>
   ),
 }));
+vi.mock("./diffs/DiffCommentAnnotation", () => ({ DiffCommentAnnotation: () => null }));
 vi.mock("./DiffFilePathCopyButton", () => ({ DiffFilePathCopyButton: () => null }));
 
 import DiffPanel from "./DiffPanel";
@@ -160,6 +163,9 @@ function setup(failedBaseRef: string | null) {
     });
     useDiffPanelSessionStore.setState({ collapsedFileKeysByScopeKey: {} });
     state.filePatches.clear();
+    localStorage.removeItem("t3code.diffFileTreeOpen");
+    localStorage.removeItem("t3code.diffHideTestFiles");
+    localStorage.removeItem("t3code.diffHideMarkdownFiles");
     useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
   };
   reset();
@@ -169,6 +175,7 @@ function setup(failedBaseRef: string | null) {
   const patch = Atom.make<AsyncResult.AsyncResult<ReviewDiffPreviewSource, Error>>(
     AsyncResult.initial(),
   );
+  state.patch = patch;
   state.threadRef = {
     environmentId: EnvironmentId.make("environment"),
     threadId: ThreadId.make("thread"),
@@ -269,6 +276,7 @@ it.each([
 
 it("opens a repository-relative file from a nested project without a remote", async () => {
   using context = setup("origin/orphan");
+  localStorage.setItem("t3code.diffFileTreeOpen", "false");
   state.thread = { ...state.thread!, worktreePath: null };
   const path = "project/back\\slash.txt";
   const metadata = preview();
@@ -288,10 +296,18 @@ it("opens a repository-relative file from a nested project without a remote", as
   useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
   await using screen = await render(
     <RegistryContext.Provider value={context.registry}>
-      <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+      <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
+        <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+      </div>
     </RegistryContext.Provider>,
   );
-  await userEvent.click(screen.getByText(path, { exact: true }));
+  await expect
+    .element(screen.getByRole("button", { name: `Expand ${path}`, exact: true }))
+    .toBeVisible();
+  const title = screen.container
+    .querySelector("diffs-container")!
+    .shadowRoot!.querySelector("[data-title]")!;
+  await userEvent.click(page.elementLocator(title));
   expect(
     selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, context.threadRef),
   ).toMatchObject({ activeSurfaceId: "file:back\\slash.txt" });
@@ -430,7 +446,9 @@ it("previews the first file, switches from the tree, and falls back when the fil
       <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
     </RegistryContext.Provider>,
   );
-  await expect.element(screen.getByText("a.ts:expanded", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse a.ts", exact: true }))
+    .toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Filter files", exact: true }));
   const legacyTestFilter = page.getByRole("menuitemcheckbox", {
     name: "Hide test files",
@@ -439,12 +457,20 @@ it("previews the first file, switches from the tree, and falls back when the fil
   await expect.element(legacyTestFilter).toHaveAttribute("aria-checked", "true");
   await userEvent.click(legacyTestFilter);
   await userEvent.keyboard("{Escape}");
-  await expect.element(screen.getByText("b.ts:expanded", { exact: true })).not.toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse b.ts", exact: true }))
+    .not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "b.ts", exact: true }));
-  await expect.element(screen.getByText("b.ts:expanded", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("a.ts:expanded", { exact: true })).not.toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse b.ts", exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse a.ts", exact: true }))
+    .not.toBeInTheDocument();
   setFiles(["a.ts"]);
-  await expect.element(screen.getByText("a.ts:expanded", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse a.ts", exact: true }))
+    .toBeVisible();
   const paths = ["a0.test.ts", "a1.test.ts", "a2.test.ts", "a3.test.ts", "guide.MD", "z.ts"];
   const source = {
     ...result.sources[0]!,
@@ -459,23 +485,31 @@ it("previews the first file, switches from the tree, and falls back when the fil
     );
   }
   context.registry.set(previewAtom, AsyncResult.success({ ...result, sources: [source] }));
-  await expect.element(screen.getByText("a0.test.ts:expanded", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse a0.test.ts", exact: true }))
+    .toBeVisible();
   const toggleFilter = async (name: string) => {
     await userEvent.click(screen.getByRole("button", { name: "Filter files", exact: true }));
     await userEvent.click(page.getByRole("menuitemcheckbox", { name, exact: true }));
     await userEvent.keyboard("{Escape}");
   };
   await toggleFilter("Hide test files");
-  await expect.element(screen.getByText("guide.MD:expanded", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse guide.MD", exact: true }))
+    .toBeVisible();
   await toggleFilter("Hide .md files");
-  await expect.element(screen.getByText("z.ts:expanded", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse z.ts", exact: true }))
+    .toBeVisible();
   await expect
     .element(screen.getByRole("button", { name: "guide.MD", exact: true }))
     .not.toBeInTheDocument();
   setFiles(["guide.MD", "a0.test.ts"]);
   await expect.element(screen.getByText("All files are hidden by filters.")).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Show all files", exact: true }));
-  await expect.element(screen.getByText("a0.test.ts:expanded", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse a0.test.ts", exact: true }))
+    .toBeVisible();
 });
 
 it("says a turn diff cut off at the server's size limit is incomplete", async () => {

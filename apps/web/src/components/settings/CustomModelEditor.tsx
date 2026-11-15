@@ -328,7 +328,7 @@ export function CustomModelEditor({
           value={draft.slug}
           onChange={(event) => {
             setError(null);
-            setDraft((current) => ({ ...current, slug: event.target.value }));
+            updateDraft((current) => ({ ...current, slug: event.target.value }));
           }}
           font="mono"
           className="sm:w-72"

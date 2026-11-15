@@ -1521,9 +1521,6 @@ const make = Effect.gen(function* () {
                 title: input.title,
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
-                ...(initialMessage === undefined
-                  ? {}
-                  : { initialMessage: { ...initialMessage, workspaceStrategy } }),
               })
             : input.reuseExistingThread === true
               ? threads.dispatch({
@@ -1552,6 +1549,9 @@ const make = Effect.gen(function* () {
                     : { delegatedFrom: input.delegatedFrom }),
                   createdBy: input.createdBy,
                   creationSource: input.creationSource,
+                  ...(initialMessage === undefined
+                    ? {}
+                    : { initialMessage: { ...initialMessage, workspaceStrategy } }),
                 });
         const claimed = yield* claimDispatch.pipe(
           Effect.mapError(

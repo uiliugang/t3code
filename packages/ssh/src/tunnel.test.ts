@@ -257,6 +257,7 @@ case "$1" in
   --version) ${downloadFails ? "exit 1" : `echo ${version}`} ;;
   __ssh-helper)
     case "$2" in
+      home-owned) exit 1 ;;
       runtime-port)
         if [ -s '${state}/pid' ]; then
           echo "$(cat '${state}/pid') 3773"
@@ -821,7 +822,11 @@ echo 'Verified relay installed and executed.'
       assert.include(result.failure.stderr, "It wrote nothing to");
       assert.notInclude(result.failure.stderr, "EARLIER_LAUNCH");
       assert.notInclude(result.failure.stderr, "EARLIER_PROCESS");
-    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(HttpClient.HttpClient, noDownloadHttpClient),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
   );
 
   it("rejects archive versions that are not a single exact version segment", () => {

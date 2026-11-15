@@ -499,7 +499,7 @@ export function BranchToolbarBranchSelector({
     if (!serverThread) {
       setThreadBranch(branch, worktreePath);
       setOptimisticBranch(branch);
-      return;
+      return true;
     }
     const result = await bindWorkspaceCheckout({
       environmentId,
@@ -514,7 +514,9 @@ export function BranchToolbarBranchSelector({
     if (result._tag === "Success") {
       setOptimisticBranch(result.value.branch);
       onActiveThreadBranchOverrideChange?.(result.value.branch);
+      return true;
     }
+    return false;
   };
 
   // The picker's list, and the server's coalesced ref listing, can predate a checkout an agent
@@ -573,13 +575,13 @@ export function BranchToolbarBranchSelector({
     ) {
       setIsBranchMenuOpen(false);
       onComposerFocusRequest?.();
-      runBranchAction(() =>
-        bindThreadCheckout(
+      runBranchAction(async () => {
+        await bindThreadCheckout(
           selectionTarget.checkoutCwd,
           refName.name,
           selectionTarget.nextWorktreePath,
-        ),
-      );
+        );
+      });
       return;
     }
 
@@ -602,11 +604,28 @@ export function BranchToolbarBranchSelector({
         const nextBranchName = refName.isRemote
           ? (checkoutResult.value.refName ?? selectedBranchName)
           : selectedBranchName;
-        await bindThreadCheckout(
+        const applied = await bindThreadCheckout(
           repository?.cwd ?? selectionTarget.checkoutCwd,
           nextBranchName,
           selectionTarget.nextWorktreePath,
         );
+        if (applied)
+          setBranchHold({
+            branch: nextBranchName,
+            environmentId,
+            checkouts: [
+              { cwd: branchCwd, replaces: canonicalActiveBranch },
+              ...(selectionTarget.checkoutCwd !== branchCwd
+                ? [
+                    {
+                      cwd: selectionTarget.checkoutCwd,
+                      replaces: projectStatusQuery.data?.refName ?? null,
+                    },
+                  ]
+                : []),
+            ],
+          });
+        setOptimisticBranch(applied ? nextBranchName : previousBranch);
         return;
       }
       setOptimisticBranch(previousBranch);
@@ -644,7 +663,15 @@ export function BranchToolbarBranchSelector({
         },
       });
       if (createBranchResult._tag === "Success") {
-        await bindThreadCheckout(branchCwd, createBranchResult.value.refName, activeWorktreePath);
+        const nextBranchName = createBranchResult.value.refName;
+        const applied = await bindThreadCheckout(branchCwd, nextBranchName, activeWorktreePath);
+        if (applied)
+          setBranchHold({
+            branch: nextBranchName,
+            environmentId,
+            checkouts: [{ cwd: branchCwd, replaces: canonicalActiveBranch }],
+          });
+        setOptimisticBranch(applied ? nextBranchName : previousBranch);
         return;
       }
       setOptimisticBranch(previousBranch);

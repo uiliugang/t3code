@@ -2379,6 +2379,7 @@ const make = Effect.gen(function* () {
       workspaceRoot: string | null;
       scopeId: string | null;
       cwd: string | null;
+      repositoryPath: string | null;
     }>`
       WITH RECURSIVE retained_checkpoint_threads(thread_id) AS (
         SELECT thread_id FROM orchestration_v2_projection_threads WHERE deleted_at IS NULL
@@ -2387,11 +2388,11 @@ const make = Effect.gen(function* () {
         FROM orchestration_v2_projection_threads t
         JOIN retained_checkpoint_threads retained ON retained.thread_id = t.thread_id
         WHERE json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
-      )
+      ), cleanup_scopes AS (
       SELECT t.thread_id AS "threadId",
         json_extract(t.payload_json, '$.worktreePath') AS "worktreePath",
         p.workspace_root AS "workspaceRoot", s.scope_id AS "scopeId",
-        json_extract(s.payload_json, '$.cwd') AS cwd
+        json_extract(s.payload_json, '$.cwd') AS cwd, s.payload_json AS scope_json
       FROM orchestration_v2_projection_threads t
       LEFT JOIN projection_projects p ON p.project_id = t.project_id
       LEFT JOIN orchestration_v2_projection_checkpoint_scopes s ON s.thread_id = t.thread_id
@@ -2401,6 +2402,14 @@ const make = Effect.gen(function* () {
           SELECT 1 FROM orchestration_v2_effect_outbox e
           WHERE e.thread_id = t.thread_id AND e.status IN ('pending', 'running')
         )
+      )
+      SELECT threadId, worktreePath, workspaceRoot, scopeId, cwd, NULL AS "repositoryPath"
+      FROM cleanup_scopes
+      UNION ALL
+      SELECT c.threadId, NULL, NULL,
+        c.scopeId || ':resource:' || json_extract(r.value, '$.id'),
+        json_extract(r.value, '$.checkoutRoot'), json_extract(r.value, '$.identity.commonDir')
+      FROM cleanup_scopes c, json_each(c.scope_json, '$.workspace.resources') r
     `.pipe(NodeSqliteClient.readOnly);
     const targets = new Map<string, Set<string>>();
     for (const row of rows) {
@@ -2416,7 +2425,7 @@ const make = Effect.gen(function* () {
         );
       }
       // A worktree may already be gone; its refs live in the shared repository.
-      for (const cwd of [row.cwd, row.worktreePath, row.workspaceRoot]) {
+      for (const cwd of [row.cwd, row.repositoryPath, row.worktreePath, row.workspaceRoot]) {
         if (cwd === null) continue;
         const key = path.resolve(cwd);
         const owned = targets.get(key) ?? new Set<string>();
