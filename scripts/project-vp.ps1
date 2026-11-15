@@ -1,5 +1,6 @@
 $t3Arguments = $args
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $false
 
 $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot "../package.json") -Raw | ConvertFrom-Json
 $nodeVersion = $manifest.engines.node
@@ -11,6 +12,8 @@ $launcher = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../vp.cmd"))
 $vp = $null
 foreach ($candidate in (Get-Command vp -All -CommandType Application -ErrorAction SilentlyContinue)) {
     if ($candidate.Source -eq $launcher) { continue }
+    $projectLauncher = Join-Path (Split-Path -Parent $candidate.Source) "scripts/project-vp.ps1"
+    if (Test-Path -LiteralPath $projectLauncher) { continue }
     try {
         & $candidate.Source env current --json 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { $vp = $candidate.Source; break }
@@ -51,14 +54,10 @@ $encodedArguments = foreach ($argument in $nativeArguments) {
     $escaped = [regex]::Replace([string]$argument, '(\\*)"', '$1$1\"')
     '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
 }
-$start = New-Object Diagnostics.ProcessStartInfo
-$start.FileName = $vp
-$start.UseShellExecute = $false
-$start.Arguments = $encodedArguments -join ' '
-$child = [Diagnostics.Process]::Start($start)
-try {
-    $child.WaitForExit()
-    exit $child.ExitCode
-} finally {
-    $child.Dispose()
+$PSNativeCommandArgumentPassing = "Legacy"
+if ($MyInvocation.ExpectingInput) {
+    $input | & $vp @encodedArguments
+} else {
+    & $vp @encodedArguments
 }
+exit $LASTEXITCODE

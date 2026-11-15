@@ -4,7 +4,11 @@ foreach ($name in @("PATH", "VP_HOME", "VP_VERSION", "VP_NODE_MANAGER", "VP_PM_M
 }
 $t3Tls = [Net.ServicePointManager]::SecurityProtocol
 try {
-    & (Join-Path $PSScriptRoot "scripts/project-vp.ps1") @args
+    if ($MyInvocation.ExpectingInput) {
+        $input | & (Join-Path $PSScriptRoot "scripts/project-vp.ps1") @args
+    } else {
+        & (Join-Path $PSScriptRoot "scripts/project-vp.ps1") @args
+    }
     exit $LASTEXITCODE
 } finally {
     foreach ($name in $t3Environment.Keys) {

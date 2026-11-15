@@ -12,6 +12,8 @@ t3_vp=
 t3_path_ifs=$IFS
 IFS=:
 for t3_directory in $PATH; do
+  # Probing another worktree launcher would recursively search this same PATH.
+  [ ! -f "${t3_directory:-.}/scripts/project-vp.ps1" ] || continue
   for t3_candidate in "${t3_directory:-.}/vp" "${t3_directory:-.}/vp.exe"; do
     if [ -x "$t3_candidate" ] && [ ! "$t3_candidate" -ef "$t3_root/vp" ] &&
       "$t3_candidate" env current --json >/dev/null 2>&1; then

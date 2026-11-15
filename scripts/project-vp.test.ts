@@ -153,6 +153,33 @@ it("bootstraps Vite+ without Node and reuses it without changing shell configura
   expect(await NodeFSP.readdir(setup.env.HOME)).toEqual([".local"]);
 });
 
+it("ignores another worktree launcher on PATH instead of recursively probing it", async () => {
+  await using setup = await fixture();
+  const other = NodePath.join(setup.root, "other worktree");
+  await NodeFSP.mkdir(NodePath.join(other, "scripts"), { recursive: true });
+  await NodeFSP.copyFile(
+    NodePath.join(repository, "scripts/project-vp.ps1"),
+    NodePath.join(other, "scripts/project-vp.ps1"),
+  );
+  await NodeFSP.copyFile(
+    NodePath.join(setup.project, "package.json"),
+    NodePath.join(other, "package.json"),
+  );
+  const launcher = await NodeFSP.readFile(NodePath.join(repository, "vp"), "utf8");
+  // Bound recursive launches on the broken implementation without leaving subprocesses alive.
+  await NodeFSP.writeFile(
+    NodePath.join(other, "vp"),
+    `#!/bin/sh\n[ "\${TEST_PROBE_DEPTH:-0}" = 0 ] || exit 78\nexport TEST_PROBE_DEPTH=1\n${launcher}`,
+    { mode: 0o755 },
+  );
+  setup.env.PATH = `${other}:${setup.env.PATH}`;
+  const result = setup.run("exec", "node", "--version");
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout.trim()).toBe(process.version);
+  const calls = await NodeFSP.readFile(setup.env.TEST_LOG, "utf8");
+  expect(calls.match(/^env current --json$/gm)).toHaveLength(1);
+});
+
 it("stops before starting a task when the runtime cannot be installed", async () => {
   await using setup = await fixture({ failInstall: true });
   const result = setup.run("exec", "node", "--version");
@@ -179,15 +206,32 @@ const hasPowerShell =
   NodeChildProcess.spawnSync(powerShell, ["-NoProfile", "-Command", "exit 0"]).status === 0;
 
 test.runIf(hasPowerShell)(
-  "preserves native arguments and exit status in Windows PowerShell's legacy argument mode",
+  "preserves arguments, pipelines, cwd and exit status in Windows PowerShell's legacy argument mode",
   () => {
     const script = NodePath.join(repository, "vp.ps1").replaceAll("'", "''");
+    const packageDirectory = NodePath.join(repository, "apps/mobile").replaceAll("'", "''");
     const result = NodeChildProcess.spawnSync(
       powerShell,
       [
         "-NoProfile",
         "-Command",
-        `$PSNativeCommandArgumentPassing = 'Legacy'; $originalPath = $env:PATH; & '${script}' exec node -e 'console.log(JSON.stringify(process.argv.slice(1)));process.exitCode=23' 'a"b' '' 'space & $value' 'C:\\path with space\\'; $resultCode = $LASTEXITCODE; if ($env:PATH -ne $originalPath) { throw 'Shell PATH changed' }; exit $resultCode`,
+        String.raw`
+$PSNativeCommandArgumentPassing = 'Legacy'
+$PSNativeCommandUseErrorActionPreference = $true
+$originalPath = $env:PATH
+Set-Location '${packageDirectory}'
+$cwd = & '${script}' exec node -p 'process.cwd()'
+if ($cwd -ne $PWD.Path) { throw 'Native working directory differs from the shell' }
+$captured = & '${script}' exec node -e 'console.log(JSON.stringify(process.argv.slice(1)));process.exitCode=23' 'a"b' '' 'space & $value' 'C:\path with space\'
+$resultCode = $LASTEXITCODE
+if ($null -eq $captured) { throw 'Native output bypassed the pipeline' }
+if ($env:PATH -ne $originalPath) { throw 'Shell PATH changed' }
+if (-not $PSNativeCommandUseErrorActionPreference) { throw 'Native error preference changed' }
+$piped = 'pipeline line' | & '${script}' exec node -e 'console.log("PIPE:"+require("node:fs").readFileSync(0,"utf8").trim())'
+if ($piped -ne 'PIPE:pipeline line') { throw 'Native input bypassed the pipeline' }
+Write-Output $captured
+exit $resultCode
+`,
       ],
       { encoding: "utf8" },
     );
