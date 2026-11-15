@@ -6361,9 +6361,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           { allowNonZeroExit: true },
         );
         if (head.exitCode !== 0) return { branch: base, created: false };
-        const remote = input.startFromOrigin
-          ? yield* fetchWorktreeBaseCommit({ cwd: input.cwd, refName: `origin/${base}` })
-          : null;
+        const remote =
+          input.startFromOrigin &&
+          (yield* originRemoteExists(input.cwd)) &&
+          (yield* fetchRemote({ cwd: input.cwd, remoteName: "origin", refName: base }))
+            ? yield* resolveRemoteTrackingCommit({
+                cwd: input.cwd,
+                refName: `origin/${base}`,
+                fallbackRemoteName: "origin",
+              })
+            : null;
         const branch = resolveAutoFeatureBranchName(
           yield* listLocalBranchNames(input.cwd),
           input.branch,

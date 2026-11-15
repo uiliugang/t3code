@@ -1938,7 +1938,7 @@ it.effect("names the missing base branch when a worktree cannot be created from 
           command: "command:launch:missing-base",
           thread: "thread:launch:missing-base",
           message: "Start from master",
-          workspace: { type: "worktree", baseRef: "master", startFromOrigin: true },
+          workspace: { type: "worktree", baseRef: "master", startFromOrigin: false },
         }),
       );
       yield* threads.streamStoredEventsFrom({ threadId: launched.threadId }).pipe(
