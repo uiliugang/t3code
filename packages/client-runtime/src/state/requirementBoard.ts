@@ -151,6 +151,29 @@ export class RequirementOverviewKey extends Data.Class<{
 
 export type EnvironmentRequirementEntry = RequirementEntry & { environmentId: EnvironmentId };
 
+export function createRequirementPermissionAtoms(
+  permissions: Record<
+    "createIssue" | "mutateWorkItem" | "discoverWorkItems",
+    (environmentId: EnvironmentId) => Atom.Atom<boolean>
+  >,
+) {
+  return Atom.family((environmentIds: ReadonlyArray<EnvironmentId>) =>
+    Atom.make(
+      (get) =>
+        new Map(
+          environmentIds.map((environmentId) => [
+            environmentId,
+            {
+              createIssue: get(permissions.createIssue(environmentId)),
+              mutateWorkItem: get(permissions.mutateWorkItem(environmentId)),
+              discoverWorkItems: get(permissions.discoverWorkItems(environmentId)),
+            },
+          ]),
+        ),
+    ),
+  );
+}
+
 export function createRequirementOverviewAtoms(
   queries: Parameters<typeof createRequirementBoardAtoms>[0] & {
     config: (environmentId: EnvironmentId) => Atom.Atom<{ readonly workItems?: boolean } | null>;

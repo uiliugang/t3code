@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import {
   createRequirementOverviewAtoms,
+  createRequirementPermissionAtoms,
   RequirementOverviewKey,
   type RequirementPagination,
   type EnvironmentRequirementEntry,
@@ -73,6 +74,11 @@ const boardAtoms = createRequirementOverviewAtoms({
   workItemsLive: serverEnvironment.workItemsLive,
   config: serverEnvironment.configValueAtom,
   tracked: serverEnvironment.issueWorkItems,
+});
+const permissionAtoms = createRequirementPermissionAtoms({
+  createIssue: sourceControlEnvironment.createIssue.permissionAtom,
+  mutateWorkItem: serverEnvironment.mutateWorkItem.permissionAtom,
+  discoverWorkItems: serverEnvironment.discoverWorkItems.permissionAtom,
 });
 const CollapsedGroups = Schema.Array(Schema.String);
 type SearchPatch = { [Key in keyof RequirementsSearch]?: RequirementsSearch[Key] | undefined };
@@ -154,6 +160,7 @@ export function RequirementBoard({
     pages: {},
   });
   const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
+  const permissions = useAtomValue(permissionAtoms(environmentIds));
   const filterKey = JSON.stringify([
     environmentIds,
     source,
@@ -716,11 +723,7 @@ export function RequirementBoard({
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={
-                        !registry.get(
-                          serverEnvironment.mutateWorkItem.permissionAtom(item.environmentId),
-                        ) || busy
-                      }
+                      disabled={!permissions.get(item.environmentId)?.mutateWorkItem || busy}
                       onClick={() => {
                         setCreatingEnvironmentId(item.environmentId);
                         setCandidate(item);
@@ -732,11 +735,7 @@ export function RequirementBoard({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={
-                        !registry.get(
-                          serverEnvironment.discoverWorkItems.permissionAtom(item.environmentId),
-                        ) || busy
-                      }
+                      disabled={!permissions.get(item.environmentId)?.discoverWorkItems || busy}
                       onClick={async () => {
                         await discover({
                           environmentId: item.environmentId,

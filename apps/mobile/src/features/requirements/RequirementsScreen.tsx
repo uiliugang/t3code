@@ -47,6 +47,7 @@ import {
 
 import {
   createRequirementOverviewAtoms,
+  createRequirementPermissionAtoms,
   RequirementOverviewKey,
   type RequirementPagination,
   type EnvironmentRequirementEntry,
@@ -74,6 +75,11 @@ const boardAtoms = createRequirementOverviewAtoms({
   workItemsLive: serverEnvironment.workItemsLive,
   config: serverEnvironment.configValueAtom,
   tracked: serverEnvironment.issueWorkItems,
+});
+const permissionAtoms = createRequirementPermissionAtoms({
+  createIssue: sourceControlEnvironment.createIssue.permissionAtom,
+  mutateWorkItem: serverEnvironment.mutateWorkItem.permissionAtom,
+  discoverWorkItems: serverEnvironment.discoverWorkItems.permissionAtom,
 });
 
 export function RequirementsScreen({ route }: StaticScreenProps<WorkItemsRouteParams | undefined>) {
@@ -148,6 +154,7 @@ function UnifiedRequirementBoard({
     pages: {},
   });
   const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
+  const permissions = useAtomValue(permissionAtoms(environmentIds));
   const filterKey = JSON.stringify([environmentIds, source, projectId, assignee, query, archived]);
   if (pagination.key !== filterKey) setPagination({ key: filterKey, pages: {} });
   const config = useEnvironmentServerConfig(environmentId);
@@ -469,9 +476,7 @@ function UnifiedRequirementBoard({
                   attributes: {
                     disabled:
                       busy ||
-                      !registry.get(
-                        serverEnvironment.discoverWorkItems.permissionAtom(project.environmentId),
-                      ) ||
+                      !permissions.get(project.environmentId)?.discoverWorkItems ||
                       registry.get(serverEnvironment.configValueAtom(project.environmentId))
                         ?.workItemDiscovery !== true,
                   },
@@ -642,18 +647,10 @@ function UnifiedRequirementBoard({
                     attributes: {
                       disabled:
                         provider === "local"
-                          ? !registry.get(
-                              serverEnvironment.mutateWorkItem.permissionAtom(
-                                project.environmentId,
-                              ),
-                            ) ||
+                          ? !permissions.get(project.environmentId)?.mutateWorkItem ||
                             registry.get(serverEnvironment.configValueAtom(project.environmentId))
                               ?.workItems !== true
-                          : !registry.get(
-                              sourceControlEnvironment.createIssue.permissionAtom(
-                                project.environmentId,
-                              ),
-                            ),
+                          : !permissions.get(project.environmentId)?.createIssue,
                     },
                   })),
                 }))}
@@ -727,11 +724,7 @@ function UnifiedRequirementBoard({
                     </Text>
                     <CandidateCard
                       candidate={candidate}
-                      disabled={
-                        !registry.get(
-                          serverEnvironment.mutateWorkItem.permissionAtom(candidate.environmentId),
-                        ) || busy
-                      }
+                      disabled={!permissions.get(candidate.environmentId)?.mutateWorkItem || busy}
                       onCreate={() =>
                         createLocal(
                           {

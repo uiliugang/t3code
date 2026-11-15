@@ -133,11 +133,24 @@ export function RequirementScanMenu({
   refreshed: () => void;
 }) {
   const t = useUiTranslation();
+  const discover = useAtomCommand(serverEnvironment.discoverWorkItems);
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const scan = async (environmentId: EnvironmentId, projectId: ProjectId) => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    await discover({ environmentId, input: { projectId } }).finally(() => {
+      pending.current = false;
+      setBusy(false);
+    });
+    refreshed();
+  };
   return (
     <Menu>
       <MenuTrigger
         render={
-          <Button size="sm" variant="outline" disabled={!environments.length}>
+          <Button size="sm" variant="outline" disabled={!environments.length || busy}>
             <ScanSearchIcon />
             {t("Scan chats")}
             <span className="sr-only">{t("Select a project")}</span>
@@ -150,7 +163,8 @@ export function RequirementScanMenu({
             key={environment.environmentId}
             environment={environment}
             projectId={projectId}
-            refreshed={refreshed}
+            scan={scan}
+            busy={busy}
           />
         ))}
       </MenuPopup>
@@ -161,11 +175,13 @@ export function RequirementScanMenu({
 function EnvironmentScanItems({
   environment,
   projectId,
-  refreshed,
+  scan,
+  busy,
 }: {
   environment: EnvironmentPresentation;
   projectId: ProjectId | undefined;
-  refreshed: () => void;
+  scan: (environmentId: EnvironmentId, projectId: ProjectId) => Promise<void>;
+  busy: boolean;
 }) {
   const { environmentId } = environment;
   const t = useUiTranslation();
@@ -178,9 +194,6 @@ function EnvironmentScanItems({
   );
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const permitted = useAtomValue(serverEnvironment.discoverWorkItems.permissionAtom(environmentId));
-  const discover = useAtomCommand(serverEnvironment.discoverWorkItems);
-  const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
   return (
     <MenuSub>
       <MenuSubTrigger
@@ -193,15 +206,7 @@ function EnvironmentScanItems({
           <MenuItem
             key={project.id}
             disabled={busy}
-            onClick={async () => {
-              if (pending.current) return;
-              pending.current = true;
-              setBusy(true);
-              await discover({ environmentId, input: { projectId: project.id } });
-              pending.current = false;
-              setBusy(false);
-              refreshed();
-            }}
+            onClick={() => void scan(environmentId, project.id)}
           >
             {project.title}
           </MenuItem>
