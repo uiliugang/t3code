@@ -1892,8 +1892,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "worktree location": "工作树位置",
   "Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the T3 home folder.":
     "新工作树的存放目录，可位于任意磁盘，例如 D:\\worktrees 或 ~/worktrees。已有工作树的位置不变。留空则使用 T3 主目录。",
-  "Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.":
-    "使用基准分支所跟踪远程分支的最新提交，即使两者名称不同。未设置跟踪分支时，使用 origin 上的同名分支；远程分支不存在时，使用本地分支。",
+  "Uses the latest commit of the base branch’s tracked remote branch, or the same-named branch on origin. If that remote branch is missing, new worktree creation stops. Turn this off to use a local branch.":
+    "使用基准分支所跟踪远程分支的最新提交；未设置跟踪分支时，使用 origin 上的同名分支。远程分支不存在时，新工作树创建会停止。关闭此选项可使用本地分支。",
   "Start new worktrees from remote by default": "默认从远程分支创建新工作树",
   "new worktrees start from remote": "从远程分支创建新工作树",
   "How new worktrees in this project populate git submodules.":
