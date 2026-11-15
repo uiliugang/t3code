@@ -179,6 +179,24 @@ export const sendPageCommand = async (
     return sendPointerCommand(webContents, debuggee, method, params, sessionId);
   }
   if (sessionId !== undefined) return debuggee.sendCommand(method, params, sessionId);
+  const format = params["format"] === undefined ? "png" : params["format"];
+  const quality = params["quality"];
+  if (
+    method === "Page.captureScreenshot" &&
+    webContents.hostWebContents &&
+    params["clip"] === undefined &&
+    params["fromSurface"] !== false &&
+    (format === "png" || format === "jpeg") &&
+    (quality === undefined ||
+      (typeof quality === "number" && Number.isInteger(quality) && quality >= 0 && quality <= 100))
+  ) {
+    // Electron's native capture wakes an occluded guest; CDP waits forever for its surface.
+    const image = await webContents.capturePage();
+    if (image.isEmpty()) throw new Error("The preview page returned an empty screenshot.");
+    return {
+      data: (format === "jpeg" ? image.toJPEG(quality ?? 80) : image.toPNG()).toString("base64"),
+    };
+  }
   // Electron's debugger routes Page.reload on a webview to its embedder window.
   if (method === "Page.reload") {
     if (params["ignoreCache"] === true) webContents.reloadIgnoringCache();
