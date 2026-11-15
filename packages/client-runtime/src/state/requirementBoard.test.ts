@@ -9,7 +9,12 @@ import {
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 import { expect, it } from "vite-plus/test";
-import { createRequirementBoardAtoms, RequirementBoardKey } from "./requirementBoard.ts";
+import {
+  createRequirementBoardAtoms,
+  RequirementBoardKey,
+  createRequirementOverviewAtoms,
+  RequirementOverviewKey,
+} from "./requirementBoard.ts";
 
 it("keeps local pages available when an issue source fails and refreshes overlapping live records", () => {
   const registry = AtomRegistry.make();
@@ -121,6 +126,86 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     expect(registry.get(board(key)).nextCursor).toBeNull();
   } finally {
     unmount();
+    registry.dispose();
+  }
+});
+
+it("keeps environment identities, failures and pagination separate in the combined board", () => {
+  const registry = AtomRegistry.make();
+  const firstEnvironment = EnvironmentId.make("first");
+  const secondEnvironment = EnvironmentId.make("second");
+  const item: WorkItemSummary = {
+    id: WorkItemId.make("same-id"),
+    projectId: ProjectId.make("same-project"),
+    title: "Task",
+    description: "",
+    specRevision: 1,
+    version: 1,
+    status: "todo",
+    priority: "P2",
+    archived: false,
+    createdAt: "2026-11-14T00:00:00Z",
+    updatedAt: "2026-11-14T00:00:00Z",
+    executionCount: 0,
+    activeExecutionCount: 0,
+  };
+  const cursor = { id: item.id, updatedAt: item.updatedAt };
+  const requested: Array<{ environmentId: EnvironmentId; cursor: unknown }> = [];
+  const overview = createRequirementOverviewAtoms({
+    issues: ({ environmentId }) =>
+      Atom.make(
+        environmentId === firstEnvironment
+          ? AsyncResult.failure<typeof IssueListResult.Type>(Cause.die(new Error("Unavailable")))
+          : AsyncResult.success<typeof IssueListResult.Type>({ groups: [], failures: [] }),
+      ),
+    workItemsLive: ({ environmentId, input }) => {
+      requested.push({ environmentId, cursor: input.cursor });
+      return Atom.make(
+        AsyncResult.success<WorkItemListResult>({
+          items: [{ ...item, title: environmentId }],
+          candidates: [],
+          nextCursor: environmentId === firstEnvironment && !input.cursor ? cursor : null,
+        }),
+      );
+    },
+    config: () => Atom.make({ workItems: true }),
+    tracked: () => Atom.make(new Map()),
+  });
+  const key = new RequirementOverviewKey({
+    environmentIds: [firstEnvironment, secondEnvironment],
+    projectId: null,
+    source: "all",
+    assignee: "me",
+    query: "",
+    archived: false,
+    pagination: {},
+  });
+  try {
+    const result = registry.get(overview(key));
+    expect(result.entries.map((entry) => entry.environmentId).sort()).toEqual([
+      firstEnvironment,
+      secondEnvironment,
+    ]);
+    expect(new Set(result.entries.map((entry) => entry.key)).size).toBe(2);
+    expect(result.errors.every((error) => error.environmentId === firstEnvironment)).toBe(true);
+    expect(result.hasMore).toBe(true);
+    registry.get(
+      overview(new RequirementOverviewKey({ ...key, pagination: result.nextPagination })),
+    );
+    expect(requested.filter((request) => request.cursor)).toEqual([
+      { environmentId: firstEnvironment, cursor },
+    ]);
+    requested.length = 0;
+    const single = registry.get(
+      overview(new RequirementOverviewKey({ ...key, environmentIds: [secondEnvironment] })),
+    );
+    expect(single.entries).toHaveLength(1);
+    expect(single.errors).toEqual([]);
+    expect(requested.every((request) => request.environmentId === secondEnvironment)).toBe(true);
+    expect(
+      registry.get(overview(new RequirementOverviewKey({ ...key, environmentIds: [] }))).entries,
+    ).toEqual([]);
+  } finally {
     registry.dispose();
   }
 });

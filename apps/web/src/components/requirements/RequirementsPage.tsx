@@ -4,24 +4,25 @@ import {
   parseBranchIssueUrl,
   type IssueProvider,
   type ProjectId,
-  type WorkItemListInput,
+  type EnvironmentId,
   type WorkItemCommandInput,
 } from "@t3tools/contracts";
 import {
-  createRequirementBoardAtoms,
-  RequirementBoardKey,
+  createRequirementOverviewAtoms,
+  RequirementOverviewKey,
+  type RequirementPagination,
+  type EnvironmentRequirementEntry,
 } from "@t3tools/client-runtime/state/requirement-board";
 import {
-  mergeRequirementEntries,
   REQUIREMENT_GROUPS,
   DELIVERY_PROGRESS_LABELS,
-  type RequirementEntry,
   type RequirementSource,
   prepareWorkItemCommandRetry,
 } from "@t3tools/client-runtime/work-item";
 import {
   ClipboardListIcon,
-  PlusIcon,
+  AlertTriangleIcon,
+  ServerIcon,
   RefreshCwIcon,
   SettingsIcon,
   ChevronDownIcon,
@@ -61,12 +62,17 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { WorkItemEditor, WorkItemDetailPanel } from "../work-items/WorkItemsPage";
 import { IssueDetailPanel } from "./IssueDetailPanel";
 import { IssueCreateDialog } from "./IssueCreateDialog";
+import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle } from "../ui/popover";
+import { RequirementCreateMenu, RequirementScanMenu } from "./RequirementBoardActions";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { ProjectTag } from "./ProjectTag";
 import type { RequirementsSearch } from "../../routes/_chat.requirements";
 
-const boardAtoms = createRequirementBoardAtoms({
+const boardAtoms = createRequirementOverviewAtoms({
   issues: sourceControlEnvironment.issues,
   workItemsLive: serverEnvironment.workItemsLive,
+  config: serverEnvironment.configValueAtom,
+  tracked: serverEnvironment.issueWorkItems,
 });
 const CollapsedGroups = Schema.Array(Schema.String);
 type SearchPatch = { [Key in keyof RequirementsSearch]?: RequirementsSearch[Key] | undefined };
@@ -80,7 +86,6 @@ export function RequirementsPage() {
   return environmentId ? (
     <SidebarInset className="h-dvh overflow-hidden">
       <RequirementBoard
-        key={environmentId}
         environmentId={environmentId}
         search={search}
         updateSearch={(patch) => {
@@ -105,7 +110,7 @@ export function RequirementsPage() {
 }
 
 export function RequirementBoard({
-  environmentId,
+  environmentId: fallbackEnvironmentId,
   search,
   updateSearch,
   compact = false,
@@ -119,59 +124,66 @@ export function RequirementBoard({
   const navigate = useNavigate();
   const registry = useContext(RegistryContext);
   const { environments } = useEnvironments();
-  const projects = useProjects().filter(
-    (project) =>
-      project.environmentId === environmentId && !project.isScratch && project.archivedAt === null,
+  const onlineEnvironments = environments.filter(
+    (environment) => environment.connection.phase === "connected",
   );
+  const filterEnvironmentId = compact ? fallbackEnvironmentId : search.environmentId;
+  const visibleEnvironments = onlineEnvironments.filter(
+    (environment) => !filterEnvironmentId || environment.environmentId === filterEnvironmentId,
+  );
+  const [creatingEnvironmentId, setCreatingEnvironmentId] = useState<EnvironmentId | null>(null);
+  const detailEnvironmentId =
+    search.detailEnvironmentId ?? filterEnvironmentId ?? fallbackEnvironmentId;
+  const environmentId = creatingEnvironmentId ?? detailEnvironmentId;
+  const allProjects = useProjects().filter(
+    (project) => !project.isScratch && project.archivedAt === null,
+  );
+  const projects = allProjects.filter((project) =>
+    visibleEnvironments.some((environment) => environment.environmentId === project.environmentId),
+  );
+  const actionProjects = allProjects.filter((project) => project.environmentId === environmentId);
+  const environmentLabel = (id: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === id)?.label ?? id;
   const source: RequirementSource =
     search.source ?? (search.local ? "local" : (search.provider ?? "all"));
   const assignee = search.assignee ?? "me";
   const view = search.view ?? "list";
   const archived = search.archived ?? false;
-  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const [pagination, setPagination] = useState<{
-    key: string;
-    page: number;
-    cursors: ReadonlyArray<WorkItemListInput["cursor"]>;
-  }>({ key: "", page: 1, cursors: [undefined] });
+  const [pagination, setPagination] = useState<{ key: string; pages: RequirementPagination }>({
+    key: "",
+    pages: {},
+  });
+  const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
   const filterKey = JSON.stringify([
-    environmentId,
+    environmentIds,
     source,
     assignee,
     search.projectId,
     search.q,
     archived,
   ]);
-  if (pagination.key !== filterKey)
-    setPagination({ key: filterKey, page: 1, cursors: [undefined] });
+  if (pagination.key !== filterKey) setPagination({ key: filterKey, pages: {} });
   const data = useAtomValue(
     boardAtoms(
-      new RequirementBoardKey({
-        environmentId,
+      new RequirementOverviewKey({
+        environmentIds,
         source,
         assignee,
         projectId: search.projectId ?? null,
         query: search.q ?? "",
         archived,
-        localSupported: config?.workItems === true,
-        page: pagination.key === filterKey ? pagination.page : 1,
-        cursors: pagination.key === filterKey ? pagination.cursors : [undefined],
+        pagination: pagination.key === filterKey ? pagination.pages : {},
       }),
     ),
   );
-  const tracked = useAtomValue(
-    serverEnvironment.issueWorkItems(
-      environmentId,
-      data.issuePages.flatMap((page) =>
-        page.groups.flatMap((group) => group.issues.map((issue) => issue.url)),
-      ),
+  const entries = data.entries;
+  const errors = [
+    ...data.errors.map((error) => `${environmentLabel(error.environmentId)}: ${error.message}`),
+    ...data.failures.map(
+      (failure) =>
+        `${environmentLabel(failure.environmentId)} · ${allProjects.find((project) => project.environmentId === failure.environmentId && project.id === failure.projectId)?.title ?? failure.projectId}: ${t(failure.reason)}`,
     ),
-  );
-  const entries = mergeRequirementEntries(data.issuePages, data.items, tracked, {
-    source,
-    query: search.q ?? "",
-    archived,
-  });
+  ];
   const [collapsed, setCollapsed] = useLocalStorage<ReadonlyArray<string>, ReadonlyArray<string>>(
     "requirements.collapsed",
     ["done"],
@@ -184,30 +196,26 @@ export function RequirementBoard({
   const retries = useRef(new Map<string, import("@t3tools/contracts").CommandId>());
   const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
   const discover = useAtomCommand(serverEnvironment.discoverWorkItems);
-  const canDiscover = useAtomValue(
-    serverEnvironment.discoverWorkItems.permissionAtom(environmentId),
-  );
   const [candidate, setCandidate] = useState<(typeof data.candidates)[number] | null>(null);
   const canCreateLocal = useAtomValue(
     serverEnvironment.mutateWorkItem.permissionAtom(environmentId),
-  );
-  const canCreateIssue = useAtomValue(
-    sourceControlEnvironment.createIssue.permissionAtom(environmentId),
   );
   const refresh = () => {
     for (const atom of data.atoms) registry.refresh(atom);
   };
   const close = () =>
     updateSearch({
+      detailEnvironmentId: undefined,
       issueId: undefined,
       issueProjectId: undefined,
       issueScope: undefined,
       issueProvider: undefined,
       workItemId: undefined,
     });
-  const open = (entry: RequirementEntry) => {
+  const open = (entry: EnvironmentRequirementEntry) => {
     if (entry.kind === "local")
       updateSearch({
+        detailEnvironmentId: entry.environmentId,
         issueId: undefined,
         issueProjectId: undefined,
         issueScope: undefined,
@@ -215,6 +223,7 @@ export function RequirementBoard({
       });
     else
       updateSearch({
+        detailEnvironmentId: entry.environmentId,
         workItemId: undefined,
         issueId: entry.issue.id,
         issueProjectId: entry.projectId,
@@ -247,12 +256,16 @@ export function RequirementBoard({
       local: undefined,
       archived: false,
       q: undefined,
+      detailEnvironmentId: environmentId,
       workItemId: result.value.item.id,
       issueId: undefined,
     });
     return true;
   };
-  const selectedProject = projects.find((project) => project.id === search.issueProjectId);
+  const selectedProject = allProjects.find(
+    (project) =>
+      project.environmentId === detailEnvironmentId && project.id === search.issueProjectId,
+  );
   const selected = Boolean(search.workItemId || search.issueId);
   const assigneeOptions = [
     ...new Map(
@@ -273,51 +286,110 @@ export function RequirementBoard({
             <div className="flex min-w-0 items-center gap-3">
               <ClipboardListIcon className="size-5 shrink-0 text-muted-foreground" />
               <h1 className="truncate text-base font-semibold">{t("Requirements board")}</h1>
+              {errors.length ? (
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <Button size="icon-sm" variant="ghost" aria-label={t("View loading errors")}>
+                        <AlertTriangleIcon className="text-destructive" />
+                      </Button>
+                    }
+                  />
+                  <PopoverPopup align="start" width="md">
+                    <div className="space-y-3">
+                      <PopoverTitle>{t("Some requirements could not be loaded")}</PopoverTitle>
+                      {errors.map((error) => (
+                        <p key={error} className="text-sm text-destructive wrap-anywhere">
+                          {error}
+                        </p>
+                      ))}
+                      <Button size="sm" variant="outline" onClick={refresh}>
+                        <RefreshCwIcon />
+                        {t("Retry")}
+                      </Button>
+                    </div>
+                  </PopoverPopup>
+                </Popover>
+              ) : null}
               <span className="text-xs text-muted-foreground">{entries.length}</span>
             </div>
+            <RequirementCreateMenu
+              environments={visibleEnvironments}
+              {...(search.projectId ? { projectId: search.projectId } : {})}
+              createIssue={(id, provider) => {
+                setCreatingEnvironmentId(id);
+                setCreatingIssue(provider);
+              }}
+              createLocal={(id, projectId) => {
+                setCreatingEnvironmentId(id);
+                setCandidate(null);
+                setCreatingLocal(projectId);
+              }}
+            />
+          </header>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-5 py-3">
             <Menu>
               <MenuTrigger
                 render={
-                  <Button size="sm">
-                    <PlusIcon />
-                    {t("New")}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={compact}
+                    aria-label={t("Environment")}
+                  >
+                    <ServerIcon />
+                    <span className="max-w-40 truncate">
+                      {filterEnvironmentId
+                        ? environmentLabel(filterEnvironmentId)
+                        : t("All environments")}
+                    </span>
+                    <ChevronDownIcon />
                   </Button>
                 }
               />
-              <MenuPopup align="end">
-                {(["meituan", "github"] as const).map((provider) => (
-                  <MenuItem
-                    key={provider}
-                    disabled={!canCreateIssue || !projects.length}
-                    onClick={() => setCreatingIssue(provider)}
+              <MenuPopup align="start">
+                {[
+                  { environmentId: undefined, label: t("All environments") },
+                  ...onlineEnvironments,
+                ].map((environment) => (
+                  <MenuCheckboxItem
+                    key={environment.environmentId ?? "all"}
+                    checked={filterEnvironmentId === environment.environmentId}
+                    onCheckedChange={() =>
+                      updateSearch({
+                        environmentId: environment.environmentId,
+                        projectId: undefined,
+                        detailEnvironmentId: undefined,
+                        issueId: undefined,
+                        issueProjectId: undefined,
+                        issueProvider: undefined,
+                        issueScope: undefined,
+                        workItemId: undefined,
+                      })
+                    }
                   >
-                    {provider === "github" ? "GitHub Issue" : "MEP ONES"}
-                  </MenuItem>
+                    {environment.label}
+                  </MenuCheckboxItem>
                 ))}
-                <MenuSub>
-                  <MenuSubTrigger
-                    disabled={!canCreateLocal || config?.workItems !== true || !projects.length}
-                  >
-                    {t("Local work item")}
-                  </MenuSubTrigger>
-                  <MenuSubPopup>
-                    {projects.map((project) => (
-                      <MenuItem
-                        key={project.id}
-                        onClick={() => {
-                          setCandidate(null);
-                          setCreatingLocal(project.id);
-                        }}
-                      >
-                        {project.title}
-                      </MenuItem>
-                    ))}
-                  </MenuSubPopup>
-                </MenuSub>
               </MenuPopup>
             </Menu>
-          </header>
-          <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-5 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <RequirementScanMenu
+                environments={visibleEnvironments}
+                {...(search.projectId ? { projectId: search.projectId } : {})}
+                refreshed={refresh}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void navigate({ to: "/settings/requirements" })}
+              >
+                <SettingsIcon />
+                {t("Requirement settings")}
+              </Button>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1 px-5 pt-3">
             <form
               className="min-w-0 flex-1"
               onSubmit={(event) => {
@@ -343,29 +415,6 @@ export function RequirementBoard({
                 }
               />
               <MenuPopup align="end">
-                {environments.length > 1 && !compact ? (
-                  <MenuSub>
-                    <MenuSubTrigger>{t("Environment")}</MenuSubTrigger>
-                    <MenuSubPopup>
-                      {environments.map((environment) => (
-                        <MenuItem
-                          key={environment.environmentId}
-                          onClick={() =>
-                            updateSearch({
-                              environmentId: environment.environmentId,
-                              projectId: undefined,
-                              issueId: undefined,
-                              issueProjectId: undefined,
-                              workItemId: undefined,
-                            })
-                          }
-                        >
-                          {environment.label}
-                        </MenuItem>
-                      ))}
-                    </MenuSubPopup>
-                  </MenuSub>
-                ) : null}
                 <MenuSub>
                   <MenuSubTrigger>{t("Issue source")}</MenuSubTrigger>
                   <MenuSubPopup>
@@ -405,10 +454,17 @@ export function RequirementBoard({
                       </MenuItem>
                       {projects.map((project) => (
                         <MenuItem
-                          key={project.id}
-                          onClick={() => updateSearch({ projectId: project.id })}
+                          key={`${project.environmentId}:${project.id}`}
+                          onClick={() =>
+                            updateSearch({
+                              environmentId: project.environmentId,
+                              projectId: project.id,
+                            })
+                          }
                         >
-                          {project.title}
+                          {filterEnvironmentId
+                            ? project.title
+                            : `${environmentLabel(project.environmentId)} · ${project.title}`}
                         </MenuItem>
                       ))}
                     </MenuSubPopup>
@@ -436,36 +492,12 @@ export function RequirementBoard({
                     </MenuSubPopup>
                   </MenuSub>
                 ) : null}
-                <MenuItem
-                  disabled={
-                    !canDiscover || config?.workItemDiscovery !== true || !search.projectId || busy
-                  }
-                  onClick={async () => {
-                    if (!search.projectId || pending.current) return;
-                    pending.current = true;
-                    setBusy(true);
-                    await discover({
-                      environmentId,
-                      input: { projectId: search.projectId },
-                    }).finally(() => {
-                      pending.current = false;
-                      setBusy(false);
-                    });
-                    refresh();
-                  }}
-                >
-                  {t("Scan chats")}
-                </MenuItem>
                 <MenuCheckboxItem
                   checked={archived}
                   onCheckedChange={(checked) => updateSearch({ archived: checked })}
                 >
                   {t("Show archived")}
                 </MenuCheckboxItem>
-                <MenuItem onClick={() => void navigate({ to: "/settings/requirements" })}>
-                  <SettingsIcon />
-                  {t("Issue management")}
-                </MenuItem>
               </MenuPopup>
             </Menu>
             <Menu>
@@ -516,21 +548,6 @@ export function RequirementBoard({
           <div
             className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
           >
-            {[...new Set(data.errors)].map((error) => (
-              <p key={error} role="alert" className="mb-3 text-sm text-destructive">
-                {error}
-              </p>
-            ))}
-            {data.failures.map((failure) => (
-              <p
-                key={`${failure.projectId}:${failure.reason}`}
-                role="alert"
-                className="mb-3 text-sm text-destructive"
-              >
-                {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
-                {t(failure.reason)}
-              </p>
-            ))}
             {data.isPending && !entries.length ? (
               <p className="py-8 text-sm text-muted-foreground">{t("Loading...")}</p>
             ) : !entries.length ? (
@@ -582,13 +599,14 @@ export function RequirementBoard({
                             type="button"
                             key={entry.key}
                             aria-current={
-                              (search.workItemId ===
+                              detailEnvironmentId === entry.environmentId &&
+                              ((search.workItemId ===
                                 (entry.kind === "local" ? entry.item.id : undefined) &&
                                 entry.kind === "local") ||
-                              (entry.kind === "issue" &&
-                                search.issueId === entry.issue.id &&
-                                search.issueProjectId === entry.projectId &&
-                                search.issueProvider === entry.provider)
+                                (entry.kind === "issue" &&
+                                  search.issueId === entry.issue.id &&
+                                  search.issueProjectId === entry.projectId &&
+                                  search.issueProvider === entry.provider))
                                 ? "true"
                                 : undefined
                             }
@@ -607,10 +625,28 @@ export function RequirementBoard({
                               </span>
                             </span>
                             <span className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={
+                                    <span className="inline-flex max-w-48 items-center gap-1 rounded border border-border/70 px-1.5 py-0.5" />
+                                  }
+                                >
+                                  <ServerIcon className="size-3 shrink-0" />
+                                  <span className="truncate">
+                                    {environmentLabel(entry.environmentId)}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipPopup>
+                                  {t("Environment")}: {environmentLabel(entry.environmentId)}
+                                </TooltipPopup>
+                              </Tooltip>
                               <ProjectTag
                                 title={
-                                  projects.find((project) => project.id === entry.projectId)
-                                    ?.title ?? entry.projectId
+                                  projects.find(
+                                    (project) =>
+                                      project.id === entry.projectId &&
+                                      project.environmentId === entry.environmentId,
+                                  )?.title ?? entry.projectId
                                 }
                               />
                               <span>
@@ -670,13 +706,23 @@ export function RequirementBoard({
               <section className="space-y-3 border-t border-border/60 py-4">
                 <h2 className="text-sm font-medium">{t("Discovered tasks")}</h2>
                 {data.candidates.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3">
-                    <span className="min-w-0 flex-1 truncate text-sm">{item.title}</span>
+                  <div key={`${item.environmentId}:${item.id}`} className="flex items-center gap-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">{item.title}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {environmentLabel(item.environmentId)}
+                      </span>
+                    </span>
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!canCreateLocal || busy}
+                      disabled={
+                        !registry.get(
+                          serverEnvironment.mutateWorkItem.permissionAtom(item.environmentId),
+                        ) || busy
+                      }
                       onClick={() => {
+                        setCreatingEnvironmentId(item.environmentId);
                         setCandidate(item);
                         setCreatingLocal(item.projectId);
                       }}
@@ -686,10 +732,14 @@ export function RequirementBoard({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={!canDiscover || busy || config?.workItemDiscovery !== true}
+                      disabled={
+                        !registry.get(
+                          serverEnvironment.discoverWorkItems.permissionAtom(item.environmentId),
+                        ) || busy
+                      }
                       onClick={async () => {
                         await discover({
-                          environmentId,
+                          environmentId: item.environmentId,
                           input: { projectId: item.projectId, dismissThreadId: item.id },
                         });
                         refresh();
@@ -701,21 +751,13 @@ export function RequirementBoard({
                 ))}
               </section>
             ) : null}
-            {data.moreIssues || data.nextCursor ? (
+            {data.hasMore ? (
               <div className="flex shrink-0 justify-center py-5">
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={data.isPending}
-                  onClick={() =>
-                    setPagination((previous) => ({
-                      ...previous,
-                      page: data.moreIssues ? previous.page + 1 : previous.page,
-                      cursors: data.nextCursor
-                        ? [...previous.cursors, data.nextCursor]
-                        : previous.cursors,
-                    }))
-                  }
+                  onClick={() => setPagination({ key: filterKey, pages: data.nextPagination })}
                 >
                   {t("Load more")}
                 </Button>
@@ -724,11 +766,16 @@ export function RequirementBoard({
           </div>
         </div>
         {search.workItemId ? (
-          <WorkItemDetailPanel environmentId={environmentId} id={search.workItemId} close={close} />
+          <WorkItemDetailPanel
+            key={`${detailEnvironmentId}/${search.workItemId}`}
+            environmentId={detailEnvironmentId}
+            id={search.workItemId}
+            close={close}
+          />
         ) : selectedProject && search.issueId ? (
           <IssueDetailPanel
-            key={`${environmentId}/${search.issueProvider}/${selectedProject.id}/${search.issueScope}/${search.issueId}`}
-            environmentId={environmentId}
+            key={`${detailEnvironmentId}/${search.issueProvider}/${selectedProject.id}/${search.issueScope}/${search.issueId}`}
+            environmentId={detailEnvironmentId}
             target={{
               projectId: selectedProject.id,
               provider: search.issueProvider ?? search.provider ?? "meituan",
@@ -745,13 +792,19 @@ export function RequirementBoard({
           <IssueCreateDialog
             environmentId={environmentId}
             provider={creatingIssue}
-            projects={projects}
+            projects={actionProjects}
             {...(search.projectId ? { initialProjectId: search.projectId } : {})}
-            close={() => setCreatingIssue(null)}
+            close={() => {
+              setCreatingIssue(null);
+              setCreatingEnvironmentId(null);
+            }}
             created={(issue, projectId) => {
               setCreatingIssue(null);
+              setCreatingEnvironmentId(null);
               refresh();
               updateSearch({
+                detailEnvironmentId: environmentId,
+                workItemId: undefined,
                 issueId: issue.id,
                 issueProjectId: projectId,
                 issueProvider: creatingIssue,
@@ -772,7 +825,10 @@ export function RequirementBoard({
             {...(candidate ? { candidate } : {})}
             busy={busy}
             run={run}
-            close={() => setCreatingLocal(null)}
+            close={() => {
+              setCreatingLocal(null);
+              setCreatingEnvironmentId(null);
+            }}
           />
         ) : null}
       </div>

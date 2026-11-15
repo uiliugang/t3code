@@ -13,7 +13,6 @@ import {
   type WorkItemId,
   type WorkItemSource,
   type ThreadId,
-  type WorkItemListInput,
 } from "@t3tools/contracts";
 import { useContext, useRef, useState } from "react";
 import * as Schema from "effect/Schema";
@@ -42,15 +41,15 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import {
   DELIVERY_PROGRESS_LABELS,
   REQUIREMENT_GROUPS,
-  mergeRequirementEntries,
   prepareWorkItemCommandRetry,
-  type RequirementEntry,
   type RequirementSource,
 } from "@t3tools/client-runtime/work-item";
 
 import {
-  createRequirementBoardAtoms,
-  RequirementBoardKey,
+  createRequirementOverviewAtoms,
+  RequirementOverviewKey,
+  type RequirementPagination,
+  type EnvironmentRequirementEntry,
 } from "@t3tools/client-runtime/state/requirement-board";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Dialog from "../../components/ui/Dialog";
@@ -70,21 +69,24 @@ type Target = {
 const isBranchIssueError = Schema.is(BranchIssueError);
 const isIssueError = Schema.is(IssueError);
 
-const boardAtoms = createRequirementBoardAtoms({
+const boardAtoms = createRequirementOverviewAtoms({
   issues: sourceControlEnvironment.issues,
   workItemsLive: serverEnvironment.workItemsLive,
+  config: serverEnvironment.configValueAtom,
+  tracked: serverEnvironment.issueWorkItems,
 });
 
 export function RequirementsScreen({ route }: StaticScreenProps<WorkItemsRouteParams | undefined>) {
   const { environments } = useEnvironments();
   const [chosenEnvironment, setEnvironment] = useState(route.params?.environmentId ?? null);
-  const environmentId = chosenEnvironment ?? environments[0]?.environmentId;
+  const environmentId = route.params?.environmentId ?? environments[0]?.environmentId;
   const t = useUiTranslation();
   return environmentId ? (
     <UnifiedRequirementBoard
       key={`${environmentId}:${route.params?.sourceMessageId ?? route.params?.itemId ?? ""}`}
       environmentId={environmentId}
       onEnvironment={setEnvironment}
+      filterEnvironmentId={chosenEnvironment}
       initial={
         route.params?.environmentId && route.params.environmentId !== environmentId
           ? undefined
@@ -99,22 +101,36 @@ export function RequirementsScreen({ route }: StaticScreenProps<WorkItemsRoutePa
 }
 
 function UnifiedRequirementBoard({
-  environmentId,
+  environmentId: fallbackEnvironmentId,
+  filterEnvironmentId,
   onEnvironment,
   initial,
 }: {
   environmentId: EnvironmentId;
-  onEnvironment: (id: EnvironmentId) => void;
+  filterEnvironmentId: EnvironmentId | null;
+  onEnvironment: (id: EnvironmentId | null) => void;
   initial: WorkItemsRouteParams | undefined;
 }) {
   const t = useUiTranslation();
   const navigation = useNavigation();
   const registry = useContext(RegistryContext);
   const { environments } = useEnvironments();
-  const projects = useProjects().filter(
-    (project) =>
-      project.environmentId === environmentId && !project.isScratch && project.archivedAt === null,
+  const [actionEnvironmentId, setActionEnvironmentId] = useState(fallbackEnvironmentId);
+  const environmentId = actionEnvironmentId;
+  const onlineEnvironments = environments.filter(
+    (environment) => environment.connection.phase === "connected",
   );
+  const visibleEnvironments = onlineEnvironments.filter(
+    (environment) => !filterEnvironmentId || environment.environmentId === filterEnvironmentId,
+  );
+  const allProjects = useProjects().filter(
+    (project) => !project.isScratch && project.archivedAt === null,
+  );
+  const projects = allProjects.filter((project) =>
+    visibleEnvironments.some((environment) => environment.environmentId === project.environmentId),
+  );
+  const environmentLabel = (id: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === id)?.label ?? id;
   const sourceThread = useThreadShell(
     initial?.sourceThreadId ? scopeThreadRef(environmentId, initial.sourceThreadId) : null,
   );
@@ -127,51 +143,39 @@ function UnifiedRequirementBoard({
   const [query, setQuery] = useState("");
   const [archived, setArchived] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
-  const [pagination, setPagination] = useState<{
-    key: string;
-    page: number;
-    cursors: ReadonlyArray<WorkItemListInput["cursor"]>;
-  }>({ key: "", page: 1, cursors: [undefined] });
-  const filterKey = JSON.stringify([environmentId, source, projectId, assignee, query, archived]);
-  if (pagination.key !== filterKey)
-    setPagination({ key: filterKey, page: 1, cursors: [undefined] });
+  const [pagination, setPagination] = useState<{ key: string; pages: RequirementPagination }>({
+    key: "",
+    pages: {},
+  });
+  const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
+  const filterKey = JSON.stringify([environmentIds, source, projectId, assignee, query, archived]);
+  if (pagination.key !== filterKey) setPagination({ key: filterKey, pages: {} });
   const config = useEnvironmentServerConfig(environmentId);
   const data = useAtomValue(
     boardAtoms(
-      new RequirementBoardKey({
-        environmentId,
+      new RequirementOverviewKey({
+        environmentIds,
         source,
         projectId,
         assignee,
         query,
         archived,
-        localSupported: config?.workItems === true,
-        page: pagination.key === filterKey ? pagination.page : 1,
-        cursors: pagination.key === filterKey ? pagination.cursors : [undefined],
+        pagination: pagination.key === filterKey ? pagination.pages : {},
       }),
     ),
   );
-  const tracked = useAtomValue(
-    serverEnvironment.issueWorkItems(
-      environmentId,
-      data.issuePages.flatMap((page) =>
-        page.groups.flatMap((group) => group.issues.map((issue) => issue.url)),
-      ),
+  const entries = data.entries;
+  const errors = [
+    ...data.errors.map((error) => `${environmentLabel(error.environmentId)}: ${error.message}`),
+    ...data.failures.map(
+      (failure) =>
+        `${environmentLabel(failure.environmentId)} · ${allProjects.find((project) => project.environmentId === failure.environmentId && project.id === failure.projectId)?.title ?? failure.projectId}: ${t(failure.reason)}`,
     ),
-  );
-  const entries = mergeRequirementEntries(data.issuePages, data.items, tracked, {
-    source,
-    query,
-    archived,
-  });
+  ];
+  const projectKey = (project: { environmentId: EnvironmentId; id: ProjectId }) =>
+    `${project.environmentId}/${project.id}`;
   const { collapsed, toggle } = useRequirementGroups();
-  const canCreateIssue = useAtomValue(
-    sourceControlEnvironment.createIssue.permissionAtom(environmentId),
-  );
   const canOperate = useAtomValue(serverEnvironment.mutateWorkItem.permissionAtom(environmentId));
-  const canDiscover = useAtomValue(
-    serverEnvironment.discoverWorkItems.permissionAtom(environmentId),
-  );
   const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
   const discover = useAtomCommand(serverEnvironment.discoverWorkItems, { reportFailure: false });
   const [busy, setBusy] = useState(false);
@@ -234,13 +238,22 @@ function UnifiedRequirementBoard({
     retries.current.delete(request.key);
     return response.value.item;
   };
-  const scan = async (dismissThreadId?: ThreadId) => {
-    if (pending.current || !canDiscover || !projectId || config?.workItemDiscovery !== true) return;
+  const scan = async (
+    target: { environmentId: EnvironmentId; projectId: ProjectId },
+    dismissThreadId?: ThreadId,
+  ) => {
+    if (
+      pending.current ||
+      !registry.get(serverEnvironment.discoverWorkItems.permissionAtom(target.environmentId)) ||
+      registry.get(serverEnvironment.configValueAtom(target.environmentId))?.workItemDiscovery !==
+        true
+    )
+      return;
     pending.current = true;
     setBusy(true);
     const result = await discover({
-      environmentId,
-      input: { projectId, ...(dismissThreadId ? { dismissThreadId } : {}) },
+      environmentId: target.environmentId,
+      input: { projectId: target.projectId, ...(dismissThreadId ? { dismissThreadId } : {}) },
     }).finally(() => {
       pending.current = false;
       setBusy(false);
@@ -249,15 +262,22 @@ function UnifiedRequirementBoard({
       Dialog.alert(t("Could not scan chats"), String(squashAtomCommandFailure(result)));
     refresh();
   };
-  const createLocal = (project: ProjectId, source?: WorkItemSource, description = "") => {
+  const createLocal = (
+    target: { environmentId: EnvironmentId; projectId: ProjectId },
+    source?: WorkItemSource,
+    description = "",
+  ) => {
+    setActionEnvironmentId(target.environmentId);
     setScrollOffset(0);
-    setCreating({ projectId: project, ...(source ? { source } : {}), description });
+    setCreating({ projectId: target.projectId, ...(source ? { source } : {}), description });
   };
-  const open = (entry: RequirementEntry) => {
-    if (entry.kind === "local") showItem(entry.item.id);
-    else
+  const open = (entry: EnvironmentRequirementEntry) => {
+    if (entry.kind === "local") {
+      setActionEnvironmentId(entry.environmentId);
+      showItem(entry.item.id);
+    } else
       navigation.navigate("IssueDetail", {
-        environmentId,
+        environmentId: entry.environmentId,
         projectId: entry.projectId,
         provider: entry.provider,
         id: entry.issue.id,
@@ -273,7 +293,7 @@ function UnifiedRequirementBoard({
         .map((person) => [person.value, person]),
     ).values(),
   ];
-  const renderRow = (entry: RequirementEntry) => (
+  const renderRow = (entry: EnvironmentRequirementEntry) => (
     <Pressable
       key={entry.key}
       accessibilityRole="button"
@@ -291,9 +311,21 @@ function UnifiedRequirementBoard({
         ) : null}
       </View>
       <View className="flex-row flex-wrap items-center gap-2">
+        <View
+          className="max-w-48 flex-row items-center gap-1 rounded border border-border-subtle px-1.5 py-0.5"
+          accessibilityLabel={`${t("Environment")}: ${environmentLabel(entry.environmentId)}`}
+        >
+          <SymbolView name="server.rack" size={12} tintColorClassName="accent-foreground-muted" />
+          <Text numberOfLines={1} className="min-w-0 shrink text-xs text-foreground-muted">
+            {environmentLabel(entry.environmentId)}
+          </Text>
+        </View>
         <ProjectTag
           title={
-            projects.find((project) => project.id === entry.projectId)?.title ?? entry.projectId
+            projects.find(
+              (project) =>
+                project.id === entry.projectId && project.environmentId === entry.environmentId,
+            )?.title ?? entry.projectId
           }
         />
         <Text className="text-xs text-foreground-muted">
@@ -352,7 +384,21 @@ function UnifiedRequirementBoard({
     );
   };
   return (
-    <SettingsScreen title={t("Requirements board")}>
+    <SettingsScreen
+      title={t("Requirements board")}
+      actions={
+        errors.length && !creating && !selectedId
+          ? [
+              {
+                accessibilityLabel: t("View loading errors"),
+                icon: "exclamationmark.triangle",
+                onPress: () =>
+                  Dialog.alert(t("Some requirements could not be loaded"), errors.join("\n\n")),
+              },
+            ]
+          : undefined
+      }
+    >
       <ScreenScrollView
         key={creating ? "create" : (selectedId ?? "list")}
         className="flex-1"
@@ -381,7 +427,7 @@ function UnifiedRequirementBoard({
         ) : selectedId ? (
           detail.data?.item ? (
             <TaskDetail
-              key={selectedId}
+              key={`${environmentId}/${selectedId}`}
               item={detail.data.item}
               environmentId={environmentId}
               disabled={!canOperate || busy || Boolean(detail.error)}
@@ -399,6 +445,58 @@ function UnifiedRequirementBoard({
           )
         ) : (
           <>
+            <View className="flex-row flex-wrap items-center justify-between gap-2">
+              <IssuePicker
+                label={t("Environment")}
+                value={filterEnvironmentId ?? "all"}
+                options={[
+                  { value: "all", label: t("All environments") },
+                  ...onlineEnvironments.map((environment) => ({
+                    value: environment.environmentId,
+                    label: environment.label,
+                  })),
+                ]}
+                onChange={(value) => {
+                  onEnvironment(value === "all" ? null : EnvironmentId.make(value));
+                  setProjectId(null);
+                }}
+              />
+              <Menu
+                title={t("Scan chats")}
+                actions={projects.map((project) => ({
+                  id: projectKey(project),
+                  title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+                  attributes: {
+                    disabled:
+                      busy ||
+                      !registry.get(
+                        serverEnvironment.discoverWorkItems.permissionAtom(project.environmentId),
+                      ) ||
+                      registry.get(serverEnvironment.configValueAtom(project.environmentId))
+                        ?.workItemDiscovery !== true,
+                  },
+                }))}
+                onPressAction={({ nativeEvent }) => {
+                  const project = projects.find(
+                    (project) => projectKey(project) === nativeEvent.event,
+                  );
+                  if (project)
+                    void scan({ environmentId: project.environmentId, projectId: project.id });
+                }}
+              >
+                <Button
+                  label={t("Scan chats")}
+                  tone="secondary"
+                  onPress={() => {}}
+                  disabled={!projects.length || busy}
+                />
+              </Menu>
+              <Button
+                label={t("Requirement settings")}
+                tone="text"
+                onPress={() => navigation.navigate("SettingsRequirements")}
+              />
+            </View>
             <View className="flex-row items-center gap-1">
               <View className="min-w-0 flex-1">
                 <AppTextInput
@@ -413,16 +511,6 @@ function UnifiedRequirementBoard({
               <Menu
                 title={t("Filters")}
                 actions={[
-                  {
-                    id: "environment",
-                    title: t("Environment"),
-                    subactions: environments.map((env) => ({
-                      id: `env:${env.environmentId}`,
-                      title: env.label,
-                      state:
-                        env.environmentId === environmentId ? ("on" as const) : ("off" as const),
-                    })),
-                  },
                   {
                     id: "source",
                     title: t("Issue source"),
@@ -459,8 +547,8 @@ function UnifiedRequirementBoard({
                         state: !projectId ? ("on" as const) : ("off" as const),
                       },
                       ...projects.map((project) => ({
-                        id: `project:${project.id}`,
-                        title: project.title,
+                        id: `project:${projectKey(project)}`,
+                        title: `${environmentLabel(project.environmentId)} · ${project.title}`,
                         state: projectId === project.id ? ("on" as const) : ("off" as const),
                       })),
                     ],
@@ -486,31 +574,22 @@ function UnifiedRequirementBoard({
                       ]
                     : []),
                   { id: "archived", title: t("Show archived"), state: archived ? "on" : "off" },
-                  {
-                    id: "scan",
-                    title: t("Scan chats"),
-                    attributes: {
-                      disabled:
-                        !projectId || !canDiscover || config?.workItemDiscovery !== true || busy,
-                    },
-                  },
                   { id: "refresh", title: t("Refresh issues") },
-                  { id: "settings", title: t("Issue management") },
                 ]}
                 onPressAction={({ nativeEvent }) => {
                   const id = nativeEvent.event;
-                  if (id.startsWith("env:")) onEnvironment(EnvironmentId.make(id.slice(4)));
-                  if (id.startsWith("project:"))
-                    setProjectId(id.slice(8) ? ProjectId.make(id.slice(8)) : null);
+                  if (id.startsWith("project:")) {
+                    const project = projects.find((project) => projectKey(project) === id.slice(8));
+                    setProjectId(project?.id ?? null);
+                    if (project) onEnvironment(project.environmentId);
+                  }
                   if (id.startsWith("source:")) {
                     setSource(id.slice(7) as RequirementSource);
                     setAssignee("me");
                   }
                   if (id.startsWith("assignee:")) setAssignee(id.slice(9));
                   if (id === "archived") setArchived(!archived);
-                  if (id === "scan") void scan();
                   if (id === "refresh") refresh();
-                  if (id === "settings") navigation.navigate("SettingsRequirements");
                 }}
               >
                 <Pressable
@@ -549,39 +628,50 @@ function UnifiedRequirementBoard({
               </Menu>
               <Menu
                 title={t("New")}
-                actions={[
-                  {
-                    id: "new:meituan",
-                    title: "MEP ONES",
-                    attributes: { disabled: !canCreateIssue || !projects.length },
-                  },
-                  {
-                    id: "new:github",
-                    title: "GitHub Issue",
-                    attributes: { disabled: !canCreateIssue || !projects.length },
-                  },
-                  {
-                    id: "new:local",
-                    title: t("Local work item"),
-                    subactions: projects.map((project) => ({
-                      id: `local:${project.id}`,
-                      title: project.title,
-                      attributes: { disabled: !canOperate || config?.workItems !== true },
-                    })),
-                  },
-                ]}
+                actions={(["meituan", "github", "local"] as const).map((provider) => ({
+                  id: provider,
+                  title:
+                    provider === "local"
+                      ? t("Local work item")
+                      : provider === "github"
+                        ? "GitHub Issue"
+                        : "MEP ONES",
+                  subactions: projects.map((project) => ({
+                    id: `${provider}:${projectKey(project)}`,
+                    title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+                    attributes: {
+                      disabled:
+                        provider === "local"
+                          ? !registry.get(
+                              serverEnvironment.mutateWorkItem.permissionAtom(
+                                project.environmentId,
+                              ),
+                            ) ||
+                            registry.get(serverEnvironment.configValueAtom(project.environmentId))
+                              ?.workItems !== true
+                          : !registry.get(
+                              sourceControlEnvironment.createIssue.permissionAtom(
+                                project.environmentId,
+                              ),
+                            ),
+                    },
+                  })),
+                }))}
                 onPressAction={({ nativeEvent }) => {
                   const id = nativeEvent.event;
-                  if (id.startsWith("local:")) createLocal(ProjectId.make(id.slice(6)));
-                  else if (id === "new:github" || id === "new:meituan") {
-                    const project = projects.find((entry) => entry.id === projectId) ?? projects[0];
-                    if (project)
-                      navigation.navigate("IssueCreate", {
-                        environmentId,
-                        projectId: project.id,
-                        provider: id === "new:github" ? "github" : "meituan",
-                      });
-                  }
+                  const provider = id.slice(0, id.indexOf(":"));
+                  const project = projects.find(
+                    (project) => projectKey(project) === id.slice(id.indexOf(":") + 1),
+                  );
+                  if (!project) return;
+                  if (provider === "local")
+                    createLocal({ environmentId: project.environmentId, projectId: project.id });
+                  else if (provider === "github" || provider === "meituan")
+                    navigation.navigate("IssueCreate", {
+                      environmentId: project.environmentId,
+                      projectId: project.id,
+                      provider,
+                    });
                 }}
               >
                 <Pressable
@@ -604,17 +694,6 @@ function UnifiedRequirementBoard({
               · {projects.find((project) => project.id === projectId)?.title ?? t("All projects")}
               {archived ? ` · ${t("Show archived")}` : ""}
             </Text>
-            {[...new Set(data.errors)].map((error) => (
-              <Text key={error} className="text-danger">
-                {error}
-              </Text>
-            ))}
-            {data.failures.map((failure) => (
-              <Text key={`${failure.projectId}:${failure.reason}`} className="text-danger">
-                {projects.find((project) => project.id === failure.projectId)?.title}:{" "}
-                {t(failure.reason)}
-              </Text>
-            ))}
             {data.isPending && !entries.length ? (
               <Text>{t("Loading...")}</Text>
             ) : !entries.length ? (
@@ -631,38 +710,41 @@ function UnifiedRequirementBoard({
                 {REQUIREMENT_GROUPS.map(renderGroup)}
               </ScrollView>
             )}
-            {data.moreIssues || data.nextCursor ? (
+            {data.hasMore ? (
               <Button
                 label={t("Load more")}
                 disabled={data.isPending}
-                onPress={() =>
-                  setPagination((previous) => ({
-                    ...previous,
-                    page: data.moreIssues ? previous.page + 1 : previous.page,
-                    cursors: data.nextCursor
-                      ? [...previous.cursors, data.nextCursor]
-                      : previous.cursors,
-                  }))
-                }
+                onPress={() => setPagination({ key: filterKey, pages: data.nextPagination })}
               />
             ) : null}
             {data.candidates.length && (source === "all" || source === "local") ? (
               <View className="gap-3">
                 <Text className="text-sm font-t3-semibold">{t("Discovered tasks")}</Text>
                 {data.candidates.map((candidate) => (
-                  <CandidateCard
-                    key={candidate.id}
-                    candidate={candidate}
-                    disabled={!canOperate || busy}
-                    onCreate={() =>
-                      createLocal(
-                        candidate.projectId,
-                        { threadId: candidate.id, title: candidate.title },
-                        candidate.description,
-                      )
-                    }
-                    onIgnore={() => void scan(candidate.id)}
-                  />
+                  <View key={`${candidate.environmentId}:${candidate.id}`} className="gap-2">
+                    <Text className="text-xs text-foreground-muted">
+                      {environmentLabel(candidate.environmentId)}
+                    </Text>
+                    <CandidateCard
+                      candidate={candidate}
+                      disabled={
+                        !registry.get(
+                          serverEnvironment.mutateWorkItem.permissionAtom(candidate.environmentId),
+                        ) || busy
+                      }
+                      onCreate={() =>
+                        createLocal(
+                          {
+                            environmentId: candidate.environmentId,
+                            projectId: candidate.projectId,
+                          },
+                          { threadId: candidate.id, title: candidate.title },
+                          candidate.description,
+                        )
+                      }
+                      onIgnore={() => void scan(candidate, candidate.id)}
+                    />
+                  </View>
                 ))}
               </View>
             ) : null}

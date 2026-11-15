@@ -10,6 +10,7 @@ const Search = Schema.Struct({
   workItemId: Schema.optionalKey(WorkItemId),
   archived: Schema.optionalKey(Schema.Boolean),
   environmentId: Schema.optionalKey(EnvironmentId),
+  detailEnvironmentId: Schema.optionalKey(EnvironmentId),
   projectId: Schema.optionalKey(ProjectId),
   assignee: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   q: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
