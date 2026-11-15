@@ -6,7 +6,6 @@ import {
   getThemeColorsForAppearance,
   MOBILE_DEFAULT_THEME_ID,
   MOBILE_THEME_IDS as SHARED_MOBILE_THEME_IDS,
-  type MobileThemeId as SharedMobileThemeId,
   type ThemeAppearance,
   type ThemeColors,
 } from "@t3tools/shared/themePalettes";
@@ -15,9 +14,16 @@ import {
   type ThemePreviewColors,
 } from "@t3tools/shared/themePreview";
 
+import { GRAPHITE_BLUE_DARK_THEME_COLORS } from "./graphiteBlueTheme.ts";
+
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
-export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you"] as const;
-export type MobileThemeId = SharedMobileThemeId | "material-you";
+export const MOBILE_THEME_IDS = [
+  ...SHARED_MOBILE_THEME_IDS,
+  "material-you",
+  "graphite-blue",
+] as const;
+export type MobileThemeId = (typeof MOBILE_THEME_IDS)[number];
+type MobilePaletteId = Exclude<MobileThemeId, "material-you">;
 export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
@@ -25,16 +31,19 @@ export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeI
 export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
   readonly id: MobileThemeId;
   readonly label: string;
+  readonly darkOnly?: boolean;
 }> = [
   { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },
   { id: "material-you", label: "Material You" },
   ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
+  { id: "graphite-blue", label: "Graphite Blue", darkOnly: true },
 ];
 
 export type MobileThemeVariable = keyof ReturnType<typeof createMobileThemeVariables>;
 export type MobileThemeVariables = Readonly<Record<MobileThemeVariable, string>>;
 
-function normalizeMobileThemeId(value: unknown): MobileThemeId {
+function normalizeMobileThemeId(value: unknown, appearance: MobileThemeAppearance): MobileThemeId {
+  if (value === "graphite-blue" && appearance === "light") return DEFAULT_MOBILE_THEME_ID;
   return typeof value === "string" && (MOBILE_THEME_IDS as readonly string[]).includes(value)
     ? (value as MobileThemeId)
     : DEFAULT_MOBILE_THEME_ID;
@@ -49,16 +58,15 @@ export function resolveMobileThemeIds(preferences: {
   readonly lightThemeId?: unknown;
   readonly darkThemeId?: unknown;
 }): MobileThemeIds {
-  const legacyThemeId = normalizeMobileThemeId(preferences.themeId);
   return {
-    light:
-      preferences.lightThemeId === undefined
-        ? legacyThemeId
-        : normalizeMobileThemeId(preferences.lightThemeId),
-    dark:
-      preferences.darkThemeId === undefined
-        ? legacyThemeId
-        : normalizeMobileThemeId(preferences.darkThemeId),
+    light: normalizeMobileThemeId(
+      preferences.lightThemeId === undefined ? preferences.themeId : preferences.lightThemeId,
+      "light",
+    ),
+    dark: normalizeMobileThemeId(
+      preferences.darkThemeId === undefined ? preferences.themeId : preferences.darkThemeId,
+      "dark",
+    ),
   };
 }
 
@@ -69,7 +77,7 @@ export function createMobileThemeSelectionPatch(
   value: MobileThemeId,
 ) {
   const nextThemeIds: MobileThemeIds = {
-    light: selectedAppearance === "light" ? value : themeIds.light,
+    light: selectedAppearance === "light" && value !== "graphite-blue" ? value : themeIds.light,
     dark: selectedAppearance === "dark" ? value : themeIds.dark,
   };
   return {
@@ -449,9 +457,12 @@ export function createMobileThemeVariables(
 }
 
 export function getMobileThemeColors(
-  themeId: SharedMobileThemeId,
+  themeId: MobilePaletteId,
   appearance: MobileThemeAppearance,
 ): ThemeColors {
+  if (themeId === "graphite-blue") {
+    return appearance === "dark" ? GRAPHITE_BLUE_DARK_THEME_COLORS : T3_CODE_LIGHT_THEME_COLORS;
+  }
   if (themeId === DEFAULT_MOBILE_THEME_ID) {
     return appearance === "dark" ? T3_CODE_DARK_THEME_COLORS : T3_CODE_LIGHT_THEME_COLORS;
   }
@@ -460,10 +471,24 @@ export function getMobileThemeColors(
 }
 
 export function getMobileThemeVariables(
-  themeId: SharedMobileThemeId,
+  themeId: MobilePaletteId,
   appearance: MobileThemeAppearance,
   overrides: Partial<MobileThemeVariables> | null = null,
 ): MobileThemeVariables {
+  if (themeId === "graphite-blue") {
+    if (appearance === "light") {
+      return getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, appearance, overrides);
+    }
+    const colors = GRAPHITE_BLUE_DARK_THEME_COLORS;
+    return {
+      ...createMobileThemeVariables(colors, appearance, colors.muted, [
+        colors.messageAction,
+        colors.messageActionForeground,
+      ]),
+      "--color-border-subtle": colors.border,
+      ...overrides,
+    };
+  }
   const colors = getMobileThemeColors(themeId, appearance);
   const groupedCard =
     themeId === DEFAULT_MOBILE_THEME_ID
@@ -506,10 +531,13 @@ export function getMobileThemePreviewColors(
   themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
 ): ThemePreviewColors {
-  if (themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you")
+  if (
+    themeId === DEFAULT_MOBILE_THEME_ID ||
+    themeId === "material-you" ||
+    (themeId === "graphite-blue" && appearance === "light")
+  )
     return STANDARD_THEME_PREVIEW_COLORS[appearance];
-  const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? T3_CHAT_THEME;
-  const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
+  const colors = getMobileThemeColors(themeId, appearance);
   return {
     canvas: themeColorToNativeColor(colors.canvas),
     accent: themeColorToNativeColor(colors.accent),

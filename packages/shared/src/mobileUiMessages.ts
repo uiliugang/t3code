@@ -1232,6 +1232,7 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
     "消息会排队等待，在当前轮次完成后运行。",
   "Install a newer app build to enable notifications": "安装更新版本的应用以启用通知",
   "Reorder {name}": "调整 {name} 的顺序",
+  "Graphite Blue": "石墨蓝",
   "Sets the light appearance only": "仅设置浅色外观",
   "Sets the dark appearance only": "仅设置深色外观",
   "Sets both light and dark appearances": "同时设置浅色和深色外观",
