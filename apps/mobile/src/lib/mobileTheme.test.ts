@@ -15,10 +15,12 @@ import {
 import { getMobileThemeRuntimeVariables } from "./mobileThemeVariables";
 
 import {
+  createMobileThemePairPatch,
   createMobileThemeSelectionPatch,
   createMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
   flattenThemeColor,
+  getMobileThemePreviewColors,
   getMobileThemeVariables,
   resolveMobileThemeIds,
   themeColorWithAlpha,
@@ -250,6 +252,74 @@ describe("mobile themes", () => {
       darkThemeId: "grove",
       themeId: "iris",
     });
+  });
+
+  it("preserves the light theme when selecting and reloading Graphite Blue", () => {
+    const themeIds = { light: "grove", dark: DEFAULT_MOBILE_THEME_ID } as const;
+    const selection = createMobileThemeSelectionPatch(themeIds, "light", "dark", "graphite-blue");
+    expect(selection.themeId).toBe("grove");
+    expect(resolveMobileThemeIds(selection)).toEqual({ light: "grove", dark: "graphite-blue" });
+    expect(resolveMobileThemeIds({ themeId: "graphite-blue" })).toEqual({
+      light: DEFAULT_MOBILE_THEME_ID,
+      dark: "graphite-blue",
+    });
+    for (const preferences of [
+      { themeId: "grove" },
+      { lightThemeId: "grove", darkThemeId: "iris" },
+    ]) {
+      expect(
+        resolveMobileThemeIds({ ...preferences, ...createMobileThemePairPatch("graphite-blue") }),
+      ).toEqual({ light: "grove", dark: "graphite-blue" });
+    }
+    expect(
+      resolveMobileThemeIds(
+        createMobileThemeSelectionPatch(themeIds, "light", "light", "graphite-blue"),
+      ),
+    ).toEqual(themeIds);
+  });
+
+  it("uses the Graphite Blue colors only in the dark appearance on iOS and Android", () => {
+    expect(getMobileThemePreviewColors("graphite-blue", "dark")).toEqual({
+      canvas: "#121923",
+      accent: "#98bfff",
+      messageAction: "#98bfff",
+    });
+    for (const platform of ["ios", "android"]) {
+      expect(getMobileThemeRuntimeVariables("graphite-blue", "light", platform)).toEqual(
+        getMobileThemeRuntimeVariables(DEFAULT_MOBILE_THEME_ID, "light", platform),
+      );
+      const variables = getMobileThemeRuntimeVariables("graphite-blue", "dark", platform);
+      expect(variables).toMatchObject({
+        "--color-screen": "#121923",
+        "--color-input": "#1d2838",
+        "--color-border-subtle": "#344256",
+        "--color-foreground": "#e8eef7",
+        "--color-foreground-muted": "#acbbcf",
+        "--color-secondary": "#26364b",
+        "--color-primary": "#98bfff",
+        "--color-primary-foreground": "#102544",
+        "--color-danger-foreground": "#ff9ba1",
+      });
+      const header = flattenThemeColor(variables["--color-header"], variables["--color-screen"]);
+      expect(contrastRatio(variables["--color-header-foreground"], header)).toBeGreaterThanOrEqual(
+        4.5,
+      );
+      if (platform === "android") expect(header).toBe("#1c2634");
+      for (const [foreground, surface, minimum] of [
+        ["--color-placeholder", "--color-input", 4.5],
+        ["--color-input-border", "--color-input", 3],
+        ["--color-input-border", "--color-screen", 3],
+        ["--color-foreground-muted", "--color-secondary", 4.5],
+        ["--color-primary-foreground", "--color-primary", 4.5],
+        ["--color-prominent-action-foreground", "--color-prominent-action", 4.5],
+        ["--color-danger-foreground", "--color-screen", 4.5],
+      ] as const) {
+        expect(
+          contrastRatio(variables[foreground], variables[surface]),
+          `${platform}: ${foreground}`,
+        ).toBeGreaterThanOrEqual(minimum);
+      }
+    }
   });
 
   it("converts OKLCH colors to React Native sRGB ColorValues", () => {
