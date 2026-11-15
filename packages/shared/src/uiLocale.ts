@@ -1607,8 +1607,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Shared Codex config, sessions, and state.": "共享的 Codex 配置、会话和状态。",
   "Shadow home path": "影子主目录路径",
   "Import and export": "导入与导出",
-  "Back up app preferences, themes, shortcuts, environment defaults and project/workspace definitions as JSON. Credentials and machine paths are excluded.":
-    "将应用偏好、主题、快捷键、环境默认值和项目或工作区定义备份为 JSON，不包含凭据和机器路径。",
+  "Back up this client's preferences and themes, plus the selected environment's shortcuts, defaults and project/workspace definitions as JSON. Import restores them to this client and the selected environment. Credentials and machine paths are excluded.":
+    "将当前客户端的偏好与主题，以及所选环境的快捷键、默认值和项目或工作区定义备份为 JSON。导入时恢复到当前客户端及所选环境，不包含凭据和机器路径。",
   "Project configuration": "项目配置",
   "Transfer this checkout's explicit project overrides and actions. Inherited defaults and shortcuts stay in the environment.":
     "迁移此检出目录的项目覆盖设置和操作。继承的默认值与快捷键保留在环境中。",

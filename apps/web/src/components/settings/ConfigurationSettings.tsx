@@ -23,6 +23,7 @@ import {
 import { getThemeSnapshot, readThemeHalvesRaw, useTheme } from "../../hooks/useTheme";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { serverEnvironment } from "../../state/server";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -41,13 +42,21 @@ import { ProjectImportHistory } from "./ProjectImportHistory";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
 import type { SettingsScopeSearch } from "./settingsScope";
+import { isConnectedWithConfig } from "./scopedSettings";
 
 export function ApplicationConfigurationSettings() {
   const t = useUiTranslation();
-  const { scope, connectedEnvironments } = useSettingsScope();
+  const { scope } = useSettingsScope();
+  const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const connectedEnvironments = environments.filter(isConnectedWithConfig);
   const [selection, setSelection] = useState<SettingsScopeSearch>({});
   const environment =
     connectedEnvironments.find((entry) => entry.environmentId === selection.machine) ??
+    connectedEnvironments.find(
+      (entry) => scope.kind === "environment" && entry.environmentId === scope.environmentId,
+    ) ??
+    connectedEnvironments.find((entry) => entry.environmentId === primaryEnvironmentId) ??
     connectedEnvironments[0] ??
     null;
   const environmentId = environment?.environmentId ?? null;
@@ -89,7 +98,7 @@ export function ApplicationConfigurationSettings() {
             ) : undefined
           }
           description={t(
-            "Back up app preferences, themes, shortcuts, environment defaults and project/workspace definitions as JSON. Credentials and machine paths are excluded.",
+            "Back up this client's preferences and themes, plus the selected environment's shortcuts, defaults and project/workspace definitions as JSON. Import restores them to this client and the selected environment. Credentials and machine paths are excluded.",
           )}
           canImport={canWrite && canWriteBindings}
           createFile={async () => {
