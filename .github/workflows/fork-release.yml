@@ -28,34 +28,25 @@ on:
         type: boolean
         default: false
   workflow_call:
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/fork-release.yml
-      - .github/scripts/android-release.init.gradle
-      - .github/scripts/android-version-code.cjs
-      - apps/mobile/app.config.ts
-      - apps/mobile/metro.config.js
-      - pnpm-workspace.yaml
-      - scripts/build-desktop-artifact.ts
 
 permissions:
   contents: read
 
 concurrency:
   group: fork-release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'warmup' || inputs.verify_cache && 'verify-cache' || inputs.android_only && 'android-only' || 'release' }}
-  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'pull_request' || inputs.verify_cache == true || inputs.android_only == true }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || inputs.verify_cache == true || inputs.android_only == true }}
 
 jobs:
   prepare:
-    if: >-
-      github.repository == 'uiliugang/t3code' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.repository == 'uiliugang/t3code'
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
       version_code: ${{ steps.version.outputs.version_code }}
     steps:
+      - name: Debounce Android cache warmup
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: sleep 300
       - name: Checkout public source
         env:
           CHECKOUT_SHA: ${{ github.sha }}
@@ -88,7 +79,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
-      # No Apple credentials are passed; PR builds still need the ad hoc bundle signature.
+      # No Apple credentials are passed; manual builds still need the ad hoc bundle signature.
       CSC_FOR_PULL_REQUEST: "true"
       T3CODE_DESKTOP_DISABLE_UPDATE_FEED: "true"
       T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}

@@ -15,8 +15,10 @@ replacing the key prevents installed APKs from upgrading in place.
 Run **Fork macOS Linux and Android release** manually on a branch to validate the build and
 download its Actions artifacts. Push a plain `vX.Y.Z` tag to publish one GitHub Release
 after all builds pass. The manual Actions entry becomes available once the workflow is
-merged into the default branch; packaging changes in same-repository PRs also build
-automatically. Tags with prerelease suffixes are rejected. The workflow builds
+merged into the default branch. Pushes to `main` that match the workflow's path filters
+run Android cache warmup after a five-minute quiet window. Each new matching push
+cancels the older run and restarts the wait. Tags and manual builds skip the wait.
+Pull requests do not trigger this workflow. Tags with prerelease suffixes are rejected. The workflow builds
 an Apple Silicon arm64 DMG, Linux x64/arm64 AppImages and Debian packages, self-contained CLI runtime
 archives, and a standalone, signed ARM64 Android APK, with `SHA256SUMS` covering
 every asset. CLI archives cover macOS arm64 and Linux x64/arm64. This fork's clients,
@@ -27,7 +29,7 @@ Android uses `com.uiliugang.t3code`. Its versionCode is
 `100000000 + major * 1000000 + minor * 1000 + patch`, with major at most 1999
 and minor/patch at most 999. This keeps stable versions ordered and above the old
 epoch-minute codes. Rebuilding the same version keeps the same versionCode;
-bump the release version to distribute a binary correction. Manual and PR builds
+bump the release version to distribute a binary correction. Manual branch builds
 use the source version without its prerelease suffix for this calculation.
 
 The macOS app is ad hoc signed without Apple notarization, so Gatekeeper can require
