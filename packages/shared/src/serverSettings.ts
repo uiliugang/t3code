@@ -80,16 +80,18 @@ export function fallbackTextGenerationModelSelection(
   options?: { readonly defaultModelSelection?: ModelSelection | null },
 ): ModelSelection | null {
   const threadDefault = options?.defaultModelSelection;
-  // The thread default's custom model wins on its instance; the driver default still serves when that model is unusable.
   const selectionsFor = (instanceId: ProviderInstanceId, driver: ProviderDriverKind) => {
-    const config = providerInstances[instanceId]?.config as { customModels?: unknown } | undefined;
-    const driverDefault = { instanceId, model: defaultTextGenerationModel(driver) };
-    return threadDefault?.instanceId === instanceId &&
-      readCustomModelEntries(config?.customModels).some(
-        (entry) => entry.slug === threadDefault.model,
-      )
-      ? [threadDefault, driverDefault]
-      : [driverDefault];
+    const config = providerInstances[instanceId]?.config as
+      | { customModels?: unknown; customModelsOnly?: boolean }
+      | undefined;
+    const customModels = readCustomModelEntries(config?.customModels).map((entry) => entry.slug);
+    const models = config?.customModelsOnly ? customModels : [defaultTextGenerationModel(driver)];
+    if (threadDefault?.instanceId === instanceId && customModels.includes(threadDefault.model)) {
+      return [threadDefault.model, ...models.filter((model) => model !== threadDefault.model)].map(
+        (model) => ({ instanceId, model }),
+      );
+    }
+    return models.map((model) => ({ instanceId, model }));
   };
   const candidates = [
     ...TEXT_GENERATION_FALLBACK_DRIVERS.map(
