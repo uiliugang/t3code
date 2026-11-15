@@ -29,7 +29,7 @@ const probeAndroid = (setup: (home: string) => Promise<Record<string, string>>, 
     const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-sdk-"));
     try {
       const env = await setup(home);
-      await executable(NodePath.join(home, "bin/npm"), "echo 10.0.0");
+      await executable(NodePath.join(home, ".local/bin/npm"), "echo 10.0.0");
       const probe = NodePath.join(home, "probe.cjs");
       await NodeFSP.writeFile(probe, remoteDeviceScript("fixture", "probe"));
       const result = await exec(

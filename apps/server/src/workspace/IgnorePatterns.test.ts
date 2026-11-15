@@ -30,6 +30,29 @@ describe("parseIgnoreFile", () => {
     expect(decide("foo/**/bar", "foo/x/ybar")).toBeUndefined();
     expect(decide("out/**", "out/x/y")).toBe("ignored");
     expect(decide("link-[0-9]", "link-7")).toBe("ignored");
+    for (const [name, member, outside] of [
+      ["alnum", "7", "-"],
+      ["alpha", "Z", "7"],
+      ["blank", "\t", "x"],
+      ["cntrl", "\x7f", "x"],
+      ["digit", "7", "x"],
+      ["graph", "!", " "],
+      ["lower", "z", "Z"],
+      ["print", " ", "\t"],
+      ["punct", "_", "a"],
+      ["space", "\t", "x"],
+      ["upper", "Z", "z"],
+      ["xdigit", "F", "G"],
+    ]) {
+      expect(decide(`link-[[:${name}:]]`, `link-${member}`)).toBe("ignored");
+      expect(decide(`link-[[:${name}:]]`, `link-${outside}`)).toBeUndefined();
+      expect(decide(`link-[![:${name}:]]`, `link-${outside}`)).toBe("ignored");
+    }
+    expect(decide("[a[:digit:]_]", "7")).toBe("ignored");
+    expect(decide("[[:unknown:]]", "[[:unknown:]]")).toBeUndefined();
+    expect(decide("[![:unknown:]]", "x]")).toBeUndefined();
+    expect(decide("[[:space:]]", "\v")).toBeUndefined();
+    expect(decide("[[:space:]]", "\f")).toBeUndefined();
     expect(decide("link-[!0-9]", "link-7")).toBeUndefined();
     expect(decide("link-?", "link-/")).toBeUndefined();
     expect(decide("\\!bang\n\\#hash\nstar\\*", "!bang")).toBe("ignored");
@@ -37,6 +60,10 @@ describe("parseIgnoreFile", () => {
     expect(decide("\\!bang\n\\#hash\nstar\\*", "starx")).toBeUndefined();
     expect(decide("dist/", "dist")).toBeUndefined();
     expect(decide("dist/", "dist", true)).toBe("ignored");
+    expect(decide(String.raw`name\\\\ `, String.raw`name\\`)).toBe("ignored");
+    expect(decide(String.raw`name\ `, "name ")).toBe("ignored");
+    expect(decide("name\\\\ ", "name\\")).toBe("ignored");
+    expect(decide("name\\", "name\\")).toBeUndefined();
   });
 
   it("matches adversarial patterns in linear time", () => {
@@ -52,5 +79,6 @@ describe("parseIgnoreFile", () => {
     expect(decide("[".repeat(30_000), "[".repeat(30_000))).toBe("ignored");
     expect(decide(`${"[".repeat(30_000)}]`, "x")).toBeUndefined();
     expect(decide("[a][", "a[")).toBe("ignored");
+    expect(decide(`[${"[:".repeat(30_000)}]`, "x")).toBeUndefined();
   });
 });

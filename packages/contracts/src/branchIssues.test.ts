@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import { branchIssuePlaceholder, parseBranchIssueUrl } from "./branchIssues.ts";
 
 describe("branch issue links", () => {
@@ -17,6 +17,9 @@ describe("branch issue links", () => {
       "789",
     ],
   ])("parses and canonicalizes %s", (url, provider, repository, id) => {
+    using _parse = vi.spyOn(URL, "parse").mockImplementation(() => {
+      throw new TypeError("URL.parse is not available in this client");
+    });
     const result = parseBranchIssueUrl(url);
     expect(result).toMatchObject({ provider, repository, id });
     expect(result?.url).not.toContain("?");
@@ -30,6 +33,7 @@ describe("branch issue links", () => {
     "https://mep.sankuai.com/app/ones/space/123/workItem/requirement?openDrawerIssueId=-1",
     "https://mep.sankuai.com/app/ones/space/123/workItem/requirement",
     "javascript:alert(1)",
+    "not a URL",
   ])("rejects non-issue or unsafe URLs %s", (url) => expect(parseBranchIssueUrl(url)).toBeNull());
 
   it("uses platform-specific input hints", () => {

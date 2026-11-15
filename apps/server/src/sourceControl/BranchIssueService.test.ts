@@ -32,6 +32,7 @@ function setup(
     provider?: "github" | "meituan";
     published?: boolean;
     remotePublished?: boolean;
+    detail?: BranchIssueDetail;
   } = {},
 ) {
   const kind = SourceControlProviderKind.make(options.provider ?? "github");
@@ -51,7 +52,7 @@ function setup(
               detail: "Unavailable",
             }),
           )
-        : Effect.succeed(detail),
+        : Effect.succeed(options.detail ?? detail),
     ...(options.remote
       ? {
           update: ({ issue, action }) =>
@@ -118,6 +119,34 @@ function setup(
 }
 
 describe("branch issue associations", () => {
+  it.effect("refreshes local issue metadata and keeps unavailable issues removable", () =>
+    Effect.gen(function* () {
+      const options: Parameters<typeof setup>[0] = {};
+      const fixture = setup(options);
+      yield* Effect.gen(function* () {
+        const service = yield* Service.BranchIssueService;
+        yield* service.update({ ...target, action: "associate", urls: [first] });
+        options.detail = { ...detail, title: "Renamed", state: "closed" };
+        expect((yield* service.list(target)).issues[0]).toMatchObject({
+          title: "Renamed",
+          state: "closed",
+        });
+        options.failUrl = first;
+        expect((yield* service.list(target)).issues[0]).toMatchObject({
+          url: first,
+          title: detail.title,
+          state: detail.state,
+        });
+        expect((yield* service.read({ ...target, url: first }).pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
+        yield* service.update({ ...target, action: "disassociate", urls: [first] });
+        expect((yield* service.list(target)).issues).toEqual([]);
+        yield* service.update({ ...target, action: "associate", urls: [second] });
+        expect((yield* service.list(target)).issues[0]?.url).toBe(second);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
   it.effect("recognizes a published branch missing from narrow local tracking refs", () =>
     Effect.gen(function* () {
       const service = yield* Service.BranchIssueService;

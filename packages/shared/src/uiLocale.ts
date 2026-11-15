@@ -2553,6 +2553,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Double press": "连按两次",
   "Could not change update track": "无法切换更新渠道",
   "Could not download update": "无法下载更新",
+  "APK update check timed out. Try again.": "检查 APK 更新超时，请重试。",
+  "APK download timed out. Try again.": "下载 APK 更新超时，请重试。",
   "Could not confirm update": "无法确认更新",
   "Could not install update": "无法安装更新",
   "Could not check for updates": "无法检查更新",

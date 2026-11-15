@@ -2,6 +2,7 @@ import type {
   ProviderInstanceEnvironment,
   ProviderInstanceEnvironmentVariable,
 } from "@t3tools/contracts";
+import { parseUrl } from "./url.ts";
 
 export const CODEX_BYOK_LABEL = "Codex · BYOK";
 export const CODEX_BYOK_ENVIRONMENT_NAMES = new Set(["T3_CODEX_BASE_URL", "T3_CODEX_API_KEY"]);
@@ -27,7 +28,7 @@ export function codexRuntimeSource(config: unknown): "auto" | "managed" | "local
 }
 
 export function codexByokUrlError(value: string): string | null {
-  const url = URL.parse(value.trim());
+  const url = parseUrl(value.trim());
   if (!url) return "Enter an API base URL.";
   if (
     !["http:", "https:"].includes(url.protocol) ||

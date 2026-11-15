@@ -92,4 +92,19 @@ describe("composer predictions", () => {
     controller.dismiss(composerPredictionKey(target));
     expect(changed).toHaveBeenCalledTimes(1);
   });
+
+  it("retries a failed request on the next activation but caches a successful empty result", async () => {
+    const failed = Promise.withResolvers<string | null>();
+    const request = vi.fn().mockReturnValueOnce(failed.promise).mockResolvedValue(null);
+    const controller = createComposerPredictionController(request);
+    controller.update(target);
+    failed.reject(new Error("Offline"));
+    await expect(failed.promise).rejects.toThrow("Offline");
+    controller.update(null);
+    controller.update(target);
+    expect(request).toHaveBeenCalledTimes(2);
+    controller.update(null);
+    controller.update(target);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
 });

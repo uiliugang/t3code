@@ -28,6 +28,28 @@ export function requireHttpsUpdateUrl(value: string): string {
   return url.href;
 }
 
+async function requestWithDeadline<T>(
+  signal: AbortSignal,
+  duration: number,
+  message: string,
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const request = new AbortController();
+  const abort = () => request.abort(signal.reason);
+  const aborted = new Promise<never>((_, reject) => {
+    request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
+  });
+  signal.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => request.abort(new Error(message)), duration);
+  try {
+    signal.throwIfAborted();
+    return await Promise.race([run(request.signal), aborted]);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 export function createApkUpdater(options: {
   readonly packageName: string;
   readonly versionCode: number;
@@ -122,7 +144,14 @@ export function createApkUpdater(options: {
       try {
         signal.throwIfAborted();
         options.onStateChange({ status: "checking" });
-        const decoded = decodeApkUpdateManifest(await options.fetchManifest(signal));
+        const decoded = decodeApkUpdateManifest(
+          await requestWithDeadline(
+            signal,
+            15_000,
+            "APK update check timed out. Try again.",
+            options.fetchManifest,
+          ),
+        );
         signal.throwIfAborted();
         if (Option.isNone(decoded)) throw new Error("The APK update manifest is invalid.");
         const manifest = decoded.value;
@@ -140,7 +169,12 @@ export function createApkUpdater(options: {
         }
         pending = undefined;
         options.onStateChange({ status: "downloading", version: manifest.versionName });
-        const uri = await options.download(manifest, signal);
+        const uri = await requestWithDeadline(
+          signal,
+          15 * 60_000,
+          "APK download timed out. Try again.",
+          (requestSignal) => options.download(manifest, requestSignal),
+        );
         signal.throwIfAborted();
         pending = { manifest, uri };
         autoInstallPending = true;

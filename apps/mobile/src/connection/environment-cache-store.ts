@@ -159,25 +159,31 @@ export const make = Effect.fn("MobileEnvironmentCacheStore.make")(function* () {
     ),
     saveThread: Effect.fn("MobileEnvironmentCache.saveThread")(function* (environmentId, snapshot) {
       const threadId = snapshot.projection.thread.id;
-      const isLatest = threadWriteOrder.beginSave(environmentId, threadId);
-      const payload = yield* encodeStoredThreadSnapshot({
-        environmentId,
-        threadId,
-        snapshot,
-      }).pipe(Effect.mapError((cause) => persistenceError("save-thread", cause)));
-      if (!isLatest()) return;
-      // An older copy of a thread now too large to keep would paint stale on reopen.
-      yield* Option.match(payload, {
-        onNone: () => database.removeCache(environmentId, "thread", threadId),
-        onSome: (encoded) =>
-          database.saveCache(
-            environmentId,
-            "thread",
-            threadId,
-            COMPACT_THREAD_CACHE_SCHEMA_VERSION,
-            encoded,
-          ),
-      }).pipe(Effect.mapError(mapDatabaseError("save-thread")));
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => threadWriteOrder.beginSave(environmentId, threadId)),
+        (claimWrite) =>
+          Effect.gen(function* () {
+            const payload = yield* encodeStoredThreadSnapshot({
+              environmentId,
+              threadId,
+              snapshot,
+            }).pipe(Effect.mapError((cause) => persistenceError("save-thread", cause)));
+            if (!claimWrite()) return;
+            // An older copy of a thread now too large to keep would paint stale on reopen.
+            yield* Option.match(payload, {
+              onNone: () => database.removeCache(environmentId, "thread", threadId),
+              onSome: (encoded) =>
+                database.saveCache(
+                  environmentId,
+                  "thread",
+                  threadId,
+                  COMPACT_THREAD_CACHE_SCHEMA_VERSION,
+                  encoded,
+                ),
+            }).pipe(Effect.mapError(mapDatabaseError("save-thread")));
+          }),
+        (claimWrite) => Effect.sync(claimWrite),
+      );
     }),
     removeThread: Effect.fn("MobileEnvironmentCache.removeThread")((environmentId, threadId) => {
       threadWriteOrder.removeThread(environmentId, threadId);

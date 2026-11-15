@@ -16,8 +16,8 @@ function setup(overrides: Partial<Parameters<typeof createApkUpdater>[0]> = {}) 
   const options = {
     packageName: update.packageName,
     versionCode: 7,
-    fetchManifest: vi.fn(async (): Promise<unknown> => update),
-    download: vi.fn(async () => {
+    fetchManifest: vi.fn(async (_signal: AbortSignal): Promise<unknown> => update),
+    download: vi.fn(async (_manifest: ApkUpdateManifest, _signal: AbortSignal) => {
       operations.push("download");
       return "file:///cache/8.apk";
     }),
@@ -36,6 +36,39 @@ function setup(overrides: Partial<Parameters<typeof createApkUpdater>[0]> = {}) 
 }
 
 describe("APK updates", () => {
+  it.each(["manifest", "download"] as const)(
+    "times out a stuck %s and permits a fresh check",
+    async (phase) => {
+      vi.useFakeTimers();
+      try {
+        const started = Promise.withResolvers<AbortSignal>();
+        const late = Promise.withResolvers<never>();
+        const { updater, states, options } = setup();
+        if (phase === "manifest")
+          vi.mocked(options.fetchManifest).mockImplementationOnce((signal) => {
+            started.resolve(signal);
+            return late.promise;
+          });
+        else
+          vi.mocked(options.download).mockImplementationOnce((_manifest, signal) => {
+            started.resolve(signal);
+            return late.promise;
+          });
+        const first = updater.check();
+        const signal = await started.promise;
+        await vi.advanceTimersByTimeAsync(phase === "manifest" ? 15_000 : 15 * 60_000);
+        expect(signal.aborted).toBe(true);
+        await first;
+        expect(states.at(-1)).toMatchObject({ status: "error" });
+        await updater.check();
+        expect(states.at(-1)).toMatchObject({ status: "installing" });
+        late.reject(new Error("Late network failure"));
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
   it.each([7, 1])(
     "updates version %s directly to the latest APK before opening the installer",
     async (versionCode) => {

@@ -1,7 +1,7 @@
 /**
  * Gitignore-syntax matching for `.ignore` files, which git cannot evaluate for us. Patterns come
  * from the repository, so each runs as an NFA over the path (O(pattern × path)): a backtracking
- * regex stalls for seconds on `a*a*a*…b`. POSIX `[:class:]` names are not supported.
+ * regex stalls for seconds on `a*a*a*…b`. Character classes use Git's ASCII ranges.
  */
 
 type Token =
@@ -21,15 +21,44 @@ interface Pattern {
 
 export type IgnoreDecision = "ignored" | "included";
 
+const posixClasses: Readonly<Record<string, ReadonlyArray<string>>> = {
+  alnum: ["0", "9", "A", "Z", "a", "z"],
+  alpha: ["A", "Z", "a", "z"],
+  blank: ["\t", "\t", " ", " "],
+  cntrl: ["\x00", "\x1f", "\x7f", "\x7f"],
+  digit: ["0", "9"],
+  graph: ["!", "~"],
+  lower: ["a", "z"],
+  print: [" ", "~"],
+  punct: ["!", "/", ":", "@", "[", "`", "{", "~"],
+  space: ["\t", "\n", "\r", "\r", " ", " "],
+  upper: ["A", "Z"],
+  xdigit: ["0", "9", "A", "F", "a", "f"],
+};
+
 function parseClass(chars: ReadonlyArray<string>, start: number) {
   let index = start + 1;
   const negated = chars[index] === "!" || chars[index] === "^";
   if (negated) index += 1;
   const ranges: string[] = [];
+  let closing = -1;
   for (let first = true; index < chars.length; first = false) {
     let char = chars[index]!;
     if (char === "]" && !first)
       return { token: { type: "class", negated, ranges } as const, end: index };
+    if (char === "[" && chars[index + 1] === ":") {
+      // Reuse the next closing bracket so nested malformed names cannot cause quadratic scans.
+      if (closing < index) closing = chars.indexOf("]", index + 2);
+      if (closing === -1) return undefined;
+      if (chars[closing - 1] === ":") {
+        const name = chars.slice(index + 2, closing - 1).join("");
+        const named = Object.hasOwn(posixClasses, name) ? posixClasses[name] : undefined;
+        if (!named) return { invalid: true as const };
+        ranges.push(...named);
+        index = closing + 1;
+        continue;
+      }
+    }
     if (char === "\\" && index + 1 < chars.length) char = chars[++index]!;
     if (chars[index + 1] === "-" && index + 2 < chars.length && chars[index + 2] !== "]") {
       let last = chars[index + 2]!;
@@ -47,7 +76,14 @@ function parseClass(chars: ReadonlyArray<string>, start: number) {
 function parseLine(rawLine: string): Pattern | undefined {
   let line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
   // Trailing spaces are dropped unless escaped.
-  while (line.endsWith(" ") && !line.endsWith("\\ ")) line = line.slice(0, -1);
+  let end = line.length;
+  while (line[end - 1] === " ") {
+    let escapeStart = end - 1;
+    while (escapeStart > 0 && line[escapeStart - 1] === "\\") escapeStart -= 1;
+    if ((end - 1 - escapeStart) % 2 === 1) break;
+    end -= 1;
+  }
+  line = line.slice(0, end);
   if (line === "" || line.startsWith("#")) return undefined;
   const negated = line.startsWith("!");
   if (negated) line = line.slice(1);
@@ -83,12 +119,14 @@ function parseLine(rawLine: string): Pattern | undefined {
     else if (char === "?") tokens.push({ type: "one" });
     else if (char === "[") {
       const parsed = classesClose ? parseClass(chars, index) : undefined;
+      if (parsed && "invalid" in parsed) return undefined;
       if (!parsed) classesClose = false;
       if (parsed) {
         tokens.push(parsed.token);
         index = parsed.end;
       } else tokens.push({ type: "char", char });
-    } else if (char === "\\" && index + 1 < chars.length) {
+    } else if (char === "\\") {
+      if (index + 1 === chars.length) return undefined;
       tokens.push({ type: "char", char: chars[++index]! });
     } else tokens.push({ type: "char", char });
   }

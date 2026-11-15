@@ -954,18 +954,27 @@ export const layer = Layer.effectContext(
       saveThread: Effect.fn("storage.saveThread")(
         function* (environmentId, snapshot) {
           const key = threadCacheKey(environmentId, snapshot.projection.thread.id);
-          const isLatest = threadWriteOrder.beginSave(environmentId, snapshot.projection.thread.id);
-          const encoded = yield* encodeStoredThreadSnapshot({
-            environmentId,
-            threadId: snapshot.projection.thread.id,
-            snapshot,
-          }).pipe(Effect.mapError((cause) => persistenceError("save-thread", cause)));
-          if (!isLatest()) return;
-          // An older copy of a thread now too large to keep would paint stale on reopen.
-          yield* Option.match(encoded, {
-            onNone: () => removeDatabaseValue(database, THREAD_STORE_NAME, key),
-            onSome: (payload) => writeDatabaseValue(database, THREAD_STORE_NAME, key, payload),
-          });
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() =>
+              threadWriteOrder.beginSave(environmentId, snapshot.projection.thread.id),
+            ),
+            (claimWrite) =>
+              Effect.gen(function* () {
+                const encoded = yield* encodeStoredThreadSnapshot({
+                  environmentId,
+                  threadId: snapshot.projection.thread.id,
+                  snapshot,
+                }).pipe(Effect.mapError((cause) => persistenceError("save-thread", cause)));
+                if (!claimWrite()) return;
+                // An older copy of a thread now too large to keep would paint stale on reopen.
+                yield* Option.match(encoded, {
+                  onNone: () => removeDatabaseValue(database, THREAD_STORE_NAME, key),
+                  onSome: (payload) =>
+                    writeDatabaseValue(database, THREAD_STORE_NAME, key, payload),
+                });
+              }),
+            (claimWrite) => Effect.sync(claimWrite),
+          );
         },
         Effect.mapError((cause) =>
           cause._tag === "ConnectionPersistenceError"
