@@ -36,7 +36,7 @@ import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../config.ts";
@@ -452,7 +452,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         if (yield* HostProcess.isWindows) return;
         const fixtures = yield* makeTildeProviderFixtures();
         const instanceId = ProviderInstanceId.make(`claude_gateway_${protocol}`);
-        const { registry } = yield* makeProviderInstanceRegistry<ClaudeDriverEnv>({
+        const { registry, mutator } = yield* makeProviderInstanceRegistry<ClaudeDriverEnv>({
           drivers: [ClaudeDriver],
           configMap: {
             [instanceId]: {
@@ -485,6 +485,23 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
           endpoint: "https://gateway.example",
         });
         expect(JSON.stringify(snapshot.auth)).not.toContain("fake-gateway-token");
+        const native = yield* instance!.resolveNativeCli!;
+        expect(native.command).toBe(
+          fixtures.claudeBinaryPath.replace(/^~/, yield* HostProcess.HomeDirectory),
+        );
+        expect(native.environment.CLAUDE_CONFIG_DIR).toBe(
+          fixtures.claudeHomePath.replace(/^~/, yield* HostProcess.HomeDirectory),
+        );
+        expect(native.environment.ANTHROPIC_AUTH_TOKEN).toBeDefined();
+        expect(native.args.join(" ")).not.toContain("fake-gateway-token");
+        if (protocol === "openai") {
+          yield* mutator.reconcile({});
+          const response = yield* HttpClient.get(
+            `${native.environment.ANTHROPIC_BASE_URL}/terminal-lease-check`,
+          ).pipe(Effect.provide(FetchHttpClient.layer));
+          expect(response.status).toBe(401);
+          yield* response.text;
+        }
       }).pipe(Effect.provide(layerTest)),
   );
 

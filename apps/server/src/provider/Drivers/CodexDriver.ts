@@ -43,6 +43,7 @@ import {
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
+import { codexNativeLaunch } from "../nativeCliLaunch.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { applyCodexModelCatalog } from "../codexModelCatalog.ts";
@@ -561,6 +562,12 @@ export const CodexDriver: ProviderDriver<
       ...(byok ? {} : { consumeResetCredit }),
       orchestrationAdapter,
       textGeneration,
+      resolveNativeCli: resolveRuntime.pipe(
+        Effect.map((runtime) => ({
+          ...codexNativeLaunch(runtime),
+          environmentKeys: environment.map((variable) => variable.name),
+        })),
+      ),
       ...(byok
         ? {
             validateEndpoint: (input: import("@t3tools/contracts").ProviderEndpointValidateInput) =>

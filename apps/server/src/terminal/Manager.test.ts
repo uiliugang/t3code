@@ -258,6 +258,7 @@ interface CreateManagerOptions {
   >[0]["resolveProviderInstanceEnvironment"];
   managedBinaryCacheDir?: string;
   managedBinaryToolsDir?: string;
+  providerShellPaths?: Parameters<typeof TerminalManager.makeWithOptions>[0]["providerShellPaths"];
 }
 
 interface ManagerFixture {
@@ -287,6 +288,7 @@ const createManager = (
         logsDir,
         historyLineLimit,
         ptyAdapter,
+        providerShellPaths: options.providerShellPaths,
         ...(options.historyByteLimit !== undefined
           ? { historyByteLimit: options.historyByteLimit }
           : {}),
@@ -2095,6 +2097,26 @@ it.layer(
       yield* manager.open(openInput());
 
       expect(ptyAdapter.spawnInputs.map((input) => input.shell)).toEqual(["/opt/my -shell/fish"]);
+    }),
+  );
+
+  it.effect("retains the original ZDOTDIR when the server was launched inside a T3 terminal", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: {
+          SHELL: "/bin/zsh",
+          ZDOTDIR: "/old-t3/provider-cli/zsh",
+          T3CODE_ORIGINAL_ZDOTDIR: "/user/zsh",
+        },
+        providerShellPaths: {
+          source: "/new-t3/env.sh",
+          zshDirectory: "/new-t3/zsh",
+          bashRc: "/new-t3/bashrc",
+        },
+      }).pipe(Effect.provide(layerWithHostPlatform("darwin")));
+      yield* manager.open(openInput());
+      expect(ptyAdapter.spawnInputs[0]!.env.ZDOTDIR).toBe("/new-t3/zsh");
+      expect(ptyAdapter.spawnInputs[0]!.env.T3CODE_ORIGINAL_ZDOTDIR).toBe("/user/zsh");
     }),
   );
 
