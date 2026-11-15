@@ -1,4 +1,5 @@
 import type { DeviceToolVersions } from "@t3tools/contracts";
+import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 // npm exposes entry files before extraction completes; their presence does not prove a usable tree.
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -132,6 +133,7 @@ const installTool = Effect.fn("DeviceToolchain.installTool")(function* (
       "--no-fund",
       "--no-audit",
       `${spec.name}@${spec.version}`,
+      ...officialNpmRegistryArgs(spec.name),
     ];
     const result = yield* runner
       .run({ command: "npm", args: installArgs, timeout: INSTALL_TIMEOUT })
@@ -141,7 +143,13 @@ const installTool = Effect.fn("DeviceToolchain.installTool")(function* (
             isCommandNotFound(error)
               ? runner.run({
                   command: "pnpm",
-                  args: ["--package=npm@11", "dlx", "npm", ...installArgs],
+                  args: [
+                    ...officialNpmRegistryArgs("npm"),
+                    "--package=npm@11",
+                    "dlx",
+                    "npm",
+                    ...installArgs,
+                  ],
                   timeout: INSTALL_TIMEOUT,
                 })
               : Effect.fail(error),

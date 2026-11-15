@@ -31,7 +31,10 @@ it.effect("failed installation cleans staging and exposes only a safe failure me
     };
     const error = yield* ensureDeviceHub(baseDir).pipe(
       Effect.provideService(ProcessRunner.ProcessRunner, {
-        run: () => Effect.succeed(result),
+        run: (input) => {
+          expect(input.args).toContain("--registry=https://registry.npmjs.org/");
+          return Effect.succeed(result);
+        },
       }),
       Effect.flip,
     );

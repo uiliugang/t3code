@@ -531,6 +531,61 @@ describe("parseResolvedPath", () => {
   });
 });
 
+it.effect("uses official npm for the WSL native build tool", () =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const scripts: string[] = [];
+    const spawner = ChildProcessSpawner.make((command) =>
+      Effect.gen(function* () {
+        assert(ChildProcess.isStandardCommand(command));
+        assert(Stream.isStream(command.options.stdin));
+        scripts.push(
+          (yield* command.options.stdin.pipe(Stream.decodeText(), Stream.runCollect)).join(""),
+        );
+        const first = scripts.length === 1;
+        const text = first
+          ? "nodePath:/usr/bin/node\nresolvedPath:/usr/bin:/bin\n"
+          : "nodeVersion:26.13.1\n";
+        return ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(first ? 1 : 0)),
+          stdout: Stream.make(new TextEncoder().encode(text)),
+          stderr: Stream.empty,
+          all: Stream.empty,
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          stdin: Sink.drain,
+          unref: Effect.succeed(Effect.void),
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        });
+      }),
+    );
+    const result = yield* Effect.gen(function* () {
+      const wsl = yield* DesktopWslEnvironment;
+      return yield* wsl.ensureNodePty("Ubuntu", "/t3", { allowBuild: true });
+    }).pipe(
+      Effect.provide(
+        layerDesktopWslEnvironment.pipe(
+          Layer.provide(DesktopManagedPolicy.layerTest()),
+          Layer.provide(
+            Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+              platform: "win32",
+              path,
+            } as DesktopEnvironment.DesktopEnvironment["Service"]),
+          ),
+        ),
+      ),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+    expect(result.ok).toBe(true);
+    expect(scripts).toHaveLength(3);
+    expect(scripts[2]).toContain(
+      "npx --yes --registry=https://registry.npmjs.org/ node-gyp rebuild",
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 // Path.layer joins with POSIX separators here, so the test windir is a POSIX path.
 const WSL_EXE = "/windows/System32/wsl.exe";
 

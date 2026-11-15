@@ -1,4 +1,5 @@
 import { deviceToolMaintenanceScript } from "./deviceToolMaintenance.ts";
+import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 import { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION } from "./DeviceToolchain.ts";
 
 export const quoteRemoteArg = (value: string) => `'${value.replaceAll("'", "'\"'\"'")}'`;
@@ -35,6 +36,7 @@ const mode = ${JSON.stringify(typeof mode === "string" ? mode : "release-session
 const releaseSession = ${JSON.stringify(typeof mode === "string" ? null : mode.releaseSession)};
 const hubVersion = ${JSON.stringify(DEVICE_HUB_VERSION)};
 const agentVersion = ${JSON.stringify(AGENT_DEVICE_VERSION)};
+const npmRegistryArgs = ${JSON.stringify(officialNpmRegistryArgs("agent-device"))};
 ` +
   deviceToolMaintenanceScript +
   String.raw`
@@ -127,7 +129,7 @@ async function install(name, version, entry) {
   try {
     if (complete()) return file;
     staging = fs.mkdtempSync(path.join(path.dirname(dir), '.install-'));
-    const result = run('npm', ['install', '--prefix', staging, '--no-fund', '--no-audit', name + '@' + version], { timeout: 600000, maxBuffer: 8 * 1024 * 1024 });
+    const result = run('npm', ['install', '--prefix', staging, '--no-fund', '--no-audit', name + '@' + version, ...npmRegistryArgs], { timeout: 600000, maxBuffer: 8 * 1024 * 1024 });
     if (result.status !== 0) throw Error('Installing ' + name + ': ' + (result.error?.message || result.stderr?.slice(-2000)));
     if (!fs.existsSync(path.join(staging, 'node_modules', name, entry))) throw Error('Missing installed entry for ' + name);
     fs.writeFileSync(path.join(staging, '.install-complete'), version);

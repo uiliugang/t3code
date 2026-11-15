@@ -101,8 +101,15 @@ prunes it. Everything else mise touches (fixed version paths, pinned tools, wrap
 whose mise tool crosses into 2.x) stays manual-only, so T3 Code never edits mise config. Nix store installs stay manual-only too, since the store is read-only. `mise latest` supplies the version, because settings such as
 `minimum_release_age` can hold mise behind npm. A Grok cask whose Homebrew prefix
 cannot be verified also stays manual-only: `grok update` would install a second copy. npm updates pin `--prefix` because the
-`npm` on `PATH` can belong to a different Node than the one that owns the provider. Homebrew
-compares against `brew info` since casks trail npm by hours; native installs share npm's version
+`npm` on `PATH` can belong to a different Node than the one that owns the provider. T3's public
+npm installs and their version checks explicitly select the public npm registry, including the package's scope,
+so a host mirror cannot provide the wrapper while omitting its matching platform binary. This
+policy applies to each command; host and project npm configuration remain unchanged, and npm's
+proxy, CA and release-age settings still apply. Vite+ global installs inherit the same default
+and scoped registry settings through their process environment, because global installs discard
+pass-through arguments. Bun, pnpm, Yarn and Volta retain their own registry settings; their fallback
+npm metadata queries do not override npm's configured registry. Meituan Skills keeps its explicit enterprise registry.
+Homebrew compares against `brew info` since casks trail npm by hours; native installs share npm's version
 train, so the registry stays authoritative for them. A Chocolatey install of Claude stays
 manual-only: its package directory is writable only by administrators, and `claude update` through
 the shim installs a native copy elsewhere. The latest version comes from `choco search`, and the

@@ -5,8 +5,66 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as ServerConfig from "../config.ts";
 import * as SkillPackages from "./SkillPackages.ts";
+
+it.effect.each(["skills", "mtskills"] as const)(
+  "prepares %s with the public or explicit enterprise registry",
+  (kind) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(`${directory}/bin`);
+      yield* fs.writeFileString(`${directory}/bin/npm`, "#!/bin/sh\n", { mode: 0o755 });
+      const calls: ReadonlyArray<string>[] = [];
+      yield* Effect.gen(function* () {
+        const packages = yield* SkillPackages.SkillPackages;
+        yield* packages.prepare({
+          id: kind,
+          label: kind,
+          kind,
+          enabled: true,
+          executable: "",
+          registry: "https://enterprise.example.test/",
+        });
+      }).pipe(
+        Effect.provide(
+          SkillPackages.layer.pipe(Layer.provide(ServerConfig.layerTest(directory, directory))),
+        ),
+        Effect.provideService(HostProcess.Environment, { PATH: `${directory}/bin` }),
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) => {
+            if (!ChildProcess.isStandardCommand(command)) return Effect.die("Unexpected pipeline");
+            calls.push(command.args.map(String));
+            expect(command.options.env?.npm_config_registry).toBe(
+              "https://enterprise.example.test/",
+            );
+            return Effect.succeed(
+              ChildProcessSpawner.makeHandle({
+                pid: ChildProcessSpawner.ProcessId(1),
+                exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+                isRunning: Effect.succeed(false),
+                kill: () => Effect.void,
+                unref: Effect.succeed(Effect.void),
+                stdin: Sink.drain,
+                stdout: Stream.empty,
+                stderr: Stream.empty,
+                all: Stream.empty,
+                getInputFd: () => Sink.drain,
+                getOutputFd: () => Stream.empty,
+              }),
+            );
+          }),
+        ),
+      );
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.includes("--registry=https://registry.npmjs.org/")).toBe(kind === "skills");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
 
 it.live(
   "installs a custom mtskills package using its supported noninteractive target-directory protocol",

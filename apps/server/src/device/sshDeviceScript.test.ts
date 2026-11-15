@@ -154,6 +154,45 @@ it.effect("rejects a Node release below the pinned agent-device engine floor", (
   }),
 );
 
+it.effect("uses official npm for SSH tool installs without changing host configuration", () =>
+  Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) === "win32") return;
+    yield* Effect.promise(async () => {
+      const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-registry-"));
+      try {
+        const sdk = NodePath.join(home, "sdk");
+        const calls = NodePath.join(home, "npm-args");
+        const config = NodePath.join(home, ".npmrc");
+        const original = "registry=https://mirror.example.test/\n";
+        await NodeFSP.writeFile(config, original);
+        await completeSdk(sdk);
+        await executable(NodePath.join(home, "bin/xcrun"), "exit 1");
+        await executable(
+          NodePath.join(home, "bin/npm"),
+          `printf '%s\\n' "$@" > ${quoteRemoteArg(calls)}\nexit 1`,
+        );
+        const result = NodeChildProcess.spawnSync(process.execPath, [], {
+          input: remoteDeviceScript("owner", "start"),
+          env: {
+            HOME: home,
+            PATH: `${NodePath.join(home, "bin")}:/usr/bin:/bin`,
+            ANDROID_HOME: sdk,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain("Installing expo-device-hub");
+        expect((await NodeFSP.readFile(calls, "utf8")).split("\n")).toContain(
+          "--registry=https://registry.npmjs.org/",
+        );
+        expect(await NodeFSP.readFile(config, "utf8")).toBe(original);
+      } finally {
+        await NodeFSP.rm(home, { recursive: true, force: true });
+      }
+    });
+  }),
+);
+
 it.effect("stops a daemon left for its owner when starting without agent tools", () =>
   Effect.gen(function* () {
     if ((yield* HostProcess.Platform) === "win32") return;

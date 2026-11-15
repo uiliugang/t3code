@@ -822,6 +822,8 @@ it.layer(layerTest)("CodexDriver", (it) => {
               installPath,
               "--allow-scripts=@openai/codex",
               "@openai/codex@latest",
+              "--registry=https://registry.npmjs.org/",
+              "--@openai:registry=https://registry.npmjs.org/",
             ],
           });
         } else {
