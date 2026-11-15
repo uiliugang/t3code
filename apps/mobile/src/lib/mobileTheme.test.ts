@@ -15,6 +15,7 @@ import {
 import { getMobileThemeRuntimeVariables } from "./mobileThemeVariables";
 
 import {
+  createMobileThemePairPatch,
   createMobileThemeSelectionPatch,
   createMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
@@ -262,6 +263,14 @@ describe("mobile themes", () => {
       light: DEFAULT_MOBILE_THEME_ID,
       dark: "graphite-blue",
     });
+    for (const preferences of [
+      { themeId: "grove" },
+      { lightThemeId: "grove", darkThemeId: "iris" },
+    ]) {
+      expect(
+        resolveMobileThemeIds({ ...preferences, ...createMobileThemePairPatch("graphite-blue") }),
+      ).toEqual({ light: "grove", dark: "graphite-blue" });
+    }
     expect(
       resolveMobileThemeIds(
         createMobileThemeSelectionPatch(themeIds, "light", "light", "graphite-blue"),

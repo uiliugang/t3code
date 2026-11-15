@@ -59,7 +59,8 @@ export function isShowcaseThemeApplied(input: {
 }): boolean {
   if (input.requestedTheme === null) return input.launchRequestRead;
   return (
-    input.themeIds.light === input.requestedTheme && input.themeIds.dark === input.requestedTheme
+    (input.requestedTheme === "graphite-blue" || input.themeIds.light === input.requestedTheme) &&
+    input.themeIds.dark === input.requestedTheme
   );
 }
 

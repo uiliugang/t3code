@@ -48,6 +48,20 @@ describe("isShowcaseThemeApplied", () => {
         themeIds: { light: "t3-code", dark: "material-you" },
       }),
     ).toBe(false);
+    expect(
+      isShowcaseThemeApplied({
+        launchRequestRead: true,
+        requestedTheme: "graphite-blue",
+        themeIds: { light: "grove", dark: "graphite-blue" },
+      }),
+    ).toBe(true);
+    expect(
+      isShowcaseThemeApplied({
+        launchRequestRead: true,
+        requestedTheme: "graphite-blue",
+        themeIds: { light: "grove", dark: "t3-code" },
+      }),
+    ).toBe(false);
   });
 });
 

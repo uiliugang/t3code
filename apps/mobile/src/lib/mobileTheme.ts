@@ -88,6 +88,7 @@ export function createMobileThemeSelectionPatch(
 }
 
 export function createMobileThemePairPatch(value: MobileThemeId) {
+  if (value === "graphite-blue") return { darkThemeId: value };
   return {
     lightThemeId: value,
     darkThemeId: value,
