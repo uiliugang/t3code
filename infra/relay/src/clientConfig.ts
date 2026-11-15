@@ -58,7 +58,7 @@ export function reconcileEnvFile(
   entries: Readonly<Record<string, string>>,
 ): string {
   const lines = contents === "" ? [] : contents.replace(/\n$/u, "").split("\n");
-  const assignment = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/u;
+  const assignment = /^\s*(?:export\s+)?([^#=\s][^=]*?)\s*=\s*(.*)$/u;
   const pending = new Map(Object.entries(entries));
   const out: string[] = [];
   for (let index = 0; index < lines.length; index += 1) {

@@ -23,6 +23,30 @@ export interface Release {
   assets: ReleaseAsset[];
 }
 
+function isRelease(value: unknown): value is Release {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "tag_name" in value &&
+    typeof value.tag_name === "string" &&
+    "html_url" in value &&
+    typeof value.html_url === "string" &&
+    "published_at" in value &&
+    typeof value.published_at === "string" &&
+    "assets" in value &&
+    Array.isArray(value.assets) &&
+    value.assets.every(
+      (asset: unknown) =>
+        typeof asset === "object" &&
+        asset !== null &&
+        "name" in asset &&
+        typeof asset.name === "string" &&
+        "browser_download_url" in asset &&
+        typeof asset.browser_download_url === "string",
+    )
+  );
+}
+
 function cacheKey(channel: ReleaseChannel) {
   return `t3code-${GITHUB_REPOSITORY}-${channel}-release`;
 }
@@ -50,19 +74,19 @@ export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Pr
   const key = cacheKey(channel);
   try {
     const cached = sessionStorage.getItem(key);
-    if (cached) return JSON.parse(cached);
+    const data: unknown = cached ? JSON.parse(cached) : null;
+    if (isRelease(data)) return data;
   } catch {
     // Blocked storage or a corrupt entry must not prevent loading the release.
   }
 
   const data = channel === "nightly" ? await fetchNightly() : await fetchStable();
+  if (!isRelease(data)) throw new Error("Invalid release metadata");
 
-  if (data?.assets) {
-    try {
-      sessionStorage.setItem(key, JSON.stringify(data));
-    } catch {
-      // Writing is optional when storage is blocked or full.
-    }
+  try {
+    sessionStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    // Writing is optional when storage is blocked or full.
   }
 
   return data;
