@@ -15,6 +15,11 @@ const { Children, mocks } = vi.hoisted(() => ({
   Children: ({ children }: { children?: ReactNode }) => children,
   mocks: { upsert: vi.fn(), alert: vi.fn(), tasks: [] as ScheduledTask[] },
 }));
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
   View: Children,

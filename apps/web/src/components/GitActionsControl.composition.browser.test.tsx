@@ -1,9 +1,10 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, SourceControlProviderKind } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../test/render";
+import { __setClientSettingsForTests } from "../hooks/useSettings";
 import { PublishRepositoryDialog } from "./GitActionsControl";
 
 const publish = vi.hoisted(() => ({ run: vi.fn() }));
@@ -45,6 +46,7 @@ vi.mock("~/state/sourceControlActions", () => ({
 }));
 
 function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   publish.run.mockReset();
   publish.run.mockReturnValue(new Promise(() => {}));
 }

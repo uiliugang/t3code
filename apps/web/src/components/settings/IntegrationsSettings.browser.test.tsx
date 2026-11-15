@@ -121,7 +121,7 @@ it.each([
 ])("shows device preferences read-only for $scope", async ({ search }) => {
   await ensureClientSettingsHydrated();
   await persistClientSettingsPatch(
-    { browserProfiles: [{ id: "work", name: "Work", kind: "persistent" }] },
+    { uiLanguage: "en", browserProfiles: [{ id: "work", name: "Work", kind: "persistent" }] },
     async () => {},
   );
   await using screen = await render(

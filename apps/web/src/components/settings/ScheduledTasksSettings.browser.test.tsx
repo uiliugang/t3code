@@ -85,11 +85,6 @@ function secondaryEnvironment() {
   return environment(secondaryId, "Secondary");
 }
 
-vi.mock(import("../../state/session"), async (original) => ({
-  ...(await original()),
-  readEnvironmentScope: () => true,
-}));
-
 function environment(id = environmentId, label = "Laptop") {
   return {
     environmentId: id,
@@ -177,6 +172,7 @@ vi.mock(import("../../state/environments"), async (original) => ({
 }));
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
+  readEnvironmentScope: () => true,
   usePreparedConnection: () => Option.none(),
 }));
 vi.mock(import("../../state/entities"), async (original) => ({

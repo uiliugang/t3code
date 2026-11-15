@@ -1,8 +1,9 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId } from "@t3tools/contracts";
 import { page, userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const updateSettings = vi.hoisted(() => vi.fn());
 
@@ -19,6 +20,7 @@ import { AddUsageLimitSourceDialog } from "./AddUsageLimitSourceDialog";
 
 describe("AddUsageLimitSourceDialog", () => {
   it("adds the hub when Enter is pressed in a field", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     updateSettings.mockClear();
     const onOpenChange = vi.fn();
     await using _screen = await render(

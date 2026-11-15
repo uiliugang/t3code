@@ -32,6 +32,11 @@ vi.mock("@react-navigation/native", async () => {
 });
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
 
+vi.mock("../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 vi.mock("react-native", () => ({
   AppState: {
     addEventListener: (_event: "change", listener: (state: string) => void) => {
