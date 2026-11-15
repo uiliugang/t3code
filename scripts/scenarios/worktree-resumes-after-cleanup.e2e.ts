@@ -51,7 +51,12 @@ test(
       ),
     );
     await t3.open("/settings/worktrees");
-    await screen.getByRole("switch", "Only create worktrees from main/master").uncheck();
+    await screen
+      .getByRole(
+        "switch",
+        /Only create worktrees from main\/master|仅允许从 main\/master 创建工作树/,
+      )
+      .uncheck();
     await t3.open(launched);
     await git(["worktree", "remove", thread.worktreePath]);
     await git(["branch", "-D", "resume-after-cleanup"]);
