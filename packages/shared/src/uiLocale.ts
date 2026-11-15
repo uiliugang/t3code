@@ -9,6 +9,42 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Manage thread worktrees and historical leftovers. Review each cleanup confirmation for what will be deleted.":
+    "管理会话工作树与历史残留。清理前请核对确认框中的删除范围。",
+  "Could not verify the directory identity.": "无法确认目录身份，请重新检查。",
+  "Clean historical leftovers": "清理历史残留",
+  "Unused folders in this environment. Select each folder to permanently delete all its files. Age and local changes do not determine eligibility.":
+    "检查此环境中的残留目录。逐项勾选后永久删除全部文件；目录年龄和本地改动不影响清理资格。",
+  "Disk usage is an estimate; shared files may not free the displayed space.":
+    "占用为估计值；共享文件的实际释放空间可能小于显示值。",
+  "No historical leftovers found.": "未发现历史残留目录。",
+  "Independent repository: its Git history will also be deleted.":
+    "独立仓库：自身 Git 历史也会一并删除。",
+  "Linked worktree": "关联工作树",
+  "Working folder": "工作目录",
+  "Size unavailable": "占用未知",
+  "No linked threads": "无关联会话",
+  "Deleted thread": "会话已删除",
+  "Thread still exists": "会话仍存在",
+  "Retry cleanup": "重试清理",
+  "Permanently delete selected ({count})": "彻底删除选中项（{count}）",
+  "Permanently delete {count} folders?": "彻底删除 {count} 个目录？",
+  "All source files, local changes, untracked and ignored files will be permanently deleted without a backup or trash. Independent repositories lose their Git history too. References and running resources are checked again before deletion.":
+    "将永久删除全部源码、本地改动、未跟踪和忽略文件，不创建备份、不移入回收站。独立仓库的 Git 历史也会删除。执行前会再次检查引用与运行资源。",
+  "Permanently delete": "彻底删除",
+  "Could not inspect all worktree registrations.": "无法检查全部工作树登记信息，请重试。",
+  "Symbolic links and replaced directories cannot be cleaned.":
+    "目录为符号链接或已被替换，不能清理。",
+  "This directory is still referenced by a thread or its history.":
+    "仍有会话或会话历史引用此目录。",
+  "Workspace preparation is still using this directory.": "工作区准备流程仍在使用此目录。",
+  "Thread tasks or deletion cleanup are still pending.": "会话任务或删除收尾尚未完成。",
+  "The repository points to a different directory.": "仓库实际指向其他目录。",
+  "Other worktrees still depend on this repository.": "其他工作树仍依赖此仓库。",
+  "Directory and all local files permanently deleted.": "目录及全部本地文件已彻底删除。",
+  "Directory is no longer a cleanup candidate. Refresh the list.":
+    "此目录已不再是清理候选，请刷新列表。",
+
   "API returned HTTP 401. Check the API key.": "API 返回 HTTP 401，请检查 API 密钥。",
   "API returned HTTP 403. Check the key and model permissions.":
     "API 返回 HTTP 403，请检查密钥与模型权限。",

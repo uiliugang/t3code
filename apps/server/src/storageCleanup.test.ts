@@ -396,6 +396,8 @@ const cleanupFixture = (
       Effect.provideService(
         ManagedWorktrees.ManagedWorktrees,
         ManagedWorktrees.ManagedWorktrees.of({
+          listResiduals: Effect.succeed({ directories: [], results: [] }),
+          removeResiduals: () => Effect.succeed([]),
           list: () =>
             Effect.forEach(
               threads.filter((thread) => thread.workspace),

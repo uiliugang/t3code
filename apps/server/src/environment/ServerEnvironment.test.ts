@@ -151,6 +151,7 @@ it.layer(
           multiRepositoryWorkspaces: true,
           settledWorktreeCleanup: true,
           storageCleanupRun: true,
+          residualWorktreeCleanup: true,
           projectWorktreeCleanup: true,
           worktreesDirectory: true,
           threadAutoSettlementScope: true,

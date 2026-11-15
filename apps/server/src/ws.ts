@@ -3287,6 +3287,9 @@ export const layerWsRpc = (
             .run(input, gitWorkflow.switchRef(input))
             .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.workspaceRecovery]: (input) => workspaceRecovery.resolve(input),
+        [WS_METHODS.managedWorktreesListResiduals]: () => managedWorktrees.listResiduals,
+        [WS_METHODS.managedWorktreesRemoveResiduals]: (input) =>
+          managedWorktrees.removeResiduals(input),
         [WS_METHODS.managedWorktreesList]: (input) => managedWorktrees.list(input),
         [WS_METHODS.managedWorktreesRemove]: (input) => managedWorktrees.remove(input),
         [WS_METHODS.managedWorktreesRestore]: (input) => managedWorktrees.restore(input),

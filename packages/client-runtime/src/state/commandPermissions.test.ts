@@ -410,6 +410,12 @@ it.effect(
           WS_METHODS.managedWorktreesRemove,
         );
         yield* removeWorktrees.authorize(registry, env);
+        const removeResiduals = createCommandPermissions(
+          runtime,
+          WS_METHODS.managedWorktreesRemoveResiduals,
+        );
+        yield* removeResiduals.authorize(registry, env);
+        expect(registry.get(removeResiduals.permissionAtom(other))).toBe(false);
         expect(registry.get(removeWorktrees.permissionAtom(other))).toBe(false);
         const restoreWorktrees = createCommandPermissions(
           runtime,
