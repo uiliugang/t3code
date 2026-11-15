@@ -365,7 +365,7 @@ it.layer(
     { install: "manual", stdout: '["1.2.0", "1.3.0"]', exitCode: 0, latest: null },
     { install: "manual", stdout: '""', exitCode: 0, latest: null },
   ])(
-    "uses npm's registry for $install installs (exit $exitCode, output $stdout)",
+    "uses official npm metadata for $install installs (exit $exitCode, output $stdout)",
     (fixture) =>
       Effect.gen(function* () {
         const tempDir = yield* makeTempDir("t3-registry-version");
@@ -391,6 +391,8 @@ it.layer(
                   "--json",
                   `${capabilities.packageName}@latest`,
                   "version",
+                  "--registry=https://registry.npmjs.org/",
+                  `--${capabilities.packageName!.split("/")[0]}:registry=https://registry.npmjs.org/`,
                 ]);
                 return fixture.stdout;
               },
@@ -505,7 +507,7 @@ it.layer(
   );
 
   it.effect.skipIf(!symlinksSupported || windowsHost)(
-    "keeps configured npm registries' latest versions apart for one install",
+    "uses official npm while keeping probe environments and their caches isolated",
     () =>
       Effect.gen(function* () {
         const tempDir = yield* makeTempDir("t3-npm-registry-isolation");
@@ -528,7 +530,9 @@ it.layer(
           }).pipe(
             Effect.provideService(
               ChildProcessSpawner.ChildProcessSpawner,
-              stdoutSpawner(() => {
+              stdoutSpawner((_command, args) => {
+                expect(args).toContain("--registry=https://registry.npmjs.org/");
+                expect(args).toContain("--@example:registry=https://registry.npmjs.org/");
                 probes++;
                 return JSON.stringify({ "@example/package-tool": { latest: version } });
               }),
@@ -704,7 +708,7 @@ it.layer(
           lookupLatestVersion: expect.anything(),
           latestVersionCacheKey: expect.any(String),
           update: {
-            command: `npm install -g --prefix ${tempDir} --allow-scripts=@example/package-tool @example/package-tool@latest`,
+            command: `npm install -g --prefix ${tempDir} --allow-scripts=@example/package-tool @example/package-tool@latest --registry=https://registry.npmjs.org/ --@example:registry=https://registry.npmjs.org/`,
             executable: "npm",
             args: [
               "install",
@@ -713,6 +717,8 @@ it.layer(
               tempDir,
               "--allow-scripts=@example/package-tool",
               "@example/package-tool@latest",
+              "--registry=https://registry.npmjs.org/",
+              "--@example:registry=https://registry.npmjs.org/",
             ],
             lockKey: `npm-global:${normalizeCommandPath(tempDir)}`,
             env: providerEnv,
@@ -1083,7 +1089,8 @@ it.layer(
       const capabilities = yield* resolveInstall({ definition: claudeUpdate, ...fixture });
 
       expect(capabilities.update).toMatchObject({
-        command: "vp i -g @anthropic-ai/claude-code",
+        command:
+          "vp i -g @anthropic-ai/claude-code -- --registry=https://registry.npmjs.org/ --@anthropic-ai:registry=https://registry.npmjs.org/",
         lockKey: "vite-plus-global",
       });
     }),
@@ -1247,7 +1254,16 @@ it.layer(
 
       expect(capabilities.update).toMatchObject({
         executable: "npm",
-        args: ["install", "-g", "--prefix", tempDir, expect.any(String), expect.any(String)],
+        args: [
+          "install",
+          "-g",
+          "--prefix",
+          tempDir,
+          expect.any(String),
+          expect.any(String),
+          "--registry=https://registry.npmjs.org/",
+          "--@example:registry=https://registry.npmjs.org/",
+        ],
       });
 
       const script = NodePath.join(tempDir, "package-tool");
@@ -1504,7 +1520,9 @@ it.layer(
           status: fixture.status,
           currentVersion: "1.0.0",
           latestVersion: fixture.latestVersion,
-          updateCommand: expect.stringMatching(/@example\/package-tool@latest$/),
+          updateCommand: expect.stringContaining(
+            "@example/package-tool@latest --registry=https://registry.npmjs.org/ --@example:registry=https://registry.npmjs.org/",
+          ),
         });
       }),
     { skip: !symlinksSupported || windowsHost },
@@ -2304,6 +2322,8 @@ it.layer(
           NodeFS.realpathSync(nodePrefix),
           "--allow-scripts=@example/package-tool",
           "@example/package-tool@latest",
+          "--registry=https://registry.npmjs.org/",
+          "--@example:registry=https://registry.npmjs.org/",
         ]);
       }),
   );

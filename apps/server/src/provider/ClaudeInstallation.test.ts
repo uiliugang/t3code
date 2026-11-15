@@ -114,7 +114,11 @@ it.layer(Layer.merge(NodeServices.layer, NodeCrypto.layer))("Claude npm installa
           `${directory}/tools/claude`,
           "--allow-scripts=@anthropic-ai/claude-code",
           "@anthropic-ai/claude-code@2.1.314",
+          "--registry=https://registry.npmjs.org/",
+          "--@anthropic-ai:registry=https://registry.npmjs.org/",
         ]);
+        expect(calls[0]?.args).toContain("--registry=https://registry.npmjs.org/");
+        expect(calls[0]?.args).toContain("--@anthropic-ai:registry=https://registry.npmjs.org/");
         expect(calls[1]?.env?.HTTPS_PROXY).toBe("http://proxy:8080");
         if (mode === "success") {
           const rejected = yield* service

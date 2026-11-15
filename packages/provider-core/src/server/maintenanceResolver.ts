@@ -15,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Cache from "effect/Cache";
@@ -491,7 +492,15 @@ const resolveNpmGlobalLatestVersion = Effect.fn("resolveNpmGlobalLatestVersion")
   if (!npmPath) return null;
   const outdated = yield* runProbe(
     npmPath,
-    ["outdated", "-g", "--prefix", npmPrefix, "--json", packageName],
+    [
+      "outdated",
+      "-g",
+      "--prefix",
+      npmPrefix,
+      "--json",
+      packageName,
+      ...officialNpmRegistryArgs(packageName),
+    ],
     env,
     // npm outdated exits 1 when updates are available.
     [0, 1],
@@ -550,7 +559,14 @@ const resolveVitePlusInstallableLatestVersion = Effect.fn(
   const npmPath = path.join(path.dirname(node.bin_path), platform === "win32" ? "npm.cmd" : "npm");
   const packed = yield* runProbe(
     npmPath,
-    ["pack", "--dry-run", "--json=false", "--global", `${packageName}@latest`],
+    [
+      "pack",
+      "--dry-run",
+      "--json=false",
+      "--global",
+      `${packageName}@latest`,
+      ...officialNpmRegistryArgs(packageName),
+    ],
     env,
   );
   return packed ? parseNpmPackVersion(packed, packageName) : null;
@@ -887,7 +903,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
       provider: definition.provider,
       packageName,
       updateExecutable: "vp",
-      updateArgs: ["i", "-g", packageName],
+      updateArgs: ["i", "-g", packageName, "--", ...officialNpmRegistryArgs(packageName)],
       updateLockKey: "vite-plus-global",
       env: context.env,
       lookupLatestVersion: resolveVitePlusInstallableLatestVersion(
@@ -977,6 +993,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
         npmPrefix,
         `--allow-scripts=${packageName}`,
         `${packageName}@latest`,
+        ...officialNpmRegistryArgs(packageName),
       ],
       updateLockKey: `npm-global:${normalizeCommandPath(npmPrefix)}`,
       env: context.env,
@@ -1203,7 +1220,14 @@ const withConfiguredNpmVersionLookup = Effect.fn("withConfiguredNpmVersionLookup
   const services = yield* Effect.context<ProviderMaintenanceResolverServices>();
   const lookup = runProbe(
     npmPath,
-    ["view", "--global", "--json", `${packageName}@latest`, "version"],
+    [
+      "view",
+      "--global",
+      "--json",
+      `${packageName}@latest`,
+      "version",
+      ...officialNpmRegistryArgs(packageName),
+    ],
     env,
   ).pipe(
     Effect.map((stdout) => {
@@ -1219,7 +1243,7 @@ const withConfiguredNpmVersionLookup = Effect.fn("withConfiguredNpmVersionLookup
   );
   return {
     ...capabilities,
-    // npm owns registry, scoped auth and proxy configuration; failure must not retry public npm.
+    // Keep npm's proxy and CA configuration; a failed lookup must not bypass them over HTTP.
     latestVersion: null,
     latestVersionCacheKey: [
       "configured-npm",

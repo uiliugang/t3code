@@ -1,5 +1,6 @@
 import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import { parseGenericCliVersion } from "@t3tools/provider-core/server/snapshotProbe";
@@ -146,7 +147,14 @@ const make = Effect.fn("ClaudeInstallation.make")(function* () {
         const install = Effect.gen(function* () {
           const latest = yield* run(
             "npm",
-            ["view", `${PACKAGE}@latest`, "version", "--json"],
+            [
+              "view",
+              "--global",
+              `${PACKAGE}@latest`,
+              "version",
+              "--json",
+              ...officialNpmRegistryArgs(PACKAGE),
+            ],
             env,
           ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(LatestVersion)));
           const compatibility =
@@ -175,6 +183,7 @@ const make = Effect.fn("ClaudeInstallation.make")(function* () {
               paths.directory,
               `--allow-scripts=${PACKAGE}`,
               `${PACKAGE}@${latest}`,
+              ...officialNpmRegistryArgs(PACKAGE),
             ],
             env,
           );
