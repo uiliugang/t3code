@@ -119,13 +119,18 @@ const noSpawn = ChildProcessSpawner.make(() =>
 );
 
 function stdoutSpawner(
-  onSpawn: (command: string, args: ReadonlyArray<string>) => string,
+  onSpawn: (command: string, args: ReadonlyArray<string>, env: NodeJS.ProcessEnv) => string,
   exitCodeOf: (args: ReadonlyArray<string>) => number = () => 0,
 ) {
   return ChildProcessSpawner.make((command) => {
-    const { command: executable, args } = command as unknown as {
+    const {
+      command: executable,
+      args,
+      options,
+    } = command as unknown as {
       readonly command: string;
       readonly args: ReadonlyArray<string>;
+      readonly options: { readonly env?: NodeJS.ProcessEnv };
     };
     return Effect.succeed(
       ChildProcessSpawner.makeHandle({
@@ -135,7 +140,7 @@ function stdoutSpawner(
         kill: () => Effect.void,
         unref: Effect.succeed(Effect.void),
         stdin: Sink.drain,
-        stdout: Stream.encodeText(Stream.make(onSpawn(executable, args))),
+        stdout: Stream.encodeText(Stream.make(onSpawn(executable, args, options.env ?? {}))),
         stderr: Stream.empty,
         all: Stream.empty,
         getInputFd: () => Sink.drain,
@@ -457,7 +462,11 @@ it.layer(
             Effect.provideService(
               ChildProcessSpawner.ChildProcessSpawner,
               // `vp i -g` runs the npm beside Vite+'s Node; `npm view` ignores min-release-age.
-              stdoutSpawner((command, args) => {
+              stdoutSpawner((command, args, probeEnv) => {
+                expect(probeEnv.npm_config_registry).toBe("https://registry.npmjs.org/");
+                expect(probeEnv["npm_config_@example:registry"]).toBe(
+                  "https://registry.npmjs.org/",
+                );
                 if (command === "vp") {
                   return JSON.stringify({
                     node: { source: nodeSource, bin_path: vitePlusNodePath, installed: true },
@@ -1086,13 +1095,40 @@ it.layer(
     },
   ] as const)("updates a Vite+ global install in $name with vp", (fixture) =>
     Effect.gen(function* () {
-      const capabilities = yield* resolveInstall({ definition: claudeUpdate, ...fixture });
+      const env = {
+        NPM_CONFIG_REGISTRY: "https://mirror.example.test/",
+        npm_config_registry: "https://other-mirror.example.test/",
+        "NPM_CONFIG_@ANTHROPIC-AI:REGISTRY": "https://scoped-mirror.example.test/",
+        "npm_config_@anthropic-ai:registry": "https://other-scoped-mirror.example.test/",
+        "npm_config_@private:registry": "https://private.example.test/",
+        HTTPS_PROXY: "http://proxy:8080",
+        npm_config_cafile: "/certs/company.pem",
+        npm_config_min_release_age: "7",
+        VP_HOME: "/tools/vite-plus",
+      };
+      const capabilities = yield* resolveInstall({
+        definition: claudeUpdate,
+        ...fixture,
+        env,
+      }).pipe(
+        Effect.provideService(HostProcess.Environment, {
+          NpM_CoNfIg_ReGiStRy: "https://inherited-mirror.example.test/",
+        }),
+      );
 
       expect(capabilities.update).toMatchObject({
-        command:
-          "vp i -g @anthropic-ai/claude-code -- --registry=https://registry.npmjs.org/ --@anthropic-ai:registry=https://registry.npmjs.org/",
+        command: "vp i -g @anthropic-ai/claude-code",
         lockKey: "vite-plus-global",
+        env: {
+          ...env,
+          NpM_CoNfIg_ReGiStRy: "https://registry.npmjs.org/",
+          NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/",
+          npm_config_registry: "https://registry.npmjs.org/",
+          "NPM_CONFIG_@ANTHROPIC-AI:REGISTRY": "https://registry.npmjs.org/",
+          "npm_config_@anthropic-ai:registry": "https://registry.npmjs.org/",
+        },
       });
+      expect(env.NPM_CONFIG_REGISTRY).toBe("https://mirror.example.test/");
     }),
   );
 
@@ -1526,6 +1562,85 @@ it.layer(
         });
       }),
     { skip: !symlinksSupported || windowsHost },
+  );
+
+  it.effect.each([
+    { owner: "yarn", binary: ".config/yarn/global/node_modules/@example/package-tool/bin/tool" },
+    { owner: "bun", binary: ".bun/bin/package-tool" },
+    {
+      owner: "pnpm",
+      binary: ".local/share/pnpm/global/5/node_modules/@example/package-tool/bin/tool",
+    },
+    { owner: "volta", binary: ".volta/bin/volta-shim" },
+  ])(
+    "keeps $owner fallback metadata on the installer's registry",
+    (fixture) =>
+      Effect.gen(function* () {
+        const tempDir = yield* makeTempDir("t3-owner-registry");
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true })),
+        );
+        const binDir = NodePath.join(tempDir, "bin");
+        writeExecutable(NodePath.join(binDir, "npm"));
+        writeExecutable(NodePath.join(binDir, fixture.owner));
+        const binaryPath = NodePath.join(tempDir, fixture.binary);
+        writeExecutable(binaryPath);
+        if (fixture.owner === "volta") {
+          NodeFS.mkdirSync(
+            NodePath.join(tempDir, ".volta/tools/image/packages/@example/package-tool"),
+            { recursive: true },
+          );
+        }
+        const env = {
+          PATH: binDir,
+          npm_config_registry: "https://mirror.example.test/",
+          "npm_config_@example:registry": "https://scoped-mirror.example.test/",
+        };
+        let npmProbes = 0;
+        const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(
+          packageToolUpdate,
+          {
+            binaryPath,
+            env,
+          },
+        ).pipe(
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            stdoutSpawner((_command, args, probeEnv) => {
+              if (args[0] !== "view") return "";
+              npmProbes++;
+              expect(probeEnv).toMatchObject(env);
+              const registry =
+                args
+                  .find((arg) => arg.startsWith("--@example:registry="))
+                  ?.slice("--@example:registry=".length) ??
+                probeEnv["npm_config_@example:registry"];
+              return registry === env["npm_config_@example:registry"] ? '"1.1.0"' : '"1.2.0"';
+            }),
+          ),
+        );
+        const latest = yield* resolveLatestProviderVersion(capabilities).pipe(
+          Effect.provide(ProviderLatestVersions.layer),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("the owner's registry must supply metadata")),
+          ),
+        );
+        expect(capabilities.update?.executable).toBe(fixture.owner);
+        expect(capabilities.update?.env).toEqual(env);
+        expect(latest).toBe("1.1.0");
+        expect(npmProbes).toBe(1);
+        expect(
+          createProviderVersionAdvisory({
+            driver: driver("packageTool"),
+            currentVersion: "1.1.0",
+            latestVersion: latest,
+            maintenanceCapabilities: capabilities,
+          }).status,
+        ).toBe("current");
+      }),
+    { skip: windowsHost },
   );
 
   it.effect.each([

@@ -15,7 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
+import { officialNpmRegistryArgs, withOfficialNpmRegistry } from "@t3tools/shared/npmRegistry";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Cache from "effect/Cache";
@@ -899,26 +899,27 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
       : native;
   if (commandPaths.some(isVitePlusGlobalCommandPath)) {
     const services = yield* Effect.context<ProviderMaintenanceResolverServices>();
+    // Vite+ global installs discard pass-through arguments before spawning npm.
+    const env = withOfficialNpmRegistry(
+      { ...(yield* HostProcess.Environment), ...context.env },
+      packageName,
+    );
     const capabilities = makeProviderMaintenanceCapabilities({
       provider: definition.provider,
       packageName,
       updateExecutable: "vp",
-      updateArgs: ["i", "-g", packageName, "--", ...officialNpmRegistryArgs(packageName)],
+      updateArgs: ["i", "-g", packageName],
       updateLockKey: "vite-plus-global",
-      env: context.env,
+      env,
       lookupLatestVersion: resolveVitePlusInstallableLatestVersion(
         packageName,
-        context.env,
+        env,
         context.platform,
       ).pipe(Effect.provideContext(services)),
     });
     return {
       ...capabilities,
-      latestVersionCacheKey: [
-        "vite-plus-global",
-        packageName,
-        environmentCacheKey(context.env),
-      ].join("\0"),
+      latestVersionCacheKey: ["vite-plus-global", packageName, environmentCacheKey(env)].join("\0"),
     };
   }
   if (commandPaths.some(isBunGlobalCommandPath)) {
@@ -1218,16 +1219,15 @@ const withConfiguredNpmVersionLookup = Effect.fn("withConfiguredNpmVersionLookup
   const npmPath = yield* resolveCommandPath("npm", { env });
   if (!npmPath) return capabilities;
   const services = yield* Effect.context<ProviderMaintenanceResolverServices>();
+  // Non-npm updaters keep their registry, so their npm fallback must query it too.
+  const registryArgs = ["bun-global", "pnpm-global", "yarn-global", "volta"].includes(
+    capabilities.update?.lockKey ?? "",
+  )
+    ? []
+    : officialNpmRegistryArgs(packageName);
   const lookup = runProbe(
     npmPath,
-    [
-      "view",
-      "--global",
-      "--json",
-      `${packageName}@latest`,
-      "version",
-      ...officialNpmRegistryArgs(packageName),
-    ],
+    ["view", "--global", "--json", `${packageName}@latest`, "version", ...registryArgs],
     env,
   ).pipe(
     Effect.map((stdout) => {
