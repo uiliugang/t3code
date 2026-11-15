@@ -125,6 +125,7 @@ export function AndroidWorkspaceNavigation(props: {
         tabs={tabs}
         labels={{
           threads: t("Chats"),
+          requirements: t("Requirements"),
           pullRequests: t("Pulls"),
           pullRequestsExpanded: t("Pull requests"),
           usage: t("Usage"),

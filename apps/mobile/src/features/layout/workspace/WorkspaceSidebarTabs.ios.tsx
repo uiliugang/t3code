@@ -45,6 +45,7 @@ export function WorkspaceSidebarTabs(props: {
       tabs={tabs}
       labels={{
         threads: t(WORKSPACE_TAB_LABELS.threads),
+        requirements: t(WORKSPACE_TAB_LABELS.requirements),
         pullRequests: t(WORKSPACE_TAB_LABELS.pullRequests),
         usage: t(WORKSPACE_TAB_LABELS.usage),
         settings: t("Settings"),

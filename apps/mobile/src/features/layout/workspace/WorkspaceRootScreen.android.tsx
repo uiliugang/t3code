@@ -58,6 +58,7 @@ function WorkspaceRoot() {
   // An open search keeps Back for itself.
   useHardwareBack(
     tab !== "threads" &&
+      tab !== "requirements" &&
       enabled.includes("threads") &&
       workspace.state.tabs[tab].searchMode === "resting",
     () => {
@@ -77,7 +78,7 @@ function WorkspaceRoot() {
             layout.usesSplitView
               ? insets
               : floatingTabsEnabled
-                ? tab === "usage"
+                ? tab === "usage" || tab === "requirements"
                   ? { ...insets, bottom: context.bottomClearance }
                   : insets
                 : { ...insets, bottom: 0 }

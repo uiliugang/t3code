@@ -129,7 +129,7 @@ class T3WorkspaceNavigationView(
   private val onTabSelected by EventDispatcher()
   private val onNewThread by EventDispatcher()
   private val onOverlayChange by EventDispatcher()
-  var tabs by mutableStateOf(listOf("threads", "pullRequests", "usage", "settings"))
+  var tabs by mutableStateOf(listOf("threads", "requirements", "pullRequests", "usage", "settings"))
   var labels by mutableStateOf(emptyMap<String, String>())
   var selectedTab by mutableStateOf("threads")
   var rail by mutableStateOf(false)
@@ -418,6 +418,7 @@ class T3WorkspaceNavigationView(
 
   private fun tabTitle(tab: String) = labels[tab] ?: when (tab) {
     "threads" -> "Chats"
+    "requirements" -> "Requirements"
     "pullRequests" -> "Pulls"
     "usage" -> "Usage"
     else -> "Settings"
@@ -430,6 +431,7 @@ class T3WorkspaceNavigationView(
   private fun tabIconPainter(tab: String) = painterResource(
     when (tab) {
       "threads" -> R.drawable.t3_chats
+      "requirements" -> R.drawable.t3_requirements
       "pullRequests" -> R.drawable.t3_pull_requests
       "usage" -> R.drawable.t3_usage
       else -> R.drawable.t3_settings

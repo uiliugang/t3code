@@ -16,12 +16,14 @@ import {
 } from "@t3tools/contracts";
 import { useContext, useRef, useState } from "react";
 import * as Schema from "effect/Schema";
-import { Linking, View, Pressable, ScrollView } from "react-native";
+import { Keyboard, Linking, View, Pressable, ScrollView } from "react-native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useHardwareBack } from "../../lib/backHandler";
+import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab";
 import { useProjects, useThreadShell, useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -82,36 +84,50 @@ const permissionAtoms = createRequirementPermissionAtoms({
   discoverWorkItems: serverEnvironment.discoverWorkItems.permissionAtom,
 });
 
-export function RequirementsScreen({ route }: StaticScreenProps<WorkItemsRouteParams | undefined>) {
+export function RequirementsScreen({
+  route,
+  workspace = false,
+}: {
+  route?: StaticScreenProps<WorkItemsRouteParams | undefined>["route"];
+  workspace?: boolean;
+}) {
   const { environments } = useEnvironments();
-  const [chosenEnvironment, setEnvironment] = useState(route.params?.environmentId ?? null);
-  const environmentId = route.params?.environmentId ?? environments[0]?.environmentId;
+  const [chosenEnvironment, setEnvironment] = useState(route?.params?.environmentId ?? null);
+  const environmentId = route?.params?.environmentId ?? environments[0]?.environmentId;
+  const selectTab = useSelectWorkspaceTab();
+  useHardwareBack(workspace && !environmentId, () => {
+    selectTab("threads");
+    return true;
+  });
   const t = useUiTranslation();
   return environmentId ? (
     <UnifiedRequirementBoard
-      key={`${environmentId}:${route.params?.sourceMessageId ?? route.params?.itemId ?? ""}`}
+      key={`${environmentId}:${route?.params?.sourceMessageId ?? route?.params?.itemId ?? ""}`}
+      workspace={workspace}
       environmentId={environmentId}
       onEnvironment={setEnvironment}
       filterEnvironmentId={chosenEnvironment}
       initial={
-        route.params?.environmentId && route.params.environmentId !== environmentId
+        route?.params?.environmentId && route?.params.environmentId !== environmentId
           ? undefined
-          : route.params
+          : route?.params
       }
     />
   ) : (
-    <SettingsScreen title={t("Requirements board")}>
+    <SettingsScreen workspaceRoot={workspace} title={t("Requirements board")}>
       <Text>{t("Connect an environment and add a project to use the task board.")}</Text>
     </SettingsScreen>
   );
 }
 
 function UnifiedRequirementBoard({
+  workspace,
   environmentId: fallbackEnvironmentId,
   filterEnvironmentId,
   onEnvironment,
   initial,
 }: {
+  workspace: boolean;
   environmentId: EnvironmentId;
   filterEnvironmentId: EnvironmentId | null;
   onEnvironment: (id: EnvironmentId | null) => void;
@@ -120,6 +136,7 @@ function UnifiedRequirementBoard({
   const t = useUiTranslation();
   const navigation = useNavigation();
   const registry = useContext(RegistryContext);
+  const selectTab = useSelectWorkspaceTab();
   const { environments } = useEnvironments();
   const [actionEnvironmentId, setActionEnvironmentId] = useState(fallbackEnvironmentId);
   const environmentId = actionEnvironmentId;
@@ -226,6 +243,14 @@ function UnifiedRequirementBoard({
     setSelectedId(null);
     setScrollOffset(listOffset.current);
   };
+  useHardwareBack(workspace, () => {
+    if (Keyboard.isVisible()) Keyboard.dismiss();
+    else if (!busy) {
+      if (creating || selectedId) back();
+      else selectTab("threads");
+    }
+    return true;
+  });
   const refresh = () => {
     for (const atom of data.atoms) registry.refresh(atom);
   };
@@ -392,6 +417,7 @@ function UnifiedRequirementBoard({
   };
   return (
     <SettingsScreen
+      workspaceRoot={workspace}
       title={t("Requirements board")}
       actions={
         errors.length && !creating && !selectedId

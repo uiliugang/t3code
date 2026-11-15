@@ -58,6 +58,7 @@ function createWorkspaceTabsModel(selectedTab?: WorkspaceTab) {
   const stored = Atom.make(initialWorkspaceTabsState(selectedTab));
   const scrollOffsets: Record<WorkspaceSearchTab, number> = {
     threads: 0,
+    requirements: 0,
     pullRequests: 0,
     usage: 0,
     settings: 0,

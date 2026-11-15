@@ -244,7 +244,6 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
 }
 
 function useSettingsIndexSections(): SettingsListSection[] {
-  const navigation = useNavigation();
   const gt = useGT();
   const language = useLanguagePreference();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
@@ -309,13 +308,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
           gt("Projects"),
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
-        serverPage("SettingsRequirements", "ticket", "Issue management"),
-        {
-          id: "requirements-board",
-          icon: "ticket",
-          label: "Requirements board",
-          onPress: () => navigation.navigate("Requirements"),
-        },
         serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
         serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
       ],
