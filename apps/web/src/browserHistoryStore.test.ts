@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   type BrowserProfileId,
   EnvironmentId,
@@ -340,6 +340,21 @@ const repoProject = {
 
 describe("thread project resolution", () => {
   beforeEach(resetStores);
+
+  it("retains only the 100 most recently registered thread projects", () => {
+    const store = useBrowserHistoryStore.getState();
+    const oldest = { ...threadRef, threadId: ThreadId.make("registered-0") };
+    for (let index = 0; index <= 100; index += 1) {
+      store.registerThreadProject(
+        { ...threadRef, threadId: ThreadId.make(`registered-${index}`) },
+        "proj-a",
+      );
+    }
+
+    const keys = Object.keys(useBrowserHistoryStore.getState().projectKeyByThreadKey);
+    expect(keys).toHaveLength(100);
+    expect(keys).not.toContain(scopedThreadKey(oldest));
+  });
 
   it("files a browser tab's visits and titles under the thread's project with no view registering it", () => {
     entities.projects = [repoProject];

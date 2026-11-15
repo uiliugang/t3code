@@ -37,6 +37,9 @@ describe("reconcileEnvFile", () => {
   it("replaces a quoted multi-line value whole", () => {
     expect(reconcileEnvFile('A="one\ntwo"\nKEEP=1\n', { A: "new" })).toBe("A=new\nKEEP=1\n");
     expect(reconcileEnvFile("A='x'\nKEEP=1\n", { A: "new" })).toBe("A=new\nKEEP=1\n");
+    expect(reconcileEnvFile('KEEP="one\nA=example\ntwo"\n', { A: "new" })).toBe(
+      'KEEP="one\nA=example\ntwo"\nA=new\n',
+    );
   });
 
   it("keeps later lines when a quoted value never closes", () => {

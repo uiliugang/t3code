@@ -53,3 +53,37 @@ it("finds a nightly beyond the first page and bounds lookup when no nightly exis
     vi.unstubAllGlobals();
   }
 });
+
+it.each(["unavailable", "corrupt", "full"] as const)(
+  "loads the release when the session cache is %s",
+  async (cache) => {
+    const release = { tag_name: "v0.0.8", assets: [] };
+    vi.stubGlobal("sessionStorage", {
+      getItem: () => {
+        if (cache === "unavailable") throw new DOMException("Blocked", "SecurityError");
+        return cache === "corrupt" ? "invalid JSON" : null;
+      },
+      setItem: () => {
+        if (cache !== "corrupt") throw new DOMException("Blocked", "QuotaExceededError");
+      },
+    });
+    using _fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(release));
+    try {
+      expect(await fetchLatestRelease()).toEqual(release);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it("rejects stable GitHub errors the same way as nightly errors", async () => {
+  vi.stubGlobal("sessionStorage", { getItem: () => null, setItem: vi.fn() });
+  using _fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(Response.json({ message: "API rate limit exceeded" }, { status: 403 }));
+  try {
+    await expect(fetchLatestRelease()).rejects.toThrow("Release lookup failed (403)");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

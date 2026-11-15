@@ -10,7 +10,6 @@ import {
 } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
-import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 
 export interface DesktopPreviewOverlay {
@@ -35,7 +34,6 @@ export interface ThreadPreviewState {
   activeTabId: string | null;
   desktopOverlay: DesktopPreviewOverlay | null;
   desktopByTabId: Record<string, DesktopPreviewOverlay>;
-  recentlySeenUrls: string[];
   listLoaded: boolean;
   serverEpoch: string | null;
   serverRevision: number;
@@ -48,7 +46,6 @@ const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
   activeTabId: null,
   desktopOverlay: null,
   desktopByTabId: {},
-  recentlySeenUrls: [] as string[],
   listLoaded: false,
   serverEpoch: null,
   serverRevision: 0,
@@ -124,19 +121,6 @@ function updateThreadPreviewState(
   if (changed) syncActivePreviewThread(threadKey, nextState);
 }
 
-const dedupeRecentUrls = (existing: string[], url: string): string[] => {
-  const next = [url, ...existing.filter((entry) => entry !== url)];
-  return next.slice(0, PREVIEW_RECENT_URL_LIMIT);
-};
-
-const rememberSnapshotUrl = (
-  recentlySeenUrls: string[],
-  snapshot: PreviewSessionSnapshot,
-): string[] =>
-  snapshot.navStatus._tag === "Idle"
-    ? recentlySeenUrls
-    : dedupeRecentUrls(recentlySeenUrls, snapshot.navStatus.url);
-
 const latestSnapshot = (
   sessions: Record<string, PreviewSessionSnapshot>,
 ): PreviewSessionSnapshot | null =>
@@ -190,10 +174,6 @@ export function applyPreviewServerEvent(ref: ScopedThreadRef, event: PreviewEven
         case "resized": {
           const snapshot = event.snapshot;
           if (current.suppressedTabIds.has(snapshot.tabId)) return current;
-          const recentlySeenUrls =
-            snapshot.navStatus._tag === "Idle"
-              ? current.recentlySeenUrls
-              : dedupeRecentUrls(current.recentlySeenUrls, snapshot.navStatus.url);
           const sessions = { ...current.sessions, [snapshot.tabId]: snapshot };
           const activeTabId = event.type === "opened" ? snapshot.tabId : current.activeTabId;
           const activeSnapshot = sessions[activeTabId ?? snapshot.tabId] ?? snapshot;
@@ -203,7 +183,6 @@ export function applyPreviewServerEvent(ref: ScopedThreadRef, event: PreviewEven
             activeTabId: activeTabId ?? snapshot.tabId,
             snapshot: activeSnapshot,
             desktopOverlay: current.desktopByTabId[activeSnapshot.tabId] ?? null,
-            recentlySeenUrls,
           };
         }
         case "failed": {
@@ -266,14 +245,12 @@ export function applyPreviewServerSnapshot(
     if (current.suppressedTabIds.has(snapshot.tabId)) return current;
     const existing = current.sessions[snapshot.tabId];
     if (existing && existing.updatedAt > snapshot.updatedAt) return current;
-    const recentlySeenUrls = rememberSnapshotUrl(current.recentlySeenUrls, snapshot);
     return {
       ...current,
       snapshot,
       sessions: { ...current.sessions, [snapshot.tabId]: snapshot },
       activeTabId: snapshot.tabId,
       desktopOverlay: current.desktopByTabId[snapshot.tabId] ?? null,
-      recentlySeenUrls,
     };
   });
 }
@@ -297,7 +274,6 @@ export function updatePreviewServerSnapshot(
       activeTabId,
       snapshot: activeSnapshot,
       desktopOverlay: current.desktopByTabId[activeTabId] ?? null,
-      recentlySeenUrls: rememberSnapshotUrl(current.recentlySeenUrls, snapshot),
     };
   });
 }
@@ -314,13 +290,11 @@ export function reconcilePreviewServerSessions(
     const snapshots = result.sessions;
     const sessions: Record<string, PreviewSessionSnapshot> = {};
     const currentSuppressedTabIds = sameServer ? current.suppressedTabIds : new Set<string>();
-    let recentlySeenUrls = current.recentlySeenUrls;
     for (const snapshot of snapshots) {
       if (currentSuppressedTabIds.has(snapshot.tabId)) continue;
       const existing = sameServer ? current.sessions[snapshot.tabId] : undefined;
       const next = existing && existing.updatedAt > snapshot.updatedAt ? existing : snapshot;
       sessions[next.tabId] = next;
-      recentlySeenUrls = rememberSnapshotUrl(recentlySeenUrls, next);
     }
 
     const fallback = latestSnapshot(sessions);
@@ -347,7 +321,6 @@ export function reconcilePreviewServerSessions(
       current.activeTabId === activeTabId &&
       current.snapshot === snapshot &&
       current.desktopOverlay === desktopOverlay &&
-      current.recentlySeenUrls === recentlySeenUrls &&
       haveSameValues(current.sessions, sessions) &&
       haveSameValues(current.desktopByTabId, desktopByTabId) &&
       current.suppressedTabIds.size === suppressedTabIds.size
@@ -362,7 +335,6 @@ export function reconcilePreviewServerSessions(
       snapshot,
       desktopByTabId,
       desktopOverlay,
-      recentlySeenUrls,
       listLoaded: true,
       serverEpoch: result.serverEpoch,
       serverRevision: result.revision,
@@ -442,10 +414,6 @@ export function cancelPreviewSessionClose(
     if (!snapshot) {
       return { ...current, suppressedTabIds };
     }
-    const recentlySeenUrls =
-      snapshot.navStatus._tag !== "Idle"
-        ? dedupeRecentUrls(current.recentlySeenUrls, snapshot.navStatus.url)
-        : current.recentlySeenUrls;
     return {
       ...current,
       snapshot,
@@ -453,7 +421,6 @@ export function cancelPreviewSessionClose(
       suppressedTabIds,
       activeTabId: snapshot.tabId,
       desktopOverlay: current.desktopByTabId[snapshot.tabId] ?? null,
-      recentlySeenUrls,
     };
   });
 }
@@ -496,14 +463,6 @@ export function whenPreviewTabKnown(
   return stop;
 }
 
-export function rememberPreviewUrl(ref: ScopedThreadRef, url: string): void {
-  if (url.trim().length === 0) return;
-  updateThreadPreviewState(ref, (current) => ({
-    ...current,
-    recentlySeenUrls: dedupeRecentUrls(current.recentlySeenUrls, url),
-  }));
-}
-
 export function isPreviewSupportedInRuntime(): boolean {
   if (typeof window === "undefined") return false;
   return Boolean(window.desktopBridge?.preview);
@@ -526,5 +485,4 @@ export function resetPreviewStateForTests(): void {
 
 export const __testing = {
   EMPTY_THREAD_PREVIEW_STATE,
-  RECENT_URL_LIMIT: PREVIEW_RECENT_URL_LIMIT,
 };

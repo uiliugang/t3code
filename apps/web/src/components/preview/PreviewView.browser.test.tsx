@@ -18,7 +18,6 @@ import type { PreviewableServer } from "./useDiscoveredLocalServers";
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(async (_tabId: string, _url: string): Promise<void> => undefined),
-  rememberPreviewUrl: vi.fn(),
   readPreparedConnection: vi.fn(() => ({ httpBaseUrl: "http://172.25.85.75:3773" })),
   readEnvironmentScope: vi.fn((_environmentId?: unknown, _scope?: unknown) => true),
   setAnnotationSendEnabled: vi.fn(async (_tabId: string, _enabled: boolean): Promise<void> => {}),
@@ -96,7 +95,6 @@ vi.mock(import("~/browser/browserDefaults"), async (original) => ({
 }));
 vi.mock(import("~/previewStateStore"), async (original) => ({
   ...(await original()),
-  rememberPreviewUrl: mocks.rememberPreviewUrl,
   useThreadPreviewState: (() => ({
     activeTabId: "tab-1",
     serverEpoch: mocks.serverEpoch,
@@ -114,7 +112,6 @@ vi.mock(import("~/previewStateStore"), async (original) => ({
         controller: "none",
       },
     },
-    recentlySeenUrls: [],
     sessions: mocks.showEmptyState
       ? {}
       : mocks.idleServerTab

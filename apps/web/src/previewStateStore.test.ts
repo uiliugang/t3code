@@ -268,6 +268,16 @@ describe("previewStateStore (single-tab)", () => {
     expect(readThreadPreviewState(ref).sessions).toEqual({ [snapshot.tabId]: snapshot });
   });
 
+  it("does not publish another state for an unchanged list with a navigated tab", () => {
+    const result = { sessions: [makeSnapshot()], serverEpoch, revision: 1 };
+    reconcilePreviewServerSessions(ref, result);
+    const first = readThreadPreviewState(ref);
+
+    reconcilePreviewServerSessions(ref, result);
+
+    expect(readThreadPreviewState(ref)).toBe(first);
+  });
+
   it("ignores a list response older than the latest server event", () => {
     const snapshot = makeSnapshot();
     applyPreviewServerEvent(ref, {

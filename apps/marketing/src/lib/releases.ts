@@ -28,7 +28,9 @@ function cacheKey(channel: ReleaseChannel) {
 }
 
 async function fetchStable(): Promise<Release> {
-  return fetch(LATEST_API_URL).then((r) => r.json());
+  const response = await fetch(LATEST_API_URL);
+  if (!response.ok) throw new Error(`Release lookup failed (${response.status})`);
+  return response.json();
 }
 
 async function fetchNightly(): Promise<Release> {
@@ -46,13 +48,21 @@ async function fetchNightly(): Promise<Release> {
 
 export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Promise<Release> {
   const key = cacheKey(channel);
-  const cached = sessionStorage.getItem(key);
-  if (cached) return JSON.parse(cached);
+  try {
+    const cached = sessionStorage.getItem(key);
+    if (cached) return JSON.parse(cached);
+  } catch {
+    // Blocked storage or a corrupt entry must not prevent loading the release.
+  }
 
   const data = channel === "nightly" ? await fetchNightly() : await fetchStable();
 
   if (data?.assets) {
-    sessionStorage.setItem(key, JSON.stringify(data));
+    try {
+      sessionStorage.setItem(key, JSON.stringify(data));
+    } catch {
+      // Writing is optional when storage is blocked or full.
+    }
   }
 
   return data;

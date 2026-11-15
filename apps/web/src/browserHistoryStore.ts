@@ -179,6 +179,7 @@ export function migratePersistedBrowserHistoryState(persistedState: unknown): {
 }
 
 const BROWSER_HISTORY_STORAGE_KEY = "t3code:browser-history:v1";
+const BROWSER_HISTORY_MAX_THREAD_PROJECT_KEYS = 100;
 
 const PENDING_MAX_PER_THREAD = 10;
 const PENDING_MAX_THREADS = 20;
@@ -285,8 +286,14 @@ export const useBrowserHistoryStore = create<BrowserHistoryStoreState>()(
         if (state.projectKeyByThreadKey[threadKey] === projectKey && !pendingVisits) return;
         const nextPendingVisits = { ...state.pendingVisitsByThreadKey };
         delete nextPendingVisits[threadKey];
+        const { [threadKey]: _previousProjectKey, ...otherProjects } = state.projectKeyByThreadKey;
+        const projectKeyByThreadKey = { ...otherProjects, [threadKey]: projectKey };
+        const threadKeys = Object.keys(projectKeyByThreadKey);
+        for (const key of threadKeys.slice(0, -BROWSER_HISTORY_MAX_THREAD_PROJECT_KEYS)) {
+          delete projectKeyByThreadKey[key];
+        }
         set({
-          projectKeyByThreadKey: { ...state.projectKeyByThreadKey, [threadKey]: projectKey },
+          projectKeyByThreadKey,
           pendingVisitsByThreadKey: nextPendingVisits,
         });
         for (const visit of pendingVisits ?? [])
@@ -342,7 +349,7 @@ function migratePersistedThreadProjectKeys(
         (entry): entry is [string, string] =>
           typeof entry[1] === "string" && entry[1] in byProjectKey,
       )
-      .slice(-100),
+      .slice(-BROWSER_HISTORY_MAX_THREAD_PROJECT_KEYS),
   );
 }
 

@@ -83,7 +83,6 @@ describe("openPreviewSession", () => {
       }
       expect(openPreview).not.toHaveBeenCalled();
       expect(readThreadPreviewState(threadRef).snapshot).toBeNull();
-      expect(readThreadPreviewState(threadRef).recentlySeenUrls).toEqual([]);
 
       await expect(open(input)).resolves.toMatchObject({ _tag: "Success" });
       expect(openPreview).toHaveBeenCalledExactlyOnceWith({
