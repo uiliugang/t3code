@@ -677,6 +677,15 @@ it.layer(layerTest)("CodexDriver", (it) => {
         identities.push(instance.continuationIdentity.continuationKey);
         expect(instance.auth).toBeUndefined();
         expect(instance.consumeResetCredit).toBeUndefined();
+        const native = yield* instance.resolveNativeCli!;
+        expect(native.command).toBe("/selected/codex");
+        expect(native.environment.CODEX_HOME).toContain(
+          NodePath.join("providers", "codex", instanceId, "byok"),
+        );
+        expect(native.environment.T3_CODEX_API_KEY).toBe("owned-key");
+        expect(native.environment.OPENAI_API_KEY).toBeUndefined();
+        expect(native.args.join(" ")).toContain(endpoint);
+        expect(native.args.join(" ")).not.toContain("owned-key");
         yield* instance.orchestrationAdapter
           .openSession({
             threadId: ThreadId.make("byok-thread"),

@@ -64,6 +64,7 @@ import {
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import { makeClaudeMaintenanceResolution } from "./ClaudeMaintenance.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -137,40 +138,46 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
             }),
         ),
       );
-    const proxy =
-      config.customModelsOnly && sourceEnvironment.T3_CLAUDE_API_FORMAT === "openai"
-        ? yield* Effect.acquireRelease(
-            Effect.tryPromise({
-              try: () =>
-                startClaudeChatCompletionsProxy({
-                  baseUrl: sourceEnvironment.ANTHROPIC_BASE_URL ?? "",
-                  apiKey:
-                    sourceEnvironment.ANTHROPIC_AUTH_TOKEN?.trim() ||
-                    sourceEnvironment.ANTHROPIC_API_KEY?.trim() ||
-                    "",
+    const resolveProcessEnvironment = Effect.fn("ClaudeDriver.resolveProcessEnvironment")(
+      function* () {
+        const proxy =
+          config.customModelsOnly && sourceEnvironment.T3_CLAUDE_API_FORMAT === "openai"
+            ? yield* Effect.acquireRelease(
+                Effect.tryPromise({
+                  try: () =>
+                    startClaudeChatCompletionsProxy({
+                      baseUrl: sourceEnvironment.ANTHROPIC_BASE_URL ?? "",
+                      apiKey:
+                        sourceEnvironment.ANTHROPIC_AUTH_TOKEN?.trim() ||
+                        sourceEnvironment.ANTHROPIC_API_KEY?.trim() ||
+                        "",
+                    }),
+                  catch: (cause) =>
+                    new ProviderDriverError({
+                      driver: DRIVER_KIND,
+                      instanceId,
+                      detail: "Could not start the local Chat Completions proxy.",
+                      cause,
+                    }),
                 }),
-              catch: (cause) =>
-                new ProviderDriverError({
-                  driver: DRIVER_KIND,
-                  instanceId,
-                  detail: "Could not start the local Chat Completions proxy.",
-                  cause,
-                }),
-            }),
-            (running) => Effect.promise(() => running.close()),
-          )
-        : undefined;
-    const processEnv: NodeJS.ProcessEnv = {
-      ...(proxy
-        ? {
-            ...sourceEnvironment,
-            ANTHROPIC_BASE_URL: proxy.baseUrl,
-            ANTHROPIC_AUTH_TOKEN: proxy.token,
-            ANTHROPIC_API_KEY: "",
-          }
-        : sourceEnvironment),
-      ...(config.setupMode === "managed" ? { DISABLE_AUTOUPDATER: "1" } : {}),
-    };
+                (running) => Effect.promise(() => running.close()),
+              )
+            : undefined;
+        const processEnvironment: NodeJS.ProcessEnv = {
+          ...(proxy
+            ? {
+                ...sourceEnvironment,
+                ANTHROPIC_BASE_URL: proxy.baseUrl,
+                ANTHROPIC_AUTH_TOKEN: proxy.token,
+                ANTHROPIC_API_KEY: "",
+              }
+            : sourceEnvironment),
+          ...(config.setupMode === "managed" ? { DISABLE_AUTOUPDATER: "1" } : {}),
+        };
+        return { proxy, environment: processEnvironment };
+      },
+    );
+    const { environment: processEnv, proxy } = yield* resolveProcessEnvironment();
     const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,
@@ -556,6 +563,27 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ),
       orchestrationAdapter,
       textGeneration,
+      resolveNativeCli: resolveProcessEnvironment().pipe(
+        Effect.flatMap((nativeEnvironment) =>
+          makeClaudeEnvironment(effectiveConfig, nativeEnvironment.environment),
+        ),
+        Effect.map((nativeEnvironment) => ({
+          command: effectiveConfig.binaryPath,
+          args: tokenizeCliArgs(effectiveConfig.launchArgs),
+          environment: nativeEnvironment,
+          environmentKeys: environment.map((variable) => variable.name),
+        })),
+        Effect.provideService(Path.Path, path),
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Could not prepare the Claude terminal environment.",
+              cause,
+            }),
+        ),
+      ),
       consumeResetCredit,
     } satisfies ProviderInstance;
   }),

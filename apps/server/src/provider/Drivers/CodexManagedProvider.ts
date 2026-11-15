@@ -14,6 +14,7 @@ import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneratio
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { chatGptModels } from "../CodexChatGptModels.ts";
 import { makeCodexManagedRuntime } from "../CodexManagedRuntime.ts";
+import { codexNativeLaunch } from "../nativeCliLaunch.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { createCodexAdapterV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import {
@@ -311,6 +312,12 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     snapshot,
     orchestrationAdapter,
     textGeneration,
+    resolveNativeCli: resolveRuntime.pipe(
+      Effect.map((runtime) => ({
+        ...codexNativeLaunch(runtime),
+        environmentKeys: input.environment?.map((variable) => variable.name),
+      })),
+    ),
     auth: runtime.auth.controller,
     snapshotForCwd: (cwd: string) =>
       enabled

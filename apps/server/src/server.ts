@@ -169,6 +169,8 @@ import * as AuthHttp from "./auth/http.ts";
 import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as CodexManagedTokenBroker from "./provider/CodexManagedTokenBroker.ts";
+import * as NativeCli from "./provider/NativeCli.ts";
+import * as NativeCliBroker from "./provider/NativeCliBroker.ts";
 import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as RelayDeliveryProof from "./scheduledTasks/RelayDeliveryProof.ts";
 import * as HeldHooksWaker from "./relay/HeldHooksWaker.ts";
@@ -1392,6 +1394,10 @@ const layerMakeServer = Layer.unwrap(
       Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)),
     );
     const layerServerApplication = Layer.mergeAll(
+      NativeCliBroker.layer.pipe(
+        Layer.provide(NativeCli.layer),
+        Layer.provide(ProjectionStoreV2.layer),
+      ),
       Layer.effectDiscard(
         Effect.gen(function* () {
           const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;

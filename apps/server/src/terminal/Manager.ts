@@ -78,6 +78,7 @@ import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 import type { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ProviderCliShell from "./ProviderCliShell.ts";
 import { increment, terminalSessionsTotal } from "../observability/Metrics.ts";
 import { expandHomeVariable } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProcessRunner from "../processRunner.ts";
@@ -1612,6 +1613,7 @@ interface TerminalManagerOptions {
   env?: NodeJS.ProcessEnv;
   managedBinaryCacheDir?: string;
   managedBinaryToolsDir?: string;
+  providerShellPaths?: ProviderCliShell.ProviderShellPaths | undefined;
   subprocessInspector?: TerminalSubprocessInspector;
   processTable?: Effect.Effect<
     ReadonlyArray<ResourceMonitorProcessTableEntry>,
@@ -1709,6 +1711,10 @@ export const make = Effect.fn("TerminalManager.make")(function* (
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
     stateDir,
+    providerShellPaths:
+      (yield* HostProcess.Platform) === "win32"
+        ? undefined
+        : yield* (yield* ProviderCliShell.ProviderCliShell).prepare(stateDir),
     ptyAdapter,
     processTable: nativeTelemetry.processTable.pipe(
       Effect.mapError(
@@ -1756,7 +1762,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         });
       }
       const env = yield* resolver(input.providerInstanceId, input.env);
-      return { ...input, env };
+      return { ...input, env: { ...env, T3CODE_PROVIDER_INSTANCE_ID: input.providerInstanceId } };
     },
   );
   // Share one process table per poll; per-terminal scans can exhaust PIDs on busy hosts.
@@ -2635,11 +2641,21 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       );
     }
 
+    const shellName = path.basename(candidate.shell);
+    const shellEnv = { ...spawnEnv };
+    let shellArgs = candidate.args ?? [];
+    if (options.providerShellPaths && shellName === "zsh") {
+      shellEnv.T3CODE_ORIGINAL_ZDOTDIR =
+        baseEnv.T3CODE_ORIGINAL_ZDOTDIR ?? spawnEnv.ZDOTDIR ?? spawnEnv.HOME;
+      shellEnv.ZDOTDIR = options.providerShellPaths.zshDirectory;
+    } else if (options.providerShellPaths && shellName === "bash") {
+      shellArgs = ["--rcfile", options.providerShellPaths.bashRc, "-i"];
+    }
     const launch = yield* agentScope.wrap({
       command: candidate.shell,
-      args: candidate.args ?? [],
+      args: shellArgs,
       name: "terminal",
-      env: spawnEnv,
+      env: shellEnv,
       survivesRestart: true,
     });
     const attempt = yield* Effect.result(
@@ -2649,7 +2665,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         cwd: session.cwd,
         cols: session.cols,
         rows: session.rows,
-        env: spawnEnv,
+        env: shellEnv,
       }),
     );
 
@@ -3812,4 +3828,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 });
 
 export const layer = (deriveConfigMap: typeof deriveProviderInstanceConfigMap) =>
-  Layer.effect(TerminalManager, make(deriveConfigMap)).pipe(Layer.provide(ProcessRunner.layer));
+  Layer.effect(TerminalManager, make(deriveConfigMap)).pipe(
+    Layer.provide(ProcessRunner.layer),
+    Layer.provide(ProviderCliShell.layer),
+  );

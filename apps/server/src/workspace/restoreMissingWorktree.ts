@@ -317,6 +317,7 @@ export const makePrepareTerminalLaunch = Effect.fn(
     const thread = yield* getThreadShell(ThreadId.make(input.threadId)).pipe(
       Effect.orElseSucceed(() => null),
     );
+    input = { ...input, env: { ...input.env, T3CODE_PROVIDER_THREAD_ID: thread?.id ?? "" } };
     const worktreePath = thread?.workspace
       ? ((thread.workspace.mode === "isolated"
           ? thread.workspace.resources.find((resource) =>
