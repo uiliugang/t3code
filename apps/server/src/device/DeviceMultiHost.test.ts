@@ -14,8 +14,17 @@ import * as DeviceService from "./DeviceService.ts";
 it.effect("keeps hosts independent when serials collide and another host fails", () =>
   Effect.gen(function* () {
     const shutdowns: string[] = [];
+    const queryEntered = yield* Deferred.make<void>();
+    const finishQuery = yield* Deferred.make<void>();
+    const progress: string[] = [];
+    let retiring = false;
     const http = HttpClient.make((request) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
+        if (retiring && request.url === "http://a/api/devices") {
+          yield* Deferred.succeed(queryEntered, undefined);
+          yield* Deferred.await(finishQuery);
+          progress.push("discovery completed");
+        }
         if (request.url.endsWith("/shutdown")) {
           shutdowns.push(request.url);
           return HttpClientResponse.fromWeb(request, Response.json({ ok: true }));
@@ -80,15 +89,21 @@ it.effect("keeps hosts independent when serials collide and another host fails",
         }),
         platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
         ensureReady: () =>
-          failed
-            ? Effect.fail(
-                new DeviceHost.DeviceHostError({
-                  hostId: id,
-                  step: "connect",
-                  cause: new Error("offline"),
-                }),
-              )
-            : Effect.succeed(ready),
+          Effect.sync(() => {
+            if (retiring && id === "b") progress.push("healthy host ready");
+          }).pipe(
+            Effect.andThen(
+              failed
+                ? Effect.fail(
+                    new DeviceHost.DeviceHostError({
+                      hostId: id,
+                      step: "connect",
+                      cause: new Error("offline"),
+                    }),
+                  )
+                : Effect.succeed(ready),
+            ),
+          ),
         ensureAgentReady: () => Effect.succeed(ready),
         current: Effect.succeed(ready),
         releaseAgentSession: ready.releaseAgentSession!,
@@ -116,8 +131,19 @@ it.effect("keeps hosts independent when serials collide and another host fails",
     const threadId = ThreadId.make("thread");
     for (const hostId of ["a", "b"])
       yield* service.open({ threadId, hostId, deviceId: "emulator-5554", platform: "android" });
-    const retiring = (yield* service.state).sessions.find((session) => session.hostId === "a")!;
-    yield* service.closeRetired(retiring, Effect.succeed(true));
+    const session = (yield* service.state).sessions.find((session) => session.hostId === "a")!;
+    retiring = true;
+    const cleanup = yield* service
+      .closeRetired(session, Effect.succeed(true))
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(queryEntered);
+    const healthy = yield* service
+      .readiness("b")
+      .pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.succeed(finishQuery, undefined);
+    yield* Fiber.join(cleanup);
+    yield* Fiber.join(healthy);
+    expect(progress).toEqual(["healthy host ready", "discovery completed"]);
     const state = yield* service.state;
     expect(state.devices).toHaveLength(2);
     expect(state.sessions.map((session) => session.hostId)).toEqual(["b"]);

@@ -133,8 +133,13 @@ const fixture = Effect.fn("fixture")(function* (
   const androidAvailable = yield* Ref.make(true);
   const iosAvailable = yield* Ref.make(true);
   const encoderResult = yield* Ref.make({ code: 0, stdout: " V....D libx264", stderr: "" });
+  const avdResult = yield* Ref.make({ code: 0, stdout: "Pixel_API_35\n", stderr: "" });
   const screenshotBody = yield* Ref.make(minimalPng);
-  const listing = { hangs: false, requested: yield* Deferred.make<void>() };
+  const listing = {
+    hangs: false,
+    requested: yield* Deferred.make<void>(),
+    pause: undefined as Deferred.Deferred<void> | undefined,
+  };
   let booted = false;
   let shutDown = false;
   const connection = { online: true, kind: "local" as "local" | "ssh", failShutdown: false };
@@ -204,6 +209,12 @@ const fixture = Effect.fn("fixture")(function* (
           Effect.andThen(Effect.never),
         );
       }
+      if (listing.pause) {
+        const pause = listing.pause;
+        listing.pause = undefined;
+        yield* Deferred.succeed(listing.requested, undefined);
+        yield* Deferred.await(pause);
+      }
       return HttpClientResponse.fromWeb(
         request,
         Response.json({
@@ -230,7 +241,7 @@ const fixture = Effect.fn("fixture")(function* (
   );
   const run = (command: string) =>
     command === "emulator"
-      ? Effect.succeed({ code: 0, stdout: "Pixel_API_35\n", stderr: "" })
+      ? Ref.get(avdResult)
       : (options.onEncoderCheck ?? Effect.void).pipe(Effect.andThen(Ref.get(encoderResult)));
   const ready: DeviceHost.DeviceHostReady = {
     nodePath: process.execPath,
@@ -375,6 +386,7 @@ const fixture = Effect.fn("fixture")(function* (
     connection,
     devices,
     encoderResult,
+    avdResult,
     screenshotBody,
     discoveryErrors,
     androidAvailable,
@@ -2072,7 +2084,7 @@ describe("agent session release on close", () => {
     "retiring a %s device powers off only a running virtual device",
     (platform) =>
       Effect.gen(function* () {
-        const { service, devices, requests } = yield* fixture();
+        const { service, devices, requests, avdResult } = yield* fixture();
         yield* service.configure({ enabled: true, agentAccessEnabled: true });
         for (const [physical, booted] of [
           [true, true],
@@ -2094,6 +2106,8 @@ describe("agent session release on close", () => {
             platform,
             boot: false,
           });
+          if (platform === "android")
+            yield* Ref.set(avdResult, { code: 1, stdout: "", stderr: "AVD catalog unavailable" });
           yield* service.closeRetired(session, Effect.succeed(true));
           expect((yield* service.state).sessions).toEqual([]);
           expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(
@@ -2173,40 +2187,80 @@ describe("agent session release on close", () => {
     }),
   );
 
-  it.effect("retains retirement records when discovery is incomplete or the hub is offline", () =>
-    Effect.gen(function* () {
-      const { service, connection, discoveryErrors, requests, devices } = yield* fixture();
-      const simulator = {
-        id: "iphone",
-        name: "iPhone",
-        version: "iOS 26",
-        platform: "ios",
-        booted: true,
-        physical: false,
-      } as const;
-      devices.push(simulator);
-      yield* service.configure({ enabled: true, agentAccessEnabled: true });
-      const session = yield* service.open({
-        threadId: ThreadId.make("discovery-retry"),
-        deviceId: simulator.id,
-        platform: simulator.platform,
-      });
-      const retire = service.closeRetired(session, Effect.succeed(true));
-      connection.online = false;
-      expect(Exit.isFailure(yield* Effect.exit(retire))).toBe(true);
-      expect((yield* service.state).sessions).toEqual([session]);
-      connection.online = true;
-      devices.length = 0;
-      yield* Ref.set(discoveryErrors, [{ message: simctlMessage }]);
-      expect(Exit.isFailure(yield* Effect.exit(retire))).toBe(true);
-      expect((yield* service.state).sessions).toEqual([session]);
-      expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
-      yield* Ref.set(discoveryErrors, []);
-      devices.push(simulator);
-      yield* retire;
-      expect((yield* service.state).sessions).toEqual([]);
-      expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(1);
-    }),
+  it.effect.each(["peer", "reopened", "resumed"] as const)(
+    "preserves a %s claim created while retirement waits for discovery",
+    (change) =>
+      Effect.gen(function* () {
+        const { service, listing, requests, closedSessions } = yield* fixture();
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        const session = yield* openClaim(service, ThreadId.make("retiring"));
+        const retired = yield* Ref.make(true);
+        const finish = yield* Deferred.make<void>();
+        listing.pause = finish;
+        const retiring = yield* service
+          .closeRetired(session, Ref.get(retired))
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(listing.requested);
+        let surviving = session;
+        if (change === "resumed") yield* Ref.set(retired, false);
+        else
+          surviving = yield* openClaim(
+            service,
+            change === "peer" ? ThreadId.make("peer") : session.threadId,
+            session.deviceId,
+          );
+        yield* Deferred.succeed(finish, undefined);
+        yield* Fiber.join(retiring);
+        expect((yield* service.state).sessions).toEqual([surviving]);
+        expect((yield* service.state).devices.some((device) => device.booted)).toBe(true);
+        expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
+        expect(closedSessions).toHaveLength(change === "peer" ? 1 : 0);
+      }),
+  );
+
+  it.effect.each(["ios", "android"] as const)(
+    "retains %s retirement records when discovery is incomplete or the hub is offline",
+    (platform) =>
+      Effect.gen(function* () {
+        const { service, connection, discoveryErrors, requests, devices } = yield* fixture();
+        const simulator = {
+          id: "iphone",
+          name: "iPhone",
+          version: "iOS 26",
+          platform,
+          booted: true,
+          physical: false,
+        } as const;
+        devices.push(simulator);
+        yield* service.configure({ enabled: true, agentAccessEnabled: true });
+        const session = yield* service.open({
+          threadId: ThreadId.make("discovery-retry"),
+          deviceId: simulator.id,
+          platform: simulator.platform,
+        });
+        const retire = service.closeRetired(session, Effect.succeed(true));
+        connection.online = false;
+        expect(Exit.isFailure(yield* Effect.exit(retire))).toBe(true);
+        expect((yield* service.state).sessions).toEqual([session]);
+        connection.online = true;
+        devices.length = 0;
+        yield* Ref.set(discoveryErrors, [
+          {
+            message:
+              platform === "ios"
+                ? simctlMessage
+                : "[android-utils] Failed to run `adb devices -l`:",
+          },
+        ]);
+        expect(Exit.isFailure(yield* Effect.exit(retire))).toBe(true);
+        expect((yield* service.state).sessions).toEqual([session]);
+        expect(requests.some((url) => url.endsWith("/shutdown"))).toBe(false);
+        yield* Ref.set(discoveryErrors, []);
+        devices.push(simulator);
+        yield* retire;
+        expect((yield* service.state).sessions).toEqual([]);
+        expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(1);
+      }),
   );
 
   it.effect("releases the post-boot agentTarget session for a cold Android AVD", () =>

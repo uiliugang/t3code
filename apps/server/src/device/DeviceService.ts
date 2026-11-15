@@ -944,6 +944,24 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     expectedSession?: DeviceSession,
   ) {
     const expected = expectedSession ? [expectedSession] : undefined;
+    const snapshot = (yield* SynchronizedRef.get(stateRef)).state;
+    if (
+      expectedSession &&
+      (!snapshot.sessions.includes(expectedSession) || (shouldClose && !(yield* shouldClose)))
+    )
+      return;
+    const retirementReady =
+      expectedSession &&
+      !snapshot.sessions.some(
+        (peer) =>
+          peer !== expectedSession &&
+          peer.hostId === expectedSession.hostId &&
+          peer.deviceId === expectedSession.deviceId,
+      )
+        ? yield* currentReadiness(expectedSession.hostId)
+        : null;
+    // Discovery can wait on a remote host; recheck ownership under the lock before closing.
+    const retirementListing = retirementReady ? yield* fetchDevices(retirementReady) : null;
     // Open publishes under the same lock; an old close must not release a reopened claim.
     const closing = yield* lifecycleLock.withPermit(
       Effect.gen(function* () {
@@ -1004,17 +1022,21 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               reason: "Device host is not running. Reconnect before retrying close.",
             });
           if (expectedSession) {
-            const listing = yield* fetchDevices(ready);
+            // A peer can retire between the snapshot and the lock; retry with a fresh listing.
+            if (!retirementListing) return [];
+            const listing = retirementListing;
+            const device = listing.devices.find((device) => device.id === session.deviceId);
             if (
-              listing.incompletePlatforms.includes(session.platform) ||
-              (session.platform === "android" && listing.androidDiscoveryIncomplete)
+              !device &&
+              (listing.detail ||
+                listing.incompletePlatforms.includes(session.platform) ||
+                (session.platform === "android" && listing.androidDiscoveryIncomplete))
             )
               return yield* new DeviceOperationError({
                 operation: "shutdown",
                 reason: "request_failed",
                 cause: new Error("Device discovery is incomplete."),
               });
-            const device = listing.devices.find((device) => device.id === session.deviceId);
             if (!device?.booted || device.physical) continue;
             if (shouldClose && !(yield* shouldClose)) return [];
             yield* releaseLaunchers([session]);
