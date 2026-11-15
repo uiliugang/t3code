@@ -114,6 +114,9 @@ export class AuthSessionRepository extends Context.Service<
     readonly getById: (
       input: GetAuthSessionByIdInput,
     ) => Effect.Effect<Option.Option<AuthSessionRecord>, AuthSessionRepositoryError>;
+    readonly latestForProofKey: (
+      proofKeyThumbprint: string,
+    ) => Effect.Effect<Option.Option<AuthSessionId>, AuthSessionRepositoryError>;
     readonly listActive: (
       input: ListActiveAuthSessionsInput,
     ) => Effect.Effect<ReadonlyArray<AuthSessionRecord>, AuthSessionRepositoryError>;
@@ -535,6 +538,29 @@ export const make = Effect.gen(function* () {
       Effect.map((rows) => Option.fromNullishOr(rows[0]?.proofKeyThumbprint)),
     );
 
+  const latestProofKeySession = SqlSchema.findOneOption({
+    Request: Schema.String,
+    Result: Schema.Struct({ sessionId: AuthSessionId }),
+    execute: (thumbprint) => sql`
+      SELECT session_id AS "sessionId" FROM auth_sessions
+      WHERE proof_key_thumbprint = ${thumbprint}
+      ORDER BY issued_at DESC, rowid DESC LIMIT 1
+    `,
+  });
+  const latestForProofKey = Effect.fn("AuthSessionRepository.latestForProofKey")(
+    (thumbprint: string) =>
+      latestProofKeySession(thumbprint).pipe(
+        NodeSqliteClient.readOnly,
+        Effect.map(Option.map((row) => row.sessionId)),
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthSessionRepository.latestForProofKey:query",
+            "AuthSessionRepository.latestForProofKey:decodeRow",
+          ),
+        ),
+      ),
+  );
+
   const revokeByProofKey: AuthSessionRepository["Service"]["revokeByProofKey"] = (input) =>
     revokeByProofKeyRows(input).pipe(
       Effect.mapError(
@@ -551,6 +577,7 @@ export const make = Effect.gen(function* () {
     createReplacingActive,
     createIfAbsent,
     getById,
+    latestForProofKey,
     listActive,
     revoke,
     revokeAllExcept,

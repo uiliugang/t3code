@@ -6,7 +6,7 @@ import {
   createComposerPredictionController,
   resolveComposerPredictionSource,
 } from "@t3tools/client-runtime/composer-prediction";
-import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { threadPredictionSourceRun } from "@t3tools/shared/threadPrediction";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { ServerConfig as T3ServerConfig } from "@t3tools/contracts";
@@ -44,7 +44,8 @@ export function useComposerPrediction(
         { environmentId, input: request },
         { reportFailure: false, reportDefect: false },
       );
-      return result._tag === "Success" ? result.value.text : null;
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      return result.value.text;
     }),
   );
   const sourceRunId = threadPredictionSourceRun(thread.source);

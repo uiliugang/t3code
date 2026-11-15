@@ -18,7 +18,28 @@ import {
 import {
   decodeStoredThreadSnapshot,
   makeStoredThreadSnapshotEncoder,
+  makeThreadCacheWriteOrder,
 } from "./threadCacheEncoding.ts";
+
+it("consumes write tickets once and invalidates removed, cleared, and superseded saves", () => {
+  const order = makeThreadCacheWriteOrder();
+  const old = order.beginSave("one", "thread");
+  const latest = order.beginSave("one", "thread");
+  expect(old()).toBe(false);
+  expect(latest()).toBe(true);
+  expect(latest()).toBe(false);
+  const removed = order.beginSave("one", "thread");
+  order.removeThread("one", "thread");
+  const replacement = order.beginSave("one", "thread");
+  expect(removed()).toBe(false);
+  expect(replacement()).toBe(true);
+  const cleared = order.beginSave("one", "thread");
+  const other = order.beginSave("two", "thread");
+  order.clearEnvironment("one");
+  expect(cleared()).toBe(false);
+  expect(other()).toBe(true);
+  expect(order.beginSave("one", "thread")()).toBe(true);
+});
 
 const environmentId = EnvironmentId.make("environment-thread-cache");
 const otherThreadId = ThreadId.make("thread-parent");

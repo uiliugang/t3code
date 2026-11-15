@@ -62,7 +62,7 @@ open "/Applications/T3 Code (Beta).app"
 
 ### 从源码运行本分支
 
-需要 Git、仓库指定的 Node.js 版本（当前为 `26.12.1`）和 [Vite+](https://viteplus.dev/guide/) 的 `vp` 命令。
+需要 Git、[package.json](package.json) 中 `engines.node` 指定的 Node.js 版本，以及 [Vite+](https://viteplus.dev/guide/) 的 `vp` 命令。
 
 ```bash
 git clone https://github.com/uiliugang/t3code.git

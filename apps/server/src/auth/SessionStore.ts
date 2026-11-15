@@ -520,9 +520,6 @@ const make = Effect.gen(function* () {
   );
   const connectedSessionsRef = yield* Ref.make(new Map<AuthSessionId, number>());
   const changesPubSub = yield* PubSub.unbounded<SessionCredentialChange>();
-  // Newest session per DPoP key. A live socket moves to it at expiry, so a
-  // client that renews its short-lived token keeps its socket.
-  const latestSessionByProofKey = new Map<string, AuthSessionId>();
   const cookieInput = {
     mode: serverConfig.mode,
     port: serverConfig.port,
@@ -730,7 +727,6 @@ const make = Effect.gen(function* () {
             })
           : authSessions.create(sessionRecord).pipe(Effect.as([] as ReadonlyArray<AuthSessionId>))
       ).pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ sessionId, cause })));
-      if (claims.jkt) latestSessionByProofKey.set(claims.jkt, sessionId);
       if (replacedSessionIds.length > 0) {
         yield* Ref.update(connectedSessionsRef, (current) => {
           const next = new Map(current);
@@ -1097,45 +1093,47 @@ const make = Effect.gen(function* () {
                 (cause) => new SessionCredentialVerificationError({ sessionId: id, cause }),
               ),
             );
+        const chain = new Set([sessionId]);
         const original = yield* readRow(sessionId);
-        if (Option.isNone(original)) return;
-        // Revoking any session the socket has used closes it. Events only wake this loop
-        // and the rows decide: revocations are written before they are published, and
-        // clientRemoved also reports an expired session losing its last socket.
-        const chain = [sessionId];
-        const nextRemoval = Effect.gen(function* () {
+        if (Option.isNone(original) || original.value.revokedAt !== null) return;
+        // Keep the listener alive across expiry so a racing timer cannot discard a revocation.
+        const watchRemovals = Effect.gen(function* () {
           while (true) {
             const change = yield* PubSub.take(subscription);
-            if (change.type === "clientRemoved" && chain.includes(change.sessionId)) return;
+            if (change.type !== "clientRemoved" || !chain.has(change.sessionId)) continue;
+            const row = yield* readRow(change.sessionId);
+            if (Option.isNone(row) || row.value.revokedAt !== null) return;
           }
         });
-        let current = original.value;
-        while (true) {
-          const rows = yield* Effect.forEach(chain, readRow);
-          if (rows.some((row) => Option.isNone(row) || row.value.revokedAt !== null)) return;
-          const now = yield* DateTime.now;
-          const remaining = current.expiresAt.epochMilliseconds - now.epochMilliseconds;
-          if (remaining > 0) {
-            yield* Effect.raceFirst(nextRemoval, Effect.sleep(Duration.millis(remaining)));
-            continue;
+        const followRenewals = Effect.gen(function* () {
+          let current = original.value;
+          while (true) {
+            const now = yield* DateTime.now;
+            const remaining = current.expiresAt.epochMilliseconds - now.epochMilliseconds;
+            if (remaining > 0) yield* Effect.sleep(Duration.millis(remaining));
+            if (proofKeyThumbprint === undefined) return;
+            const latest = yield* authSessions
+              .latestForProofKey(proofKeyThumbprint)
+              .pipe(
+                Effect.mapError(
+                  (cause) => new SessionCredentialVerificationError({ sessionId, cause }),
+                ),
+              );
+            if (Option.isNone(latest) || chain.has(latest.value)) return;
+            chain.add(latest.value);
+            const successor = yield* readRow(latest.value);
+            // A renewed socket retains its original scopes and must honor revocation of every predecessor.
+            if (
+              Option.isNone(successor) ||
+              successor.value.revokedAt !== null ||
+              successor.value.subject !== original.value.subject ||
+              !original.value.scopes.every((scope) => successor.value.scopes.includes(scope))
+            )
+              return;
+            current = successor.value;
           }
-          const successorId =
-            proofKeyThumbprint === undefined
-              ? undefined
-              : latestSessionByProofKey.get(proofKeyThumbprint);
-          if (successorId === undefined || successorId === current.sessionId) return;
-          const successor = yield* readRow(successorId);
-          // The socket keeps its original scopes, so the renewal must still grant all of them.
-          if (
-            Option.isNone(successor) ||
-            successor.value.subject !== original.value.subject ||
-            !original.value.scopes.every((scope) => successor.value.scopes.includes(scope))
-          ) {
-            return;
-          }
-          chain.push(successorId);
-          current = successor.value;
-        }
+        });
+        yield* Effect.raceFirst(watchRemovals, followRenewals);
       }),
     );
   });

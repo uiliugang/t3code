@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
-import { expect, it } from "@effect/vitest";
+import { expect, it, vi } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -17,6 +17,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as AuthSessions from "../persistence/AuthSessions.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import { base64UrlDecodeUtf8, base64UrlEncode } from "./utils.ts";
@@ -146,6 +147,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
       name: "a renewal with fewer scopes",
       renewal: { scopes: ["orchestration:read"] as const },
       closesAtMinute: 60,
+      sameInstantPredecessor: true,
+    },
+    {
+      name: "a revoked renewal with a valid predecessor issued at the same instant",
+      renewal: {},
+      closesAtMinute: 60,
+      sameInstantPredecessor: true,
+      revokeBeforeExpiry: true,
     },
     {
       name: "a renewal, until the original is revoked",
@@ -171,7 +180,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
           Effect.forkScoped({ startImmediately: true }),
         );
       yield* TestClock.adjust(Duration.minutes(59));
+      if ("sameInstantPredecessor" in testCase) yield* sessions.issue(relaySessionInput);
       const renewal = yield* sessions.issue({ ...relaySessionInput, ...testCase.renewal });
+      if ("revokeBeforeExpiry" in testCase) yield* sessions.revoke(renewal.sessionId);
       yield* TestClock.adjust(Duration.millis((testCase.closesAtMinute - 59) * 60_000 - 1));
       expect(yield* Deferred.isDone(invalidated)).toBe(false);
       yield* TestClock.adjust(Duration.millis(1));
@@ -187,6 +198,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
   it.effect("closes a DPoP socket when an earlier renewal in its chain is revoked", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;
+      const repository = yield* AuthSessions.AuthSessionRepository;
+      using reads = vi.spyOn(repository, "getById");
       const client = yield* sessions.issue(relaySessionInput);
       const invalidated = yield* Deferred.make<void>();
       const watcher = yield* sessions
@@ -202,6 +215,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
       // Past the first renewal's expiry, so the socket now follows the second.
       yield* TestClock.adjust(Duration.minutes(2));
       expect(yield* Deferred.isDone(invalidated)).toBe(false);
+      expect(
+        reads.mock.calls.filter(([input]) => input.sessionId === client.sessionId),
+      ).toHaveLength(1);
       yield* sessions.revoke(first.sessionId);
       yield* Fiber.join(watcher);
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),

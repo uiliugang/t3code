@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import {
   codexConnectionMode,
   codexRuntimeSource,
@@ -21,6 +21,9 @@ describe("Codex connection configuration", () => {
     }
   });
   it("rejects credential-bearing and request URLs without losing gateway prefixes", () => {
+    using _parse = vi.spyOn(URL, "parse").mockImplementation(() => {
+      throw new TypeError("URL.parse is not available in this client");
+    });
     expect(codexByokUrlError("https://gateway.example/team/v1")).toBeNull();
     for (const url of [
       "file:///tmp/api",

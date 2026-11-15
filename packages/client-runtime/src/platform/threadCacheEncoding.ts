@@ -93,28 +93,30 @@ interface EncodedRow {
   readonly length: number;
 }
 
-/**
- * Thread saves yield while encoding, so they can finish after a later save, a
- * removal, or an environment clear. Each takes a ticket when it starts; a save
- * writes only while no newer ticket exists for its thread or environment.
- */
+/** A write consumes its ticket; removal invalidates pending encoders before they can write. */
 export function makeThreadCacheWriteOrder() {
-  let latest = 0;
-  const tickets = new Map<string, number>();
-  const threadKey = (environmentId: string, threadId: string) =>
-    `${environmentId}\u0000${threadId}`;
+  const environments = new Map<string, Map<string, object>>();
   return {
     beginSave: (environmentId: string, threadId: string) => {
-      const ticket = ++latest;
-      const key = threadKey(environmentId, threadId);
-      tickets.set(key, ticket);
-      return () => tickets.get(key) === ticket && (tickets.get(environmentId) ?? 0) < ticket;
+      const threads = environments.get(environmentId) ?? new Map<string, object>();
+      environments.set(environmentId, threads);
+      const ticket = {};
+      threads.set(threadId, ticket);
+      return () => {
+        if (environments.get(environmentId) !== threads || threads.get(threadId) !== ticket)
+          return false;
+        threads.delete(threadId);
+        if (threads.size === 0) environments.delete(environmentId);
+        return true;
+      };
     },
     removeThread: (environmentId: string, threadId: string) => {
-      tickets.set(threadKey(environmentId, threadId), ++latest);
+      const threads = environments.get(environmentId);
+      threads?.delete(threadId);
+      if (threads?.size === 0) environments.delete(environmentId);
     },
     clearEnvironment: (environmentId: string) => {
-      tickets.set(environmentId, ++latest);
+      environments.delete(environmentId);
     },
   };
 }

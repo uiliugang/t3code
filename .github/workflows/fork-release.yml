@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/fork-release.yml
       - .github/scripts/android-release.init.gradle
+      - .github/scripts/android-version-code.cjs
       - .github/actions/setup-ci-deps/**
       - .env.example
       - apps/mobile/**
@@ -32,6 +33,7 @@ on:
     paths:
       - .github/workflows/fork-release.yml
       - .github/scripts/android-release.init.gradle
+      - .github/scripts/android-version-code.cjs
       - apps/mobile/app.config.ts
       - apps/mobile/metro.config.js
       - pnpm-workspace.yaml
@@ -78,8 +80,7 @@ jobs:
             version="$(jq -r .version apps/desktop/package.json)-pr.fork.${GITHUB_RUN_NUMBER}"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          # Epoch minutes keep versionCode increasing independently of the app version.
-          echo "version_code=$(( $(date +%s) / 60 ))" >> "$GITHUB_OUTPUT"
+          echo "version_code=$(node .github/scripts/android-version-code.cjs "${version%%-*}")" >> "$GITHUB_OUTPUT"
 
   macos:
     if: (github.event_name != 'push' || github.ref_type == 'tag') && !inputs.android_only && !inputs.verify_cache
@@ -424,7 +425,10 @@ jobs:
           if [[ -n "$previous_tag" ]]; then
             notes_args+=(--notes-start-tag "$previous_tag")
           fi
-          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage *.deb latest-linux*.yml t3-*.tar.gz android-update.json SHA256SUMS --verify-tag \
+          gh release create "$RELEASE_TAG" *.dmg *.apk *.AppImage *.deb latest-linux*.yml t3-*.tar.gz android-update.json SHA256SUMS --verify-tag --latest=false \
             --title "T3 Code $RELEASE_TAG (fork)" \
             "${notes_args[@]}" \
             --notes '本版本提供 Apple Silicon macOS DMG 与 CLI、支持自动更新的 Linux x64/arm64 AppImage、DEB 与 CLI，以及独立签名的 ARM64 Android APK。macOS 应用采用临时签名，未经 Apple 公证，可从“设置 → 关于”下载安装包更新。Android 从本仓库下载 APK 更新，并在安装前请求确认。此 fork 已关闭上游 Android OTA 更新。'
+          release_id=$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)
+          # Let GitHub select latest by semantic version, even when an older tag finishes later.
+          gh api --method PATCH "repos/$GH_REPO/releases/$release_id" -f make_latest=legacy --silent

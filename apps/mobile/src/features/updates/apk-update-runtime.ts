@@ -7,6 +7,7 @@ import { AppState, Platform } from "react-native";
 import { reportAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 
 import { appAtomRegistry } from "../../state/atom-registry";
+import { uuidv4 } from "../../lib/uuid";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { flushPendingAppWrites } from "./app-updates";
 import { createApkUpdater, requireHttpsUpdateUrl, type ApkUpdateState } from "./apk-update";
@@ -53,7 +54,7 @@ const updater = apkUpdatesAvailable
         const file = new File(directory, `${manifest.versionCode}-${manifest.sha256}.apk`);
         if (file.exists) return file.uri;
         for (const entry of directory.list()) entry.delete();
-        const partial = new File(directory, "download.partial");
+        const partial = new File(directory, `${uuidv4()}.partial`);
         try {
           await File.downloadFileAsync(manifest.url, partial, { signal });
           signal.throwIfAborted();

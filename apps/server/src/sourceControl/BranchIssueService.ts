@@ -84,14 +84,20 @@ const make = Effect.gen(function* () {
       const handle = yield* resolve(input);
       const published = yield* isPublished(input, handle.context.remoteName);
       if (!published) return { provider: handle.provider.kind, published, issues: [] };
-      const local = yield* stored(input.cwd, handle.key);
-      const remote = handle.capability.list
+      const issues = handle.capability.list
         ? yield* handle.capability.list({ ...input, context: handle.context })
-        : [];
+        : yield* Effect.forEach(
+            yield* stored(input.cwd, handle.key),
+            (issue) =>
+              handle.capability
+                .read({ cwd: input.cwd, issue })
+                .pipe(Effect.map(({ title, state }) => ({ ...issue, title, state }))),
+            { concurrency: 4 },
+          );
       return {
         provider: handle.provider.kind,
         published,
-        issues: handle.capability.list ? remote : local,
+        issues,
       };
     },
     Effect.mapError((cause) =>

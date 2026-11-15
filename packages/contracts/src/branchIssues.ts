@@ -93,8 +93,13 @@ export class BranchIssueError extends Schema.TaggedError<
 }
 
 export function parseBranchIssueUrl(value: string): BranchIssueRef | null {
-  const url = URL.parse(value.trim());
-  if (!url || url.protocol !== "https:" || url.username || url.password || url.port) return null;
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
   if (url.hostname === "github.com") {
     const match = /^\/([\w.-]+\/[\w.-]+)\/issues\/([1-9]\d*)\/?$/.exec(url.pathname);
     return match

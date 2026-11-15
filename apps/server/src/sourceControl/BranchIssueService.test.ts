@@ -32,6 +32,7 @@ function setup(
     provider?: "github" | "meituan";
     published?: boolean;
     remotePublished?: boolean;
+    detail?: BranchIssueDetail;
   } = {},
 ) {
   const kind = SourceControlProviderKind.make(options.provider ?? "github");
@@ -51,7 +52,7 @@ function setup(
               detail: "Unavailable",
             }),
           )
-        : Effect.succeed(detail),
+        : Effect.succeed(options.detail ?? detail),
     ...(options.remote
       ? {
           update: ({ issue, action }) =>
@@ -118,6 +119,27 @@ function setup(
 }
 
 describe("branch issue associations", () => {
+  it.effect(
+    "refreshes local issue metadata and reports a failed refresh without losing the link",
+    () =>
+      Effect.gen(function* () {
+        const options: Parameters<typeof setup>[0] = {};
+        const fixture = setup(options);
+        yield* Effect.gen(function* () {
+          const service = yield* Service.BranchIssueService;
+          yield* service.update({ ...target, action: "associate", urls: [first] });
+          options.detail = { ...detail, title: "Renamed", state: "closed" };
+          expect((yield* service.list(target)).issues[0]).toMatchObject({
+            title: "Renamed",
+            state: "closed",
+          });
+          options.failUrl = first;
+          expect((yield* service.list(target).pipe(Effect.flip)).reason).toBe("unavailable");
+          delete options.failUrl;
+          expect((yield* service.list(target)).issues[0]?.url).toBe(first);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+  );
   it.effect("recognizes a published branch missing from narrow local tracking refs", () =>
     Effect.gen(function* () {
       const service = yield* Service.BranchIssueService;

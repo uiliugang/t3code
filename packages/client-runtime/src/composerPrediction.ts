@@ -69,11 +69,15 @@ export function createComposerPredictionController(
       }
       currentKey = key;
       const requestRevision = revision;
-      void pending
-        .then((text) => {
+      void pending.then(
+        (text) => {
           if (revision === requestRevision && currentKey === key) publish(key, text);
-        })
-        .catch(() => {});
+        },
+        () => {
+          if (requests.get(key) === pending) requests.delete(key);
+          if (revision === requestRevision && currentKey === key) clear();
+        },
+      );
     },
   };
 }
