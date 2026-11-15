@@ -48,7 +48,11 @@ import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withCheckpointRestoreReservation, withWorkspaceLeases } from "./workspaceLease.ts";
 import { sameDirectoryIdentity } from "./directoryIdentity.ts";
 import { scratchFolderRoot } from "../project/ManagedProjectFolders.ts";
-import { residualDirectoryPaths, residualDirectoryBytes } from "./residualDirectories.ts";
+import {
+  residualDirectoryPaths,
+  residualDirectoryBytes,
+  residualNestedRepositories,
+} from "./residualDirectories.ts";
 
 const SavedResource = Schema.Struct({
   identity: WorkspaceCheckoutIdentity,
@@ -180,10 +184,12 @@ const make = Effect.gen(function* () {
       Schema.decodeEffect(snapshotJson)(row.payload_json),
     );
   });
-  const readThreads = Effect.fn("ManagedWorktrees.readThreads")(function* () {
+  const readThreads = Effect.fn("ManagedWorktrees.readThreads")(function* (
+    includeProjectThreads = false,
+  ) {
     const rows = yield* sql<{
       payload_json: string;
-    }>`SELECT payload_json FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL OR json_extract(payload_json, '$.workspace') IS NOT NULL`;
+    }>`SELECT payload_json FROM orchestration_v2_projection_threads ${includeProjectThreads ? sql`` : sql`WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL OR json_extract(payload_json, '$.workspace') IS NOT NULL`}`;
     return yield* Effect.forEach(rows, (row) => decodeThread(row.payload_json));
   });
   const threadPaths = (thread: CleanupThread) =>
@@ -986,10 +992,21 @@ const make = Effect.gen(function* () {
   });
   const residualContext = Effect.fn("ManagedWorktrees.residualContext")(function* () {
     const context = yield* inspectionContext();
-    const threads = yield* readThreads();
+    const threads = yield* readThreads(true);
     const members = yield* Effect.forEach(threads, (thread) =>
       Effect.gen(function* () {
-        return { thread, paths: yield* Effect.forEach(threadPaths(thread), canonical) };
+        const paths = threadPaths(thread);
+        if (paths.length === 0) {
+          const root =
+            thread.projectWorkspaceRoot ??
+            context.projectRows.find((project) => project.projectId === thread.projectId)
+              ?.workspaceRoot;
+          if (root !== undefined) paths.push(root);
+          paths.push(
+            ...(thread.workspaceConfiguration?.roots.map((root) => root.sourcePath) ?? []),
+          );
+        }
+        return { thread, paths: yield* Effect.forEach(paths, canonical) };
       }),
     );
     const scratch = yield* canonical(scratchFolderRoot(config.baseDir, path));
@@ -1018,16 +1035,32 @@ const make = Effect.gen(function* () {
         ),
       ]),
     ];
-    const registered = (yield* Effect.forEach(
+    const inspectedSources = yield* Effect.forEach(
       sources,
       (source) =>
         Effect.gen(function* () {
-          if (!(yield* fs.exists(path.join(source, ".git")))) return [];
-          return yield* registrations(source);
+          const result = yield* Effect.gen(function* () {
+            if (!(yield* fs.exists(path.join(source, ".git")))) return [];
+            return yield* registrations(source);
+          }).pipe(Effect.result);
+          if (result._tag === "Failure")
+            yield* Effect.logWarning("Could not inspect residual worktree source", {
+              source,
+              cause: result.failure,
+            });
+          return { source, result };
         }),
       { concurrency: 4 },
-    )).flat();
-    return { ...context, members, scratch, paths, pendingPaths, registered };
+    );
+    const registered = inspectedSources.flatMap(({ result }) =>
+      result._tag === "Success" ? result.success : [],
+    );
+    const failedSources = new Set(
+      inspectedSources
+        .filter(({ result }) => result._tag === "Failure")
+        .map(({ source }) => source),
+    );
+    return { ...context, members, scratch, paths, pendingPaths, registered, failedSources };
   });
   const inspectResidual = Effect.fn("ManagedWorktrees.inspectResidual")(function* (
     target: string,
@@ -1077,6 +1110,24 @@ const make = Effect.gen(function* () {
       reason ??= "Borrowed repositories cannot be removed.";
     if (context.pendingPaths.some(overlaps))
       reason ??= "Workspace preparation is still using this directory.";
+    if (
+      members.some(({ thread }) => {
+        const project = context.projectRows.find(
+          (project) => project.projectId === thread.projectId,
+        );
+        const sources = [
+          ...(thread.workspace?.bindings.map((binding) => binding.sourcePathAtBind) ?? []),
+          ...(project
+            ? [
+                project.workspaceRoot,
+                ...(project.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
+              ]
+            : []),
+        ];
+        return sources.some((source) => context.failedSources.has(source));
+      })
+    )
+      reason ??= "Could not inspect this directory's source repository. Repair it and retry.";
     if (
       context.registered.some(
         (entry) => entry.path !== null && contains(target, entry.path) && entry.locked,
@@ -1132,6 +1183,21 @@ const make = Effect.gen(function* () {
         }
       }
     }
+    let nestedRepositories: string[] = [];
+    if (reason === null) {
+      const nested = yield* residualNestedRepositories(target).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.result,
+      );
+      if (nested._tag === "Failure") reason = nested.failure.message;
+      else {
+        nestedRepositories = nested.success;
+        if (nestedRepositories.length > 0)
+          reason =
+            "This folder contains repositories. Select them separately before cleaning the parent folder.";
+      }
+    }
     const threads = members.map(({ thread }) => ({
       id: thread.id,
       title: thread.title,
@@ -1154,14 +1220,15 @@ const make = Effect.gen(function* () {
         threads,
       ]),
     };
-    return { checked, identity };
+    return { checked, identity, nestedRepositories };
   });
   const residualResults = yield* Ref.make<ReadonlyArray<ManagedWorktreeResult>>([]);
   const listResiduals = Effect.gen(function* () {
     const context = yield* residualContext();
     const rows: ResidualWorktree[] = [];
     const measurementDeadline = (yield* Clock.currentTimeMillis) + 10_000;
-    for (const target of context.paths) {
+    const pending = new Set(context.paths);
+    for (const target of pending) {
       if (!(yield* fs.exists(target))) continue;
       const inspected = yield* inspectResidual(target, context).pipe(Effect.result);
       if (inspected._tag === "Failure") {
@@ -1176,7 +1243,8 @@ const make = Effect.gen(function* () {
         });
         continue;
       }
-      const { checked } = inspected.success;
+      const { checked, nestedRepositories } = inspected.success;
+      for (const repository of nestedRepositories) pending.add(repository);
       // Live worktrees already have their own management list.
       if (checked.threads.length > 0 && checked.threads.every((thread) => !thread.deleted))
         continue;
@@ -1203,39 +1271,46 @@ const make = Effect.gen(function* () {
         path,
         target.id,
         withWorkspaceLeases(
-          [target.id, `checkout:${target.id}`],
-          Effect.gen(function* () {
-            const context = yield* residualContext();
-            if (!context.paths.includes(target.id) || !(yield* fs.exists(target.id)))
-              return "skipped" as const;
-            const { checked, identity } = yield* inspectResidual(target.id, context);
-            if (checked.reason !== null)
-              return yield* new ManagedWorktreeError({ detail: checked.reason });
-            if (checked.fingerprint !== target.fingerprint)
-              return yield* new ManagedWorktreeError({
-                detail: "The worktree changed since inspection. Refresh and confirm again.",
-              });
-            if (checked.kind === "worktree" && identity !== null) {
-              yield* resolver.verify(identity);
-              yield* removeLinkedWorktree({
-                operation: "ManagedWorktrees.removeResiduals",
-                cwd: identity.commonDir,
-                worktreePath: checked.path,
-                force: true,
-                execute: git.execute,
-                run: (args) =>
-                  git.execute({
-                    operation: "ManagedWorktrees.removeResiduals",
-                    cwd: identity.commonDir,
-                    args: ["--git-dir", identity.commonDir, ...args],
-                  }),
-              }).pipe(
-                Effect.provideService(FileSystem.FileSystem, fs),
-                Effect.provideService(Path.Path, path),
-              );
-            } else yield* fs.remove(checked.path, { recursive: true });
-            return "removed" as const;
-          }),
+          [`checkout:${target.id}`],
+          withWorkspaceLeases(
+            [target.id],
+            Effect.gen(function* () {
+              const context = yield* residualContext();
+              if (
+                !context.paths.some((root) => contains(root, target.id)) ||
+                !(yield* fs.exists(target.id)) ||
+                (yield* canonical(target.id)) !== target.id
+              )
+                return "skipped" as const;
+              const { checked, identity } = yield* inspectResidual(target.id, context);
+              if (checked.reason !== null)
+                return yield* new ManagedWorktreeError({ detail: checked.reason });
+              if (checked.fingerprint !== target.fingerprint)
+                return yield* new ManagedWorktreeError({
+                  detail: "The worktree changed since inspection. Refresh and confirm again.",
+                });
+              if (checked.kind === "worktree" && identity !== null) {
+                yield* resolver.verify(identity);
+                yield* removeLinkedWorktree({
+                  operation: "ManagedWorktrees.removeResiduals",
+                  cwd: identity.commonDir,
+                  worktreePath: checked.path,
+                  force: true,
+                  execute: git.execute,
+                  run: (args) =>
+                    git.execute({
+                      operation: "ManagedWorktrees.removeResiduals",
+                      cwd: identity.commonDir,
+                      args: ["--git-dir", identity.commonDir, ...args],
+                    }),
+                }).pipe(
+                  Effect.provideService(FileSystem.FileSystem, fs),
+                  Effect.provideService(Path.Path, path),
+                );
+              } else yield* fs.remove(checked.path, { recursive: true });
+              return "removed" as const;
+            }),
+          ),
         ),
       ).pipe(Effect.result);
       results.push(

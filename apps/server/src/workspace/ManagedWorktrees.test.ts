@@ -12,6 +12,7 @@ import {
   type TerminalSummary,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -37,6 +38,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as ManagedWorktrees from "./ManagedWorktrees.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts";
 
 const infrastructure = Layer.mergeAll(
   GitVcsDriver.layer,
@@ -297,6 +299,7 @@ it.live.each([
   "running-task",
   "provider-session",
   "history",
+  "pinned-project-path",
 ] as const)("retains residual directories when inspection becomes unsafe: %s", (scenario) =>
   Effect.gen(function* () {
     const context = yield* fixture();
@@ -362,15 +365,18 @@ it.live.each([
         });
         yield* sql`INSERT INTO orchestration_v2_projection_provider_sessions (provider_session_id, provider, status, updated_at, payload_json) VALUES ('session-1', 'codex', 'ready', 'now', ${payload})`;
         yield* Ref.set(context.sessionLive, true);
-      } else if (scenario === "history") {
+      } else if (scenario === "history" || scenario === "pinned-project-path") {
         yield* persist({
           ...thread,
           id: ThreadId.make("history-thread"),
           workspace: undefined,
           worktreePath: null,
+          ...(scenario === "pinned-project-path" ? { projectWorkspaceRoot: root } : {}),
         });
-        const payload = JSON.stringify({ cwd: root });
-        yield* sql`INSERT INTO orchestration_v2_projection_checkpoint_scopes (scope_id, thread_id, node_id, kind, ordinal_within_parent, advances_app_run_count, created_at, payload_json) VALUES ('history', 'history-thread', 'node', 'root', 0, 0, 'now', ${payload})`;
+        if (scenario === "history") {
+          const payload = JSON.stringify({ cwd: root });
+          yield* sql`INSERT INTO orchestration_v2_projection_checkpoint_scopes (scope_id, thread_id, node_id, kind, ordinal_within_parent, advances_app_run_count, created_at, payload_json) VALUES ('history', 'history-thread', 'node', 'root', 0, 0, 'now', ${payload})`;
+        }
       } else if (scenario === "repository-dependency") {
         yield* git.execute({
           operation: "test",
@@ -404,6 +410,119 @@ it.live.each([
         );
       }
     }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("lists nested repositories separately and protects their dependent worktrees", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { fs, path, temp, git, workspace } = context;
+    const container = path.join(temp, "state", "scratch", "container");
+    const repository = path.join(container, "repo");
+    const dependent = path.join(temp, "dependent");
+    yield* fs.makeDirectory(container, { recursive: true });
+    yield* fs.writeFileString(path.join(container, "notes.txt"), "keep until selected");
+    yield* git.execute({
+      operation: "test",
+      cwd: temp,
+      args: ["clone", workspace.bindings[0]!.sourcePathAtBind, repository],
+    });
+    yield* git.execute({
+      operation: "test",
+      cwd: repository,
+      args: ["worktree", "add", "--detach", dependent],
+    });
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const { directories } = yield* service.listResiduals;
+      const parent = directories.find((row) => row.path === container)!;
+      const child = directories.find((row) => row.path === repository)!;
+      assert.isNotNull(parent.reason);
+      assert.isDefined(child);
+      assert.strictEqual(child.kind, "repository");
+      assert.include(child.reason!, "depend");
+      assert.isTrue(
+        (yield* service.removeResiduals({ targets: [parent, child] })).every(
+          (row) => row.outcome === "failed",
+        ),
+      );
+      assert.isTrue(yield* fs.exists(path.join(repository, ".git")));
+      yield* git.execute({
+        operation: "test",
+        cwd: repository,
+        args: ["worktree", "remove", dependent],
+      });
+      const refreshed = (yield* service.listResiduals).directories.find(
+        (row) => row.path === repository,
+      )!;
+      assert.isNull(refreshed.reason);
+      assert.strictEqual(
+        (yield* service.removeResiduals({ targets: [refreshed] }))[0]!.outcome,
+        "removed",
+      );
+      assert.isTrue(yield* fs.exists(path.join(container, "notes.txt")));
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("isolates broken source registrations from unrelated scratch cleanup", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { fs, path, temp, workspace, resources, persist, thread } = context;
+    yield* persist({ ...thread, deletedAt: thread.createdAt });
+    const scratch = path.join(temp, "state", "scratch", "unrelated");
+    yield* fs.makeDirectory(scratch, { recursive: true });
+    const source = workspace.bindings[0]!.sourcePathAtBind;
+    yield* fs.rename(path.join(source, ".git"), path.join(source, ".git-saved"));
+    yield* fs.writeFileString(path.join(source, ".git"), `gitdir: ${path.join(temp, "missing")}\n`);
+    yield* fs.remove(path.join(resources[0]!.checkoutRoot, ".git"));
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const rows = (yield* service.listResiduals).directories;
+      assert.isNotNull(rows.find((row) => row.path === resources[0]!.checkoutRoot)!.reason);
+      const target = rows.find((row) => row.path === scratch)!;
+      assert.isNull(target.reason);
+      assert.strictEqual(
+        (yield* service.removeResiduals({ targets: [target] }))[0]!.outcome,
+        "removed",
+      );
+    }).pipe(Effect.provide(context.layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live("does not hold the directory lease while waiting for checkout cleanup", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const root = context.resources[0]!.checkoutRoot;
+    yield* context.persist({ ...context.thread, deletedAt: context.thread.createdAt });
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const target = (yield* service.listResiduals).directories.find((row) => row.path === root)!;
+      yield* withWorkspaceLease(
+        `checkout:${root}`,
+        Effect.gen(function* () {
+          const cleanup = yield* Effect.forkChild(service.removeResiduals({ targets: [target] }), {
+            startImmediately: true,
+          });
+          const available = yield* Effect.forkChild(
+            withWorkspaceLease(root, Effect.succeed("available")),
+            { startImmediately: true },
+          );
+          assert.strictEqual(available.pollUnsafe()?._tag, "Success");
+          yield* Fiber.interrupt(cleanup);
+        }),
+      );
+    }).pipe(
+      Effect.provide(context.layer),
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.make({
+          ...context.fs,
+          realPath: (target) =>
+            target === root ? Effect.succeed(root) : context.fs.realPath(target),
+        }),
+      ),
+    );
   }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );
 

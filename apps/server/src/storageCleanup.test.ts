@@ -607,7 +607,7 @@ const cleanupFixture = (
                       : strings.join("").includes("deleted_at IS NOT NULL")
                         ? deletedThreads.map((thread) => ({
                             payload_json: JSON.stringify(thread),
-                            workspaceRoot: repo,
+                            workspaceRoot: projectRoots[0]!,
                           }))
                         : strings.join("").includes('AS "worktreePath"')
                           ? [
@@ -2502,6 +2502,8 @@ describe("deleted thread worktrees", () => {
     "locked missing metadata",
     "shared",
     "project checkout",
+    "moved project",
+    "locked missing metadata moved project",
   ] as const)("removes a deleted thread's worktree with %s", (scenario) =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW_MS);
@@ -2519,16 +2521,37 @@ describe("deleted thread worktrees", () => {
         worktree = `${config.baseDir}/scratch/deleted`;
         yield* fixture.fs.makeDirectory(worktree, { recursive: true });
       }
-      const owner = { ...parent(worktree), ...(scenario === "scratch" ? { branch: null } : {}) };
+      const owner = {
+        ...parent(worktree),
+        ...(scenario === "scratch" ? { branch: null } : {}),
+        ...(scenario === "locked missing metadata moved project"
+          ? { projectWorkspaceRoot: fixture.repo }
+          : {}),
+      };
       yield* fixture.fs.writeFileString(`${worktree}/notes.txt`, "local work\n");
       yield* fixture.fs.writeFileString(`${worktree}/.env`, "LOCAL_TEST=1\n");
       if (scenario !== "scratch")
         yield* fixture.fs.writeFileString(`${worktree}/tracked.txt`, "edited\n");
-      if (scenario === "locked" || scenario === "locked missing metadata")
+      if (
+        scenario === "locked" ||
+        scenario === "locked missing metadata" ||
+        scenario === "locked missing metadata moved project"
+      )
         yield* fixture.command(fixture.repo, ["worktree", "lock", worktree]);
-      if (scenario === "missing metadata" || scenario === "locked missing metadata")
+      if (
+        scenario === "missing metadata" ||
+        scenario === "locked missing metadata" ||
+        scenario === "locked missing metadata moved project"
+      )
         yield* fixture.fs.remove(`${worktree}/.git`);
       if (scenario === "project checkout") fixture.setProjectRoots([worktree]);
+      if (scenario === "moved project" || scenario === "locked missing metadata moved project") {
+        const moved = yield* fixture.fs.makeTempDirectoryScoped({
+          prefix: "cleanup-moved-project-",
+        });
+        yield* fixture.command(moved, ["init", "-b", "main"]);
+        fixture.setProjectRoots([moved]);
+      }
       fixture.setDeletedThreads([owner]);
       fixture.setThreads(
         scenario === "native subagent"
@@ -2544,7 +2567,15 @@ describe("deleted thread worktrees", () => {
             : [],
       );
       const report = yield* fixture.service.runNow;
-      if (["locked", "locked missing metadata", "shared", "project checkout"].includes(scenario)) {
+      if (
+        [
+          "locked",
+          "locked missing metadata",
+          "locked missing metadata moved project",
+          "shared",
+          "project checkout",
+        ].includes(scenario)
+      ) {
         expect(yield* fixture.fs.readFileString(`${worktree}/notes.txt`)).toBe("local work\n");
         expect(report.entries.some((entry) => entry.outcome === "removed")).toBe(false);
         return;

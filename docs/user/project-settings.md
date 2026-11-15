@@ -425,6 +425,8 @@ worktrees were removed or kept and why, plus any failures. The Worktrees page al
 
 Use **Clean historical leftovers** on the Worktrees page to review unused managed folders and scratch directories on that environment. Each entry shows its full path, associated threads, estimated disk usage, and any reason it cannot be removed. Select folders individually and confirm once to permanently delete all their source files, local changes, ignored files, and caches. Selecting an independent repository also deletes its own Git history. No backup or trash copy is created. Directory age alone never triggers this cleanup.
 
+Repositories inside a leftover folder are listed separately. Select and clean those repositories before removing their parent folder; repositories with dependent worktrees remain protected. A source repository that cannot be inspected blocks its associated directories while unrelated leftovers remain available for cleanup.
+
 The server checks references and running resources again before deleting. Project checkouts and directories referenced by existing threads or their history remain protected. Close occupying terminals or finish pending tasks, refresh the list, and retry failed items. Successful removals and failure reasons remain visible in the results.
 
 The inactive and settled retention periods also apply to the folders of

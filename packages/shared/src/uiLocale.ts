@@ -9,6 +9,11 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Could not inspect all nested repositories.": "无法完整检查目录内的嵌套仓库，请检查目录后重试。",
+  "This folder contains repositories. Select them separately before cleaning the parent folder.":
+    "此目录包含仓库。请单独勾选并清理内部仓库，再清理父目录。",
+  "Could not inspect this directory's source repository. Repair it and retry.":
+    "无法检查此目录的来源仓库，请修复来源仓库后重试。",
   "Manage thread worktrees and historical leftovers. Review each cleanup confirmation for what will be deleted.":
     "管理会话工作树与历史残留。清理前请核对确认框中的删除范围。",
   "Could not verify the directory identity.": "无法确认目录身份，请重新检查。",

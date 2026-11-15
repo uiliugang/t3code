@@ -2,6 +2,45 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import { ManagedWorktreeError } from "@t3tools/contracts";
+
+export const residualNestedRepositories = Effect.fn("ManagedWorktrees.residualNestedRepositories")(
+  function* (root: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const pending = [root];
+    const repositories: string[] = [];
+    let count = 0;
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      if ((yield* fs.realPath(directory)) !== directory)
+        return yield* new ManagedWorktreeError({
+          detail: "Symbolic links and replaced directories cannot be cleaned.",
+        });
+      const names = yield* fs.readDirectory(directory);
+      if (directory !== root && names.includes(".git")) {
+        repositories.push(directory);
+        continue;
+      }
+      count += names.length;
+      if (count > 2_000_000)
+        return yield* new ManagedWorktreeError({
+          detail: "Could not inspect all nested repositories.",
+        });
+      const children = yield* Effect.filter(
+        names.filter((name) => name !== ".git").map((name) => path.join(directory, name)),
+        (target) => fs.lstat(target).pipe(Effect.map((stat) => stat.type === "Directory")),
+        { concurrency: 16 },
+      );
+      pending.push(...children);
+    }
+    return repositories.sort();
+  },
+  Effect.timeout("10 seconds"),
+  Effect.mapError(
+    () => new ManagedWorktreeError({ detail: "Could not inspect all nested repositories." }),
+  ),
+);
 
 export const residualDirectoryPaths = Effect.fn("ManagedWorktrees.residualDirectoryPaths")(
   function* (roots: ReadonlyArray<string>, scratch: string, known: ReadonlyArray<string>) {

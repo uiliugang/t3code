@@ -1881,20 +1881,23 @@ const make = Effect.gen(function* () {
               if (blocked !== null) return keep(blocked);
               if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
               if (!scratch) {
-                const lockReason = yield* worktreeLockReason(worktreePath, project.workspaceRoot);
+                const lockReason = yield* worktreeLockReason(
+                  worktreePath,
+                  thread.projectWorkspaceRoot ?? project.workspaceRoot,
+                );
                 if (lockReason !== null) return keep(lockReason);
               }
               if (!scratch && (yield* fs.exists(path.join(worktreePath, ".git")))) {
                 if (yield* branchChanged(worktreePath, thread.branch))
                   return keep("repository or branch changed");
+                const repository = yield* worktreeRepository(worktreePath);
                 yield* removeLinkedWorktree({
                   operation: "StorageCleanup.cleanupGit",
-                  cwd: project.workspaceRoot,
+                  cwd: repository,
                   worktreePath,
                   force: true,
                   execute: git.execute,
-                  run: (args) =>
-                    cleanupGit(project.workspaceRoot, [...args], "git worktree remove"),
+                  run: (args) => cleanupGit(repository, [...args], "git worktree remove"),
                 });
               } else {
                 yield* fs.remove(worktreePath, { recursive: true });
