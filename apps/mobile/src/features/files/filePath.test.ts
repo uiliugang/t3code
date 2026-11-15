@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  defaultWorkspaceFileViewMode,
   fileRoutePathSegments,
   isAudioPreviewFile,
   isMarkdownPreviewFile,
@@ -66,7 +67,14 @@ describe("workspace preview classifiers", () => {
     for (const path of ["notes/clip#1.wav", "notes/clip?1.wav", "notes#old/clip.wav"]) {
       expect(isAudioPreviewFile(path)).toBe(true);
     }
+    expect(defaultWorkspaceFileViewMode(null)).toBe("source");
+    expect(defaultWorkspaceFileViewMode("main.ts")).toBe("source");
+    for (const path of ["index.html", "photo.png", "clip.mp4", "clip.wav", "data.csv"]) {
+      expect(defaultWorkspaceFileViewMode(path)).toBe("preview");
+    }
     for (const path of [
+      "/Users/maria/notes.md",
+      "page.mdx",
       "docs/draft#1.md",
       "docs/draft?1.md",
       "docs#old/draft.md",
@@ -75,6 +83,9 @@ describe("workspace preview classifiers", () => {
       "todo.mkd",
     ]) {
       expect(isMarkdownPreviewFile(path)).toBe(true);
+      expect(defaultWorkspaceFileViewMode(path)).toBe("preview");
+      expect(defaultWorkspaceFileViewMode(path, 123)).toBe("source");
     }
+    expect(defaultWorkspaceFileViewMode("data.csv", 3)).toBe("source");
   });
 });

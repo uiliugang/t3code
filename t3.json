@@ -4,13 +4,13 @@
   "scripts": [
     {
       "name": "Dev",
-      "command": "vp run dev",
+      "command": "./vp run dev",
       "icon": "play",
       "stopOnSettle": true
     },
     {
       "name": "Setup Worktree",
-      "command": "vp env exec --node 26.12.1 node scripts/setup-worktree.ts",
+      "command": "./vp exec node scripts/setup-worktree.ts",
       "icon": "configure",
       "runOnWorktreeCreate": true
     }
