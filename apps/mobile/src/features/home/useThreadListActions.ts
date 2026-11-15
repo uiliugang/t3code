@@ -211,7 +211,7 @@ function confirmThreadDeletion(
   });
   Dialog.confirm({
     title,
-    message,
+    message: `${message}\n\n${t("When worktree cleanup on deletion is enabled, unused managed worktrees and all their local files are also permanently deleted.")}`,
     confirmText: t("Delete"),
     cancelText: t("Cancel"),
     destructive: true,

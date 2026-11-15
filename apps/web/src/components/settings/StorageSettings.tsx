@@ -720,7 +720,7 @@ export function WorktreeCleanupSection() {
               status={ruleStatus("worktreeOnDelete")}
               managedPaths={lockablePath("worktreeOnDelete")}
               description={t(
-                "Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept.",
+                "Remove unused managed worktrees when active or archived threads are deleted, including all local changes, untracked files and ignored files.",
               )}
               serverScoped={!isProjectScope}
               control={

@@ -7,6 +7,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { removeLinkedWorktree } from "../vcs/worktreeRemoval.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLeases } from "./workspaceLease.ts";
 
@@ -131,7 +132,13 @@ export const layer = Layer.effect(
                       return yield* reject(`${resource.name} disappeared before cleanup.`);
                     continue;
                   }
-                  yield* resolver.verify(resource.identity);
+                  if ((yield* fs.realPath(resource.checkoutRoot)) !== resource.checkoutRoot)
+                    return yield* reject(`${resource.name} is a symbolic link.`);
+                  if (yield* fs.exists(path.join(resource.checkoutRoot, ".git")))
+                    yield* resolver.verify(resource.identity);
+                  else yield* resolver.verifyRepository(resource.identity);
+                  if (resource.identity.gitDir === resource.identity.commonDir)
+                    return yield* reject("The main repository cannot be removed.");
                   if (
                     !input.managedRoots.some((root) => {
                       const relative = path.relative(root, resource.checkoutRoot);
@@ -146,15 +153,8 @@ export const layer = Layer.effect(
                     return yield* reject(
                       `${resource.name} is outside the managed worktree directories.`,
                     );
-                  const status = yield* git.execute({
-                    operation: "WorkspaceCleanup.preflight",
-                    cwd: resource.checkoutRoot,
-                    args: ["status", "--porcelain", "--untracked-files=all", "--ignored"],
-                  });
-                  if (status.stdout.trim() !== "" || status.stdoutTruncated)
-                    return yield* reject(
-                      `${resource.name} has local files or changes; the whole group was retained.`,
-                    );
+                  if (yield* fs.exists(path.join(resource.identity.gitDir, "locked")))
+                    return yield* reject(`${resource.name} is locked.`);
                   present.push(resource);
                 }
                 // Persist intent before removing any checkout; a retry can recognize completed removals.
@@ -162,19 +162,32 @@ export const layer = Layer.effect(
                   yield* sql`INSERT INTO workspace_cleanup_resources (revision_id, resource_id, stage) VALUES (${workspace.id}, ${resource.id}, 'planned') ON CONFLICT DO NOTHING`;
                 for (const resource of present) {
                   yield* assertUnused();
-                  yield* resolver.verify(resource.identity);
-                  yield* git.execute({
-                    operation: "WorkspaceCleanup.remove",
-                    cwd: path.dirname(resource.checkoutRoot),
-                    args: [
-                      "--git-dir",
-                      resource.identity.commonDir,
-                      "worktree",
-                      "remove",
-                      "--",
-                      resource.checkoutRoot,
-                    ],
-                  });
+                  if ((yield* fs.realPath(resource.checkoutRoot)) !== resource.checkoutRoot)
+                    return yield* reject(`${resource.name} is a symbolic link.`);
+                  if (yield* fs.exists(path.join(resource.identity.gitDir, "locked")))
+                    return yield* reject(`${resource.name} is locked.`);
+                  if (yield* fs.exists(path.join(resource.checkoutRoot, ".git"))) {
+                    yield* resolver.verify(resource.identity);
+                    yield* removeLinkedWorktree({
+                      operation: "WorkspaceCleanup.remove",
+                      cwd: resource.identity.commonDir,
+                      worktreePath: resource.checkoutRoot,
+                      force: true,
+                      execute: git.execute,
+                      run: (args) =>
+                        git.execute({
+                          operation: "WorkspaceCleanup.remove",
+                          cwd: path.dirname(resource.checkoutRoot),
+                          args: ["--git-dir", resource.identity.commonDir, ...args],
+                        }),
+                    }).pipe(
+                      Effect.provideService(FileSystem.FileSystem, fs),
+                      Effect.provideService(Path.Path, path),
+                    );
+                  } else {
+                    yield* resolver.verifyRepository(resource.identity);
+                    yield* fs.remove(resource.checkoutRoot, { recursive: true });
+                  }
                   yield* sql`UPDATE workspace_cleanup_resources SET stage = 'removed' WHERE revision_id = ${workspace.id} AND resource_id = ${resource.id}`;
                 }
               }),

@@ -2195,27 +2195,75 @@ describe("deleted thread worktrees", () => {
       ...overrides,
     });
 
-  it.effect.each(["no subagents", "native subagent"] as const)(
-    "removes a deleted thread's worktree with %s",
-    (scenario) =>
-      Effect.gen(function* () {
-        yield* TestClock.setTime(NOW_MS);
-        const fixture = yield* cleanupFixture({
-          ...disabledCleanup,
-          worktreeAfterDays: null,
-          worktreeOnDelete: true,
-        });
-        const owner = parent(fixture.worktree);
-        fixture.setDeletedThreads([owner]);
-        fixture.setThreads(scenario === "native subagent" ? [subagent(owner)] : []);
-        const report = yield* fixture.service.runNow;
-        expect(report.entries[0]).toMatchObject({
-          threadId: owner.id,
-          outcome: "removed",
-          reason: "Thread was deleted",
-        });
-        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
-      }).pipe(Effect.provide(cleanupTestLayer)),
+  it.effect.each([
+    "no subagents",
+    "native subagent",
+    "any-local-files",
+    "uncommitted-changes",
+    "tracked-changes",
+    "missing metadata",
+    "scratch",
+    "locked",
+    "locked missing metadata",
+    "shared",
+    "project checkout",
+  ] as const)("removes a deleted thread's worktree with %s", (scenario) =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW_MS);
+      const fixture = yield* cleanupFixture({
+        ...disabledCleanup,
+        worktreeAfterDays: null,
+        worktreeOnDelete: true,
+        ...(["any-local-files", "uncommitted-changes", "tracked-changes"].includes(scenario)
+          ? { worktreeKeepWhen: scenario as StorageCleanupSettings["worktreeKeepWhen"] }
+          : {}),
+      });
+      let worktree = fixture.worktree;
+      if (scenario === "scratch") {
+        const config = yield* ServerConfig.ServerConfig;
+        worktree = `${config.baseDir}/scratch/deleted`;
+        yield* fixture.fs.makeDirectory(worktree, { recursive: true });
+      }
+      const owner = { ...parent(worktree), ...(scenario === "scratch" ? { branch: null } : {}) };
+      yield* fixture.fs.writeFileString(`${worktree}/notes.txt`, "local work\n");
+      yield* fixture.fs.writeFileString(`${worktree}/.env`, "LOCAL_TEST=1\n");
+      if (scenario !== "scratch")
+        yield* fixture.fs.writeFileString(`${worktree}/tracked.txt`, "edited\n");
+      if (scenario === "locked" || scenario === "locked missing metadata")
+        yield* fixture.command(fixture.repo, ["worktree", "lock", worktree]);
+      if (scenario === "missing metadata" || scenario === "locked missing metadata")
+        yield* fixture.fs.remove(`${worktree}/.git`);
+      if (scenario === "project checkout") fixture.setProjectRoots([worktree]);
+      fixture.setDeletedThreads([owner]);
+      fixture.setThreads(
+        scenario === "native subagent"
+          ? [subagent(owner)]
+          : scenario === "shared"
+            ? [
+                shell({
+                  id: ThreadId.make("independent"),
+                  branch: "feature",
+                  worktreePath: worktree,
+                }),
+              ]
+            : [],
+      );
+      const report = yield* fixture.service.runNow;
+      if (["locked", "locked missing metadata", "shared", "project checkout"].includes(scenario)) {
+        expect(yield* fixture.fs.readFileString(`${worktree}/notes.txt`)).toBe("local work\n");
+        expect(report.entries.some((entry) => entry.outcome === "removed")).toBe(false);
+        return;
+      }
+      expect(report.entries[0]).toMatchObject({
+        threadId: owner.id,
+        outcome: "removed",
+        reason: "Thread was deleted",
+      });
+      expect(yield* fixture.fs.exists(worktree)).toBe(false);
+      expect(
+        (yield* fixture.command(fixture.repo, ["rev-parse", "feature"])).stdout.trim(),
+      ).not.toBe("");
+    }).pipe(Effect.provide(cleanupTestLayer)),
   );
 
   it.effect("applies the remaining subagent's rules when deletion cleanup is off", () =>
@@ -2411,6 +2459,7 @@ describe("deleted thread worktrees", () => {
         fixture.setDeletedThreads([owner]);
         fixture.setThreads([]);
         yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "agent edit\n");
+        yield* fixture.command(fixture.repo, ["worktree", "lock", fixture.worktree]);
         const reads = yield* stopSessionAfterStartupSweep(
           fixture,
           owner.id,
@@ -2418,10 +2467,10 @@ describe("deleted thread worktrees", () => {
             expect((yield* fixture.service.latestReport)?.entries[0]).toMatchObject({
               threadId: owner.id,
               outcome: "kept",
-              reason: "Has uncommitted changes (1 file)",
+              reason: "Worktree is locked",
             });
-            yield* fixture.fs
-              .writeFileString(`${fixture.worktree}/tracked.txt`, "original\n")
+            yield* fixture
+              .command(fixture.repo, ["worktree", "unlock", fixture.worktree])
               .pipe(Effect.orDie);
           }),
         );
@@ -2441,6 +2490,7 @@ describe("deleted thread worktrees", () => {
       fixture.setDeletedThreads([parent(fixture.worktree)]);
       fixture.setThreads([]);
       yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "agent edit\n");
+      yield* fixture.command(fixture.repo, ["worktree", "lock", fixture.worktree]);
       const reads = yield* stopSessionAfterStartupSweep(
         fixture,
         ThreadId.make("thread-elsewhere"),
@@ -3065,6 +3115,7 @@ describe("storage cleanup reports and local file policies", () => {
           fixture.setDeletedThreads([
             shell({ branch: "feature", worktreePath: fixture.worktree, deletedAt: at(0) }),
           ]);
+          fixture.setOutboxStatus("failed");
           yield* fixture.fs.writeFileString(`${fixture.worktree}/tracked.txt`, "agent edit\n");
           const events = yield* Queue.unbounded<{
             readonly event: OrchestrationV2DomainEvent;

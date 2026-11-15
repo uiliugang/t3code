@@ -351,6 +351,9 @@ export function useThreadActionMenu(input: {
                 [
                   t('Delete thread "{title}"?', { title: thread.title }),
                   t("This permanently clears conversation history for this thread."),
+                  t(
+                    "When worktree cleanup on deletion is enabled, unused managed worktrees and all their local files are also permanently deleted.",
+                  ),
                 ].join("\n"),
                 { variant: "destructive" },
               ),

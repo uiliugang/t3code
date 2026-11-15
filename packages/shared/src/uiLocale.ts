@@ -1857,8 +1857,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Use these rules for this project.": "对此项目使用以下规则。",
   "Use each machine's worktree cleanup settings.": "使用各设备的工作树清理设置。",
   "Delete worktrees with deleted threads": "删除会话时清理工作树",
-  "Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept.":
-    "删除活跃或已归档的会话时，移除不再使用的工作树。保留有本地改动的工作树。",
+  "When worktree cleanup on deletion is enabled, unused managed worktrees and all their local files are also permanently deleted.":
+    "启用删除会话时清理工作树后，不再使用的托管工作树及其中所有本地文件也会永久删除。",
+  "Remove unused managed worktrees when active or archived threads are deleted, including all local changes, untracked files and ignored files.":
+    "删除活跃或已归档的会话时，彻底移除不再使用的托管工作树，包括未提交改动、未跟踪文件和已忽略文件。",
   "Delete merged worktrees": "清理拉取请求已合并的工作树",
   "Remove worktrees whose pull request is merged and whose commits are included in the default branch.":
     "清理拉取请求已合并且提交已包含在默认分支中的工作树。",

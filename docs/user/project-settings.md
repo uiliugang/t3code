@@ -101,8 +101,12 @@ Automatic group cleanup follows each project's cleanup rules, including merged b
 unchanged worktrees, and retention after a task settles or becomes inactive. Every repository
 and linked task must qualify before the group is removed. Active work, local changes, open
 terminals, and unfinished recovery retain the group; idle provider sessions are released when
-cleanup is ready. **Delete worktrees with deleted threads** also removes eligible deleted groups.
-Branches and thread history are retained. Failed preparations remain available for inspection.
+cleanup is ready. **Delete worktrees with deleted threads** permanently removes unused managed
+working directories, including uncommitted changes, untracked files and ignored files. This also
+removes their leftover files if the Git worktree metadata is missing. Shared or borrowed checkouts,
+project roots, locked worktrees and active resources remain protected. Other automatic cleanup
+rules keep their configured local-file protection. Branches and commits are retained.
+Failed preparations remain available for inspection.
 
 To free disk space manually, open **Settings > Worktrees > Local worktrees**. Select individual
 worktrees or complete multi-repository groups within a project, then confirm cleanup. A group
