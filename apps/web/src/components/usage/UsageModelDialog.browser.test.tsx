@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 
 import { render } from "../../../test/render";
 import { UsageModelDialog } from "./UsageModelDialog";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 describe("UsageModelDialog", () => {
   it("exposes each stat as its own label and value to screen readers", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     await using _screen = await render(
       <UsageModelDialog
         model={{

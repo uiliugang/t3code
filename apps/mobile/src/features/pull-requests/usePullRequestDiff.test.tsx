@@ -9,6 +9,10 @@ import { expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({ diff: vi.fn() }));
 vi.mock("../../state/pull-requests", () => ({ composerPullRequests: { diff: mocks.diff } }));
+vi.mock("../../state/preferences", async () => {
+  const { Atom, AsyncResult } = await import("effect/reactivity");
+  return { mobilePreferencesAtom: Atom.make(AsyncResult.success({ uiLanguage: "en" })) };
+});
 
 import { usePullRequestDiff, usePullRequestDiffEntry } from "./usePullRequestDiff";
 import * as reviewModel from "../review/reviewModel";

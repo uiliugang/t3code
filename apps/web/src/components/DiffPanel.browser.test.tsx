@@ -581,7 +581,13 @@ it("opens a file from a tool call's diff by the path its agent recorded", async 
       </div>
     </RegistryContext.Provider>,
   );
-  await userEvent.click(screen.getByText("src/a.ts", { exact: true }));
+  await expect
+    .element(screen.getByRole("button", { name: "Collapse src/a.ts", exact: true }))
+    .toBeVisible();
+  const title = screen.container
+    .querySelector("diffs-container")!
+    .shadowRoot!.querySelector("[data-title]")!;
+  await userEvent.click(page.elementLocator(title));
   await vi.waitFor(() =>
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, context.threadRef),
