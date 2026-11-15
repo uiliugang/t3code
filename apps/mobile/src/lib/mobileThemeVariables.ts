@@ -55,10 +55,7 @@ function platformThemeVariables(
   appearance: MobileThemeAppearance,
   platform: string,
 ): MobileThemeVariables {
-  const usesDefaultPalette =
-    themeId === DEFAULT_MOBILE_THEME_ID ||
-    themeId === "material-you" ||
-    (themeId === "graphite-blue" && appearance === "light");
+  const usesDefaultPalette = themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you";
   const variables = usesDefaultPalette
     ? defaults[appearance]
     : getMobileThemeVariables(themeId, appearance);

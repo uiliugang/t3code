@@ -11,7 +11,6 @@ import {
   publishedThemeDefinitions,
   resolveThemeAppearance,
   T3_CHAT_THEME,
-  EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
@@ -179,7 +178,7 @@ describe("index.html boot script", () => {
       prefersDark: true,
     },
     {
-      name: "Ember follows a dark OS",
+      name: "removed Ember falls back to the system appearance",
       storage: { [THEME_STORAGE_KEY]: "ember", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
     },
@@ -310,7 +309,7 @@ describe("index.html boot script", () => {
   });
 
   it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, IRIS_THEME]) {
       expect(theme.appearance).toBe("light");
       for (const mode of ["light", "dark"] as const) {
         const colors = getThemeColorsForMode(theme, mode);

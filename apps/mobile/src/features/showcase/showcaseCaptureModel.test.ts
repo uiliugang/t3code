@@ -51,14 +51,14 @@ describe("isShowcaseThemeApplied", () => {
     expect(
       isShowcaseThemeApplied({
         launchRequestRead: true,
-        requestedTheme: "graphite-blue",
-        themeIds: { light: "grove", dark: "graphite-blue" },
+        requestedTheme: "iris",
+        themeIds: { light: "iris", dark: "iris" },
       }),
     ).toBe(true);
     expect(
       isShowcaseThemeApplied({
         launchRequestRead: true,
-        requestedTheme: "graphite-blue",
+        requestedTheme: "iris",
         themeIds: { light: "grove", dark: "t3-code" },
       }),
     ).toBe(false);

@@ -7,7 +7,7 @@ import {
 } from "@t3tools/shared/codexByok";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
-import { Switch, TextInput, View } from "react-native";
+import { TextInput, View } from "react-native";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -28,6 +28,9 @@ import { readCustomModelEntries, toCustomModelSetting } from "@t3tools/shared/mo
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
+import { ListRow } from "../../components/ui/ListRow";
+import { ListActionRow } from "../../components/ui/ListActionRow";
+import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { Menu } from "../../components/ui/Menu";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -60,7 +63,7 @@ export function ClaudeByokProviderSettings({
   let id = `${driver}_byok`;
   for (let suffix = 2; existing.has(id); suffix++) id = `${driver}_byok_${suffix}`;
   return (
-    <View className="gap-3 p-4">
+    <View>
       {instances.map(([instanceId, instance]) => (
         <ClaudeByokEditor
           driver={driver}
@@ -79,9 +82,9 @@ export function ClaudeByokProviderSettings({
           onClose={() => setAdding(false)}
         />
       ) : allowCreate ? (
-        <ControlPill
+        <ListActionRow
+          icon="plus"
           label={t("Add {name}", { name: label })}
-          variant="pill"
           onPress={() => setAdding(true)}
         />
       ) : null}
@@ -221,243 +224,248 @@ function ClaudeByokEditor({
     });
   };
   return (
-    <View className="gap-3">
-      {provider ? (
-        <ClaudeInstallationControls
-          environment={environment}
-          provider={provider}
-          connectionDisabled={dirty || pending}
-        />
-      ) : null}
-      {provider && dirty ? (
-        <Text textRole="footnote" className="text-foreground-muted">
-          {t("Save or revert your changes before switching connections.")}
-        </Text>
-      ) : null}
+    <View className="border-b border-border-subtle">
       {instance ? (
-        <ControlPill
+        <ListRow
           label={instance.displayName ?? label}
-          variant="pill"
+          description={label}
+          detail={t(expanded ? "Done" : "Edit")}
+          disabled={pending}
           onPress={() => setExpanded(!expanded)}
         />
       ) : null}
       {expanded ? (
         <>
-          {field("Display name", name, setName)}
-          {!codex ? (
-            <Menu
-              actions={[
-                {
-                  id: "anthropic",
-                  title: "Anthropic Messages",
-                  state: protocol === "anthropic" ? "on" : "off",
-                },
-                {
-                  id: "openai",
-                  title: "OpenAI Chat Completions",
-                  state: protocol === "openai" ? "on" : "off",
-                },
-              ]}
-              onPressAction={(event) => {
-                const value = event.nativeEvent.event;
-                if (!disabled && (value === "anthropic" || value === "openai")) {
-                  setDraft(withClaudeByokVariable(draft, CLAUDE_BYOK_PROTOCOL_VARIABLE, value));
-                  setFeedback(null);
-                }
-              }}
-            >
-              <ControlPill
-                label={protocol === "openai" ? "OpenAI Chat Completions" : "Anthropic Messages"}
-                variant="pill"
-                disabled={disabled}
-              />
-            </Menu>
-          ) : null}
-          {field("API base URL", url, (value) => setDraft(variable(draft, baseName, value)))}
-          {!codex ? (
-            <Menu
-              actions={[
-                { id: "bearer", title: "Bearer Token", state: mode === "bearer" ? "on" : "off" },
-                {
-                  id: "apiKey",
-                  title: protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)",
-                  state: mode === "apiKey" ? "on" : "off",
-                },
-              ]}
-              onPressAction={(event) => {
-                const value = event.nativeEvent.event;
-                if (!disabled && (value === "bearer" || value === "apiKey")) {
-                  setDraft(withClaudeByokVariable(draft, claudeByokAuthVariable(value), ""));
-                  setFeedback(null);
-                }
-              }}
-            >
-              <ControlPill
-                label={
-                  mode === "bearer"
-                    ? "Bearer Token"
-                    : protocol === "openai"
-                      ? "API Key (Bearer)"
-                      : "API Key (x-api-key)"
-                }
-                variant="pill"
-                disabled={disabled}
-              />
-            </Menu>
-          ) : null}
-          {field(
-            codex ? "API Key" : "BA credential",
-            typeof credential?.value === "string" ? credential.value : "",
-            (value) => setDraft(variable(draft, credentialName, value)),
-            true,
-          )}
-          {field("Model IDs", modelIds, setModelIds)}
-          {instance ? (
-            <View className="gap-2">
-              <Text textRole="footnote" className="text-foreground-muted">
-                {t("Test this model and its tools. Sends two requests and uses API credits.")}
-              </Text>
-              {models.map((model) => (
-                <View
-                  key={model.slug}
-                  className="flex-row flex-wrap items-center justify-between gap-2"
-                >
-                  <Text className="shrink text-foreground">{model.name}</Text>
-                  <ControlPill
-                    label={t("Test model & tools")}
-                    accessibilityLabel={t("{action}: {model}", {
-                      action: t("Test model & tools"),
-                      model: model.slug,
-                    })}
-                    variant="pill"
-                    disabled={disabled || dirty || !enabled || !valid || !canTest}
-                    onPress={() => void check("model", model.slug)}
-                  />
-                </View>
-              ))}
-            </View>
-          ) : null}
-          <View className="flex-row items-center justify-between">
-            <Text className="text-foreground">{t("Enabled")}</Text>
-            <Switch
-              accessibilityLabel={t("BYOK enabled")}
-              value={enabled}
-              disabled={disabled}
-              onValueChange={(value) => {
-                setEnabled(value);
-                setFeedback(null);
-              }}
+          {provider ? (
+            <ClaudeInstallationControls
+              environment={environment}
+              provider={provider}
+              connectionDisabled={dirty || pending}
             />
-          </View>
-          {dirty && !valid ? (
-            <Text className="text-sm text-foreground-muted">
-              {t("Enter a base URL, credential, and at least one model ID.")}
-            </Text>
           ) : null}
-          <View className="flex-row flex-wrap gap-2">
-            <ControlPill
-              label={t("Save")}
-              variant="primary"
-              disabled={disabled || !dirty || !valid}
-              onPress={() => {
-                void (async () => {
-                  setPending(true);
-                  const result = await mutate({
-                    environmentId,
-                    input: {
-                      patch: {},
-                      providerInstanceMutation: {
-                        operation: instance ? "upsert" : "create",
-                        instanceId,
-                        instance: {
-                          ...instance,
-                          driver: ProviderDriverKind.make(driver),
-                          displayName: name,
-                          enabled,
-                          config: {
-                            ...config,
-                            ...(codex
-                              ? {
-                                  connectionMode: "byok",
-                                  setupMode: "existing",
-                                  runtimeSource: codexRuntimeSource(
-                                    instance?.config ?? { runtimeSource: "managed" },
-                                  ),
-                                }
-                              : {
-                                  customModelsOnly: true,
-                                  ...(!instance ? { homePath: `~/.claude-t3/${instanceId}` } : {}),
-                                }),
-                            customModels: ids.map((slug) =>
-                              toCustomModelSetting(
-                                models.find((model) => model.slug === slug) ?? {
-                                  slug,
-                                  name: slug,
-                                  capabilities: null,
-                                },
+          <View className="gap-3 p-4">
+            {provider && dirty ? (
+              <Text textRole="footnote" className="text-foreground-muted">
+                {t("Save or revert your changes before switching connections.")}
+              </Text>
+            ) : null}
+            {field("Display name", name, setName)}
+            {!codex ? (
+              <Menu
+                actions={[
+                  {
+                    id: "anthropic",
+                    title: "Anthropic Messages",
+                    state: protocol === "anthropic" ? "on" : "off",
+                  },
+                  {
+                    id: "openai",
+                    title: "OpenAI Chat Completions",
+                    state: protocol === "openai" ? "on" : "off",
+                  },
+                ]}
+                onPressAction={(event) => {
+                  const value = event.nativeEvent.event;
+                  if (!disabled && (value === "anthropic" || value === "openai")) {
+                    setDraft(withClaudeByokVariable(draft, CLAUDE_BYOK_PROTOCOL_VARIABLE, value));
+                    setFeedback(null);
+                  }
+                }}
+              >
+                <ControlPill
+                  label={protocol === "openai" ? "OpenAI Chat Completions" : "Anthropic Messages"}
+                  variant="pill"
+                  disabled={disabled}
+                />
+              </Menu>
+            ) : null}
+            {field("API base URL", url, (value) => setDraft(variable(draft, baseName, value)))}
+            {!codex ? (
+              <Menu
+                actions={[
+                  { id: "bearer", title: "Bearer Token", state: mode === "bearer" ? "on" : "off" },
+                  {
+                    id: "apiKey",
+                    title: protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)",
+                    state: mode === "apiKey" ? "on" : "off",
+                  },
+                ]}
+                onPressAction={(event) => {
+                  const value = event.nativeEvent.event;
+                  if (!disabled && (value === "bearer" || value === "apiKey")) {
+                    setDraft(withClaudeByokVariable(draft, claudeByokAuthVariable(value), ""));
+                    setFeedback(null);
+                  }
+                }}
+              >
+                <ControlPill
+                  label={
+                    mode === "bearer"
+                      ? "Bearer Token"
+                      : protocol === "openai"
+                        ? "API Key (Bearer)"
+                        : "API Key (x-api-key)"
+                  }
+                  variant="pill"
+                  disabled={disabled}
+                />
+              </Menu>
+            ) : null}
+            {field(
+              codex ? "API Key" : "BA credential",
+              typeof credential?.value === "string" ? credential.value : "",
+              (value) => setDraft(variable(draft, credentialName, value)),
+              true,
+            )}
+            {field("Model IDs", modelIds, setModelIds)}
+            {instance ? (
+              <View className="gap-2">
+                <Text textRole="footnote" className="text-foreground-muted">
+                  {t("Test this model and its tools. Sends two requests and uses API credits.")}
+                </Text>
+                {models.map((model) => (
+                  <View
+                    key={model.slug}
+                    className="flex-row flex-wrap items-center justify-between gap-2"
+                  >
+                    <Text className="shrink text-foreground">{model.name}</Text>
+                    <ControlPill
+                      label={t("Test model & tools")}
+                      accessibilityLabel={t("{action}: {model}", {
+                        action: t("Test model & tools"),
+                        model: model.slug,
+                      })}
+                      variant="pill"
+                      disabled={disabled || dirty || !enabled || !valid || !canTest}
+                      onPress={() => void check("model", model.slug)}
+                    />
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            <View className="-mx-4">
+              <ListToggleRow
+                label={t("BYOK enabled")}
+                value={enabled}
+                disabled={disabled}
+                onValueChange={(value) => {
+                  setEnabled(value);
+                  setFeedback(null);
+                }}
+              />
+            </View>
+            {dirty && !valid ? (
+              <Text className="text-sm text-foreground-muted">
+                {t("Enter a base URL, credential, and at least one model ID.")}
+              </Text>
+            ) : null}
+            <View className="flex-row flex-wrap gap-2">
+              <ControlPill
+                label={t("Save")}
+                variant="primary"
+                disabled={disabled || !dirty || !valid}
+                onPress={() => {
+                  void (async () => {
+                    setPending(true);
+                    const result = await mutate({
+                      environmentId,
+                      input: {
+                        patch: {},
+                        providerInstanceMutation: {
+                          operation: instance ? "upsert" : "create",
+                          instanceId,
+                          instance: {
+                            ...instance,
+                            driver: ProviderDriverKind.make(driver),
+                            displayName: name,
+                            enabled,
+                            config: {
+                              ...config,
+                              ...(codex
+                                ? {
+                                    connectionMode: "byok",
+                                    setupMode: "existing",
+                                    runtimeSource: codexRuntimeSource(
+                                      instance?.config ?? { runtimeSource: "managed" },
+                                    ),
+                                  }
+                                : {
+                                    customModelsOnly: true,
+                                    ...(!instance
+                                      ? { homePath: `~/.claude-t3/${instanceId}` }
+                                      : {}),
+                                  }),
+                              customModels: ids.map((slug) =>
+                                toCustomModelSetting(
+                                  models.find((model) => model.slug === slug) ?? {
+                                    slug,
+                                    name: slug,
+                                    capabilities: null,
+                                  },
+                                ),
                               ),
-                            ),
+                            },
+                            environment: draft,
                           },
-                          environment: draft,
                         },
                       },
-                    },
-                  });
-                  setPending(false);
-                  if (result._tag === "Success") {
-                    const saved = result.value.providerInstances[instanceId];
-                    if (saved) {
-                      setDraft(saved.environment ?? []);
-                      setFeedback(null);
-                    }
-                    onClose?.();
-                  } else {
-                    const failure = squashAtomCommandFailure(result);
-                    setFeedback({
-                      fingerprint,
-                      message: failure instanceof Error ? failure.message : t("Save failed."),
                     });
-                  }
-                })();
-              }}
-            />
-            <ControlPill
-              label={t("Revert")}
-              variant="pill"
-              disabled={disabled || !dirty}
-              onPress={() => {
-                if (!instance) {
-                  onClose?.();
-                  return;
-                }
-                setDraft(instance.environment ?? []);
-                setName(instance.displayName ?? label);
-                setEnabled(instance.enabled ?? true);
-                setModelIds(models.map((model) => model.slug).join(", "));
-                setFeedback(null);
-              }}
-            />
-            <ControlPill
-              label={t("Check connection")}
-              variant="pill"
-              disabled={disabled || dirty || !enabled || !canCheck}
-              onPress={() => void check("connection")}
-            />
-            {checking ? (
-              <ControlPill
-                label={t("Cancel check")}
-                variant="pill"
-                onPress={() =>
-                  void validate({ environmentId, input: { instanceId, check: "cancel" } })
-                }
+                    setPending(false);
+                    if (result._tag === "Success") {
+                      const saved = result.value.providerInstances[instanceId];
+                      if (saved) {
+                        setDraft(saved.environment ?? []);
+                        setFeedback(null);
+                      }
+                      onClose?.();
+                    } else {
+                      const failure = squashAtomCommandFailure(result);
+                      setFeedback({
+                        fingerprint,
+                        message: failure instanceof Error ? failure.message : t("Save failed."),
+                      });
+                    }
+                  })();
+                }}
               />
+              <ControlPill
+                label={t("Revert")}
+                variant="pill"
+                disabled={disabled || !dirty}
+                onPress={() => {
+                  if (!instance) {
+                    onClose?.();
+                    return;
+                  }
+                  setDraft(instance.environment ?? []);
+                  setName(instance.displayName ?? label);
+                  setEnabled(instance.enabled ?? true);
+                  setModelIds(models.map((model) => model.slug).join(", "));
+                  setFeedback(null);
+                }}
+              />
+              <ControlPill
+                label={t("Check connection")}
+                variant="pill"
+                disabled={disabled || dirty || !enabled || !canCheck}
+                onPress={() => void check("connection")}
+              />
+              {checking ? (
+                <ControlPill
+                  label={t("Cancel check")}
+                  variant="pill"
+                  onPress={() =>
+                    void validate({ environmentId, input: { instanceId, check: "cancel" } })
+                  }
+                />
+              ) : null}
+            </View>
+            {feedback && feedback.fingerprint === fingerprint ? (
+              <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
+                {t(feedback.message)}
+              </Text>
             ) : null}
           </View>
-          {feedback && feedback.fingerprint === fingerprint ? (
-            <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
-              {t(feedback.message)}
-            </Text>
-          ) : null}
         </>
       ) : null}
     </View>
