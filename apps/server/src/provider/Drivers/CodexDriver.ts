@@ -1,3 +1,12 @@
+import {
+  codexConnectionMode,
+  codexRuntimeSource,
+  codexByokUrlError,
+  codexByokLaunchArgs,
+  CODEX_BYOK_ENVIRONMENT_NAMES,
+} from "@t3tools/shared/codexByok";
+import { ProviderSetupError, ServerSettingsError } from "@t3tools/contracts";
+import { validateCodexEndpoint } from "../CodexEndpointValidation.ts";
 import { CodexSettings, ProviderDriverKind, type ServerProviderModel } from "@t3tools/contracts";
 import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 import * as Digest from "effect/crypto/Digest";
@@ -168,12 +177,12 @@ export const CodexDriver: ProviderDriver<
     enabled,
     config,
   }) {
-    if (config.setupMode === "managed")
+    if (codexConnectionMode(config) === "chatgpt")
       return yield* makeManagedCodexProvider({
         instanceId,
         displayName,
         accentColor,
-        environment,
+        environment: environment.filter((entry) => !CODEX_BYOK_ENVIRONMENT_NAMES.has(entry.name)),
         enabled,
         config,
       });
@@ -186,17 +195,44 @@ export const CodexDriver: ProviderDriver<
     const installation = yield* CodexInstallation.CodexInstallation;
     const modelCatalog = yield* ModelCatalog.ModelCatalog;
     const currentCatalog = modelCatalog.current(DRIVER_KIND);
-    const processEnv = yield* mergeProviderInstanceEnvironment(
+    const sourceEnvironment = yield* mergeProviderInstanceEnvironment(
       environment,
       yield* HostProcess.Environment,
     );
+    const byok = codexConnectionMode(config) === "byok";
+    const processEnv = { ...sourceEnvironment };
+    const stateDir = (yield* ServerConfig.ServerConfig).stateDir;
+    const privateHome = pathService.join(stateDir, "providers", "codex", instanceId, "byok");
+    if (byok) {
+      delete processEnv.OPENAI_API_KEY;
+      delete processEnv.OPENAI_BASE_URL;
+      delete processEnv.ACCESS_TOKEN;
+      delete processEnv.T3CODE_CODEX_LAUNCH_ARGS;
+      processEnv.CODEX_HOME = privateHome;
+      processEnv.T3_CODEX_BASE_URL = environment.find(
+        (entry) => entry.name === "T3_CODEX_BASE_URL",
+      )?.value;
+      processEnv.T3_CODEX_API_KEY = environment.find(
+        (entry) => entry.name === "T3_CODEX_API_KEY",
+      )?.value;
+    }
+    if (!byok) {
+      delete processEnv.T3_CODEX_BASE_URL;
+      delete processEnv.T3_CODEX_API_KEY;
+    }
     const environmentHome = processEnv.CODEX_HOME;
-    const homeConfig =
-      !config.homePath.trim() && environmentHome?.trim()
+    const homeConfig = byok
+      ? { ...config, homePath: privateHome, shadowHomePath: "" }
+      : !config.homePath.trim() && environmentHome?.trim()
         ? { ...config, homePath: environmentHome }
         : config;
     const homeLayout = yield* resolveCodexHomeLayout(homeConfig);
-    const continuationIdentity = codexContinuationIdentity(homeLayout);
+    const continuationIdentity = {
+      ...codexContinuationIdentity(homeLayout),
+      continuationKey: byok
+        ? `${homeLayout.continuationKey}:endpoint:${processEnv.T3_CODEX_BASE_URL?.trim().replace(/\/+$/, "")}`
+        : homeLayout.continuationKey,
+    };
     const stampIdentity = withInstanceIdentity({
       instanceId,
       driverKind: DRIVER_KIND,
@@ -220,7 +256,49 @@ export const CodexDriver: ProviderDriver<
       enabled,
       binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
       homePath: homeLayout.effectiveHomePath ?? "",
+      ...(byok ? { launchArgs: codexByokLaunchArgs(processEnv.T3_CODEX_BASE_URL ?? "") } : {}),
     } satisfies CodexSettings;
+    const resolveRuntime = Effect.gen(function* () {
+      if (byok) {
+        const error = codexByokUrlError(processEnv.T3_CODEX_BASE_URL ?? "");
+        if (error || !processEnv.T3_CODEX_API_KEY?.trim())
+          return yield* new ProviderSetupError({
+            instanceId,
+            operation: "runtime",
+            detail: error ?? "Enter an API key.",
+          });
+        yield* fileSystem.makeDirectory(privateHome, { recursive: true }).pipe(
+          Effect.mapError(
+            () =>
+              new ProviderSetupError({
+                instanceId,
+                operation: "runtime",
+                detail: "Could not create the private Codex home.",
+              }),
+          ),
+        );
+      }
+      const executable =
+        codexRuntimeSource(config) === "local"
+          ? effectiveConfig.binaryPath
+          : (yield* installation
+              .acquire(codexRuntimeSource(config), effectiveConfig.binaryPath)
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new ProviderSetupError({
+                      instanceId,
+                      operation: "runtime",
+                      detail: error.detail,
+                    }),
+                ),
+              )).executablePath;
+      return {
+        config: { ...effectiveConfig, binaryPath: executable },
+        environment: processEnv,
+        revision: `${instanceId}:${homeLayout.effectiveHomePath}:${byok ? processEnv.T3_CODEX_BASE_URL : ""}`,
+      };
+    });
     const resolveInstallation = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(
         makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
@@ -235,9 +313,11 @@ export const CodexDriver: ProviderDriver<
       ),
     );
     const resolveMaintenance: typeof resolveInstallation = (options) =>
-      resolveInstallation(options).pipe(
-        Effect.map((capabilities) => withCodexNativeLatestVersion(capabilities, httpClient)),
-      );
+      codexRuntimeSource(config) !== "local"
+        ? Effect.succeed({ provider: DRIVER_KIND, packageName: null, update: null })
+        : resolveInstallation(options).pipe(
+            Effect.map((capabilities) => withCodexNativeLatestVersion(capabilities, httpClient)),
+          );
 
     const orchestrationAdapter = yield* createCodexAdapterV2(
       {
@@ -246,9 +326,11 @@ export const CodexDriver: ProviderDriver<
         accentColor,
         environment,
         enabled,
-        config: homeConfig,
+        config: { ...homeConfig, launchArgs: effectiveConfig.launchArgs },
       },
       {
+        resolveRuntime,
+        connectionKey: continuationIdentity.continuationKey,
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         models: Effect.suspend(() => snapshot.getSnapshot).pipe(
           Effect.map((value) => value.models),
@@ -275,12 +357,40 @@ export const CodexDriver: ProviderDriver<
         Effect.zipWith(
           Ref.get(previousModels).pipe(
             Effect.flatMap((models) =>
-              checkCodexProviderStatus(effectiveConfig, undefined, processEnv, undefined, models),
+              resolveRuntime.pipe(
+                Effect.flatMap((runtime) =>
+                  checkCodexProviderStatus(
+                    runtime.config,
+                    undefined,
+                    runtime.environment,
+                    undefined,
+                    models,
+                  ),
+                ),
+                Effect.scoped,
+                Effect.catchTags({
+                  ProviderSetupError: (error) =>
+                    makePendingCodexProvider(effectiveConfig).pipe(
+                      Effect.map((draft) => ({ ...draft, message: error.detail })),
+                    ),
+                }),
+                Effect.mapError(
+                  (cause) =>
+                    new ServerSettingsError({
+                      operation: "read-file",
+                      settingsPath: stateDir,
+                      cause,
+                    }),
+                ),
+              ),
             ),
             Effect.tap((draft) => Ref.set(previousModels, draft.models)),
           ),
           currentCatalog,
-          (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
+          (draft, catalog) =>
+            stampIdentity(
+              byok ? { ...draft, customModelsOnly: true } : applyCodexModelCatalog(draft, catalog),
+            ),
           { concurrent: true },
         ),
       ),
@@ -299,7 +409,10 @@ export const CodexDriver: ProviderDriver<
         Effect.zipWith(
           makePendingCodexProvider(settings.provider),
           currentCatalog,
-          (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
+          (draft, catalog) =>
+            stampIdentity(
+              byok ? { ...draft, customModelsOnly: true } : applyCodexModelCatalog(draft, catalog),
+            ),
         ),
       checkProvider,
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
@@ -324,23 +437,37 @@ export const CodexDriver: ProviderDriver<
           }),
       ),
     );
+    if (codexRuntimeSource(config) !== "local") {
+      yield* installation.changes.pipe(
+        Stream.filter((state) => state.phase === "succeeded"),
+        Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
+        Effect.forkScoped,
+      );
+    }
     const textGeneration = yield* makeCodexTextGeneration(
       effectiveConfig,
       processEnv,
       snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
+      resolveRuntime,
     );
     const snapshotForCwd = (cwd: string) =>
       !effectiveConfig.enabled
         ? snapshot.getSnapshot
         : Effect.all([
             snapshot.getSnapshot,
-            probeCodexSkillsForCwd({
-              binaryPath: effectiveConfig.binaryPath,
-              homePath: effectiveConfig.homePath,
-              launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
-              cwd,
-              environment: processEnv,
-            }).pipe(
+            resolveRuntime.pipe(
+              Effect.flatMap((runtime) =>
+                probeCodexSkillsForCwd({
+                  binaryPath: runtime.config.binaryPath,
+                  homePath: runtime.config.homePath,
+                  launchArgs: resolveCodexLaunchArgs(
+                    runtime.config.launchArgs,
+                    runtime.environment,
+                  ),
+                  cwd,
+                  environment: runtime.environment,
+                }),
+              ),
               Effect.scoped,
               Effect.timeout(resolveProviderProbeTimeoutMs("codex", 20_000, processEnv)),
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -366,8 +493,9 @@ export const CodexDriver: ProviderDriver<
       resetCreditCoordinator
         .redeem(accountKey, (idempotencyKey) =>
           Effect.gen(function* () {
+            const runtime = yield* resolveRuntime;
             const { client } = yield* withCodexAppServerClient({
-              binaryPath: effectiveConfig.binaryPath,
+              binaryPath: runtime.config.binaryPath,
               homePath: effectiveConfig.homePath,
               launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
               cwd: process.cwd(),
@@ -430,9 +558,17 @@ export const CodexDriver: ProviderDriver<
       enabled,
       snapshot,
       snapshotForCwd,
-      consumeResetCredit,
+      ...(byok ? {} : { consumeResetCredit }),
       orchestrationAdapter,
       textGeneration,
+      ...(byok
+        ? {
+            validateEndpoint: (input: import("@t3tools/contracts").ProviderEndpointValidateInput) =>
+              validateCodexEndpoint(input, config, processEnv).pipe(
+                Effect.provideService(HttpClient.HttpClient, httpClient),
+              ),
+          }
+        : {}),
     } satisfies ProviderInstance;
   }),
 };

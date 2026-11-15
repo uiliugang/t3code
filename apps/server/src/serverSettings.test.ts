@@ -604,6 +604,37 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("rejects legacy overwrites of explicit Codex connection settings", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const instanceId = ProviderInstanceId.make("codex_byok");
+      const driver = ProviderDriverKind.make("codex");
+      yield* service.updateProviderInstance({
+        operation: "create",
+        instanceId,
+        instance: {
+          driver,
+          config: { connectionMode: "byok", runtimeSource: "managed", setupMode: "existing" },
+        },
+      });
+      for (const config of [
+        { setupMode: "managed" },
+        { connectionMode: "byok", runtimeSource: "managed", setupMode: "managed" },
+      ]) {
+        const result = yield* service
+          .updateProviderInstance({ operation: "upsert", instanceId, instance: { driver, config } })
+          .pipe(Effect.result);
+        assert.equal(result._tag, "Failure");
+      }
+      const unchanged = (yield* service.getSettings).providerInstances[instanceId];
+      assert.deepEqual(unchanged?.config, {
+        connectionMode: "byok",
+        runtimeSource: "managed",
+        setupMode: "existing",
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("pauses provider-instance mutations while a settings snapshot is in use", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

@@ -1,3 +1,9 @@
+import {
+  codexConnectionMode,
+  CODEX_BYOK_LABEL,
+  CODEX_BYOK_ENVIRONMENT_NAMES,
+} from "@t3tools/shared/codexByok";
+import { CodexConnectionSettings } from "./CodexConnectionSettings";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { Spinner } from "~/components/ui/spinner";
 
@@ -909,13 +915,18 @@ export function ProviderInstanceCard({
         : (rest as ProviderInstanceConfig),
     );
   };
-  const isByok = instance.driver === "claudeAgent" && isClaudeByok(instance.config);
+  const isByok =
+    instance.driver === "claudeAgent"
+      ? isClaudeByok(instance.config)
+      : instance.driver === "codex" && codexConnectionMode(instance.config) === "byok";
+  const byokNames =
+    instance.driver === "codex" ? CODEX_BYOK_ENVIRONMENT_NAMES : CLAUDE_BYOK_ENVIRONMENT_NAMES;
   const environmentFields = (driverOption?.environmentFields ?? []).filter(
-    (field) => !isByok || !CLAUDE_BYOK_ENVIRONMENT_NAMES.has(field.name),
+    (field) => !isByok || !byokNames.has(field.name),
   );
   const environmentFieldNames = new Set([
     ...environmentFields.map((field) => field.name),
-    ...(isByok ? CLAUDE_BYOK_ENVIRONMENT_NAMES : []),
+    ...(isByok || instance.driver === "codex" ? byokNames : []),
   ]);
   const genericEnvironment = providerEnvironmentWithoutNames(
     instance.environment,
@@ -1149,12 +1160,6 @@ export function ProviderInstanceCard({
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
-              {versionLabel ? (
-                <code className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
-                  {versionLabel}
-                </code>
-              ) : null}
-              {versionAdvisoryNode}
             </span>
             <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground/80">
               {statusDotNode && !updateProgress ? (
@@ -1341,9 +1346,18 @@ export function ProviderInstanceCard({
         />
       </SettingsSection>
 
+      {instance.driver === "codex" && environmentId ? (
+        <CodexConnectionSettings
+          environmentId={environmentId}
+          instanceId={instanceId}
+          config={instance.config}
+          disabled={readOnly || !!instanceLocks?.configKeys.size}
+          onChange={updateConfig}
+        />
+      ) : null}
       {isByok && environmentId ? (
-        <SettingsSection title={CLAUDE_BYOK_LABEL}>
-          <ClaudeByokSettings
+        <SettingsSection title={instance.driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL}>
+          <ProviderByokSettings
             key={JSON.stringify(instance.environment)}
             instance={instance}
             instanceId={instanceId}
@@ -1351,9 +1365,7 @@ export function ProviderInstanceCard({
             readOnly={
               readOnly ||
               !!instanceLocks?.wholeEnvironment ||
-              [...CLAUDE_BYOK_ENVIRONMENT_NAMES].some((name) =>
-                instanceLocks?.environmentNames.has(name),
-              )
+              [...byokNames].some((name) => instanceLocks?.environmentNames.has(name))
             }
             secretSources={secretSources}
           />
@@ -1413,11 +1425,11 @@ export function ProviderInstanceCard({
           aria-disabled={readOnly || undefined}
           className={readOnly ? "opacity-50 select-none" : undefined}
         >
-          {instance.driver === "claudeAgent" ? (
+          {instance.driver === "claudeAgent" || instance.driver === "codex" ? (
             <FoldedSettingsSection
               key={instanceId}
               id={`provider-instance-${instanceId}-runtime`}
-              title={t("Runtime")}
+              title={t("Advanced settings")}
               headerPlacement="outside"
             >
               {runtimeFields}
@@ -1495,4 +1507,4 @@ export function ProviderInstanceCard({
   );
 }
 import { CLAUDE_BYOK_LABEL, isClaudeByok } from "@t3tools/shared/claudeByok";
-import { ClaudeByokSettings, CLAUDE_BYOK_ENVIRONMENT_NAMES } from "./ClaudeByokSettings";
+import { ProviderByokSettings, CLAUDE_BYOK_ENVIRONMENT_NAMES } from "./ClaudeByokSettings";

@@ -1,5 +1,9 @@
+import * as Stream from "effect/Stream";
+import * as Option from "effect/Option";
+import { codexRuntimeSource } from "@t3tools/shared/codexByok";
 import {
   type ProviderInstanceConfig,
+  ProviderInstanceEnvironment,
   ProviderInstanceId,
   type ProviderInstanceMutation,
   type ServerSettingsPatch,
@@ -52,6 +56,7 @@ const Journal = Schema.fromJsonString(Schema.Array(ManagedResource));
 const decodeJournal = Schema.decodeUnknownEffect(Journal);
 const encodeJournal = Schema.encodeEffect(Journal);
 const isSettingsError = Schema.is(ServerSettingsError);
+const sameEnvironment = Schema.toEquivalence(ProviderInstanceEnvironment);
 
 function resourceKey(resource: ManagedResource): string {
   switch (resource.kind) {
@@ -356,7 +361,9 @@ const make = Effect.gen(function* () {
                     entries.some(
                       (entry) =>
                         entry.driver === resource.driver &&
-                        (configString(entry, "setupMode") === "managed" ||
+                        ((entry.driver === "codex"
+                          ? codexRuntimeSource(entry.config) !== "local"
+                          : configString(entry, "setupMode") === "managed") ||
                           (entry.driver === "antigravity" && !configString(entry, "binaryPath"))),
                     )
                   )
@@ -420,8 +427,69 @@ const make = Effect.gen(function* () {
     mutation: ProviderInstanceMutation,
     patch: ServerSettingsPatch = {},
   ) {
-    if (mutation.operation !== "delete")
+    if (mutation.operation !== "delete") {
+      if (mutation.operation === "upsert" && mutation.instance.driver === "codex") {
+        const before = deriveProviderInstanceConfigMap(yield* settings.getSettings)[
+          mutation.instanceId
+        ];
+        const changed =
+          before &&
+          ([
+            "connectionMode",
+            "runtimeSource",
+            "setupMode",
+            "binaryPath",
+            "homePath",
+            "shadowHomePath",
+            "launchArgs",
+          ].some((key) => configString(before, key) !== configString(mutation.instance, key)) ||
+            !sameEnvironment(
+              before.environment ?? [],
+              (mutation.instance.environment ?? []).map((entry) =>
+                entry.valueRedacted && entry.value === ""
+                  ? (before.environment?.find((saved) => saved.name === entry.name) ?? entry)
+                  : entry,
+              ),
+            ));
+        if (changed) {
+          const instance = yield* registry.getInstance(mutation.instanceId);
+          if (instance?.auth) {
+            const state = yield* instance.auth.subscribe("provider-settings").pipe(Stream.runHead);
+            if (
+              Option.isSome(state) &&
+              ["starting", "waiting", "verifying"].includes(state.value.phase)
+            )
+              return yield* new ServerSettingsError({
+                operation: "write-file",
+                settingsPath: config.settingsPath,
+                cause: new Error(
+                  "Finish or cancel sign-in before changing the provider connection.",
+                ),
+              });
+          }
+        }
+        if (changed)
+          return yield* sessions
+            .withInstanceClosed(
+              mutation.instanceId,
+              settings.updateProviderInstance(mutation, patch),
+              true,
+            )
+            .pipe(
+              Effect.mapError((cause) =>
+                isSettingsError(cause)
+                  ? cause
+                  : new ServerSettingsError({
+                      operation: "stop-provider-sessions",
+                      settingsPath: config.settingsPath,
+                      providerInstanceId: mutation.instanceId,
+                      cause,
+                    }),
+              ),
+            );
+      }
       return yield* settings.updateProviderInstance(mutation, patch);
+    }
     yield* settings.validateProviderInstanceMutation(mutation, patch);
     return yield* sessions
       .withInstanceClosed(mutation.instanceId, remove(mutation.instanceId, patch))

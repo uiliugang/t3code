@@ -250,6 +250,7 @@ export interface ProviderSessionManagerV2Shape {
   readonly withInstanceClosed: <A, E, R>(
     instanceId: ProviderInstanceId,
     effect: Effect.Effect<A, E, R>,
+    requireIdle?: boolean,
   ) => Effect.Effect<A, E | ProviderSessionManagerV2Error, R>;
   readonly release: (input: {
     readonly providerSessionId: ProviderSessionId;
@@ -3158,11 +3159,26 @@ export const layerWithOptions = (
           ),
         closeInstance: (instanceId) =>
           withInstanceLock(instanceId, "write", closeInstance(instanceId)),
-        withInstanceClosed: (instanceId, effect) =>
+        withInstanceClosed: (instanceId, effect, requireIdle) =>
           withInstanceLock(
             instanceId,
             "write",
-            closeInstance(instanceId).pipe(Effect.andThen(effect)),
+            Effect.gen(function* () {
+              if (
+                requireIdle &&
+                [...(yield* Ref.get(sessions)).values()].some(
+                  (entry) => entry.runtime.instanceId === instanceId && entry.busyTurns.size > 0,
+                )
+              )
+                return yield* new ProviderSessionCloseError({
+                  providerSessionId: ProviderSessionId.make(`provider-instance:${instanceId}`),
+                  cause: new Error(
+                    "Finish or stop active turns before changing the provider connection.",
+                  ),
+                });
+              yield* closeInstance(instanceId);
+              return yield* effect;
+            }),
           ),
         release: releaseEntry,
         releaseUnlessBusy: Effect.fn("ProviderSessionManager.releaseUnlessBusy")(function* (input) {

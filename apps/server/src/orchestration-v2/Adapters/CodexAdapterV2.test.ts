@@ -1442,6 +1442,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
         instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
         settings: DEFAULT_CODEX_SETTINGS,
+        connectionKey: "fixture-original-connection",
         environment: {},
         clientFactory,
         ...(onUsageLimits ? { onUsageLimits } : {}),
@@ -3445,6 +3446,22 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           Effect.sync(() => {
             if (method === "thread/resume") resumeThreadEnvs.push(threadEnvOf(params));
           }),
+      );
+      const refused = yield* harness.runtime
+        .resumeThread({
+          providerThread: {
+            ...harness.providerThread,
+            nativeMetadata: { codexConnectionKey: "different-endpoint" },
+          },
+          modelSelection: CODEX_TEST_MODEL_SELECTION,
+          runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        })
+        .pipe(Effect.result);
+      assert.equal(refused._tag, "Failure");
+      assert.deepEqual(resumeThreadEnvs, []);
+      assert.equal(
+        harness.providerThread.nativeMetadata?.codexConnectionKey,
+        "fixture-original-connection",
       );
       const resumed = yield* harness.runtime.resumeThread({
         providerThread: harness.providerThread,
@@ -8933,6 +8950,17 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       yield* TestClock.adjust("100 millis");
       yield* harness.awaitTerminal(1);
       assert.equal(harness.terminalEvents()[0]?.status, "completed");
+      const childRegistration = harness.events.find(
+        (event) =>
+          event.type === "provider_thread.updated" &&
+          event.providerThread.id !== harness.providerThread.id,
+      );
+      if (childRegistration?.type === "provider_thread.updated") {
+        assert.equal(
+          childRegistration.providerThread.nativeMetadata?.codexConnectionKey,
+          "fixture-original-connection",
+        );
+      } else assert.fail("Missing child registration");
       const settledUpdates = harness.subagentUpdates();
       const firstCompletion = settledUpdates[settledUpdates.length - 1];
       assert.equal(firstCompletion?.subagent.status, "completed");

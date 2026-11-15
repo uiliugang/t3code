@@ -414,6 +414,7 @@ function makeLocalCommandHarness(input: {
   readonly sideChat?: {
     readonly contextRun: "current" | "failed" | "cancelled" | "delivered";
     readonly nativeForkFrom?: "idle" | "busy";
+    readonly connectionChanged?: boolean;
     readonly switchedProvider?: boolean;
     readonly threadRuntimeMode?: OrchestrationV2ThreadProjection["thread"]["runtimeMode"];
     readonly workspace?: OrchestrationV2ThreadProjection["thread"]["workspace"];
@@ -919,6 +920,16 @@ function makeLocalCommandHarness(input: {
     Effect.succeed(sideChatThread),
   );
   const sideChatSession = {
+    validateThreadConnection: () =>
+      input.sideChat?.connectionChanged
+        ? Effect.fail(
+            new ProviderAdapter.ProviderAdapterConnectionMismatchError({
+              driver: providerThread.driver,
+              providerThreadId: providerThread.id,
+              detail: "Connection changed",
+            }),
+          )
+        : Effect.void,
     driver: providerThread.driver,
     providerSession,
     ensureThread: () => Effect.succeed(sideChatThread),
@@ -1661,6 +1672,27 @@ effectIt.effect.each([
     }),
 );
 
+effectIt.effect.each(["idle", "busy"] as const)(
+  "does not hand off a %s native fork across connections",
+  (nativeForkFrom) =>
+    Effect.gen(function* () {
+      const workspace = workspaceFixture();
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        sideChat: { contextRun: "current", nativeForkFrom, workspace, connectionChanged: true },
+      });
+      const initialHandoffs = harness.projection().contextHandoffs;
+      yield* withWorkspaceLeases(
+        workspace.resources.map((resource) => `resource:${resource.id}`),
+        harness.start,
+      );
+      expect(harness.forkThread).not.toHaveBeenCalled();
+      expect(harness.startTurn).not.toHaveBeenCalled();
+      expect(harness.projection().contextHandoffs).toEqual(initialHandoffs);
+      expect(harness.projection().runs.at(-1)).toMatchObject({ status: "failed", startedAt: null });
+    }),
+);
+
 effectIt.effect.each([
   { goalDriver: "opencode", nativeGoals: false },
   { goalDriver: "opencode", nativeGoals: true },
@@ -2259,38 +2291,47 @@ effectIt.effect("checks the run's status without loading the thread's history", 
   }),
 );
 
-effectIt.effect("fails the run instead of replacing a native thread another client holds", () =>
-  Effect.gen(function* () {
-    const detail = "This conversation is open in another Codex client.";
-    const harness = makeLocalCommandHarness({
-      text: "Continue",
-      resumeFailure: new ProviderAdapter.ProviderAdapterThreadInUseError({
-        driver: ProviderDriverKind.make("codex"),
-        providerThreadId: ProviderThreadId.make("new-provider-thread"),
-        detail,
-        cause: new Error("thread native-resume-thread already has an active writer"),
-      }),
-    });
+effectIt.effect.each(["active-writer", "connection-changed"] as const)(
+  "does not recover history after %s",
+  (reason) =>
+    Effect.gen(function* () {
+      const detail = "This conversation is open in another Codex client.";
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        resumeFailure:
+          reason === "connection-changed"
+            ? new ProviderAdapter.ProviderAdapterConnectionMismatchError({
+                driver: ProviderDriverKind.make("codex"),
+                providerThreadId: ProviderThreadId.make("new-provider-thread"),
+                detail,
+              })
+            : new ProviderAdapter.ProviderAdapterThreadInUseError({
+                driver: ProviderDriverKind.make("codex"),
+                providerThreadId: ProviderThreadId.make("new-provider-thread"),
+                detail,
+                cause: new Error("thread native-resume-thread already has an active writer"),
+              }),
+      });
 
-    const exit = yield* Effect.exit(harness.start);
+      const exit = yield* Effect.exit(harness.start);
 
-    expect(harness.fallbackEnsureThread).not.toHaveBeenCalled();
-    expect(exit._tag).toBe("Success");
-    expect(harness.startRootRun).not.toHaveBeenCalled();
-    const projection = harness.projection();
-    expect(projection.providerThreads.at(-1)?.nativeThreadRef?.nativeId).toBe(
-      "native-resume-thread",
-    );
-    expect(projection.contextHandoffs).toEqual([]);
-    expect(projection.runs.at(-1)).toMatchObject({ status: "failed", startedAt: null });
-    expect(projection.turnItems).toMatchObject([
-      {
-        type: "error",
-        title: "Provider turn failed to start",
-        failure: { class: "provider_error", message: detail },
-      },
-    ]);
-  }),
+      expect(harness.fallbackEnsureThread).not.toHaveBeenCalled();
+      expect(exit._tag).toBe("Success");
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      const projection = harness.projection();
+      expect(projection.providerThreads.at(-1)?.nativeThreadRef?.nativeId).toBe(
+        "native-resume-thread",
+      );
+      expect(projection.contextHandoffs).toEqual([]);
+      expect(projection.runs.at(-1)).toMatchObject({ status: "failed", startedAt: null });
+      expect(projection.turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Provider turn failed to start",
+          failure: { class: "provider_error", message: detail },
+        },
+      ]);
+    }),
 );
 
 effectIt.effect("does not mistake a failed state read for a superseded run", () =>

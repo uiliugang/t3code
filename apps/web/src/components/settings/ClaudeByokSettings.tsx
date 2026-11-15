@@ -1,7 +1,10 @@
+import { codexByokFormError } from "@t3tools/shared/codexByok";
+import { CodexByokFields } from "./CodexByokFields";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { CheckIcon, FlaskConicalIcon, PlugIcon, SaveIcon, Undo2Icon, XIcon } from "lucide-react";
+import { resolveProviderInstanceEnabled } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   ProviderInstanceConfig,
@@ -165,7 +168,7 @@ export function ClaudeByokFields({
   );
 }
 
-export function ClaudeByokSettings({
+export function ProviderByokSettings({
   instance,
   instanceId,
   environmentId,
@@ -199,7 +202,9 @@ export function ClaudeByokSettings({
   const [testModel, setTestModel] = useState(models[0]?.slug ?? "");
   const fingerprint = JSON.stringify([instance.config, instance.environment]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(instance.environment ?? []);
-  const error = claudeByokFormError(draft);
+  const codex = instance.driver === "codex";
+  const Fields = codex ? CodexByokFields : ClaudeByokFields;
+  const error = codex ? codexByokFormError(draft) : claudeByokFormError(draft);
   const runCheck = useAtomCommand(serverEnvironment.validateProviderEndpoint, {
     reportFailure: false,
   });
@@ -238,7 +243,8 @@ export function ClaudeByokSettings({
             : "Check failed. Try again.",
     });
   };
-  const unavailable = readOnly || dirty || error !== null || !instance.enabled;
+  const unavailable =
+    readOnly || dirty || error !== null || !resolveProviderInstanceEnabled(instance);
   const save = async () => {
     setSaving(true);
     setSaveError(null);
@@ -253,7 +259,8 @@ export function ClaudeByokSettings({
           instance: {
             ...instance,
             environment: draft.map((entry) =>
-              entry.name === "ANTHROPIC_BASE_URL" && typeof entry.value === "string"
+              (entry.name === "ANTHROPIC_BASE_URL" || entry.name === "T3_CODEX_BASE_URL") &&
+              typeof entry.value === "string"
                 ? { ...entry, value: entry.value.trim() }
                 : entry,
             ),
@@ -271,7 +278,7 @@ export function ClaudeByokSettings({
   };
   return (
     <>
-      <ClaudeByokFields
+      <Fields
         environment={draft}
         onChange={(next) => {
           setDraft(next);

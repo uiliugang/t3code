@@ -33,7 +33,7 @@ vi.mock(import("../../state/use-atom-command"), () => ({
   useAtomCommand: ((command: unknown) => command) as never,
 }));
 
-import { ClaudeByokSettings } from "./ClaudeByokSettings";
+import { ProviderByokSettings } from "./ClaudeByokSettings";
 
 it("clears a rotated credential after saving even when the redacted snapshot is unchanged", async () => {
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
@@ -56,7 +56,7 @@ it("clears a rotated credential after saving even when the redacted snapshot is 
   });
   await using screen = await render(
     <RegistryProvider>
-      <ClaudeByokSettings
+      <ProviderByokSettings
         instance={instance}
         instanceId={instanceId}
         environmentId={EnvironmentId.make("test-env")}
@@ -88,4 +88,29 @@ it("clears a rotated credential after saving even when the redacted snapshot is 
   await expect.element(screen.getByRole("alert")).toHaveTextContent("Save unavailable");
   await expect.element(credential).toHaveValue("retry-token");
   await expect.element(screen.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+});
+
+it("allows checking a default Codex instance with implicit enabled state", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
+  state.save.mockReset();
+  state.check.mockReset();
+  await using screen = await render(
+    <RegistryProvider>
+      <ProviderByokSettings
+        instanceId={ProviderInstanceId.make("codex")}
+        environmentId={EnvironmentId.make("test-env")}
+        instance={{
+          driver: ProviderDriverKind.make("codex"),
+          config: { connectionMode: "byok", customModels: ["test"] },
+          environment: [
+            { name: "T3_CODEX_BASE_URL", value: "https://api.test/v1", sensitive: false },
+            { name: "T3_CODEX_API_KEY", value: "", sensitive: true, valueRedacted: true },
+          ],
+        }}
+        readOnly={false}
+        secretSources={[]}
+      />
+    </RegistryProvider>,
+  );
+  await expect.element(screen.getByRole("button", { name: "Check connection" })).toBeEnabled();
 });

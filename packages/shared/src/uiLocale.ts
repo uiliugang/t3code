@@ -9,6 +9,46 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "API returned HTTP 401. Check the API key.": "API 返回 HTTP 401，请检查 API 密钥。",
+  "API returned HTTP 403. Check the key and model permissions.":
+    "API 返回 HTTP 403，请检查密钥与模型权限。",
+  "API returned HTTP 404. Check the API path; this service may not support model listing.":
+    "API 返回 HTTP 404，请检查 API 路径；此服务可能不支持模型目录。",
+  "API returned HTTP 429. Check the quota and try again later.":
+    "API 返回 HTTP 429，请检查额度并稍后重试。",
+  "API request failed. Check service availability and try again.":
+    "API 请求失败，请检查服务状态后重试。",
+  "Codex is not installed in T3 Code. Install it to continue.":
+    "尚未安装 T3 托管的 Codex，请先安装。",
+  "Codex provider status has not been checked in this session yet.": "尚未检查 Codex 状态。",
+  "This thread belongs to a different Codex connection. Switch back to its original connection or start a new thread.":
+    "此会话属于另一个 Codex 连接，请切回原连接或新建会话。",
+  "Unsaved changes": "有未保存的更改",
+  "Use your ChatGPT subscription.": "使用你的 ChatGPT 订阅。",
+  "Could not read Codex setup status. Reconnect and try again.":
+    "无法读取 Codex 设置状态，请重新连接后重试。",
+  "Set up Codex to get started.": "请先配置 Codex。",
+  "Sign in with ChatGPT to use Codex.": "登录 ChatGPT 后即可使用 Codex。",
+  "Connection method": "连接方式",
+  "Uses the Responses API. Include the API path, such as /v1.":
+    "使用 Responses API，请包含 /v1 等 API 路径。",
+  "Runtime source": "运行时来源",
+  "Shared runtime": "共享运行时",
+  "Install / update": "安装或更新",
+  "Advanced settings": "高级设置",
+  "Changing the runtime keeps this login. Changing the connection uses its own credentials.":
+    "切换运行时保留当前登录；切换连接方式会使用各自的凭据。",
+  "Managed installations are shared by providers on this environment. Credentials stay separate.":
+    "当前环境的同类提供商共享托管安装，凭据独立保存。",
+  "Enter an API base URL.": "请输入 API 基础地址。",
+  "Enter an API key.": "请输入 API 密钥。",
+  "Enter the API base URL, without /responses, /chat/completions or /models.":
+    "请输入 API 基础地址，不要包含 /responses、/chat/completions 或 /models。",
+  "Model listing accepted the API key. Inference is unverified.":
+    "模型目录已接受 API 密钥，尚未验证推理能力。",
+  "The model completed a Responses API tool round trip.": "模型已完成 Responses API 工具调用验证。",
+  "API check failed. Check connectivity and Responses API compatibility.":
+    "API 检查失败，请检查网络和 Responses API 兼容性。",
   "Needs approval": "需要批准",
   "Needs your input": "需要你输入",
   Stopped: "已停止",

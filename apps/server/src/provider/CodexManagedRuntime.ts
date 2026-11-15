@@ -1,3 +1,6 @@
+import { codexRuntimeSource } from "@t3tools/shared/codexByok";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveManagedCodexHomeLayout } from "./CodexManagedHome.ts";
 import { CodexSettings, ProviderSetupError, type ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -41,6 +44,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const localBinary = expandHomePath(options.config.binaryPath, yield* HostProcess.HomeDirectory);
   const broker = yield* CodexManagedTokenBroker.CodexManagedTokenBroker;
   const environmentIdentity = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const environmentId = yield* environmentIdentity.getEnvironmentId;
@@ -72,16 +76,18 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
           }),
       ),
     );
-    const executable = yield* installation.acquire().pipe(
-      Effect.mapError(
-        () =>
-          new ProviderSetupError({
-            instanceId: options.instanceId,
-            operation: "install",
-            detail: "Set up managed Codex before starting a session.",
-          }),
-      ),
-    );
+    const executable = yield* installation
+      .acquire(codexRuntimeSource(options.config), localBinary)
+      .pipe(
+        Effect.mapError(
+          () =>
+            new ProviderSetupError({
+              instanceId: options.instanceId,
+              operation: "install",
+              detail: "Set up managed Codex before starting a session.",
+            }),
+        ),
+      );
     const credentials = yield* auth.access;
     const profileKey = yield* auth.profileKey(credentials);
     const authArgs = selfInvocationArgs(invocation, [
@@ -134,5 +140,12 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
       revision: profileKey,
     } satisfies CodexEffectiveRuntime;
   });
-  return { auth, resolve, installation, homePath, homeLayout };
+  return {
+    auth,
+    resolve,
+    installation,
+    homePath,
+    homeLayout,
+    resolveExecutable: () => installation.resolve(codexRuntimeSource(options.config), localBinary),
+  };
 });

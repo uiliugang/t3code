@@ -1,3 +1,11 @@
+import {
+  codexConnectionMode,
+  codexByokFormError,
+  CODEX_BYOK_LABEL,
+} from "@t3tools/shared/codexByok";
+import { CodexByokFields } from "./CodexByokFields";
+import { useAtomValue } from "@effect/atom-react";
+import { serverEnvironment } from "../../state/server";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -164,6 +172,9 @@ export function AddProviderInstanceDialog({
 }: AddProviderInstanceDialogProps) {
   const t = useUiTranslation();
   const settings = useEnvironmentSettings(environmentId);
+  const supportsCodexByok =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.environment.capabilities
+      ?.codexByok === true;
   const secretSources = useSecretSources(environmentId);
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
   const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
@@ -241,9 +252,15 @@ export function AddProviderInstanceDialog({
   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
 
   const configDraft = configByDriver[driver] ?? EMPTY_CONFIG_DRAFT;
-  const isByok = driver === "claudeAgent" && isClaudeByok(configDraft);
+  const isByok =
+    driver === "claudeAgent"
+      ? isClaudeByok(configDraft)
+      : driver === "codex" && codexConnectionMode(configDraft) === "byok";
+  const ByokFields = driver === "codex" ? CodexByokFields : ClaudeByokFields;
   const byokError = isByok
-    ? (claudeByokFormError(localEnvironment) ??
+    ? ((driver === "codex"
+        ? codexByokFormError(localEnvironment)
+        : claudeByokFormError(localEnvironment)) ??
       (Array.isArray(configDraft.customModels) && configDraft.customModels.length > 0
         ? null
         : "Enter at least one model ID."))
@@ -515,29 +532,40 @@ export function AddProviderInstanceDialog({
                   aria-labelledby="add-instance-driver-label"
                 />
                 <MultipleAccountsNote environmentId={environmentId} driver={driver} />
-                {driver === "claudeAgent" ? (
+                {driver === "claudeAgent" || (driver === "codex" && supportsCodexByok) ? (
                   <RadioGroup
-                    aria-label={t("Claude connection")}
+                    aria-label={t("Connection method")}
                     value={isByok ? "byok" : "subscription"}
                     onValueChange={(value) => {
                       setConfigDraft(
-                        value === "byok"
-                          ? { ...configDraft, customModelsOnly: true }
-                          : { ...configDraft, customModelsOnly: false },
+                        driver === "codex"
+                          ? {
+                              ...configDraft,
+                              connectionMode: value === "byok" ? "byok" : "existing",
+                              runtimeSource: value === "byok" ? "managed" : "local",
+                            }
+                          : value === "byok"
+                            ? { ...configDraft, customModelsOnly: true }
+                            : { ...configDraft, customModelsOnly: false },
                       );
                       setIdentityDraft({
-                        label: value === "byok" ? CLAUDE_BYOK_LABEL : driverOption.label,
+                        label:
+                          value === "byok"
+                            ? driver === "codex"
+                              ? CODEX_BYOK_LABEL
+                              : CLAUDE_BYOK_LABEL
+                            : driverOption.label,
                         instanceIdOverride: null,
                       });
                     }}
                   >
                     <label className="flex items-center gap-2 py-1 text-sm">
                       <Radio value="subscription" />
-                      {t("Claude account")}
+                      {t(driver === "codex" ? "Use existing CLI" : "Claude account")}
                     </label>
                     <label className="flex items-center gap-2 py-1 text-sm">
                       <Radio value="byok" />
-                      {CLAUDE_BYOK_LABEL}
+                      {driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL}
                     </label>
                   </RadioGroup>
                 ) : null}
@@ -760,7 +788,7 @@ export function AddProviderInstanceDialog({
 
               {isByok ? (
                 <SettingsGroup variant="plain" className={cn(wizardStep !== 2 && "hidden")}>
-                  <ClaudeByokFields
+                  <ByokFields
                     environment={localEnvironment}
                     onChange={setLocalEnvironment}
                     secretSources={secretSources}
@@ -771,7 +799,7 @@ export function AddProviderInstanceDialog({
                     status={
                       hasAttemptedSubmit && byokError ? (
                         <span role="alert" className="text-destructive">
-                          {byokError}
+                          {t(byokError)}
                         </span>
                       ) : undefined
                     }
@@ -837,7 +865,7 @@ export function AddProviderInstanceDialog({
               >
                 {t(wizardStep === 0 ? "Cancel" : "Back")}
               </Button>
-              {wizardStep === 0 && driver === "codex" ? (
+              {wizardStep === 0 && driver === "codex" && !isByok ? (
                 <>
                   <Button variant="outline" size="sm" onClick={() => navigateToStep(1)}>
                     {t("Configure manually")}

@@ -120,6 +120,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Hide the switch when absent; older servers silently drop per-project provider patches. */
   projectProviderInstanceOverrides: Schema.optionalKey(Schema.Boolean),
   providerInstanceDeletion: Schema.optionalKey(Schema.Boolean),
+  codexByok: Schema.optionalKey(Schema.Boolean),
   threadSnooze: Schema.optionalKey(Schema.Boolean),
   /** Serves `orchestration.forceStopThread`; hide Force stop where it is absent. */
   threadForceStop: Schema.optionalKey(Schema.Boolean),

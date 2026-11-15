@@ -950,7 +950,9 @@ function ManagedCodexSetup({
       {accountPicker}
       <SettingsRow
         title={t("ChatGPT account")}
-        description={accountDescription}
+        description={
+          typeof accountDescription === "string" ? t(accountDescription) : accountDescription
+        }
         control={
           <div className="flex max-w-88 flex-wrap items-center justify-end gap-2">
             {authActive ? (
@@ -1081,10 +1083,13 @@ function ManagedCodexSetup({
       {callbackFallback ? <div className="px-3 py-3 sm:px-4">{callbackFallback}</div> : null}
       {error || authQuery.error || installQuery.error || installation?.phase === "failed" ? (
         <p role="alert" className="px-3 py-2 text-xs text-destructive sm:px-4">
-          {error ??
-            (installation?.phase === "failed"
-              ? installation.message
-              : "Could not read Codex setup status. Reconnect and try again.")}
+          {t(
+            error ??
+              (installation?.phase === "failed"
+                ? installation.message
+                : "Could not read Codex setup status. Reconnect and try again.") ??
+              "",
+          )}
         </p>
       ) : null}
     </section>

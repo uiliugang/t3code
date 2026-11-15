@@ -1,3 +1,6 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { codexRuntimeSource } from "@t3tools/shared/codexByok";
 import {
   AntigravitySettings,
   CodexSettings,
@@ -23,6 +26,7 @@ import * as Stream from "effect/Stream";
 import * as CodexInstallation from "./CodexInstallation.ts";
 import * as ClaudeInstallation from "./ClaudeInstallation.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { disallowedDriverReason } from "../policy/managedProviders.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
@@ -114,17 +118,22 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     operation: string,
     managedOnly = false,
   ) {
-    const instance = yield* instances.getInstance(instanceId);
-    const isCodex = instance?.driverKind === ProviderDriverKind.make("codex");
-    const isClaude = instance?.driverKind === ProviderDriverKind.make("claudeAgent");
-    if (instance?.driverKind !== ANTIGRAVITY && !isCodex && !isClaude) {
+    const entries = yield* readEntries(instanceId, operation);
+    // Settings remain available while a runtime switch rebuilds the live instance.
+    const driver = entries[instanceId]?.driver;
+    const isCodex = driver === ProviderDriverKind.make("codex");
+    const isClaude = driver === ProviderDriverKind.make("claudeAgent");
+    if (driver === undefined || (driver !== ANTIGRAVITY && !isCodex && !isClaude)) {
       return yield* new ProviderSetupError({
         instanceId,
         operation,
         detail: "Managed installation is not available for this provider instance.",
       });
     }
-    const entries = yield* readEntries(instanceId, operation);
+    const blocked = disallowedDriverReason(settings.managedPolicy, driver);
+    if (blocked) {
+      return yield* new ProviderSetupError({ instanceId, operation, detail: blocked });
+    }
     const installation = isClaude
       ? {
           ...claudeInstallation,
@@ -133,7 +142,13 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
           ),
         }
       : isCodex
-        ? codexInstallation
+        ? {
+            ...codexInstallation,
+            start:
+              codexRuntimeSource(entries[instanceId]?.config) === "managed"
+                ? codexInstallation.startManaged
+                : codexInstallation.start,
+          }
         : antigravityInstallation;
     const invalidConfig = () =>
       new ProviderSetupError({
@@ -152,7 +167,10 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
         : yield* decodeAntigravitySettings(entries[instanceId]?.config ?? {}).pipe(
             Effect.mapError(invalidConfig),
           );
-    if ((isCodex || isClaude) && (!("setupMode" in config) || config.setupMode !== "managed")) {
+    if (
+      (isCodex && codexRuntimeSource(config) === "local" && operation !== "observe-install") ||
+      (isClaude && (!("setupMode" in config) || config.setupMode !== "managed"))
+    ) {
       return yield* new ProviderSetupError({
         instanceId,
         operation,
@@ -163,7 +181,7 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
       managedOnly &&
       !isClaude &&
       config.binaryPath &&
-      (!isCodex || config.binaryPath !== "codex")
+      (!isCodex || (codexRuntimeSource(config) !== "managed" && config.binaryPath !== "codex"))
     ) {
       return yield* new ProviderSetupError({
         instanceId,
@@ -172,7 +190,48 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
           "This instance uses a custom executable. Clear its binary path to manage installation in T3 Code.",
       });
     }
-    return { installation, driver: instance.driverKind };
+    if (isCodex && operation === "observe-install") {
+      const source = codexRuntimeSource(config);
+      const binaryPath = expandHomePath(
+        config.binaryPath ?? "codex",
+        yield* HostProcess.HomeDirectory,
+      );
+      const projectState = (state: ProviderInstallState) =>
+        source !== "local" && ["downloading", "extracting", "verifying"].includes(state.phase)
+          ? Effect.succeed(state)
+          : codexInstallation.resolve(source, binaryPath).pipe(
+              Effect.match({
+                onFailure: (error): ProviderInstallState => ({
+                  ...state,
+                  installedVersion: null,
+                  executablePath: null,
+                  canRemove: false,
+                  message: error.detail,
+                }),
+                onSuccess: (executable): ProviderInstallState => ({
+                  ...state,
+                  source: executable.source,
+                  installedVersion: executable.version,
+                  executablePath: executable.executablePath,
+                  canRemove: executable.source === "managed" && state.canRemove,
+                  ...(source === "local"
+                    ? { phase: "idle", operationId: null, message: null }
+                    : {}),
+                }),
+              }),
+            );
+      return {
+        installation: {
+          ...installation,
+          changes: (source === "local"
+            ? Stream.fromEffect(codexInstallation.state)
+            : codexInstallation.changes
+          ).pipe(Stream.mapEffect(projectState)),
+        },
+        driver,
+      };
+    }
+    return { installation, driver };
   });
 
   const failure =
@@ -241,7 +300,7 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
 
   // Watching an installation is when its owner can act on an update, so the
   // lookup runs then, in the background, unless update checks are off.
-  const subscribe = (input: ProviderSetupInput) =>
+  const subscribeCurrent = (input: ProviderSetupInput) =>
     Stream.unwrap(
       requireInstance(input.instanceId, "observe-install").pipe(
         Effect.tap(({ installation }) =>
@@ -256,6 +315,44 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
         ),
         Effect.map(({ installation }) => installation.changes),
       ),
+    );
+
+  const subscribe = (input: ProviderSetupInput) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const changes = yield* settings.subscribeChanges;
+        return Stream.concat(
+          Stream.fromEffect(
+            settings.getSettings.pipe(
+              Effect.mapError(
+                () =>
+                  new ProviderSetupError({
+                    instanceId: input.instanceId,
+                    operation: "observe-install",
+                    detail: "Could not read provider installation settings.",
+                  }),
+              ),
+            ),
+          ),
+          changes,
+        ).pipe(
+          Stream.map((current) => {
+            const entry = deriveProviderInstanceConfigMap(current)[input.instanceId];
+            const config = entry?.config;
+            const read = (key: string) =>
+              config && typeof config === "object" ? Reflect.get(config, key) : undefined;
+            return [
+              entry?.driver,
+              entry?.driver === "codex" ? codexRuntimeSource(config) : read("setupMode"),
+              read("binaryPath"),
+            ];
+          }),
+          Stream.changesWith((before, after) =>
+            before.every((value, index) => value === after[index]),
+          ),
+          Stream.switchMap(() => subscribeCurrent(input)),
+        );
+      }),
     );
 
   const remove = Effect.fn("ProviderInstallation.remove")(function* (input: ProviderSetupInput) {

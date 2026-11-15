@@ -1410,6 +1410,11 @@ function ProviderInstanceRow({
                     : {}),
                   enabled: true,
                   setupMode,
+                  ...(instance.config !== null &&
+                  typeof instance.config === "object" &&
+                  "connectionMode" in instance.config
+                    ? { connectionMode: setupMode === "managed" ? "chatgpt" : "existing" }
+                    : {}),
                 },
               })
             }

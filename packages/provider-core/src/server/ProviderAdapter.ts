@@ -259,6 +259,19 @@ export class ProviderAdapterResumeThreadError extends Schema.TaggedError<
   }
 }
 
+export class ProviderAdapterConnectionMismatchError extends Schema.TaggedError<
+  ProviderAdapterConnectionMismatchError,
+  { readonly brand: unique symbol }
+>()("ProviderAdapterConnectionMismatchError", {
+  driver: ProviderDriverKind,
+  providerThreadId: ProviderThreadId,
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
 /**
  * The native thread is live in another process that owns its writes. Starting
  * a replacement would split the conversation, so callers must not fall back.
@@ -488,6 +501,7 @@ export const ProviderAdapterV2Error = Schema.Union([
   ProviderAdapterOpenSessionError,
   ProviderAdapterCloseSessionError,
   ProviderAdapterResumeThreadError,
+  ProviderAdapterConnectionMismatchError,
   ProviderAdapterThreadInUseError,
   ProviderAdapterEnsureThreadError,
   ProviderAdapterReadThreadSnapshotError,
@@ -696,6 +710,9 @@ export interface ProviderAdapterV2SessionRuntime {
   readonly ensureThread: (
     input: ProviderAdapterV2EnsureThreadInput,
   ) => Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapterV2Error>;
+  readonly validateThreadConnection?: (
+    thread: OrchestrationV2ProviderThread,
+  ) => Effect.Effect<void, ProviderAdapterV2Error>;
   readonly resumeThread: (input: {
     readonly providerThread: OrchestrationV2ProviderThread;
     readonly threadId?: ThreadId;

@@ -1,3 +1,4 @@
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
@@ -740,7 +741,12 @@ export function ProviderSettingsForm({
   managed,
   environmentId,
 }: ProviderSettingsFormProps) {
-  const fields = deriveProviderSettingsFields(definition, value);
+  const fields = deriveProviderSettingsFields(definition, value).filter(
+    (field) =>
+      definition.driverKind !== "codex" ||
+      codexConnectionMode(value) !== "byok" ||
+      !["homePath", "shadowHomePath", "launchArgs"].includes(field.key),
+  );
   const isLocalAcp =
     definition.driverKind === "acpRegistry" &&
     readProviderConfigString(value, "source") === "local";

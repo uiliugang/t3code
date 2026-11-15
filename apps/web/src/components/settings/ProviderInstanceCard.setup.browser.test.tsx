@@ -35,7 +35,7 @@ it("shows BYOK installation and folds Claude runtime settings by default", async
   );
 
   await expect.element(screen.getByRole("button", { name: "Install Claude" })).toBeVisible();
-  const runtime = screen.getByRole("button", { name: "Runtime", exact: true });
+  const runtime = screen.getByRole("button", { name: "Advanced settings", exact: true });
   await expect.element(runtime).toHaveAttribute("aria-expanded", "false");
   await userEvent.click(runtime);
   await expect.element(runtime).toHaveAttribute("aria-expanded", "true");

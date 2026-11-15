@@ -743,6 +743,12 @@ export function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fi
 
 export const CodexSettings = makeProviderSettingsSchema(
   {
+    connectionMode: Schema.optionalKey(Schema.Literals(["chatgpt", "existing", "byok"])).pipe(
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    runtimeSource: Schema.optionalKey(Schema.Literals(["auto", "managed", "local"])).pipe(
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
     setupMode: Schema.optionalKey(Schema.Literals(["managed", "existing"])).pipe(
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
