@@ -8,7 +8,7 @@ import {
   textGeneratorForSelection,
 } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection, pickModelSelection } from "@t3tools/shared/model";
 import {
   resolveReviewGuideModelSelection,
   resolveSourceControlWriterModelSelection,
@@ -371,7 +371,11 @@ export function SourceControlWritingSettingsSection() {
                           return;
                         }
                         updateSettings({
-                          reviewGuideModelSelection: createModelSelection(instanceId, model),
+                          reviewGuideModelSelection: pickModelSelection(
+                            mixedReviewGuideModel ? null : reviewGuideSelection,
+                            instanceId,
+                            model,
+                          ),
                         });
                       }}
                     />
@@ -576,7 +580,11 @@ export function SourceControlWritingSettingsSection() {
                         return;
                       }
                       updateSettings({
-                        sourceControlWriterModelSelection: createModelSelection(instanceId, model),
+                        sourceControlWriterModelSelection: pickModelSelection(
+                          mixedWriterModel ? null : activeSelection,
+                          instanceId,
+                          model,
+                        ),
                       });
                     }}
                   />

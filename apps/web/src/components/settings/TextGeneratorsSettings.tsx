@@ -8,7 +8,7 @@ import {
   TextGeneratorConfig,
   type TextGeneratorModel,
 } from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+import { pickModelSelection } from "@t3tools/shared/model";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -607,7 +607,7 @@ function TextGenerationTaskPicker({
           )}
           triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
           onInstanceModelChange={(instanceId, model) =>
-            updateSettings({ [settingKey]: createModelSelection(instanceId, model) })
+            updateSettings({ [settingKey]: pickModelSelection(selection, instanceId, model) })
           }
         />
       </div>

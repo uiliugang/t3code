@@ -163,6 +163,8 @@ export function scheduleDraftErrors(
       ];
     return [];
   }
+  if (draft.scheduleMode === "fixed" && !draft.timeOfDay)
+    return [{ title: "Invalid run time", description: "Pick a time." }];
   if (draft.scheduleMode !== "webhook") return [];
   if (parseMaxDeliveryAge(draft.maxDeliveryAgeMinutes) === undefined)
     return [
@@ -278,7 +280,7 @@ export function scheduleFromDraft(
   const selectedEveryDay = draft.weekdays.size === 0 || draft.weekdays.size === 7;
   return {
     type: "fixed_time",
-    timeOfDay: draft.timeOfDay || "09:00",
+    timeOfDay: draft.timeOfDay,
     ...(selectedEveryDay ? {} : { weekdays: [...draft.weekdays].toSorted() }),
   };
 }

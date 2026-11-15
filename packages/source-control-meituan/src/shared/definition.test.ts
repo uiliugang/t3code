@@ -36,10 +36,12 @@ describe("Meituan Code identity", () => {
     ).toBeNull();
     expect(recognizeRemoteWith(definition, "https://bitbucket.org/sa/web.git")).toBeNull();
   });
-  it("treats SCM HTTPS remotes and SSH remotes as the same repository", () => {
-    expect(definition.repositoryKeyFromRemote("git.sankuai.com/scm/SA/Web")).toBe(
-      "git.sankuai.com/sa/web",
-    );
+  it.each([
+    "git.sankuai.com/scm/SA/Web",
+    "git.sankuai.com/scm/SA/Web.git",
+    "git.sankuai.com/SA/Web.git",
+  ])("treats %s as the same repository", (key) => {
+    expect(definition.repositoryKeyFromRemote(key)).toBe("git.sankuai.com/sa/web");
     expect(definition.canonicalRepositoryKey("git.sankuai.com/sa/web")).toBe(
       "git.sankuai.com/sa/web",
     );

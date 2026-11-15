@@ -86,7 +86,7 @@ export const definition = defineSourceControl({
   publishHost: () => HOST,
   newRepositoryOwner: () => null,
   defaultCloneTransport: "ssh",
-  repositoryKeyFromRemote: repositoryKey,
+  repositoryKeyFromRemote: (key) => repositoryKey(key.replace(/\.git$/iu, "")),
   canonicalRepositoryKey: repositoryKey,
   changeRequestUrl: ({ repository, number }) =>
     `https://${WEB_HOST}/code/repo-detail/${repository}/pr/${number}/overview`,

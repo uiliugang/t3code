@@ -4,6 +4,7 @@ import {
   pullRequestAnchorMatchesUrl,
   pullRequestDiffPathMatches,
   pullRequestLinkCommit,
+  resolvePullRequestAnchorRange,
   resolvePullRequestReviewAnchor,
 } from "@t3tools/shared/pullRequestAnchor";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -148,17 +149,10 @@ function usePullRequestActivityRows(params: PullRequestParams, filter: ActivityF
       filtered.activity,
       params,
       navigation,
-      {
-        permissions,
-        onChanged: result.refresh,
-      },
+      { permissions, onChanged: result.refresh },
+      filter.newestFirst,
       t,
     );
-    if (filter.newestFirst) {
-      const notice = rows.at(-1)?.key === "truncated" ? rows.pop() : undefined;
-      rows.reverse();
-      if (notice) rows.push(notice);
-    }
     if (!rows.length)
       rows.push({
         key: "empty",
@@ -1087,7 +1081,15 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
       : !jumpPath || requestedFile
         ? data.files[0]
         : undefined);
-  const range = pickedPath === null && linkAnchor?.kind === "diff" ? linkAnchor.range : null;
+  const linkRange = pickedPath === null && linkAnchor?.kind === "diff" ? linkAnchor.range : null;
+  const range =
+    linkRange &&
+    resolvePullRequestAnchorRange(linkRange, (line) =>
+      data.rows.some(
+        (row) =>
+          row.fileId === targetFile?.id && row.change === "delete" && row.oldLineNumber === line,
+      ),
+    );
   const focus =
     route.params.focus ??
     (range

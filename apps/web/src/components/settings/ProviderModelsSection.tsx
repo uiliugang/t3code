@@ -119,7 +119,8 @@ interface ProviderModelsSectionProps {
   readonly hiddenModels: ReadonlyArray<string>;
   readonly favoriteModels: ReadonlyArray<string>;
   readonly modelOrder: ReadonlyArray<string>;
-  readonly onChange: (next: ReadonlyArray<CustomModelDefinition>) => void;
+  /** Resolves true once the custom models are saved. */
+  readonly onChange: (next: ReadonlyArray<CustomModelDefinition>) => Promise<boolean>;
   readonly onHiddenModelsChange: (
     next: ReadonlyArray<string>,
     affectedModels: ReadonlyArray<string>,
@@ -152,9 +153,12 @@ export function ProviderModelsSection({
   const t = useUiTranslation();
   const [input, setInput] = useState("");
   const [isAdding, setIsAdding] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const addAttemptRef = useRef(0);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
+  const editAttemptRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const scrollToSlugRef = useRef<string | null>(null);
   const hiddenModelSet = new Set(hiddenModels);
@@ -204,8 +208,8 @@ export function ProviderModelsSection({
   const allBuiltInModelsHidden =
     builtInModels.length > 0 && builtInModels.every((model) => hiddenModels.includes(model.slug));
 
-  const handleAdd = () => {
-    if (!canManageCustomModels || driverKind === "antigravity") return;
+  const handleAdd = async () => {
+    if (!canManageCustomModels || driverKind === "antigravity" || isSaving) return;
     const normalized = normalizeCustomModelSlug(input);
     if (!normalized) {
       setError("Enter a model slug.");
@@ -224,15 +228,25 @@ export function ProviderModelsSection({
       return;
     }
 
+    addAttemptRef.current += 1;
+    const attempt = addAttemptRef.current;
+    setIsSaving(true);
+    const saved = await onChange([
+      ...customModels,
+      { slug: normalized, name: normalized, capabilities: null },
+    ]);
+    setIsSaving(false);
+    // Cancel bumps the attempt, so a late save cannot close the draft opened after it.
+    if (!saved || attempt !== addAttemptRef.current) return;
     scrollToSlugRef.current = normalized;
     setFilter("");
-    onChange([...customModels, { slug: normalized, name: normalized, capabilities: null }]);
     setInput("");
     setError(null);
     setIsAdding(false);
   };
 
   const cancelAdd = () => {
+    addAttemptRef.current += 1;
     setInput("");
     setError(null);
     setIsAdding(false);
@@ -240,8 +254,11 @@ export function ProviderModelsSection({
 
   const handleRemove = (slug: string) => {
     if (!canManageCustomModels) return;
-    if (editingSlug === slug) setEditingSlug(null);
-    onChange(customModels.filter((entry) => entry.slug !== slug));
+    if (editingSlug === slug) {
+      editAttemptRef.current += 1;
+      setEditingSlug(null);
+    }
+    void onChange(customModels.filter((entry) => entry.slug !== slug));
     if (canWritePreferences && !models.some((model) => model.slug === slug && !model.isCustom)) {
       onModelOrderChange(modelOrder.filter((model) => model !== slug));
       onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
@@ -249,13 +266,15 @@ export function ProviderModelsSection({
     setError(null);
   };
 
-  const handleSaveEdit = (next: CustomModelDefinition) => {
+  const handleSaveEdit = async (next: CustomModelDefinition) => {
     if (!canManageCustomModels || editingSlug === null) return;
-    onChange(
+    const attempt = ++editAttemptRef.current;
+    const saved = await onChange(
       customModels.some((entry) => entry.slug === editingSlug)
         ? customModels.map((entry) => (entry.slug === editingSlug ? next : entry))
         : [...customModels, next],
     );
+    if (!saved || attempt !== editAttemptRef.current) return;
     if (editingSlug !== next.slug) {
       if (canWritePreferences) {
         if (!hiddenModelSet.has(editingSlug)) {
@@ -306,6 +325,7 @@ export function ProviderModelsSection({
 
   const handleToggleEdit = useStableCallback((slug: string) => {
     if (!canManageCustomModels) return;
+    editAttemptRef.current += 1;
     setEditingSlug((current) => (current === slug ? null : slug));
   });
   const rowHandlers = {
@@ -465,8 +485,14 @@ export function ProviderModelsSection({
                       .filter((candidate) => candidate.slug !== editingSlug)
                       .map((candidate) => candidate.slug),
                   ]}
-                  onSave={handleSaveEdit}
-                  onCancel={() => setEditingSlug(null)}
+                  onSave={(next) => void handleSaveEdit(next)}
+                  onDraftChange={() => {
+                    editAttemptRef.current += 1;
+                  }}
+                  onCancel={() => {
+                    editAttemptRef.current += 1;
+                    setEditingSlug(null);
+                  }}
                 />
               ) : null}
             </div>
@@ -480,6 +506,7 @@ export function ProviderModelsSection({
             id={`provider-instance-${instanceId}-custom-model`}
             size="sm"
             autoFocus
+            readOnly={isSaving}
             value={input}
             onChange={(event) => {
               setInput(event.target.value);
@@ -493,13 +520,13 @@ export function ProviderModelsSection({
               }
               if (event.key !== "Enter") return;
               event.preventDefault();
-              handleAdd();
+              void handleAdd();
             }}
             placeholder={driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug"}
             spellCheck={false}
           />
           <div className="flex shrink-0 gap-2">
-            <Button size="sm" variant="outline" onClick={handleAdd}>
+            <Button size="sm" variant="outline" disabled={isSaving} onClick={handleAdd}>
               {t("Add")}
             </Button>
             <Button size="sm" variant="ghost" onClick={cancelAdd}>

@@ -8,7 +8,7 @@ import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { AnchoredToastProvider } from "../ui/toast";
 import { AboutVersionTitle } from "./AboutVersionTitle";
 
-it("shows copy confirmation when the version is clicked without waiting for a hover tooltip", async () => {
+it("copies the version without a notification", async () => {
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   await using screen = await render(
     <AnchoredToastProvider>
@@ -20,5 +20,5 @@ it("shows copy confirmation when the version is clicked without waiting for a ho
   await screen.getByRole("button", { name: `Copy version ${APP_VERSION}` }).click();
 
   expect(write).toHaveBeenCalledWith(APP_VERSION);
-  await expect.element(page.getByText(/^Copied!?$/)).toBeVisible();
+  await expect.element(page.getByText(/^Copied!?$/)).not.toBeInTheDocument();
 });

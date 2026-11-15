@@ -1,8 +1,14 @@
-import { EnvironmentId, ProviderDriverKind, type AcpRegistrySearchAgent } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  EnvironmentId,
+  ProviderDriverKind,
+  type AcpRegistrySearchAgent,
+} from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const state = vi.hoisted(() => ({
   result: null as { readonly agents: ReadonlyArray<AcpRegistrySearchAgent> } | null,
@@ -92,6 +98,7 @@ function Step({
 }
 
 function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   state.canManage = true;
   state.result = null;
   state.error = null;
@@ -115,6 +122,23 @@ it("rechecks the grant before preparing an agent", async () => {
 
   expect(state.prepare).not.toHaveBeenCalled();
   expect(onPrepared).not.toHaveBeenCalled();
+});
+
+it("bounds pasted registry searches before debounce and submission", async () => {
+  setup();
+  await using screen = await render(<Step />);
+  const searchbox = screen.getByRole("searchbox", { name: "Search ACP Registry" });
+
+  await searchbox.fill("agent".repeat(26));
+  await vi.waitFor(() => {
+    expect(state.search).toHaveBeenLastCalledWith({
+      environmentId,
+      input: { query: "agent".repeat(24) },
+    });
+  });
+  await userEvent.keyboard("{Enter}");
+  expect(state.refresh).toHaveBeenCalledTimes(1);
+  await expect.element(searchbox).toHaveValue("agent".repeat(24));
 });
 
 it("leaves out Registry agents that T3 Code supports as their own providers", async () => {
