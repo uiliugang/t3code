@@ -184,14 +184,21 @@ PATH=/usr/bin:/bin exec ps "$@"`,
       const version = NodePath.join(home, ".t3/runtime/versions/1.2.3");
       NodeFS.mkdirSync(version, { recursive: true });
       NodeFS.writeFileSync(NodePath.join(version, ".install-complete"), "1.2.3");
+      // Probe real ownership locks without reloading the full CLI module graph for every poll.
       NodeFS.writeFileSync(
         NodePath.join(home, "helper.ts"),
         `
-import * as Effect from "effect/Effect";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Command } from "effect/cli";
-import { sshHelperCommand } from ${JSON.stringify(NodePath.join(root, "apps/server/src/cli/sshHelper.ts"))};
-await Effect.runPromise(Command.runWith(sshHelperCommand, { version: "1.2.3" })(process.argv.slice(2)).pipe(Effect.provide(NodeServices.layer)));
+if (process.argv[2] === "home-owned") {
+  const { serviceLauncherIsServing, stateDirOwned } = await import(${JSON.stringify(NodePath.join(root, "apps/server/src/serviceLauncher.ts"))});
+  const baseDir = process.argv[3];
+  process.exitCode = (await serviceLauncherIsServing(baseDir)) || (await stateDirOwned(baseDir)) ? 0 : 1;
+} else {
+  const Effect = await import("effect/Effect");
+  const NodeServices = await import("@effect/platform-node/NodeServices");
+  const { Command } = await import("effect/cli");
+  const { sshHelperCommand } = await import(${JSON.stringify(NodePath.join(root, "apps/server/src/cli/sshHelper.ts"))});
+  await Effect.runPromise(Command.runWith(sshHelperCommand, { version: "1.2.3" })(process.argv.slice(2)).pipe(Effect.provide(NodeServices.layer)));
+}
 `,
       );
       NodeFS.writeFileSync(

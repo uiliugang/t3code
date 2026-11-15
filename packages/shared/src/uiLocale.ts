@@ -49,6 +49,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Directory and all local files permanently deleted.": "目录及全部本地文件已彻底删除。",
   "Directory is no longer a cleanup candidate. Refresh the list.":
     "此目录已不再是清理候选，请刷新列表。",
+  "Update providers": "更新当前环境",
+  "Update all environments": "更新全部环境",
+  "Check all environments": "检查全部环境",
+  "Refreshing providers": "正在检查提供商",
   "Expo Simulators": "Expo 模拟器",
   "Expo project": "Expo 项目",
   "Expo Simulators needs a paid Expo account. A session runs for up to 115 minutes and stops early when it is idle for the idle minutes, so idle minutes must be less than session minutes.":

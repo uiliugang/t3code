@@ -63,7 +63,6 @@ export function settingsScopeProjectMachines(
 export const ALL_ENVIRONMENTS_VALUE = "all";
 export const ALL_PROJECTS_VALUE = "all";
 export const SINGLE_ENVIRONMENT_SETTINGS_PATHS: ReadonlySet<string> = new Set([
-  "/settings/providers",
   "/settings/secrets",
   "/settings/skills",
 ]);

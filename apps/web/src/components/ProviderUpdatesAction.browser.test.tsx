@@ -46,6 +46,9 @@ vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
 vi.mock(import("~/state/server"), () => ({
   serverEnvironment: { updateProvider: "update", refreshProviders: "refresh" } as never,
 }));
+vi.mock(import("~/hooks/useUiTranslation"), () => ({
+  useUiTranslation: () => (message: string) => message,
+}));
 vi.mock(import("~/state/use-atom-command"), () => ({
   useAtomCommand: ((command: string) =>
     async ({ environmentId, input }: { environmentId: EnvironmentId; input: unknown }) => {
@@ -186,4 +189,67 @@ it("provider updates and checks exclude connections without a confirmed manageme
     await updates.updateAll({ quiet: true });
   });
   expect(state.requests).toEqual([]);
+});
+
+it("keeps provider updates and checks within the selected environments", async () => {
+  setup();
+  const selectedId = EnvironmentId.make("writable");
+  const otherId = EnvironmentId.make("cloud-ide");
+  state.environments.push({
+    environmentId: otherId,
+    label: "Cloud IDE",
+    connection: { phase: "connected" },
+  });
+  state.providers.set(otherId, [provider]);
+  state.sessions.set(otherId, Atom.make(session([AuthProvidersManageScope])));
+
+  let updates!: ReturnType<typeof useProviderUpdates>;
+  let check!: ReturnType<typeof useCheckProviderUpdates>;
+  function Probe({ environmentIds }: { environmentIds?: readonly EnvironmentId[] }) {
+    const nextUpdates = useProviderUpdates(environmentIds);
+    const nextCheck = useCheckProviderUpdates(environmentIds);
+    useEffect(() => {
+      updates = nextUpdates;
+      check = nextCheck;
+    }, [nextUpdates, nextCheck]);
+    return null;
+  }
+  const probe = (environmentIds?: readonly EnvironmentId[]) => (
+    <RegistryContext.Provider value={appAtomRegistry}>
+      <Probe {...(environmentIds ? { environmentIds } : {})} />
+    </RegistryContext.Provider>
+  );
+  await using screen = await render(probe([selectedId]));
+
+  for (const [scope, expected] of [
+    [[selectedId], [selectedId]],
+    [[otherId], [otherId]],
+    [undefined, [selectedId, otherId]],
+    [[], []],
+    [[EnvironmentId.make("missing")], []],
+  ] as const) {
+    await screen.rerender(probe(scope));
+    expect(updates.machines.map(({ environmentId }) => environmentId)).toEqual(expected);
+    state.requests = [];
+    state.checks = [];
+    await act(async () => {
+      await updates.updateAll({ quiet: true });
+      await check();
+    });
+    expect(state.requests).toEqual(expected);
+    expect(state.checks.map(({ environmentId }) => environmentId)).toEqual(expected);
+  }
+
+  state.environments = state.environments.map((environment) =>
+    environment.environmentId === otherId
+      ? { ...environment, connection: { phase: "disconnected" } }
+      : environment,
+  );
+  await screen.rerender(probe([otherId]));
+  expect(updates.machines).toEqual([]);
+  state.checks = [];
+  await act(async () => {
+    await check();
+  });
+  expect(state.checks).toEqual([]);
 });
