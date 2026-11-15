@@ -11,7 +11,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon, ClipboardListIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -44,10 +44,6 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
-import { useNavigate } from "@tanstack/react-router";
-import { Button } from "../ui/button";
-import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { serverEnvironment } from "../../state/server";
 import { NavigationHistoryControls } from "../NavigationHistoryControls";
 
 interface ChatHeaderProps {
@@ -89,9 +85,6 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
-  const navigate = useNavigate();
-  const t = useUiTranslation();
-  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(activeThreadEnvironmentId));
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
@@ -412,31 +405,6 @@ export const ChatHeader = memo(function ChatHeader({
           <NavigationHistoryControls />
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
-      {isServerThread && serverConfig?.workItems === true ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label={t("Requirements board")}
-                onClick={() =>
-                  void navigate({
-                    to: "/requirements",
-                    search: {
-                      environmentId: activeThreadEnvironmentId,
-                      ...(activeProject ? { projectId: activeProject.id } : {}),
-                    },
-                  })
-                }
-              />
-            }
-          >
-            <ClipboardListIcon />
-          </TooltipTrigger>
-          <TooltipPopup>{t("Requirements board")}</TooltipPopup>
-        </Tooltip>
-      ) : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );

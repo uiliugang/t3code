@@ -59,8 +59,8 @@ const isChildRunLive = (
 /**
  * Whether a thread shows under its parent rather than in thread lists: a
  * subagent, a side chat, or a task a linked environment delegated here whose parent the
- * client lists (`delegatedUnderParent`, by thread key). A task whose parent
- * the client cannot list stays in the lists, so its work is never out of reach.
+ * client lists or whose environment is paused (`delegatedUnderParent`, by thread key).
+ * Tasks with missing or archived parents stay reachable in the lists.
  */
 export function isShownUnderParent(
   ref: ScopedThreadRef,
@@ -214,6 +214,8 @@ export function createEnvironmentThreadShellAtoms(input: {
   readonly snapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
+  /** Share raw parent classification when display snapshots omit paused environments. */
+  readonly delegatedUnderParentAtom?: Atom.Atom<ReadonlySet<string>>;
   /** Tags whose threads display lists leave out; null while the filter is off. */
   readonly hiddenThreadTagsAtom: (
     environmentId: EnvironmentId,
@@ -677,23 +679,47 @@ export function createEnvironmentThreadShellAtoms(input: {
   }).pipe(Atom.withLabel("environment-quiet-thread-shell-list"));
 
   let previousDelegatedUnderParent: ReadonlySet<string> = new Set();
-  const delegatedUnderParentAtom = Atom.make((get) => {
-    const environmentIds = new Set(enabledEnvironmentIds(get(input.catalogValueAtom)));
+  let previousDelegatedParents: ReadonlyMap<string, boolean> = new Map();
+  const defaultDelegatedUnderParentAtom = Atom.make((get) => {
+    const catalog = get(input.catalogValueAtom);
     const next = new Set<string>();
-    for (const environmentId of environmentIds) {
+    const parents = new Map(previousDelegatedParents);
+    for (const key of parents.keys()) {
+      const parent = parseThreadKey(key);
+      if (!catalog.entries.has(parent.environmentId)) {
+        parents.delete(key);
+      } else if (get(input.snapshotAtom(parent.environmentId)) !== null) {
+        parents.set(
+          key,
+          get(environmentThreadIndexAtom(parent.environmentId)).get(parent.threadId)?.archivedAt ===
+            null,
+        );
+      }
+    }
+    for (const environmentId of enabledEnvironmentIds(catalog)) {
       for (const thread of get(environmentThreadsAtom(environmentId))) {
         const parent = thread.delegatedFrom;
+        if (parent === undefined) continue;
+        const parentEnvironment = catalog.entries.get(parent.environmentId);
+        if (parentEnvironment === undefined) continue;
+        const parentKey = threadKey(parent);
+        // A missing snapshot cannot overturn what the last snapshot knew about this parent.
+        const parentIsActive =
+          get(input.snapshotAtom(parent.environmentId)) === null
+            ? parents.get(parentKey)
+            : get(environmentThreadIndexAtom(parent.environmentId)).get(parent.threadId)
+                ?.archivedAt === null;
+        if (parentIsActive !== undefined) parents.set(parentKey, parentIsActive);
         if (
-          parent !== undefined &&
-          environmentIds.has(parent.environmentId) &&
-          // An archived parent leaves navigation; its task there stays listed on its own.
-          get(environmentThreadIndexAtom(parent.environmentId)).get(parent.threadId)?.archivedAt ===
-            null
+          parentIsActive === true ||
+          (parentIsActive === undefined &&
+            (!parentEnvironment.enabled || parentEnvironment.unsupportedReason !== undefined))
         ) {
           next.add(threadKey({ environmentId, threadId: thread.id }));
         }
       }
     }
+    previousDelegatedParents = parents;
     if (
       next.size === previousDelegatedUnderParent.size &&
       [...next].every((key) => previousDelegatedUnderParent.has(key))
@@ -703,6 +729,8 @@ export function createEnvironmentThreadShellAtoms(input: {
     previousDelegatedUnderParent = next;
     return next;
   }).pipe(Atom.withLabel("environment-delegated-under-parent"));
+  const delegatedUnderParentAtom =
+    input.delegatedUnderParentAtom ?? defaultDelegatedUnderParentAtom;
 
   let previousNavigationShells: ReadonlyArray<EnvironmentThreadShell> = [];
   const navigationThreadShellsAtom = Atom.make((get) => {

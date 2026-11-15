@@ -16,6 +16,7 @@ import {
   type SkillMutation,
   type SkillSnapshot,
   type SkillTarget,
+  type SkillOrigin,
   type SkillCopySource,
   type SkillCopyPackage,
   type SkillCopyInput,
@@ -125,6 +126,7 @@ const make = Effect.gen(function* () {
   const revision = yield* SubscriptionRef.make(0);
   const writeLock = yield* Semaphore.make(1);
   const jobLock = yield* Semaphore.make(1);
+  const copyLock = yield* Semaphore.make(1);
   const runningJob = yield* Ref.make<string | null>(null);
   const discoveries = yield* Ref.make<ReadonlyArray<DiscoveredSkill>>([]);
   const populatedTargets = yield* Ref.make<ReadonlySet<string>>(new Set());
@@ -229,6 +231,13 @@ const make = Effect.gen(function* () {
     return selected;
   });
   const activePath = (id: string) => path.join(root, "active", id);
+  const withCopiedOrigin = <A extends { identity?: string; origin?: SkillOrigin }>(
+    description: A,
+    current: SkillCatalog,
+  ) => {
+    const copied = current.copiedOrigins?.find((entry) => entry.directory === description.identity);
+    return copied ? { ...description, origin: copied.origin } : description;
+  };
   const versionPath = (id: string, digest: string) => path.join(root, "versions", id, digest);
   const baselinePath = (id: string, digest: string) => path.join(root, "baselines", id, digest);
   const packagePath = Effect.fn("SkillManager.packagePath")(function* (id: string, digest: string) {
@@ -356,7 +365,10 @@ const make = Effect.gen(function* () {
       managed,
       current.targetSettings?.map((setting) => setting.directory) ?? [],
     );
-    yield* Ref.set(discoveries, result.discovered);
+    yield* Ref.set(
+      discoveries,
+      result.discovered.map((entry) => withCopiedOrigin(entry, current)),
+    );
     yield* Ref.set(populatedTargets, result.populatedDirectories);
     yield* Ref.set(scannedAt, yield* now);
     yield* SubscriptionRef.update(revision, (n) => n + 1);
@@ -430,7 +442,10 @@ const make = Effect.gen(function* () {
   const inspect = Effect.fn("SkillManager.inspect")(
     function* (input: SkillInspect) {
       if (input.type === "adopt") {
-        const description = yield* discovery.describe(input.path);
+        const description = withCopiedOrigin(
+          yield* discovery.describe(input.path),
+          yield* Ref.get(state),
+        );
         const data = yield* packages.inspect(description.identity);
         return {
           name: data.name,
@@ -485,6 +500,7 @@ const make = Effect.gen(function* () {
         })),
       };
     },
+    copyLock.withPermits(1),
     Effect.mapError((cause) =>
       isSkillManagerError(cause)
         ? cause
@@ -769,7 +785,10 @@ const make = Effect.gen(function* () {
   const adopt = Effect.fn("SkillManager.adopt")(function* (
     input: Extract<SkillAction, { type: "adopt" }>,
   ) {
-    const description = yield* discovery.describe(input.path);
+    const description = withCopiedOrigin(
+      yield* discovery.describe(input.path),
+      yield* Ref.get(state),
+    );
     if (description.external)
       return yield* new SkillManagerError({ operation: "adopt", reason: "external" });
     const current = yield* Ref.get(state);
@@ -889,6 +908,81 @@ const make = Effect.gen(function* () {
       yield* replace({ ...(yield* get(id)), adoptionState: "complete" });
     }).pipe(Effect.tapError(() => abortAdoption(skill)));
   });
+  const commitCopiedOrigin = Effect.fn("SkillManager.commitCopiedOrigin")(function* (
+    input: Extract<SkillAction, { type: "copy" }>,
+    directory: string,
+  ) {
+    const current = yield* Ref.get(state);
+    const copiedDirectory = path.join(directory, input.name);
+    let source =
+      input.origin &&
+      current.sources.find(
+        (entry) =>
+          entry.kind === input.origin?.source.kind &&
+          entry.registry === input.origin.source.registry,
+      );
+    if (input.origin && !source) {
+      source = {
+        ...input.origin.source,
+        id: current.sources.some((entry) => entry.id === input.origin?.source.id)
+          ? yield* random.uuidV4().pipe(Effect.orDie)
+          : input.origin.source.id,
+        executable: input.origin.source.kind === "mtskills" ? "mtskills" : "",
+      };
+    }
+    yield* save({
+      ...current,
+      sources:
+        source && !current.sources.some((entry) => entry.id === source.id)
+          ? [...current.sources, source]
+          : current.sources,
+      copiedOrigins: [
+        ...(current.copiedOrigins ?? []).filter((entry) => entry.directory !== copiedDirectory),
+        ...(input.origin && source
+          ? [
+              {
+                directory: copiedDirectory,
+                origin: {
+                  sourceId: source.id,
+                  locator: input.origin.locator,
+                  skill: input.origin.skill,
+                  evidence: path.join(copiedDirectory, "SKILL.md"),
+                },
+              },
+            ]
+          : []),
+      ],
+    });
+  });
+  const applyCopy = Effect.fn("SkillManager.applyCopy")(function* (
+    input: Extract<SkillAction, { type: "copy" }>,
+  ) {
+    if (yield* host.busy)
+      return yield* new SkillManagerError({ operation: "copy", reason: "busy" });
+    const { directory } = yield* copies.preview({
+      directory: input.directory,
+      names: [input.name],
+    });
+    const beforeCopy = yield* Ref.get(state);
+    yield* save({
+      ...beforeCopy,
+      skills: beforeCopy.skills.map((skill) => ({
+        ...skill,
+        bindings: skill.bindings.filter(
+          (binding) =>
+            !(
+              path.resolve(binding.directory) === directory &&
+              (binding.entryName ?? skill.name) === input.name
+            ),
+        ),
+      })),
+    });
+    yield* copies
+      .apply(input, commitCopiedOrigin(input, directory))
+      .pipe(Effect.tapError(() => save(beforeCopy)));
+    yield* refreshDiscovery;
+    yield* host.refresh(yield* allTargets);
+  }, copyLock.withPermits(1));
   const execute = Effect.fn("SkillManager.execute")(function* (input: SkillAction) {
     const current = yield* Ref.get(state);
     yield* save({
@@ -898,32 +992,9 @@ const make = Effect.gen(function* () {
       lastFailureDiagnostics: null,
     });
     switch (input.type) {
-      case "copy": {
-        if (yield* host.busy)
-          return yield* new SkillManagerError({ operation: "copy", reason: "busy" });
-        const { directory } = yield* copies.preview({
-          directory: input.directory,
-          names: [input.name],
-        });
-        const beforeCopy = yield* Ref.get(state);
-        yield* save({
-          ...beforeCopy,
-          skills: beforeCopy.skills.map((skill) => ({
-            ...skill,
-            bindings: skill.bindings.filter(
-              (binding) =>
-                !(
-                  path.resolve(binding.directory) === directory &&
-                  (binding.entryName ?? skill.name) === input.name
-                ),
-            ),
-          })),
-        });
-        yield* copies.apply(input).pipe(Effect.tapError(() => save(beforeCopy)));
-        yield* refreshDiscovery;
-        yield* host.refresh(yield* allTargets);
+      case "copy":
+        yield* applyCopy(input);
         return;
-      }
       case "refresh":
         yield* refreshDiscovery;
         return;
@@ -966,11 +1037,18 @@ const make = Effect.gen(function* () {
         return;
       }
       case "source.remove": {
-        if (current.skills.some((skill) => skill.sourceId === input.sourceId))
+        const copiedOrigins = yield* Effect.filter(current.copiedOrigins ?? [], (entry) =>
+          fs.exists(path.join(entry.directory, "SKILL.md")),
+        );
+        if (
+          current.skills.some((skill) => skill.sourceId === input.sourceId) ||
+          copiedOrigins.some((entry) => entry.origin.sourceId === input.sourceId)
+        )
           return yield* new SkillManagerError({ operation: "source", reason: "conflict" });
         yield* save({
           ...current,
           lastFailure: null,
+          copiedOrigins,
           sources: current.sources.filter((source) => source.id !== input.sourceId),
         });
         return;
@@ -1571,6 +1649,16 @@ const make = Effect.gen(function* () {
       }
     }
   }
+  for (const job of (yield* Ref.get(state)).jobs ?? []) {
+    if (job.status !== "running" || job.input.type !== "copy") continue;
+    const input = job.input;
+    const target = path.join(input.directory, input.name);
+    const stat = yield* fs.lstat(target).pipe(Effect.option);
+    if (stat._tag === "None" || stat.value.type !== "Directory") continue;
+    const actual = yield* packages.inspect(target).pipe(Effect.option);
+    if (actual._tag === "Some" && actual.value.digest === input.digest)
+      yield* commitCopiedOrigin(input, input.directory);
+  }
   const recoveredAt = yield* now;
   yield* saveJobs((jobs) =>
     jobs.map((job) =>
@@ -1674,19 +1762,51 @@ const make = Effect.gen(function* () {
   return SkillManager.of({
     exportSkill: Effect.fn("SkillManager.exportSkill")(
       function* (input: SkillCopySource) {
-        const directory =
-          "id" in input
-            ? activePath((yield* get(input.id)).id)
-            : path.basename(input.path) === "SKILL.md"
-              ? path.dirname(input.path)
-              : input.path;
+        const current = yield* Ref.get(state);
+        const managed = "id" in input ? yield* get(input.id) : undefined;
+        const directory = managed
+          ? activePath(managed.id)
+          : "path" in input && path.basename(input.path) === "SKILL.md"
+            ? path.dirname(input.path)
+            : "path" in input
+              ? input.path
+              : "";
+        let origin =
+          managed && !managed.snapshotOnly
+            ? {
+                sourceId: managed.sourceId,
+                locator: managed.locator,
+                skill: managed.requestedSkill,
+              }
+            : undefined;
         if ("path" in input) {
-          const description = yield* discovery.describe(input.path);
+          const description = withCopiedOrigin(yield* discovery.describe(input.path), current);
           if (description.external)
             return yield* new SkillManagerError({ operation: "copy", reason: "external" });
+          origin = description.origin;
         }
-        return yield* copies.exportPackage(directory);
+        const source = current.sources.find((entry) => entry.id === origin?.sourceId);
+        const pkg = yield* copies.exportPackage(directory);
+        return {
+          ...pkg,
+          ...(origin && source
+            ? {
+                origin: {
+                  source: {
+                    id: source.id,
+                    label: source.label,
+                    kind: source.kind,
+                    enabled: source.enabled,
+                    registry: source.registry,
+                  },
+                  locator: origin.locator,
+                  skill: origin.skill,
+                },
+              }
+            : {}),
+        };
       },
+      copyLock.withPermits(1),
       Effect.mapError((cause) =>
         isSkillManagerError(cause)
           ? cause
@@ -1715,6 +1835,7 @@ const make = Effect.gen(function* () {
           directory: preview.directory,
           digest: input.package.digest,
           workKey,
+          ...(input.package.origin ? { origin: input.package.origin } : {}),
         }).pipe(Effect.onError(() => copies.discard(workKey).pipe(Effect.ignore)));
       },
       Effect.mapError((cause) =>

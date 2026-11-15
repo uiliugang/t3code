@@ -47,6 +47,7 @@ import { Sheet } from "../../components/ui/Sheet";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SkillCopySheet } from "./SkillCopySheet";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+import { useEnvironments } from "../../state/environments";
 
 type Mutate = (input: SkillMutation) => Promise<boolean>;
 type Inspect = (input: SkillInspect) => Promise<SkillInspection | null>;
@@ -746,6 +747,14 @@ function Source({
 function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) {
   const t = useUiTranslation();
   const insets = useSafeAreaInsets();
+  const { environments } = useEnvironments();
+  const showCopy =
+    environments.some(
+      (env) => env.environmentId === environmentId && env.connection.phase === "connected",
+    ) &&
+    environments.some(
+      (env) => env.environmentId !== environmentId && env.connection.phase === "connected",
+    );
   const query = useEnvironmentQuery(serverEnvironment.skills({ environmentId, input: {} }));
   const permitted = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
   const command = useAtomCommand(serverEnvironment.mutateSkills);
@@ -753,6 +762,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [tab, setTab] = useState("skills");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
   const [showExternal, setShowExternal] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -812,7 +822,13 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
     );
   const disabled = !permitted;
   const failedSource = skillSourceFailure(data);
-  const { rows, counts } = skillRows(data, search, filter, showExternal);
+  const { rows, counts, sourceCounts } = skillRows(
+    data,
+    search,
+    filter,
+    showExternal,
+    sourceFilter,
+  );
   const chosen = data.skills.filter((skill) => selected.includes(skill.id));
   const discovered = data.discovered.filter(
     (skill) => selected.includes(skill.identity ?? skill.path) && !skill.external,
@@ -835,14 +851,16 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             setSelecting(false);
           }}
         />
-        <ControlPill
-          icon="square.on.square"
-          label={t("Copy")}
-          accessibilityLabel={t("Copy to environment...")}
-          variant="primary"
-          disabled={disabled || chosen.length + discovered.length === 0}
-          onPress={() => setCopying(true)}
-        />
+        {showCopy && (
+          <ControlPill
+            icon="square.on.square"
+            label={t("Copy")}
+            accessibilityLabel={t("Copy to environment...")}
+            variant="primary"
+            disabled={disabled || chosen.length + discovered.length === 0}
+            onPress={() => setCopying(true)}
+          />
+        )}
         <Menu
           actions={[
             { id: "select-all", title: t("Select filtered skills") },
@@ -1147,6 +1165,20 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                         title: `${t(title)} (${counts[id as SkillFilter]})`,
                       })),
                       {
+                        id: "source-all",
+                        title: `${sourceFilter === null ? "✓ " : ""}${t("All sources")}`,
+                      },
+                      ...[
+                        ...data.sources.map((source) => ({
+                          id: source.id,
+                          label: skillSourceName(source, t),
+                        })),
+                        { id: "", label: t("Unknown source") },
+                      ].map((source) => ({
+                        id: `source:${source.id}`,
+                        title: `${sourceFilter === source.id ? "✓ " : ""}${source.label} (${sourceCounts[source.id] ?? 0})`,
+                      })),
+                      {
                         id: "external",
                         title: `${showExternal ? "✓ " : ""}${t("Show externally maintained skills")}`,
                       },
@@ -1161,14 +1193,17 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                         );
                         return;
                       }
-                      if (nativeEvent.event === "external") setShowExternal(!showExternal);
+                      if (nativeEvent.event === "source-all") setSourceFilter(null);
+                      else if (nativeEvent.event.startsWith("source:"))
+                        setSourceFilter(nativeEvent.event.slice(7));
+                      else if (nativeEvent.event === "external") setShowExternal(!showExternal);
                       else setFilter(nativeEvent.event as SkillFilter);
                       setSelected([]);
                     }}
                   >
                     <ControlPill
                       icon={
-                        filter === "all" && !showExternal
+                        filter === "all" && sourceFilter === null && !showExternal
                           ? "line.3.horizontal.decrease.circle"
                           : "line.3.horizontal.decrease.circle.fill"
                       }

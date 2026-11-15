@@ -69,6 +69,7 @@ export const steadyShellsHoldingAtom = steadyShells.holdingAtom;
 export const steadyNavigationThreadShellsAtom = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   snapshotAtom: steadyShells.snapshotAtom,
+  delegatedUnderParentAtom: environmentThreadShells.delegatedUnderParentAtom,
   hiddenThreadTagsAtom: serverEnvironment.hiddenThreadTagsAtom,
 }).navigationThreadShellsAtom;
 export const childThreadApprovalsAtom = createChildThreadApprovalsAtom({

@@ -9,20 +9,25 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { PrimaryConnectionTarget } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, PrimaryConnectionTarget } from "../connection/model.ts";
 import { v2Now, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import { isThreadWorking } from "./threadInbox.ts";
 import { childThreadInputsTitle, createEnvironmentThreadShellAtoms } from "./threadShell.ts";
+import { EMPTY_SHELL_STATE } from "./shell.ts";
+import { createSteadyShellAtoms } from "./steadyShells.ts";
 
 const environmentId = EnvironmentId.make("environment-v2");
 const remoteEnvironmentId = EnvironmentId.make("remote-environment-v2");
 const otherProjectId = ProjectId.make("other-project");
 
-function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environmentId]) {
+function makeHarness(
+  environmentIds: ReadonlyArray<EnvironmentId> = [environmentId],
+  registry = AtomRegistry.make(),
+) {
   const snapshotAtom = Atom.family((_environmentId: EnvironmentId) =>
     Atom.make<OrchestrationV2ShellSnapshot | null>(v2ShellSnapshot),
   );
@@ -45,7 +50,7 @@ function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environment
     ),
   });
   return {
-    registry: AtomRegistry.make(),
+    registry,
     snapshotAtom,
     catalogValueAtom,
     threads: createEnvironmentThreadShellAtoms({
@@ -425,8 +430,7 @@ describe("v2 thread shell lists", () => {
       "user_input",
     );
 
-    // A task whose parent is gone there is listed on its own, as is one whose
-    // parent's environment is switched off.
+    // A task whose parent is gone there is listed on its own.
     registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [] });
     expect(listed()).toEqual([`${remoteEnvironmentId}/${task.id}`]);
     // Archiving the parent here leaves the task there unarchived, so it is listed on its own.
@@ -440,6 +444,15 @@ describe("v2 thread shell lists", () => {
     const catalog = registry.get(catalogValueAtom);
     const entries = new Map(catalog.entries);
     entries.set(environmentId, { ...entries.get(environmentId)!, enabled: false });
+    registry.set(catalogValueAtom, { ...catalog, entries });
+    expect(listed()).toEqual([]);
+    registry.set(snapshotAtom(environmentId), null);
+    expect(listed()).toEqual([]);
+    registry.set(catalogValueAtom, catalog);
+    expect(listed()).toEqual([]);
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [parent] });
+    expect(listed()).toEqual([`${environmentId}/${parent.id}`]);
+    entries.delete(environmentId);
     registry.set(catalogValueAtom, { ...catalog, entries });
     expect(listed()).toEqual([`${remoteEnvironmentId}/${task.id}`]);
     disposeInputs();
@@ -521,14 +534,29 @@ describe("v2 thread shell lists", () => {
       state: { enabled: true, unsupportedReason: "Use a compatible client." },
     },
   ])("leaves $reason environments out of navigation until restored", ({ state }) => {
-    const { registry, threads, catalogValueAtom } = makeHarness([
+    const { registry, threads, catalogValueAtom, snapshotAtom } = makeHarness([
       environmentId,
       remoteEnvironmentId,
     ]);
+    const task = {
+      ...v2ThreadShell,
+      id: ThreadId.make("local-task"),
+      delegatedFrom: {
+        environmentId: remoteEnvironmentId,
+        threadId: v2ThreadShell.id,
+        title: v2ThreadShell.title,
+      },
+    };
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [v2ThreadShell, task],
+    });
     const dispose = registry.mount(threads.navigationThreadShellsAtom);
     const environmentsOf = () =>
       new Set(registry.get(threads.navigationThreadShellsAtom).map((t) => t.environmentId));
     expect(environmentsOf()).toEqual(new Set([environmentId, remoteEnvironmentId]));
+    const listedIds = () => registry.get(threads.navigationThreadShellsAtom).map((t) => t.id);
+    expect(listedIds()).not.toContain(task.id);
 
     const setRemotePaused = (paused: boolean) => {
       const catalog = registry.get(catalogValueAtom);
@@ -541,9 +569,119 @@ describe("v2 thread shell lists", () => {
     };
     setRemotePaused(true);
     expect(environmentsOf()).toEqual(new Set([environmentId]));
+    expect(listedIds()).toEqual([v2ThreadShell.id]);
     setRemotePaused(false);
     expect(environmentsOf()).toEqual(new Set([environmentId, remoteEnvironmentId]));
+    expect(listedIds()).not.toContain(task.id);
+    for (const parentThreads of [[], [{ ...v2ThreadShell, archivedAt: v2Now }]]) {
+      registry.set(snapshotAtom(remoteEnvironmentId), {
+        ...v2ShellSnapshot,
+        threads: parentThreads,
+      });
+      expect(listedIds()).toEqual([v2ThreadShell.id, task.id]);
+      setRemotePaused(true);
+      expect(listedIds()).toEqual([v2ThreadShell.id, task.id]);
+      registry.set(snapshotAtom(remoteEnvironmentId), null);
+      expect(listedIds()).toEqual([v2ThreadShell.id, task.id]);
+      const catalog = registry.get(catalogValueAtom);
+      const entries = new Map(catalog.entries);
+      entries.set(environmentId, { ...entries.get(environmentId)!, enabled: false });
+      registry.set(catalogValueAtom, { ...catalog, entries });
+      expect(listedIds()).toEqual([]);
+      registry.set(catalogValueAtom, catalog);
+      expect(listedIds()).toEqual([v2ThreadShell.id, task.id]);
+      setRemotePaused(false);
+      expect(listedIds()).toEqual([v2ThreadShell.id, task.id]);
+      registry.set(snapshotAtom(remoteEnvironmentId), v2ShellSnapshot);
+      expect(listedIds()).not.toContain(task.id);
+      const pausedTaskCatalog = registry.get(catalogValueAtom);
+      const pausedTaskEntries = new Map(pausedTaskCatalog.entries);
+      pausedTaskEntries.set(environmentId, {
+        ...pausedTaskEntries.get(environmentId)!,
+        enabled: false,
+      });
+      registry.set(catalogValueAtom, { ...pausedTaskCatalog, entries: pausedTaskEntries });
+      expect(listedIds()).toEqual([v2ThreadShell.id]);
+      registry.set(snapshotAtom(remoteEnvironmentId), {
+        ...v2ShellSnapshot,
+        threads: parentThreads,
+      });
+      expect(listedIds()).toEqual([]);
+      setRemotePaused(true);
+      registry.set(snapshotAtom(remoteEnvironmentId), null);
+      expect(listedIds()).toEqual([]);
+      const bothPaused = registry.get(catalogValueAtom);
+      const restoredTaskEntries = new Map(bothPaused.entries);
+      restoredTaskEntries.set(environmentId, {
+        ...restoredTaskEntries.get(environmentId)!,
+        enabled: true,
+      });
+      registry.set(catalogValueAtom, { ...bothPaused, entries: restoredTaskEntries });
+      expect(listedIds()).toEqual([v2ThreadShell.id, task.id]);
+      setRemotePaused(false);
+      registry.set(snapshotAtom(remoteEnvironmentId), v2ShellSnapshot);
+      expect(listedIds()).not.toContain(task.id);
+    }
     dispose();
+    registry.dispose();
+  });
+
+  it.each([
+    { reason: "deleted", parents: [] },
+    { reason: "archived", parents: [{ ...v2ThreadShell, archivedAt: v2Now }] },
+  ])("keeps tasks reachable when a list resumes after its parent was $reason", ({ parents }) => {
+    const scheduled: Array<() => void> = [];
+    const registry = AtomRegistry.make({
+      scheduleTask: (task) => {
+        scheduled.push(task);
+        return () => {};
+      },
+    });
+    const { threads, snapshotAtom, catalogValueAtom } = makeHarness(
+      [environmentId, remoteEnvironmentId],
+      registry,
+    );
+    const task = {
+      ...v2ThreadShell,
+      id: ThreadId.make("remote-task"),
+      delegatedFrom: { environmentId, threadId: v2ThreadShell.id, title: v2ThreadShell.title },
+    };
+    registry.set(snapshotAtom(remoteEnvironmentId), { ...v2ShellSnapshot, threads: [task] });
+    const keepCatalog = registry.mount(catalogValueAtom);
+    const keepParent = registry.mount(snapshotAtom(environmentId));
+    const keepTask = registry.mount(snapshotAtom(remoteEnvironmentId));
+    const steady = createSteadyShellAtoms({
+      catalogValueAtom,
+      snapshotAtom,
+      shellStateAtom: () => Atom.make({ ...EMPTY_SHELL_STATE, status: "live", generation: 1 }),
+      rowActionsAtom: () => Atom.make(0),
+      connectionStateAtom: () =>
+        Atom.make(
+          AsyncResult.success({ ...AVAILABLE_CONNECTION_STATE, phase: "connected" as const }),
+        ),
+    });
+    const navigation = createEnvironmentThreadShellAtoms({
+      catalogValueAtom,
+      snapshotAtom: steady.snapshotAtom,
+      delegatedUnderParentAtom: threads.delegatedUnderParentAtom,
+      hiddenThreadTagsAtom: () => Atom.make(null),
+    }).navigationThreadShellsAtom;
+    const release = registry.mount(navigation);
+    expect(registry.get(navigation).map((thread) => thread.id)).toEqual([v2ThreadShell.id]);
+    release();
+    for (const run of scheduled.splice(0)) run();
+    expect(registry.getNodes().has(navigation)).toBe(false);
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: parents });
+    const catalog = registry.get(catalogValueAtom);
+    const entries = new Map(catalog.entries);
+    entries.set(environmentId, { ...entries.get(environmentId)!, enabled: false });
+    registry.set(catalogValueAtom, { ...catalog, entries });
+    const remount = registry.mount(navigation);
+    expect(registry.get(navigation).map((thread) => thread.id)).toEqual([task.id]);
+    remount();
+    keepTask();
+    keepParent();
+    keepCatalog();
     registry.dispose();
   });
 
