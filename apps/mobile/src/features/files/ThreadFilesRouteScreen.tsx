@@ -63,6 +63,7 @@ import { WorkspaceFileVideoPreview } from "./WorkspaceFileVideoPreview";
 import { WorkspaceFileWebPreview } from "./WorkspaceFileWebPreview";
 import {
   basename,
+  defaultWorkspaceFileViewMode,
   fileHeaderSubtitle,
   fileRoutePathSegments,
   resolveWorkspaceFilePath,
@@ -197,17 +198,6 @@ function normalizeRouteLine(value: string | null): number | null {
   }
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function defaultViewMode(path: string | null): FileViewMode {
-  return path !== null &&
-    (isWorkspaceBrowserPreviewPath(path) ||
-      isWorkspaceImagePreviewPath(path) ||
-      isVideoPreviewFile(path) ||
-      isAudioPreviewFile(path) ||
-      filePreviewDelimiter({ name: path }) !== null)
-    ? "preview"
-    : "source";
 }
 
 // Android numbered rows are separate text views, so a long-press opens the whole file as one
@@ -682,9 +672,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const activeMode =
     relativePath !== null && modeOverride?.path === relativePath
       ? modeOverride.mode
-      : targetLine !== null && filePreviewDelimiter({ name: relativePath ?? "" }) !== null
-        ? "source"
-        : defaultViewMode(relativePath);
+      : defaultWorkspaceFileViewMode(relativePath, targetLine);
   const resolvedActiveMode =
     isVideoFile || isAudioFile ? "preview" : canPreview ? activeMode : "source";
   const assetPreviewPath =

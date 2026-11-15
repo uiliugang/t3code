@@ -3,6 +3,8 @@ import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import { joinPath, resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import {
   isWorkspaceAudioPreviewPath,
+  isWorkspaceBrowserPreviewPath,
+  isWorkspaceImagePreviewPath,
   isWorkspaceVideoPreviewPath,
 } from "@t3tools/shared/filePreview";
 
@@ -109,6 +111,27 @@ export function isSvgImagePreviewFile(path: string): boolean {
 
 export function isMarkdownPreviewFile(path: string): boolean {
   return /\.(?:md|mdx|markdown|mdown|mkd)$/i.test(path);
+}
+
+export function defaultWorkspaceFileViewMode(
+  path: string | null,
+  targetLine: number | null = null,
+): "preview" | "source" {
+  if (
+    path !== null &&
+    targetLine !== null &&
+    (isMarkdownPreviewFile(path) || filePreviewDelimiter({ name: path }) !== null)
+  )
+    return "source";
+  return path !== null &&
+    (isMarkdownPreviewFile(path) ||
+      isWorkspaceBrowserPreviewPath(path) ||
+      isWorkspaceImagePreviewPath(path) ||
+      isVideoPreviewFile(path) ||
+      isAudioPreviewFile(path) ||
+      filePreviewDelimiter({ name: path }) !== null)
+    ? "preview"
+    : "source";
 }
 
 export function needsWorkspaceFileContents(input: {

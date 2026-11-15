@@ -2,25 +2,31 @@
 
 ## First checkout
 
-T3 Code uses [Vite+](https://viteplus.dev/guide/). Install its global `vp` command:
+Use the repository's `vp` launcher from the checkout root. It reads the exact Node version
+from `package.json`, installs it through [Vite+](https://viteplus.dev/guide/) when needed,
+and selects it for the command even if an older Node appears first on PATH.
+If the global `vp` command is missing, the launcher installs a private copy of Vite+
+without changing your shell startup files or NVM defaults. First use needs network access
+and, on macOS/Linux, `curl` and `bash`.
 
 ```sh
-curl -fsSL https://vite.plus | bash
+./vp i
+./vp run dev
+./vp run check:changed
 ```
 
-On Windows, in PowerShell:
+On Windows, use `./vp.ps1` in PowerShell or `vp.cmd` in Command Prompt. If script execution
+is disabled, `vp.cmd` also works for ordinary task commands from PowerShell. T3's project
+scripts use the same launcher for worktree setup and development. The `vp` commands in
+this guide assume a working managed runtime; use the repository launcher to enforce the
+project version regardless of your machine configuration. When working in a package,
+invoke it by relative path, such as `../../vp run dev:client` from `apps/mobile`.
 
-```powershell
-irm https://vite.plus/ps1 | iex
-```
-
-`vp` provides the Node version pinned in `package.json` (Node 26), so no separate Node install is
-needed. From the repository root:
-
-```sh
-vp i
-vp run dev
-```
+A download failure stops the command. Re-run after restoring connectivity, or configure
+Vite+'s `VP_NODE_DIST_MIRROR` for an approved Node distribution mirror. Runtime caches
+are shared between worktrees; an existing global Vite+ keeps its configured cache,
+while the private fallback uses `$XDG_DATA_HOME/t3code/vite-plus` (defaulting to
+`~/.local/share/t3code/vite-plus`) or `%LOCALAPPDATA%\t3code\vite-plus` on Windows.
 
 Open the pairing URL printed by the dev runner. The bare origin does not authenticate
 a new browser.

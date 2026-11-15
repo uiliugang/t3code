@@ -1,0 +1,50 @@
+#!/bin/sh
+set -eu
+
+t3_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+t3_node=$(tr '\n' ' ' < "$t3_root/package.json" | sed -nE 's/.*"engines"[[:space:]]*:[[:space:]]*\{[^}]*"node"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
+if ! printf '%s\n' "$t3_node" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  printf '%s\n' 'Project package.json must specify an exact engines.node version.' >&2
+  exit 1
+fi
+
+t3_vp=
+t3_path_ifs=$IFS
+IFS=:
+for t3_directory in $PATH; do
+  # Probing another worktree launcher would recursively search this same PATH.
+  [ ! -f "${t3_directory:-.}/scripts/project-vp.ps1" ] || continue
+  for t3_candidate in "${t3_directory:-.}/vp" "${t3_directory:-.}/vp.exe"; do
+    if [ -x "$t3_candidate" ] && [ ! "$t3_candidate" -ef "$t3_root/vp" ] &&
+      "$t3_candidate" env current --json >/dev/null 2>&1; then
+      t3_vp=$t3_candidate
+      break 2
+    fi
+  done
+done
+IFS=$t3_path_ifs
+if [ -z "$t3_vp" ]; then
+  VP_HOME=${VP_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/t3code/vite-plus}
+  export VP_HOME
+  t3_vp=$VP_HOME/bin/vp
+  if [ ! -x "$t3_vp" ]; then
+    printf '%s\n' 'Installing Vite+ for this project...' >&2
+    t3_installer=$(mktemp)
+    trap 'rm -f "$t3_installer"' EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    curl -fsSL --retry 2 --connect-timeout 15 --max-time 120 https://vite.plus -o "$t3_installer"
+    t3_vp_version=$(sed -nE 's/^  vite-plus: ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' "$t3_root/pnpm-workspace.yaml")
+    [ -n "$t3_vp_version" ] || { printf '%s\n' 'Missing Vite+ catalog version.' >&2; exit 1; }
+    VP_VERSION="$t3_vp_version" VP_NODE_MANAGER=no VP_PM_MANAGER=no VP_SELF_SETUP_NO_MODIFY_PATH=1 \
+      VP_SETUP_NODE_VERSION="$t3_node" bash "$t3_installer" >&2
+    rm -f "$t3_installer"
+    trap - EXIT HUP INT TERM
+  fi
+fi
+
+PATH="$(dirname -- "$t3_vp"):$PATH"
+export PATH
+"$t3_vp" env install "node@$t3_node" >&2
+exec "$t3_vp" env exec --node "$t3_node" "$t3_vp" "$@"
