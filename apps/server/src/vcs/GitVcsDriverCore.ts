@@ -5839,6 +5839,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const resolveWorktreeBaseRemote: GitVcsDriver.GitVcsDriver["Service"]["resolveWorktreeBaseRemote"] =
     Effect.fn("resolveWorktreeBaseRemote")(function* (input) {
+      const refName = input.refName.startsWith("refs/heads/")
+        ? input.refName.slice("refs/heads/".length)
+        : input.refName;
       const remoteNames = (yield* listRemoteNames(input.cwd)).toSorted(
         (left, right) => right.length - left.length,
       );
@@ -5847,13 +5850,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const localBranch = yield* runGitStdout("GitVcsDriver.resolveWorktreeBaseRemote", input.cwd, [
         "for-each-ref",
         "--format=%(refname)\t%(upstream:remotename)\t%(upstream:remoteref)",
-        `refs/heads/${input.refName}`,
+        `refs/heads/${refName}`,
       ]).pipe(
         Effect.map((stdout) =>
           stdout
             .split("\n")
             .map((line) => line.split("\t"))
-            .find(([refName]) => refName === `refs/heads/${input.refName}`),
+            .find(([localRefName]) => localRefName === `refs/heads/${refName}`),
         ),
       );
       let target: { remoteName: string; branchName: string } | null;
@@ -5865,11 +5868,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             ? { remoteName, branchName: merge.slice("refs/heads/".length) }
             : null;
       } else {
-        target = parseRemoteRefWithRemoteNames(input.refName, remoteNames);
+        target = parseRemoteRefWithRemoteNames(refName, remoteNames);
       }
       const { remoteName, branchName } = target ?? {
         remoteName: "origin",
-        branchName: input.refName,
+        branchName: refName,
       };
       // `<remote>/HEAD` is the remote's default-branch pointer, not a branch it can serve, and
       // a revision expression such as `HEAD~1`, `@{-1}` or `:/text` is no branch name at all.
@@ -5900,6 +5903,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             cwd: input.cwd,
             args: ["fetch"],
           }),
+          reason: "ref_not_found",
           detail:
             "The selected remote base branch no longer exists. Select another base branch or turn off Start from remote to use a local branch.",
         });

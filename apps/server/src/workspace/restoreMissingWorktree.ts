@@ -142,6 +142,17 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     return null;
   });
 
+  const fetchRecreateBase = Effect.fn("restoreMissingWorktree.fetchRecreateBase")(
+    (cwd: string, refName: string) =>
+      gitWorkflow.fetchWorktreeBaseCommit({ cwd, refName }).pipe(
+        // Recovery retains the local base when its remote branch no longer exists.
+        Effect.catchTags({
+          GitCommandError: (error) =>
+            error.reason === "ref_not_found" ? Effect.succeed(null) : Effect.fail(error),
+        }),
+      ),
+  );
+
   const recreateMissingWorktree = Effect.fn("restoreMissingWorktree.recreate")(function* (input: {
     readonly cwd: string;
     readonly worktreePath: string;
@@ -165,7 +176,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
         return yield* new WorktreeRecreateNoBaseError({ worktreePath, branch });
       }
       const remoteBase = settings.newWorktreesStartFromOrigin
-        ? yield* gitWorkflow.fetchWorktreeBaseCommit({ cwd, refName: baseRef })
+        ? yield* fetchRecreateBase(cwd, baseRef)
         : null;
       yield* gitWorkflow.createWorktree({
         cwd,
@@ -196,7 +207,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     if (base === null) return yield* new WorktreeRecreateNoBaseError({ worktreePath, branch });
     const remoteBase =
       settings.newWorktreesStartFromOrigin && base.refName.startsWith("refs/heads/")
-        ? yield* gitWorkflow.fetchWorktreeBaseCommit({ cwd, refName: base.refName })
+        ? yield* fetchRecreateBase(cwd, base.refName)
         : null;
     yield* gitWorkflow.createWorktree({
       cwd,

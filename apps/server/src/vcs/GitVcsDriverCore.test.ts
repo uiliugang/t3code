@@ -9096,6 +9096,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           commitSha: remoteHead,
           remoteRefName: "upstream/release",
         });
+        assert.deepEqual(
+          yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "refs/heads/stable" }),
+          fetched,
+        );
         yield* git(cwd, ["update-ref", "-d", "refs/remotes/upstream/release"]);
         assert.deepEqual(
           yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "upstream/release" }),
@@ -9106,6 +9110,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           commitSha: localHead,
           remoteRefName: "origin/stable",
         });
+        assert.deepEqual(
+          yield* driver.fetchWorktreeBaseCommit({ cwd, refName: "refs/heads/stable" }),
+          { commitSha: localHead, remoteRefName: "origin/stable" },
+        );
         assert.equal(yield* git(cwd, ["rev-parse", "stable"]), localHead);
 
         const path = yield* Path.Path;
@@ -9159,11 +9167,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           yield* git(cwd, ["rev-parse", "refs/remotes/origin/release"]),
           yield* git(cwd, ["rev-parse", "HEAD"]),
         );
-        assert.include(
-          (yield* driver.fetchWorktreeBaseCommit({ cwd, refName: initialBranch }).pipe(Effect.flip))
-            .detail,
-          "remote base branch no longer exists",
-        );
+        const error = yield* driver
+          .fetchWorktreeBaseCommit({ cwd, refName: initialBranch })
+          .pipe(Effect.flip);
+        assert.include(error.detail, "remote base branch no longer exists");
+        assert.equal(error.reason, "ref_not_found");
         yield* git(cwd, ["remote", "remove", "origin"]);
         assert.isNull(yield* driver.fetchWorktreeBaseCommit({ cwd, refName: initialBranch }));
       }),

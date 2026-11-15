@@ -1784,24 +1784,25 @@ it.effect("keeps a `:/` commit-search base instead of re-basing", () =>
 );
 
 it.effect("skips a stale tracking ref when the remote reports the base branch is gone", () =>
-  withRealGitRepo(({ cwd, worktreePath, command, harness }) =>
+  withRealGitRepo(({ directory, cwd, worktreePath, command, harness }) =>
     Effect.gen(function* () {
+      const remote = `${directory}/remote.git`;
       yield* command(cwd, ["commit", "--allow-empty", "-m", "stale point"]);
       const staleHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+      yield* command(cwd, ["init", "--bare", remote]);
+      yield* command(cwd, ["remote", "add", "origin", remote]);
+      yield* command(cwd, ["push", "origin", "HEAD:gone"]);
+      yield* command(remote, ["--git-dir=.", "update-ref", "-d", "refs/heads/gone"]);
       yield* command(cwd, ["commit", "--allow-empty", "-m", "current work"]);
       const betaHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
       // The deleted remote branch leaves its tracking ref (and origin/HEAD) behind.
-      yield* command(cwd, ["update-ref", "refs/remotes/origin/gone", staleHead]);
       yield* command(cwd, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone"]);
-
-      yield* launchFromBase(
-        harness({
-          // A completed fetch that found no branch, as when the branch was deleted.
-          fetchWorktreeBaseCommit: () => Effect.succeed(null),
-          git: { resolvePrimaryRemoteName: () => Effect.succeed("origin") },
-        }),
-        "main",
+      assert.equal(
+        (yield* command(cwd, ["rev-parse", "refs/remotes/origin/gone"])).stdout.trim(),
+        staleHead,
       );
+
+      yield* launchFromBase(harness(), "HEAD~2");
       assert.equal((yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim(), betaHead);
     }),
   ),

@@ -489,7 +489,10 @@ const make = Effect.gen(function* () {
           })
           .pipe(
             Effect.map((base) => ({ fetchFailed: false as const, base })),
-            Effect.orElseSucceed(() => ({ fetchFailed: true as const, base: null })),
+            Effect.catchTags({
+              GitCommandError: (error) =>
+                Effect.succeed({ fetchFailed: error.reason !== "ref_not_found", base: null }),
+            }),
           );
         if (remoteBase.base !== null) {
           return {
@@ -497,8 +500,7 @@ const make = Effect.gen(function* () {
             baseRefName: `refs/remotes/${remoteBase.base.remoteRefName}`,
           };
         }
-        // A completed fetch that found no branch means the branch is gone and its
-        // tracking ref is stale; only a failed fetch can fall back to it.
+        // A missing remote branch invalidates its tracking ref even when fetch failed.
         if (remoteBase.fetchFailed) {
           const trackingRef = `refs/remotes/${remoteName}/${defaultBranch}`;
           if (yield* git.hasCommit({ cwd, refName: trackingRef })) {
