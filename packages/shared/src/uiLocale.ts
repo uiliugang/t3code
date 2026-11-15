@@ -813,6 +813,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "This thread is unavailable. Select another thread.": "此会话不可用，请重新选择。",
   "Pair WeChat and send an activation message first.": "请先配对微信，再向机器人发送激活消息。",
   "Another WeChat operation is running. Try again shortly.": "有其他微信操作正在进行，请稍后重试。",
+  Requirements: "需求",
   "Requirements board": "需求看板",
   "All sources": "全部来源",
   "No matching work items.": "没有符合条件的需求或任务。",

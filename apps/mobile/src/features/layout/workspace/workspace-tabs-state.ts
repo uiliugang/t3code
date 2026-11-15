@@ -16,7 +16,7 @@ export type WorkspaceTab = NavigationTab;
 export type WorkspaceSearchTab = WorkspaceTab | "settings";
 export type WorkspaceSearchMode = "resting" | "active" | "expanded";
 
-/** Settings, Chats and pull requests pair a list with a detail column; Usage is one page. */
+/** Settings, Chats and pull requests pair a list with a detail column; other tabs are single pages. */
 export function workspaceUsesColumns(tab: WorkspaceTab, settingsOpen = false) {
   return settingsOpen || tab === "threads" || tab === "pullRequests";
 }
@@ -40,7 +40,14 @@ function emptyTab(): WorkspaceTabState {
 
 /** The list a workspace page belongs to. */
 export function workspaceTabOf(routeName: string | undefined): WorkspaceTab {
-  return routeName === "PullRequest" ? "pullRequests" : "threads";
+  return routeName === "PullRequest"
+    ? "pullRequests"
+    : routeName === "Requirements" ||
+        routeName === "WorkItems" ||
+        routeName === "IssueDetail" ||
+        routeName === "IssueCreate"
+      ? "requirements"
+      : "threads";
 }
 
 export function initialWorkspaceTabsState(
@@ -51,6 +58,7 @@ export function initialWorkspaceTabsState(
     selectionRevision: 0,
     tabs: {
       threads: emptyTab(),
+      requirements: emptyTab(),
       pullRequests: emptyTab(),
       usage: emptyTab(),
       settings: emptyTab(),

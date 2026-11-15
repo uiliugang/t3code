@@ -69,6 +69,9 @@ export const workItemMessages: Readonly<Record<string, string>> = {
   "Artifacts, one per line": "产物（每行一项）",
   Discover: "发现任务",
   "Scan chats": "扫描会话",
+  "Requirement settings": "需求设置",
+  "View loading errors": "查看加载错误",
+  "Some requirements could not be loaded": "部分需求加载失败",
   "Discovered conversations": "发现的会话",
   "Discovered tasks": "发现的任务",
   "Suggestions do not start agents or change existing tasks.":

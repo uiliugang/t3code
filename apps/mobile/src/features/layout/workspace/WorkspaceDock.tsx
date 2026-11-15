@@ -5,13 +5,13 @@ import { GlassSurface } from "../../../components/ui/GlassSurface";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WORKSPACE_DOCK } from "./workspace-tabs-state";
 import { PullRequestGlyph } from "../../pull-requests/pullRequestGlyphs";
-import { useNavigation } from "@react-navigation/native";
+import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 
 export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
   const t = useUiTranslation();
   const workspace = useWorkspaceTabs()!;
-  const navigation = useNavigation();
+  const selectTab = useSelectWorkspaceTab();
   return (
     <View
       className="w-full flex-row items-center justify-between"
@@ -57,7 +57,7 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t("Requirements board")}
-        onPress={() => navigation.navigate("Requirements")}
+        onPress={() => selectTab("requirements")}
         className="min-h-12 min-w-12 items-center justify-center"
       >
         <SymbolView name="ticket" size={23} tintColorClassName="accent-icon" />

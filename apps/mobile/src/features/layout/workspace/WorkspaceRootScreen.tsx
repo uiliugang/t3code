@@ -100,7 +100,8 @@ function WorkspaceRootContent() {
   );
   const tab = state.tabs[settingsOpen ? "settings" : state.selectedTab];
   const bottomClearance =
-    layout.variant === "medium" && state.selectedTab === "usage"
+    layout.variant === "medium" &&
+    (state.selectedTab === "usage" || state.selectedTab === "requirements")
       ? workspaceDockBottomClearance({ bottomInset: insets.bottom, keyboardHeight })
       : isDuoDevice(deviceType)
         ? // The column's safe area already holds the Duo's search toolbar and keyboard.
@@ -146,7 +147,10 @@ function WorkspaceRootContent() {
             // Beside a detail column the tab bar names the tab and the detail header the page,
             // so the sidebar keeps the brand.
             headerTitle:
-              sidebarNavigation || (!settingsOpen && state.selectedTab !== "usage")
+              sidebarNavigation ||
+              (!settingsOpen &&
+                state.selectedTab !== "usage" &&
+                state.selectedTab !== "requirements")
                 ? renderHeaderTitle
                 : undefined,
           }}

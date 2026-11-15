@@ -91,6 +91,18 @@ describe("opening a workspace tab", () => {
       );
     expect(names(open("android"))).toEqual(["Home"]);
     expect(names(open("ios"))).toEqual(["Home", "Thread"]);
+    for (const platform of ["android", "ios"]) {
+      expect(
+        names(
+          workspaceTabNavigationState(
+            { routes: [home, settings, pullRequest] },
+            "requirements",
+            { pullRequests: pullRequest.params },
+            { columns: workspaceTabColumns(platform, "requirements", true), check: available },
+          ),
+        ),
+      ).toEqual(["Home"]);
+    }
   });
 
   it("opens the remembered page beside the list with columns, and the list without", () => {

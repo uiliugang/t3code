@@ -1,11 +1,13 @@
 # Manage requirements and local tasks
 
 Open **Requirements board** to see MEP ONES, GitHub Issues, and local tasks together.
+On mobile, open the **Requirements** navigation tab. Use **Requirement settings** on the board to configure issue sources.
+The board starts with all connected environments; each record shows its environment.
 Use the source, environment, and project filters to narrow the same board, and switch between
 list and board views. **New** lets you create an external issue or a local task in a project.
 Existing tasks keep their conversations, execution history, review results, and archive state.
 Create a local task when there is no external issue to track. To discover recent conversations,
-select a project and choose **Filters → Scan chats**. You can turn a conversation into a local task
+choose **Scan chats**, then select the environment and project. You can turn a conversation into a local task
 without starting an agent or changing the conversation.
 
 The board groups all sources by delivery progress. Local tasks awaiting review appear under

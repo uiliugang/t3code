@@ -11,14 +11,12 @@ import {
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useCompactWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
-import { useNavigation } from "@react-navigation/native";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 
 const PULL_REQUEST_ICON = require("../../../../assets/icons/pull-request.png");
 
 export function WorkspaceTabToolbarButtons() {
   const t = useUiTranslation();
-  const navigation = useNavigation();
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
   const workspace = useWorkspaceTabs()!;
@@ -46,12 +44,6 @@ export function WorkspaceTabToolbarButtons() {
           onPress={() => selectTab(tab)}
         />
       ))}
-      <Toolbar.Button
-        identifier="workspace-requirements"
-        accessibilityLabel={t("Requirements board")}
-        icon="ticket"
-        onPress={() => navigation.navigate("Requirements")}
-      />
       <Toolbar.Button
         identifier="workspace-tab-settings"
         accessibilityLabel={t("Settings")}

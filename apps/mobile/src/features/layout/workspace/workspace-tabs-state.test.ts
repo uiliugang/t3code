@@ -11,6 +11,7 @@ import {
   workspaceSearchBottomClearance,
   workspaceDockBottomClearance,
   workspaceUsesColumns,
+  workspaceTabOf,
   type WorkspaceTab,
   type WorkspaceTabsState,
 } from "./workspace-tabs-state";
@@ -57,13 +58,24 @@ describe("Duo list clearance", () => {
 describe("workspace root navigation", () => {
   it("pairs Settings, chats and pull requests with a detail column, and keeps Usage one page", () => {
     expect(workspaceUsesColumns("usage")).toBe(false);
+    expect(workspaceUsesColumns("requirements")).toBe(false);
     expect(workspaceUsesColumns("usage", true)).toBe(true);
     expect(workspaceUsesColumns("threads")).toBe(true);
     expect(workspaceUsesColumns("pullRequests")).toBe(true);
+    for (const route of ["Requirements", "WorkItems", "IssueDetail", "IssueCreate"]) {
+      expect(workspaceTabOf(route)).toBe("requirements");
+    }
+    expect(workspaceTabOf("PullRequest")).toBe("pullRequests");
+    expect(workspaceTabOf("Thread")).toBe("threads");
   });
 
   it("keeps the registered defaults while customization is unavailable", () => {
-    expect(resolveWorkspaceTabOrder(undefined)).toEqual(["threads", "pullRequests", "usage"]);
+    expect(resolveWorkspaceTabOrder(undefined)).toEqual([
+      "threads",
+      "requirements",
+      "pullRequests",
+      "usage",
+    ]);
     expect(resolveWorkspaceTabOrder(["home", "usage", "issues", "threads"])).toEqual(
       resolveWorkspaceTabOrder(undefined),
     );
@@ -164,7 +176,7 @@ describe("workspace root navigation", () => {
       query: "retained",
       tab: "threads",
     });
-    for (const tab of ["usage"] as const) {
+    for (const tab of ["usage", "requirements"] as const) {
       state = workspaceTabsReducer(state, { type: "select", tab });
       expect(state.selectedTab).toBe(tab);
       expect(workspaceTabsReducer(state, { type: "search" })).toBe(state);
@@ -290,6 +302,9 @@ it("Back from the Pulls tab returns to Threads instead of leaving the app", asyn
 
   expect(pressBack()).toBe(true);
   expect(opened).toEqual(["threads"]);
+  mocks.state = selected("requirements");
+  await act(async () => root.render(createElement(WorkspaceRootScreen)));
+  expect(pressBack()).toBe(false);
 });
 
 it.each([
