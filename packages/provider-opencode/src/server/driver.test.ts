@@ -1098,12 +1098,17 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
         v2Prefix,
         "--allow-scripts=@opencode/cli",
         "@opencode/cli@latest",
+        "--registry=https://registry.npmjs.org/",
+        "--@opencode:registry=https://registry.npmjs.org/",
       ]);
       const v1 = yield* resolveUpdate(
         "v1",
         npmGlobalInstall(v1Prefix, ["opencode-ai"], "opencode"),
       );
-      assert.strictEqual(v1.update?.args.at(-1), "opencode-ai@latest");
+      assert.deepStrictEqual(v1.update?.args.slice(-2), [
+        "opencode-ai@latest",
+        "--registry=https://registry.npmjs.org/",
+      ]);
       assert.isNull(
         (yield* resolveUpdate("v2", NodePath.join(v1Prefix, "bin", "opencode"))).update,
       );
