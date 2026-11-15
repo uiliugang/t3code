@@ -142,42 +142,38 @@ function EnvironmentProviders({
           providers={providers}
         />
       ) : null}
-      {providers
-        .filter(
-          (provider) =>
-            !isByok(provider) &&
-            ((provider.driver === CLAUDE_DRIVER && canManageProvider(provider)) ||
-              (provider.driver === "codex" &&
-                environment.serverConfig.environment.capabilities?.codexByok)),
-        )
-        .map((provider) => (
-          <ClaudeInstallationControls
-            key={provider.instanceId}
-            environment={environment}
-            provider={provider}
-          />
-        ))}
       {accounts.map((provider, index) => (
-        <ProviderAccount
+        <View
           key={provider.instanceId}
-          environment={environment}
-          provider={provider}
-          divider={index > 0}
-        />
-      ))}
-      {providers.filter(needsProviderSummary).map((provider) => (
-        <View key={provider.instanceId} className="p-4">
-          <ProviderAccountSummary
-            name={provider.displayName ?? provider.driver}
-            status={t(providerSummaryStatus(provider))}
-            email={
-              provider.enabled && provider.auth.status === "authenticated"
-                ? provider.auth.email?.trim()
-                : undefined
-            }
-          />
+          className={index > 0 ? "border-t border-border-subtle" : undefined}
+        >
+          <ProviderAccount environment={environment} provider={provider} />
+          {provider.driver === CLAUDE_DRIVER ||
+          (provider.driver === "codex" &&
+            environment.serverConfig.environment.capabilities?.codexByok) ? (
+            <ClaudeInstallationControls environment={environment} provider={provider} />
+          ) : null}
         </View>
       ))}
+      {providers
+        .filter((provider) => !isByok(provider) && needsProviderSummary(provider))
+        .map((provider) => (
+          <View key={provider.instanceId} className="border-t border-border-subtle p-4">
+            <ProviderAccountSummary
+              name={provider.displayName ?? provider.driver}
+              status={t(providerSummaryStatus(provider))}
+              email={
+                provider.enabled && provider.auth.status === "authenticated"
+                  ? provider.auth.email?.trim()
+                  : undefined
+              }
+            />
+            {provider.driver === "codex" &&
+            environment.serverConfig.environment.capabilities?.codexByok ? (
+              <ClaudeInstallationControls environment={environment} provider={provider} />
+            ) : null}
+          </View>
+        ))}
       {providers.length === 0 ? (
         <Text className="p-4 text-foreground-muted">{t("No providers available.")}</Text>
       ) : null}
@@ -207,11 +203,9 @@ function managedProviders(
 function ProviderAccount({
   environment,
   provider,
-  divider,
 }: {
   readonly environment: SettingsTarget;
   readonly provider: ServerProvider;
-  readonly divider: boolean;
 }) {
   const t = useUiTranslation();
   const environmentId = environment.environmentId;
@@ -478,7 +472,7 @@ function ProviderAccount({
     />
   ) : null;
   return (
-    <View className={divider ? "border-t border-border-subtle" : undefined}>
+    <View>
       <View
         className={
           stacked

@@ -129,11 +129,6 @@ export function ClaudeAccount({
   }
   return (
     <View className="border-t border-border-subtle">
-      <ClaudeInstallationControls
-        environment={environment}
-        provider={provider}
-        connectionDisabled={editing || pending}
-      />
       <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
         <View className="min-w-0 shrink grow gap-0.5">
           <Text textRole="body" className="text-foreground" numberOfLines={1}>
@@ -164,6 +159,11 @@ export function ClaudeAccount({
           </Menu>
         )}
       </View>
+      <ClaudeInstallationControls
+        environment={environment}
+        provider={provider}
+        connectionDisabled={editing || pending}
+      />
       {editing ? (
         <ClaudeAccountForm
           environment={environment}

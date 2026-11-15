@@ -116,7 +116,6 @@ const PreviewOrb = memo(function PreviewOrb(props: {
 
 function ThemeCard(props: {
   readonly disabled: boolean;
-  readonly darkOnly: boolean;
   readonly darkSelected: boolean;
   readonly label: string;
   readonly lightSelected: boolean;
@@ -160,21 +159,19 @@ function ThemeCard(props: {
   return (
     <View className="min-w-36 flex-1 basis-[47%] gap-3 rounded-[24px] border border-border bg-grouped-card px-2 py-4">
       <Pressable
-        accessibilityHint={t(
-          props.darkOnly ? "Sets the dark appearance only" : "Sets both light and dark appearances",
-        )}
+        accessibilityHint={t("Sets both light and dark appearances")}
         accessibilityLabel={t("{name} theme", { name: props.label })}
         accessibilityRole="button"
         accessibilityState={{
           disabled: props.disabled,
-          selected: (props.darkOnly || props.lightSelected) && props.darkSelected,
+          selected: props.lightSelected && props.darkSelected,
         }}
         className="absolute inset-0 rounded-[24px] active:bg-subtle"
         disabled={props.disabled}
         onPress={props.onSelectCard}
       />
       <View className="flex-row items-center justify-center gap-2 py-1" pointerEvents="box-none">
-        {props.darkOnly ? null : choice("light", props.lightSelected)}
+        {choice("light", props.lightSelected)}
         {choice("dark", props.darkSelected)}
       </View>
       <Text
@@ -333,17 +330,12 @@ export function ThemeAppearanceSection() {
           ).map((theme) => (
             <ThemeCard
               disabled={!isReady}
-              darkOnly={theme.darkOnly === true}
               key={theme.id}
               label={t(theme.label)}
               darkSelected={theme.id === themeIds.dark}
               lightSelected={theme.id === themeIds.light}
               onSelect={(appearance) => setThemeIdForAppearance(appearance, theme.id)}
-              onSelectCard={() =>
-                theme.darkOnly
-                  ? setThemeIdForAppearance("dark", theme.id)
-                  : setThemeIdForBothAppearances(theme.id)
-              }
+              onSelectCard={() => setThemeIdForBothAppearances(theme.id)}
               themeId={theme.id}
             />
           ))}

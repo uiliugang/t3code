@@ -828,40 +828,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
 
-  html[data-theme-id="ember"] {
-    --stage-art-top: oklch(0.782439 0.118806 52.569);
-    --stage-art-mid: oklch(0.62863 0.15922 39.401);
-    --stage-art-bottom: oklch(0.404251 0.117664 30.424);
-    --stage-art-highlight: oklch(0.962469 0.02774 70.95);
-    --stage-art-secondary: oklch(0.815735 0.11904 53.659);
-    --stage-art-tertiary: oklch(0.69361 0.159346 24.787);
-    --stage-art-line: oklch(0.970313 0.02052 67.583);
-    --stage-night-top: oklch(0.470236 0.102322 39.355);
-    --stage-night-mid: oklch(0.345367 0.080697 33.217);
-    --stage-night-bottom: oklch(0.227386 0.056077 27.437);
-    --stage-night-highlight: oklch(0.903891 0.059281 56.181);
-    --stage-night-secondary: oklch(0.641705 0.126508 44.376);
-    --stage-night-tertiary: oklch(0.538694 0.129931 25.865);
-    --stage-night-line: oklch(0.926348 0.046029 58.73);
-
-    @variant dark {
-      --stage-art-top: oklch(0.597533 0.120694 43.455);
-      --stage-art-mid: oklch(0.437763 0.101287 34.86);
-      --stage-art-bottom: oklch(0.264269 0.055858 26.548);
-      --stage-art-highlight: oklch(0.929214 0.042638 55.801);
-      --stage-art-secondary: oklch(0.705592 0.137369 43.176);
-      --stage-art-tertiary: oklch(0.629583 0.158322 24.088);
-      --stage-art-line: oklch(0.945058 0.033906 58.824);
-      --stage-night-top: oklch(0.392352 0.081287 36.444);
-      --stage-night-mid: oklch(0.271305 0.056352 31.135);
-      --stage-night-bottom: oklch(0.182126 0.028154 27.774);
-      --stage-night-highlight: oklch(0.851007 0.061294 53.805);
-      --stage-night-secondary: oklch(0.560789 0.10645 42.953);
-      --stage-night-tertiary: oklch(0.476228 0.106656 24.165);
-      --stage-night-line: oklch(0.884931 0.046607 56.556);
-    }
-  }
-
   html[data-theme-id="iris"] {
     --stage-art-top: oklch(0.738305 0.113454 298.926);
     --stage-art-mid: oklch(0.551826 0.159189 294.531);
@@ -908,7 +874,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     html[data-theme-id="t3-chat"],
     html[data-theme-id="grove"],
     html[data-theme-id="ocean"],
-    html[data-theme-id="ember"],
     html[data-theme-id="iris"]
   ) {
     --stage-art-celeste-highlight: var(--stage-art-highlight);

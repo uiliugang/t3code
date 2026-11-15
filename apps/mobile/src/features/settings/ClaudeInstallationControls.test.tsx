@@ -54,6 +54,13 @@ vi.mock("../../components/ui/ControlPill", () => ({
     </button>
   ),
 }));
+vi.mock("../../components/ui/ListRow", () => ({
+  ListRow: ({ label, onPress }: { label: string; onPress: () => void }) => (
+    <button onClick={onPress}>{label}</button>
+  ),
+}));
+vi.mock("../../components/ui/ListActionRow", () => ({ ListActionRow: Children }));
+vi.mock("../../components/ui/ListToggleRow", () => ({ ListToggleRow: () => null }));
 vi.mock("../../components/ui/Menu", () => ({
   Menu: ({
     children,
