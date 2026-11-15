@@ -3072,6 +3072,7 @@ it.effect.each([false, true])(
       const allowBranchName = yield* Deferred.make<void>();
       const preparationStarted = yield* Deferred.make<void>();
       const allowPreparation = yield* Deferred.make<void>();
+      const setupObserved = yield* Deferred.make<void>();
       const workspace = workspaceFixture({ projectId });
       const temporaryWorkspace = {
         ...workspace,
@@ -3090,7 +3091,7 @@ it.effect.each([false, true])(
                   Effect.andThen(Deferred.await(allowPreparation)),
                   Effect.as({
                     workspace: temporaryWorkspace,
-                    completion: Effect.void,
+                    completion: Deferred.succeed(setupObserved, undefined).pipe(Effect.asVoid),
                     cancel: Effect.void,
                   }),
                 ),
@@ -3194,6 +3195,14 @@ it.effect.each([false, true])(
         assert.equal(harness.createWorktree.mock.calls.length, group ? 0 : 1);
         assert.equal(harness.runSetup.mock.calls.length, group ? 0 : 1);
         assert.match(before.thread.branch!, group ? /^t3-multi-/ : /^t3\//);
+        if (group) {
+          yield* Deferred.await(setupObserved);
+          assert.equal(
+            (yield* tracker.get(launched.threadId))?.stages.find((stage) => stage.id === "naming")
+              ?.status,
+            "running",
+          );
+        }
         yield* Deferred.succeed(allowBranchName, undefined);
         yield* threads
           .streamStoredEventsFrom({
@@ -3225,11 +3234,18 @@ it.effect.each(["success", "both-fail", "same-model"] as const)(
   "falls back to the current thread model when the naming model fails (%s)",
   (outcome) =>
     Effect.gen(function* () {
+      const threadSelection = {
+        ...modelSelection,
+        options: [
+          { id: "reasoningEffort", value: "xhigh" },
+          { id: "serviceTier", value: "priority" },
+        ],
+      };
       const harness = makeHarness({
         serverSettings: {
           branchNamePrefix: "t3",
           textGenerationModelSelection:
-            outcome === "same-model" ? modelSelection : claudeModelSelection,
+            outcome === "same-model" ? threadSelection : claudeModelSelection,
         },
         generateBranchName: (input) =>
           outcome !== "success" ||
@@ -3245,14 +3261,15 @@ it.effect.each(["success", "both-fail", "same-model"] as const)(
       yield* Effect.gen(function* () {
         const launches = yield* ThreadLaunch.ThreadLaunchService;
         const threads = yield* ThreadManagement.ThreadManagementService;
-        const launched = yield* launches.launch(
-          launchInput({
+        const launched = yield* launches.launch({
+          ...launchInput({
             command: "launch:fallback",
             thread: "thread:fallback",
             message: "Start",
             workspace: { type: "worktree", baseRef: "main" },
           }),
-        );
+          modelSelection: threadSelection,
+        });
         const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
         yield* tracker.stream(launched.threadId).pipe(
           Stream.filter((snapshot) => snapshot?.phase === "done"),
@@ -3264,8 +3281,9 @@ it.effect.each(["success", "both-fail", "same-model"] as const)(
         else assert.match(projection.thread.branch!, /^t3\//);
         assert.deepEqual(
           harness.generateBranchName.mock.calls.map(([input]) => input.modelSelection),
-          outcome === "same-model" ? [modelSelection] : [claudeModelSelection, modelSelection],
+          outcome === "same-model" ? [threadSelection] : [claudeModelSelection, modelSelection],
         );
+        assert.deepEqual(projection.thread.modelSelection, threadSelection);
       }).pipe(Effect.provide(harness.layer));
     }),
 );
@@ -3518,65 +3536,96 @@ it.effect("reports submodule downloads as their own setup step", () =>
   }),
 );
 
-it.effect.each([0, 1])("releases an async setup before its completion with exit %s", (exitCode) =>
-  Effect.gen(function* () {
-    const completion = yield* Deferred.make<{ exitCode: number | null; durationMs: number }>();
-    const harness = makeHarness({
-      runSetup: () =>
-        Effect.succeed({
-          status: "started" as const,
-          async: true,
-          scriptId: "setup",
-          scriptName: "Setup",
-          scriptCommand: "vp install",
-          terminalId: "setup",
-          cwd: "/repo-worktrees/feature",
-          completion: Deferred.await(completion),
-        }),
-    });
-    yield* Effect.gen(function* () {
-      const launches = yield* ThreadLaunch.ThreadLaunchService;
-      const threads = yield* ThreadManagement.ThreadManagementService;
-      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
-      const launched = yield* launches.launch(
-        launchInput({
-          command: `command:launch:async-${exitCode}`,
-          thread: `thread:launch:async-${exitCode}`,
-          message: "Start during setup",
-          workspace: { type: "worktree", baseRef: "main" },
-        }),
-      );
-      yield* tracker.stream(launched.threadId).pipe(
-        Stream.filter(
-          (snapshot) =>
-            snapshot?.stages.some((stage) => stage.id === "agent" && stage.status === "done") ===
-            true,
-        ),
-        Stream.runHead,
-      );
-      const running = yield* threads.getThreadProjection(launched.threadId);
-      assert.equal(running.runs[0]?.status, "starting");
-      assert.equal((yield* tracker.get(launched.threadId))?.phase, "running");
-      yield* Deferred.succeed(completion, { exitCode, durationMs: 1 });
-      yield* tracker.stream(launched.threadId).pipe(
-        Stream.filter((snapshot) => snapshot?.phase === "done"),
-        Stream.runHead,
-      );
-      const settled = yield* tracker.get(launched.threadId);
-      assert.equal(
-        settled?.stages.find((stage) => stage.id === "setup-script")?.status,
-        exitCode === 0 ? "done" : "failed",
-      );
-      assert.deepInclude(
-        settled?.stages.find((stage) => stage.id === "submodules"),
-        { status: "skipped", detail: "none" },
-      );
-      assert.equal(
-        (yield* threads.getThreadProjection(launched.threadId)).runs[0]?.status,
-        "starting",
-      );
-    }).pipe(Effect.provide(harness.layer));
-  }),
+it.effect.each(
+  [true, false].flatMap((namingFirst) => [0, 1].map((exitCode) => ({ namingFirst, exitCode }))),
+)(
+  "observes async setup independently of naming (namingFirst=$namingFirst, exit=$exitCode)",
+  ({ namingFirst, exitCode }) =>
+    Effect.gen(function* () {
+      const completion = yield* Deferred.make<{ exitCode: number | null; durationMs: number }>();
+      const allowNaming = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        serverSettings: { branchNamePrefix: "t3" },
+        generateBranchName: () =>
+          Deferred.await(allowNaming).pipe(Effect.as({ branch: "generated-branch" })),
+        runSetup: () =>
+          Effect.succeed({
+            status: "started" as const,
+            async: true,
+            scriptId: "setup",
+            scriptName: "Setup",
+            scriptCommand: "vp install",
+            terminalId: "setup",
+            cwd: "/repo-worktrees/feature",
+            completion: Deferred.await(completion),
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+        const launched = yield* launches.launch(
+          launchInput({
+            command: `command:launch:async-${exitCode}`,
+            thread: `thread:launch:async-${exitCode}`,
+            message: "Start during setup",
+            workspace: { type: "worktree", baseRef: "main" },
+          }),
+        );
+        if (namingFirst) yield* Deferred.succeed(allowNaming, undefined);
+        yield* tracker.stream(launched.threadId).pipe(
+          Stream.filter(
+            (snapshot) =>
+              snapshot?.stages.some((stage) =>
+                namingFirst
+                  ? stage.id === "agent" && stage.status === "done"
+                  : stage.id === "setup-script" && stage.status === "running",
+              ) === true,
+          ),
+          Stream.runHead,
+        );
+        const running = yield* threads.getThreadProjection(launched.threadId);
+        assert.equal(running.runs[0]?.status, namingFirst ? "starting" : "preparing");
+        assert.equal((yield* tracker.get(launched.threadId))?.phase, "running");
+        yield* Deferred.succeed(completion, { exitCode, durationMs: 1 });
+        yield* tracker.stream(launched.threadId).pipe(
+          Stream.filter(
+            (snapshot) =>
+              snapshot?.stages.some(
+                (stage) =>
+                  stage.id === "setup-script" &&
+                  stage.status === (exitCode === 0 ? "done" : "failed"),
+              ) === true,
+          ),
+          Stream.runHead,
+        );
+        if (!namingFirst) {
+          assert.equal(
+            (yield* tracker.get(launched.threadId))?.stages.find((stage) => stage.id === "naming")
+              ?.status,
+            "running",
+          );
+          yield* Deferred.succeed(allowNaming, undefined);
+        }
+        yield* tracker.stream(launched.threadId).pipe(
+          Stream.filter((snapshot) => snapshot?.phase === "done"),
+          Stream.runHead,
+        );
+        const settled = yield* tracker.get(launched.threadId);
+        assert.equal(
+          settled?.stages.find((stage) => stage.id === "setup-script")?.status,
+          exitCode === 0 ? "done" : "failed",
+        );
+        assert.deepInclude(
+          settled?.stages.find((stage) => stage.id === "submodules"),
+          { status: "skipped", detail: "none" },
+        );
+        assert.equal(
+          (yield* threads.getThreadProjection(launched.threadId)).runs[0]?.status,
+          "starting",
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }),
 );
 
 it.effect.each(["origin/master", ":/initial"])(

@@ -88,6 +88,37 @@ describe("fallbackTextGenerationModelSelection", () => {
     );
     expect(fallback?.instanceId).toBe(configured);
   });
+
+  it.each(["default", "first", "empty"] as const)(
+    "keeps automatic text generation inside a custom-only model catalog (%s)",
+    (selection) => {
+      const instanceId = ProviderInstanceId.make("claude_work");
+      const fallback = fallbackTextGenerationModelSelection(
+        {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            config: {
+              customModelsOnly: true,
+              customModels: selection === "empty" ? [] : ["custom-fast", "custom-reasoning"],
+            },
+          },
+        },
+        (candidate) => candidate === instanceId,
+        {
+          defaultModelSelection: {
+            instanceId,
+            model: selection === "default" ? "custom-reasoning" : "unavailable",
+            options: [{ id: "effort", value: "high" }],
+          },
+        },
+      );
+      expect(fallback).toEqual(
+        selection === "empty"
+          ? null
+          : { instanceId, model: selection === "default" ? "custom-reasoning" : "custom-fast" },
+      );
+    },
+  );
 });
 
 describe("serverSettings helpers", () => {

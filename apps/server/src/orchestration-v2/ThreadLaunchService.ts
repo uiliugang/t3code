@@ -585,7 +585,10 @@ const make = Effect.gen(function* () {
             });
             return yield* textGeneration.generateBranchName({
               ...namingInput,
-              modelSelection: current.modelSelection,
+              modelSelection: {
+                instanceId: current.modelSelection.instanceId,
+                model: current.modelSelection.model,
+              },
             });
           }),
         ),
@@ -781,11 +784,16 @@ const make = Effect.gen(function* () {
               })
               .pipe(Effect.mapError(mapError(input, "release-run", threadId)));
           yield* setupTracker.stageStatus(threadId, "agent", "done");
-          if (naming !== null) yield* Fiber.join(naming);
-          yield* prepared.completion.pipe(
-            Effect.catch((cause) =>
-              Effect.logWarning("Workspace setup failed after launch", { threadId, cause }),
-            ),
+          yield* Effect.all(
+            [
+              naming === null ? Effect.void : Fiber.join(naming),
+              prepared.completion.pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Workspace setup failed after launch", { threadId, cause }),
+                ),
+              ),
+            ],
+            { concurrency: "unbounded", discard: true },
           );
           yield* setupTracker.finish(threadId, "done");
         }).pipe(
@@ -1196,12 +1204,15 @@ const make = Effect.gen(function* () {
               )(`Setup script exited with ${completion.exitCode ?? "no exit code"}.`);
           });
           if (setup.async) {
-            awaitAsyncSetup = awaitCompletion.pipe(
-              Effect.catchCause((cause) =>
-                setupTracker.stage(threadId, "setup-script", {
-                  status: "failed",
-                  detail: failureDetail(Cause.squash(cause)),
-                }),
+            awaitAsyncSetup = Fiber.join(
+              yield* awaitCompletion.pipe(
+                Effect.catchCause((cause) =>
+                  setupTracker.stage(threadId, "setup-script", {
+                    status: "failed",
+                    detail: failureDetail(Cause.squash(cause)),
+                  }),
+                ),
+                Effect.forkChild,
               ),
             );
           } else {

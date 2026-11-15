@@ -97,9 +97,9 @@ test(
       await expect(browser.locator('[data-worktree-setup-phase="failed"]')).toBeVisible();
       await expect(fetchStage).toHaveAttribute("data-worktree-setup-status", "failed");
       await expect(
-        screen.getByText("Git could not authenticate with the remote.", { exact: false }).first(),
+        screen.getByText(/Git could not authenticate with the remote\.|Git 远端认证失败。/).first(),
       ).toBeVisible();
-      await expect(screen.getByRole("button", "Cancel")).toHaveCount(0);
+      await expect(screen.getByRole("button", /^(Cancel|取消)$/)).toHaveCount(0);
       await app.screenshot("fetch-failed");
     } finally {
       remote.closeAllConnections();

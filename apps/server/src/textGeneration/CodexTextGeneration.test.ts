@@ -763,7 +763,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
       primaryState === "not installed, fallback disabled for project" ||
       primaryState === "signed out, fallback failed"
         ? selection
-        : threadDefault,
+        : { instanceId: fallback, model: threadDefault.model },
     ]);
   }),
 );
