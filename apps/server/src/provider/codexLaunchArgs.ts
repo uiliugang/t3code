@@ -14,6 +14,9 @@ export const codexAppServerArgs = (launchArgs?: string) => [
   "app-server",
   "-c",
   "thread_unload_delay_secs=0",
+  // HTTP Responses requires call IDs, which Codex's standalone context tool outputs omit.
+  "-c",
+  "features.untrusted_as_tool_output=false",
   ...codexLaunchArgv(launchArgs),
 ];
 
