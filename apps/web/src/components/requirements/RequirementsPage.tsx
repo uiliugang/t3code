@@ -735,7 +735,12 @@ export function RequirementBoard({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={!permissions.get(item.environmentId)?.discoverWorkItems || busy}
+                      disabled={
+                        !permissions.get(item.environmentId)?.discoverWorkItems ||
+                        busy ||
+                        registry.get(serverEnvironment.configValueAtom(item.environmentId))
+                          ?.workItemDiscovery !== true
+                      }
                       onClick={async () => {
                         await discover({
                           environmentId: item.environmentId,

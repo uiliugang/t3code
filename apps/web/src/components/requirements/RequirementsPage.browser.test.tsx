@@ -116,7 +116,7 @@ function setup() {
   };
 }
 
-it("updates remote candidate actions when that environment's grants change", async () => {
+it("updates remote candidate actions when that environment's grants or capabilities change", async () => {
   using fixture = setup();
   const permission = serverEnvironment.mutateWorkItem.permissionAtom(
     EnvironmentId.make("remote"),
@@ -124,9 +124,26 @@ it("updates remote candidate actions when that environment's grants change", asy
   fixture.registry.set(permission, false);
   await using screen = await render(fixture.board());
   const add = screen.getByRole("button", { name: "Add task" });
+  const ignore = screen.getByRole("button", { name: "Ignore" });
   await expect.element(add).toBeDisabled();
   await act(() => fixture.registry.set(permission, true));
   await expect.element(add).toBeEnabled();
+  const config = serverEnvironment.configValueAtom(EnvironmentId.make("remote"));
+  const { workItemDiscovery: _, ...baseConfig } = fixture.registry.get(config)!;
+  for (const unavailable of [false, undefined]) {
+    await act(() =>
+      fixture.registry.ensureNode(config).setInitialValue({
+        ...baseConfig,
+        ...(unavailable === undefined ? {} : { workItemDiscovery: unavailable }),
+      }),
+    );
+    await expect.element(ignore).toBeDisabled();
+    await expect.element(add).toBeEnabled();
+  }
+  await act(() =>
+    fixture.registry.ensureNode(config).setInitialValue({ ...baseConfig, workItemDiscovery: true }),
+  );
+  await expect.element(ignore).toBeEnabled();
   await act(() => fixture.registry.set(permission, false));
   await expect.element(add).toBeDisabled();
 });
