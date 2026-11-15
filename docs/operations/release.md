@@ -23,8 +23,12 @@ every asset. CLI archives cover macOS arm64 and Linux x64/arm64. This fork's cli
 CLI installers, and npm launcher download runtimes from `uiliugang/t3code`,
 independently of desktop update settings. Use a tagged release for SSH connections:
 manual branch builds have temporary versions with no matching published runtime.
-Android uses `com.uiliugang.t3code` and epoch minutes as its versionCode;
-allow at least a minute between builds intended to upgrade each other.
+Android uses `com.uiliugang.t3code`. Its versionCode is
+`100000000 + major * 1000000 + minor * 1000 + patch`, with major at most 1999
+and minor/patch at most 999. This keeps stable versions ordered and above the old
+epoch-minute codes. Rebuilding the same version keeps the same versionCode;
+bump the release version to distribute a binary correction. Manual and PR builds
+use the source version without its prerelease suffix for this calculation.
 
 The macOS app is ad hoc signed without Apple notarization, so Gatekeeper can require
 approval in System Settings. It has no automatic update feed: Settings → About →

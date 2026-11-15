@@ -89,9 +89,10 @@ const make = Effect.gen(function* () {
         : yield* Effect.forEach(
             yield* stored(input.cwd, handle.key),
             (issue) =>
-              handle.capability
-                .read({ cwd: input.cwd, issue })
-                .pipe(Effect.map(({ title, state }) => ({ ...issue, title, state }))),
+              handle.capability.read({ cwd: input.cwd, issue }).pipe(
+                Effect.map(({ title, state }) => ({ ...issue, title, state })),
+                Effect.catchTags({ SourceControlProviderError: () => Effect.succeed(issue) }),
+              ),
             { concurrency: 4 },
           );
       return {

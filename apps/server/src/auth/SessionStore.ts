@@ -764,6 +764,8 @@ const make = Effect.gen(function* () {
         ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
       } satisfies IssuedSession;
     },
+    // A committed replacement must notify old sockets even if its request is canceled.
+    Effect.uninterruptible,
   );
 
   const verify: SessionStore["Service"]["verify"] = Effect.fn("SessionStore.verify")(
@@ -1001,26 +1003,26 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new ActiveSessionsListError({ cause })),
   );
 
-  const revoke: SessionStore["Service"]["revoke"] = Effect.fn("SessionStore.revoke")(
-    function* (sessionId) {
-      const revokedAt = yield* DateTime.now;
-      const revoked = yield* authSessions
-        .revoke({
-          sessionId,
-          revokedAt,
-        })
-        .pipe(Effect.mapError((cause) => new SessionRevocationError({ sessionId, cause })));
-      if (revoked) {
-        yield* Ref.update(connectedSessionsRef, (current) => {
-          const next = new Map(current);
-          next.delete(sessionId);
-          return next;
-        });
-        yield* emitRemoved(sessionId);
-      }
-      return revoked;
-    },
-  );
+  const revoke: SessionStore["Service"]["revoke"] = Effect.fn("SessionStore.revoke")(function* (
+    sessionId,
+  ) {
+    const revokedAt = yield* DateTime.now;
+    const revoked = yield* authSessions
+      .revoke({
+        sessionId,
+        revokedAt,
+      })
+      .pipe(Effect.mapError((cause) => new SessionRevocationError({ sessionId, cause })));
+    if (revoked) {
+      yield* Ref.update(connectedSessionsRef, (current) => {
+        const next = new Map(current);
+        next.delete(sessionId);
+        return next;
+      });
+      yield* emitRemoved(sessionId);
+    }
+    return revoked;
+  }, Effect.uninterruptible);
 
   const proofKeyThumbprintOf: SessionStore["Service"]["proofKeyThumbprintOf"] = (sessionId) =>
     authSessions
@@ -1041,7 +1043,7 @@ const make = Effect.gen(function* () {
     });
     yield* Effect.forEach(revokedSessionIds, emitRemoved, { discard: true });
     return revokedSessionIds.length;
-  });
+  }, Effect.uninterruptible);
 
   const revokeAllExcept: SessionStore["Service"]["revokeAllExcept"] = Effect.fn(
     "SessionStore.revokeAllExcept",
@@ -1075,7 +1077,7 @@ const make = Effect.gen(function* () {
       );
     }
     return revokedSessionIds.length;
-  });
+  }, Effect.uninterruptible);
 
   const awaitInvalidation = Effect.fn(function* (
     sessionId: AuthSessionId,

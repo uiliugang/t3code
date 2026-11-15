@@ -136,6 +136,40 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
   );
 
+  it.effect("publishes committed revocations even when their request is interrupted", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const repository = yield* AuthSessions.AuthSessionRepository;
+      const client = yield* sessions.issue(relaySessionInput);
+      const invalidated = yield* Deferred.make<void>();
+      yield* sessions
+        .awaitInvalidation(client.sessionId, relaySessionInput.proofKeyThumbprint)
+        .pipe(
+          Effect.andThen(Deferred.succeed(invalidated, undefined)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+      yield* TestClock.adjust(Duration.minutes(59));
+      yield* sessions.issue(relaySessionInput);
+      const revoke = repository.revoke;
+      using _interrupted = vi
+        .spyOn(repository, "revoke")
+        .mockImplementation((input) =>
+          revoke(input).pipe(
+            Effect.tap(() =>
+              Effect.withFiber((fiber) => Effect.sync(() => fiber.interruptUnsafe(fiber.id))),
+            ),
+          ),
+        );
+      const request = yield* sessions.revoke(client.sessionId).pipe(Effect.forkScoped);
+      yield* Fiber.await(request);
+      expect(
+        Option.getOrThrow(yield* repository.getById({ sessionId: client.sessionId })).revokedAt,
+      ).not.toBeNull();
+      yield* TestClock.adjust(Duration.minutes(1));
+      expect(yield* Deferred.isDone(invalidated)).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
   it.effect.each([
     { name: "a renewal for the same key", renewal: {}, closesAtMinute: 119 },
     {
