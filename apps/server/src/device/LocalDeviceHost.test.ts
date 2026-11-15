@@ -214,6 +214,7 @@ describe("AgentDevice startup", () => {
             .pipe(Effect.orDie, Effect.as(processOutput(0))),
         processOutput(0),
         undefined,
+        true,
         environment,
       );
       // The desktop shell snapshot updates the server's environment after the host exists.
