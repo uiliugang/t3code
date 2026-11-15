@@ -944,6 +944,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     expectedSession?: DeviceSession,
   ) {
     const expected = expectedSession ? [expectedSession] : undefined;
+    let didShutdown = false;
     const snapshot = (yield* SynchronizedRef.get(stateRef)).state;
     if (
       expectedSession &&
@@ -1043,6 +1044,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           }
           if (shouldClose && !(yield* shouldClose)) return [];
           yield* shutdownDevice(ready, session.deviceId, session.platform);
+          didShutdown = true;
         }
         if (shouldClose && !(yield* shouldClose)) return [];
         yield* publish((current) => ({
@@ -1052,7 +1054,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         return closing;
       }),
     );
-    if (input.shutdown)
+    if (didShutdown)
       yield* Effect.forEach(
         closing,
         (session) =>

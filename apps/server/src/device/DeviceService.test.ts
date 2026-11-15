@@ -1992,6 +1992,12 @@ describe("agent session release on close", () => {
           expect((yield* service.state).sessions).toEqual([]);
           expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(1);
           expect((yield* service.state).devices.some((device) => device.booted)).toBe(false);
+          const stopped = (yield* service.state).devices.find(
+            (device) => device.name === "Pixel_API_35",
+          )!;
+          const reopened = yield* openClaim(service, threadId, stopped.id);
+          expect(reopened.deviceId).toBe("emulator-5554");
+          expect((yield* service.state).devices.some((device) => device.booted)).toBe(true);
         }
       }),
   );

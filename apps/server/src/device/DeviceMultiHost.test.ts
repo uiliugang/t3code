@@ -18,9 +18,11 @@ it.effect("keeps hosts independent when serials collide and another host fails",
     const finishQuery = yield* Deferred.make<void>();
     const progress: string[] = [];
     let retiring = false;
+    let paused = false;
     const http = HttpClient.make((request) =>
       Effect.gen(function* () {
-        if (retiring && request.url === "http://a/api/devices") {
+        if (retiring && !paused && request.url === "http://a/api/devices") {
+          paused = true;
           yield* Deferred.succeed(queryEntered, undefined);
           yield* Deferred.await(finishQuery);
           progress.push("discovery completed");
