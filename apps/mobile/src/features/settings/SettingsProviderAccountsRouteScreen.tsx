@@ -40,6 +40,12 @@ import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
 import { RemoveProvider } from "./RemoveProvider";
 
+import {
+  canManageProvider,
+  needsProviderSummary,
+  providerSummaryStatus,
+} from "./provider-accounts.logic";
+
 export function SettingsProviderAccountsRouteScreen() {
   const t = useUiTranslation();
   const environmentMenu = useSettingsEnvironmentMenu();
@@ -124,8 +130,21 @@ function EnvironmentProviders({
           divider={index > 0}
         />
       ))}
-      {accounts.length === 0 ? (
-        <Text className="p-4 text-foreground-muted">{t("No providers with in-app sign-in.")}</Text>
+      {providers.filter(needsProviderSummary).map((provider) => (
+        <View key={provider.instanceId} className="p-4">
+          <ProviderAccountSummary
+            name={provider.displayName ?? provider.driver}
+            status={t(providerSummaryStatus(provider))}
+            email={
+              provider.enabled && provider.auth.status === "authenticated"
+                ? provider.auth.email?.trim()
+                : undefined
+            }
+          />
+        </View>
+      ))}
+      {providers.length === 0 ? (
+        <Text className="p-4 text-foreground-muted">{t("No providers available.")}</Text>
       ) : null}
       {claudeAccounts.map((provider) => (
         <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider} />
@@ -143,12 +162,6 @@ function managedProviders(
 ) {
   return (providersByEnvironment.get(environment.environmentId) ?? []).filter((provider) =>
     isManagedDriverAllowed(environment.serverConfig.managedPolicy, provider.driver),
-  );
-}
-
-function canManageProvider(provider: ServerProvider) {
-  return Boolean(
-    provider.setup?.canAuthenticate || (provider.driver === "acpRegistry" && provider.installed),
   );
 }
 
