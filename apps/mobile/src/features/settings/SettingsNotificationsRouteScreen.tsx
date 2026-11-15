@@ -205,12 +205,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     }
     if (result.value.type === "granted") {
       setNotificationStatus("enabled");
-      if (agentAwarenessNotificationsReady()) {
-        Dialog.alert(
-          t("Notifications enabled"),
-          t("Agent notifications are enabled for this device."),
-        );
-      } else {
+      if (!agentAwarenessNotificationsReady()) {
         Dialog.alert(
           t("Couldn't finish enabling notifications"),
           t(

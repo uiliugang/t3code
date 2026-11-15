@@ -20,7 +20,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { render } from "../../test/render";
+import { act, render } from "../../test/render";
 import { makeThreadFixture } from "~/test-fixtures";
 
 type ResultAtom<A> = Atom.Atom<AsyncResult.AsyncResult<A, Error>>;
@@ -126,6 +126,7 @@ vi.mock("./DiffFilePathCopyButton", () => ({ DiffFilePathCopyButton: () => null 
 
 import DiffPanel from "./DiffPanel";
 import { useDiffPanelSessionStore, useDiffPanelStore } from "~/diffPanelStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 
 const cwd = "/project-worktree";
 const errorMessage = "Could not find a common commit between 'origin/orphan' and HEAD.";
@@ -159,6 +160,7 @@ function setup(failedBaseRef: string | null) {
     });
     useDiffPanelSessionStore.setState({ collapsedFileKeysByScopeKey: {} });
     state.filePatches.clear();
+    useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
   };
   reset();
   state.diffFilesCollapsed = false;
@@ -264,6 +266,140 @@ it.each([
     });
   },
 );
+
+it("opens a repository-relative file from a nested project without a remote", async () => {
+  using context = setup("origin/orphan");
+  state.thread = { ...state.thread!, worktreePath: null };
+  const path = "project/back\\slash.txt";
+  const metadata = preview();
+  const source = {
+    ...metadata.sources[0]!,
+    files: [{ path, previousPath: null, additions: 1, deletions: 0 }],
+  };
+  state.previews.set("main", Atom.make(AsyncResult.success({ ...metadata, sources: [source] })));
+  state.status = Atom.make(
+    AsyncResult.success({
+      ...AsyncResult.getOrElse(context.registry.get(state.status), () => {
+        throw new Error("Missing status");
+      }),
+      workingTree: { rootPath: "/", files: [], insertions: 0, deletions: 0 },
+    }),
+  );
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+    </RegistryContext.Provider>,
+  );
+  await userEvent.click(screen.getByText(path, { exact: true }));
+  expect(
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, context.threadRef),
+  ).toMatchObject({ activeSurfaceId: "file:back\\slash.txt" });
+});
+
+it.each([false, true])(
+  "expands an unloaded file on the first click with default collapse %s",
+  async (collapsed) => {
+    using context = setup("origin/orphan");
+    state.diffFilesCollapsed = collapsed;
+    const path = `pending-${collapsed}.txt`;
+    const metadata = preview();
+    const source = {
+      ...metadata.sources[0]!,
+      files: [{ path, previousPath: null, additions: 1, deletions: 1 }],
+    };
+    state.previews.set("main", Atom.make(AsyncResult.success({ ...metadata, sources: [source] })));
+    useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+    await using screen = await render(
+      <RegistryContext.Provider value={context.registry}>
+        <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
+          <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+        </div>
+      </RegistryContext.Provider>,
+    );
+    const toggle = screen.getByRole("button", { name: `Expand ${path}`, exact: true });
+    await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(toggle);
+    await act(() =>
+      context.registry.set(
+        context.patch,
+        AsyncResult.success({
+          ...source,
+          diff: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-before\n+after\n`,
+        }),
+      ),
+    );
+    const loadedToggle = screen.getByRole("button", { name: `Collapse ${path}`, exact: true });
+    await expect.element(loadedToggle).toHaveAttribute("aria-expanded", "true");
+    await expect.element(screen.getByText("after", { exact: true })).toBeVisible();
+    await userEvent.click(loadedToggle);
+    await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
+  },
+);
+
+it("says a turn diff cut off at the server's size limit is incomplete", async () => {
+  using context = setup("origin/orphan");
+  state.checkpoints = [
+    {
+      runId: "run",
+      checkpointTurnCount: 1,
+      checkpointRef: "ref",
+      status: "ready",
+      files: [],
+      assistantMessageId: null,
+      completedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  state.checkpointDiff = {
+    diff: "diff --git a/first.txt b/first.txt\n--- a/first.txt\n+++ b/first.txt\n@@ -0,0 +1 @@\n+visible\n\n[truncated]",
+  };
+  useDiffPanelStore.getState().selectTurn(context.threadRef, RunId.make("run"));
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
+        <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+      </div>
+    </RegistryContext.Provider>,
+  );
+  await expect.element(screen.getByText("first.txt", { exact: true }).first()).toBeVisible();
+  await expect
+    .element(screen.getByText("This preview exceeds the size limit. Changes shown are incomplete."))
+    .toBeVisible();
+});
+
+// Paths as git's numstat reports them; the parsed patch trims the trailing space from its name.
+it.each([
+  { path: " leading.ts", name: " leading.ts" },
+  { path: "src/trailing.ts ", name: "src/trailing.ts" },
+])("reveals the turn file $path picked from the changed files", async ({ path, name }) => {
+  using context = setup("origin/orphan");
+  state.diffFilesCollapsed = true;
+  state.checkpoints = [
+    {
+      runId: "run",
+      checkpointTurnCount: 1,
+      checkpointRef: "ref",
+      status: "ready",
+      files: [],
+      assistantMessageId: null,
+      completedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  state.checkpointDiff = {
+    diff: `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\t\n@@ -0,0 +1 @@\n+revealed\n`,
+  };
+  useDiffPanelStore.getState().selectTurn(context.threadRef, RunId.make("run"), path);
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
+        <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+      </div>
+    </RegistryContext.Provider>,
+  );
+  await expect
+    .element(screen.getByRole("button", { name: `Collapse ${name}`, exact: true }))
+    .toHaveAttribute("aria-expanded", "true");
+});
 
 it("previews the first file, switches from the tree, and falls back when the file disappears", async () => {
   using context = setup(null);

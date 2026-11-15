@@ -36,111 +36,81 @@ const layerNoProject = Layer.mergeAll(
   Layer.mock(ProjectEnrichment.ProjectEnrichmentService)({}),
 );
 
-it.effect.each([false, true])(
-  "completes finalization when the post-checkpoint workspace refresh fails (multi-repository: %s)",
-  (multiRepository) => {
-    const threadId = ThreadId.make("thread_refresh_failure");
-    const runId = RunId.make("run_refresh_failure");
-    const scopeId = CheckpointScopeId.make("scope_refresh_failure");
-    const captured: string[] = [];
-    const layer = RunFinalization.layer.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
-            execute: () =>
-              Effect.sync(() => {
-                captured.push("checkpoint");
-              }),
-          }),
-          Layer.mock(ProjectionStore.ProjectionStoreV2)({
-            getCheckpointContext: () =>
-              Effect.succeed({
-                runs: [],
-                checkpointScopes: [
-                  {
-                    id: scopeId,
-                    runId,
-                    kind: "root_run" as const,
-                    cwd: "/repo",
-                    ...(multiRepository ? { workspace: workspaceFixture() } : {}),
-                  },
-                ],
-                checkpoints: [],
-              }),
-          }),
-          Layer.succeed(RunFinalization.RunFinalizationObserver, {
-            refresh: ({ cwd }) =>
-              Effect.gen(function* () {
-                captured.push(cwd);
-                return yield* new RunFinalization.RunFinalizationRefreshError({
-                  cwd: "/repo",
-                  cause: new Error("Git command timed out"),
-                });
-              }),
-            refreshAfterTurn: () => Effect.void,
-          }),
-        ),
+const finalizationLayer = (
+  scopeId: CheckpointScopeId,
+  runId: RunId,
+  steps: string[],
+  refresh: (typeof RunFinalization.RunFinalizationObserver)["Service"]["refresh"],
+) =>
+  RunFinalization.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
+          execute: () =>
+            Effect.sync(() => {
+              steps.push("checkpoint");
+            }),
+        }),
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getCheckpointContext: () =>
+            Effect.succeed({
+              runs: [],
+              checkpointScopes: [{ id: scopeId, runId, kind: "root_run" as const, cwd: "/repo" }],
+              checkpoints: [],
+            }),
+        }),
+        Layer.succeed(RunFinalization.RunFinalizationObserver, {
+          refresh,
+          refreshAfterTurn: () => Effect.void,
+        }),
       ),
-    );
-    return Effect.gen(function* () {
-      const service = yield* RunFinalization.RunFinalizationService;
-      yield* service.finalize({ threadId, runId, scopeId });
-      assert.deepEqual(
-        captured,
-        multiRepository
-          ? ["checkpoint", "/tasks/frontend", "/tasks/backend"]
-          : ["checkpoint", "/repo"],
-      );
-    }).pipe(Effect.provide(layer));
-  },
-);
+    ),
+  );
 
-it.effect("finishes while workspace refresh is pending and replaces it after the next run", () => {
-  const threadId = ThreadId.make("thread-slow-status");
-  const runId = RunId.make("run-slow-status");
-  const scopeId = CheckpointScopeId.make("scope-slow-status");
+it.effect("completes finalization when the post-checkpoint workspace refresh fails", () => {
+  const threadId = ThreadId.make("thread_refresh_failure");
+  const runId = RunId.make("run_refresh_failure");
+  const scopeId = CheckpointScopeId.make("scope_refresh_failure");
+  const captured: string[] = [];
+  const layer = finalizationLayer(scopeId, runId, captured, () =>
+    Effect.gen(function* () {
+      captured.push("refresh");
+      return yield* new RunFinalization.RunFinalizationRefreshError({
+        cwd: "/repo",
+        cause: new Error("Git command timed out"),
+      });
+    }),
+  );
   return Effect.gen(function* () {
-    const started = yield* Deferred.make<void>();
-    const interrupted = yield* Deferred.make<void>();
-    let refreshes = 0;
-    const layer = RunFinalization.layer.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
-            execute: () => Effect.void,
-          }),
-          Layer.mock(ProjectionStore.ProjectionStoreV2)({
-            getCheckpointContext: () =>
-              Effect.succeed({
-                runs: [],
-                checkpointScopes: [{ id: scopeId, runId, kind: "root_run" as const, cwd: "/repo" }],
-                checkpoints: [],
-              }),
-          }),
-          Layer.succeed(RunFinalization.RunFinalizationObserver, {
-            refreshAfterTurn: () => Effect.void,
-            refresh: () =>
-              Effect.gen(function* () {
-                refreshes++;
-                yield* Deferred.succeed(started, undefined);
-                return yield* Effect.never;
-              }).pipe(Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))),
-          }),
-        ),
-      ),
+    const service = yield* RunFinalization.RunFinalizationService;
+    yield* service.finalize({ threadId, runId, scopeId });
+    assert.deepEqual(captured, ["checkpoint", "refresh"]);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("completes finalization without waiting for the display refresh", () => {
+  const threadId = ThreadId.make("thread_slow_refresh");
+  const runId = RunId.make("run_slow_refresh");
+  const scopeId = CheckpointScopeId.make("scope_slow_refresh");
+  const steps: string[] = [];
+  const release = Deferred.makeUnsafe<void>();
+  const refreshed = Deferred.makeUnsafe<void>();
+  const layer = finalizationLayer(scopeId, runId, steps, () =>
+    Deferred.await(release).pipe(Effect.andThen(Deferred.succeed(refreshed, undefined))),
+  );
+  return Effect.gen(function* () {
+    const service = yield* RunFinalization.RunFinalizationService;
+    const finalize = yield* service
+      .finalize({ threadId, runId, scopeId })
+      .pipe(Effect.timeoutOption("1 minute"), Effect.forkChild({ startImmediately: true }));
+    yield* TestClock.adjust("1 minute");
+    assert.isTrue(
+      Option.isSome(yield* Fiber.join(finalize)),
+      "finalization waited on the display refresh, blocking the thread's next turn",
     );
-    yield* Effect.gen(function* () {
-      const service = yield* RunFinalization.RunFinalizationService;
-      const first = yield* service
-        .finalize({ threadId, runId, scopeId })
-        .pipe(Effect.forkChild({ startImmediately: true }));
-      yield* Deferred.await(started);
-      assert.isDefined(first.pollUnsafe(), "finalization waited on Git status");
-      yield* service.finalize({ threadId, runId: RunId.make("next-run"), scopeId });
-      yield* Deferred.await(interrupted);
-      assert.equal(refreshes, 2);
-    }).pipe(Effect.provide(layer));
-  });
+    yield* Deferred.succeed(release, undefined);
+    yield* Deferred.await(refreshed);
+  }).pipe(Effect.provide(layer));
 });
 
 it.effect.each(
@@ -470,3 +440,62 @@ it.effect("returns from the post-turn refresh while the identity resolver is sti
     assert.strictEqual(change.enrichment.repositoryIdentity?.canonicalKey, identity.canonicalKey);
   }).pipe(Effect.scoped, Effect.provide(layerIdentityRefresh(workspaceRoot, resolver)));
 });
+
+it.effect.each([false, true])(
+  "completes finalization when the post-checkpoint workspace refresh fails (multi-repository: %s)",
+  (multiRepository) => {
+    const threadId = ThreadId.make("thread_refresh_failure");
+    const runId = RunId.make("run_refresh_failure");
+    const scopeId = CheckpointScopeId.make("scope_refresh_failure");
+    const captured: string[] = [];
+    const layer = RunFinalization.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
+            execute: () =>
+              Effect.sync(() => {
+                captured.push("checkpoint");
+              }),
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getCheckpointContext: () =>
+              Effect.succeed({
+                runs: [],
+                checkpointScopes: [
+                  {
+                    id: scopeId,
+                    runId,
+                    kind: "root_run" as const,
+                    cwd: "/repo",
+                    ...(multiRepository ? { workspace: workspaceFixture() } : {}),
+                  },
+                ],
+                checkpoints: [],
+              }),
+          }),
+          Layer.succeed(RunFinalization.RunFinalizationObserver, {
+            refresh: ({ cwd }) =>
+              Effect.gen(function* () {
+                captured.push(cwd);
+                return yield* new RunFinalization.RunFinalizationRefreshError({
+                  cwd: "/repo",
+                  cause: new Error("Git command timed out"),
+                });
+              }),
+            refreshAfterTurn: () => Effect.void,
+          }),
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
+      const service = yield* RunFinalization.RunFinalizationService;
+      yield* service.finalize({ threadId, runId, scopeId });
+      assert.deepEqual(
+        captured,
+        multiRepository
+          ? ["checkpoint", "/tasks/frontend", "/tasks/backend"]
+          : ["checkpoint", "/repo"],
+      );
+    }).pipe(Effect.provide(layer));
+  },
+);

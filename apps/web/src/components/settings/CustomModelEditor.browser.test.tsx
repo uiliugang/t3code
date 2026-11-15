@@ -25,6 +25,7 @@ function ModelSettings() {
           builtInModels={[]}
           reservedSlugs={[]}
           onCancel={() => setEditing(false)}
+          onDraftChange={() => {}}
           onSave={() => setEditing(false)}
         />
       ) : (

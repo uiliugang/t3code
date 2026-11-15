@@ -74,8 +74,12 @@ export function reconcileEnvFile(
     const rawValue = match[2] ?? "";
     const quote = /^(['"`])/u.exec(rawValue)?.[1];
     if (quote !== undefined && !closesQuote(rawValue, quote)) {
-      const closing = lines.findIndex((candidate, at) => at > index && candidate.includes(quote));
-      if (closing !== -1) index = closing;
+      for (let closing = index + 1; closing < lines.length; closing += 1) {
+        if (lines[closing]!.includes(quote)) {
+          index = closing;
+          break;
+        }
+      }
     }
     if (!Object.hasOwn(entries, name)) {
       for (let at = start; at <= index; at += 1) out.push(lines[at]!);
