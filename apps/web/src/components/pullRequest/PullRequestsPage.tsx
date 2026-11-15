@@ -1448,14 +1448,7 @@ export function PullRequestsPage() {
       sourceControlClients.findByChangeRequestUrl(url) ?? sourceControlClients.get(undefined)
     ).changeRequest;
     void writeTextToClipboard(url, t("{term} link", { term: t(singular) })).then(
-      (didCopy) => {
-        if (didCopy)
-          toastManager.add({
-            type: "success",
-            title: t("{term} link copied", { term: shortLabel }),
-            description: url,
-          });
-      },
+      undefined,
       (error) => {
         toastManager.add({
           type: "error",

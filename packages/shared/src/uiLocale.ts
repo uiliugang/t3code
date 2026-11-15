@@ -44,6 +44,16 @@ const zhCN: Readonly<Record<string, string>> = {
   "Directory and all local files permanently deleted.": "目录及全部本地文件已彻底删除。",
   "Directory is no longer a cleanup candidate. Refresh the list.":
     "此目录已不再是清理候选，请刷新列表。",
+  "Expo Simulators": "Expo 模拟器",
+  "Expo project": "Expo 项目",
+  "Expo Simulators needs a paid Expo account. A session runs for up to 115 minutes and stops early when it is idle for the idle minutes, so idle minutes must be less than session minutes.":
+    "Expo 模拟器需要付费 Expo 账号。会话最长运行 115 分钟，达到空闲时限后会提前停止，因此空闲时限必须短于会话时限。",
+  " Saving restarts this host and stops its running sessions.":
+    " 保存会重启此主机并停止正在运行的会话。",
+  "This action doesn't commit your changes, so a feature branch can't be named. Create a branch yourself or continue on {branch}.":
+    "此操作不会提交修改，因此无法自动命名功能分支。请自行创建分支，或继续使用 {branch}。",
+  "messages queued to send": "消息已排队待发送",
+  "regenerating title": "正在重新生成标题",
 
   "API returned HTTP 401. Check the API key.": "API 返回 HTTP 401，请检查 API 密钥。",
   "API returned HTTP 403. Check the key and model permissions.":

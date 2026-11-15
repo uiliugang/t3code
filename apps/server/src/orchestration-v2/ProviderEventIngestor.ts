@@ -42,17 +42,18 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
 
-export class ProviderEventNormalizeError extends Schema.TaggedError<
-  ProviderEventNormalizeError,
-  { readonly brand: unique symbol }
->()("ProviderEventNormalizeError", {
-  providerSessionId: ProviderSessionId,
-  threadId: ThreadId,
-  providerEvent: ProviderAdapter.ProviderAdapterV2Event,
-  cause: Schema.optional(Schema.Defect()),
-}) {
+export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
+  "ProviderEventNormalizeError",
+  {
+    providerSessionId: ProviderSessionId,
+    threadId: ThreadId,
+    // The rejected payload cannot be validated again while reporting its normalization failure.
+    eventType: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
   override get message(): string {
-    return `Failed to normalize provider event ${this.providerEvent.type} for thread ${this.threadId}.`;
+    return `Failed to normalize provider event ${this.eventType} for thread ${this.threadId}.`;
   }
 }
 
@@ -721,7 +722,7 @@ export const layer: Layer.Layer<
                 new ProviderEventNormalizeError({
                   providerSessionId: input.providerSessionId,
                   threadId: input.threadId,
-                  providerEvent: input.event,
+                  eventType: input.event.type,
                   cause,
                 }),
             ),

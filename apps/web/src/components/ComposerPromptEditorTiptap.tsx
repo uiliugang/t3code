@@ -1,3 +1,4 @@
+import type { ComposerDraftContextRecords } from "./composerContextPresentation";
 import type { NodeViewProps } from "@tiptap/react";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Transaction } from "@tiptap/pm/state";
@@ -12,7 +13,6 @@ import type { IsKnownModel } from "~/composer-rich-text-doc";
 import type { SkillMeta } from "~/composer-rich-text-doc";
 import type { ComposerChangeKind } from "~/composer-undo-grouping";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
-import type { ComposerDraftContextRecords } from "./composerContextPresentation";
 import { useAtomValue } from "@effect/atom-react";
 import { documentChipKindForFileName } from "~/pierre-icons";
 import { isProviderSkillUserInvocable } from "@t3tools/client-runtime/providerSkills";
@@ -137,12 +137,17 @@ import { resolveAssistantCitationCommentDismissal } from "./chat/assistantCitati
 import { composerCodeBlockHighlight } from "./composerCodeBlockHighlight";
 import { importPastedComposerText, readPastedPlainText } from "./composerInlineTokenPaste";
 import { didComposerSelectionChangeVisibly } from "./composerSelection";
+import {
+  captureComposerAttachmentInsertion,
+  type ComposerAttachmentInsertion,
+} from "./composerAttachmentInsertion";
 
 export interface ComposerPromptEditorHandle {
   focus: () => void;
   focusAt: (cursor: number) => void;
   focusAtEnd: () => void;
   readSelectionRange: () => { start: number; end: number };
+  captureAttachmentInsertion: () => ComposerAttachmentInsertion | undefined;
   requestCitationComment: (request: ComposerCitationCommentRequest) => void;
   readSnapshot: () => {
     value: string;
@@ -1634,6 +1639,12 @@ function ComposerPromptEditorTiptapInner(
     selectMarkdownOffset(editor, normalizedExpandedCursor);
     const map = serializeEditorDoc(editor.state.doc);
     if (isFocused) scrollTiptapCaretIntoView(editor);
+    // A redraw later in this commit drops the editor's scroll offset, so reveal on the next frame.
+    else if (initialSelection) {
+      window.requestAnimationFrame(() => {
+        if (!editor.isDestroyed) revealCaretInEditor(editor);
+      });
+    }
     if (pendingCitation) {
       citationRequestRef.current = null;
       const target = map.runs.find(
@@ -1749,6 +1760,8 @@ function ComposerPromptEditorTiptapInner(
         readSnapshot();
         return selectionRangeRef.current;
       },
+      captureAttachmentInsertion: () =>
+        editor ? captureComposerAttachmentInsertion(editor) : undefined,
       requestCitationComment: (request) => {
         citationRequestRef.current = request;
         if (!editor) return;
@@ -1970,6 +1983,19 @@ function selectMarkdownOffset(editor: TiptapEditor, offset: number): void {
 /** Native scrolling follows only real input; explicitly reveal programmatically placed carets. */
 function scrollTiptapCaretIntoView(editor: TiptapEditor): void {
   editor.view.dispatch(editor.state.tr.scrollIntoView());
+}
+
+/** Scrolls only the editor's own box: a mounting composer must not move the timeline or page. */
+function revealCaretInEditor(editor: TiptapEditor): void {
+  const scroller = editor.view.dom;
+  const caret = editor.view.coordsAtPos(editor.state.selection.head);
+  const box = scroller.getBoundingClientRect();
+  // Padding can be reserved for controls drawn over the box, such as mobile pending-answer actions.
+  const style = getComputedStyle(scroller);
+  const bottom = box.bottom - parseFloat(style.paddingBottom);
+  const top = box.top + parseFloat(style.paddingTop);
+  if (caret.bottom > bottom) scroller.scrollTop += caret.bottom - bottom;
+  else if (caret.top < top) scroller.scrollTop -= top - caret.top;
 }
 
 function caretLineRect(range: Range, edge: "start" | "end"): DOMRect | null {

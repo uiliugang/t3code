@@ -38,7 +38,11 @@ import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { NativeLayoutObserver } from "../../native/NativeLayoutObserver";
-import { deriveBottomControlInsets, type NativeLayoutMetrics } from "../../lib/reserved-regions";
+import {
+  deriveBottomControlInsets,
+  deriveContentSideInsets,
+  type NativeLayoutMetrics,
+} from "../../lib/reserved-regions";
 import type {
   EnvironmentId,
   MessageId,
@@ -139,6 +143,7 @@ import {
   type LayoutVariant,
 } from "../../lib/layout";
 import { editPendingThreadMessage } from "../../state/edit-pending-thread-message";
+import { environmentCatalog } from "../../connection/catalog";
 import { deviceEnvironment } from "../../state/device";
 import { useEnvironmentQuery } from "../../state/query";
 import { threadDevicePreviews } from "../devices/threadDevicePreviews";
@@ -177,8 +182,6 @@ import { PendingApprovalCard } from "./PendingApprovalCard";
 import { ComposerErrorNotice } from "./ComposerErrorNotice";
 import { ManagedRuntimeModeNotice } from "./ManagedRuntimeModeNotice";
 import { FreshSessionNotice } from "./FreshSessionNotice";
-import { Notice } from "../../components/ui/Notice";
-import { formatTokens } from "@t3tools/shared/usageFormat";
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
 import { PendingUserInputCard } from "./PendingUserInputCard";
@@ -198,6 +201,7 @@ import {
   COMPOSER_COLLAPSED_CHROME,
   THREAD_COMPOSER_BOTTOM_GUTTER,
   ThreadComposer,
+  type ThreadComposerProps,
 } from "./ThreadComposer";
 import { ComposerPopoverHost } from "./ComposerPopoverHost";
 import { ThreadFeed, type ThreadFeedHistoryControls } from "./ThreadFeed";
@@ -249,11 +253,7 @@ export interface ThreadDetailScreenProps {
   readonly extensionStatuses?: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>;
   readonly isCompacting: boolean;
   /** Set while the next send compacts the thread first. */
-  readonly compactBeforeSend?: {
-    readonly tokens: number;
-    readonly keepFullHistory: boolean;
-    readonly toggleKeepFullHistory: () => void;
-  } | null;
+  readonly compactBeforeSend?: ThreadComposerProps["compactBeforeSend"];
   readonly creationState:
     | {
         readonly kind: "preparing";
@@ -374,6 +374,7 @@ const wakeAwareVisitShell = Atom.family((key: string) => {
 
 const threadVisitTracker = createThreadVisitTracker({
   threadShellAtom: (ref) => wakeAwareVisitShell(threadKey(ref)),
+  sessionGenerationAtom: environmentCatalog.sessionGenerationAtom,
   visit: threadEnvironment.visit,
 });
 
@@ -1549,7 +1550,7 @@ function ThreadDetailBody(
                   }
                   contentMaxWidth={contentMaxWidth}
                   historyControls={props.historyControls}
-                  contentSideInsets={nativeMetrics?.safeArea}
+                  contentSideInsets={deriveContentSideInsets(nativeMetrics)}
                   layoutVariant={layoutVariant}
                   usesAutomaticContentInsets={props.usesAutomaticContentInsets}
                   onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
@@ -1733,25 +1734,6 @@ function ThreadDetailBody(
                     {freshSessionAvailable ? (
                       <FreshSessionNotice threadKey={selectedThreadKey} />
                     ) : null}
-                    {props.compactBeforeSend ? (
-                      <View className="px-4 pb-3">
-                        <Notice
-                          message={
-                            props.compactBeforeSend.keepFullHistory
-                              ? `Your next message keeps all ${formatTokens(props.compactBeforeSend.tokens)} tokens of history.`
-                              : `Your next message compacts ${formatTokens(props.compactBeforeSend.tokens)} tokens of history first.`
-                          }
-                          icon="arrow.down.right.and.arrow.up.left"
-                          floating
-                          onDismiss={props.compactBeforeSend.toggleKeepFullHistory}
-                          dismissLabel={
-                            props.compactBeforeSend.keepFullHistory
-                              ? "Compact first"
-                              : "Keep the full history"
-                          }
-                        />
-                      </View>
-                    ) : null}
                     {props.canOperateThread ? (
                       <ManagedRuntimeModeNotice
                         threadKey={selectedThreadKey}
@@ -1921,6 +1903,7 @@ function ThreadDetailBody(
                         connectionState={props.connectionStateLabel}
                         environmentLabel={props.environmentLabel}
                         selectedThread={props.selectedThread}
+                        compactBeforeSend={props.compactBeforeSend ?? null}
                         hasCompactableConversation={
                           hasCompactableConversation && !props.isCompacting
                         }
@@ -1940,6 +1923,10 @@ function ThreadDetailBody(
                         serverConfig={props.serverConfig}
                         queueCount={props.selectedThreadQueueCount}
                         activeThreadBusy={props.activeThreadBusy}
+                        redirectsApproval={
+                          props.activePendingApprovals.length > 0 &&
+                          props.activePendingUserInput === null
+                        }
                         canStopThread={props.canStopThread}
                         environmentId={props.environmentId}
                         projectCwd={props.threadCwd ?? props.projectWorkspaceRoot}

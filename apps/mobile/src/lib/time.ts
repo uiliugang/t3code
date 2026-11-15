@@ -1,5 +1,17 @@
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
+// Host timestamps may carry UTC offsets or mixed fractions, so text order is not time order.
+export function compareTimestamps(left: string, right: string): number {
+  return (Date.parse(left) || 0) - (Date.parse(right) || 0);
+}
+
+export function byTimestamp(newestFirst: boolean) {
+  return (left: { readonly date: string }, right: { readonly date: string }) =>
+    newestFirst
+      ? compareTimestamps(right.date, left.date)
+      : compareTimestamps(left.date, right.date);
+}
+
 export function relativeTime(input: string, nowMs: number = Date.now(), t?: UiTranslator): string {
   const timestamp = Date.parse(input);
   if (Number.isNaN(timestamp)) {

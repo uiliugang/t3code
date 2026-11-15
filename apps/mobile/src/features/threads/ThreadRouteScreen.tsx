@@ -910,7 +910,7 @@ function ThreadRouteContent(
       selectedThread?.workspace?.mode === "isolated" ||
       (selectedThreadCreation?.message.creation?.workspaceMode === "worktree" &&
         selectedThreadCreation.outcome == null),
-    turnStarted: setupTurnStartedAt !== null,
+    runs: selectedThreadDetail?.runs ?? [],
     followUpSent:
       composer.selectedThreadFeed.filter(
         (entry) => entry.type === "message" && entry.message.role === "user",
