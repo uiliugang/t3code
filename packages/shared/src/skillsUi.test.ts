@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ManagedSkill, SkillSnapshot } from "@t3tools/contracts";
+import type { ManagedSkill, SkillSnapshot, SkillJob } from "@t3tools/contracts";
 import {
   skillGroups,
   skillRows,
@@ -8,6 +8,7 @@ import {
   skillDefaultTargetIds,
   skillBindingTargetIds,
   skillFailure,
+  skillConfigurationJob,
   skillStatus,
   skillSourceFailure,
 } from "./skillsUi.ts";
@@ -48,6 +49,28 @@ const snapshot: SkillSnapshot = {
 };
 
 describe("skill management views", () => {
+  it("keeps configuration failures only while they match the current skill error", () => {
+    const job: SkillJob = {
+      id: "configure-review",
+      input: { type: "configure", id: skill.id, policy: "automatic", targetIds: [] },
+      origin: "user",
+      status: "failed",
+      reason: "conflict",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(skillConfigurationJob({ ...skill, failureReason: "conflict" }, [job])).toBe(job);
+    expect(skillConfigurationJob({ ...skill, failureReason: null }, [job])).toBeUndefined();
+    expect(skillConfigurationJob(skill, [{ ...job, reason: null }])).toBeUndefined();
+    expect(
+      skillConfigurationJob({ ...skill, failureReason: "local-changes" }, [job]),
+    ).toBeUndefined();
+    const queued = { ...job, id: "retry", status: "queued" as const, reason: null };
+    expect(skillConfigurationJob(skill, [job, queued])).toBe(queued);
+    expect(skillConfigurationJob({ ...skill, id: "other" }, [job])).toBeUndefined();
+    expect(skillConfigurationJob(skill)).toBeUndefined();
+  });
+
   it("does not flag snapshots without update requirements as needing attention", () => {
     for (const policy of ["manual", "pinned"] as const) {
       const current = { ...skill, snapshotOnly: true, policy };

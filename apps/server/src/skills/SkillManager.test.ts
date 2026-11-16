@@ -1309,6 +1309,20 @@ describe("SkillManager", () => {
       yield* manager.drain;
       expect((yield* manager.snapshot).skills[0]?.failureReason).toBe("local-changes");
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("user edit");
+      for (let attempt = 0; attempt < 2; attempt++) {
+        yield* manager.mutate({
+          type: "configure",
+          id: first.id,
+          policy: first.policy,
+          targetIds: ["fixture"],
+        });
+        yield* manager.drain;
+      }
+      const configured = yield* manager.snapshot;
+      expect(configured.skills[0]?.failureReason).toBe("local-changes");
+      expect(configured.skills[0]?.status).toBe("failed");
+      expect(configured.jobs?.at(-1)?.status).toBe("completed");
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("user edit");
       const diff = yield* manager.inspect({ type: "diff", id: first.id });
       expect(diff.files.find((file) => file.path === "script.sh")).toMatchObject({
         status: "changed",

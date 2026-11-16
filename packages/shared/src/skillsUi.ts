@@ -8,6 +8,7 @@ import {
   type SkillSource,
   type SkillUpdatePolicy,
   type SkillTarget,
+  type SkillJob,
 } from "@t3tools/contracts";
 import type { UiTranslator } from "./uiLocale.ts";
 
@@ -61,6 +62,12 @@ export function skillStatus(skill: ManagedSkill) {
 export function skillFailure(skill: ManagedSkill) {
   if (skill.failureReason === "select-skill" && skill.choices?.length) return null;
   return skill.failureReason ? skillFailureMessage(skill.failureReason) : skill.failure;
+}
+export function skillConfigurationJob(skill: ManagedSkill, jobs: ReadonlyArray<SkillJob> = []) {
+  const job = jobs.findLast((job) => job.input.type === "configure" && job.input.id === skill.id);
+  return job?.status === "failed" && (!skill.failureReason || job.reason !== skill.failureReason)
+    ? undefined
+    : job;
 }
 export function skillRows(
   data: SkillSnapshot,

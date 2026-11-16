@@ -27,6 +27,7 @@ import {
   skillBindingTargetIds,
   skillStatus,
   skillFailure,
+  skillConfigurationJob,
   skillNextCheck,
   skillSourceName,
   skillSourceFailure,
@@ -355,9 +356,7 @@ function Skill({
   const [origin, setOrigin] = useState(false);
   const [inspection, setInspection] = useState<SkillInspection | null>(null);
   const [configuring, setConfiguring] = useState(false);
-  const configuration = data.jobs?.findLast(
-    (job) => job.input.type === "configure" && job.input.id === skill.id,
-  );
+  const configuration = skillConfigurationJob(skill, data.jobs);
   const name = skill.description ? skill.name : skill.requestedSkill || skill.locator;
   const failure = skillFailure(skill);
   const confirm = (label: string, action: SkillMutation) =>
