@@ -10,10 +10,12 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   hostReviewerQuery,
+  parseReviewerIds,
   reviewerCandidateView,
   type ReviewerTruncation,
 } from "@t3tools/client-runtime/pull-request-reviewers";
-import type { PullRequestReviewerCandidate } from "@t3tools/contracts";
+import { PullRequestOperationError, type PullRequestReviewerCandidate } from "@t3tools/contracts";
+import { Schema } from "effect";
 import { useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
@@ -28,6 +30,8 @@ import { useDebouncedValue } from "../../state/queries";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { PullRequestAvatar } from "./PullRequestPresentation";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
+
+const isPullRequestOperationError = Schema.is(PullRequestOperationError);
 
 const TRUNCATED_LABELS: Record<ReviewerTruncation, (error: string | null) => string> = {
   unsearchable: () =>
@@ -104,8 +108,13 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
   };
   const update = async (
     candidate: Pick<PullRequestReviewerCandidate, "id" | "kind" | "isRequested">,
+    fromInput = false,
   ) => {
     if (!allowed || inFlight.current) return;
+    const ids = parseReviewerIds(query);
+    const manual = fromInput || !pr?.capabilities.reviewers.listCandidates;
+    if (manual && (ids.length === 0 || ids.length > 25)) return;
+    if (candidate.isRequested && pr?.capabilities.reviewers.remove === false) return;
     inFlight.current = true;
     setPending(`${candidate.kind}:${candidate.id}`);
     setError(null);
@@ -113,7 +122,9 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
       ...target,
       input: {
         ...target.input,
-        reviewers: [{ id: candidate.id, kind: candidate.kind }],
+        reviewers: manual
+          ? ids.map((id) => ({ id, kind: "user" }))
+          : [{ id: candidate.id, kind: candidate.kind }],
         requested: !candidate.isRequested,
       },
     });
@@ -122,27 +133,80 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
     if (AsyncResult.isFailure(response)) {
       const cause = squashAtomCommandFailure(response);
       setError(
-        cause instanceof Error ? cause.message : "Couldn't update this review request. Try again.",
+        t(
+          isPullRequestOperationError(cause)
+            ? cause.detail
+            : cause instanceof Error
+              ? cause.message
+              : "Couldn't update this review request. Try again.",
+        ),
       );
       return;
     }
     if (hostQuery !== null) searchResult.refresh();
-    if (!pr?.capabilities.reviewers.listCandidates) {
+    if (manual) {
       search("");
       detail.refresh();
     }
   };
   const listCandidates = pr?.capabilities.reviewers.listCandidates === true;
-  const reviewerSearch: AppBarSearch | undefined = listCandidates
-    ? {
-        mode: "inline",
-        compactToolbar: true,
-        value: query,
-        onChangeText: search,
-        placeholder: t("Search reviewers"),
-      }
-    : undefined;
+  const reviewerIds = parseReviewerIds(query);
+  const tooMany = reviewerIds.length > 25;
+  const manualWithCandidates = pr?.provider === "meituan";
+  const reviewerSearch: AppBarSearch | undefined =
+    listCandidates && !manualWithCandidates
+      ? {
+          mode: "inline",
+          compactToolbar: true,
+          value: query,
+          onChangeText: search,
+          placeholder: t("Search reviewers"),
+        }
+      : undefined;
   const searchToolbarInset = useSearchToolbarInset(reviewerSearch);
+  const manualControls = pr ? (
+    <View className="gap-3">
+      <Text className="text-sm text-foreground-muted">
+        {t(pr.provider === "meituan" ? "Reviewer MIS" : "Reviewer IDs")}
+      </Text>
+      <TextInput
+        accessibilityLabel={t(pr.provider === "meituan" ? "Reviewer MIS" : "Reviewer IDs")}
+        placeholder={t(
+          pr.provider === "meituan" ? "mis1, mis2" : "Reviewer login or ID, separated by commas",
+        )}
+        placeholderTextColorClassName="accent-foreground-muted"
+        value={query}
+        onChangeText={(value) => {
+          search(value);
+          setError(null);
+        }}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={pending === null}
+        className="min-h-12 rounded-xl bg-grouped-card px-3 text-base"
+      />
+      <Button
+        label={t("Add reviewers")}
+        fullWidth
+        disabled={!allowed || reviewerIds.length === 0 || tooMany || pending !== null}
+        onPress={() => void update({ id: query.trim(), kind: "user", isRequested: false }, true)}
+      />
+      {pr.capabilities.reviewers.remove !== false ? (
+        <Button
+          label={t("Remove review request")}
+          fullWidth
+          tone="text"
+          disabled={!allowed || reviewerIds.length === 0 || tooMany || pending !== null}
+          onPress={() => void update({ id: query.trim(), kind: "user", isRequested: true }, true)}
+        />
+      ) : null}
+      {tooMany || error ? (
+        <Text selectable className="text-danger-foreground">
+          {tooMany ? t("Add up to 25 reviewers at a time.") : error}
+        </Text>
+      ) : null}
+    </View>
+  ) : null;
   return (
     <View className="flex-1 bg-sheet">
       <AppBar
@@ -168,11 +232,20 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           contentContainerStyle={{ paddingBottom: 24 + searchToolbarInset }}
           ListHeaderComponent={
             <View className="gap-3 px-4 py-4">
-              <Text className="text-xs text-foreground-muted">
-                {t(
-                  "Tap someone to request a review. Tap a requested reviewer to remove the request.",
-                )}
-              </Text>
+              {manualWithCandidates ? (
+                <>
+                  {manualControls}
+                  <Text className="text-xs font-t3-medium text-foreground-muted">
+                    {t("Default reviewers")}
+                  </Text>
+                </>
+              ) : (
+                <Text className="text-xs text-foreground-muted">
+                  {t(
+                    "Tap someone to request a review. Tap a requested reviewer to remove the request.",
+                  )}
+                </Text>
+              )}
               {!allowed ? (
                 <Text className="text-xs text-foreground-muted">
                   {t("Requesting reviews requires write access and an open {type}.", {
@@ -180,7 +253,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
                   })}
                 </Text>
               ) : null}
-              {error ? (
+              {error && !manualWithCandidates ? (
                 <Text selectable className="text-sm text-danger-foreground">
                   {error}
                 </Text>
@@ -193,8 +266,17 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${item.isRequested ? "Remove review request from" : "Request review from"} ${item.login}${item.kind === "team" ? " team" : ""}`}
-                accessibilityState={{ disabled: !allowed || pending !== null }}
-                disabled={!allowed || pending !== null}
+                accessibilityState={{
+                  disabled:
+                    !allowed ||
+                    pending !== null ||
+                    (item.isRequested && pr?.capabilities.reviewers.remove === false),
+                }}
+                disabled={
+                  !allowed ||
+                  pending !== null ||
+                  (item.isRequested && pr?.capabilities.reviewers.remove === false)
+                }
                 onPress={() => void update(item)}
                 className="min-h-16 flex-row items-center gap-3 border-b border-border-subtle px-4 py-3 active:opacity-70"
               >
@@ -231,11 +313,22 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
                     queryError
                       ? t("Couldn't load reviewers")
                       : query.trim()
-                        ? t("No matching reviewers")
-                        : t("No reviewers available")
+                        ? t(
+                            manualWithCandidates
+                              ? "No matching default reviewers"
+                              : "No matching reviewers",
+                          )
+                        : t(
+                            manualWithCandidates
+                              ? "No default reviewers"
+                              : "No reviewers available",
+                          )
                   }
                   detail={
-                    queryError ?? t("Search people and teams with access to this repository.")
+                    queryError ??
+                    (manualWithCandidates
+                      ? ""
+                      : t("Search people and teams with access to this repository."))
                   }
                   variant="plain"
                 />
@@ -272,39 +365,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
               </Text>
             )
           ) : (
-            <>
-              <Text className="text-sm text-foreground-muted">
-                {t("This provider accepts a reviewer ID but cannot list candidates.")}
-              </Text>
-              <TextInput
-                accessibilityLabel={t("Reviewer ID")}
-                placeholder={t("Reviewer login or ID")}
-                placeholderTextColorClassName="accent-foreground-muted"
-                value={query}
-                onChangeText={search}
-                autoCapitalize="none"
-                autoCorrect={false}
-                className="min-h-12 rounded-xl bg-grouped-card px-3 text-base"
-              />
-              <Button
-                label={t("Request review")}
-                fullWidth
-                disabled={!allowed || !query.trim() || pending !== null}
-                onPress={() => void update({ id: query.trim(), kind: "user", isRequested: false })}
-              />
-              <Button
-                label={t("Remove review request")}
-                fullWidth
-                tone="text"
-                disabled={!allowed || !query.trim() || pending !== null}
-                onPress={() => void update({ id: query.trim(), kind: "user", isRequested: true })}
-              />
-              {error ? (
-                <Text selectable className="text-danger-foreground">
-                  {error}
-                </Text>
-              ) : null}
-            </>
+            manualControls
           )}
         </ScrollView>
       )}

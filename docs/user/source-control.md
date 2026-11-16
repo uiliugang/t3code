@@ -218,14 +218,15 @@ unverified. Git clone and push still require your SSH key or Git credentials. SS
 Choose **Meituan Code** when cloning or publishing and enter `project/repository`.
 Existing Meituan Git remotes and pull request links from `dev.sankuai.com` are recognized
 automatically. When a repository requires an ONES work item, associate it with the source
-branch before creating a PR. Existing source-to-target PRs are reused and default reviewers
-remain enabled. Candidate reviewers for the target branch are added, with repository defaults as a fallback.
+branch before creating a PR. Existing source-to-target PRs are reused. New PRs do not request
+reviews automatically. After creation, request reviews by selecting repository defaults or
+entering MIS IDs separated by commas.
 
 You can read PRs and diffs, post comments, approve or request changes, mark drafts ready,
 close, reopen, and merge. Authors cannot approve or request changes on their own PRs.
 Human review assignments can be resolved and reopened. Creating inline comments,
-replying to review threads, reactions, editing PR text, and changing reviewer assignments
-are not available in this integration; use the Meituan Code website for those operations.
+replying to review threads, reactions, editing PR text, and removing reviewers are not available
+in this integration; use the Meituan Code website for those operations.
 
 The CLI exposes review assignments rather than complete discussion and commit history, so
 activity can be incomplete. It provides creation time but no last-update time, and listings

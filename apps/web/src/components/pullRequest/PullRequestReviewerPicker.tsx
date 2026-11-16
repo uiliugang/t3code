@@ -1,17 +1,20 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useAtomValue } from "@effect/atom-react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type {
   EnvironmentId,
   PullRequestRef,
   PullRequestReviewerCandidate,
+  PullRequestReviewerRequestInput,
 } from "@t3tools/contracts";
 import {
   hostReviewerQuery,
+  parseReviewerIds,
   reviewerCandidateView,
   type ReviewerTruncation,
 } from "@t3tools/client-runtime/pull-request-reviewers";
 import { CheckIcon, UserPlusIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
@@ -19,6 +22,7 @@ import { useDebouncedValue } from "~/state/queries";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 import { toastManager } from "../ui/toast";
+import { Button } from "../ui/button";
 import { PullRequestCandidatePicker } from "./PullRequestCandidatePicker";
 import { PullRequestActorLabel } from "./pullRequestPresentation";
 import { readableFailure } from "./pullRequestDetail.logic";
@@ -39,16 +43,28 @@ export function PullRequestReviewerPicker({
   reference,
   allowed,
   searchable,
+  manualEntry = false,
+  removable = true,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
   allowed: boolean;
   searchable: boolean;
+  manualEntry?: boolean;
+  removable?: boolean;
 }) {
   const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const canWrite = useAtomValue(
+    pullRequestEnvironment.requestReviewers.permissionAtom(environmentId),
+  );
+  const enabled = allowed && canWrite;
+  const ids = parseReviewerIds(query);
+  const tooMany = ids.length > 25;
 
   const candidatesQuery = useEnvironmentQuery(
     open ? pullRequestEnvironment.reviewerCandidates({ environmentId, input: reference }) : null,
@@ -74,41 +90,67 @@ export function PullRequestReviewerPicker({
     search: searchResult,
   });
 
-  const toggle = async (candidate: PullRequestReviewerCandidate) => {
-    if (pending !== null) return;
-    setPending(candidate.id);
+  const update = async (
+    reviewers: PullRequestReviewerRequestInput["reviewers"],
+    requested: boolean,
+  ) => {
+    if (
+      !enabled ||
+      inFlight.current ||
+      reviewers.length === 0 ||
+      reviewers.length > 25 ||
+      (!requested && !removable)
+    )
+      return;
+    inFlight.current = true;
+    setPending(reviewers.map((reviewer) => reviewer.id).join(", "));
+    setError(null);
+    const login = reviewers
+      .map(
+        (reviewer) =>
+          candidates.find(
+            (candidate) => candidate.id === reviewer.id && candidate.kind === reviewer.kind,
+          )?.login ?? reviewer.id,
+      )
+      .join(", ");
     const result = await requestReviewers({
       environmentId,
       input: {
         ...reference,
-        reviewers: [{ id: candidate.id, kind: candidate.kind }],
-        requested: !candidate.isRequested,
+        reviewers,
+        requested,
       },
     });
     setPending(null);
+    inFlight.current = false;
     if (result._tag === "Failure") {
-      toastManager.add({
-        type: "error",
-        title: candidate.isRequested
-          ? t("Could not take back the review request to {login}", { login: candidate.login })
-          : t("Could not ask {login} for a review", { login: candidate.login }),
-        description: readableFailure(
+      const description = t(
+        readableFailure(
           squashAtomCommandFailure(result),
           t(
             "The host refused it. Check that you have write access on this repository, and that they still have access to it.",
           ),
         ),
+      );
+      setError(description);
+      toastManager.add({
+        type: "error",
+        title: requested
+          ? t("Could not ask {login} for a review", { login })
+          : t("Could not take back the review request to {login}", { login }),
+        description,
       });
       return;
     }
     // The command reads the loaded list again only for somebody it lacked, and a search result
     // is keyed by what was typed, so the one on screen is read here or it keeps the old request.
     if (hostQuery !== null) searchResult.refresh();
+    if (manualEntry) setQuery((current) => (current === query ? "" : current));
     toastManager.add({
       type: "success",
-      title: candidate.isRequested
-        ? t("Review request to {login} taken back", { login: candidate.login })
-        : t("Review requested from {login}", { login: candidate.login }),
+      title: requested
+        ? t("Review requested from {login}", { login })
+        : t("Review request to {login} taken back", { login }),
     });
   };
 
@@ -116,13 +158,51 @@ export function PullRequestReviewerPicker({
     <PullRequestCandidatePicker
       icon={<UserPlusIcon className="size-3.5" />}
       label={t("Request a review")}
-      allowed={allowed}
+      allowed={enabled}
       disabledReason={t("Asking someone to review needs write access on this repository")}
       open={open}
       onOpenChange={setOpen}
       query={query}
-      onQueryChange={setQuery}
-      searchLabel={t("Search people with access")}
+      onQueryChange={(value) => {
+        setQuery(value);
+        setError(null);
+      }}
+      searchLabel={t(manualEntry ? "Reviewer MIS" : "Search people with access")}
+      listLabel={manualEntry ? t("Default reviewers") : undefined}
+      onQuerySubmit={
+        manualEntry
+          ? () =>
+              void update(
+                ids.map((id) => ({ id, kind: "user" })),
+                true,
+              )
+          : undefined
+      }
+      footer={
+        manualEntry ? (
+          <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
+            {tooMany || error ? (
+              <p role="alert" className="text-xs text-destructive">
+                {tooMany ? t("Add up to 25 reviewers at a time.") : error}
+              </p>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending !== null || ids.length === 0 || tooMany || !enabled}
+              onClick={() =>
+                void update(
+                  ids.map((id) => ({ id, kind: "user" })),
+                  true,
+                )
+              }
+            >
+              <UserPlusIcon />
+              {t(pending !== null ? "Adding..." : "Add reviewers")}
+            </Button>
+          </div>
+        ) : undefined
+      }
       isPending={(candidatesQuery.isPending && candidatesQuery.data === null) || searchPending}
       error={
         candidatesQuery.data === null
@@ -132,14 +212,23 @@ export function PullRequestReviewerPicker({
             : null
       }
       candidates={candidates}
-      emptyLabel={t("Nobody else has access to this repository.")}
-      noMatchLabel={t("Nobody with access matches that.")}
+      emptyLabel={t(
+        manualEntry ? "No default reviewers" : "Nobody else has access to this repository.",
+      )}
+      noMatchLabel={t(
+        manualEntry ? "No matching default reviewers" : "Nobody with access matches that.",
+      )}
       errorLabel={t("The people with access could not be read.")}
       truncated={truncation !== null}
       truncatedLabel={truncation === null ? "" : t(TRUNCATED_LABELS[truncation](searchError))}
       candidateKey={(candidate) => `${candidate.kind}:${candidate.id}`}
       disabled={pending !== null}
-      onSelect={(candidate) => void toggle(candidate)}
+      candidateDisabled={(candidate: PullRequestReviewerCandidate) =>
+        candidate.isRequested && !removable
+      }
+      onSelect={(candidate) =>
+        void update([{ id: candidate.id, kind: candidate.kind }], !candidate.isRequested)
+      }
     >
       {(candidate) => (
         <>

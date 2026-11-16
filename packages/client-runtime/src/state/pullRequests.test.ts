@@ -2059,6 +2059,80 @@ it.effect("keeps live detail reads separate from reads that allow stale data", (
   }),
 );
 
+it.effect(
+  "rereads loaded reviewers after a partially failed request without a refresh stream",
+  () =>
+    Effect.gen(function* () {
+      let added = false;
+      const reviewer = { login: "alice", name: null, avatarUrl: null };
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+        [WS_METHODS.pullRequestsDetail]: () =>
+          Effect.sync(() => ({ reviewers: added ? [reviewer] : [] })),
+        [WS_METHODS.pullRequestsReviewerCandidates]: () =>
+          Effect.sync(() => ({
+            candidates: [{ ...reviewer, id: reviewer.login, kind: "user", isRequested: added }],
+            truncated: false,
+          })),
+        [WS_METHODS.pullRequestsActivity]: () =>
+          Effect.sync(() => ({ reviewers: added ? [reviewer] : [] })),
+        [WS_METHODS.pullRequestsRequestReviewers]: () =>
+          Effect.gen(function* () {
+            added = true;
+            return yield* new MutationRefused();
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: {
+          projectId: ProjectId.make("project-1"),
+          host: "git.sankuai.com",
+          repository: "acme/web",
+          number: 1,
+        },
+      };
+      const detail = atoms.detail(target);
+      const candidates = atoms.reviewerCandidates(target);
+      const activity = atoms.activity(target);
+      const unmounts = [
+        registry.mount(detail),
+        registry.mount(candidates),
+        registry.mount(activity),
+      ];
+      yield* Effect.addFinalizer(() => Effect.sync(() => unmounts.forEach((unmount) => unmount())));
+      expect((yield* AtomRegistry.getResult(registry, detail)).reviewers).toEqual([]);
+      expect((yield* AtomRegistry.getResult(registry, candidates)).candidates[0]?.isRequested).toBe(
+        false,
+      );
+      expect((yield* AtomRegistry.getResult(registry, activity)).reviewers).toEqual([]);
+      const response = yield* Effect.promise(() =>
+        atoms.requestReviewers.run(registry, {
+          ...target,
+          input: {
+            ...target.input,
+            reviewers: [
+              { id: "alice", kind: "user" },
+              { id: "missinguser", kind: "user" },
+            ],
+            requested: true,
+          },
+        }),
+      );
+      expect(AsyncResult.isFailure(response)).toBe(true);
+      expect(
+        (yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true })).reviewers,
+      ).toEqual([reviewer]);
+      expect(
+        (yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true }))
+          .candidates[0]?.isRequested,
+      ).toBe(true);
+      expect(
+        (yield* AtomRegistry.getResult(registry, activity, { suspendOnWaiting: true })).reviewers,
+      ).toEqual([reviewer]);
+    }),
+);
+
 it.effect("updates cached labels after successful edits without rereading the host", () =>
   Effect.gen(function* () {
     let detailReads = 0;

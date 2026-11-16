@@ -28,8 +28,7 @@ const CAPABILITIES: PullRequestCapabilities = {
     resolve: true,
     verdicts: ["comment", "approve", "request-changes"],
   },
-  // code-cli can add reviewers but cannot remove them, so the toggle is not offered.
-  reviewers: { request: false, listCandidates: true },
+  reviewers: { request: true, listCandidates: true, remove: false },
 };
 
 export const make = Effect.gen(function* () {
@@ -102,7 +101,7 @@ export const make = Effect.gen(function* () {
     actions: CAPABILITIES.actions,
     comment: true,
     resolve: true,
-    requestReviewers: false,
+    requestReviewers: pr.state === "OPEN" || pr.state === "DRAFT",
     verdicts:
       pr.author.mis.toLowerCase() === viewer.toLowerCase()
         ? ["comment"]
@@ -349,7 +348,7 @@ export const make = Effect.gen(function* () {
         const result = yield* read(
           input,
           "listReviewerCandidates",
-          ["reviewers", "--target", pr.toRef.branch],
+          ["reviewers"],
           Json.Reviewers,
           "repo",
         );
@@ -363,13 +362,39 @@ export const make = Effect.gen(function* () {
               login: user.mis,
               name: user.name || null,
               avatarUrl: null,
-              isRequested: pr.reviewers.some((reviewer) => reviewer.mis === user.mis),
+              isRequested: pr.reviewers.some(
+                (reviewer) => reviewer.mis.toLowerCase() === user.mis.toLowerCase(),
+              ),
             })),
           truncated: false,
         };
       },
     ),
-    setReviewerRequest: () => unsupported("setReviewerRequest"),
+    setReviewerRequest: Effect.fn("MCodePullRequestProvider.setReviewerRequest")(function* (input) {
+      if (
+        !input.requested ||
+        input.reviewers.some(
+          (reviewer) => reviewer.kind !== "user" || !/^[a-zA-Z][a-zA-Z0-9._-]*$/u.test(reviewer.id),
+        )
+      )
+        return yield* unsupported("setReviewerRequest");
+      yield* run(input, "setReviewerRequest", [
+        "add-reviewer",
+        String(input.number),
+        ...input.reviewers.flatMap((reviewer) => ["--reviewer", reviewer.id]),
+      ]).pipe(
+        Effect.mapError((error) =>
+          input.reviewers.length > 1
+            ? new PullRequestProviderError({
+                ...error,
+                detail:
+                  "Some reviewers may already have been added. Check the reviewer list before retrying.",
+                cause: error,
+              })
+            : error,
+        ),
+      );
+    }),
     replyToThread: () => unsupported("replyToThread"),
     setReaction: () => unsupported("setReaction"),
     setThreadResolution: (input) =>

@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   hostReviewerQuery,
   mergeReviewerCandidates,
+  parseReviewerIds,
   reviewerCandidateView,
 } from "./pullRequestReviewers.ts";
 
@@ -14,6 +15,18 @@ const reviewer = (
     kind?: "user" | "team";
   },
 ) => ({ login, name, avatarUrl: null, id: login, kind, isRequested });
+
+describe("parseReviewerIds", () => {
+  it.each([
+    ["", []],
+    [" , , ", []],
+    [" liugang59 ", ["liugang59"]],
+    ["liugang59, zhangsan,LIUGANG59,,", ["liugang59", "zhangsan"]],
+    ["liugang59，zhangsan", ["liugang59", "zhangsan"]],
+  ])("parses comma-separated reviewer IDs: %s", (input, expected) => {
+    expect(parseReviewerIds(input)).toEqual(expected);
+  });
+});
 
 describe("mergeReviewerCandidates", () => {
   it("narrows the loaded candidates by login or name", () => {

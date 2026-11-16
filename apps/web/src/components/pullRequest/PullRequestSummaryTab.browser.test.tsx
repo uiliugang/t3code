@@ -1,10 +1,46 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { EnvironmentId, ProjectId, type PullRequestDetailView } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import * as Cause from "effect/Cause";
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
-const state = vi.hoisted(() => ({ update: vi.fn(), canUpdate: true }));
+const state = vi.hoisted(() => ({
+  update: vi.fn(),
+  canUpdate: true,
+  candidateQuery: {},
+  reviewerRequested: false,
+}));
+
+vi.mock(import("~/state/query"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    useEnvironmentQuery: ((input: Parameters<typeof actual.useEnvironmentQuery>[0]) => {
+      const query = actual.useEnvironmentQuery(input === state.candidateQuery ? null : input);
+      return input === state.candidateQuery
+        ? {
+            ...query,
+            data: {
+              candidates: [
+                {
+                  id: "reviewer",
+                  login: "reviewer",
+                  name: "Reviewer",
+                  kind: "user",
+                  avatarUrl: null,
+                  isRequested: state.reviewerRequested,
+                },
+              ],
+              truncated: false,
+            },
+            isPending: false,
+            error: null,
+          }
+        : query;
+    }) as never,
+  };
+});
 
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
@@ -24,8 +60,13 @@ vi.mock(import("~/state/pullRequests"), async (original) => {
     ...actual,
     pullRequestEnvironment: {
       ...actual.pullRequestEnvironment,
+      reviewerCandidates: (() => state.candidateQuery) as never,
       update: {
         ...actual.pullRequestEnvironment.update,
+        permissionAtom: () => (state.canUpdate ? allowed : denied),
+      },
+      requestReviewers: {
+        ...actual.pullRequestEnvironment.requestReviewers,
         permissionAtom: () => (state.canUpdate ? allowed : denied),
       },
     },
@@ -36,6 +77,7 @@ function setup() {
   state.update.mockReset();
   state.update.mockResolvedValue({ _tag: "Success", value: undefined });
   state.canUpdate = true;
+  state.reviewerRequested = false;
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   return {
     [Symbol.dispose]() {
@@ -151,6 +193,76 @@ it("keeps an unsaved description when collapsed and reopened, and after a failed
   expect(state.update).toHaveBeenCalledTimes(1);
   await expect.element(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   expect(screen.container.querySelector("textarea")!.value).toBe("Unsaved description");
+});
+
+it("lists unselected default reviewers and accepts manual MIS without losing failed input", async () => {
+  using _settings = setup();
+  state.update.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(
+      new Error(
+        "Some reviewers may already have been added. Check the reviewer list before retrying.",
+      ),
+    ),
+  });
+  const value = {
+    ...detail,
+    provider: SourceControlProviderKind.make("meituan"),
+    capabilities: {
+      ...detail.capabilities,
+      reviewers: { request: true, listCandidates: true, remove: false },
+    },
+    viewerPermissions: { ...detail.viewerPermissions, requestReviewers: true },
+  };
+  await using screen = await render(value);
+  await userEvent.click(screen.getByRole("combobox", { name: "Request a review" }));
+  await expect.element(page.getByRole("option")).toBeEnabled();
+  expect(state.update).not.toHaveBeenCalled();
+  const input = page.getByRole("combobox", { name: "Reviewer MIS" });
+  await expect.element(page.getByRole("button", { name: "Add reviewers" })).toBeDisabled();
+  await userEvent.type(input, "liugang59, zhangsan{Enter}");
+  await expect.element(page.getByRole("alert")).toBeVisible();
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent(
+      "Some reviewers may already have been added. Check the reviewer list before retrying.",
+    );
+  await expect.element(input).toHaveValue("liugang59, zhangsan");
+  expect(state.update).toHaveBeenCalledWith({
+    environmentId: EnvironmentId.make("environment"),
+    input: expect.objectContaining({
+      provider: SourceControlProviderKind.make("meituan"),
+      reviewers: [
+        { id: "liugang59", kind: "user" },
+        { id: "zhangsan", kind: "user" },
+      ],
+      requested: true,
+    }),
+  });
+  await expect
+    .element(page.getByRole("button", { name: "Remove review request" }))
+    .not.toBeInTheDocument();
+  await userEvent.click(page.getByRole("button", { name: "Add reviewers" }));
+  await expect.element(input).toHaveValue("");
+  let finishRequest = (_result: unknown) => {};
+  state.update.mockReturnValueOnce(new Promise((resolve) => (finishRequest = resolve)));
+  await userEvent.fill(input, "wangwu");
+  await userEvent.click(page.getByRole("button", { name: "Add reviewers" }));
+  await userEvent.fill(input, "zhaoliu");
+  await act(async () => finishRequest({ _tag: "Success", value: undefined }));
+  await expect.element(input).toHaveValue("zhaoliu");
+  await userEvent.clear(input);
+  await userEvent.click(page.getByRole("option"));
+  expect(state.update).toHaveBeenLastCalledWith({
+    environmentId: EnvironmentId.make("environment"),
+    input: expect.objectContaining({
+      reviewers: [{ id: "reviewer", kind: "user" }],
+      requested: true,
+    }),
+  });
+  state.reviewerRequested = true;
+  await screen.rerender(tab({ ...value }));
+  await expect.element(page.getByRole("option")).toBeDisabled();
 });
 
 it("ticks a description checkbox placed after an attachment and edits from the ticked body", async () => {

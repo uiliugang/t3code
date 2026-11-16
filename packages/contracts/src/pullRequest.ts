@@ -275,6 +275,8 @@ export type PullRequestEditCapabilities = typeof PullRequestEditCapabilities.Typ
 export const PullRequestReviewerCapabilities = Schema.Struct({
   request: Schema.Boolean,
   listCandidates: Schema.Boolean,
+  /** Absent on older hosts, which support removing requests wherever they support adding them. */
+  remove: Schema.optional(Schema.Boolean),
   /**
    * Reviewer candidates take a `query` the host matches past the first page. Absent, as from a
    * server that predates it, means the client narrows the loaded page itself.
