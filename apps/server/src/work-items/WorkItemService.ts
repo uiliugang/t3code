@@ -5,6 +5,7 @@ import {
   isRuntimeModeAbove,
   MessageId,
   type NodeId,
+  type OrchestrationV2ThreadProjection,
   type RunId,
   ProjectId,
   ThreadId,
@@ -19,7 +20,7 @@ import {
   type WorkItemCommandInput,
   type WorkItemDiscoverInput,
   type WorkItemDiscoverResult,
-  type WorkItemExecution,
+  WorkItemExecution,
   type WorkItemListInput,
   type WorkItemListResult,
   type WorkItemMutationResult,
@@ -132,6 +133,7 @@ const encodeItem = Schema.encodeEffect(Schema.fromJsonString(WorkItem));
 const encodeCandidate = Schema.encodeEffect(Schema.fromJsonString(WorkItemCandidate));
 const decodeItem = Schema.decodeUnknownEffect(Schema.fromJsonString(WorkItem));
 const decodeCandidate = Schema.decodeUnknownEffect(Schema.fromJsonString(WorkItemCandidate));
+const sameExecution = Schema.toEquivalence(WorkItemExecution);
 const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
 const make = Effect.gen(function* () {
@@ -285,6 +287,9 @@ const make = Effect.gen(function* () {
         | "status"
         | "error"
         | "summary"
+        | "stopRequested"
+        | "submitted"
+        | "artifacts"
         | "resolvedWorkspacePath"
         | "branch"
         | "checkpointId"
@@ -292,6 +297,7 @@ const make = Effect.gen(function* () {
         | "codeEvidenceCapturedAt"
       >
     >,
+    expected?: { version: number; execution: WorkItemExecution },
   ) {
     yield* writes.withPermits(1)(
       sql.withTransaction(
@@ -299,12 +305,22 @@ const make = Effect.gen(function* () {
           const item = yield* get(itemId);
           const current = item.executions.find((entry) => entry.id === executionId);
           if (!current) return;
+          if (
+            expected !== undefined &&
+            (item.version !== expected.version || !sameExecution(current, expected.execution))
+          ) {
+            yield* Queue.offer(pending, undefined);
+            return;
+          }
           const next = { ...current, ...patch };
           if (
             next.runId === current.runId &&
             next.status === current.status &&
             next.error === current.error &&
             next.summary === current.summary &&
+            next.stopRequested === current.stopRequested &&
+            next.submitted === current.submitted &&
+            next.artifacts === current.artifacts &&
             next.resolvedWorkspacePath === current.resolvedWorkspacePath &&
             next.branch === current.branch &&
             next.checkpointId === current.checkpointId &&
@@ -320,12 +336,75 @@ const make = Effect.gen(function* () {
               entry.id === executionId ? { ...next, updatedAt: now } : entry,
             ),
           };
+          if (next.runId !== current.runId && patch.stopRequested === false)
+            yield* sql`DELETE FROM work_item_outbox WHERE execution_id = ${executionId} AND effect_type = 'stop'`;
           yield* save(updated, "execution.updated", { executionId, ...patch });
         }),
       ),
     );
     yield* notify;
   }, Effect.mapError(persistenceError));
+
+  const resumeIssueExecution = Effect.fn("WorkItemService.resumeIssueExecution")(function* (
+    item: WorkItem,
+    execution: WorkItemExecution,
+    records: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "messages">,
+  ) {
+    const root = records.runs.find((run) => run.id === execution.runId);
+    if (
+      item.archived ||
+      item.status === "done" ||
+      root === undefined ||
+      !["completed", "failed", "interrupted", "cancelled"].includes(root.status) ||
+      execution.sideChatOf === undefined ||
+      execution.specRevision !== item.specRevision ||
+      records.thread.lineage.sideChat !== true ||
+      records.thread.lineage.parentThreadId !== execution.sideChatOf ||
+      records.thread.archivedAt !== null ||
+      records.thread.deletedAt !== null
+    )
+      return execution;
+    const rows = yield* sql<{
+      linked_at: string | null;
+    }>`SELECT (SELECT MIN(occurred_at) FROM work_item_events WHERE work_item_id = ${item.id} AND event_type = 'link_issue') AS linked_at
+      FROM work_item_delivery_actions WHERE work_item_id = ${item.id} AND kind = 'create_issue' LIMIT 1`;
+    if (rows[0] === undefined || (item.delivery !== undefined && rows[0].linked_at === null))
+      return execution;
+    const linkedAt = rows[0].linked_at;
+    const userMessages = new Set(
+      records.messages
+        .filter(
+          (message) =>
+            message.role === "user" &&
+            message.createdBy === "user" &&
+            (message.creationSource === "web" || message.creationSource === "mobile"),
+        )
+        .map((message) => message.id),
+    );
+    // Linking can commit before this worker sees the user's continuation.
+    const continued = records.runs
+      .filter(
+        (run) =>
+          run.ordinal > root.ordinal &&
+          run.status !== "rolled_back" &&
+          run.status !== "queued" &&
+          (linkedAt === null || DateTime.formatIso(run.requestedAt) <= linkedAt) &&
+          userMessages.has(run.userMessageId),
+      )
+      .toSorted((a, b) => b.ordinal - a.ordinal)[0];
+    return continued === undefined
+      ? execution
+      : {
+          ...execution,
+          runId: continued.id,
+          status: "recovering" as const,
+          stopRequested: false,
+          summary: "",
+          submitted: false,
+          artifacts: [],
+          error: null,
+        };
+  });
 
   const refreshExecutions = Effect.fn("WorkItemService.refreshExecutions")(function* (
     threadIds: ReadonlySet<ThreadId>,
@@ -335,17 +414,31 @@ const make = Effect.gen(function* () {
       checkpointThreadIds.size === 0
         ? sql`0 = 1`
         : sql`EXISTS (SELECT 1 FROM json_each(item_json, '$.executions') AS execution WHERE json_extract(execution.value, '$.threadId') IN ${sql.in([...checkpointThreadIds])})`;
+    const issueFilter = sql`json_extract(item_json, '$.archived') = 0 AND json_extract(item_json, '$.status') <> 'done' AND id IN (SELECT work_item_id FROM work_item_delivery_actions WHERE kind = 'create_issue')`;
+    const changedIssueFilter =
+      threadIds.size === 0
+        ? issueFilter
+        : sql`${issueFilter} AND EXISTS (SELECT 1 FROM json_each(item_json, '$.executions') AS execution WHERE json_extract(execution.value, '$.threadId') IN ${sql.in([...threadIds])})`;
     const rows = yield* sql<{
       item_json: string;
-    }>`SELECT item_json FROM work_items WHERE active_count > 0 OR ${evidenceFilter}`;
-    const items = yield* Effect.forEach(rows, (row) => decodeItem(row.item_json));
+      issue_creation: number;
+    }>`SELECT item_json, (${issueFilter}) AS issue_creation
+      FROM work_items WHERE active_count > 0 OR ${evidenceFilter} OR (${changedIssueFilter})`;
+    const items = yield* Effect.forEach(rows, (row) =>
+      decodeItem(row.item_json).pipe(
+        Effect.map((item) => ({
+          item,
+          canResumeIssue: row.issue_creation === 1,
+        })),
+      ),
+    );
     yield* Effect.forEach(
       items,
-      (item) =>
+      ({ item, canResumeIssue }) =>
         Effect.forEach(
           item.executions.filter(
             (entry) =>
-              (executionIsActive(entry) &&
+              ((executionIsActive(entry) || (canResumeIssue && entry.sideChatOf !== undefined)) &&
                 (threadIds.size === 0 || threadIds.has(entry.threadId))) ||
               checkpointThreadIds.has(entry.threadId),
           ),
@@ -371,14 +464,19 @@ const make = Effect.gen(function* () {
                 return;
               }
               const records = result.success;
-              const root = records.runs.find((run) => run.id === execution.runId);
+              const resumed = canResumeIssue
+                ? yield* resumeIssueExecution(item, execution, records)
+                : execution;
+              const root = records.runs.find((run) => run.id === resumed.runId);
               if (!root) {
                 if (executionIsActive(execution))
                   yield* updateExecution(item.id, execution.id, { status: "recovering" });
                 return;
               }
+              const resuming = root.id !== execution.runId;
+              const stopRequested = execution.stopRequested && !resuming;
               const owned = workItemExecutionScope(records, root.id);
-              if (!executionIsActive(execution)) {
+              if (!executionIsActive(execution) && !resuming) {
                 yield* updateExecution(
                   item.id,
                   execution.id,
@@ -386,7 +484,7 @@ const make = Effect.gen(function* () {
                 );
                 return;
               }
-              if (execution.stopRequested && owned.unrelatedActive) {
+              if (stopRequested && owned.unrelatedActive) {
                 yield* updateExecution(item.id, execution.id, {
                   status: "recovering",
                   error: WORK_ITEM_UNRELATED_WORK,
@@ -421,7 +519,7 @@ const make = Effect.gen(function* () {
                 const activeRun = owned.runs.find((run) =>
                   ["preparing", "queued", "starting", "running", "waiting"].includes(run.status),
                 );
-                status = execution.stopRequested
+                status = stopRequested
                   ? "stopping"
                   : activeRun?.status === "waiting" ||
                       awaitingInput ||
@@ -434,7 +532,7 @@ const make = Effect.gen(function* () {
               } else {
                 const terminal = progress.resultRun ?? root;
                 status =
-                  execution.stopRequested ||
+                  stopRequested ||
                   ["cancelled", "interrupted", "rolled_back"].includes(terminal.status)
                     ? "cancelled"
                     : terminal.status === "failed"
@@ -442,7 +540,7 @@ const make = Effect.gen(function* () {
                       : "completed";
               }
               const summary =
-                execution.summary ||
+                (!resuming && execution.summary) ||
                 (status === "completed"
                   ? (owned.messages
                       .filter(
@@ -459,16 +557,24 @@ const make = Effect.gen(function* () {
                 owned.runIds,
                 yield* nowIso,
               );
-              yield* updateExecution(item.id, execution.id, {
-                status,
-                summary,
-                error:
-                  status === "failed"
-                    ? (latestRootProviderFailure(progress.resultRun ?? root, records.turnItems)
-                        ?.message ?? "Agent execution failed. Open its conversation for details.")
-                    : null,
-                ...evidence,
-              });
+              yield* updateExecution(
+                item.id,
+                execution.id,
+                {
+                  ...(resuming
+                    ? { runId: root.id, stopRequested: false, submitted: false, artifacts: [] }
+                    : {}),
+                  status,
+                  summary,
+                  error:
+                    status === "failed"
+                      ? (latestRootProviderFailure(progress.resultRun ?? root, records.turnItems)
+                          ?.message ?? "Agent execution failed. Open its conversation for details.")
+                      : null,
+                  ...evidence,
+                },
+                { version: item.version, execution },
+              );
             }),
         ).pipe(Effect.asVoid),
       { concurrency: 4 },
@@ -730,16 +836,29 @@ const make = Effect.gen(function* () {
                     }
                     const owned =
                       rootRun === undefined ? null : workItemExecutionScope(records, rootRun.id);
+                    const continuedSideChat =
+                      threadId === execution.threadId &&
+                      execution.sideChatOf !== undefined &&
+                      records.thread.lineage.sideChat === true &&
+                      records.thread.lineage.parentThreadId === execution.sideChatOf &&
+                      rootRun !== undefined &&
+                      records.runs.every(
+                        (run) => run.ordinal <= rootRun.ordinal || owned?.runIds.has(run.id),
+                      );
                     if (
                       owned !== null &&
                       (owned.unrelatedActive ||
-                        owned.runs.length !== records.runs.length ||
-                        owned.subagents.length !== records.subagents.length)
+                        (!continuedSideChat &&
+                          (owned.runs.length !== records.runs.length ||
+                            owned.subagents.length !== records.subagents.length)))
                     ) {
                       ownershipConflict = true;
                       return false;
                     }
-                    stopRuns.set(threadId, owned?.runs.map((run) => run.id) ?? []);
+                    stopRuns.set(
+                      threadId,
+                      (continuedSideChat ? records.runs : (owned?.runs ?? [])).map((run) => run.id),
+                    );
                     const childIds = yield* threads
                       .listAppOwnedChildThreadIds(threadId)
                       .pipe(Effect.mapError(persistenceError));
@@ -782,7 +901,7 @@ const make = Effect.gen(function* () {
                   }).pipe(Effect.provideService(DispatchModeLimit, limit));
                 }
               }
-              yield* sql`DELETE FROM work_item_outbox WHERE execution_id = ${row.execution_id} AND effect_type = ${row.effect_type}`;
+              yield* sql`DELETE FROM work_item_outbox WHERE execution_id = ${row.execution_id} AND effect_type = ${row.effect_type} AND command_id = ${row.command_id}`;
             }).pipe(
               Effect.catch((cause) =>
                 updateExecution(
@@ -901,7 +1020,7 @@ const make = Effect.gen(function* () {
     callerThreadId?: ThreadId,
     callerLimits?: typeof SavedCallerLimits.Type,
   ) {
-    const result = yield* writes
+    const operation = writes
       .withPermits(1)(
         sql.withTransaction(
           Effect.gen(function* () {
@@ -962,7 +1081,7 @@ const make = Effect.gen(function* () {
                 updatedAt: now,
               };
             } else {
-              const item = yield* get(input.id);
+              let item = yield* get(input.id);
               yield* requireProject(item.projectId);
               if (
                 input.type === "report" &&
@@ -976,6 +1095,32 @@ const make = Effect.gen(function* () {
                   code: "invalid_request",
                   message: "An agent can only report its own task execution.",
                 });
+              }
+              if (input.type === "report" || input.type === "stop") {
+                const resumedExecutions = new Map<WorkItemExecutionId, WorkItemExecution>();
+                for (const execution of item.executions.filter(
+                  (entry) =>
+                    entry.sideChatOf !== undefined &&
+                    entry.runId !== null &&
+                    (input.executionId === undefined || entry.id === input.executionId),
+                )) {
+                  const records = yield* threads.getThreadRecords(execution.threadId, [
+                    "runs",
+                    "messages",
+                  ]);
+                  const resumed = yield* resumeIssueExecution(item, execution, records);
+                  if (resumed !== execution) {
+                    yield* sql`DELETE FROM work_item_outbox WHERE execution_id = ${execution.id} AND effect_type = 'stop'`;
+                    resumedExecutions.set(resumed.id, resumed);
+                  }
+                }
+                if (resumedExecutions.size > 0)
+                  item = {
+                    ...item,
+                    executions: item.executions.map(
+                      (entry) => resumedExecutions.get(entry.id) ?? entry,
+                    ),
+                  };
               }
               const executions: WorkItemExecution[] = [];
               if (input.type === "start") {
@@ -1116,6 +1261,10 @@ const make = Effect.gen(function* () {
         ),
       )
       .pipe(Effect.mapError(persistenceError));
+    // Resuming a command must not reassign a stop already claimed by the worker.
+    const result = yield* input.type === "report" || input.type === "stop"
+      ? effects.withPermits(1)(operation)
+      : operation;
     yield* notify;
     yield* Queue.offer(pending, undefined);
     return result;

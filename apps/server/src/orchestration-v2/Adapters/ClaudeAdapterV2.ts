@@ -2522,7 +2522,12 @@ export function claudeMcpQueryOverrides(input: {
   }
   const mcpAllowedTools = input.readOnlySandbox
     ? // This operation authorizes a task and destination server-side without granting local writes.
-      [...CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS, "mcp__t3-code__work_item_issue"]
+      [
+        ...CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
+        "mcp__t3-code__work_item_issue",
+        "mcp__t3-code__work_item_report",
+        "mcp__t3-code__work_item_submit",
+      ]
     : [CLAUDE_T3_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),

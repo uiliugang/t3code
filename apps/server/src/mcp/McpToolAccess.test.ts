@@ -135,6 +135,10 @@ const ProbeToolkit = Toolkit.make(
     McpSchema.EnabledWhen,
     McpInvocationContext.hiddenFromOutsideClients,
   ),
+  Tool.make("reports_work_item", probe).annotate(
+    McpSchema.EnabledWhen,
+    McpInvocationContext.hiddenFromOutsideClients,
+  ),
   Tool.make("writes", probe),
   Tool.make("writes_with_capability", probe),
   Tool.make("writes_threads", {
@@ -156,6 +160,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   reads_as_caller: McpToolAccess.readsAsCaller(() => ran),
   acts_as_caller: McpToolAccess.actsAsCaller(() => ran),
   issue_creation: McpToolAccess.issueCreation(() => ran),
+  reports_work_item: McpToolAccess.reportsWorkItem(() => ran),
   writes: McpToolAccess.writes(() => ran),
   writes_with_capability: McpToolAccess.writesWithCapability(() => ran),
   writes_threads: McpToolAccess.writesThreads(
@@ -271,6 +276,15 @@ it.effect.each([
   ["reads", threadCaller(sideChatThreadId), {}, "ran"],
   ["issue_creation", threadCaller(sideChatThreadId), {}, "ran"],
   ["issue_creation", ended, {}, "parent_not_active"],
+  ["reports_work_item", threadCaller(sideChatThreadId), {}, "ran"],
+  ["reports_work_item", supervised, {}, "ran"],
+  ["reports_work_item", previewOnly, {}, "capability_denied"],
+  ["reports_work_item", ended, {}, "parent_not_active"],
+  ["reports_work_item", background, {}, "ran"],
+  ["reports_work_item", oldProviderBackground, {}, "parent_not_active"],
+  ["reports_work_item", mismatchedProvider, {}, "parent_not_active"],
+  ["reports_work_item", archivedBackground, {}, "parent_not_active"],
+  ["reports_work_item", unknownOwnerBackground, {}, "parent_not_active"],
   ["writes", threadCaller(sideChatThreadId), {}, "capability_denied"],
   ["starts_threads", threadCaller(sideChatThreadId), {}, "capability_denied"],
   ["writes_environment", threadCaller(sideChatThreadId), {}, "capability_denied"],
@@ -499,20 +513,23 @@ it.effect("refuses a linked environment to a tool that acts as its calling threa
 );
 
 // Discovery hides these tools. The handler must refuse on its own if that ever changes.
-it.effect.each(["reads_as_caller", "acts_as_caller", "issue_creation"] as const)(
-  "%s refuses an outside client behind discovery",
-  (tool) =>
-    Effect.gen(function* () {
-      const built = yield* ProbeToolkit;
-      const { result } = yield* built
-        .handle(tool, {})
-        .pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption));
-      expect(result).toMatchObject({ code: "thread_credential_required" });
-    }).pipe(
-      Effect.provide(McpToolAccess.HandlersLayer.layer(layerProbeHandlers)),
-      Effect.provideService(McpInvocationContext.McpInvocationContext, fullAccessClient),
-      Effect.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
-    ),
+it.effect.each([
+  "reads_as_caller",
+  "acts_as_caller",
+  "issue_creation",
+  "reports_work_item",
+] as const)("%s refuses an outside client behind discovery", (tool) =>
+  Effect.gen(function* () {
+    const built = yield* ProbeToolkit;
+    const { result } = yield* built
+      .handle(tool, {})
+      .pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption));
+    expect(result).toMatchObject({ code: "thread_credential_required" });
+  }).pipe(
+    Effect.provide(McpToolAccess.HandlersLayer.layer(layerProbeHandlers)),
+    Effect.provideService(McpInvocationContext.McpInvocationContext, fullAccessClient),
+    Effect.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+  ),
 );
 
 it.effect("refuses to build a thread-bound tool that outside clients would be offered", () =>

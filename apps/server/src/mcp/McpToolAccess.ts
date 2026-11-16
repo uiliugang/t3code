@@ -187,6 +187,19 @@ export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A,
     undefined,
   );
 
+// WorkItemService checks execution ownership; reporting does not grant other side-chat writes.
+export const reportsWorkItem = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
+  declare(
+    (params: P) =>
+      requireThreadCaller.pipe(
+        Effect.andThen(refuseReadOnlyClient),
+        Effect.andThen(readCaller()),
+        Effect.tap(assertLiveCaller),
+        Effect.flatMap(() => handle(params)),
+      ),
+    undefined,
+  );
+
 /**
  * Changes something that belongs to no thread, such as a pending upload or a
  * scheduled task. Work a linked environment started may not: none of it

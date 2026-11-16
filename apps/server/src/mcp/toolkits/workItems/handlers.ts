@@ -148,8 +148,8 @@ export const layer = McpToolAccess.toLayer(WorkItemToolkit, {
   work_item_update: McpToolAccess.writes((input) => mutate({ ...input, type: "update" })),
   work_item_start: McpToolAccess.writes((input) => mutate({ ...input, type: "start" })),
   work_item_stop: McpToolAccess.writes((input) => mutate({ ...input, type: "stop" })),
-  work_item_report: McpToolAccess.actsAsCaller((input) => mutate({ ...input, type: "report" })),
-  work_item_submit: McpToolAccess.actsAsCaller((input) =>
+  work_item_report: McpToolAccess.reportsWorkItem((input) => mutate({ ...input, type: "report" })),
+  work_item_submit: McpToolAccess.reportsWorkItem((input) =>
     mutate({ ...input, type: "report", submitted: true }),
   ),
 });
