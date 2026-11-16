@@ -6,6 +6,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  RunId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -155,6 +156,84 @@ it.layer(layerTest)("DispatchModeLimit", (it) => {
           Effect.flip,
         );
       assert.equal(escalated._tag, "OrchestratorThreadAboveModeLimitError");
+      assert.isNull(yield* projections.getThreadShell(targetThreadId));
+
+      const escalatedRuntime = yield* orchestrator
+        .dispatch({
+          ...fork,
+          commandId: CommandId.make("fork-with-broader-runtime-mode"),
+          sideChat: true,
+          runtimeMode: "full-access",
+          interactionMode: "plan",
+        })
+        .pipe(
+          Effect.provideService(DispatchModeLimit, { ...supervised, interactionMode: "plan" }),
+          Effect.flip,
+        );
+      assert.equal(escalatedRuntime._tag, "OrchestratorThreadAboveModeLimitError");
+      assert.isNull(yield* projections.getThreadShell(targetThreadId));
+
+      const sink = yield* EventSink.EventSinkV2;
+      const now = yield* DateTime.now;
+      const sourceRunId = RunId.make("run:limit-fork-source");
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make("event:limit-fork-source-run"),
+            type: "run.created",
+            threadId: sourceThreadId,
+            occurredAt: now,
+            payload: {
+              id: sourceRunId,
+              threadId: sourceThreadId,
+              ordinal: 1,
+              providerInstanceId: instanceId,
+              modelSelection: { instanceId, model: "gpt-5" },
+              providerThreadId: null,
+              userMessageId: MessageId.make("message:limit-fork-source"),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: "completed",
+              queuePosition: null,
+              requestedAt: now,
+              startedAt: now,
+              completedAt: now,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+        ],
+      });
+      const workspaceThreadId = ThreadId.make("thread:limit-fork-workspace");
+      yield* orchestrator.dispatch({
+        type: "thread.fork",
+        commandId: CommandId.make("create-fork-workspace"),
+        sourceThreadId,
+        targetThreadId: workspaceThreadId,
+        sourcePoint: { type: "run", runId: sourceRunId },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.make("raise-fork-workspace"),
+        threadId: workspaceThreadId,
+        runtimeMode: "full-access",
+      });
+      const raisedWorkspaceFork = yield* orchestrator
+        .dispatch({
+          type: "thread.fork",
+          commandId: CommandId.make("fork-from-raised-workspace"),
+          sourceThreadId,
+          workspaceThreadId,
+          targetThreadId,
+          sourcePoint: { type: "run", runId: sourceRunId },
+          createdBy: "agent",
+          creationSource: "mcp",
+        })
+        .pipe(Effect.provideService(DispatchModeLimit, supervised), Effect.flip);
+      assert.ok(raisedWorkspaceFork._tag === "OrchestratorThreadAboveModeLimitError");
+      assert.equal(raisedWorkspaceFork.threadId, workspaceThreadId);
       assert.isNull(yield* projections.getThreadShell(targetThreadId));
     }),
   );

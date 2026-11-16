@@ -48,6 +48,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -102,6 +103,7 @@ import * as PortScanner from "../preview/PortScanner.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
+import { ThreadForkPlanError } from "./ThreadForkService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { workspaceFixture } from "./testkit/workspaceFixtures.ts";
@@ -125,6 +127,7 @@ const modelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5.4",
 } satisfies ModelSelection;
+const isThreadForkPlanError = Schema.is(ThreadForkPlanError);
 const alternateInstanceId = ProviderInstanceId.make("codex_alternate");
 
 const layerVcsDriverRegistryTest = VcsDriverRegistry.layer.pipe(
@@ -1185,6 +1188,253 @@ it.layer(layerProjectDeletionTest)("project deletion during thread commands", (i
         assert.isNotNull((yield* orchestrator.getThreadProjection(sideChatId)).thread.deletedAt);
       }).pipe(Effect.ensuring(Effect.sync(() => lockSpy.mockRestore())));
     }),
+  );
+
+  it.effect(
+    "rejects inverse workspace ancestry while an app-owned child waits on its parent lock",
+    () =>
+      Effect.gen(function* () {
+        const projects = yield* ProjectService.ProjectService;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+        const projectId = ProjectId.make("inverse-workspace");
+        const parentId = ThreadId.make("inverse-parent");
+        const childId = ThreadId.make("inverse-child");
+        yield* projects.create({
+          commandId: CommandId.make("inverse-project"),
+          projectId,
+          title: "Inverse",
+          workspaceRoot: "/work/inverse",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("inverse-parent"),
+          threadId: parentId,
+          projectId,
+          title: "Parent",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const parent = (yield* orchestrator.getThreadProjection(parentId)).thread;
+        const now = yield* DateTime.now;
+        yield* sink.write({
+          events: [
+            {
+              id: EventId.make("inverse-child"),
+              type: "thread.created",
+              threadId: childId,
+              occurredAt: now,
+              payload: {
+                ...parent,
+                id: childId,
+                lineage: {
+                  parentThreadId: parentId,
+                  rootThreadId: parentId,
+                  relationshipToParent: "subagent",
+                },
+                forkedFrom: {
+                  type: "node",
+                  nodeId: NodeId.make("inverse-node"),
+                },
+              },
+            },
+          ],
+        });
+        const run = yield* writeHtmlRenderRun({
+          threadId: childId,
+          key: "inverse-child",
+          ordinal: 1,
+        });
+        const holdingParent = yield* Deferred.make<void>();
+        const releaseParent = yield* Deferred.make<void>();
+        const withLock = executor.withLock;
+        const observeLock: ThreadCommandExecutor.ThreadCommandExecutor["Service"]["withLock"] = (
+          key,
+          effect,
+        ) =>
+          key === parentId
+            ? withLock(
+                key,
+                Deferred.succeed(holdingParent, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseParent)),
+                  Effect.andThen(effect),
+                ),
+              )
+            : withLock(key, effect);
+        const spy = vi.spyOn(executor, "withLock").mockImplementation(observeLock);
+        yield* Effect.gen(function* () {
+          const response = yield* orchestrator
+            .dispatch({
+              type: "runtime-request.respond",
+              commandId: CommandId.make("inverse-response"),
+              threadId: childId,
+              requestId: RuntimeRequestId.make("missing-request"),
+            })
+            .pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(holdingParent);
+          const error = yield* orchestrator
+            .dispatch({
+              type: "thread.fork",
+              commandId: CommandId.make("inverse-fork"),
+              sourceThreadId: childId,
+              workspaceThreadId: parentId,
+              targetThreadId: ThreadId.make("inverse-target"),
+              sourcePoint: { type: "run", runId: run.runId },
+              createdBy: "user",
+              creationSource: "web",
+            })
+            .pipe(Effect.flip);
+          assert.ok(isThreadForkPlanError(error.cause));
+          assert.equal(
+            error.cause.cause,
+            "Workspace thread must inherit from the fork source thread.",
+          );
+          yield* Deferred.succeed(releaseParent, undefined);
+          yield* Fiber.join(response);
+        }).pipe(Effect.ensuring(Effect.sync(() => spy.mockRestore())));
+      }),
+  );
+
+  it.effect(
+    "inherited forks traverse promoted side chats and serialize with workspace deletion",
+    () =>
+      Effect.gen(function* () {
+        const projects = yield* ProjectService.ProjectService;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+        const projectId = ProjectId.make("inherited-workspace");
+        const sourceId = ThreadId.make("inherited-source");
+        const sideChatId = ThreadId.make("inherited-sidechat");
+        const workspaceId = ThreadId.make("inherited-workspace");
+        yield* projects.create({
+          commandId: CommandId.make("inherited-project"),
+          projectId,
+          title: "Inherited",
+          workspaceRoot: "/work/inherited",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("inherited-source"),
+          threadId: sourceId,
+          projectId,
+          title: "Source",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const run = yield* writeHtmlRenderRun({
+          threadId: sourceId,
+          key: "inherited-source",
+          ordinal: 1,
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.fork",
+          commandId: CommandId.make("inherited-sidechat"),
+          sourceThreadId: sourceId,
+          targetThreadId: sideChatId,
+          sourcePoint: { type: "run", runId: run.runId },
+          sideChat: true,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const sideRun = yield* writeHtmlRenderRun({
+          threadId: sideChatId,
+          key: "inherited-sidechat",
+          ordinal: 1,
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.fork",
+          commandId: CommandId.make("inherited-promote"),
+          sourceThreadId: sideChatId,
+          targetThreadId: workspaceId,
+          sourcePoint: { type: "run", runId: sideRun.runId },
+          isolateWorkspace: true,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("inherited-checkout"),
+          threadId: workspaceId,
+          branch: "feature/current",
+          worktreePath: "/work/current",
+        });
+        const fork = {
+          type: "thread.fork" as const,
+          commandId: CommandId.make("inherited-valid"),
+          sourceThreadId: sourceId,
+          workspaceThreadId: workspaceId,
+          targetThreadId: ThreadId.make("inherited-valid"),
+          sourcePoint: { type: "run" as const, runId: run.runId },
+          createdBy: "user" as const,
+          creationSource: "web" as const,
+        };
+        yield* orchestrator.dispatch(fork);
+        const inherited = (yield* orchestrator.getThreadProjection(fork.targetThreadId)).thread;
+        assert.equal(inherited.worktreePath, "/work/current");
+        assert.isUndefined(inherited.lineage.sideChat);
+        const deleteCommandId = CommandId.make("inherited-delete");
+        const deleting = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const forkQueued = yield* Deferred.make<void>();
+        const commit = sink.commitCommand;
+        const deletionLock = executor.withDeletionLock;
+        const commitSpy = vi
+          .spyOn(sink, "commitCommand")
+          .mockImplementation((input) =>
+            input.commandId === deleteCommandId
+              ? Deferred.succeed(deleting, undefined).pipe(
+                  Effect.andThen(Deferred.await(release)),
+                  Effect.andThen(commit(input)),
+                )
+              : commit(input),
+          );
+        let deletionRequests = 0;
+        const observeDeletion: ThreadCommandExecutor.ThreadCommandExecutor["Service"]["withDeletionLock"] =
+          (effect) =>
+            Effect.suspend(() =>
+              ++deletionRequests === 2
+                ? Deferred.succeed(forkQueued, undefined).pipe(Effect.andThen(deletionLock(effect)))
+                : deletionLock(effect),
+            );
+        const lockSpy = vi.spyOn(executor, "withDeletionLock").mockImplementation(observeDeletion);
+        yield* Effect.gen(function* () {
+          const deletion = yield* orchestrator
+            .dispatch({ type: "thread.delete", commandId: deleteCommandId, threadId: workspaceId })
+            .pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(deleting);
+          const pending = yield* orchestrator
+            .dispatch({
+              ...fork,
+              commandId: CommandId.make("inherited-deleted"),
+              targetThreadId: ThreadId.make("inherited-deleted"),
+            })
+            .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(forkQueued);
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(deletion);
+          const error = yield* Fiber.join(pending);
+          assert.equal(error.cause, `Thread ${workspaceId} was deleted.`);
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              commitSpy.mockRestore();
+              lockSpy.mockRestore();
+            }),
+          ),
+        );
+      }),
   );
 
   it.effect("deleted sources keep the html_render pages any live fork shows", () =>

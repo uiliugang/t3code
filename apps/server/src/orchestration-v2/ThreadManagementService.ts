@@ -119,7 +119,10 @@ function existingThreadIdsForCommand(
     case "thread.mark-unread":
       return [];
     case "thread.fork":
-      return [command.sourceThreadId];
+      return command.workspaceThreadId === undefined ||
+        command.workspaceThreadId === command.sourceThreadId
+        ? [command.sourceThreadId]
+        : [command.sourceThreadId, command.workspaceThreadId];
     case "thread.merge_back":
       return command.sourceThreadId === command.targetThreadId
         ? [command.sourceThreadId]

@@ -1,15 +1,18 @@
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { MessageId, type RunId, type TurnItemId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { agentWorkingDirectories } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
-import { GitForkIcon, ReplyIcon } from "lucide-react";
+import { FolderGit2Icon, GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Spinner } from "../ui/spinner";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
@@ -149,6 +152,7 @@ function AssistantForkButton({
 }: {
   readonly projectedItem: NonNullable<Extract<TimelineRow, { kind: "message" }>["projectedItem"]>;
 }) {
+  const t = useUiTranslation();
   const ctx = use(TimelineRowCtx);
   const [busy, setBusy] = useState(false);
   const support = useV2ItemSupport({
@@ -164,30 +168,84 @@ function AssistantForkButton({
   const onForkFromRun = ctx.onForkFromRun;
   if (!canFork || onForkFromRun === undefined || projectedItem.item.runId === null) return null;
   const runId = projectedItem.item.runId;
+  const label = t("Fork from this response");
+  const runFork = (destination?: "current" | "worktree") => {
+    setBusy(true);
+    void onForkFromRun({
+      sourceThreadId: projectedItem.sourceThreadId,
+      runId,
+      ...(destination === undefined ? {} : { destination }),
+    }).finally(() => setBusy(false));
+  };
+
+  if (!ctx.forkDestinationMenu) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={busy}
+              data-fork-busy={busy ? "true" : undefined}
+              onClick={() => runFork()}
+              aria-label={label}
+            />
+          }
+        >
+          {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
+        </TooltipTrigger>
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
+    );
+  }
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void onForkFromRun({ sourceThreadId: projectedItem.sourceThreadId, runId }).finally(
-                () => setBusy(false),
-              );
-            }}
-            aria-label="Fork from this response"
-          />
-        }
-      >
-        <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
-      </TooltipTrigger>
-      <TooltipPopup side="top">Fork from this response</TooltipPopup>
-    </Tooltip>
+    <Menu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              render={
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  data-fork-busy={busy ? "true" : undefined}
+                  aria-label={label}
+                />
+              }
+              disabled={busy}
+            />
+          }
+        >
+          {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
+        </TooltipTrigger>
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
+      <MenuPopup align="start">
+        <MenuItem onClick={() => runFork("current")}>
+          <GitForkIcon />
+          <span className="min-w-0">
+            {t(
+              ctx.forkDestinationMenu.inWorktree
+                ? "Fork in the current worktree"
+                : "Fork in the current folder",
+            )}
+          </span>
+        </MenuItem>
+        <MenuItem onClick={() => runFork("worktree")}>
+          <FolderGit2Icon />
+          <span className="flex min-w-0 flex-col">
+            <span>{t("Fork into a new worktree")}</span>
+            <span className="text-muted-foreground text-xs">
+              {t("Includes uncommitted changes")}
+            </span>
+          </span>
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -234,7 +292,7 @@ function AssistantMessageMeta({
         "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
         alwaysVisible
           ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
+          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 has-data-fork-busy:opacity-100 has-data-popup-open:opacity-100 group-hover/assistant:opacity-100",
         className,
       )}
     >

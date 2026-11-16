@@ -41,6 +41,7 @@ import {
   forkSideChat,
   continueSideChat,
   forkThreadFromRun,
+  forkThreadToWorktree,
   markThreadUnread,
   mergeThreadBack,
   promoteQueuedRun,
@@ -379,7 +380,8 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency: {
         mode: "serial",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.sourceThreadId]),
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.workspaceThreadId ?? input.sourceThreadId]),
       },
     }),
     forkSideChat: createEnvironmentCommand(runtime, {
@@ -398,6 +400,16 @@ export function createThreadEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "serial",
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input.sourceThreadId]),
+      },
+    }),
+    forkToWorktree: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:fork-to-worktree",
+      execute: forkThreadToWorktree,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.workspaceThreadId ?? input.sourceThreadId]),
       },
     }),
     mergeBack: createEnvironmentCommand(runtime, {

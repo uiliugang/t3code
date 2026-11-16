@@ -932,6 +932,33 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           path: NodePath.join(yield* makeTempDir("t3code-worktree-policy-"), "checkout"),
         });
         expect(legacy.worktree.refName).toBe("unrestricted");
+        NodeFS.writeFileSync(NodePath.join(repoDir, "staged-fork.txt"), "staged\n");
+        yield* runGit(repoDir, ["add", "staged-fork.txt"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "extra.txt"), "unmerged + unstaged\n");
+        NodeFS.writeFileSync(NodePath.join(repoDir, "untracked-fork.txt"), "untracked\n");
+        const carriedPath = NodePath.join(
+          yield* makeTempDir("t3code-worktree-policy-"),
+          "carried-checkout",
+        );
+        const carried = yield* manager.createWorktree(
+          {
+            cwd: repoDir,
+            refName: ahead.stdout.trim(),
+            newRefName: "forked-from-ahead",
+            path: carriedPath,
+          },
+          { carryChangesFromCwd: repoDir },
+        );
+        expect(carried.worktree.refName).toBe("forked-from-ahead");
+        expect(NodeFS.readFileSync(NodePath.join(carriedPath, "staged-fork.txt"), "utf8")).toBe(
+          "staged\n",
+        );
+        expect(NodeFS.readFileSync(NodePath.join(carriedPath, "extra.txt"), "utf8")).toBe(
+          "unmerged + unstaged\n",
+        );
+        expect(NodeFS.readFileSync(NodePath.join(carriedPath, "untracked-fork.txt"), "utf8")).toBe(
+          "untracked\n",
+        );
       }),
   );
   it.effect(

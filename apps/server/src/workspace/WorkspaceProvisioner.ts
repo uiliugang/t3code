@@ -47,6 +47,11 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import { sameDirectoryIdentity } from "./directoryIdentity.ts";
+import {
+  applyCarriedCheckoutChanges,
+  readCarriedCheckoutChanges,
+  type CarriedCheckoutChanges,
+} from "./carryCheckoutChanges.ts";
 
 const PreparedResource = Schema.Struct({
   source: WorkspaceExecutionResource,
@@ -56,6 +61,8 @@ const PreparedResource = Schema.Struct({
   baseRef: Schema.String,
   submodules: Schema.NullOr(WorktreeSubmodules),
   submodulesReady: Schema.Boolean,
+  carryCheckoutRoot: Schema.optional(Schema.String),
+  changesCarried: Schema.optional(Schema.Boolean),
   resource: Schema.optional(WorkspaceExecutionResource),
   setup: Schema.Literals(["pending", "running", "failed", "done"]),
   ready: Schema.Boolean,
@@ -98,6 +105,9 @@ export class WorkspaceProvisioner extends Context.Service<
       readonly scripts?: readonly ProjectScript[];
       readonly strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
       readonly generatedBranchName?: GitVcsDriver.CreateWorktreeOptions["generatedBranchName"];
+      readonly carryChanges?: boolean;
+      readonly carrySourceWorkspace?: ThreadWorkspaceRevision;
+      readonly carrySourceWorktreePath?: string | null;
     }) => Effect.Effect<
       {
         readonly workspace: ThreadWorkspaceRevision;
@@ -149,6 +159,7 @@ export const layer = Layer.effect(
               const settings = Option.isSome(settingsService)
                 ? yield* settingsService.value.getSettings
                 : null;
+              const carryChangesByPath = new Map<string, CarriedCheckoutChanges>();
               let state: typeof Preparation.Type;
               if (rows[0]) {
                 state = yield* Schema.decodeEffect(json)(rows[0].payload_json);
@@ -205,9 +216,30 @@ export const layer = Layer.effect(
                     ? null
                     : resolveProjectSettings(settings, input.projectId).settings;
                 const submodules = projectSettings?.worktreeSubmodules ?? null;
+                const carryChanges =
+                  input.strategy.type === "worktree" && input.carryChanges === true;
+                const carryCheckoutByRootId = new Map<string, string>();
                 const launchRoots = [];
                 const baseRefs = new Map<string, string>();
                 for (const root of config.roots) {
+                  const carryBinding = carryChanges
+                    ? input.carrySourceWorkspace?.bindings.find(
+                        (binding) => binding.rootId === root.id,
+                      )
+                    : undefined;
+                  const carryResource =
+                    carryBinding === undefined
+                      ? undefined
+                      : input.carrySourceWorkspace?.resources.find(
+                          (entry) => entry.id === carryBinding.resourceId,
+                        );
+                  const carryCwd = carryChanges
+                    ? input.carrySourceWorkspace !== undefined
+                      ? (carryResource?.checkoutRoot ?? carryBinding?.executionPath ?? null)
+                      : root.id === config.primaryRootId && input.carrySourceWorktreePath != null
+                        ? input.carrySourceWorktreePath
+                        : root.sourcePath
+                    : null;
                   const taskBranch =
                     root.defaultSelected && input.strategy.type === "root"
                       ? yield* git.prepareTaskBranch({
@@ -216,11 +248,41 @@ export const layer = Layer.effect(
                           startFromOrigin: projectSettings?.newWorktreesStartFromOrigin ?? true,
                         })
                       : null;
-                  let baseRef =
-                    root.id === config.primaryRootId && input.strategy.type === "worktree"
+                  let baseRef = carryChanges
+                    ? (root.defaultBaseRef ?? "HEAD")
+                    : root.id === config.primaryRootId && input.strategy.type === "worktree"
                       ? input.strategy.baseRef
                       : (taskBranch?.branch ?? root.defaultBaseRef ?? "HEAD");
+                  let recordedBaseRef = baseRef;
+                  if (carryChanges && carryCwd !== null && root.defaultSelected) {
+                    const headSha = (yield* git.execute({
+                      operation: "WorkspaceProvisioner.resolveCarryHead",
+                      cwd: carryCwd,
+                      args: ["rev-parse", "--verify", "HEAD^{commit}"],
+                    })).stdout.trim();
+                    const carryBranch = yield* git
+                      .execute({
+                        operation: "WorkspaceProvisioner.resolveCarryBranch",
+                        cwd: carryCwd,
+                        args: ["symbolic-ref", "--quiet", "--short", "HEAD"],
+                      })
+                      .pipe(
+                        Effect.map((result) => result.stdout.trim()),
+                        Effect.orElseSucceed(() => ""),
+                      );
+                    const carryToplevel = yield* fs.realPath(
+                      (yield* git.execute({
+                        operation: "WorkspaceProvisioner.resolveCarryToplevel",
+                        cwd: carryCwd,
+                        args: ["rev-parse", "--show-toplevel"],
+                      })).stdout.replace(/\r?\n$/, ""),
+                    );
+                    baseRef = headSha;
+                    recordedBaseRef = carryBranch.length > 0 ? carryBranch : headSha;
+                    carryCheckoutByRootId.set(root.id, carryToplevel);
+                  }
                   if (
+                    !carryChanges &&
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
                     projectSettings?.newWorktreesMainBranchOnly
@@ -248,9 +310,10 @@ export const layer = Layer.effect(
                         threadId: input.threadId,
                         detail: `${root.alias}: new worktree branches must start from main or master. Change this in Settings → Source Control → Branch management.`,
                       });
+                    recordedBaseRef = baseRef;
                   }
-                  let recordedBaseRef = baseRef;
                   if (
+                    !carryChanges &&
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
                     (input.strategy.startFromOrigin ??
@@ -345,15 +408,28 @@ export const layer = Layer.effect(
                 const resources = [];
                 for (const [index, source] of resolved.resources.entries()) {
                   const binding = resolved.bindings.find((item) => item.resourceId === source.id)!;
+                  const targetPath = isolated
+                    ? path.join(
+                        worktreesDirectory,
+                        `workspace-${token}`,
+                        `${index + 1}-${source.name}`,
+                      )
+                    : source.checkoutRoot;
+                  const carryCheckoutRoot = carryChanges
+                    ? carryCheckoutByRootId.get(binding.rootId)
+                    : undefined;
+                  if (carryCheckoutRoot !== undefined) {
+                    const changes = yield* readCarriedCheckoutChanges({
+                      git,
+                      fs,
+                      sourceCwd: carryCheckoutRoot,
+                      commit: binding.launchBaseCommit!,
+                    });
+                    carryChangesByPath.set(targetPath, changes);
+                  }
                   resources.push({
                     source,
-                    path: isolated
-                      ? path.join(
-                          worktreesDirectory,
-                          `workspace-${token}`,
-                          `${index + 1}-${source.name}`,
-                        )
-                      : source.checkoutRoot,
+                    path: targetPath,
                     branch: isolated
                       ? `${input.strategy.branch ?? `t3-multi-${token}`}${resolved.resources.filter((entry) => entry.storeId === source.storeId).length > 1 ? `-${index + 1}` : ""}`
                       : null,
@@ -361,6 +437,7 @@ export const layer = Layer.effect(
                     baseRef: baseRefs.get(binding.rootId)!,
                     submodules,
                     submodulesReady: !isolated,
+                    ...(carryCheckoutRoot === undefined ? {} : { carryCheckoutRoot }),
                     ...(isolated ? {} : { resource: source }),
                     setup:
                       input.strategy.type === "existing_worktree"
@@ -404,6 +481,7 @@ export const layer = Layer.effect(
                 let item = state.resources[index]!;
                 yield* resolver.verify(item.source.identity);
                 if (item.resource === undefined) {
+                  let createdThisPass = false;
                   yield* fs.makeDirectory(path.dirname(item.path), { recursive: true });
                   if (!(yield* fs.exists(item.path))) {
                     const created = yield* withWorkspaceLease(
@@ -425,6 +503,7 @@ export const layer = Layer.effect(
                         },
                       ),
                     );
+                    createdThisPass = true;
                     item = yield* update(index, { branch: created.worktree.refName });
                   }
                   const identity = yield* resolver.inspect(item.path);
@@ -447,6 +526,91 @@ export const layer = Layer.effect(
                       threadId: input.threadId,
                       detail: `Cannot recover the prepared checkout at ${item.path}; its identity or branch changed.`,
                     });
+                  if (item.carryCheckoutRoot !== undefined && item.changesCarried !== true) {
+                    if (!createdThisPass) {
+                      yield* git.execute({
+                        operation: "WorkspaceProvisioner.resetCarryCheckout",
+                        cwd: item.path,
+                        args: ["reset", "--hard", item.baseCommit],
+                      });
+                      yield* git.execute({
+                        operation: "WorkspaceProvisioner.cleanCarryCheckout",
+                        cwd: item.path,
+                        args: ["clean", "-fd"],
+                      });
+                    }
+                    const changes =
+                      carryChangesByPath.get(item.path) ??
+                      (yield* readCarriedCheckoutChanges({
+                        git,
+                        fs,
+                        sourceCwd: item.carryCheckoutRoot,
+                        commit: item.baseCommit,
+                      }));
+                    yield* applyCarriedCheckoutChanges({
+                      git,
+                      fs,
+                      path,
+                      targetCheckoutRoot: item.path,
+                      changes,
+                    }).pipe(
+                      Effect.onError(() =>
+                        Effect.gen(function* () {
+                          let allRemoved = true;
+                          for (const [index, prepared] of state.resources.entries()) {
+                            if (prepared.branch === null) continue;
+                            const removed = yield* withWorkspaceLease(
+                              prepared.source.identity.commonDir,
+                              git
+                                .removeWorktree({
+                                  cwd: prepared.source.checkoutRoot,
+                                  path: prepared.path,
+                                  force: true,
+                                })
+                                .pipe(
+                                  Effect.andThen(
+                                    git
+                                      .deleteLocalBranch({
+                                        cwd: prepared.source.checkoutRoot,
+                                        refName: prepared.branch,
+                                        force: true,
+                                      })
+                                      .pipe(Effect.ignore),
+                                  ),
+                                  Effect.as(true),
+                                  Effect.orElseSucceed(() => false),
+                                ),
+                            );
+                            if (removed) {
+                              const { resource: _resource, ...pending } = prepared;
+                              state = {
+                                ...state,
+                                resources: state.resources.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? {
+                                        ...pending,
+                                        changesCarried: false,
+                                        ready: false,
+                                        setup: "pending",
+                                        submodulesReady: false,
+                                      }
+                                    : entry,
+                                ),
+                              };
+                            } else {
+                              allRemoved = false;
+                            }
+                          }
+                          yield* (
+                            allRemoved
+                              ? sql`DELETE FROM workspace_preparations WHERE thread_id = ${input.threadId}`
+                              : save(state)
+                          ).pipe(Effect.ignore);
+                        }),
+                      ),
+                    );
+                    item = yield* update(index, { changesCarried: true });
+                  }
                   const root = state.config.roots.find((entry) =>
                     state.bindings.some(
                       (binding) =>
@@ -747,7 +911,7 @@ export const layer = Layer.effect(
           );
         },
         (effect, input) =>
-          effect.pipe(
+          Effect.scoped(effect).pipe(
             Effect.mapError((cause) =>
               isWorkspacePreparationError(cause) || isGitCommandError(cause)
                 ? cause

@@ -2904,6 +2904,8 @@ export default function ChatView(props: ChatViewProps) {
       isSendBusy,
       isRevertingCheckpoint,
       supportsConversationRollback,
+      supportsWorktreeForkCarryChanges:
+        serverConfig?.environment.capabilities.worktreeForkCarryChanges === true,
       activeEnvironmentUnavailable,
       activeEnvironmentUnavailableLabel,
       promptRef,
@@ -3534,7 +3536,23 @@ export default function ChatView(props: ChatViewProps) {
                   // Side chat runs keep no checkpoints to diff, and a fork would promote the side chat.
                   {...(embedded
                     ? {}
-                    : { onOpenTurnDiff: onOpenTurnDiffStable, onForkFromRun: onForkFromRunStable })}
+                    : {
+                        onOpenTurnDiff: onOpenTurnDiffStable,
+                        ...(canOperateThread ? { onForkFromRun: onForkFromRunStable } : {}),
+                        forkDestinationMenu:
+                          canOperateThread &&
+                          serverConfig?.environment.capabilities.worktreeForkCarryChanges ===
+                            true &&
+                          activeThread.projectId !== null &&
+                          !activeProjectIsScratch &&
+                          isGitRepo
+                            ? {
+                                inWorktree:
+                                  activeThread.worktreePath !== null ||
+                                  activeThread.workspace?.mode === "isolated",
+                              }
+                            : null,
+                      })}
                   onOpenThread={onOpenRelatedThreadStable}
                   parentThreadLink={parentThreadLink}
                   workflowOpening={workflowOpening}

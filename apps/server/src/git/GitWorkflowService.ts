@@ -84,7 +84,7 @@ export class GitWorkflowService extends Context.Service<
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
-      options?: GitVcsDriver.CreateWorktreeOptions,
+      options?: GitManager.GitCreateWorktreeOptions,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
     readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
     readonly prepareTaskBranch: GitVcsDriver.GitVcsDriver["Service"]["prepareTaskBranch"];
@@ -102,6 +102,7 @@ export class GitWorkflowService extends Context.Service<
       readonly remoteName: string;
       readonly refName: string;
     }) => Effect.Effect<boolean, GitCommandError>;
+    readonly resolveCommit: GitVcsDriver.GitVcsDriver["Service"]["resolveCommit"];
     readonly resolvePrimaryRemoteName: (cwd: string) => Effect.Effect<string, GitCommandError>;
     readonly resolveRemoteTrackingCommit: (input: {
       readonly cwd: string;
@@ -465,6 +466,11 @@ export const make = Effect.gen(function* () {
     remoteBranchExists: Effect.fn("GitWorkflowService.remoteBranchExists")(function (input) {
       return ensureGitCommand("GitWorkflowService.remoteBranchExists", input.cwd).pipe(
         Effect.andThen(git.remoteBranchExists(input)),
+      );
+    }),
+    resolveCommit: Effect.fn("GitWorkflowService.resolveCommit")(function (input) {
+      return ensureGitCommand("GitWorkflowService.resolveCommit", input.cwd).pipe(
+        Effect.andThen(git.resolveCommit(input)),
       );
     }),
     resolvePrimaryRemoteName: Effect.fn("GitWorkflowService.resolvePrimaryRemoteName")(

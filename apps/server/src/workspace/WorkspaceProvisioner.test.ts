@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as WorkspaceCleanup from "./WorkspaceCleanup.ts";
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -284,6 +284,8 @@ it.live(
         Layer.provide(
           Layer.succeed(GitVcsDriver.GitVcsDriver, {
             ...git,
+            execute: (input) => git.execute(input),
+            removeWorktree: (input) => git.removeWorktree(input),
             fetchWorktreeBaseCommit: (input) =>
               Ref.getAndSet(failFetch, false).pipe(
                 Effect.tap(
@@ -579,6 +581,180 @@ it.live(
           yield* fs.realPath(roots[0]!.sourcePath),
         );
         assert.isFalse(yield* fs.exists(path.join(preparedPath, "setup.txt")));
+        yield* fs.writeFileString(path.join(preparedPath, "staged.txt"), "staged work");
+        yield* git.execute({ operation: "test", cwd: preparedPath, args: ["add", "staged.txt"] });
+        yield* fs.writeFileString(path.join(preparedPath, "pr.txt"), "PR head + unstaged");
+        yield* fs.writeFileString(path.join(preparedPath, "untracked.txt"), "untracked work");
+        const { workspace: carried } = yield* provisioner.prepare({
+          ...existingInput,
+          threadId: ThreadId.make("carried-fork"),
+          strategy: {
+            type: "worktree",
+            baseRef: "feature/prepared-pr",
+            startFromOrigin: false,
+          },
+          carryChanges: true,
+          carrySourceWorkspace: existing,
+          carrySourceWorktreePath: preparedPath,
+        });
+        const carriedRoot = carried.resources[0]!.checkoutRoot;
+        assert.notEqual(carriedRoot, yield* fs.realPath(preparedPath));
+        assert.equal(carried.bindings[0]!.launchBaseCommit, preparedHead);
+        assert.equal(carried.bindings[0]!.launchBaseRef, "feature/prepared-pr");
+        assert.equal(yield* fs.readFileString(path.join(carriedRoot, "staged.txt")), "staged work");
+        assert.equal(
+          yield* fs.readFileString(path.join(carriedRoot, "pr.txt")),
+          "PR head + unstaged",
+        );
+        assert.equal(
+          yield* fs.readFileString(path.join(carriedRoot, "untracked.txt")),
+          "untracked work",
+        );
+        const carriedStaged = (yield* git.execute({
+          operation: "test",
+          cwd: carriedRoot,
+          args: ["diff", "--cached", "--name-only"],
+        })).stdout.trim();
+        assert.equal(carriedStaged, "staged.txt");
+        const carriedUnstaged = (yield* git.execute({
+          operation: "test",
+          cwd: carriedRoot,
+          args: ["diff", "--name-only"],
+        })).stdout.trim();
+        assert.equal(carriedUnstaged, "pr.txt");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const execute = driver.execute;
+        const removeWorktree = driver.removeWorktree;
+        const partialPaths: string[] = [];
+        const executeSpy = vi.spyOn(driver, "execute").mockImplementation((request) =>
+          request.operation === "carryCheckoutChanges.applyUnstaged"
+            ? Effect.sync(() => partialPaths.push(request.cwd)).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    new GitCommandError({
+                      operation: "test",
+                      command: "git apply",
+                      cwd: request.cwd,
+                      detail: "injected apply failure",
+                    }),
+                  ),
+                ),
+              )
+            : execute(request),
+        );
+        const removeSpy = vi.spyOn(driver, "removeWorktree").mockImplementation((request) =>
+          Effect.fail(
+            new GitCommandError({
+              operation: "test",
+              command: "git worktree remove",
+              cwd: request.cwd,
+              detail: "injected locked directory",
+            }),
+          ),
+        );
+        const retryInput = {
+          ...existingInput,
+          threadId: ThreadId.make("carry-retry"),
+          strategy: {
+            type: "worktree" as const,
+            baseRef: "removed-branch",
+            startFromOrigin: false,
+          },
+          carryChanges: true,
+          carrySourceWorkspace: existing,
+        };
+        yield* Effect.gen(function* () {
+          const failed = yield* provisioner.prepare(retryInput).pipe(Effect.flip);
+          assert.include(failed.message, "injected apply failure");
+          assert.lengthOf(
+            yield* sql`SELECT * FROM workspace_preparations WHERE thread_id = ${retryInput.threadId}`,
+            1,
+          );
+          assert.lengthOf(partialPaths, 1);
+          assert.isTrue(yield* fs.exists(partialPaths[0]!));
+          executeSpy.mockImplementation(execute);
+          removeSpy.mockImplementation(removeWorktree);
+          const recovered = yield* provisioner.prepare(retryInput);
+          assert.equal(
+            recovered.workspace.resources[0]!.checkoutRoot,
+            yield* fs.realPath(partialPaths[0]!),
+          );
+          assert.equal(
+            yield* fs.readFileString(path.join(partialPaths[0]!, "staged.txt")),
+            "staged work",
+          );
+          assert.equal(
+            yield* fs.readFileString(path.join(partialPaths[0]!, "pr.txt")),
+            "PR head + unstaged",
+          );
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              executeSpy.mockRestore();
+              removeSpy.mockRestore();
+            }),
+          ),
+        );
+        for (const root of roots) {
+          yield* fs.writeFileString(path.join(root.sourcePath, "carry-multi.txt"), root.alias);
+          yield* git.execute({
+            operation: "test",
+            cwd: root.sourcePath,
+            args: ["add", "carry-multi.txt"],
+          });
+        }
+        const multiPaths: string[] = [];
+        const multiSpy = vi.spyOn(driver, "execute").mockImplementation((request) => {
+          if (request.operation !== "carryCheckoutChanges.applyStaged") return execute(request);
+          return Effect.sync(() => multiPaths.push(request.cwd)).pipe(
+            Effect.andThen(
+              request.cwd.endsWith("backend")
+                ? Effect.fail(
+                    new GitCommandError({
+                      operation: "test",
+                      command: "git apply",
+                      cwd: request.cwd,
+                      detail: "second repository apply failed",
+                    }),
+                  )
+                : execute(request),
+            ),
+          );
+        });
+        const multiInput = {
+          ...retryInput,
+          threadId: ThreadId.make("carry-multi-retry"),
+          config: input.config,
+          carrySourceWorkspace: local,
+        };
+        yield* Effect.gen(function* () {
+          const failed = yield* provisioner.prepare(multiInput).pipe(Effect.flip);
+          assert.include(failed.message, "second repository apply failed");
+          assert.lengthOf(multiPaths, 2);
+          for (const prepared of multiPaths) assert.isFalse(yield* fs.exists(prepared));
+          assert.lengthOf(
+            yield* sql`SELECT * FROM workspace_preparations WHERE thread_id = ${multiInput.threadId}`,
+            0,
+          );
+          multiSpy.mockImplementation(execute);
+          const recovered = yield* provisioner.prepare(multiInput);
+          for (const [index, resource] of recovered.workspace.resources.entries()) {
+            assert.equal(
+              yield* fs.readFileString(path.join(resource.checkoutRoot, "carry-multi.txt")),
+              roots[index]!.alias,
+            );
+          }
+          const unbound = yield* provisioner.prepare({
+            ...multiInput,
+            threadId: ThreadId.make("carry-unbound-root"),
+            carrySourceWorkspace: existing,
+          });
+          assert.isFalse(
+            yield* fs.exists(
+              path.join(unbound.workspace.resources[1]!.checkoutRoot, "carry-multi.txt"),
+            ),
+          );
+        }).pipe(Effect.ensuring(Effect.sync(() => multiSpy.mockRestore())));
         for (const [suffix, config, strategy, message] of [
           ["multi", input.config, existingInput.strategy, "single existing worktree"],
           [

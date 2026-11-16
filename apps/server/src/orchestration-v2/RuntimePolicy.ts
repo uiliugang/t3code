@@ -95,7 +95,7 @@ const requireIsolatedWorkspace = (thread: OrchestrationV2AppThread) =>
           projectId: thread.projectId,
           providerInstanceId: thread.modelSelection.instanceId,
           cause:
-            "The isolated worktree is not ready. Wait for setup, or return to the side chat and create a new isolated task.",
+            "The isolated worktree is not ready. Wait for setup, or return to the source conversation and create a new isolated task.",
         }),
       )
     : Effect.void;
@@ -241,8 +241,13 @@ export const layerFromProjectStore: Layer.Layer<
               workspace.resources.map((resource) => resource.checkoutRoot),
             );
             for (const thread of [...shell.threads, ...shell.archivedThreads]) {
+              // In-place forks inherit the parent's workspace revision and share its worktree.
+              const sharesInheritedWorkspace =
+                thread.lineage.rootThreadId === input.thread.lineage.rootThreadId &&
+                thread.workspace?.id === workspace.id;
               if (
                 thread.id === input.thread.id ||
+                sharesInheritedWorkspace ||
                 thread.lineage.sideChat === true ||
                 thread.deletedAt !== null ||
                 (!["preparing", "starting", "running", "waiting"].includes(thread.status) &&

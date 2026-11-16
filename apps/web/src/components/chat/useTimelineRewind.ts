@@ -3,6 +3,7 @@ import type { ComposerThreadTarget } from "../../composerDraftStore";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { SessionPhase } from "../../types";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -45,6 +46,7 @@ interface TimelineRewindInput {
   readonly isSendBusy: boolean;
   readonly isRevertingCheckpoint: boolean;
   readonly supportsConversationRollback: boolean;
+  readonly supportsWorktreeForkCarryChanges: boolean;
   readonly activeEnvironmentUnavailable: boolean;
   readonly activeEnvironmentUnavailableLabel: string | null;
   readonly promptRef: { current: string };
@@ -70,6 +72,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     isSendBusy,
     isRevertingCheckpoint,
     supportsConversationRollback,
+    supportsWorktreeForkCarryChanges,
     activeEnvironmentUnavailable,
     activeEnvironmentUnavailableLabel,
     promptRef,
@@ -77,6 +80,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     composerDraftTarget,
     setThreadError,
   } = input;
+  const t = useUiTranslation();
   const navigate = useNavigate();
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
@@ -87,6 +91,9 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     reportFailure: false,
   });
   const forkThreadFromRun = useAtomCommand(threadEnvironment.forkFromRun, {
+    reportFailure: false,
+  });
+  const forkThreadToWorktree = useAtomCommand(threadEnvironment.forkToWorktree, {
     reportFailure: false,
   });
 
@@ -176,19 +183,50 @@ export function useTimelineRewind(input: TimelineRewindInput) {
   const onForkFromRun = async (input: {
     readonly sourceThreadId: ThreadId;
     readonly runId: RunId;
+    readonly destination?: "current" | "worktree";
   }) => {
-    if (!activeThread || activeEnvironmentUnavailable) return;
+    if (
+      !activeThread ||
+      activeEnvironmentUnavailable ||
+      !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
+    )
+      return;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
-    const result = await forkThreadFromRun({
-      environmentId,
-      input: {
-        sourceThreadId: input.sourceThreadId,
-        targetThreadId,
-        runId: input.runId,
-        title: `${activeThread.title} fork`,
-      },
-    });
+    const title = t("{title} fork", { title: activeThread.title });
+    const workspaceThreadId =
+      supportsWorktreeForkCarryChanges && activeThread.id !== input.sourceThreadId
+        ? activeThread.id
+        : undefined;
+    const result =
+      input.destination === "worktree" &&
+      supportsWorktreeForkCarryChanges &&
+      activeThread.projectId !== null
+        ? await forkThreadToWorktree({
+            environmentId,
+            input: {
+              sourceThreadId: input.sourceThreadId,
+              ...(workspaceThreadId === undefined ? {} : { workspaceThreadId }),
+              targetThreadId,
+              runId: input.runId,
+              projectId: activeThread.projectId,
+              modelSelection: activeThread.modelSelection,
+              runtimeMode: activeThread.runtimeMode,
+              interactionMode: activeThread.interactionMode,
+              baseRef: activeThread.branch ?? "HEAD",
+              title,
+            },
+          })
+        : await forkThreadFromRun({
+            environmentId,
+            input: {
+              sourceThreadId: input.sourceThreadId,
+              ...(workspaceThreadId === undefined ? {} : { workspaceThreadId }),
+              targetThreadId,
+              runId: input.runId,
+              title,
+            },
+          });
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);

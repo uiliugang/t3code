@@ -237,6 +237,10 @@ export interface ThreadDetailScreenProps {
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
   readonly canOperateThread: boolean;
+  readonly forkDestinationMenu?: {
+    readonly projectId: import("@t3tools/contracts").ProjectId;
+    readonly inWorktree: boolean;
+  } | null;
   readonly selectedThread: EnvironmentThreadShell;
   /** Use this for detail reads; it stays null until queued creation reaches the server. */
   readonly selectedThreadDetailRef: ScopedThreadRef | null;
@@ -1540,6 +1544,19 @@ function ThreadDetailBody(
                   }
                   contentPresentation={props.contentPresentation}
                   threadTitle={props.selectedThread.title}
+                  canForkThread={
+                    props.canOperateThread && props.selectedThread.lineage.sideChat !== true
+                  }
+                  forkSettings={{
+                    supportsWorktreeForkCarryChanges:
+                      props.serverConfig?.environment.capabilities.worktreeForkCarryChanges ===
+                      true,
+                    modelSelection: props.selectedThread.modelSelection,
+                    runtimeMode: props.selectedThread.runtimeMode,
+                    interactionMode: props.selectedThread.interactionMode,
+                    branch: props.selectedThread.branch,
+                  }}
+                  forkDestinationMenu={props.forkDestinationMenu ?? null}
                   latestRun={props.activityRun}
                   activeWorkStartedAt={props.activeWorkStartedAt}
                   runlessWorkActive={props.runlessWorkActive ?? false}
