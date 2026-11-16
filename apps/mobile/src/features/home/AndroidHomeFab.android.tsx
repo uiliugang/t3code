@@ -30,6 +30,7 @@ export function AndroidHomeFabLayout(props: ComponentProps<typeof SharedAndroidH
   const { fontScale } = useWindowDimensions();
   const [layoutWidth, setLayoutWidth] = useState<number | null>(null);
   const { state } = useWorkspaceState();
+  const [expanded, setExpanded] = useState(true);
   const { scale, fabSize } = useAndroidControlSizing();
   const enabledTabs = useEnabledNavigationTabs();
   const barWidth =
@@ -42,7 +43,6 @@ export function AndroidHomeFabLayout(props: ComponentProps<typeof SharedAndroidH
   const workspace = useWorkspaceTabs();
   const bottomClearance = insets.bottom + FLOATING_TABS.bottom + FLOATING_TABS.edge + size;
   const context = floatingTabsEnabled && workspace ? { ...workspace, bottomClearance } : workspace;
-  const [expanded, setExpanded] = useState(true);
   const scrollState = useRef({ anchor: 0, expanded: true });
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -69,7 +69,7 @@ export function AndroidHomeFabLayout(props: ComponentProps<typeof SharedAndroidH
         <ScrollComposeButton
           key={`${appearance.baseFontSize}:${fontScale}:${layoutWidth}`}
           size={size}
-          expanded={floatingTabsEnabled || !props.sidebar ? false : expanded}
+          expanded={floatingTabsEnabled ? false : expanded}
           onPress={props.onStartNewTask}
           className="absolute"
           style={

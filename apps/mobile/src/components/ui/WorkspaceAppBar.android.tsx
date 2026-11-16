@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Pressable, View } from "react-native";
 
+import type { AppSymbolName } from "./AppSymbol";
 import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu.android";
 import { AndroidHeaderIconButton } from "./AndroidScreenHeader.android";
 import { AppText } from "./AppText";
@@ -26,9 +27,18 @@ const FILTER_FILLED_ICON = require("../../../assets/icons/filter-filled.xml");
 const ACTION_SIZE = 48;
 const ACTION_END_INSET = 4;
 
+export interface WorkspaceAppBarAction {
+  readonly accessibilityLabel: string;
+  readonly icon: AppSymbolName;
+  readonly onPress: () => void;
+  readonly disabled?: boolean;
+  readonly selected?: boolean;
+}
+
 export interface WorkspaceAppBarProps {
   readonly title: string;
   readonly titleContent?: ReactNode;
+  readonly actions?: ReadonlyArray<WorkspaceAppBarAction>;
   readonly search?: {
     readonly accessibilityLabel: string;
     readonly active: boolean;
@@ -163,6 +173,7 @@ function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
       }
     </AndroidAnchoredMenu>
   ) : null;
+  const inlineActions = props.actions ?? [];
   return (
     <View className="bg-header" style={{ paddingTop, paddingBottom }}>
       <View
@@ -195,6 +206,22 @@ function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
                   contentDescription={search?.accessibilityLabel}
                 />
               </IconButton>
+              {inlineActions.length > 0 ? (
+                <RNHostView matchContents>
+                  <View collapsable={false} className="flex-row items-center">
+                    {inlineActions.map((action) => (
+                      <AndroidHeaderIconButton
+                        key={action.accessibilityLabel}
+                        accessibilityLabel={action.accessibilityLabel}
+                        icon={action.icon}
+                        disabled={action.disabled}
+                        selected={action.selected}
+                        onPress={action.onPress}
+                      />
+                    ))}
+                  </View>
+                </RNHostView>
+              ) : null}
               <Box contentAlignment="center" modifiers={[size(ACTION_SIZE, ACTION_SIZE)]}>
                 <Icon
                   source={filter?.customized ? FILTER_FILLED_ICON : FILTER_ICON}

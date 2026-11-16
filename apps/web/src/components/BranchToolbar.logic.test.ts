@@ -439,7 +439,7 @@ describe("sanitizeNewRefName", () => {
 });
 
 describe("shouldShowComposerContextStrip", () => {
-  it("hides the duplicate strip in active threads when the inline details panel is open, while keeping draft strips visible", () => {
+  it("hides the duplicate strip in active threads only when the inline details panel covers its controls, while keeping draft strips visible", () => {
     const base = {
       persistInActiveThreads: true,
       hasActiveProject: true,
@@ -450,21 +450,21 @@ describe("shouldShowComposerContextStrip", () => {
       shouldShowComposerContextStrip({
         ...base,
         isDraftHeroState: false,
-        inlineDetailsPanelOpen: false,
+        inlineDetailsPanelCoversControls: false,
       }),
     ).toBe(true);
     expect(
       shouldShowComposerContextStrip({
         ...base,
         isDraftHeroState: false,
-        inlineDetailsPanelOpen: true,
+        inlineDetailsPanelCoversControls: true,
       }),
     ).toBe(false);
     expect(
       shouldShowComposerContextStrip({
         ...base,
         isDraftHeroState: true,
-        inlineDetailsPanelOpen: true,
+        inlineDetailsPanelCoversControls: true,
       }),
     ).toBe(true);
   });

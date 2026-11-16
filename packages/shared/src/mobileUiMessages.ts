@@ -1859,5 +1859,4 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "{count} projects could not load pull requests": "{count} 个项目未能加载合并请求",
   "Tap to view details": "点击查看详情",
   "Filter requirements": "筛选需求",
-  "New or scan": "新建或扫描",
 };

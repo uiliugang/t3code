@@ -19,12 +19,13 @@ import * as Schema from "effect/Schema";
 import { Keyboard, Linking, View, Pressable, ScrollView } from "react-native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
-import type { AppBarMenu } from "../../components/ui/AppBar.types";
+import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { Chip } from "../../components/ui/Chip";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { Sheet } from "../../components/ui/Sheet";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { appBarMenuItemsFromActions } from "../../components/ui/menuActionItems";
 import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import { useDebouncedValue } from "../../state/queries";
 import { useUiTranslation } from "../../lib/useUiTranslation";
@@ -44,7 +45,14 @@ import { serverEnvironment } from "../../state/server";
 import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 import { ProjectTag, Disclosure, useRequirementGroups } from "./RequirementPrimitives";
 import { DraftFillButton } from "./DraftFillButton";
-import { Menu } from "../../components/ui/Menu";
+import {
+  DEFAULT_REQUIREMENT_FILTER_STATE,
+  applyRequirementFilterSelection,
+  findSelectedRequirementProject,
+  isRequirementFilterCustomized,
+  requirementProjectKey,
+  type RequirementProjectRef,
+} from "./requirementFilters";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import {
   DELIVERY_PROGRESS_LABELS,
@@ -170,27 +178,47 @@ function UnifiedRequirementBoard({
     initial?.sourceThreadId ? scopeThreadRef(environmentId, initial.sourceThreadId) : null,
   );
   const [source, setSource] = useState<RequirementSource>("all");
-  const [projectId, setProjectId] = useState<ProjectId | null>(
-    initial?.projectId ?? sourceThread?.projectId ?? null,
+  const initialProjectId = initial?.projectId ?? sourceThread?.projectId ?? null;
+  const [projectFilter, setProjectFilter] = useState<RequirementProjectRef | null>(
+    initialProjectId
+      ? {
+          environmentId: sourceThread?.environmentId ?? fallbackEnvironmentId,
+          projectId: initialProjectId,
+        }
+      : null,
+  );
+  const projectId = projectFilter?.projectId ?? null;
+  const queryEnvironmentId = filterEnvironmentId ?? projectFilter?.environmentId ?? null;
+  const queryEnvironments = onlineEnvironments.filter(
+    (environment) => !queryEnvironmentId || environment.environmentId === queryEnvironmentId,
   );
   const [assignee, setAssignee] = useState("me");
   const [queryText, setQueryText] = useState("");
   const query = useDebouncedValue(queryText.trim(), 180);
   const [archived, setArchived] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [pagination, setPagination] = useState<{ key: string; pages: RequirementPagination }>({
     key: "",
     pages: {},
   });
   const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
+  const queryEnvironmentIds = queryEnvironments.map((environment) => environment.environmentId);
   const permissions = useAtomValue(permissionAtoms(environmentIds));
-  const filterKey = JSON.stringify([environmentIds, source, projectId, assignee, query, archived]);
+  const filterKey = JSON.stringify([
+    queryEnvironmentIds,
+    source,
+    projectId,
+    assignee,
+    query,
+    archived,
+  ]);
   if (pagination.key !== filterKey) setPagination({ key: filterKey, pages: {} });
   const config = useEnvironmentServerConfig(environmentId);
   const data = useAtomValue(
     boardAtoms(
       new RequirementOverviewKey({
-        environmentIds,
+        environmentIds: queryEnvironmentIds,
         source,
         projectId,
         assignee,
@@ -208,8 +236,7 @@ function UnifiedRequirementBoard({
         `${environmentLabel(failure.environmentId)} · ${allProjects.find((project) => project.environmentId === failure.environmentId && project.id === failure.projectId)?.title ?? failure.projectId}: ${t(failure.reason)}`,
     ),
   ];
-  const projectKey = (project: { environmentId: EnvironmentId; id: ProjectId }) =>
-    `${project.environmentId}/${project.id}`;
+  const projectKey = requirementProjectKey;
   const { collapsed, toggle } = useRequirementGroups();
   const canOperate = useAtomValue(serverEnvironment.mutateWorkItem.permissionAtom(environmentId));
   const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
@@ -258,7 +285,8 @@ function UnifiedRequirementBoard({
   useHardwareBack(workspace, () => {
     if (Keyboard.isVisible()) Keyboard.dismiss();
     else if (!busy) {
-      if (creating || selectedId) back();
+      if (createSheetOpen) setCreateSheetOpen(false);
+      else if (creating || selectedId) back();
       else selectTab("threads");
     }
     return true;
@@ -266,12 +294,22 @@ function UnifiedRequirementBoard({
   const refresh = () => {
     for (const atom of data.atoms) registry.refresh(atom);
   };
-  const run = async (input: WorkItemCommandInput) => {
-    if (pending.current || !canOperate) return null;
+  const runOnEnvironment = async (
+    targetEnvironmentId: EnvironmentId,
+    input: WorkItemCommandInput,
+  ) => {
+    if (
+      pending.current ||
+      !registry.get(serverEnvironment.mutateWorkItem.permissionAtom(targetEnvironmentId))
+    )
+      return null;
     const request = prepareWorkItemCommandRetry(input, retries.current);
     pending.current = true;
     setBusy(true);
-    const response = await mutate({ environmentId, input: request.input }).finally(() => {
+    const response = await mutate({
+      environmentId: targetEnvironmentId,
+      input: request.input,
+    }).finally(() => {
       pending.current = false;
       setBusy(false);
     });
@@ -282,6 +320,7 @@ function UnifiedRequirementBoard({
     retries.current.delete(request.key);
     return response.value.item;
   };
+  const run = (input: WorkItemCommandInput) => runOnEnvironment(environmentId, input);
   const scan = async (
     target: { environmentId: EnvironmentId; projectId: ProjectId },
     dismissThreadId?: ThreadId,
@@ -430,19 +469,24 @@ function UnifiedRequirementBoard({
     );
   };
   const showingList = !creating && !selectedId;
-  const isFiltered =
-    filterEnvironmentId !== null ||
-    source !== "all" ||
-    projectId !== null ||
-    assignee !== "me" ||
-    archived;
-  const resetFilters = () => {
-    onEnvironment(null);
-    setSource("all");
-    setProjectId(null);
-    setAssignee("me");
-    setArchived(false);
+  const filterState = {
+    environmentId: filterEnvironmentId,
+    source,
+    project: projectFilter,
+    assignee,
+    archived,
+    queryText,
   };
+  const isFiltered = isRequirementFilterCustomized(filterState);
+  const applyFilterState = (next: typeof filterState) => {
+    onEnvironment(next.environmentId);
+    setSource(next.source);
+    setProjectFilter(next.project);
+    setAssignee(next.assignee);
+    setArchived(next.archived);
+    setQueryText(next.queryText);
+  };
+  const resetFilters = () => applyFilterState(DEFAULT_REQUIREMENT_FILTER_STATE);
   const assigneeChoices = [
     { value: "me", label: t("Assigned to me") },
     { value: "all", label: t("All assignees") },
@@ -455,145 +499,97 @@ function UnifiedRequirementBoard({
     { value: "github" as const, label: "GitHub Issues" },
     { value: "local" as const, label: t("Local work items") },
   ];
-  const createMenuActions = (["meituan", "github", "local"] as const).map((provider) => ({
-    id: provider,
-    title:
-      provider === "local"
-        ? t("Local work item")
-        : provider === "github"
-          ? "GitHub Issue"
-          : "MEP ONES",
-    subactions: projects.map((project) => ({
-      id: `${provider}:${projectKey(project)}`,
-      title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-      attributes: {
-        disabled:
-          provider === "local"
-            ? !permissions.get(project.environmentId)?.mutateWorkItem ||
-              registry.get(serverEnvironment.configValueAtom(project.environmentId))?.workItems !==
-                true
-            : !permissions.get(project.environmentId)?.createIssue,
-      },
+  const selectedProject = findSelectedRequirementProject(allProjects, projectFilter);
+  const environmentActions = [
+    {
+      id: "env:",
+      title: t("All environments"),
+      state: filterEnvironmentId === null ? ("on" as const) : ("off" as const),
+    },
+    ...onlineEnvironments.map((environment) => ({
+      id: `env:${environment.environmentId}`,
+      title: environment.label,
+      state: filterEnvironmentId === environment.environmentId ? ("on" as const) : ("off" as const),
     })),
+  ];
+  const sourceActions = sourceChoices.map((option) => ({
+    id: `source:${option.value}`,
+    title: option.label,
+    state: source === option.value ? ("on" as const) : ("off" as const),
   }));
-  const handleCreateOrScanAction = (id: string) => {
-    if (id.startsWith("scan:")) {
-      const project = projects.find((candidate) => projectKey(candidate) === id.slice(5));
-      if (project) void scan({ environmentId: project.environmentId, projectId: project.id });
-      return;
-    }
-    const colon = id.indexOf(":");
-    if (colon <= 0) return;
-    const provider = id.slice(0, colon);
-    const project = projects.find((candidate) => projectKey(candidate) === id.slice(colon + 1));
-    if (!project) return;
-    if (provider === "local")
-      createLocal({ environmentId: project.environmentId, projectId: project.id });
-    else if (provider === "github" || provider === "meituan")
-      navigation.navigate("IssueCreate", {
-        environmentId: project.environmentId,
-        projectId: project.id,
-        provider,
-      });
+  const projectActions = [
+    {
+      id: "project:",
+      title: t("All projects"),
+      state: projectFilter === null ? ("on" as const) : ("off" as const),
+    },
+    ...projects.map((project) => ({
+      id: `project:${projectKey(project)}`,
+      title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+      state:
+        projectFilter?.projectId === project.id &&
+        projectFilter.environmentId === project.environmentId
+          ? ("on" as const)
+          : ("off" as const),
+    })),
+  ];
+  const assigneeActions = assigneeChoices.map((person) => ({
+    id: `assignee:${person.value}`,
+    title: person.label,
+    state: assignee === person.value ? ("on" as const) : ("off" as const),
+  }));
+  const applyFilterSelection = (id: string) => {
+    applyFilterState(applyRequirementFilterSelection(filterState, id, allProjects));
   };
+  const scanItems = projects.map((project) => ({
+    id: `scan:${projectKey(project)}`,
+    title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+    disabled:
+      busy ||
+      !permissions.get(project.environmentId)?.discoverWorkItems ||
+      registry.get(serverEnvironment.configValueAtom(project.environmentId))?.workItemDiscovery !==
+        true,
+    onPress: () => void scan({ environmentId: project.environmentId, projectId: project.id }),
+  }));
+  const headerActions: ReadonlyArray<AppBarAction> = [
+    {
+      accessibilityLabel: view === "list" ? t("Switch to board view") : t("Switch to list view"),
+      icon: view === "list" ? "list.number" : "square.grid.2x2",
+      onPress: () => setView((current) => (current === "list" ? "board" : "list")),
+    },
+    {
+      accessibilityLabel: t("New requirement"),
+      icon: "plus",
+      disabled: projects.length === 0 || busy,
+      onPress: () => setCreateSheetOpen(true),
+    },
+  ];
   const headerMenu: AppBarMenu = {
     title: t("Filter requirements"),
     icon: isFiltered
       ? "line.3.horizontal.decrease.circle.fill"
       : "line.3.horizontal.decrease.circle",
     items: [
-      {
-        id: "environment",
-        title: t("Environment"),
-        items: [
-          {
-            id: "env:all",
-            title: t("All environments"),
-            selected: filterEnvironmentId === null,
-            onPress: () => {
-              onEnvironment(null);
-              setProjectId(null);
-            },
-          },
-          ...onlineEnvironments.map((environment) => ({
-            id: `env:${environment.environmentId}`,
-            title: environment.label,
-            selected: filterEnvironmentId === environment.environmentId,
-            onPress: () => {
-              onEnvironment(environment.environmentId);
-              setProjectId(null);
-            },
-          })),
+      ...appBarMenuItemsFromActions(
+        [
+          { id: "source", title: t("Issue source"), subactions: sourceActions },
+          { id: "project", title: t("Project"), subactions: projectActions },
+          ...(source !== "local"
+            ? [{ id: "assignee", title: t("Assignee"), subactions: assigneeActions }]
+            : []),
         ],
-      },
-      {
-        id: "source",
-        title: t("Issue source"),
-        items: sourceChoices.map((option) => ({
-          id: `source:${option.value}`,
-          title: option.label,
-          selected: source === option.value,
-          onPress: () => {
-            setSource(option.value);
-            setAssignee("me");
-          },
-        })),
-      },
-      {
-        id: "project",
-        title: t("Project"),
-        items: [
-          {
-            id: "project:all",
-            title: t("All projects"),
-            selected: projectId === null,
-            onPress: () => setProjectId(null),
-          },
-          ...projects.map((project) => ({
-            id: `project:${projectKey(project)}`,
-            title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-            selected:
-              projectId === project.id &&
-              (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId,
-            onPress: () => {
-              setProjectId(project.id);
-              onEnvironment(project.environmentId);
-            },
-          })),
-        ],
-      },
-      ...(source !== "local"
+        applyFilterSelection,
+      ),
+      ...(scanItems.length > 0
         ? [
             {
-              id: "assignee",
-              title: t("Assignee"),
-              items: assigneeChoices.map((person) => ({
-                id: `assignee:${person.value}`,
-                title: person.label,
-                selected: assignee === person.value,
-                onPress: () => setAssignee(person.value),
-              })),
+              id: "scan",
+              title: t("Scan chats"),
+              icon: "magnifyingglass",
+              items: scanItems,
             },
           ]
         : []),
-      {
-        id: "view",
-        title: t("View"),
-        items: [
-          {
-            id: "view:list",
-            title: t("List view"),
-            selected: view === "list",
-            onPress: () => setView("list"),
-          },
-          {
-            id: "view:board",
-            title: t("Board view"),
-            selected: view === "board",
-            onPress: () => setView("board"),
-          },
-        ],
-      },
       {
         id: "archived",
         title: t("Show archived"),
@@ -626,6 +622,7 @@ function UnifiedRequirementBoard({
     <SettingsScreen
       workspaceRoot={workspace}
       title={t("Requirements board")}
+      actions={showingList ? headerActions : undefined}
       menus={showingList ? [headerMenu] : undefined}
       search={
         showingList
@@ -703,79 +700,32 @@ function UnifiedRequirementBoard({
                 gap: 8,
               }}
             >
-              {onlineEnvironments.length > 1 ? (
-                <ListFilterMenu
-                  label={
-                    filterEnvironmentId
-                      ? environmentLabel(filterEnvironmentId)
-                      : t("All environments")
-                  }
-                  accessibilityLabel={t("Environment")}
-                  active={filterEnvironmentId !== null}
-                  actions={[
-                    {
-                      id: "all",
-                      title: t("All environments"),
-                      state: filterEnvironmentId === null ? "on" : "off",
-                    },
-                    ...onlineEnvironments.map((environment) => ({
-                      id: environment.environmentId,
-                      title: environment.label,
-                      state:
-                        filterEnvironmentId === environment.environmentId
-                          ? ("on" as const)
-                          : ("off" as const),
-                    })),
-                  ]}
-                  onSelect={(id) => {
-                    onEnvironment(id === "all" ? null : EnvironmentId.make(id));
-                    setProjectId(null);
-                  }}
-                />
-              ) : null}
+              <ListFilterMenu
+                label={
+                  filterEnvironmentId
+                    ? environmentLabel(filterEnvironmentId)
+                    : t("All environments")
+                }
+                accessibilityLabel={t("Environment")}
+                active={filterEnvironmentId !== null}
+                actions={environmentActions}
+                onSelect={applyFilterSelection}
+              />
               <ListFilterMenu
                 label={
                   sourceChoices.find((option) => option.value === source)?.label ?? t("All sources")
                 }
                 accessibilityLabel={t("Issue source")}
                 active={source !== "all"}
-                actions={sourceChoices.map((option) => ({
-                  id: option.value,
-                  title: option.label,
-                  state: source === option.value ? ("on" as const) : ("off" as const),
-                }))}
-                onSelect={(id) => {
-                  setSource(id as RequirementSource);
-                  setAssignee("me");
-                }}
+                actions={sourceActions}
+                onSelect={applyFilterSelection}
               />
               <ListFilterMenu
-                label={
-                  projects.find((project) => project.id === projectId)?.title ?? t("All projects")
-                }
+                label={selectedProject?.title ?? t("All projects")}
                 accessibilityLabel={t("Project")}
-                active={projectId !== null}
-                actions={[
-                  {
-                    id: "",
-                    title: t("All projects"),
-                    state: !projectId ? ("on" as const) : ("off" as const),
-                  },
-                  ...projects.map((project) => ({
-                    id: projectKey(project),
-                    title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-                    state:
-                      projectId === project.id &&
-                      (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId
-                        ? ("on" as const)
-                        : ("off" as const),
-                  })),
-                ]}
-                onSelect={(id) => {
-                  const project = projects.find((candidate) => projectKey(candidate) === id);
-                  setProjectId(project?.id ?? null);
-                  if (project) onEnvironment(project.environmentId);
-                }}
+                active={projectFilter !== null}
+                actions={projectActions}
+                onSelect={applyFilterSelection}
               />
               {source !== "local" ? (
                 <ListFilterMenu
@@ -784,47 +734,10 @@ function UnifiedRequirementBoard({
                   }
                   accessibilityLabel={t("Assignee")}
                   active={assignee !== "me"}
-                  actions={assigneeChoices.map((person) => ({
-                    id: person.value,
-                    title: person.label,
-                    state: assignee === person.value ? ("on" as const) : ("off" as const),
-                  }))}
-                  onSelect={setAssignee}
+                  actions={assigneeActions}
+                  onSelect={applyFilterSelection}
                 />
               ) : null}
-              <Menu
-                title={t("New or scan")}
-                actions={[
-                  ...createMenuActions,
-                  {
-                    id: "scan",
-                    title: t("Scan chats"),
-                    image: "magnifyingglass",
-                    subactions: projects.map((project) => ({
-                      id: `scan:${projectKey(project)}`,
-                      title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-                      attributes: {
-                        disabled:
-                          busy ||
-                          !permissions.get(project.environmentId)?.discoverWorkItems ||
-                          registry.get(serverEnvironment.configValueAtom(project.environmentId))
-                            ?.workItemDiscovery !== true,
-                      },
-                    })),
-                  },
-                ]}
-                onPressAction={({ nativeEvent }) => handleCreateOrScanAction(nativeEvent.event)}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t("New")}
-                  hitSlop={6}
-                  disabled={!projects.length || busy}
-                  className={!projects.length || busy ? "opacity-45" : "active:opacity-70"}
-                >
-                  <Chip label={t("New")} icon="plus" />
-                </Pressable>
-              </Menu>
               {isFiltered ? (
                 <Pressable
                   accessibilityRole="button"
@@ -934,7 +847,170 @@ function UnifiedRequirementBoard({
           </>
         )}
       </ScreenScrollView>
+      {createSheetOpen ? (
+        <RequirementCreateSheet
+          projects={projects}
+          environmentLabel={environmentLabel}
+          defaultProject={
+            selectedProject ??
+            projects.find((project) => project.environmentId === environmentId) ??
+            projects[0]
+          }
+          defaultSource={source === "all" ? "local" : source}
+          busy={busy}
+          run={runOnEnvironment}
+          onClose={() => setCreateSheetOpen(false)}
+          onCreatedLocal={(createdEnvId, item) => {
+            setCreateSheetOpen(false);
+            setActionEnvironmentId(createdEnvId);
+            showItem(item.id);
+          }}
+          onCreatedIssue={(target, id) => {
+            setCreateSheetOpen(false);
+            navigation.navigate("IssueDetail", { ...target, id });
+          }}
+        />
+      ) : null}
     </SettingsScreen>
+  );
+}
+
+function RequirementCreateSheet({
+  projects,
+  environmentLabel,
+  defaultProject,
+  defaultSource,
+  busy: parentBusy,
+  run,
+  onClose,
+  onCreatedLocal,
+  onCreatedIssue,
+}: {
+  projects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly title: string;
+    readonly environmentId: EnvironmentId;
+  }>;
+  environmentLabel: (id: EnvironmentId) => string;
+  defaultProject:
+    | { readonly id: ProjectId; readonly title: string; readonly environmentId: EnvironmentId }
+    | undefined;
+  defaultSource: Exclude<RequirementSource, "all">;
+  busy: boolean;
+  run: (
+    environmentId: EnvironmentId,
+    input: WorkItemCommandInput,
+  ) => Promise<{ readonly id: WorkItemId } | null>;
+  onClose: () => void;
+  onCreatedLocal: (environmentId: EnvironmentId, item: { readonly id: WorkItemId }) => void;
+  onCreatedIssue: (target: Target, id: string) => void;
+}) {
+  const t = useUiTranslation();
+  const [selectedProjectKey, setSelectedProjectKey] = useState(
+    defaultProject ? `${defaultProject.environmentId}/${defaultProject.id}` : "",
+  );
+  const project =
+    projects.find((entry) => `${entry.environmentId}/${entry.id}` === selectedProjectKey) ??
+    projects[0];
+  const config = useEnvironmentServerConfig(project?.environmentId ?? null);
+  const canCreateLocal = useAtomValue(
+    serverEnvironment.mutateWorkItem.permissionAtom(
+      project?.environmentId ?? EnvironmentId.make(""),
+    ),
+  );
+  const canCreateIssue = useAtomValue(
+    sourceControlEnvironment.createIssue.permissionAtom(
+      project?.environmentId ?? EnvironmentId.make(""),
+    ),
+  );
+  const localAllowed = Boolean(project && canCreateLocal && config?.workItems === true);
+  const issueAllowed = Boolean(project && canCreateIssue);
+  const [kind, setKind] = useState<Exclude<RequirementSource, "all">>(() => {
+    if (defaultSource === "local" && !localAllowed && issueAllowed) return "github";
+    if (defaultSource !== "local" && !issueAllowed && localAllowed) return "local";
+    return defaultSource;
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!project) return null;
+
+  const kindOptions = [
+    ...(localAllowed ? [{ value: "local", label: t("Local work item") }] : []),
+    ...(issueAllowed
+      ? [
+          { value: "github", label: "GitHub Issue" },
+          { value: "meituan", label: "MEP ONES" },
+        ]
+      : []),
+  ];
+  const activeKind = kindOptions.some((option) => option.value === kind)
+    ? kind
+    : ((kindOptions[0]?.value as Exclude<RequirementSource, "all"> | undefined) ?? "local");
+
+  return (
+    <Sheet
+      title={t("New requirement")}
+      onClose={onClose}
+      dismissDisabled={parentBusy || submitting}
+      expanded
+    >
+      <ScreenScrollView
+        className="flex-1"
+        keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerClassName="gap-4 px-5 pt-4 pb-12"
+      >
+        {projects.length > 1 ? (
+          <IssuePicker
+            label={t("Project")}
+            value={`${project.environmentId}/${project.id}`}
+            options={projects.map((candidate) => ({
+              value: `${candidate.environmentId}/${candidate.id}`,
+              label: `${environmentLabel(candidate.environmentId)} · ${candidate.title}`,
+            }))}
+            disabled={parentBusy || submitting}
+            onChange={setSelectedProjectKey}
+          />
+        ) : null}
+        {kindOptions.length > 1 ? (
+          <IssuePicker
+            label={t("Requirement source")}
+            value={activeKind}
+            options={kindOptions}
+            disabled={parentBusy || submitting}
+            onChange={(value) => setKind(value as Exclude<RequirementSource, "all">)}
+          />
+        ) : null}
+        {activeKind === "local" ? (
+          <TaskEditor
+            key={`${project.environmentId}/${project.id}`}
+            environmentId={project.environmentId}
+            projectId={project.id}
+            item={null}
+            disabled={!localAllowed || parentBusy || submitting}
+            run={async (input) => {
+              setSubmitting(true);
+              const created = await run(project.environmentId, input).finally(() =>
+                setSubmitting(false),
+              );
+              return created as Awaited<ReturnType<Parameters<typeof TaskEditor>[0]["run"]>>;
+            }}
+            onCancel={onClose}
+            onSaved={(item) => onCreatedLocal(project.environmentId, item)}
+          />
+        ) : (
+          <IssueCreateFormBody
+            key={`${project.environmentId}/${project.id}/${activeKind}`}
+            environmentId={project.environmentId}
+            projectId={project.id}
+            provider={activeKind}
+            allowProjectChange={false}
+            onBusyChange={setSubmitting}
+            onCreated={onCreatedIssue}
+          />
+        )}
+      </ScreenScrollView>
+    </Sheet>
   );
 }
 
@@ -1091,15 +1167,53 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
 export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
   const t = useUiTranslation();
   const navigation = useNavigation();
-  const [selectedScope, setSelectedScope] = useState("");
-  const projects = useProjects().filter(
-    (project) => project.environmentId === route.params.environmentId && !project.isScratch,
+  return (
+    <SettingsScreen title={t("New issue")}>
+      <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
+        <IssueCreateFormBody
+          environmentId={route.params.environmentId}
+          projectId={route.params.projectId}
+          provider={route.params.provider}
+          initialScope={route.params.scope}
+          allowProjectChange
+          onCreated={(target, id) =>
+            navigation.dispatch(StackActions.replace("IssueDetail", { ...target, id }))
+          }
+        />
+      </ScreenScrollView>
+    </SettingsScreen>
   );
-  const [projectId, setProjectId] = useState(route.params.projectId);
-  const [selectedProvider, setProvider] = useState<IssueProvider | null>(null);
+}
+
+function IssueCreateFormBody({
+  environmentId,
+  projectId: initialProjectId,
+  provider: initialProvider,
+  initialScope,
+  allowProjectChange,
+  onBusyChange,
+  onCreated,
+}: {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  provider: IssueProvider;
+  initialScope?: string;
+  allowProjectChange: boolean;
+  onBusyChange?: (busy: boolean) => void;
+  onCreated: (target: Target, id: string) => void;
+}) {
+  const t = useUiTranslation();
+  const [selectedScope, setSelectedScope] = useState(initialScope ?? "");
+  const projects = useProjects().filter(
+    (project) => project.environmentId === environmentId && !project.isScratch,
+  );
+  const [projectId, setProjectId] = useState(initialProjectId);
+  const [selectedProvider, setProvider] = useState<IssueProvider | null>(
+    allowProjectChange ? null : initialProvider,
+  );
   const sources = useEnvironmentQuery(
     sourceControlEnvironment.issueSources({
-      environmentId: route.params.environmentId,
+      environmentId,
       input: { projectIds: [projectId] },
     }),
   );
@@ -1107,18 +1221,20 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
     ...new Set(sources.data?.[0]?.sources.map((source) => source.provider) ?? []),
   ];
   const platformSelected =
+    !allowProjectChange ||
     availableProviders.length === 1 ||
     (selectedProvider !== null && availableProviders.includes(selectedProvider));
-  const provider =
-    availableProviders.length === 1
+  const provider = !allowProjectChange
+    ? initialProvider
+    : availableProviders.length === 1
       ? availableProviders[0]!
-      : (selectedProvider ?? route.params.provider);
+      : (selectedProvider ?? initialProvider);
   const scopes =
     sources.data?.[0]?.sources
       .filter((source) => source.provider === provider)
       .map((source) => source.scope) ?? [];
   const scope = scopes.includes(selectedScope) ? selectedScope : scopes[0];
-  const target = { ...route.params, projectId, provider, ...(scope ? { scope } : {}) };
+  const target: Target = { environmentId, projectId, provider, ...(scope ? { scope } : {}) };
   const [type, setType] = useState<(typeof IssueMetadataInput.Type)["type"]>("REQUIREMENT");
   const [subtype, setSubtype] = useState("");
   const [title, setTitle] = useState("");
@@ -1153,6 +1269,7 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
   const submit = async () => {
     if (!scope || generating || !platformSelected) return;
     setBusy(true);
+    onBusyChange?.(true);
     setError(null);
     const result = await command({
       environmentId: target.environmentId,
@@ -1167,8 +1284,8 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
       },
     });
     setBusy(false);
-    if (result._tag === "Success")
-      navigation.dispatch(StackActions.replace("IssueDetail", { ...target, id: result.value.id }));
+    onBusyChange?.(false);
+    if (result._tag === "Success") onCreated(target, result.value.id);
     else {
       const failure = squashAtomCommandFailure(result);
       setError(
@@ -1188,8 +1305,8 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
     }
   };
   return (
-    <SettingsScreen title={t("New issue")}>
-      <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
+    <>
+      {allowProjectChange ? (
         <IssuePicker
           label={t("Project")}
           value={projectId}
@@ -1205,189 +1322,187 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
             setFields({});
           }}
         />
-        {availableProviders.length > 1 ? (
-          <IssuePicker
-            label={t("Choose platform")}
-            value={selectedProvider ?? ""}
-            options={availableProviders.map((value) => ({
-              value,
-              label: value === "github" ? "GitHub Issues" : "MEP ONES",
-            }))}
-            disabled={busy || generating}
-            onChange={(value) => {
-              setProvider(value === "github" ? "github" : "meituan");
-              setAssignee("");
-              setPersonQuery("");
-              setSelectedScope("");
-              setSubtype("");
-              setFields({});
-            }}
-          />
-        ) : null}
-        <DraftFillButton
-          environmentId={target.environmentId}
-          projectId={target.projectId}
-          context={[title, body].filter(Boolean).join("\n\n")}
-          disabled={busy || uncertain}
-          onBusyChange={setGenerating}
-          onDraft={(draft) => {
-            setTitle(draft.title);
-            setBody(
-              [
-                draft.description,
-                draft.constraints.length
-                  ? t("Constraints") +
-                    "\n" +
-                    draft.constraints.map((line) => "- " + line).join("\n")
-                  : "",
-                draft.acceptanceCriteria.length
-                  ? t("Acceptance criteria") +
-                    "\n" +
-                    draft.acceptanceCriteria.map((line) => "- " + line).join("\n")
-                  : "",
-              ]
-                .filter(Boolean)
-                .join("\n\n"),
-            );
+      ) : null}
+      {allowProjectChange && availableProviders.length > 1 ? (
+        <IssuePicker
+          label={t("Choose platform")}
+          value={selectedProvider ?? ""}
+          options={availableProviders.map((value) => ({
+            value,
+            label: value === "github" ? "GitHub Issues" : "MEP ONES",
+          }))}
+          disabled={busy || generating}
+          onChange={(value) => {
+            setProvider(value === "github" ? "github" : "meituan");
+            setAssignee("");
+            setPersonQuery("");
+            setSelectedScope("");
+            setSubtype("");
+            setFields({});
           }}
         />
-        {scopes.length > 1 ? (
+      ) : null}
+      <DraftFillButton
+        environmentId={target.environmentId}
+        projectId={target.projectId}
+        context={[title, body].filter(Boolean).join("\n\n")}
+        disabled={busy || uncertain}
+        onBusyChange={setGenerating}
+        onDraft={(draft) => {
+          setTitle(draft.title);
+          setBody(
+            [
+              draft.description,
+              draft.constraints.length
+                ? t("Constraints") + "\n" + draft.constraints.map((line) => "- " + line).join("\n")
+                : "",
+              draft.acceptanceCriteria.length
+                ? t("Acceptance criteria") +
+                  "\n" +
+                  draft.acceptanceCriteria.map((line) => "- " + line).join("\n")
+                : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          );
+        }}
+      />
+      {scopes.length > 1 ? (
+        <IssuePicker
+          label={t("MEP space ID")}
+          value={scope ?? ""}
+          options={scopes.map((value) => ({ value, label: value }))}
+          onChange={(value) => {
+            setSelectedScope(value);
+            setAssignee("");
+            setPersonQuery("");
+            setSubtype("");
+            setFields({});
+          }}
+        />
+      ) : null}
+      {target.provider === "meituan" ? (
+        <>
           <IssuePicker
-            label={t("MEP space ID")}
-            value={scope ?? ""}
-            options={scopes.map((value) => ({ value, label: value }))}
+            label={t("Work item type")}
+            value={type}
+            options={[
+              { value: "REQUIREMENT", label: t("Requirement") },
+              { value: "DEVTASK", label: t("Task") },
+              { value: "DEFECT", label: t("Defect") },
+            ]}
             onChange={(value) => {
-              setSelectedScope(value);
-              setAssignee("");
-              setPersonQuery("");
+              setType(value as typeof type);
               setSubtype("");
               setFields({});
             }}
           />
-        ) : null}
-        {target.provider === "meituan" ? (
-          <>
-            <IssuePicker
-              label={t("Work item type")}
-              value={type}
-              options={[
-                { value: "REQUIREMENT", label: t("Requirement") },
-                { value: "DEVTASK", label: t("Task") },
-                { value: "DEFECT", label: t("Defect") },
-              ]}
-              onChange={(value) => {
-                setType(value as typeof type);
-                setSubtype("");
-                setFields({});
-              }}
-            />
-            <IssuePicker
-              label={t("Subtype")}
-              value={subtype}
-              options={metadata.data?.subtypes ?? []}
-              onChange={(value) => {
-                setSubtype(value);
-                setFields({});
-              }}
-            />
-          </>
-        ) : null}
-        <AppTextInput
-          accessibilityLabel={t("Title")}
-          placeholder={t("Title")}
-          value={title}
-          onChangeText={setTitle}
-          editable={!busy && !generating}
-          maxLength={256}
-        />
-        <AppTextInput
-          accessibilityLabel={t("Description")}
-          placeholder={t("Description")}
-          multiline
-          value={body}
-          onChangeText={setBody}
-          editable={!busy && !generating}
-        />
-        <AppTextInput
-          accessibilityLabel={t("Search people")}
-          placeholder={t("Search people")}
-          onSubmitEditing={(event) => setPersonQuery(event.nativeEvent.text)}
-          returnKeyType="search"
-          editable={!busy && !generating}
-        />
-        <IssuePicker
-          label={t("Assignee")}
-          value={assignee}
-          options={[{ value: "", label: t("Unassigned") }, ...(people.data ?? [])]}
-          onChange={setAssignee}
-          disabled={busy || generating}
-        />
-        {metadata.data?.fields.map((field) => (
-          <View key={field.variable} className="gap-2">
-            <Text>
-              {field.label}
-              {field.required ? " *" : ""}
-            </Text>
-            {field.options.length && field.multiple ? (
-              field.options.map((option) => (
-                <ListToggleRow
-                  key={option.value}
-                  label={option.label}
-                  disabled={busy || generating}
-                  value={(fields[field.variable] ?? "").split(",").includes(option.value)}
-                  onValueChange={(checked) => {
-                    const selected = (fields[field.variable] ?? "")
-                      .split(",")
-                      .filter(Boolean)
-                      .filter((value) => value !== option.value);
-                    setFields({
-                      ...fields,
-                      [field.variable]: [...selected, ...(checked ? [option.value] : [])].join(","),
-                    });
-                  }}
-                />
-              ))
-            ) : field.options.length ? (
-              <IssuePicker
-                label={field.label}
-                value={fields[field.variable] ?? ""}
-                options={field.options}
-                onChange={(value) => setFields({ ...fields, [field.variable]: value })}
+          <IssuePicker
+            label={t("Subtype")}
+            value={subtype}
+            options={metadata.data?.subtypes ?? []}
+            onChange={(value) => {
+              setSubtype(value);
+              setFields({});
+            }}
+          />
+        </>
+      ) : null}
+      <AppTextInput
+        accessibilityLabel={t("Title")}
+        placeholder={t("Title")}
+        value={title}
+        onChangeText={setTitle}
+        editable={!busy && !generating}
+        maxLength={256}
+      />
+      <AppTextInput
+        accessibilityLabel={t("Description")}
+        placeholder={t("Description")}
+        multiline
+        value={body}
+        onChangeText={setBody}
+        editable={!busy && !generating}
+      />
+      <AppTextInput
+        accessibilityLabel={t("Search people")}
+        placeholder={t("Search people")}
+        onSubmitEditing={(event) => setPersonQuery(event.nativeEvent.text)}
+        returnKeyType="search"
+        editable={!busy && !generating}
+      />
+      <IssuePicker
+        label={t("Assignee")}
+        value={assignee}
+        options={[{ value: "", label: t("Unassigned") }, ...(people.data ?? [])]}
+        onChange={setAssignee}
+        disabled={busy || generating}
+      />
+      {metadata.data?.fields.map((field) => (
+        <View key={field.variable} className="gap-2">
+          <Text>
+            {field.label}
+            {field.required ? " *" : ""}
+          </Text>
+          {field.options.length && field.multiple ? (
+            field.options.map((option) => (
+              <ListToggleRow
+                key={option.value}
+                label={option.label}
                 disabled={busy || generating}
+                value={(fields[field.variable] ?? "").split(",").includes(option.value)}
+                onValueChange={(checked) => {
+                  const selected = (fields[field.variable] ?? "")
+                    .split(",")
+                    .filter(Boolean)
+                    .filter((value) => value !== option.value);
+                  setFields({
+                    ...fields,
+                    [field.variable]: [...selected, ...(checked ? [option.value] : [])].join(","),
+                  });
+                }}
               />
-            ) : (
-              <AppTextInput
-                accessibilityLabel={field.label}
-                value={fields[field.variable] ?? ""}
-                onChangeText={(value) => setFields({ ...fields, [field.variable]: value })}
-                editable={!busy && !generating}
-              />
-            )}
-          </View>
-        ))}
-        {error || metadata.error ? (
-          <Text className="text-danger">{error ?? metadata.error}</Text>
-        ) : null}
-        <Button
-          label={t("Create issue")}
-          icon="plus"
-          loading={busy}
-          disabled={
-            generating ||
-            !platformSelected ||
-            !allowed ||
-            !title.trim() ||
-            uncertain ||
-            metadata.isPending ||
-            Boolean(metadata.error) ||
-            metadata.data?.fields.some(
-              (field) => field.required && !fields[field.variable]?.trim(),
-            ) ||
-            (target.provider === "meituan" && !subtype)
-          }
-          onPress={() => void submit()}
-        />
-      </ScreenScrollView>
-    </SettingsScreen>
+            ))
+          ) : field.options.length ? (
+            <IssuePicker
+              label={field.label}
+              value={fields[field.variable] ?? ""}
+              options={field.options}
+              onChange={(value) => setFields({ ...fields, [field.variable]: value })}
+              disabled={busy || generating}
+            />
+          ) : (
+            <AppTextInput
+              accessibilityLabel={field.label}
+              value={fields[field.variable] ?? ""}
+              onChangeText={(value) => setFields({ ...fields, [field.variable]: value })}
+              editable={!busy && !generating}
+            />
+          )}
+        </View>
+      ))}
+      {error || metadata.error ? (
+        <Text className="text-danger">{error ?? metadata.error}</Text>
+      ) : null}
+      <Button
+        label={t("Create issue")}
+        icon="plus"
+        loading={busy}
+        disabled={
+          generating ||
+          !platformSelected ||
+          !allowed ||
+          !title.trim() ||
+          uncertain ||
+          metadata.isPending ||
+          Boolean(metadata.error) ||
+          metadata.data?.fields.some(
+            (field) => field.required && !fields[field.variable]?.trim(),
+          ) ||
+          (target.provider === "meituan" && !subtype)
+        }
+        onPress={() => void submit()}
+      />
+    </>
   );
 }

@@ -56,7 +56,9 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../ui/empty";
+import { RefreshIcon } from "../ui/refresh-icon";
 import { SidebarInset } from "../ui/sidebar";
+import { Spinner } from "../ui/spinner";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { isElectron } from "../../env";
 import {
@@ -152,8 +154,13 @@ export function RequirementBoard({
     (environment) => environment.connection.phase === "connected",
   );
   const filterEnvironmentId = compact ? fallbackEnvironmentId : search.environmentId;
+  const queryEnvironmentId =
+    filterEnvironmentId ?? (search.projectId ? fallbackEnvironmentId : undefined);
   const visibleEnvironments = onlineEnvironments.filter(
     (environment) => !filterEnvironmentId || environment.environmentId === filterEnvironmentId,
+  );
+  const queryEnvironments = onlineEnvironments.filter(
+    (environment) => !queryEnvironmentId || environment.environmentId === queryEnvironmentId,
   );
   const [creatingEnvironmentId, setCreatingEnvironmentId] = useState<EnvironmentId | null>(null);
   const detailEnvironmentId =
@@ -178,9 +185,10 @@ export function RequirementBoard({
     pages: {},
   });
   const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
+  const queryEnvironmentIds = queryEnvironments.map((environment) => environment.environmentId);
   const permissions = useAtomValue(permissionAtoms(environmentIds));
   const filterKey = JSON.stringify([
-    environmentIds,
+    queryEnvironmentIds,
     source,
     assignee,
     search.projectId,
@@ -191,7 +199,7 @@ export function RequirementBoard({
   const data = useAtomValue(
     boardAtoms(
       new RequirementOverviewKey({
-        environmentIds,
+        environmentIds: queryEnvironmentIds,
         source,
         assignee,
         projectId: search.projectId ?? null,
@@ -311,9 +319,10 @@ export function RequirementBoard({
         >
           <WorkspacePageHeader
             electron={!compact && isElectron}
+            reserveNativeControls={!compact && isElectron}
             className={
               compact
-                ? "justify-between border-b border-border px-4"
+                ? "justify-between border-b border-border px-4!"
                 : "justify-between border-b border-border/60"
             }
           >
@@ -321,7 +330,7 @@ export function RequirementBoard({
               <ClipboardListIcon className="size-4 shrink-0 text-muted-foreground" />
               <h1 className="truncate text-sm font-semibold">{t("Requirements board")}</h1>
               {entries.length > 0 ? (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground tabular-nums">
+                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground tabular-nums">
                   {entries.length}
                 </span>
               ) : null}
@@ -329,7 +338,12 @@ export function RequirementBoard({
                 <Popover>
                   <PopoverTrigger
                     render={
-                      <Button size="icon-xs" variant="ghost" aria-label={t("View loading errors")}>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        className="shrink-0"
+                        aria-label={t("View loading errors")}
+                      >
                         <AlertTriangleIcon className="size-3.5 text-warning-foreground" />
                       </Button>
                     }
@@ -351,8 +365,12 @@ export function RequirementBoard({
                 </Popover>
               ) : null}
               {data.isPending && entries.length ? (
-                <span role="status" className="text-xs text-muted-foreground">
-                  {t("Updating")}
+                <span
+                  role="status"
+                  className="inline-flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground"
+                >
+                  <Spinner size="xs" tone="muted" aria-hidden="true" role={undefined} />
+                  <span className="sr-only sm:not-sr-only">{t("Updating")}</span>
                 </span>
               ) : null}
             </div>
@@ -580,7 +598,7 @@ export function RequirementBoard({
               disabled={data.isPending}
               onClick={refresh}
             >
-              <RefreshCwIcon />
+              <RefreshIcon refreshing={data.isPending} />
             </Button>
           </div>
           {source !== "all" || search.projectId !== undefined || archived ? (
@@ -597,8 +615,11 @@ export function RequirementBoard({
               {source !== "all" && search.projectId !== undefined ? <span>·</span> : null}
               {search.projectId !== undefined ? (
                 <span>
-                  {projects.find((project) => project.id === search.projectId)?.title ??
-                    search.projectId}
+                  {projects.find(
+                    (project) =>
+                      project.id === search.projectId &&
+                      project.environmentId === (filterEnvironmentId ?? fallbackEnvironmentId),
+                  )?.title ?? search.projectId}
                 </span>
               ) : null}
               {archived ? (

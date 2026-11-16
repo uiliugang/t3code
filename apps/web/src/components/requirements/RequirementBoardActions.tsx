@@ -150,10 +150,14 @@ export function RequirementScanMenu({
     <Menu>
       <MenuTrigger
         render={
-          <Button size="sm" variant="outline" disabled={!environments.length || busy}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!environments.length || busy}
+            aria-label={`${t("Scan chats")} ${t("Select a project")}`}
+          >
             <ScanSearchIcon />
-            {t("Scan chats")}
-            <span className="sr-only">{t("Select a project")}</span>
+            <span className="hidden sm:inline">{t("Scan chats")}</span>
           </Button>
         }
       />

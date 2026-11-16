@@ -27,6 +27,7 @@ import {
   paceRemainingPercent,
   usesChatGptSharing,
   resolveNewThreadModelSelection,
+  summarizeLimitNotice,
 } from "./usageLimits.ts";
 
 const now = Date.parse("2026-09-03T12:00:00.000Z");
@@ -1840,6 +1841,20 @@ describe("external usage settings", () => {
       [EnvironmentId.make("c"), host],
     ]);
     expect(collectLimitNotices(presentations)).toEqual(["Host · codex: Could not read limits."]);
+  });
+
+  it("summarizes auth and network limit notices with localized short labels", () => {
+    const zh = (message: string, values?: Readonly<Record<string, string | number>>) =>
+      translateUi("zh-CN", message, values);
+    expect(
+      summarizeLimitNotice(
+        'Gmac · Codex: Codex CLI is not authenticated. Run `codex login` with CODEX_HOME="/tmp".',
+        zh,
+      ),
+    ).toBe("Gmac · Codex: 未认证");
+    expect(
+      summarizeLimitNotice("Gmac · Hub: Failed to fetch remote endpoint (Transport error).", zh),
+    ).toBe("Gmac · Hub: 未连接");
   });
 });
 

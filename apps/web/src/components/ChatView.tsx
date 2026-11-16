@@ -315,6 +315,7 @@ import {
 } from "./chat/PanelLayoutControls";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
+import { resolveThreadDetailsVisibility } from "./chat/threadDetailsItems";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -2006,6 +2007,12 @@ export default function ChatView(props: ChatViewProps) {
       threadPanelPresentation,
     ),
   );
+  const threadDetailsVisibility = resolveThreadDetailsVisibility(settings);
+  const inlineDetailsPanelOpen = threadPanelPresentation === "inline" && threadPanelOpen;
+  const inlineDetailsPanelCoversControls =
+    inlineDetailsPanelOpen &&
+    (!isGitRepo || threadDetailsVisibility.branch) &&
+    (!showComposerEnvironmentIndicator || threadDetailsVisibility.environment);
   const showComposerContextStrip =
     !embedded &&
     shouldShowComposerContextStrip({
@@ -2014,7 +2021,7 @@ export default function ChatView(props: ChatViewProps) {
       hasActiveProject: activeProject !== null && !showProviderSubagentBar,
       isGitRepo,
       showEnvironmentIndicator: showComposerEnvironmentIndicator,
-      inlineDetailsPanelOpen: threadPanelPresentation === "inline" && threadPanelOpen,
+      inlineDetailsPanelCoversControls,
     });
   const supportsThreadPullRequests = serverConfig !== null;
   const visiblePullRequests = visibleThreadPullRequests(
@@ -3925,6 +3932,9 @@ export default function ChatView(props: ChatViewProps) {
                 />
 
                 <ThreadDetailsPanel
+                  {...(!showComposerContextStrip && inlineDetailsPanelOpen
+                    ? { branchToolbarRef }
+                    : {})}
                   anchor={threadPanelPopoverAnchorRef}
                   handle={threadPanelPopoverHandle}
                   forceNewWorktree={multipleModelSelections !== null}

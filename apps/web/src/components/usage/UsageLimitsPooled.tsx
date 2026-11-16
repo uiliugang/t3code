@@ -15,6 +15,7 @@ import {
   remainingPercent,
   type ResetCreditChoice,
   resetCreditChoices,
+  summarizeLimitNotice,
 } from "@t3tools/shared/usageLimits";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
@@ -704,32 +705,19 @@ export function UsageLimitsPooled({
   );
 }
 
-function compactNoticeSummary(notice: string): string {
-  const separator = notice.indexOf(":");
-  const subject = separator > 0 ? notice.slice(0, separator).trim() : notice;
-  const detail = separator > 0 ? notice.slice(separator + 1).trim() : "";
-  if (/not authenticated/i.test(detail)) return `${subject}: Not authenticated`;
-  if (/failed to fetch|transport error|econnrefused|network/i.test(detail))
-    return `${subject}: Connection unavailable`;
-  const firstSentence = detail.split(/\.\s+/)[0];
-  return firstSentence && firstSentence.length < 72
-    ? `${subject}: ${firstSentence}${firstSentence.endsWith(".") ? "" : "."}`
-    : subject;
-}
-
 function LimitNotices({ notices }: { readonly notices: readonly string[] }) {
   const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
   if (notices.length === 0) return null;
   const summary =
     notices.length === 1
-      ? compactNoticeSummary(notices[0]!)
+      ? summarizeLimitNotice(notices[0]!, t)
       : t("Provider notices ({count})", { count: notices.length });
   return (
-    <div
-      role="alert"
-      className="rounded-lg border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground"
-    >
+    <div className="rounded-lg border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+      <div role="status" aria-live="polite" className="sr-only">
+        {summary}
+      </div>
       <button
         type="button"
         aria-expanded={expanded}

@@ -6354,13 +6354,14 @@ const zhCN: Readonly<Record<string, string>> = {
   "this machine": "此设备",
   "Choose what to show": "选择要显示的内容",
   "Filter threads by project: {projects}": "按项目筛选对话：{projects}",
-  "Add project or group": "添加项目或分组",
   "Checkout {term}": "检出 {term}",
   'Create new ref "{name}"': "新建分支或引用“{name}”",
   "Provider notices ({count})": "提供商提示（{count}）",
-  "{count} environments unavailable": "{count} 个环境未连接",
-  "{count} sources unavailable": "{count} 个来源无法加载",
   "Create or scan items, or adjust your filters.": "创建或扫描需求，或调整筛选条件。",
+  "Switch to board view": "切换为看板视图",
+  "Switch to list view": "切换为列表视图",
+  "New requirement": "新建需求",
+  "Requirement source": "需求类型",
 };
 
 export function hasUiTranslation(message: string): boolean {

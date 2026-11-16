@@ -70,15 +70,15 @@ export function shouldShowComposerContextStrip(input: {
   hasActiveProject: boolean;
   isGitRepo: boolean;
   showEnvironmentIndicator: boolean;
-  inlineDetailsPanelOpen?: boolean;
+  inlineDetailsPanelCoversControls?: boolean;
 }): boolean {
   // A new thread always shows the strip, since it names the permissions the first send uses.
-  // When the inline Thread Details panel is open alongside an active thread, it already shows
-  // the workspace and branch controls, so hide the duplicate strip below the composer.
+  // When the inline Thread Details panel is open alongside an active thread and shows every
+  // control the strip would show, hide the duplicate strip below the composer.
   return (
     input.hasActiveProject &&
     (input.isDraftHeroState ||
-      (!input.inlineDetailsPanelOpen &&
+      (!input.inlineDetailsPanelCoversControls &&
         input.persistInActiveThreads &&
         (input.isGitRepo || input.showEnvironmentIndicator)))
   );

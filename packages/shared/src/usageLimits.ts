@@ -427,6 +427,19 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
   return [...accounts.values()];
 }
 
+export function summarizeLimitNotice(notice: string, t: UiTranslator): string {
+  const separator = notice.indexOf(":");
+  const subject = separator > 0 ? notice.slice(0, separator).trim() : notice;
+  const detail = separator > 0 ? notice.slice(separator + 1).trim() : "";
+  if (/not authenticated/i.test(detail)) return `${subject}: ${t("Not authenticated")}`;
+  if (/failed to fetch|transport error|econnrefused|network/i.test(detail))
+    return `${subject}: ${t("Connection offline")}`;
+  const firstSentence = detail.split(/\.\s+/)[0];
+  return firstSentence && firstSentence.length < 72
+    ? `${subject}: ${firstSentence}${firstSentence.endsWith(".") ? "" : "."}`
+    : subject;
+}
+
 export function collectLimitNotices(presentations: LimitPresentations): readonly string[] {
   const label = (environmentLabel: string, subject: string) =>
     presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;

@@ -14,6 +14,7 @@ import {
   formatResetsIn,
   paceRemainingPercent,
   remainingPercent,
+  summarizeLimitNotice,
   type LimitAccount,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
@@ -504,19 +505,6 @@ export function UsageLimitsSection({
   );
 }
 
-function compactMobileLimitNotice(notice: string, t: ReturnType<typeof useUiTranslation>): string {
-  const separator = notice.indexOf(":");
-  const subject = separator > 0 ? notice.slice(0, separator).trim() : notice;
-  const detail = separator > 0 ? notice.slice(separator + 1).trim() : "";
-  if (/not authenticated/i.test(detail)) return `${subject}: ${t("Not authenticated")}`;
-  if (/failed to fetch|transport error|econnrefused|network/i.test(detail))
-    return `${subject}: ${t("Connection offline")}`;
-  const firstSentence = detail.split(/\.\s+/)[0];
-  return firstSentence && firstSentence.length < 72
-    ? `${subject}: ${firstSentence}${firstSentence.endsWith(".") ? "" : "."}`
-    : subject;
-}
-
 function MobileLimitNoticesCard(props: {
   readonly notices: readonly string[];
   readonly failedLabels: readonly string[];
@@ -529,7 +517,7 @@ function MobileLimitNoticesCard(props: {
   const summary =
     totalCount === 1
       ? notices[0]
-        ? compactMobileLimitNotice(notices[0], t)
+        ? summarizeLimitNotice(notices[0], t)
         : t("{accounts} could not refresh limits. Showing the last known values.", {
             accounts: failedLabels.join(", "),
           })
@@ -537,15 +525,15 @@ function MobileLimitNoticesCard(props: {
 
   return (
     <View
-      accessible
-      accessibilityRole="alert"
       accessibilityLiveRegion="polite"
       className="rounded-xl border border-warning-border bg-warning px-3.5 py-2.5"
     >
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={`${summary}. ${t("Tap to view details")}`}
         accessibilityState={{ expanded }}
         onPress={() => setExpanded((value) => !value)}
+        onLongPress={() => undefined}
         className="min-h-8 flex-row items-center gap-2.5 active:opacity-70"
       >
         <SymbolView
