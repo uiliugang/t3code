@@ -1290,7 +1290,14 @@ describe("environment query lifecycle", () => {
 
       // Past the stale time, well inside the default 5 minute idle TTL.
       now = 61_000;
-      expect(yield* remount).toBe("after edit");
+      const unmount = registry.mount(harness.atom);
+      expect(registry.get(harness.atom)).toMatchObject({
+        _tag: "Success",
+        value: "before edit",
+        waiting: true,
+      });
+      expect(yield* read).toBe("after edit");
+      unmount();
       expect(fetches).toBe(2);
     }),
   );

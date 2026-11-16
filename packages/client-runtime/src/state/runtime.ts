@@ -413,10 +413,6 @@ export async function executeAtomQuery<A, E>(
           }
         });
       }
-      // Mount schedules stale-cache revalidation; keep the reader until it has started.
-      yield* Effect.callback<void>((resume) => {
-        registry.schedulerAsync.makeDispatcher().scheduleTask(() => resume(Effect.void), 0);
-      });
       return yield* AtomRegistry.getResult(registry, atom, {
         suspendOnWaiting: true,
       });
@@ -596,6 +592,8 @@ const revalidateOnMount =
           get.registry.schedulerAsync.makeDispatcher().scheduleTask(() => {
             if (active && isStale(get.once(self), staleTimeMs)) get.refresh(self);
           }, 0);
+          // Keep one-shot readers mounted until the scheduled revalidation settles.
+          return AsyncResult.waiting(current);
         }
         return current;
       },
