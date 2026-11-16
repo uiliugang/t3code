@@ -2,12 +2,14 @@ import { ProviderInstanceId, SkillManagerError, type SkillTarget } from "@t3tool
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
@@ -36,6 +38,7 @@ const make = Effect.gen(function* () {
   const home = yield* HostProcess.HomeDirectory;
   const environment = yield* HostProcess.Environment;
   const secrets = yield* SecretResolver.SecretResolver;
+  const { stateDir } = yield* ServerConfig.ServerConfig;
   const targets = Effect.gen(function* () {
     const current = yield* settings.getSettings;
     const result: SkillTarget[] = [];
@@ -71,7 +74,9 @@ const make = Effect.gen(function* () {
       switch (instance.driver) {
         case "codex":
           directory = path.join(
-            configuredHome || env.CODEX_HOME || path.join(userHome, ".codex"),
+            codexConnectionMode(instance.config) === "byok"
+              ? path.join(stateDir, "providers", "codex", id, "byok")
+              : configuredHome || env.CODEX_HOME || path.join(userHome, ".codex"),
             "skills",
           );
           break;

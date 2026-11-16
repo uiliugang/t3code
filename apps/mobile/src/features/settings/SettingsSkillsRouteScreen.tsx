@@ -447,7 +447,7 @@ function Skill({
             )}
             <ControlPill
               label={t("Use candidate version")}
-              disabled={disabled || !inspection.candidateDigest || skill.policy === "pinned"}
+              disabled={disabled || !inspection.candidateDigest}
               onPress={() =>
                 void mutate({
                   type: "resolve",

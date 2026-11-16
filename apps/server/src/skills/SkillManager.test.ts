@@ -1314,13 +1314,21 @@ describe("SkillManager", () => {
       yield* manager.drain;
       expect((yield* manager.snapshot).skills[0]?.policy).toBe("pinned");
       expect((yield* manager.snapshot).skills[0]?.activeDigest).toBe(diff.digest);
-      yield* manager.mutate({ type: "policy", id: first.id, policy: "automatic" });
       yield* manager.mutate({ type: "check", id: first.id });
       yield* manager.drain;
-      const candidate = (yield* manager.snapshot).skills[0]?.availableDigest;
-      yield* manager.mutate({ type: "update", id: first.id, digest: candidate! });
+      const candidate = yield* manager.inspect({ type: "diff", id: first.id });
+      yield* manager.mutate({
+        type: "resolve",
+        id: first.id,
+        resolution: "upstream",
+        digest: candidate.candidateDigest!,
+      });
       yield* manager.drain;
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("upstream");
+      expect((yield* manager.snapshot).skills[0]?.policy).toBe("pinned");
+      expect((yield* manager.snapshot).skills[0]?.versions).toContainEqual(
+        expect.objectContaining({ digest: diff.digest }),
+      );
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 

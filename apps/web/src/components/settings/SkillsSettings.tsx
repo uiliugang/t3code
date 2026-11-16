@@ -701,7 +701,7 @@ function DifferenceDialog({
             </Button>
           )}
           <Button
-            disabled={saving || !inspection.candidateDigest || skill.policy === "pinned"}
+            disabled={saving || !inspection.candidateDigest}
             onClick={() => void resolve("upstream")}
           >
             {t("Use candidate version")}
