@@ -1,5 +1,7 @@
 import {
+  AuthSettingsWriteScope,
   CommandId,
+  ProjectScript,
   repositoryGroupingKeyOf,
   type ProjectFoldersInspectInput,
   type ProjectFoldersImportInput,
@@ -10,9 +12,11 @@ import {
   type Project,
   type ProjectCreatePayload,
   type ProjectUpdatePayload,
+  type ProjectWorkspaceConfig,
   type ProjectWorkspaceConfigInput,
   type ProjectSnapshot,
   type ThreadId,
+  type WorkspaceRootId,
 } from "@t3tools/contracts";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
@@ -56,6 +60,56 @@ export interface ProjectUpdateInput extends ProjectUpdatePayload {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
 }
+
+const sameSetupScript = Schema.toEquivalence(Schema.UndefinedOr(ProjectScript));
+
+function workspaceSetupScriptsChanged(
+  previous: ProjectWorkspaceConfig | undefined,
+  next: ProjectWorkspaceConfigInput | undefined,
+  legacySetupScript?: ProjectScript,
+): boolean {
+  if (next === undefined) return false;
+  if (previous === undefined) {
+    return (
+      next.roots.some((root) => root.setupScript !== undefined) ||
+      (legacySetupScript !== undefined &&
+        !next.roots.some((root) => sameSetupScript(root.setupScript, legacySetupScript)))
+    );
+  }
+  const previousScripts = new Map<WorkspaceRootId, ProjectScript | undefined>(
+    previous.roots.map((root) => [root.id, root.setupScript]),
+  );
+  const nextIds = new Set(next.roots.map((root) => root.id));
+  for (const root of next.roots) {
+    const before = previousScripts.get(root.id);
+    if (!previousScripts.has(root.id)) {
+      if (root.setupScript !== undefined) return true;
+      continue;
+    }
+    if (!sameSetupScript(before, root.setupScript)) return true;
+  }
+  for (const [id, script] of previousScripts) {
+    if (!nextIds.has(id) && script !== undefined) return true;
+  }
+  return false;
+}
+
+/** Caller scopes when a client updates a project; omitted by internal callers. */
+export class ProjectMutationCallerScopes extends Context.Reference<ReadonlySet<string> | null>(
+  "t3/project/ProjectService/ProjectMutationCallerScopes",
+  { defaultValue: () => null },
+) {}
+
+export class ProjectSetupScriptAuthorizationError extends Schema.TaggedError<
+  ProjectSetupScriptAuthorizationError,
+  { readonly brand: unique symbol }
+>()("ProjectSetupScriptAuthorizationError", { projectId: ProjectId }) {
+  override get message(): string {
+    return `Changing repository worktree setup scripts requires ${AuthSettingsWriteScope}.`;
+  }
+}
+
+const isProjectSetupScriptAuthorizationError = Schema.is(ProjectSetupScriptAuthorizationError);
 
 export interface ProjectBootstrapInput extends ProjectCreateInput {}
 
@@ -141,6 +195,7 @@ export type ProjectServiceError =
   | ProjectNotEmptyError
   | ProjectInvalidError
   | ProjectWorkspaceRootChangeBlockedError
+  | ProjectSetupScriptAuthorizationError
   | ProjectOperationError;
 
 export class ProjectService extends Context.Service<
@@ -323,12 +378,26 @@ export const make = Effect.gen(function* () {
   });
 
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
+    const callerScopes = yield* ProjectMutationCallerScopes;
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
       new ProjectOperationError({ operation: "dispatch-project-command", projectId, cause });
     const workspaceRoot = command.type === "project.delete" ? undefined : command.workspaceRoot;
     const planAndCommit = Effect.gen(function* () {
       const project = Option.getOrUndefined(yield* readRow(projectId, { includeDeleted: true }));
+      if (
+        command.type === "project.meta.update" &&
+        project !== undefined &&
+        callerScopes !== null &&
+        !callerScopes.has(AuthSettingsWriteScope) &&
+        workspaceSetupScriptsChanged(
+          project.workspaceConfig,
+          command.workspaceConfig,
+          project.scripts.find((script) => script.runOnWorktreeCreate),
+        )
+      ) {
+        return yield* new ProjectSetupScriptAuthorizationError({ projectId });
+      }
       const workspaceOwner =
         workspaceRoot === undefined
           ? undefined
@@ -370,7 +439,11 @@ export const make = Effect.gen(function* () {
           ? planAndCommit
           : workspaceLocks.withLock(yield* physicalRoot(workspaceRoot), planAndCommit),
       )
-      .pipe(Effect.mapError(dispatchError));
+      .pipe(
+        Effect.mapError((cause) =>
+          isProjectSetupScriptAuthorizationError(cause) ? cause : dispatchError(cause),
+        ),
+      );
     if (receipt.projectId !== projectId || receipt.commandType !== command.type) {
       return yield* dispatchError(
         `Command ${command.commandId} was already used by ${receipt.commandType} for ${receipt.projectId}.`,
@@ -472,6 +545,11 @@ export const make = Effect.gen(function* () {
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
       yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
+      for (const root of workspaceConfig?.roots ?? []) {
+        if (root.sourcePath !== workspaceRoot) {
+          yield* rejectWorktreeContainer(input.projectId, root.sourcePath);
+        }
+      }
       yield* commit({
         type: "project.create",
         commandId: input.commandId,
@@ -491,6 +569,18 @@ export const make = Effect.gen(function* () {
       const existing = yield* readRow(input.projectId);
       if (Option.isNone(existing)) {
         return yield* new ProjectNotFoundError({ projectId: input.projectId });
+      }
+      const callerScopes = yield* ProjectMutationCallerScopes;
+      if (
+        callerScopes !== null &&
+        !callerScopes.has(AuthSettingsWriteScope) &&
+        workspaceSetupScriptsChanged(
+          existing.value.workspaceConfig,
+          input.workspaceConfig,
+          existing.value.scripts.find((script) => script.runOnWorktreeCreate),
+        )
+      ) {
+        return yield* new ProjectSetupScriptAuthorizationError({ projectId: input.projectId });
       }
       const previousRoot = existing.value.workspaceRoot;
       const workspaceConfig =
@@ -531,6 +621,17 @@ export const make = Effect.gen(function* () {
             projectId: input.projectId,
           });
         yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
+      }
+      if (workspaceConfig !== undefined) {
+        const previousRoots = new Set([
+          previousRoot,
+          ...(existing.value.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
+        ]);
+        for (const root of workspaceConfig.roots) {
+          if (!previousRoots.has(root.sourcePath) && root.sourcePath !== workspaceRoot) {
+            yield* rejectWorktreeContainer(input.projectId, root.sourcePath);
+          }
+        }
       }
       yield* commit({
         type: "project.meta.update",

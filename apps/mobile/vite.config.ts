@@ -33,6 +33,7 @@ const reactTests = [
   "src/features/settings/WechatSettingsSection.test.tsx",
   "src/features/settings/SettingsScheduledTasksRouteScreen.test.tsx",
   "src/features/settings/components/BranchNamingSettings.test.tsx",
+  "src/features/settings/components/ProjectRepositoriesEditor.test.tsx",
   "src/features/settings/components/SettingsDragHandle.test.tsx",
   "src/features/settings/components/SourceControlToolsSection.test.tsx",
   "src/features/threads/ThreadMarkdownImage.test.tsx",

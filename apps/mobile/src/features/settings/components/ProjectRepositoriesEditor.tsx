@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { serverEnvironment } from "../../../state/server";
 import {
   AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   WorkspaceRootId,
   type ProjectWorkspaceRoot,
 } from "@t3tools/contracts";
@@ -29,6 +30,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
     useSettingsEnvironmentFilter();
   const config = useAtomValue(serverEnvironment.configValueAtom(project.environmentId));
   const permission = useEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope);
+  const canWriteSettings = useEnvironmentScope(project.environmentId, AuthSettingsWriteScope);
   const t = useUiTranslation();
   const allowed = permission && config?.environment.capabilities.multiRepositoryWorkspaces === true;
   const update = useAtomCommand(projectEnvironment.update, { reportFailure: false });
@@ -56,8 +58,15 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
   const valid =
     roots.every((root) => root.alias.trim() && root.sourcePath.trim()) &&
     new Set(roots.map((root) => root.alias.trim())).size === roots.length;
+  const canSaveRoots =
+    allowed &&
+    !saving &&
+    valid &&
+    (canWriteSettings ||
+      (!roots.some((root) => root.setupScript !== undefined) &&
+        !(project.workspaceConfig?.roots.some((root) => root.setupScript !== undefined) ?? false)));
   const save = async () => {
-    if (!allowed || saving || !valid) return;
+    if (!canSaveRoots) return;
     setSaving(true);
     const result = await update({
       environmentId: project.environmentId,
@@ -149,7 +158,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
               accessibilityLabel={t("Worktree setup command")}
               autoCapitalize="none"
               autoCorrect={false}
-              editable={allowed && !saving}
+              editable={allowed && canWriteSettings && !saving}
               value={root.setupScript?.command ?? ""}
               onChangeText={(value) => {
                 const { setupScript: _setup, ...rest } = root;
@@ -179,7 +188,13 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
             <Button
               label={t("Remove repository")}
               tone="danger"
-              disabled={!allowed || saving || roots.length === 1 || primary === root.id}
+              disabled={
+                !allowed ||
+                saving ||
+                roots.length === 1 ||
+                primary === root.id ||
+                (!canWriteSettings && root.setupScript !== undefined)
+              }
               onPress={() => setRoots((current) => current.filter((entry) => entry.id !== root.id))}
             />
           </View>
@@ -205,7 +220,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
           label={t("Save repositories")}
           tone="primary"
           loading={saving}
-          disabled={!allowed || !valid}
+          disabled={!canSaveRoots}
           onPress={() => void save()}
         />
       </View>

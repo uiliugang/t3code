@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { ProjectId } from "@t3tools/contracts";
+import { AuthSettingsWriteScope, ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import * as ProjectHttp from "./http.ts";
@@ -18,5 +18,12 @@ it.effect("rejects invalid project mutations as client errors", () =>
         reason: "invalid_command",
       });
     }
+    const scopeError = yield* ProjectHttp.failProjectMutation(
+      new ProjectService.ProjectSetupScriptAuthorizationError({ projectId }),
+    ).pipe(Effect.flip);
+    expect(scopeError).toMatchObject({
+      _tag: "EnvironmentScopeRequiredError",
+      requiredPermission: AuthSettingsWriteScope,
+    });
   }),
 );

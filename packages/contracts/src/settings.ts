@@ -2156,12 +2156,20 @@ export function requiredScopesForServerSettingsPatch(
 export function requiredScopesForProjectMutation(
   mutation: ProjectMutation,
 ): ReadonlyArray<AuthEnvironmentScope> {
-  if (mutation.type === "project.delete" || mutation.scripts === undefined) {
+  if (mutation.type === "project.delete") {
+    return [AuthOrchestrationOperateScope];
+  }
+  const nestedSetupScripts = mutation.workspaceConfig?.roots.flatMap((root) =>
+    root.setupScript === undefined ? [] : [root.setupScript],
+  );
+  if (mutation.scripts === undefined && (!nestedSetupScripts || nestedSetupScripts.length === 0)) {
     return [AuthOrchestrationOperateScope];
   }
   return [
     AuthOrchestrationOperateScope,
-    ...requiredScopesForServerSettingsPatch({ defaultProjectScripts: mutation.scripts }),
+    ...requiredScopesForServerSettingsPatch({
+      defaultProjectScripts: mutation.scripts ?? nestedSetupScripts ?? [],
+    }),
   ];
 }
 

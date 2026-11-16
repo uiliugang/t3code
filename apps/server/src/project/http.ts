@@ -1,5 +1,6 @@
 import {
   AuthOrchestrationReadScope,
+  AuthSettingsWriteScope,
   EnvironmentHttpApi,
   requiredScopesForProjectMutation,
 } from "@t3tools/contracts";
@@ -10,6 +11,7 @@ import {
   annotateEnvironmentRequest,
   failEnvironmentInternal,
   failEnvironmentInvalidRequest,
+  failEnvironmentScopeRequired,
   requireEnvironmentScope,
 } from "../auth/http.ts";
 import { traceLocalHandlerWork } from "../cloud/traceRelayRequest.ts";
@@ -21,6 +23,9 @@ import { mutateProjectWithClone } from "./ProjectMutation.ts";
 export const failProjectMutation = Effect.fn("environment.projects.failMutation")(function* (
   cause: ProjectService.ProjectServiceError | ServerRuntimeStartup.ServerRuntimeStartupError,
 ) {
+  if (cause._tag === "ProjectSetupScriptAuthorizationError") {
+    return yield* failEnvironmentScopeRequired(AuthSettingsWriteScope);
+  }
   if (
     cause._tag === "ProjectNotFoundError" ||
     cause._tag === "ProjectConflictError" ||
@@ -57,10 +62,15 @@ export const layer = HttpApiBuilder.group(
         "mutate",
         Effect.fn("environment.projects.mutate")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          for (const scope of requiredScopesForProjectMutation(args.payload)) {
+          const session = yield* requireEnvironmentScope(
+            requiredScopesForProjectMutation(args.payload)[0]!,
+          );
+          for (const scope of requiredScopesForProjectMutation(args.payload).slice(1)) {
             yield* requireEnvironmentScope(scope);
           }
-          const operation = mutateProjectWithClone(projects, projectClones, args.payload);
+          const operation = mutateProjectWithClone(projects, projectClones, args.payload).pipe(
+            Effect.provideService(ProjectService.ProjectMutationCallerScopes, session.scopes),
+          );
           return yield* startup
             .enqueueCommand(operation)
             .pipe(traceLocalHandlerWork, Effect.catch(failProjectMutation));
