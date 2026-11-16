@@ -273,12 +273,19 @@ it.live(
         cwd: repo,
         args: ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "main"],
       });
-      yield* git.execute({
+      const merge = yield* git.execute({
         operation: "test",
         cwd: repo,
-        args: ["merge", "other"],
+        args: ["-c", "user.name=Test", "-c", "user.email=test@example.com", "merge", "other"],
         allowNonZeroExit: true,
       });
+      assert.equal(merge.exitCode, 1);
+      const unmerged = yield* git.execute({
+        operation: "test",
+        cwd: repo,
+        args: ["ls-files", "--unmerged"],
+      });
+      assert.include(unmerged.stdout, "conflict.txt");
       const mainHead = (yield* git.execute({
         operation: "test",
         cwd: repo,
