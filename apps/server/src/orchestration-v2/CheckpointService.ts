@@ -17,6 +17,7 @@ import {
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Hex from "effect/encoding/Hex";
@@ -33,6 +34,8 @@ const ROOT_CHECKPOINT_SCOPE_NAME = "root";
 // The provider turn waits on the baseline, so a workspace too slow for this starts without one.
 // It bounds only the snapshot: waiting on the lock lets an in-flight capture finish the same ref.
 const BASELINE_CAPTURE_BUDGET = "5 seconds";
+// Workspace baselines are required, so allow the normal Git command budget before failing.
+const WORKSPACE_BASELINE_CAPTURE_BUDGET = "30 seconds";
 
 export class CheckpointRootScopePrepareError extends Schema.TaggedError<
   CheckpointRootScopePrepareError,
@@ -281,7 +284,10 @@ export const layer: Layer.Layer<
         ),
       );
 
-    const captureBaselineSingle: CheckpointServiceV2Shape["captureBaseline"] = (input) =>
+    const captureBaselineSingle = (
+      input: Parameters<CheckpointServiceV2Shape["captureBaseline"]>[0],
+      captureBudget: Duration.Input = BASELINE_CAPTURE_BUDGET,
+    ) =>
       withWorkspaceLock(
         input.scope.cwd,
         Effect.gen(function* () {
@@ -307,7 +313,7 @@ export const layer: Layer.Layer<
               checkpointRef,
             })
             .pipe(
-              Effect.timeout(BASELINE_CAPTURE_BUDGET),
+              Effect.timeout(captureBudget),
               Effect.catchTags({
                 VcsUnsupportedOperationError: () => Effect.void,
               }),
@@ -660,7 +666,10 @@ export const layer: Layer.Layer<
         : Effect.forEach(
             input.scope.workspace.resources,
             (resource) =>
-              captureBaselineSingle({ ...input, scope: resourceScope(input.scope, resource) }).pipe(
+              captureBaselineSingle(
+                { ...input, scope: resourceScope(input.scope, resource) },
+                WORKSPACE_BASELINE_CAPTURE_BUDGET,
+              ).pipe(
                 Effect.andThen(
                   materializeBaselineCheckpointSingle({
                     ...input,

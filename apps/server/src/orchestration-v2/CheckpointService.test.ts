@@ -83,6 +83,68 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
   }),
 );
 
+it.effect.each([
+  { elapsed: "10 seconds", expected: "Success" },
+  { elapsed: "30 seconds", expected: "Failure" },
+] as const)("bounds required workspace baseline capture with %j", ({ elapsed, expected }) =>
+  Effect.gen(function* () {
+    const workspace = workspaceFixture();
+    const refs = new Map<string, string>();
+    const started = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const layerTest = CheckpointService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          Layer.mock(CheckpointStore.CheckpointStore)({
+            isGitRepository: () => Effect.succeed(true),
+            hasCheckpointRef: ({ cwd, checkpointRef }) =>
+              Effect.succeed(refs.get(checkpointRef) === cwd),
+            captureCheckpoint: ({ cwd, checkpointRef }) =>
+              (cwd === workspace.resources[0]!.checkoutRoot
+                ? Effect.void
+                : Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
+              ).pipe(
+                Effect.andThen(Effect.sync(() => refs.set(checkpointRef, cwd))),
+                Effect.asVoid,
+              ),
+          }),
+        ),
+      ),
+      Layer.provideMerge(NodeCrypto.layer),
+    );
+
+    yield* Effect.gen(function* () {
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const scope = yield* checkpoints.prepareRootRunScope({
+        threadId: ThreadId.make("multi-slow"),
+        runId: RunId.make("run:multi-slow"),
+        rootNodeId: NodeId.make("node:multi-slow"),
+        providerThreadId: ProviderThreadId.make("provider:multi-slow"),
+        cwd: workspace.resources[0]!.checkoutRoot,
+        workspace,
+        createdAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+      });
+      const capture = yield* checkpoints
+        .captureBaseline({ scope, ordinalWithinScope: 0 })
+        .pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust(elapsed);
+      yield* Deferred.succeed(release, undefined);
+      const result = yield* Fiber.join(capture);
+      assert.equal(result._tag, expected);
+      const baseline = yield* checkpoints.materializeBaselineCheckpoint({
+        scope,
+        ordinalWithinScope: 0,
+        nodeId: scope.nodeId,
+        capturedAt: scope.createdAt,
+      });
+      assert.equal(baseline.status, expected === "Success" ? "ready" : "error");
+      assert.equal(refs.size, expected === "Success" ? workspace.resources.length : 1);
+    }).pipe(Effect.provide(layerTest));
+  }),
+);
+
 it.effect(
   "skips unsupported baseline and turn checkpoints without swallowing capture failures",
   () =>
