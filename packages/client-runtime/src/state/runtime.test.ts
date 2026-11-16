@@ -1779,85 +1779,176 @@ describe("persisted environment queries", () => {
       }),
   );
 
-  it.effect("restores requirement pages and keeps them when their source cannot refresh", () =>
+  it.effect("revalidates stale requirement prefetches without refetching fresh pages", () =>
     Effect.gen(function* () {
-      const input: IssueListInput = {
-        provider: "github",
-        assignee: "me",
-        query: "",
-        page: 1,
-      };
-      const cached: typeof IssueListResult.Type = {
-        groups: [
-          {
-            source: { provider: "github", host: "github.com", scope: "owner/repo" },
-            projectIds: [ProjectId.make("requirements")],
-            issues: [
-              {
-                id: "1",
-                url: "https://github.com/owner/repo/issues/1",
-                title: "Cached requirement",
-                state: "open",
-                stateCategory: "todo",
-                type: "Issue",
-                assignees: [],
-                priority: "",
-                updatedAt: "2026-11-16T00:00:00Z",
-              },
-            ],
-            hasMore: false,
-          },
-        ],
-        failures: [],
-      };
-      const refreshed = yield* Deferred.make<void>();
-      const refresh = yield* Deferred.make<typeof IssueListResult.Type, IssueError>();
+      let now = 0;
+      using _now = vi.spyOn(Date, "now").mockImplementation(() => now);
+      let executions = 0;
       const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
-        initialState: queryConnectionState({ phase: "offline", network: "offline" }),
-        queryStore: {
-          load: (environmentId, key) =>
-            Effect.succeed(
-              environmentId === QUERY_ENVIRONMENT.environmentId &&
-                key === queryPersistenceKey("environment-data:issues:list", input)
-                ? Option.some(JSON.stringify(cached))
-                : Option.none(),
-            ),
-          save: () => Effect.void,
-        },
         rpcSession: {
           client: {
             [WS_METHODS.issuesList]: () =>
-              Deferred.succeed(refreshed, undefined).pipe(Effect.andThen(Deferred.await(refresh))),
+              Effect.sync(() => {
+                executions++;
+                return { groups: [], failures: [] };
+              }),
           },
         } as unknown as RpcSession.RpcSession,
       });
+      const registry = AtomRegistry.make();
+      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
       const runtime = harness.runtime as unknown as Atom.AtomRuntime<
         EnvironmentRegistry.EnvironmentRegistry | Persistence.EnvironmentCacheStore
       >;
-      const atom = createSourceControlEnvironmentAtoms(runtime).issues({
-        environmentId: QUERY_ENVIRONMENT.environmentId,
-        input,
+      const { issues } = createSourceControlEnvironmentAtoms(runtime);
+      const prefetch = Effect.promise(() =>
+        prefetchRequirementIssues(registry, issues, [QUERY_ENVIRONMENT.environmentId]),
+      );
+      const afterScheduledTasks = Effect.callback<void>((resume) => {
+        registry.schedulerAsync.makeDispatcher().scheduleTask(() => resume(Effect.void), 0);
       });
-      const registry = yield* mountEnvironmentQuery(atom);
-      expect(yield* readEnvironmentQuery(registry, atom)).toEqual(cached);
-      const answers = yield* Queue.unbounded<typeof IssueListResult.Type>();
-      const unsubscribe = registry.subscribe(atom, (result) => {
-        if (AsyncResult.isSuccess(result) && !result.waiting && result.value.failures.length)
-          Queue.offerUnsafe(answers, result.value);
-      });
-      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-      yield* SubscriptionRef.set(harness.supervisorState, queryConnectionState());
-      yield* Deferred.await(refreshed);
-      expect(AsyncResult.getOrElse(registry.get(atom), () => null)).toEqual(cached);
-      yield* Deferred.succeed(refresh, {
-        groups: [],
-        failures: [{ projectId: ProjectId.make("requirements"), reason: "Source unavailable" }],
-      });
-      expect(yield* Queue.take(answers)).toEqual({
-        ...cached,
-        failures: [{ projectId: ProjectId.make("requirements"), reason: "Source unavailable" }],
-      });
+      yield* prefetch;
+      yield* afterScheduledTasks;
+      expect(executions).toBe(2);
+      now = 20_000;
+      yield* prefetch;
+      yield* afterScheduledTasks;
+      expect(executions).toBe(2);
+      now = 31_000;
+      yield* prefetch;
+      expect(executions).toBe(4);
     }),
+  );
+
+  it.effect.each(["resolved", "discovery-failure", "lookup-failure", "unconfigured"] as const)(
+    "restores failed requirement pages against %s source configuration",
+    (sourceState) =>
+      Effect.gen(function* () {
+        const input: IssueListInput = {
+          provider: "github",
+          assignee: "me",
+          query: "",
+          page: 1,
+        };
+        const cached: typeof IssueListResult.Type = {
+          groups: [
+            {
+              source: { provider: "github", host: "github.com", scope: "owner/repo" },
+              projectIds: [ProjectId.make("requirements")],
+              issues: [
+                {
+                  id: "1",
+                  url: "https://github.com/owner/repo/issues/1",
+                  title: "Cached requirement",
+                  state: "open",
+                  stateCategory: "todo",
+                  type: "Issue",
+                  assignees: [],
+                  priority: "",
+                  updatedAt: "2026-11-16T00:00:00Z",
+                },
+              ],
+              hasMore: false,
+            },
+          ],
+          failures: [],
+        };
+        const kept = cached.groups[0]!;
+        const removed = { ...kept, source: { ...kept.source, scope: "owner/removed" } };
+        const fresh = { ...kept, source: { ...kept.source, scope: "owner/fresh" } };
+        const deletedProject = ProjectId.make("deleted-project");
+        const stored = {
+          ...cached,
+          groups: [kept, removed].map((group) => ({
+            ...group,
+            projectIds: [deletedProject, ...group.projectIds],
+          })),
+        };
+        const refreshed = yield* Deferred.make<void>();
+        const saved = yield* Deferred.make<string>();
+        const refresh = yield* Deferred.make<typeof IssueListResult.Type, IssueError>();
+        const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
+          initialState: queryConnectionState({ phase: "offline", network: "offline" }),
+          queryStore: {
+            load: (environmentId, key) =>
+              Effect.succeed(
+                environmentId === QUERY_ENVIRONMENT.environmentId &&
+                  key === queryPersistenceKey("environment-data:issues:list", input)
+                  ? Option.some(JSON.stringify(stored))
+                  : Option.none(),
+              ),
+            save: (_environmentId, _key, payload) =>
+              Deferred.succeed(saved, payload).pipe(Effect.asVoid),
+          },
+          rpcSession: {
+            client: {
+              [WS_METHODS.issuesList]: () =>
+                Deferred.succeed(refreshed, undefined).pipe(
+                  Effect.andThen(Deferred.await(refresh)),
+                ),
+              [WS_METHODS.issuesSources]: () =>
+                sourceState === "lookup-failure"
+                  ? Effect.fail(new IssueError({ operation: "sources", reason: "unavailable" }))
+                  : Effect.succeed([
+                      {
+                        projectId: deletedProject,
+                        repository: null,
+                        manual: false,
+                        sources: [],
+                        error: new IssueError({ operation: "project", reason: "invalid-target" })
+                          .message,
+                      },
+                      {
+                        projectId: ProjectId.make("requirements"),
+                        repository: null,
+                        manual: true,
+                        sources: sourceState === "resolved" ? [kept.source, fresh.source] : [],
+                        ...(sourceState === "discovery-failure"
+                          ? { error: "Discovery unavailable" }
+                          : {}),
+                      },
+                    ]),
+            },
+          } as unknown as RpcSession.RpcSession,
+        });
+        const runtime = harness.runtime as unknown as Atom.AtomRuntime<
+          EnvironmentRegistry.EnvironmentRegistry | Persistence.EnvironmentCacheStore
+        >;
+        const atom = createSourceControlEnvironmentAtoms(runtime).issues({
+          environmentId: QUERY_ENVIRONMENT.environmentId,
+          input,
+        });
+        const registry = yield* mountEnvironmentQuery(atom);
+        expect(yield* readEnvironmentQuery(registry, atom)).toEqual(stored);
+        const answers = yield* Queue.unbounded<typeof IssueListResult.Type>();
+        const unsubscribe = registry.subscribe(atom, (result) => {
+          if (AsyncResult.isSuccess(result) && !result.waiting && result.value.failures.length)
+            Queue.offerUnsafe(answers, result.value);
+        });
+        yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+        yield* SubscriptionRef.set(harness.supervisorState, queryConnectionState());
+        yield* Deferred.await(refreshed);
+        expect(AsyncResult.getOrElse(registry.get(atom), () => null)).toEqual(stored);
+        yield* Deferred.succeed(refresh, {
+          groups: [fresh],
+          failures: [{ projectId: ProjectId.make("requirements"), reason: "Source unavailable" }],
+        });
+        const expected = {
+          groups: [
+            fresh,
+            ...(sourceState === "resolved"
+              ? [kept]
+              : sourceState === "unconfigured"
+                ? []
+                : sourceState === "lookup-failure"
+                  ? stored.groups
+                  : [kept, removed]),
+          ],
+          failures: [{ projectId: ProjectId.make("requirements"), reason: "Source unavailable" }],
+        };
+        expect(yield* Queue.take(answers)).toEqual(expected);
+        expect(JSON.parse(yield* Deferred.await(saved))).toEqual(expected);
+      }),
   );
 
   it.effect("keeps an in-memory cached page pending until revalidation settles", () =>

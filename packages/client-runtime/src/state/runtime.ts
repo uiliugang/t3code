@@ -413,6 +413,10 @@ export async function executeAtomQuery<A, E>(
           }
         });
       }
+      // Mount schedules stale-cache revalidation; keep the reader until it has started.
+      yield* Effect.callback<void>((resume) => {
+        registry.schedulerAsync.makeDispatcher().scheduleTask(() => resume(Effect.void), 0);
+      });
       return yield* AtomRegistry.getResult(registry, atom, {
         suspendOnWaiting: true,
       });

@@ -6,6 +6,7 @@ import {
   type SourceControlTool,
 } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
+import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -25,7 +26,7 @@ import { request } from "../rpc/client.ts";
 const unconfiguredSourceMessage = new IssueError({ operation: "resolve", reason: "invalid-target" })
   .message;
 
-function retainFailedIssueGroups(
+const retainFailedIssueGroups = Effect.fn("sourceControl.retainFailedIssueGroups")(function* (
   result: typeof IssueListResult.Type,
   previous: Option.Option<typeof IssueListResult.Type>,
 ) {
@@ -35,15 +36,39 @@ function retainFailedIssueGroups(
       .filter((failure) => failure.reason !== unconfiguredSourceMessage)
       .map((failure) => failure.projectId),
   );
-  const sourceKey = (group: (typeof result.groups)[number]) =>
-    JSON.stringify([group.source.provider, group.source.host, group.source.scope]);
-  const freshSources = new Set(result.groups.map(sourceKey));
-  const saved = previous.value.groups.filter(
+  const sourceKey = (source: (typeof result.groups)[number]["source"]) =>
+    JSON.stringify([source.provider, source.host, source.scope]);
+  const freshSources = new Set(result.groups.map((group) => sourceKey(group.source)));
+  const candidates = previous.value.groups.filter(
     (group) =>
-      !freshSources.has(sourceKey(group)) && group.projectIds.some((id) => failedProjects.has(id)),
+      !freshSources.has(sourceKey(group.source)) &&
+      group.projectIds.some((id) => failedProjects.has(id)),
   );
+  if (!candidates.length) return result;
+  const projectIds = [...new Set(candidates.flatMap((group) => group.projectIds))];
+  const sources = yield* Effect.forEach(
+    Array.chunksOf(projectIds, 500),
+    (projectIds) => request(WS_METHODS.issuesSources, { projectIds }),
+    { concurrency: 2 },
+  ).pipe(
+    Effect.map(Array.flatten),
+    Effect.orElseSucceed(() => null),
+  );
+  const byProject = new Map(sources?.map((project) => [project.projectId, project]));
+  const saved = candidates.flatMap((group) => {
+    const projectIds = group.projectIds.filter((id) => {
+      if (sources === null) return true;
+      const project = byProject.get(id);
+      return (
+        project !== undefined &&
+        (project.sources.some((source) => sourceKey(source) === sourceKey(group.source)) ||
+          (project.error !== undefined && project.error !== unconfiguredSourceMessage))
+      );
+    });
+    return projectIds.length ? [{ ...group, projectIds }] : [];
+  });
   return saved.length ? { ...result, groups: [...result.groups, ...saved] } : result;
-}
+});
 
 export function sourceControlToolStatus(tool: SourceControlTool): string {
   switch (tool.phase) {
@@ -107,7 +132,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       persistence: persistQuery(IssueListResult),
       execute: (input, _emit, previous) =>
         request(WS_METHODS.issuesList, input).pipe(
-          Effect.map((result) => retainFailedIssueGroups(result, previous)),
+          Effect.flatMap((result) => retainFailedIssueGroups(result, previous)),
         ),
       refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
     }),
