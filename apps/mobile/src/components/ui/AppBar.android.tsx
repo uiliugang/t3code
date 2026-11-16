@@ -119,10 +119,12 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
   if (inWorkspace) {
     const menu = props.menus?.[0];
     const icon = typeof menu?.icon === "string" ? menu.icon : menu?.icon.android;
+    const inlineWorkspaceActions = props.actions?.filter((action) => !action.overflowOnly);
     return (
       <WorkspaceAppBar
         title={props.title}
         titleContent={props.titleContent}
+        actions={inlineWorkspaceActions}
         search={
           search
             ? {

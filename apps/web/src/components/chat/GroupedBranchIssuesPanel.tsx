@@ -388,14 +388,14 @@ export function GroupedBranchIssuesPanel({
           <ChevronDownIcon className={expanded ? "size-4 rotate-180" : "size-4"} />
         </ThreadDetailsControl>
       </div>
-      <div hidden={!expanded} className="space-y-3 px-3 pb-3">
+      <div hidden={!expanded} className="space-y-3 px-2 pb-2.5">
         {creationControl}
         {threadIssues
           .filter((item) => !groups.some((group) => group.issue.url === item.issue?.url))
           .map((item) => (
             <Link
               key={item.id}
-              className="block text-xs text-primary hover:underline"
+              className="block px-1 text-xs text-primary hover:underline"
               to="/requirements"
               search={{
                 environmentId,
@@ -408,9 +408,9 @@ export function GroupedBranchIssuesPanel({
               {item.title} #{item.issue!.id}
             </Link>
           ))}
-        {pending ? <p className="text-xs text-muted-foreground">{t("Loading...")}</p> : null}
+        {pending ? <p className="px-2 text-xs text-muted-foreground">{t("Loading...")}</p> : null}
         {failed ? (
-          <div role="alert" className="text-xs text-destructive">
+          <div role="alert" className="px-2 text-xs text-destructive">
             {t("Could not load linked issues.")}
             <Button variant="ghost" size="xs" onClick={refresh}>
               {t("Retry")}

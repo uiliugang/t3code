@@ -23,7 +23,7 @@ import { AppRoot } from "~/AppRoot";
 import "~/components/ChatView";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "~/diffPanelStore";
-import { __setClientSettingsForTests } from "~/hooks/useSettings";
+import { __setClientSettingsForTests, updateClientSettings } from "~/hooks/useSettings";
 import { environmentContextRecord } from "~/lib/composerContextRecords";
 import { startWorkspaceFocus } from "~/lib/workspaceFocus";
 import { usePromptStashStore } from "~/promptStashStore";
@@ -616,6 +616,64 @@ it("a shortcut conditioned on rightPanelOpen sees the thread's open right panel"
   await userEvent.keyboard("{Control>}t{/Control}");
   await expect.element(page.getByRole("menuitem", { name: /Files/ })).toBeVisible();
   await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
+});
+
+it("opens branch shortcuts in inline details and restores composer controls when details are hidden", async () => {
+  await page.viewport(1440, 900);
+  const thread = threadWithHistory("thread-branch-shortcut", 0);
+  using _environment = installFakeEnvironment([thread], {
+    keybindings: mergeWithDefaultKeybindings(
+      compileResolvedKeybindingsConfig([{ key: "ctrl+shift+g", command: "composer.branch" }]),
+    ),
+  });
+  using _refs = answerRpc(WS_METHODS.vcsListRefs, () =>
+    Effect.succeed({
+      refs: [{ name: "main", current: true, isDefault: true, worktreePath: null }],
+      isRepo: true,
+      hasPrimaryRemote: false,
+      nextCursor: null,
+      totalCount: 1,
+    }),
+  );
+  const settings = {
+    ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en" as const,
+    persistComposerContextStrip: true,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  };
+  __setClientSettingsForTests(settings);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using screen = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await expect
+    .element(page.getByRole("region", { name: "Thread details", exact: true }))
+    .toBeVisible();
+  const composer = page.getByTestId("composer-editor");
+  await composer.click();
+  await userEvent.keyboard("{Control>}{Shift>}g{/Shift}{/Control}");
+  await expect.element(page.getByPlaceholder("Search refs...")).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await page.viewport(1440, 400);
+  await expect
+    .element(
+      page
+        .getByRole("region", { name: "Thread details", exact: true })
+        .getByRole("button", { name: /^Run context:/ }),
+    )
+    .toBeVisible();
+  await page.viewport(1440, 900);
+  await act(() =>
+    updateClientSettings({ threadDetailsItems: { branch: false, environment: false } }),
+  );
+  await expect.element(screen.getByRole("combobox", { name: /^Branch:/ })).toBeVisible();
+  await composer.click();
+  await userEvent.keyboard("{Control>}{Shift>}g{/Shift}{/Control}");
+  await expect.element(page.getByPlaceholder("Search refs...")).toBeVisible();
 });
 
 it("selecting a side-chat tab focuses that side chat's composer", async () => {

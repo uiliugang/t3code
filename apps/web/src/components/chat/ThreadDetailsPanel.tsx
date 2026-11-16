@@ -7,8 +7,8 @@ import type { ThreadId } from "@t3tools/contracts";
 import type { WorkspaceRootId } from "@t3tools/contracts";
 import type { ComposerThreadTarget } from "../../composerDraftStore";
 import type { DraftId } from "../../composerDraftStore";
-import type { EnvMode } from "../BranchToolbar.logic";
-import type { EnvironmentOption } from "../BranchToolbar.logic";
+import type { EnvMode, EnvironmentOption } from "../BranchToolbar.logic";
+import type { BranchToolbarHandle } from "../BranchToolbar";
 import type { NewProjectScriptInput } from "../ProjectScriptsControl";
 import type { ProjectScriptActionResult } from "../ProjectScriptsControl";
 import type { ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
@@ -31,7 +31,7 @@ import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 import { BranchToolbar } from "../BranchToolbar";
 import BaseGitActionsControl from "../GitActionsControl";
 import ProjectScriptsControl from "../ProjectScriptsControl";
-import { memo, useState, type ComponentProps } from "react";
+import { memo, useState, type ComponentProps, type Ref } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -59,6 +59,7 @@ interface ThreadDetailsPanelProps extends Pick<
   ComponentProps<typeof ThreadDetailsCard>,
   "anchor" | "handle"
 > {
+  branchToolbarRef?: Ref<BranchToolbarHandle>;
   forceNewWorktree?: boolean;
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -236,7 +237,9 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
       {(density) => {
         // Section flags follow the rows that will render, so no empty section steals the divider rule.
         const show = {
-          environment: density === "full" && visible.environment,
+          // The inline toolbar also owns composer controls while the duplicate strip is hidden.
+          environment:
+            (density === "full" || props.branchToolbarRef !== undefined) && visible.environment,
           openIn:
             visible.openIn &&
             ((density !== "essential" && props.showOpenInPicker) ||
@@ -382,7 +385,12 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                 >
                   <div className="flex flex-col">
                     {show.branch ? (
-                      <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />
+                      <BranchToolbar
+                        layout="panel"
+                        panelSection="branch"
+                        {...(props.branchToolbarRef ? { ref: props.branchToolbarRef } : {})}
+                        {...branchToolbarProps}
+                      />
                     ) : null}
                     {show.pullRequests ? (
                       <ThreadDetailsThreadPrRows
@@ -408,13 +416,15 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
               ) : null}
 
               {!workspace && props.gitCwd && showIssues && issuesPlacement === "inline" ? (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <BranchIssuesPanel environmentId={props.environmentId} cwd={props.gitCwd} />
-                  <ThreadIssueCreationButton
-                    environmentId={props.environmentId}
-                    projectId={props.projectId}
-                    threadId={props.threadId}
-                  />
+                  <div className="px-2 pb-2 empty:hidden">
+                    <ThreadIssueCreationButton
+                      environmentId={props.environmentId}
+                      projectId={props.projectId}
+                      threadId={props.threadId}
+                    />
+                  </div>
                 </div>
               ) : null}
 
@@ -465,7 +475,7 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                 >
                   <SlidersHorizontalIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
                   <span className={cn("ml-0.5", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
-                    Choose what to show
+                    {t("Choose what to show")}
                   </span>
                 </ThreadDetailsControl>
               </div>

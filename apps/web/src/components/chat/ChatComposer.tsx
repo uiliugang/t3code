@@ -3190,11 +3190,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         flushSync(() => setIsComposerFocused(true));
         const shell = composerFormRef.current?.closest('[data-slot="composer-shell"]');
-        const trigger = Array.from(
-          shell?.querySelectorAll<HTMLButtonElement>(
+        const inlineDetails = document.querySelector<HTMLElement>(
+          '[data-thread-details-panel="inline"]',
+        );
+        const trigger = Array.from([
+          ...(shell?.querySelectorAll<HTMLButtonElement>(
             `button[data-composer-shortcut~="${command}"]:not(:disabled)`,
-          ) ?? [],
-        ).find(
+          ) ?? []),
+          ...(inlineDetails?.querySelectorAll<HTMLButtonElement>(
+            `button[data-composer-shortcut~="${command}"]:not(:disabled)`,
+          ) ?? []),
+        ]).find(
           (element) =>
             !element.closest("[inert]") && element.checkVisibility({ visibilityProperty: true }),
         );

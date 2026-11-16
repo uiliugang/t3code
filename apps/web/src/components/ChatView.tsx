@@ -315,6 +315,7 @@ import {
 } from "./chat/PanelLayoutControls";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
+import { resolveThreadDetailsVisibility } from "./chat/threadDetailsItems";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -1809,15 +1810,6 @@ export default function ChatView(props: ChatViewProps) {
           providerSubagentModels,
           reportedModelSelection,
         );
-  const showComposerContextStrip =
-    !embedded &&
-    shouldShowComposerContextStrip({
-      isDraftHeroState,
-      persistInActiveThreads: settings.persistComposerContextStrip,
-      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-      isGitRepo,
-      showEnvironmentIndicator: showComposerEnvironmentIndicator,
-    });
   const terminalShortcutLabelOptions = {
     context: {
       terminalFocus: true,
@@ -2015,6 +2007,22 @@ export default function ChatView(props: ChatViewProps) {
       threadPanelPresentation,
     ),
   );
+  const threadDetailsVisibility = resolveThreadDetailsVisibility(settings);
+  const inlineDetailsPanelOpen = threadPanelPresentation === "inline" && threadPanelOpen;
+  const inlineDetailsPanelCoversControls =
+    inlineDetailsPanelOpen &&
+    (!isGitRepo || threadDetailsVisibility.branch) &&
+    (!showComposerEnvironmentIndicator || threadDetailsVisibility.environment);
+  const showComposerContextStrip =
+    !embedded &&
+    shouldShowComposerContextStrip({
+      isDraftHeroState,
+      persistInActiveThreads: settings.persistComposerContextStrip,
+      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      inlineDetailsPanelCoversControls,
+    });
   const supportsThreadPullRequests = serverConfig !== null;
   const visiblePullRequests = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],
@@ -3924,6 +3932,9 @@ export default function ChatView(props: ChatViewProps) {
                 />
 
                 <ThreadDetailsPanel
+                  {...(!showComposerContextStrip && inlineDetailsPanelOpen
+                    ? { branchToolbarRef }
+                    : {})}
                   anchor={threadPanelPopoverAnchorRef}
                   handle={threadPanelPopoverHandle}
                   forceNewWorktree={multipleModelSelections !== null}

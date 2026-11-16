@@ -177,44 +177,73 @@ export function ProviderInstanceIcon(props: {
   readonly surfaceColor?: string;
 }) {
   const accentColor = normalizeProviderAccentColor(props.accentColor);
+  const size = props.size ?? 16;
+  const compact = size <= 14;
   return (
     <View style={{ position: "relative" }}>
       <View style={{ opacity: 0.6 }}>
-        <ProviderIcon iconUrl={props.iconUrl} provider={props.provider} size={props.size} />
+        <ProviderIcon iconUrl={props.iconUrl} provider={props.provider} size={size} />
       </View>
       {props.showBadge ? (
-        // An absolute badge alone is capped at icon width and clips initials.
-        <View
-          pointerEvents="none"
-          style={{ position: "absolute", right: -3, bottom: -3, width: 32, alignItems: "flex-end" }}
-        >
+        compact ? (
           <View
-            className={cn(!accentColor && "bg-card", !props.surfaceColor && "border-screen")}
+            pointerEvents="none"
+            className={cn(
+              !accentColor && "bg-foreground-muted",
+              !props.surfaceColor && "border-screen",
+            )}
             style={{
-              height: 12,
-              minWidth: 12,
-              paddingHorizontal: 2,
+              position: "absolute",
+              right: -2,
+              bottom: -2,
+              width: 7,
+              height: 7,
               borderRadius: 999,
-              borderWidth: 1,
+              borderWidth: 1.5,
               ...(props.surfaceColor ? { borderColor: props.surfaceColor } : {}),
-              backgroundColor: accentColor,
-              alignItems: "center",
-              justifyContent: "center",
+              ...(accentColor ? { backgroundColor: accentColor } : {}),
+            }}
+          />
+        ) : (
+          // An absolute badge alone is capped at icon width and clips initials.
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              right: -3,
+              bottom: -3,
+              width: 32,
+              alignItems: "flex-end",
             }}
           >
-            <Text
-              className={accentColor ? undefined : "text-foreground-muted"}
+            <View
+              className={cn(!accentColor && "bg-card", !props.surfaceColor && "border-screen")}
               style={{
-                fontSize: 7,
-                fontWeight: "600",
-                lineHeight: 9,
-                color: accentColor ? providerAccentForegroundColor(accentColor) : undefined,
+                height: 12,
+                minWidth: 12,
+                paddingHorizontal: 2,
+                borderRadius: 999,
+                borderWidth: 1,
+                ...(props.surfaceColor ? { borderColor: props.surfaceColor } : {}),
+                backgroundColor: accentColor,
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {providerInstanceInitials(props.displayName)}
-            </Text>
+              <Text
+                className={accentColor ? undefined : "text-foreground-muted"}
+                style={{
+                  fontSize: 7,
+                  fontWeight: "600",
+                  lineHeight: 9,
+                  color: accentColor ? providerAccentForegroundColor(accentColor) : undefined,
+                }}
+              >
+                {providerInstanceInitials(props.displayName)}
+              </Text>
+            </View>
           </View>
-        </View>
+        )
       ) : null}
     </View>
   );

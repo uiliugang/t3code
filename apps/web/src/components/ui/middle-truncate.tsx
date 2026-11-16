@@ -35,7 +35,7 @@ export function MiddleTruncate({
         "inline-flex min-w-0 max-w-full overflow-hidden whitespace-nowrap",
         variant === "cap-aligned" &&
           // Padding keeps descenders inside the box, so the cut does not clip them.
-          "overflow-x-clip overflow-y-visible [&>span]:[text-box:trim-both_cap_alphabetic] [&>span]:-mb-1 [&>span]:pb-1 [&>span]:overflow-x-clip [&>span]:overflow-y-visible",
+          "overflow-x-clip overflow-y-visible [&>span]:[text-box:trim-both_cap_alphabetic] [&>span]:-mb-1 [&>span]:pb-1 [&>span]:overflow-y-visible [&>span:last-child]:overflow-x-clip",
         className,
       )}
       {...props}
