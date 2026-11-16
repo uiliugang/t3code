@@ -4,7 +4,7 @@ import { expect } from "e2e";
 import { test, WEB } from "./t3.ts";
 
 test(
-  "creating an issue opens a side chat without leaving the conversation",
+  "issue creation replaces a deleted side chat without leaving the conversation",
   WEB,
   async ({ t3, app, browser, screen }) => {
     const project = await t3.project("issue-side-chat");
@@ -61,5 +61,16 @@ test(
     await expect(sideChat).toContainText("first fixture turn complete");
     await expect(browser).toHaveURL(sourceUrl);
     await app.screenshot("issue-creation-side-chat");
+    const originalId = await sideChat.getAttribute("data-side-chat-pane");
+    await screen.getByRole("button", "Delete side chat").tap();
+    await screen.getByRole("button", "Confirm", { exact: true }).tap();
+    await expect(sideChat).not.toBeVisible();
+    await app.screenshot("deleted-issue-creation-side-chat");
+    await expect(create).toBeEnabled();
+    await create.tap();
+    await expect(sideChat).toBeVisible();
+    await expect(sideChat).not.toHaveAttribute("data-side-chat-pane", originalId!);
+    await expect(browser).toHaveURL(sourceUrl);
+    await app.screenshot("replacement-issue-creation-side-chat");
   },
 );

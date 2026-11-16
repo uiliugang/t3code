@@ -164,7 +164,22 @@ export const layer = Layer.effect(
             code: "persistence",
             message: "Issue creation action was not saved.",
           });
-        return yield* items.mutate(yield* decodeCommandJson(action[0].payload_json));
+        let startAction = yield* decodeCommandJson(action[0].payload_json);
+        const current = yield* items.get(item.id);
+        if (current.delivery) return { item: current };
+        const execution = current.executions.at(-1);
+        if (startAction.type === "start" && execution?.runId) {
+          const sideChat = yield* threads.getThreadShell(execution.threadId);
+          if (sideChat === null || sideChat.deletedAt !== null) {
+            startAction = {
+              ...startAction,
+              commandId: CommandId.make(`${creationKey}:start:${execution.id}`),
+              specRevision: current.specRevision,
+            };
+          }
+        }
+        const result = yield* items.mutate(startAction);
+        return { item: yield* items.get(result.item.id) };
       },
       Effect.mapError((cause) =>
         isWorkItemError(cause)

@@ -18,7 +18,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useRightPanelStore } from "../../rightPanelStore";
-import { waitForThreadShell } from "../../state/entities";
+import { useThreadStatus, waitForThreadShell } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { IssueSelect } from "./IssueSelect";
@@ -55,6 +55,9 @@ export function ThreadIssueCreationButton({
   );
   const options = sources.data?.[0]?.sources ?? [];
   const execution = task.data?.item?.executions.at(-1);
+  const executionStatus = useThreadStatus(
+    execution?.runId ? scopeThreadRef(environmentId, execution.threadId) : null,
+  );
   const openSideChat = async (sideChatId: ThreadId) => {
     if (await waitForThreadShell(scopeThreadRef(environmentId, sideChatId)))
       useRightPanelStore.getState().openSideChat({ environmentId, threadId }, sideChatId);
@@ -90,7 +93,7 @@ export function ThreadIssueCreationButton({
         {t("Linked issues")} #{task.data.item.delivery.issue.id}
       </a>
     );
-  if (itemId)
+  if (itemId && executionStatus !== "deleted")
     return (
       <div className="space-y-2 text-xs text-muted-foreground" role="status">
         {t("Preparing issue creation")}
