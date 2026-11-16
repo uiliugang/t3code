@@ -25,7 +25,9 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import { McpSchema, McpServer } from "effect/ai";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -46,6 +48,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as McpHttpServer from "../mcp/McpHttpServer.ts";
+import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 
 const projectId = ProjectId.make("project:tasks");
 const now = "2026-11-09T01:00:00.000Z";
@@ -112,6 +116,7 @@ function setup(
   eventStream?: Stream.Stream<OrchestrationV2DomainEvent>,
 ) {
   const projections = new Map<ThreadId, OrchestrationV2ThreadProjection>();
+  const recordBarriers = new Map<ThreadId, Effect.Effect<void>>();
   const launched: Array<Parameters<ThreadLaunch.ThreadLaunchService["Service"]["launch"]>[0]> = [];
   const stopped: ThreadId[] = [];
   const dispatched = new Map<CommandId, OrchestrationV2ServerCommand>();
@@ -188,7 +193,9 @@ function setup(
       getThreadRecords: (id) =>
         failures.records
           ? Effect.fail(new Orchestrator.OrchestratorProjectionError({ threadId: id }))
-          : Effect.succeed(projections.get(id) ?? projection(id)),
+          : Effect.succeed(projections.get(id) ?? projection(id)).pipe(
+              Effect.tap(() => recordBarriers.get(id) ?? Effect.void),
+            ),
       listProjectThreads: (input) =>
         Effect.succeed(
           [...projections.values()]
@@ -274,8 +281,17 @@ function setup(
               });
           }
           if (input.type === "thread.stop") {
-            stopped.push(input.threadId);
             const current = projections.get(input.threadId);
+            if (
+              input.expectedRunIds !== undefined &&
+              current?.runs.some((run) => !input.expectedRunIds?.includes(run.id))
+            )
+              return yield* new Orchestrator.OrchestratorDispatchError({
+                commandId: input.commandId,
+                commandType: input.type,
+                cause: "The thread has work outside this stop request's execution scope.",
+              });
+            stopped.push(input.threadId);
             if (current)
               projections.set(input.threadId, {
                 ...current,
@@ -317,7 +333,17 @@ function setup(
     Layer.provide(NodeCrypto.layer),
     Layer.provideMerge(Sqlite.layerMemory),
   );
-  return { layer, dependencies, projections, launched, stopped, failures, events, dispatched };
+  return {
+    layer,
+    dependencies,
+    projections,
+    recordBarriers,
+    launched,
+    stopped,
+    failures,
+    events,
+    dispatched,
+  };
 }
 
 const create = (service: WorkItems.WorkItemService["Service"], suffix = "create") =>
@@ -791,6 +817,366 @@ it.effect("rejects unavailable side chat sources and sources outside the task pr
     assert.equal((yield* service.get(item.id)).executions.length, 0);
   }).pipe(Effect.provide(test.layer), Effect.scoped);
 });
+
+it.effect("allows side chats to report only their own execution through MCP", () => {
+  const test = setup();
+  const parentId = ThreadId.make("report-source");
+  test.projections.set(parentId, projection(parentId));
+  const layer = McpHttpServer.layerWorkItemToolkit.pipe(
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+    Layer.provide(test.dependencies),
+    Layer.provide(Layer.mock(DeliveryAutomation.DeliveryAutomationService)({})),
+    Layer.provideMerge(test.layer),
+  );
+  return Effect.gen(function* () {
+    const service = yield* WorkItems.WorkItemService;
+    const server = yield* McpServer.McpServer;
+    const { item } = yield* create(service);
+    const started = yield* service.mutate({
+      type: "start",
+      commandId: command("report-side-chat"),
+      id: item.id,
+      specRevision: 1,
+      participants: [{ ...participant, sideChatOf: parentId }],
+    });
+    yield* service.drain();
+    const execution = started.item.executions[0]!;
+    const call = (name: string, callerThreadId: ThreadId, submitted = false) =>
+      server
+        .callTool({
+          name,
+          arguments: {
+            commandId: command(`${name}:${callerThreadId}`),
+            id: item.id,
+            executionId: execution.id,
+            specRevision: 1,
+            summary: "Issue creation progress",
+            artifacts: [],
+            ...(name === "work_item_report" ? { submitted } : {}),
+          },
+        })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, {
+            environmentId: EnvironmentId.make("report-environment"),
+            requestNamespace: "report-session",
+            thread: {
+              threadId: callerThreadId,
+              providerSessionId: "report-session",
+              providerInstanceId: modelSelection.instanceId,
+            },
+            client: undefined,
+            capabilities: new Set(["orchestration"] as const),
+            issuedAt: 0,
+          }),
+          Effect.provideService(
+            McpSchema.McpServerClient,
+            McpSchema.McpServerClient.of({
+              clientId: 1,
+              protocolVersion: "2025-06-18",
+              clientCapabilities: {},
+              clientInfo: { name: "report-test", version: "1" },
+              initializePayload: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "report-test", version: "1" },
+              },
+              getClient: Effect.die("unused"),
+            }),
+          ),
+        );
+    const report = yield* call("work_item_report", execution.threadId);
+    assert.notEqual(report.isError, true);
+    assert.equal((yield* service.get(item.id)).executions[0]?.summary, "Issue creation progress");
+    const submitted = yield* call("work_item_submit", execution.threadId);
+    assert.notEqual(submitted.isError, true);
+    assert.equal((yield* service.get(item.id)).executions[0]?.submitted, true);
+    const foreignId = ThreadId.make("foreign-side-chat");
+    const foreign = projection(foreignId);
+    test.projections.set(foreignId, {
+      ...foreign,
+      thread: { ...foreign.thread, lineage: { ...foreign.thread.lineage, sideChat: true } },
+    });
+    assert.equal((yield* call("work_item_report", foreignId)).isError, true);
+    const own = test.projections.get(execution.threadId)!;
+    test.projections.set(execution.threadId, {
+      ...own,
+      runs: own.runs.map((run) => ({ ...run, status: "completed" })),
+    });
+    assert.equal((yield* call("work_item_report", execution.threadId)).isError, true);
+  }).pipe(Effect.provide(layer), Effect.scoped);
+});
+
+it.effect(
+  "resumes an unfinished issue side chat without replacing its task or creation attempt",
+  () => {
+    const test = setup();
+    const parentId = ThreadId.make("resume-issue-source");
+    test.projections.set(parentId, projection(parentId));
+    const source = { provider: "github", host: "github.com", scope: "acme/app" } as const;
+    const layer = DeliveryAutomation.layer.pipe(
+      Layer.provide(test.dependencies),
+      Layer.provide(
+        Layer.mock(Issues.IssueService)({
+          sources: () =>
+            Effect.succeed([
+              { projectId, repository: "acme/app", sources: [source], manual: true },
+            ]),
+        }),
+      ),
+      Layer.provideMerge(test.layer),
+    );
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe(now)));
+      const service = yield* WorkItems.WorkItemService;
+      const automation = yield* DeliveryAutomation.DeliveryAutomationService;
+      const sql = yield* SqlClient.SqlClient;
+      const { item } = yield* automation.createIssue({
+        commandId: command("resume-issue"),
+        threadId: parentId,
+        source,
+      });
+      yield* service.drain();
+      const execution = (yield* service.get(item.id)).executions[0]!;
+      yield* sql`INSERT INTO work_item_delivery_actions (work_item_id, scope_revision, kind, payload_json) VALUES (${item.id}, 0, 'issue_create_attempt', '{}')`;
+      yield* service.mutate({
+        type: "stop",
+        commandId: command("stop-issue"),
+        id: item.id,
+        executionId: execution.id,
+      });
+      yield* service.drain();
+      assert.equal((yield* service.get(item.id)).executions[0]?.status, "cancelled");
+      const current = test.projections.get(execution.threadId)!;
+      const root = current.runs[0]!;
+      const continued = {
+        ...root,
+        id: RunId.make("issue-user-continuation"),
+        userMessageId: MessageId.make("issue-continue"),
+        ordinal: 2,
+        status: "running" as const,
+        completedAt: null,
+      };
+      const message = {
+        id: continued.userMessageId,
+        threadId: execution.threadId,
+        runId: continued.id,
+        nodeId: null,
+        role: "user" as const,
+        text: "Continue the issue task",
+        attachments: [],
+        streaming: false,
+        createdBy: "user" as const,
+        creationSource: "web" as const,
+        createdAt: DateTime.makeUnsafe(now),
+        updatedAt: DateTime.makeUnsafe(now),
+      };
+      for (const blocked of [
+        {
+          ...current,
+          runs: [...current.runs, continued],
+          messages: [{ ...message, createdBy: "agent" as const, creationSource: "mcp" as const }],
+        },
+        {
+          ...current,
+          runs: [...current.runs, { ...continued, status: "queued" as const }],
+          messages: [message],
+        },
+        {
+          ...current,
+          thread: { ...current.thread, lineage: { ...current.thread.lineage, sideChat: false } },
+          runs: [...current.runs, continued],
+          messages: [message],
+        },
+      ]) {
+        test.projections.set(execution.threadId, blocked);
+        yield* service.drain();
+        assert.equal((yield* service.get(item.id)).executions[0]?.runId, root.id);
+        assert.equal((yield* service.get(item.id)).executions[0]?.status, "cancelled");
+      }
+      test.projections.set(execution.threadId, {
+        ...current,
+        runs: [...current.runs, continued],
+        messages: [message],
+      });
+      const refreshRead = yield* Deferred.make<void>();
+      const releaseRefresh = yield* Deferred.make<void>();
+      test.recordBarriers.set(
+        execution.threadId,
+        Deferred.succeed(refreshRead, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseRefresh)),
+        ),
+      );
+      const refresh = yield* service.drain().pipe(Effect.forkChild);
+      yield* Deferred.await(refreshRead);
+      const archived = yield* service.mutate({
+        type: "archive",
+        commandId: command("archive-during-resume"),
+        id: item.id,
+        expectedVersion: (yield* service.get(item.id)).version,
+        archived: true,
+      });
+      test.recordBarriers.delete(execution.threadId);
+      yield* Deferred.succeed(releaseRefresh, undefined);
+      yield* Fiber.join(refresh);
+      yield* service.drain();
+      const archivedExecution = (yield* service.get(item.id)).executions[0]!;
+      assert.equal(archivedExecution.runId, root.id);
+      assert.equal(archivedExecution.status, "cancelled");
+      yield* service.mutate({
+        type: "archive",
+        commandId: command("restore-before-resume"),
+        id: item.id,
+        expectedVersion: archived.item.version,
+        archived: false,
+      });
+      yield* service.mutate(
+        {
+          type: "report",
+          commandId: command("report-before-resume-refresh"),
+          id: item.id,
+          executionId: execution.id,
+          specRevision: 1,
+          summary: "Continued issue creation",
+          artifacts: ["https://example.com/issue-evidence"],
+          submitted: true,
+        },
+        execution.threadId,
+      );
+      yield* service.drain();
+      const resumed = (yield* service.get(item.id)).executions[0]!;
+      assert.equal(resumed.id, execution.id);
+      assert.equal(resumed.runId, continued.id);
+      assert.equal(resumed.status, "running");
+      assert.equal(resumed.stopRequested, false);
+      assert.equal(resumed.summary, "Continued issue creation");
+      assert.equal(resumed.submitted, true);
+      assert.deepEqual(resumed.artifacts, ["https://example.com/issue-evidence"]);
+      assert.equal(
+        (yield* sql`SELECT 1 FROM work_item_delivery_actions WHERE work_item_id = ${item.id} AND kind = 'issue_create_attempt'`)
+          .length,
+        1,
+      );
+      yield* service.mutate({
+        type: "stop",
+        commandId: command("stop-resumed-issue"),
+        id: item.id,
+        executionId: execution.id,
+      });
+      yield* service.drain();
+      assert.equal((yield* service.get(item.id)).executions[0]?.status, "cancelled");
+      assert.equal(test.stopped.length, 2);
+      const immediate = {
+        ...continued,
+        id: RunId.make("issue-immediate-stop"),
+        userMessageId: MessageId.make("issue-immediate-request"),
+        ordinal: 3,
+      };
+      const stopped = test.projections.get(execution.threadId)!;
+      test.projections.set(execution.threadId, {
+        ...stopped,
+        runs: [...stopped.runs, immediate],
+        messages: [
+          ...stopped.messages,
+          { ...message, id: immediate.userMessageId, runId: immediate.id },
+        ],
+      });
+      yield* sql`INSERT INTO work_item_outbox (execution_id, work_item_id, effect_type, command_id) VALUES (${execution.id}, ${item.id}, 'stop', 'retained-previous-stop')`;
+      test.failures.records = true;
+      const unavailableStop = yield* Effect.result(
+        service.mutate({
+          type: "stop",
+          commandId: command("stop-before-resume-refresh"),
+          id: item.id,
+          executionId: execution.id,
+        }),
+      );
+      assert.equal(unavailableStop._tag, "Failure");
+      test.failures.records = false;
+      yield* service.mutate({
+        type: "stop",
+        commandId: command("stop-before-resume-refresh"),
+        id: item.id,
+        executionId: execution.id,
+      });
+      yield* service.drain();
+      const immediatelyStopped = (yield* service.get(item.id)).executions[0]!;
+      assert.equal(immediatelyStopped.runId, immediate.id);
+      assert.equal(immediatelyStopped.status, "cancelled");
+      assert.equal(test.stopped.length, 3);
+      assert.equal(
+        (yield* sql`SELECT 1 FROM work_item_outbox WHERE execution_id = ${execution.id} AND effect_type = 'stop'`)
+          .length,
+        0,
+      );
+      const finalRun = {
+        ...continued,
+        id: RunId.make("issue-final-run"),
+        userMessageId: MessageId.make("issue-final-request"),
+        ordinal: 4,
+        status: "completed" as const,
+        completedAt: DateTime.makeUnsafe(now),
+      };
+      test.projections.set(execution.threadId, {
+        ...current,
+        runs: [
+          ...current.runs,
+          { ...continued, status: "interrupted", completedAt: DateTime.makeUnsafe(now) },
+          { ...immediate, status: "interrupted", completedAt: DateTime.makeUnsafe(now) },
+          finalRun,
+        ],
+        messages: [
+          message,
+          { ...message, id: finalRun.userMessageId, runId: finalRun.id },
+          {
+            ...message,
+            id: MessageId.make("issue-result"),
+            runId: finalRun.id,
+            createdBy: "agent",
+            creationSource: "provider",
+            role: "assistant",
+            text: "Recovered the issue",
+          },
+        ],
+      });
+      yield* service.mutate({
+        type: "link_issue",
+        commandId: command("link-before-refresh"),
+        id: item.id,
+        expectedVersion: (yield* service.get(item.id)).version,
+        issue: {
+          provider: "github",
+          repository: "acme/app",
+          id: "42",
+          url: "https://github.com/acme/app/issues/42",
+        },
+      });
+      yield* service.drain();
+      const completed = (yield* service.get(item.id)).executions[0]!;
+      assert.equal(completed.status, "completed");
+      assert.equal(completed.runId, finalRun.id);
+      assert.equal(completed.summary, "Recovered the issue");
+      assert.equal((yield* service.get(item.id)).executions.length, 1);
+      const finished = test.projections.get(execution.threadId)!;
+      const later = {
+        ...finalRun,
+        id: RunId.make("post-issue-chat"),
+        userMessageId: MessageId.make("post-issue-message"),
+        ordinal: 5,
+        requestedAt: DateTime.makeUnsafe("2026-11-09T01:00:01.000Z"),
+        status: "running" as const,
+        completedAt: null,
+      };
+      test.projections.set(execution.threadId, {
+        ...finished,
+        runs: [...finished.runs, later],
+        messages: [...finished.messages, { ...message, id: later.userMessageId, runId: later.id }],
+      });
+      yield* service.drain();
+      assert.equal((yield* service.get(item.id)).executions[0]?.runId, finalRun.id);
+      assert.equal((yield* service.get(item.id)).executions[0]?.status, "completed");
+    }).pipe(Effect.provide(layer), Effect.scoped);
+  },
+);
 
 it.effect(
   "deduplicates the same dispatch while permitting parallel agents and stopping only one",

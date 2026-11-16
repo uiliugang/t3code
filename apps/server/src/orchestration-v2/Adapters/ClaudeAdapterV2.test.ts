@@ -752,6 +752,8 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
         ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
         ...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
         "mcp__t3-code__work_item_issue",
+        "mcp__t3-code__work_item_report",
+        "mcp__t3-code__work_item_submit",
       ],
       mcpServers: T3_MCP_SERVERS,
     });

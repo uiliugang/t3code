@@ -2118,12 +2118,17 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
-  it.effect.each(["global", "project"])(
-    "adds session MCP and %s dependency mode without replacing launch-argument servers",
-    (mode) =>
+  it.effect.each([
+    { mode: "global", readOnly: false },
+    { mode: "project", readOnly: false },
+    { mode: "global", readOnly: true },
+  ])(
+    "adds session MCP and dependency mode without replacing launch-argument servers: %j",
+    ({ mode, readOnly }) =>
       Effect.gen(function* () {
         const scenario = "launch-mcp-servers";
-        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        const sessions = yield* McpProviderSessions.McpProviderSessions;
+        const session = {
           environmentId: EnvironmentId.make("environment-codex-mcp"),
           threadId: ThreadId.make(`thread-${scenario}`),
           providerSessionId: `provider-session-${scenario}`,
@@ -2131,22 +2136,82 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           endpoint: "http://127.0.0.1:43123/mcp",
           authorizationHeader: "Bearer secret-codex-token",
           browserToolsAvailable: true,
-        });
+        };
+        yield* sessions.set(session);
+        const forkTargetId = ThreadId.make(`thread-${scenario}-fork`);
+        yield* sessions.set({ ...session, threadId: forkTargetId });
         const requests: Array<unknown> = [];
-        yield* makeCodexReplayHarness(
+        const runtimePolicy = {
+          ...CODEX_TEST_RUNTIME_POLICY,
+          environment: { PNPM_CONFIG_VIRTUAL_STORE_TYPE: mode },
+          ...(readOnly ? { sandboxPolicy: { type: "readOnly" } } : {}),
+        };
+        const harness = yield* makeCodexReplayHarness(
           makeCodexReplayTranscript({
             scenario,
-            entries: codexReplayPreamble({
-              nativeThreadId: "launch-mcp-thread",
-              nativeTurnId: "unused",
-              prompt: "unused",
-              config: { "shell_environment_policy.set.PNPM_CONFIG_VIRTUAL_STORE_TYPE": mode },
-            }).slice(0, 5),
+            entries: [
+              ...codexReplayPreamble({
+                nativeThreadId: "launch-mcp-thread",
+                nativeTurnId: "unused",
+                prompt: "unused",
+                config: { "shell_environment_policy.set.PNPM_CONFIG_VIRTUAL_STORE_TYPE": mode },
+              }).slice(0, 5),
+              {
+                type: "expect_outbound",
+                frame: {
+                  id: 3,
+                  method: "thread/resume",
+                  params: {
+                    threadId: "launch-mcp-thread",
+                    excludeTurns: true,
+                    cwd: "/workspace",
+                    model: "gpt-5.4",
+                    config: {
+                      ...CodexAdapterV2.CODEX_THREAD_CONFIG,
+                      "shell_environment_policy.set.PNPM_CONFIG_VIRTUAL_STORE_TYPE": mode,
+                    },
+                  },
+                },
+              },
+              {
+                type: "emit_inbound",
+                frame: { id: 3, result: { thread: { id: "launch-mcp-thread", updatedAt: 0 } } },
+              },
+              {
+                type: "expect_outbound",
+                frame: {
+                  id: 4,
+                  method: "thread/fork",
+                  params: {
+                    threadId: "launch-mcp-thread",
+                    lastTurnId: "launch-mcp-turn",
+                    excludeTurns: true,
+                    cwd: "/workspace",
+                    model: "gpt-5.4",
+                    config: {
+                      ...CodexAdapterV2.CODEX_THREAD_CONFIG,
+                      "shell_environment_policy.set.PNPM_CONFIG_VIRTUAL_STORE_TYPE": mode,
+                    },
+                  },
+                },
+              },
+              {
+                type: "emit_inbound",
+                frame: {
+                  id: 4,
+                  result: codexReplayThreadResult({
+                    nativeThreadId: "launch-mcp-fork",
+                    forkedFromId: "launch-mcp-thread",
+                  }),
+                },
+              },
+            ],
           }),
           () => Effect.void,
           (method, params) =>
             Effect.sync(() => {
-              if (method === "thread/start") requests.push(params);
+              if (["thread/start", "thread/resume", "thread/fork"].includes(method))
+                requests.push(params);
             }),
           undefined,
           undefined,
@@ -2154,7 +2219,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           undefined,
           undefined,
           undefined,
-          { ...CODEX_TEST_RUNTIME_POLICY, environment: { PNPM_CONFIG_VIRTUAL_STORE_TYPE: mode } },
+          runtimePolicy,
         );
         expect(requests).toEqual([
           {
@@ -2175,6 +2240,15 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 tool_timeout_sec: 3_900,
                 http_headers: { Authorization: "Bearer secret-codex-token" },
                 disabled_tools: ["t3_thread_wait", "delegate_task"],
+                ...(readOnly
+                  ? {
+                      tools: {
+                        work_item_issue: { approval_mode: "approve" },
+                        work_item_report: { approval_mode: "approve" },
+                        work_item_submit: { approval_mode: "approve" },
+                      },
+                    }
+                  : {}),
               },
               "mcp_servers.t3-code-direct": {
                 url: "http://127.0.0.1:43123/mcp",
@@ -2186,6 +2260,39 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             },
           },
         ]);
+        yield* harness.runtime.resumeThread({
+          providerThread: harness.providerThread,
+          modelSelection: CODEX_TEST_MODEL_SELECTION,
+          runtimePolicy,
+        });
+        expect(requests[1]).toEqual({
+          ...(requests[0] as Record<string, unknown>),
+          threadId: "launch-mcp-thread",
+          excludeTurns: true,
+        });
+        const sourceTurn = codexReplaySourceTurn({
+          id: "launch-mcp-source-turn",
+          ordinal: 1,
+          nativeId: "launch-mcp-turn",
+          providerThreadId: harness.providerThread.id,
+          now: yield* DateTime.now,
+        });
+        yield* harness.runtime.forkThread({
+          sourceProviderThread: harness.providerThread,
+          sourceProviderTurns: [sourceTurn],
+          providerTurnId: sourceTurn.id,
+          targetThreadId: forkTargetId,
+          modelSelection: CODEX_TEST_MODEL_SELECTION,
+          runtimePolicy,
+        });
+        expect(requests[2]).toEqual({
+          ...(requests[1] as Record<string, unknown>),
+          lastTurnId: "launch-mcp-turn",
+          config: {
+            ...(requests[0] as { config: Record<string, unknown> }).config,
+            "shell_environment_policy.set.T3CODE_THREAD_ID": forkTargetId,
+          },
+        });
       }).pipe(
         Effect.scoped,
         Effect.provide(
