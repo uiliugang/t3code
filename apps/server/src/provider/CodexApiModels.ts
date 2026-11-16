@@ -80,7 +80,7 @@ export const codexApiModels = Effect.fn("CodexApiModels.discover")(
       try: () => {
         const base = new URL(provider.base_url);
         const path = base.pathname.replace(/\/+$/, "");
-        base.pathname = `${path}${path.endsWith("/v1") ? "" : "/v1"}/models`;
+        base.pathname = `${path}${providerId === "t3_byok" || path.endsWith("/v1") ? "" : "/v1"}/models`;
         const catalog = provider.model_catalog_url ? new URL(provider.model_catalog_url) : base;
         if (
           !["http:", "https:"].includes(catalog.protocol) ||

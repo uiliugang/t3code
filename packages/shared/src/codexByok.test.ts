@@ -38,8 +38,8 @@ describe("Codex connection configuration", () => {
     expect(args).toContain("gateway.example/team/v1");
     expect(args).toContain("T3_CODEX_API_KEY");
     const customPath = codexByokLaunchArgs("https://gateway.example/team/api/");
-    expect(customPath).toContain("model_catalog_url");
-    expect(customPath).toContain("https://gateway.example/team/api/models");
+    expect(customPath).not.toContain("model_catalog_url");
+    expect(customPath).toContain("https://gateway.example/team/api");
     expect(customPath).not.toContain("/api/v1/");
     expect(args).not.toContain("openai_token_sharing");
   });

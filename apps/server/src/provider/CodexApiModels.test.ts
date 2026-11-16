@@ -52,6 +52,30 @@ it.effect("discovers the selected API provider's exact model IDs using its insta
       "http://sub2api.test:8420/v1/models",
       "http://sub2api.test:8420/v1/models",
     ]);
+    urls.length = 0;
+    for (const base of [
+      "https://gateway.test/v1/",
+      "https://gateway.test/team/api/",
+      "https://gateway.test/",
+    ]) {
+      const models = yield* codexApiModels(
+        {
+          model_provider: "t3_byok",
+          model_providers: { t3_byok: { base_url: base, env_key: "T3_CODEX_API_KEY" } },
+        },
+        { T3_CODEX_API_KEY: "instance-key" },
+        "/unused",
+      ).pipe(Effect.provideService(HttpClient.HttpClient, http));
+      assert.deepStrictEqual(
+        models?.map((model) => model.slug),
+        ["gpt-6.1-sol", "CaseSensitive"],
+      );
+    }
+    assert.deepStrictEqual(urls, [
+      "https://gateway.test/v1/models",
+      "https://gateway.test/team/api/models",
+      "https://gateway.test/models",
+    ]);
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

@@ -66,7 +66,8 @@ export function withCodexByokVariable(
 
 export function codexByokLaunchArgs(baseUrl: string): string {
   const base = baseUrl.trim().replace(/\/+$/, "");
-  const provider = `{name="T3 API",base_url=${JSON.stringify(base)},model_catalog_url=${JSON.stringify(base + "/models")},env_key="T3_CODEX_API_KEY",wire_api="responses",requires_openai_auth=false,supports_websockets=false}`;
+  // OpenAI model listing is not a Codex capability catalog; incorrect metadata can rewrite effort.
+  const provider = `{name="T3 API",base_url=${JSON.stringify(base)},env_key="T3_CODEX_API_KEY",wire_api="responses",requires_openai_auth=false,supports_websockets=false}`;
   return ['model_provider="t3_byok"', `model_providers.t3_byok=${provider}`]
     .map((value) => `-c ${JSON.stringify(value)}`)
     .join(" ");
