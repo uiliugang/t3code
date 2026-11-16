@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   CommandId,
   type EnvironmentId,
@@ -17,6 +18,7 @@ import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
+import { environmentThreadDetails } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { IssuePicker } from "./IssuePicker";
 
@@ -51,22 +53,28 @@ export function ThreadIssueCreationButton({
       : null,
   );
   const options = sources.data?.[0]?.sources ?? [];
+  const execution = task.data?.item?.executions.at(-1);
+  const executionStatus = useAtomValue(
+    environmentThreadDetails.statusAtom(
+      scopeThreadRef(environmentId, execution?.runId ? execution.threadId : threadId),
+    ),
+  );
   const source =
     options.length === 1 ? options[0] : selected ? options[Number(selected)] : undefined;
   if (!config?.workItemDelivery) return null;
   if (linked.data?.items.some((item) => item.issue)) return null;
-  if (itemId)
+  if (itemId && executionStatus !== "deleted")
     return (
       <View className="gap-2">
         <Text className="text-xs text-foreground-muted">{t("Preparing issue creation")}</Text>
-        {task.data?.item?.executions.at(-1) ? (
+        {execution ? (
           <Button
             label={t("Open conversation")}
             onPress={() =>
               navigation.dispatch(
                 StackActions.push("Thread", {
                   environmentId,
-                  threadId: task.data?.item?.executions.at(-1)?.threadId,
+                  threadId: execution.threadId,
                 }),
               )
             }

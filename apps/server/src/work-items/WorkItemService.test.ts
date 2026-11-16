@@ -650,6 +650,49 @@ it.effect(
         }),
       );
       assert.equal(refused._tag, "Failure");
+      test.failures.dispatchReply = false;
+      test.projections.set(execution.threadId, {
+        ...sideChat,
+        thread: { ...sideChat.thread, deletedAt: DateTime.makeUnsafe(now) },
+      });
+      const [restarted, concurrent] = yield* Effect.all(
+        [
+          automation.createIssue({
+            commandId: command("create-issue-after-delete"),
+            threadId,
+            source,
+          }),
+          automation.createIssue({
+            commandId: command("create-issue-concurrent"),
+            threadId,
+            source,
+          }),
+        ],
+        { concurrency: "unbounded" },
+      );
+      yield* service.drain();
+      assert.equal(restarted.item.id, first.item.id);
+      assert.equal(restarted.item.executions.length, 2);
+      const replacement = restarted.item.executions.at(-1)!;
+      assert.equal(concurrent.item.executions.at(-1)?.id, replacement.id);
+      assert.notEqual(replacement.threadId, execution.threadId);
+      assert.equal(replacement.sideChatOf, threadId);
+      const retried = yield* automation.createIssue({
+        commandId: command("create-issue-retry-replacement"),
+        threadId,
+        source,
+      });
+      assert.equal(retried.item.executions.length, 2);
+      assert.equal(retried.item.executions.at(-1)?.id, replacement.id);
+      test.projections.delete(replacement.threadId);
+      const missing = yield* automation.createIssue({
+        commandId: command("create-issue-after-missing"),
+        threadId,
+        source,
+      });
+      assert.equal(missing.item.id, first.item.id);
+      assert.equal(missing.item.executions.length, 3);
+      assert.equal((yield* service.list({ projectId })).items.length, 1);
     }).pipe(Effect.provide(layer), Effect.scoped);
   },
 );
@@ -717,7 +760,7 @@ it.effect(
         threadId,
         source,
       });
-      const sideChatId = item.executions[0]!.threadId;
+      let sideChatId = item.executions[0]!.threadId;
       const action = {
         operation: "create",
         type: "REQUIREMENT",
@@ -747,6 +790,25 @@ it.effect(
       );
       assert.equal(retry._tag, "Failure");
       assert.equal(creates, 1);
+      const service = yield* WorkItems.WorkItemService;
+      yield* service.drain();
+      const sideChat = test.projections.get(sideChatId)!;
+      test.projections.set(sideChatId, {
+        ...sideChat,
+        thread: { ...sideChat.thread, deletedAt: DateTime.makeUnsafe(now) },
+      });
+      const restarted = yield* automation.createIssue({
+        commandId: command("uncertain-create-after-delete"),
+        threadId,
+        source,
+      });
+      sideChatId = restarted.item.executions.at(-1)!.threadId;
+      assert.notEqual(sideChatId, item.executions[0]!.threadId);
+      const uncertain = yield* Effect.result(
+        automation.issueAction({ id: item.id, action }, sideChatId),
+      );
+      assert.equal(uncertain._tag, "Failure");
+      assert.equal(creates, 1);
       const wrongSource = yield* Effect.result(
         automation.issueAction(
           {
@@ -768,6 +830,13 @@ it.effect(
       if ("item" in recovered) assert.equal(recovered.item.delivery?.issue.id, "42");
       yield* automation.issueAction({ id: item.id, action }, sideChatId);
       assert.equal(creates, 1);
+      const linked = yield* automation.createIssue({
+        commandId: command("already-linked-create"),
+        threadId,
+        source,
+      });
+      assert.equal(linked.item.delivery?.issue.id, "42");
+      assert.equal(linked.item.executions.length, 2);
       const nextId = ThreadId.make("issue-action-next");
       test.projections.set(nextId, projection(nextId));
       const next = yield* automation.createIssue({
