@@ -277,6 +277,7 @@ import * as SourceControlRepositoryService from "./sourceControl/SourceControlRe
 import * as BranchIssueService from "./sourceControl/BranchIssueService.ts";
 import * as IssueService from "./sourceControl/IssueService.ts";
 import * as SourceControlSignIn from "./sourceControl/SourceControlSignIn.ts";
+import * as SourceControlToolMaintenance from "./sourceControl/SourceControlToolMaintenance.ts";
 import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
@@ -1623,6 +1624,7 @@ export const layerWsRpc = (
       const sourceControlRepositories =
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const sourceControlSignIn = yield* SourceControlSignIn.SourceControlSignIn;
+      const sourceControlTools = yield* SourceControlToolMaintenance.SourceControlToolMaintenance;
       const branchIssues = yield* BranchIssueService.BranchIssueService;
       const issues = yield* IssueService.IssueService;
       const withPullRequestViewer = pullRequests.withRoutingCredential;
@@ -2933,6 +2935,9 @@ export const layerWsRpc = (
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
           sourceControlRepositories.cloneRepository(input),
         [WS_METHODS.sourceControlSignInStart]: (input) => sourceControlSignIn.start(input),
+        [WS_METHODS.sourceControlToolsSubscribe]: () => sourceControlTools.changes,
+        [WS_METHODS.sourceControlToolsRefresh]: () => sourceControlTools.refresh,
+        [WS_METHODS.sourceControlToolStart]: (input) => sourceControlTools.start(input),
         [WS_METHODS.sourceControlSignInWait]: (input) => sourceControlSignIn.wait(input),
         [WS_METHODS.sourceControlSignInCancel]: (input) => sourceControlSignIn.cancel(input),
         [WS_METHODS.sourceControlAppAccess]: (input) => sourceControlSignIn.access(input),

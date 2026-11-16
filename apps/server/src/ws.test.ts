@@ -147,6 +147,7 @@ import * as SourceControlRepositoryService from "./sourceControl/SourceControlRe
 import * as BranchIssueService from "./sourceControl/BranchIssueService.ts";
 import * as IssueService from "./sourceControl/IssueService.ts";
 import * as SourceControlSignIn from "./sourceControl/SourceControlSignIn.ts";
+import * as SourceControlToolMaintenance from "./sourceControl/SourceControlToolMaintenance.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as SkillManager from "./skills/SkillManager.ts";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
@@ -941,6 +942,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(BranchIssueService.BranchIssueService)({}),
   Layer.mock(IssueService.IssueService)({}),
   Layer.mock(SourceControlSignIn.SourceControlSignIn)({}),
+  Layer.mock(SourceControlToolMaintenance.SourceControlToolMaintenance)({}),
   Layer.mock(StorageCleanup.StorageCleanup)({}),
   Layer.mock(SkillManager.SkillManager)({}),
   Layer.mock(DatabaseStorage.DatabaseStorage)({}),

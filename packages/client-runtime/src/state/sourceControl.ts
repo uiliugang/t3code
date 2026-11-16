@@ -1,4 +1,4 @@
-import { WS_METHODS, type EnvironmentId } from "@t3tools/contracts";
+import { WS_METHODS, type EnvironmentId, type SourceControlTool } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import * as Effect from "effect/Effect";
 
@@ -13,6 +13,29 @@ import * as Persistence from "../platform/persistence.ts";
 import { vcsCommandConcurrency, vcsCommandScheduler } from "./vcsCommandScheduler.ts";
 import { invalidateCachedVcsRefs } from "./vcsRefInvalidation.ts";
 
+export function sourceControlToolStatus(tool: SourceControlTool): string {
+  switch (tool.phase) {
+    case "running":
+      return tool.version ? "Updating tool..." : "Installing tool...";
+    case "verifying":
+      return "Verifying active executable...";
+    case "succeeded":
+      return "Installation verified.";
+    case "unchanged":
+      return tool.message ?? "The version is unchanged.";
+    case "failed":
+      return tool.message ?? "Installation failed.";
+    case "idle":
+      return tool.status === "unknown"
+        ? "Inspection failed."
+        : tool.reason
+          ? "Manual maintenance"
+          : tool.status === "installed"
+            ? "Installed"
+            : "Not installed";
+  }
+}
+
 export function createSourceControlEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Persistence.EnvironmentCacheStore | R, E>,
 ) {
@@ -24,6 +47,18 @@ export function createSourceControlEnvironmentAtoms<R, E>(
   });
   return {
     issueSources,
+    tools: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:source-control:tools",
+      tag: WS_METHODS.sourceControlToolsSubscribe,
+    }),
+    refreshTools: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:source-control:tools-refresh",
+      tag: WS_METHODS.sourceControlToolsRefresh,
+    }),
+    startTool: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:source-control:tool-start",
+      tag: WS_METHODS.sourceControlToolStart,
+    }),
     refreshIssueSources: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:refresh-sources",
       tag: WS_METHODS.issuesSources,
