@@ -6,6 +6,7 @@ import {
 import { serverEnvironment } from "../../state/server";
 import {
   AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   WorkspaceRootId,
   type ProjectWorkspaceRoot,
 } from "@t3tools/contracts";
@@ -26,6 +27,7 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
   const t = useUiTranslation();
   const config = useAtomValue(serverEnvironment.configValueAtom(project.environmentId));
   const permission = useEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope);
+  const canWriteSettings = useEnvironmentScope(project.environmentId, AuthSettingsWriteScope);
   const allowed = permission && config?.environment.capabilities.multiRepositoryWorkspaces === true;
   const update = useOrchestrationCommand(projectEnvironment.update, { reportFailure: false });
   const [roots, setRoots] = useState<ReadonlyArray<ProjectWorkspaceRoot>>(
@@ -57,8 +59,15 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
   const valid =
     roots.every((root) => root.alias.trim() && root.sourcePath.trim()) &&
     new Set(roots.map((root) => root.alias.trim())).size === roots.length;
+  const canSaveRoots =
+    allowed &&
+    !saving &&
+    valid &&
+    (canWriteSettings ||
+      (!roots.some((root) => root.setupScript !== undefined) &&
+        !(project.workspaceConfig?.roots.some((root) => root.setupScript !== undefined) ?? false)));
   const save = async () => {
-    if (!allowed || saving || !valid) return;
+    if (!canSaveRoots) return;
     setSaving(true);
     const primary = roots.find((root) => root.id === primaryRootId)!;
     const result = await update({
@@ -116,7 +125,11 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={roots.length === 1 || root.id === primaryRootId}
+                  disabled={
+                    roots.length === 1 ||
+                    root.id === primaryRootId ||
+                    (!canWriteSettings && root.setupScript !== undefined)
+                  }
                   onClick={() => {
                     setRoots((current) => current.filter((entry) => entry.id !== root.id));
                     setSaved(false);
@@ -178,6 +191,7 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
               {t("Worktree setup command")}
               <Input
                 value={root.setupScript?.command ?? ""}
+                disabled={!canWriteSettings}
                 onChange={(event) => {
                   const { setupScript: _script, ...rest } = root;
                   setRoots((current) =>
@@ -229,7 +243,7 @@ export function ProjectRepositoriesSettings({ project }: { project: Project }) {
           >
             {t("Add repository")}
           </Button>
-          <Button size="sm" disabled={!allowed || saving || !valid} onClick={() => void save()}>
+          <Button size="sm" disabled={!canSaveRoots} onClick={() => void save()}>
             {saving ? t("Saving...") : saved ? t("Saved") : t("Save repositories")}
           </Button>
         </div>

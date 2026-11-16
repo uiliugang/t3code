@@ -1072,6 +1072,67 @@ it.effect("refuses a worktree container as a new project and as a new workspace 
         Option.getOrThrow(yield* service.getById(projectId)).workspaceRoot,
         worktree.workspaceRoot,
       );
+
+      const secondaryCreateRejected = yield* service
+        .create({
+          commandId: CommandId.make("command:container:secondary-create"),
+          projectId: ProjectId.make("project:container:secondary"),
+          title: "Group with container root",
+          workspaceRoot: `${container}/develop`,
+          workspaceConfig: {
+            primaryRootId: WorkspaceRootId.make("primary"),
+            roots: [
+              {
+                id: WorkspaceRootId.make("primary"),
+                alias: "primary",
+                sourcePath: `${container}/develop`,
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+              {
+                id: WorkspaceRootId.make("secondary"),
+                alias: "secondary",
+                sourcePath: container,
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+        })
+        .pipe(Effect.flip);
+      assert.equal(secondaryCreateRejected._tag, "ProjectInvalidError");
+
+      const secondaryUpdateRejected = yield* service
+        .update({
+          commandId: CommandId.make("command:container:secondary-update"),
+          projectId,
+          expectedWorkspaceVersion: 0,
+          workspaceConfig: {
+            primaryRootId: WorkspaceRootId.make("primary"),
+            roots: [
+              {
+                id: WorkspaceRootId.make("primary"),
+                alias: "primary",
+                sourcePath: `${container}/develop`,
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+              {
+                id: WorkspaceRootId.make("secondary"),
+                alias: "secondary",
+                sourcePath: container,
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+        })
+        .pipe(Effect.flip);
+      assert.equal(secondaryUpdateRejected._tag, "ProjectInvalidError");
     }).pipe(Effect.provide(layerTest));
   }).pipe(Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
@@ -1170,4 +1231,177 @@ it.effect("rejects an update that waited on the lock while its project was delet
       "Update race",
     );
   }).pipe(Effect.provide(layerProjectServiceDependencies)),
+);
+
+it.effect(
+  "requires settings:write when project.update clears a setupScript or removes a root with a persisted setupScript",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const projectId = ProjectId.make("project:nested-setup-removal");
+      const frontendId = WorkspaceRootId.make("frontend");
+      const backendId = WorkspaceRootId.make("backend");
+      const setupScript = {
+        id: "setup",
+        name: "Setup",
+        command: "echo harmless",
+        icon: "configure" as const,
+        runOnWorktreeCreate: true,
+      };
+      yield* service.create({
+        commandId: CommandId.make("command:nested-setup:create"),
+        projectId,
+        title: "Workspace Group",
+        workspaceRoot: "/work/frontend",
+        workspaceConfig: {
+          primaryRootId: frontendId,
+          roots: [
+            {
+              id: frontendId,
+              alias: "frontend",
+              sourcePath: "/work/frontend",
+              description: "",
+              defaultSelected: true,
+              accessIntent: "write",
+            },
+            {
+              id: backendId,
+              alias: "backend",
+              sourcePath: "/work/backend",
+              description: "",
+              defaultSelected: true,
+              accessIntent: "write",
+              setupScript,
+            },
+          ],
+        },
+      });
+
+      const operateOnly = new Set(["orchestration:operate"]);
+      const withSettingsWrite = new Set(["orchestration:operate", "settings:write"]);
+
+      // Removing a root that holds a setupScript without settings:write is rejected.
+      const dropRootRejected = yield* service
+        .update({
+          commandId: CommandId.make("command:nested-setup:drop-root-denied"),
+          projectId,
+          expectedWorkspaceVersion: 1,
+          workspaceConfig: {
+            primaryRootId: frontendId,
+            roots: [
+              {
+                id: frontendId,
+                alias: "frontend",
+                sourcePath: "/work/frontend",
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+        })
+        .pipe(
+          Effect.provideService(ProjectService.ProjectMutationCallerScopes, operateOnly),
+          Effect.flip,
+        );
+      assert.instanceOf(dropRootRejected, ProjectService.ProjectSetupScriptAuthorizationError);
+
+      // Clearing setupScript on an existing root without settings:write is also rejected.
+      const clearScriptRejected = yield* service
+        .update({
+          commandId: CommandId.make("command:nested-setup:clear-denied"),
+          projectId,
+          expectedWorkspaceVersion: 1,
+          workspaceConfig: {
+            primaryRootId: frontendId,
+            roots: [
+              {
+                id: frontendId,
+                alias: "frontend",
+                sourcePath: "/work/frontend",
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+              {
+                id: backendId,
+                alias: "backend",
+                sourcePath: "/work/backend",
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+        })
+        .pipe(
+          Effect.provideService(ProjectService.ProjectMutationCallerScopes, operateOnly),
+          Effect.flip,
+        );
+      assert.instanceOf(clearScriptRejected, ProjectService.ProjectSetupScriptAuthorizationError);
+
+      // Updating non-script metadata while no roots carry setupScripts succeeds for operate-only callers on script-free groups,
+      // and clearing setupScript succeeds once settings:write is granted.
+      const cleared = yield* service
+        .update({
+          commandId: CommandId.make("command:nested-setup:clear-allowed"),
+          projectId,
+          expectedWorkspaceVersion: 1,
+          workspaceConfig: {
+            primaryRootId: frontendId,
+            roots: [
+              {
+                id: frontendId,
+                alias: "frontend",
+                sourcePath: "/work/frontend",
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+              {
+                id: backendId,
+                alias: "backend",
+                sourcePath: "/work/backend",
+                description: "Updated description",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+        })
+        .pipe(Effect.provideService(ProjectService.ProjectMutationCallerScopes, withSettingsWrite));
+      assert.equal(cleared.workspaceConfig?.version, 2);
+      assert.isUndefined(cleared.workspaceConfig?.roots[1]?.setupScript);
+
+      // Now that no roots hold setupScripts, operate-only callers can update repository metadata freely.
+      const renamed = yield* service
+        .update({
+          commandId: CommandId.make("command:nested-setup:rename-allowed"),
+          projectId,
+          expectedWorkspaceVersion: 2,
+          workspaceConfig: {
+            primaryRootId: frontendId,
+            roots: [
+              {
+                id: frontendId,
+                alias: "web",
+                sourcePath: "/work/frontend",
+                description: "",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+              {
+                id: backendId,
+                alias: "api",
+                sourcePath: "/work/backend",
+                description: "Updated description",
+                defaultSelected: true,
+                accessIntent: "write",
+              },
+            ],
+          },
+        })
+        .pipe(Effect.provideService(ProjectService.ProjectMutationCallerScopes, operateOnly));
+      assert.equal(renamed.workspaceConfig?.version, 3);
+    }).pipe(Effect.provide(layerTest)),
 );
