@@ -197,7 +197,14 @@ it("keeps an unsaved description when collapsed and reopened, and after a failed
 
 it("lists unselected default reviewers and accepts manual MIS without losing failed input", async () => {
   using _settings = setup();
-  state.update.mockResolvedValueOnce({ _tag: "Failure", cause: Cause.fail(new Error("offline")) });
+  state.update.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(
+      new Error(
+        "Some reviewers may already have been added. Check the reviewer list before retrying.",
+      ),
+    ),
+  });
   const value = {
     ...detail,
     provider: SourceControlProviderKind.make("meituan"),
@@ -215,6 +222,11 @@ it("lists unselected default reviewers and accepts manual MIS without losing fai
   await expect.element(page.getByRole("button", { name: "Add reviewers" })).toBeDisabled();
   await userEvent.type(input, "liugang59, zhangsan{Enter}");
   await expect.element(page.getByRole("alert")).toBeVisible();
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent(
+      "Some reviewers may already have been added. Check the reviewer list before retrying.",
+    );
   await expect.element(input).toHaveValue("liugang59, zhangsan");
   expect(state.update).toHaveBeenCalledWith({
     environmentId: EnvironmentId.make("environment"),

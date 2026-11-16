@@ -1418,7 +1418,21 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     requestReviewers: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:request-reviewers",
       tag: WS_METHODS.pullRequestsRequestReviewers,
-      execute: (input) => routedRequest(WS_METHODS.pullRequestsRequestReviewers, input),
+      execute: (input, registry, environmentId) =>
+        routedRequest(WS_METHODS.pullRequestsRequestReviewers, input).pipe(
+          Effect.tapError(() =>
+            Effect.sync(() => {
+              const target = { environmentId, input };
+              for (const atom of [
+                ...loadedDetails(registry, target),
+                reviewerCandidates(target),
+                activity(target),
+              ]) {
+                if (registry.getNodes().has(atom)) registry.refresh<unknown>(atom);
+              }
+            }),
+          ),
+        ),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
       onSuccess: (target, registry) =>

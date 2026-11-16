@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Layer from "effect/Layer";
+import { VcsProcessExitError } from "@t3tools/contracts";
 import * as TestHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as MCodeCli from "./MCodeCli.ts";
@@ -14,44 +15,66 @@ const layerFor = (run: SourceControlHost.SourceControlHost["Service"]["process"]
   MCodeCli.layer.pipe(Layer.provide(TestHost.layer({ process: { run } })));
 
 describe("Meituan pull requests", () => {
-  it.effect("adds multiple MIS reviewers without replacing existing reviewers or searching", () =>
-    Effect.gen(function* () {
-      const writes: ReadonlyArray<string>[] = [];
-      const provider = yield* Provider.make.pipe(
-        Effect.provide(
-          layerFor((input) => {
-            writes.push(input.args);
-            return Effect.succeed(TestHost.processOutput(""));
-          }),
-        ),
-      );
-      expect(provider.capabilities.reviewers).toMatchObject({
-        request: true,
-        listCandidates: true,
-        remove: false,
-      });
-      yield* provider.setReviewerRequest({
-        ...repositoryRef,
-        reviewers: [
-          { id: "liugang59", kind: "user" },
-          { id: "zhangsan", kind: "user" },
-        ],
-        requested: true,
-      });
-      expect(writes).toEqual([
-        [
-          "pr",
-          "-R",
-          "team/service",
-          "add-reviewer",
-          "22",
-          "--reviewer",
-          "liugang59",
-          "--reviewer",
-          "zhangsan",
-        ],
-      ]);
-    }),
+  it.effect.each([false, true])(
+    "adds MIS reviewers with an explicit failure warning (failure: %s)",
+    (fails) =>
+      Effect.gen(function* () {
+        const writes: ReadonlyArray<string>[] = [];
+        const provider = yield* Provider.make.pipe(
+          Effect.provide(
+            layerFor((input) => {
+              writes.push(input.args);
+              return fails
+                ? Effect.fail(
+                    new VcsProcessExitError({
+                      operation: input.operation,
+                      command: input.command,
+                      cwd: input.cwd,
+                      exitCode: 1,
+                      detail: "Reviewer not found",
+                      failureKind: "not-found",
+                    }),
+                  )
+                : Effect.succeed(TestHost.processOutput(""));
+            }),
+          ),
+        );
+        expect(provider.capabilities.reviewers).toMatchObject({
+          request: true,
+          listCandidates: true,
+          remove: false,
+        });
+        const result = yield* provider
+          .setReviewerRequest({
+            ...repositoryRef,
+            reviewers: [
+              { id: "liugang59", kind: "user" },
+              { id: "zhangsan", kind: "user" },
+            ],
+            requested: true,
+          })
+          .pipe(Effect.result);
+        if (fails) {
+          expect(Result.isFailure(result) && result.failure.detail).toBe(
+            "Some reviewers may already have been added. Check the reviewer list before retrying.",
+          );
+        } else {
+          expect(Result.isSuccess(result)).toBe(true);
+        }
+        expect(writes).toEqual([
+          [
+            "pr",
+            "-R",
+            "team/service",
+            "add-reviewer",
+            "22",
+            "--reviewer",
+            "liugang59",
+            "--reviewer",
+            "zhangsan",
+          ],
+        ]);
+      }),
   );
 
   it.effect("lists repository defaults without selecting them or querying branch candidates", () =>

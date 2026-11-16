@@ -124,10 +124,12 @@ export function PullRequestReviewerPicker({
     setPending(null);
     inFlight.current = false;
     if (result._tag === "Failure") {
-      const description = readableFailure(
-        squashAtomCommandFailure(result),
-        t(
-          "The host refused it. Check that you have write access on this repository, and that they still have access to it.",
+      const description = t(
+        readableFailure(
+          squashAtomCommandFailure(result),
+          t(
+            "The host refused it. Check that you have write access on this repository, and that they still have access to it.",
+          ),
         ),
       );
       setError(description);

@@ -3626,6 +3626,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Add up to 25 reviewers at a time.": "一次最多添加 25 位审核人。",
   "Add reviewers": "添加审核人",
   "Couldn't update this review request. Try again.": "无法更新评审请求，请重试。",
+  "Some reviewers may already have been added. Check the reviewer list before retrying.":
+    "部分审核人可能已添加，请核对审核人列表后重试。",
   Resolve: "标记为已解决",
   "Resolve conflicts": "解决冲突",
   Resolved: "已解决",

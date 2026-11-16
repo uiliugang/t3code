@@ -53,9 +53,11 @@ export function PullRequestReviewerInput({
     setBusy(false);
     if (result._tag === "Failure") {
       setError(
-        readableFailure(
-          squashAtomCommandFailure(result),
-          t("Couldn't update this review request. Try again."),
+        t(
+          readableFailure(
+            squashAtomCommandFailure(result),
+            t("Couldn't update this review request. Try again."),
+          ),
         ),
       );
       return;

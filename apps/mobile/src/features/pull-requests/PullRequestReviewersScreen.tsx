@@ -14,7 +14,8 @@ import {
   reviewerCandidateView,
   type ReviewerTruncation,
 } from "@t3tools/client-runtime/pull-request-reviewers";
-import type { PullRequestReviewerCandidate } from "@t3tools/contracts";
+import { PullRequestOperationError, type PullRequestReviewerCandidate } from "@t3tools/contracts";
+import { Schema } from "effect";
 import { useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
@@ -29,6 +30,8 @@ import { useDebouncedValue } from "../../state/queries";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { PullRequestAvatar } from "./PullRequestPresentation";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
+
+const isPullRequestOperationError = Schema.is(PullRequestOperationError);
 
 const TRUNCATED_LABELS: Record<ReviewerTruncation, (error: string | null) => string> = {
   unsearchable: () =>
@@ -130,7 +133,13 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
     if (AsyncResult.isFailure(response)) {
       const cause = squashAtomCommandFailure(response);
       setError(
-        cause instanceof Error ? cause.message : "Couldn't update this review request. Try again.",
+        t(
+          isPullRequestOperationError(cause)
+            ? cause.detail
+            : cause instanceof Error
+              ? cause.message
+              : "Couldn't update this review request. Try again.",
+        ),
       );
       return;
     }

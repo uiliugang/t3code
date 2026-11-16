@@ -4011,7 +4011,12 @@ export const make = Effect.gen(function* () {
     setThreadResolution: invalidatedByMutation(setThreadResolution),
     setReaction: invalidatedByMutation(setReaction),
     reviewerCandidates,
-    requestReviewers: invalidatedByMutation(requestReviewers),
+    requestReviewers: Effect.fn("PullRequestService.requestReviewersAndInvalidate")(
+      (input: PullRequestReviewerRequestInput) =>
+        invalidatedByMutation(requestReviewers)(input).pipe(
+          Effect.tapError(() => invalidate({ reference: input }, { notifyReaders: true })),
+        ),
+    ),
     labelCandidates,
     setLabels: invalidatedByMutation(setLabels),
     invalidate,

@@ -2586,6 +2586,70 @@ it.effect("refuses a review request this viewer may not make, and says what acce
   }),
 );
 
+it.effect("notifies readers and drops cached reviewers after a partially failed batch", () =>
+  Effect.gen(function* () {
+    const reviewers: Array<{ login: string; name: null; avatarUrl: null }> = [];
+    let cachedReviewers: typeof reviewers | undefined;
+    const kind = SourceControlProviderKind.make("meituan");
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "p1",
+          title: "web",
+          workspaceRoot: "/a",
+          repository: "acme/web",
+          provider: kind,
+          host: "git.sankuai.com",
+        }),
+      ],
+      providers: [
+        fakePullRequestProvider(kind, {
+          getChangeRequest: () =>
+            Effect.sync(() => {
+              cachedReviewers ??= [...reviewers];
+              return { ...hostedChangeRequest("body"), reviewers: cachedReviewers };
+            }),
+          forgetChangeRequestReads: () =>
+            Effect.sync(() => {
+              cachedReviewers = undefined;
+            }),
+          setReviewerRequest: (input) =>
+            Effect.gen(function* () {
+              reviewers.push({ login: input.reviewers[0]!.id, name: null, avatarUrl: null });
+              return yield* new PullRequestProviderError({
+                provider: kind,
+                operation: "setReviewerRequest",
+                reason: "failed",
+                detail: "Second reviewer refused",
+              });
+            }),
+        }),
+      ],
+    });
+    const ref = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    yield* service.invalidate({ reference: ref }, { notifyReaders: true });
+    assert.deepStrictEqual((yield* service.detail(ref)).reviewers, []);
+    const before = Option.getOrThrow(yield* Stream.runHead(service.subscribeRefreshes));
+    const result = yield* Effect.exit(
+      service.requestReviewers({
+        ...ref,
+        reviewers: [
+          { id: "alice", kind: "user" },
+          { id: "missinguser", kind: "user" },
+          { id: "bob", kind: "user" },
+        ],
+        requested: true,
+      }),
+    );
+    assert.isTrue(Exit.isFailure(result));
+    assert.isAbove(Option.getOrThrow(yield* Stream.runHead(service.subscribeRefreshes)), before);
+    assert.deepStrictEqual(
+      (yield* service.detail(ref)).reviewers.map((reviewer) => reviewer.login),
+      ["alice"],
+    );
+  }),
+);
+
 it.effect.each(["list", "listStats"] as const)(
   "retries a replacement %s read that joins a canceled lookup",
   (operation) =>

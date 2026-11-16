@@ -382,7 +382,18 @@ export const make = Effect.gen(function* () {
         "add-reviewer",
         String(input.number),
         ...input.reviewers.flatMap((reviewer) => ["--reviewer", reviewer.id]),
-      ]);
+      ]).pipe(
+        Effect.mapError((error) =>
+          input.reviewers.length > 1
+            ? new PullRequestProviderError({
+                ...error,
+                detail:
+                  "Some reviewers may already have been added. Check the reviewer list before retrying.",
+                cause: error,
+              })
+            : error,
+        ),
+      );
     }),
     replyToThread: () => unsupported("replyToThread"),
     setReaction: () => unsupported("setReaction"),
