@@ -86,6 +86,39 @@ For upstream builds, including Windows and Intel Macs, use
 | Arch Linux nightly | `yay -S t3code-nightly-bin`                                  |
 | Nix                | `nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code` |
 
+### macOS
+
+On an Apple Silicon Mac, quit T3 Code and run this command to install or update
+the fork's desktop app:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install-desktop.sh | sh
+```
+
+The script installs the latest stable release in `/Applications`. It verifies
+the DMG against the release's `SHA256SUMS` and checks the app's minimum macOS
+version and bundle signature before replacing an existing installation. It does not change your T3 home,
+threads, provider accounts, or projects, and does not launch the app afterwards.
+Repeat the command to update; it does not enable in-app automatic updates.
+
+To install a specific release without looking up the latest version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install-desktop.sh | T3CODE_VERSION=0.0.17 sh
+```
+
+If `/Applications` is not writable, set
+`T3CODE_DESKTOP_INSTALL_DIR="$HOME/Applications"` on the `sh` command instead.
+To download from a trusted mirror, set `T3CODE_RELEASE_BASE_URL` to its
+`releases/download` root. A mirror-only installation also needs `T3CODE_VERSION`
+to avoid the GitHub version lookup.
+
+These builds use ad hoc signing, not Apple notarization. The installer does not
+remove quarantine attributes or change Gatekeeper settings. If macOS blocks the
+app, follow [the fork's macOS instructions](../../README.md#macos-提示无法验证应用).
+The script installs the desktop app only; use the separate
+[CLI installer](#command-line) for a standalone server.
+
 ### Linux
 
 AppImage and `.deb` downloads are available for x86_64 and ARM64. Check your

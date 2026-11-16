@@ -47,6 +47,14 @@
 
 上游的 `npx t3@latest`、应用商店和包管理器入口分发的是上游版本，不包含本分支的增强。要安装本分支的 CLI，请使用[本仓库的安装脚本](docs/user/install.md#command-line)。
 
+macOS Apple Silicon 桌面应用也可以通过一条命令安装或更新。先退出 T3 Code，再运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install-desktop.sh | sh
+```
+
+脚本校验安装包后替换 `/Applications` 中的应用，不修改用户数据，也不启用应用内自动更新。指定版本或安装目录见[macOS 安装说明](docs/user/install.md#macos)。
+
 #### macOS 提示无法验证应用
 
 没有 Apple 开发者账号时，本分支无法通过 Developer ID 签名和 Apple 公证消除首次打开的拦截。确认安装包来自可信来源后，将应用拖入「应用程序」文件夹，尝试打开一次，再前往「系统设置 → 隐私与安全性」选择「仍要打开」，按提示确认。
