@@ -17,6 +17,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { ListActionRow } from "../../components/ui/ListActionRow";
+import { ListRow } from "../../components/ui/ListRow";
 import { Menu } from "../../components/ui/Menu";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -70,6 +71,7 @@ export function ClaudeAccount({
 }) {
   const t = useUiTranslation();
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const { run, pending, error } = useProviderInstanceMutation(environment);
   const instance = environment.serverConfig.settings.providerInstances[provider.instanceId];
   const configDir = claudeConfigDir(instance);
@@ -127,6 +129,20 @@ export function ClaudeAccount({
       ],
     );
   }
+  if (!expanded && !editing) {
+    return (
+      <View className="border-t border-border-subtle">
+        <ListRow
+          label={name}
+          description={[status, configDir || t("Default config folder")]
+            .filter(Boolean)
+            .join(" · ")}
+          detail={t("Edit")}
+          onPress={() => setExpanded(true)}
+        />
+      </View>
+    );
+  }
   return (
     <View className="border-t border-border-subtle">
       <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
@@ -158,6 +174,11 @@ export function ClaudeAccount({
             />
           </Menu>
         )}
+        <ControlPill
+          label={t("Done")}
+          disabled={editing || pending}
+          onPress={() => setExpanded(false)}
+        />
       </View>
       <ClaudeInstallationControls
         environment={environment}

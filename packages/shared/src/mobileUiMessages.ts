@@ -1,4 +1,5 @@
 export const mobileUiMessages: Readonly<Record<string, string>> = {
+  "Show turned-off providers": "显示已关闭的提供商",
   Cite: "引用",
   "Cite formula": "引用公式",
   "Reply to this response": "引用这条回复",

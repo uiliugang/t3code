@@ -43,9 +43,11 @@ export function ClaudeByokProviderSettings({
   driver = "claudeAgent",
   allowCreate = true,
   providers = [],
+  showDisabled = false,
 }: {
   readonly allowCreate?: boolean;
   readonly providers?: ReadonlyArray<ServerProvider>;
+  readonly showDisabled?: boolean;
   readonly driver?: "claudeAgent" | "codex";
   readonly environment: SettingsTarget;
 }) {
@@ -53,8 +55,12 @@ export function ClaudeByokProviderSettings({
   const label = driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL;
   const [adding, setAdding] = useState(false);
   const instances = Object.entries(environment.serverConfig.settings.providerInstances).filter(
-    ([, instance]) =>
+    ([instanceId, instance]) =>
       instance.driver === driver &&
+      (showDisabled ||
+        (providers.find((provider) => provider.instanceId === instanceId)?.enabled ??
+          instance.enabled ??
+          true)) &&
       (driver === "codex"
         ? codexConnectionMode(instance.config) === "byok"
         : isClaudeByok(instance.config)),
@@ -228,7 +234,7 @@ function ClaudeByokEditor({
       {instance ? (
         <ListRow
           label={instance.displayName ?? label}
-          description={label}
+          description={instance.enabled === false ? t("Turned off") : label}
           detail={t(expanded ? "Done" : "Edit")}
           disabled={pending}
           onPress={() => setExpanded(!expanded)}

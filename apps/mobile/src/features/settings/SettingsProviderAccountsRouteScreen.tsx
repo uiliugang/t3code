@@ -23,6 +23,7 @@ import type { MenuAction } from "@react-native-menu/menu";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
+import { ListRow } from "../../components/ui/ListRow";
 import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { environmentPresentations } from "../../state/presentation";
@@ -52,12 +53,29 @@ import {
 export function SettingsProviderAccountsRouteScreen() {
   const t = useUiTranslation();
   const environmentMenu = useSettingsEnvironmentMenu();
+  const [showDisabled, setShowDisabled] = useState(false);
   const { selectedTargets } = useSettingsEnvironmentFilter();
   const permittedEnvironments = useEnvironmentsWithScope(selectedTargets, AuthProvidersManageScope);
   const providersByEnvironment = useAtomValue(environmentPresentations.providersByEnvironmentAtom);
   const insets = useSafeAreaInsets();
   return (
-    <SettingsScreen title={t("Providers")} menus={[environmentMenu]}>
+    <SettingsScreen
+      title={t("Providers")}
+      menus={[
+        {
+          ...environmentMenu,
+          items: [
+            ...environmentMenu.items,
+            {
+              id: "show-disabled-providers",
+              title: t("Show turned-off providers"),
+              selected: showDisabled,
+              onPress: () => setShowDisabled((value) => !value),
+            },
+          ],
+        },
+      ]}
+    >
       <ScreenScrollView
         className="flex-1"
         contentInsetAdjustmentBehavior="automatic"
@@ -83,6 +101,7 @@ export function SettingsProviderAccountsRouteScreen() {
                 <EnvironmentProviders
                   environment={environment}
                   providers={managedProviders(environment, providersByEnvironment)}
+                  showDisabled={showDisabled}
                 />
               )}
             </SettingsSection>
@@ -96,11 +115,14 @@ export function SettingsProviderAccountsRouteScreen() {
 function EnvironmentProviders({
   environment,
   providers,
+  showDisabled,
 }: {
   readonly environment: SettingsTarget;
   readonly providers: ReadonlyArray<ServerProvider>;
+  readonly showDisabled: boolean;
 }) {
   const t = useUiTranslation();
+  const visibleProviders = providers.filter((provider) => showDisabled || provider.enabled);
   const isByok = (provider: ServerProvider) =>
     provider.driver === "codex"
       ? codexConnectionMode(
@@ -111,9 +133,11 @@ function EnvironmentProviders({
         );
   const unified =
     environment.serverConfig.environment.capabilities?.providerConnectionProfiles === true;
-  const accounts = providers.filter((provider) => canManageProvider(provider) && !isByok(provider));
+  const accounts = visibleProviders.filter(
+    (provider) => canManageProvider(provider) && !isByok(provider),
+  );
   // Claude has no in-app sign-in; each account is its own instance on a signed-in config folder.
-  const claudeAccounts = providers.filter(
+  const claudeAccounts = visibleProviders.filter(
     (provider) =>
       provider.driver === CLAUDE_DRIVER && !canManageProvider(provider) && !isByok(provider),
   );
@@ -128,6 +152,7 @@ function EnvironmentProviders({
           environment={environment}
           allowCreate={!unified}
           providers={providers}
+          showDisabled={showDisabled}
         />
       ) : null}
       {environment.serverConfig.environment.capabilities?.codexByok &&
@@ -140,6 +165,7 @@ function EnvironmentProviders({
           driver="codex"
           allowCreate={!unified}
           providers={providers}
+          showDisabled={showDisabled}
         />
       ) : null}
       {accounts.map((provider, index) => (
@@ -148,33 +174,18 @@ function EnvironmentProviders({
           className={index > 0 ? "border-t border-border-subtle" : undefined}
         >
           <ProviderAccount environment={environment} provider={provider} />
-          {provider.driver === CLAUDE_DRIVER ||
-          (provider.driver === "codex" &&
-            environment.serverConfig.environment.capabilities?.codexByok) ? (
-            <ClaudeInstallationControls environment={environment} provider={provider} />
-          ) : null}
         </View>
       ))}
-      {providers
+      {visibleProviders
         .filter((provider) => !isByok(provider) && needsProviderSummary(provider))
         .map((provider) => (
-          <View key={provider.instanceId} className="border-t border-border-subtle p-4">
-            <ProviderAccountSummary
-              name={provider.displayName ?? provider.driver}
-              status={t(providerSummaryStatus(provider))}
-              email={
-                provider.enabled && provider.auth.status === "authenticated"
-                  ? provider.auth.email?.trim()
-                  : undefined
-              }
-            />
-            {provider.driver === "codex" &&
-            environment.serverConfig.environment.capabilities?.codexByok ? (
-              <ClaudeInstallationControls environment={environment} provider={provider} />
-            ) : null}
-          </View>
+          <ProviderSummary
+            key={provider.instanceId}
+            environment={environment}
+            provider={provider}
+          />
         ))}
-      {providers.length === 0 ? (
+      {visibleProviders.length === 0 ? (
         <Text className="p-4 text-foreground-muted">{t("No providers available.")}</Text>
       ) : null}
       {claudeAccounts.map((provider) => (
@@ -187,6 +198,47 @@ function EnvironmentProviders({
       ) : null}
       <RemoveProvider environment={environment} providers={providers} />
     </>
+  );
+}
+
+function ProviderSummary({
+  environment,
+  provider,
+}: {
+  readonly environment: SettingsTarget;
+  readonly provider: ServerProvider;
+}) {
+  const t = useUiTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const name = provider.displayName ?? provider.driver;
+  const status = t(providerSummaryStatus(provider));
+  const email =
+    provider.enabled && provider.auth.status === "authenticated"
+      ? provider.auth.email?.trim()
+      : undefined;
+  const hasSettings =
+    provider.driver === "codex" && environment.serverConfig.environment.capabilities?.codexByok;
+  return (
+    <View className="border-t border-border-subtle">
+      {hasSettings && !expanded ? (
+        <ListRow
+          label={name}
+          description={email ? `${status} · ••••••@••••••` : status}
+          detail={t("Edit")}
+          onPress={() => setExpanded(true)}
+        />
+      ) : (
+        <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
+          <ProviderAccountSummary key={email} name={name} status={status} email={email} />
+          {hasSettings ? (
+            <ControlPill label={t("Done")} onPress={() => setExpanded(false)} />
+          ) : null}
+        </View>
+      )}
+      {hasSettings && expanded ? (
+        <ClaudeInstallationControls environment={environment} provider={provider} />
+      ) : null}
+    </View>
   );
 }
 
@@ -225,6 +277,7 @@ function ProviderAccount({
   // Matches ListRowLayout: large text stacks the action below instead of squeezing the status.
   const stacked = useWindowDimensions().fontScale >= 1.5;
   const [pending, setPending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ id: "", values: {} as Record<string, string> });
@@ -471,6 +524,19 @@ function ProviderAccount({
       onPress={() => startSignIn()}
     />
   ) : null;
+  if (!expanded && !active) {
+    const description = status ? t(status) : undefined;
+    return (
+      <ListRow
+        label={name}
+        description={
+          email ? [description, "••••••@••••••"].filter(Boolean).join(" · ") : description
+        }
+        detail={t("Edit")}
+        onPress={() => setExpanded(true)}
+      />
+    );
+  }
   return (
     <View>
       <View
@@ -486,7 +552,14 @@ function ProviderAccount({
           status={status ? t(status) : status}
           email={email}
         />
-        {trailing}
+        <View className="flex-row flex-wrap items-center gap-2">
+          {trailing}
+          <ControlPill
+            label={t("Done")}
+            disabled={active || pending}
+            onPress={() => setExpanded(false)}
+          />
+        </View>
       </View>
       {interaction?.type === "deviceCode" ||
       interaction?.type === "terminal" ||
@@ -584,6 +657,11 @@ function ProviderAccount({
             })().catch(() => setError("Could not open the sign-in page."));
           }}
         />
+      ) : null}
+      {provider.driver === CLAUDE_DRIVER ||
+      (provider.driver === "codex" &&
+        environment.serverConfig.environment.capabilities?.codexByok) ? (
+        <ClaudeInstallationControls environment={environment} provider={provider} />
       ) : null}
     </View>
   );
