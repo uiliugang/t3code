@@ -982,10 +982,12 @@ export function PullRequestSummaryTab({
               {detail.capabilities.reviewers.request ? (
                 detail.capabilities.reviewers.listCandidates ? (
                   <PullRequestReviewerPicker
+                    manualEntry={detail.provider === "meituan"}
+                    removable={detail.capabilities.reviewers.remove !== false}
                     searchable={detail.capabilities.reviewers.searchCandidates === true}
                     environmentId={environmentId}
                     reference={reference}
-                    allowed={detail.viewerPermissions.requestReviewers}
+                    allowed={detail.state === "open" && detail.viewerPermissions.requestReviewers}
                   />
                 ) : (
                   <PullRequestReviewerInput

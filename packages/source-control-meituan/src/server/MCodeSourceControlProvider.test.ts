@@ -172,8 +172,8 @@ describe("Meituan source control", () => {
   );
 
   it.effect.each([false, true])(
-    "preserves reviewers and literal PR bodies (fallback: %s)",
-    (fallback) =>
+    "creates without reviewers and preserves literal PR bodies (issue required: %s)",
+    (issueRequired) =>
       Effect.gen(function* () {
         const calls: ReadonlyArray<string>[] = [];
         const provider = yield* Provider.make.pipe(
@@ -183,14 +183,10 @@ describe("Meituan source control", () => {
               const response = input.args.includes("list")
                 ? []
                 : input.args.includes("settings")
-                  ? { requireIssueAssociated: true }
+                  ? { requireIssueAssociated: issueRequired }
                   : input.args.includes("create")
                     ? { ...pullRequest, additions: -1, deletions: -1, commitNum: -1 }
-                    : input.args.includes("reviewers")
-                      ? input.args.includes("--target")
-                        ? { candidates: fallback ? [] : [{ mis: "reviewer", name: "Reviewer" }] }
-                        : [{ mis: "reviewer", name: "Reviewer" }]
-                      : { name: "master", issues: [{ id: "123" }] };
+                    : { name: "master", issues: [{ id: "123" }] };
               return Effect.succeed(TestHost.processOutput(JSON.stringify(response)));
             }),
           ),
@@ -198,9 +194,9 @@ describe("Meituan source control", () => {
         yield* provider.createChangeRequest(createInput);
         const create = calls.find((args) => args.includes("create"));
         expect(create).toContain("Body with `code` and $(literal)\nSecond line");
-        expect(create).not.toContain("--no-default-reviewers");
-        expect(create).toContain("--reviewer");
-        expect(create).toContain("reviewer");
+        expect(create).toContain("--no-default-reviewers");
+        expect(create).not.toContain("--reviewer");
+        expect(calls.some((args) => args.includes("reviewers"))).toBe(false);
       }),
   );
 

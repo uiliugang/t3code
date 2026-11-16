@@ -27,7 +27,7 @@ describe("Meituan pull requests", () => {
       );
       expect(provider.capabilities.reviewers).toMatchObject({
         request: true,
-        listCandidates: false,
+        listCandidates: true,
         remove: false,
       });
       yield* provider.setReviewerRequest({
@@ -50,6 +50,43 @@ describe("Meituan pull requests", () => {
           "--reviewer",
           "zhangsan",
         ],
+      ]);
+    }),
+  );
+
+  it.effect("lists repository defaults without selecting them or querying branch candidates", () =>
+    Effect.gen(function* () {
+      const calls: ReadonlyArray<string>[] = [];
+      const provider = yield* Provider.make.pipe(
+        Effect.provide(
+          layerFor((input) => {
+            calls.push(input.args);
+            const response = input.args.includes("view")
+              ? { ...pullRequest, reviewers: [] }
+              : [
+                  { mis: "reviewer", name: "Reviewer" },
+                  { mis: "AUTHOR", name: "Author" },
+                ];
+            return Effect.succeed(TestHost.processOutput(JSON.stringify(response)));
+          }),
+        ),
+      );
+      expect(yield* provider.listReviewerCandidates(repositoryRef)).toEqual({
+        candidates: [
+          {
+            id: "reviewer",
+            login: "reviewer",
+            name: "Reviewer",
+            kind: "user",
+            avatarUrl: null,
+            isRequested: false,
+          },
+        ],
+        truncated: false,
+      });
+      expect(calls).toEqual([
+        ["pr", "-R", "team/service", "view", "22", "--json"],
+        ["repo", "-R", "team/service", "reviewers", "--json"],
       ]);
     }),
   );

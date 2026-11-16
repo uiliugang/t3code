@@ -28,7 +28,7 @@ const CAPABILITIES: PullRequestCapabilities = {
     resolve: true,
     verdicts: ["comment", "approve", "request-changes"],
   },
-  reviewers: { request: true, listCandidates: false, remove: false },
+  reviewers: { request: true, listCandidates: true, remove: false },
 };
 
 export const make = Effect.gen(function* () {
@@ -348,7 +348,7 @@ export const make = Effect.gen(function* () {
         const result = yield* read(
           input,
           "listReviewerCandidates",
-          ["reviewers", "--target", pr.toRef.branch],
+          ["reviewers"],
           Json.Reviewers,
           "repo",
         );
@@ -362,7 +362,9 @@ export const make = Effect.gen(function* () {
               login: user.mis,
               name: user.name || null,
               avatarUrl: null,
-              isRequested: pr.reviewers.some((reviewer) => reviewer.mis === user.mis),
+              isRequested: pr.reviewers.some(
+                (reviewer) => reviewer.mis.toLowerCase() === user.mis.toLowerCase(),
+              ),
             })),
           truncated: false,
         };

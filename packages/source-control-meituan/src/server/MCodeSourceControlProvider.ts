@@ -259,26 +259,6 @@ export const make = Effect.gen(function* () {
               reason: "issue-required",
             });
         }
-        const candidates = yield* cli.json(
-          {
-            cwd: input.cwd,
-            operation: "reviewerCandidates",
-            args: ["repo", "-R", repo, "reviewers", "--target", input.baseRefName, "--json"],
-          },
-          Json.Reviewers,
-        );
-        let reviewers = "candidates" in candidates ? candidates.candidates : candidates;
-        if (!reviewers.length) {
-          const defaults = yield* cli.json(
-            {
-              cwd: input.cwd,
-              operation: "defaultReviewers",
-              args: ["repo", "-R", repo, "reviewers", "--json"],
-            },
-            Json.Reviewers,
-          );
-          reviewers = "candidates" in defaults ? defaults.candidates : defaults;
-        }
         const body = yield* fileSystem
           .readFileString(input.bodyFile)
           .pipe(
@@ -304,10 +284,7 @@ export const make = Effect.gen(function* () {
               head,
               "--base",
               input.baseRefName,
-              ...[...new Set(reviewers.map((user) => user.mis).filter(Boolean))].flatMap((mis) => [
-                "--reviewer",
-                mis,
-              ]),
+              "--no-default-reviewers",
               "--json",
             ],
           },

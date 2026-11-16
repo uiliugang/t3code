@@ -23,6 +23,9 @@ export function PullRequestCandidatePicker<T>({
   query,
   onQueryChange,
   searchLabel,
+  onQuerySubmit,
+  listLabel,
+  footer,
   isPending,
   error,
   candidates,
@@ -33,6 +36,7 @@ export function PullRequestCandidatePicker<T>({
   truncatedLabel,
   candidateKey,
   disabled,
+  candidateDisabled,
   onSelect,
   children,
 }: {
@@ -45,6 +49,9 @@ export function PullRequestCandidatePicker<T>({
   query: string;
   onQueryChange: (query: string) => void;
   searchLabel: string;
+  onQuerySubmit?: (() => void) | undefined;
+  listLabel?: string | undefined;
+  footer?: ReactNode;
   isPending: boolean;
   error: string | null;
   candidates: ReadonlyArray<T>;
@@ -55,6 +62,7 @@ export function PullRequestCandidatePicker<T>({
   truncatedLabel: string;
   candidateKey: (candidate: T) => string;
   disabled: boolean;
+  candidateDisabled?: (candidate: T) => boolean;
   onSelect: (candidate: T) => void;
   children: (candidate: T) => ReactNode;
 }) {
@@ -109,7 +117,25 @@ export function PullRequestCandidatePicker<T>({
           placeholder={searchLabel}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.nativeEvent.isComposing &&
+              onQuerySubmit &&
+              (candidates.length === 0 || /[,\uFF0C]/u.test(query))
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              (
+                event as typeof event & { preventBaseUIHandler?: () => void }
+              ).preventBaseUIHandler?.();
+              onQuerySubmit();
+            }
+          }}
         />
+        {listLabel ? (
+          <p className="px-3 pt-2 text-xs font-medium text-muted-foreground">{listLabel}</p>
+        ) : null}
         <ComboboxList className="max-h-72">
           {isPending ? (
             <PullRequestPeopleGhost rows={4} />
@@ -128,7 +154,7 @@ export function PullRequestCandidatePicker<T>({
                 hideIndicator
                 index={index}
                 value={keys[index]}
-                disabled={disabled}
+                disabled={disabled || candidateDisabled?.(candidate)}
               >
                 {children(candidate)}
               </ComboboxItem>
@@ -138,6 +164,7 @@ export function PullRequestCandidatePicker<T>({
             <p className="px-2 py-1.5 text-xs text-muted-foreground">{truncatedLabel}</p>
           ) : null}
         </ComboboxList>
+        {footer}
       </ComboboxPopup>
     </Combobox>
   );
