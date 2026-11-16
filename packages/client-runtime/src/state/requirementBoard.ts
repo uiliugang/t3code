@@ -11,7 +11,8 @@ import type {
 import * as Cause from "effect/Cause";
 import * as Array from "effect/Array";
 import * as Data from "effect/Data";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
+import { executeAtomQuery } from "./runtime.ts";
 import {
   mergeRequirementEntries,
   mergeWorkItemPages,
@@ -21,6 +22,25 @@ import {
 
 const unconfiguredSourceMessage = new IssueError({ operation: "resolve", reason: "invalid-target" })
   .message;
+
+export function prefetchRequirementIssues(
+  registry: AtomRegistry.AtomRegistry,
+  issues: Parameters<typeof createRequirementBoardAtoms>[0]["issues"],
+  environmentIds: ReadonlyArray<EnvironmentId>,
+  signal?: AbortSignal,
+) {
+  return Promise.all(
+    [...new Set(environmentIds)].flatMap((environmentId) =>
+      (["meituan", "github"] as const).map((provider) =>
+        executeAtomQuery(
+          registry,
+          issues({ environmentId, input: { provider, assignee: "me", query: "", page: 1 } }),
+          { ...(signal ? { signal } : {}), reportFailure: false, reportDefect: false },
+        ),
+      ),
+    ),
+  ).then(() => undefined);
+}
 
 export class RequirementBoardKey extends Data.Class<{
   environmentId: EnvironmentId;
@@ -51,10 +71,11 @@ export function createRequirementBoardAtoms(queries: {
       const atoms: Array<Atom.Atom<AsyncResult.AsyncResult<unknown, unknown>>> = [];
       const errors: string[] = [];
       let isPending = false;
-      const read = <A>(atom: Atom.Atom<AsyncResult.AsyncResult<A, unknown>>) => {
+      const read = <A>(atom: Atom.Atom<AsyncResult.AsyncResult<A, unknown>>, live = false) => {
         atoms.push(atom);
         const result = get(atom);
-        isPending ||= result.waiting;
+        // Live subscriptions keep waiting between snapshots, including after their first answer.
+        isPending ||= result.waiting && !(live && AsyncResult.isSuccess(result));
         if (result._tag === "Failure") {
           const error = Cause.squash(result.cause);
           errors.push(error instanceof Error ? error.message : String(error));
@@ -106,6 +127,7 @@ export function createRequirementBoardAtoms(queries: {
                 ...(cursor ? { cursor } : {}),
               },
             }),
+            true,
           );
           nextCursor = result?.nextCursor ?? null;
           if (result) itemPages.push(result);

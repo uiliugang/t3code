@@ -97,6 +97,7 @@ vi.mock(import("../ui/toast"), () => ({ toastManager: { add: vi.fn() } }) as nev
 import { act, render } from "../../../test/render";
 import { serverEnvironment } from "~/state/server";
 import { RequirementBoard } from "./RequirementsPage";
+import type { RequirementsSearch } from "~/routes/_chat.requirements";
 
 function setup() {
   mocks.command.mockReset().mockResolvedValue({ _tag: "Success", value: [] });
@@ -104,17 +105,58 @@ function setup() {
   return {
     registry,
     [Symbol.dispose]: () => registry.dispose(),
-    board: () => (
+    board: (search: RequirementsSearch = {}, updateSearch = vi.fn()) => (
       <RegistryContext.Provider value={registry}>
         <RequirementBoard
           environmentId={EnvironmentId.make("local")}
-          search={{}}
-          updateSearch={() => {}}
+          search={search}
+          updateSearch={updateSearch}
         />
       </RegistryContext.Provider>
     ),
   };
 }
+
+it("keeps filter checkmarks in sync with selection and distinguishes projects across environments", async () => {
+  using fixture = setup();
+  const updateSearch = vi.fn();
+  const search: RequirementsSearch = {
+    projectId: ProjectId.make("project"),
+    archived: true,
+    assignee: "selected-user",
+  };
+  await using screen = await render(fixture.board(search, updateSearch));
+  await screen.getByRole("button", { name: "Filters" }).click();
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "Show archived" })).toBeChecked();
+  await page.getByRole("menuitem", { name: "Project", exact: true }).hover();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "local · local project" }))
+    .toBeChecked();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "remote · remote project" }))
+    .not.toBeChecked();
+  await page.getByRole("menuitemcheckbox", { name: "All projects" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ projectId: undefined });
+  await screen.rerender(fixture.board({ archived: true, assignee: "selected-user" }, updateSearch));
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "All projects" })).toBeChecked();
+  await userEvent.keyboard("{Escape}");
+  await page.getByRole("menuitem", { name: "Assignee", exact: true }).hover();
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "selected-user" })).toBeChecked();
+  await page.getByRole("menuitemcheckbox", { name: "All assignees" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ assignee: "all" });
+  await screen.rerender(fixture.board({ assignee: "all", archived: true }, updateSearch));
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "All assignees" })).toBeChecked();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
+    .not.toBeChecked();
+  await userEvent.keyboard("{Escape}");
+  await page.getByRole("menuitemcheckbox", { name: "Show archived" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ archived: false });
+  await screen.rerender(fixture.board({ assignee: "all" }, updateSearch));
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Show archived" }))
+    .not.toBeChecked();
+});
 
 it("updates remote candidate actions when that environment's grants or capabilities change", async () => {
   using fixture = setup();

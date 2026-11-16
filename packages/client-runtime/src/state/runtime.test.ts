@@ -5,6 +5,9 @@ import { vi } from "vite-plus/test";
 import {
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
   EnvironmentId,
+  IssueError,
+  type IssueListInput,
+  type IssueListResult,
   type FilesystemBrowseEntry,
   ORCHESTRATION_V2_WS_METHODS,
   type OrchestrationV2ArchivedShellSnapshot,
@@ -24,6 +27,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -45,6 +49,7 @@ import {
 } from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import type * as Persistence from "../platform/persistence.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type * as RpcSession from "../rpc/session.ts";
@@ -52,7 +57,9 @@ import { createOrchestrationEnvironmentAtoms } from "./orchestration.ts";
 import { createReviewEnvironmentAtoms } from "./review.ts";
 import { createPreviewEnvironmentAtoms } from "./preview.ts";
 import { createFilesystemEnvironmentAtoms } from "./filesystem.ts";
-import type { QueryPersistence } from "./queryPersistence.ts";
+import { EnvironmentQueryStore, type QueryPersistence } from "./queryPersistence.ts";
+import { createSourceControlEnvironmentAtoms } from "./sourceControl.ts";
+import { prefetchRequirementIssues } from "./requirementBoard.ts";
 import type { EnvironmentShellState } from "./shell.ts";
 import { v2Now, v2Project, v2ThreadId, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import { createTerminalEnvironmentAtoms } from "./terminal.ts";
@@ -66,6 +73,7 @@ import {
   environmentSessionGenerationAtom,
   scheduleAtomCommandEffect,
   executeAtomQuery,
+  queryPersistenceKey,
   type QueryAnswerHandler,
 } from "./runtime.ts";
 
@@ -121,6 +129,7 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
     rpcSession,
     isFinal,
     onAnswer,
+    queryStore,
   }: {
     readonly refreshTrigger?: Atom.Atom<unknown>;
     readonly onAnswer?: QueryAnswerHandler<undefined, A>;
@@ -129,6 +138,7 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
     readonly persistence?: QueryPersistence<A>;
     readonly initialState?: SupervisorConnectionState;
     readonly rpcSession?: RpcSession.RpcSession;
+    readonly queryStore?: typeof EnvironmentQueryStore.Service;
   } = {},
 ) {
   const supervisorState = yield* SubscriptionRef.make(initialState ?? queryConnectionState());
@@ -162,7 +172,10 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
     stateChanges: () => SubscriptionRef.changes(supervisorState),
   } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
   const runtime = Atom.runtime(
-    Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+    Layer.mergeAll(
+      Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+      Layer.succeed(EnvironmentQueryStore, queryStore ?? null),
+    ),
   );
   const family = createEnvironmentQueryAtomFamily(runtime, {
     label: "test.environment-query",
@@ -1711,6 +1724,142 @@ describe("runtime command runner", () => {
 });
 
 describe("persisted environment queries", () => {
+  it.effect(
+    "shares requirement prefetches with board readers and releases only its own readers",
+    () =>
+      Effect.gen(function* () {
+        const requests = yield* Queue.unbounded<IssueListInput>();
+        const replies = {
+          github: yield* Deferred.make<typeof IssueListResult.Type>(),
+          meituan: yield* Deferred.make<typeof IssueListResult.Type>(),
+        };
+        let executions = 0;
+        const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
+          rpcSession: {
+            client: {
+              [WS_METHODS.issuesList]: (input: IssueListInput) =>
+                Effect.gen(function* () {
+                  executions++;
+                  yield* Queue.offer(requests, input);
+                  return yield* Deferred.await(replies[input.provider]);
+                }),
+            },
+          } as unknown as RpcSession.RpcSession,
+        });
+        const registry = AtomRegistry.make();
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        const runtime = harness.runtime as unknown as Atom.AtomRuntime<
+          EnvironmentRegistry.EnvironmentRegistry | Persistence.EnvironmentCacheStore
+        >;
+        const { issues } = createSourceControlEnvironmentAtoms(runtime);
+        const environmentId = QUERY_ENVIRONMENT.environmentId;
+        const first = yield* Effect.promise((signal) =>
+          prefetchRequirementIssues(registry, issues, [environmentId, environmentId], signal),
+        ).pipe(Effect.forkChild);
+        const inputs = [yield* Queue.take(requests), yield* Queue.take(requests)];
+        expect(inputs.map((input) => input.provider).sort()).toEqual(["github", "meituan"]);
+        for (const input of inputs) {
+          expect(input).toMatchObject({ assignee: "me", query: "", page: 1 });
+          yield* AtomRegistry.mount(registry, issues({ environmentId, input }));
+        }
+        const second = yield* Effect.promise(() =>
+          prefetchRequirementIssues(registry, issues, [environmentId]),
+        ).pipe(Effect.forkChild);
+        yield* Fiber.interrupt(first);
+        for (const input of inputs)
+          yield* Deferred.succeed(replies[input.provider], { groups: [], failures: [] });
+        yield* Fiber.join(second);
+        expect(executions).toBe(2);
+        for (const input of inputs) {
+          expect(yield* readEnvironmentQuery(registry, issues({ environmentId, input }))).toEqual({
+            groups: [],
+            failures: [],
+          });
+        }
+      }),
+  );
+
+  it.effect("restores requirement pages and keeps them when their source cannot refresh", () =>
+    Effect.gen(function* () {
+      const input: IssueListInput = {
+        provider: "github",
+        assignee: "me",
+        query: "",
+        page: 1,
+      };
+      const cached: typeof IssueListResult.Type = {
+        groups: [
+          {
+            source: { provider: "github", host: "github.com", scope: "owner/repo" },
+            projectIds: [ProjectId.make("requirements")],
+            issues: [
+              {
+                id: "1",
+                url: "https://github.com/owner/repo/issues/1",
+                title: "Cached requirement",
+                state: "open",
+                stateCategory: "todo",
+                type: "Issue",
+                assignees: [],
+                priority: "",
+                updatedAt: "2026-11-16T00:00:00Z",
+              },
+            ],
+            hasMore: false,
+          },
+        ],
+        failures: [],
+      };
+      const refreshed = yield* Deferred.make<void>();
+      const refresh = yield* Deferred.make<typeof IssueListResult.Type, IssueError>();
+      const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
+        initialState: queryConnectionState({ phase: "offline", network: "offline" }),
+        queryStore: {
+          load: (environmentId, key) =>
+            Effect.succeed(
+              environmentId === QUERY_ENVIRONMENT.environmentId &&
+                key === queryPersistenceKey("environment-data:issues:list", input)
+                ? Option.some(JSON.stringify(cached))
+                : Option.none(),
+            ),
+          save: () => Effect.void,
+        },
+        rpcSession: {
+          client: {
+            [WS_METHODS.issuesList]: () =>
+              Deferred.succeed(refreshed, undefined).pipe(Effect.andThen(Deferred.await(refresh))),
+          },
+        } as unknown as RpcSession.RpcSession,
+      });
+      const runtime = harness.runtime as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry.EnvironmentRegistry | Persistence.EnvironmentCacheStore
+      >;
+      const atom = createSourceControlEnvironmentAtoms(runtime).issues({
+        environmentId: QUERY_ENVIRONMENT.environmentId,
+        input,
+      });
+      const registry = yield* mountEnvironmentQuery(atom);
+      expect(yield* readEnvironmentQuery(registry, atom)).toEqual(cached);
+      const answers = yield* Queue.unbounded<typeof IssueListResult.Type>();
+      const unsubscribe = registry.subscribe(atom, (result) => {
+        if (AsyncResult.isSuccess(result) && !result.waiting && result.value.failures.length)
+          Queue.offerUnsafe(answers, result.value);
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      yield* SubscriptionRef.set(harness.supervisorState, queryConnectionState());
+      yield* Deferred.await(refreshed);
+      expect(AsyncResult.getOrElse(registry.get(atom), () => null)).toEqual(cached);
+      yield* Deferred.succeed(refresh, {
+        groups: [],
+        failures: [{ projectId: ProjectId.make("requirements"), reason: "Source unavailable" }],
+      });
+      expect(yield* Queue.take(answers)).toEqual({
+        ...cached,
+        failures: [{ projectId: ProjectId.make("requirements"), reason: "Source unavailable" }],
+      });
+    }),
+  );
+
   it.effect("keeps an in-memory cached page pending until revalidation settles", () =>
     Effect.gen(function* () {
       const refreshStarted = Latch.makeUnsafe();

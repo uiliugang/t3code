@@ -1,6 +1,13 @@
-import { WS_METHODS, type EnvironmentId, type SourceControlTool } from "@t3tools/contracts";
+import {
+  IssueError,
+  IssueListResult,
+  WS_METHODS,
+  type EnvironmentId,
+  type SourceControlTool,
+} from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import {
   createAtomCommandScheduler,
@@ -12,6 +19,31 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { vcsCommandConcurrency, vcsCommandScheduler } from "./vcsCommandScheduler.ts";
 import { invalidateCachedVcsRefs } from "./vcsRefInvalidation.ts";
+import { persistQuery } from "./queryPersistence.ts";
+import { request } from "../rpc/client.ts";
+
+const unconfiguredSourceMessage = new IssueError({ operation: "resolve", reason: "invalid-target" })
+  .message;
+
+function retainFailedIssueGroups(
+  result: typeof IssueListResult.Type,
+  previous: Option.Option<typeof IssueListResult.Type>,
+) {
+  if (Option.isNone(previous) || result.failures.length === 0) return result;
+  const failedProjects = new Set(
+    result.failures
+      .filter((failure) => failure.reason !== unconfiguredSourceMessage)
+      .map((failure) => failure.projectId),
+  );
+  const sourceKey = (group: (typeof result.groups)[number]) =>
+    JSON.stringify([group.source.provider, group.source.host, group.source.scope]);
+  const freshSources = new Set(result.groups.map(sourceKey));
+  const saved = previous.value.groups.filter(
+    (group) =>
+      !freshSources.has(sourceKey(group)) && group.projectIds.some((id) => failedProjects.has(id)),
+  );
+  return saved.length ? { ...result, groups: [...result.groups, ...saved] } : result;
+}
 
 export function sourceControlToolStatus(tool: SourceControlTool): string {
   switch (tool.phase) {
@@ -72,6 +104,11 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     issues: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:list",
       tag: WS_METHODS.issuesList,
+      persistence: persistQuery(IssueListResult),
+      execute: (input, _emit, previous) =>
+        request(WS_METHODS.issuesList, input).pipe(
+          Effect.map((result) => retainFailedIssueGroups(result, previous)),
+        ),
       refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
     }),
     issueBranches: createEnvironmentRpcQueryAtomFamily(runtime, {

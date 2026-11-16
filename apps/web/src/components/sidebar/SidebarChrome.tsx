@@ -11,7 +11,10 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { usePullRequestsSupported } from "../../state/environments";
+import { useConnectedEnvironmentIds, usePullRequestsSupported } from "../../state/environments";
+import { prefetchRequirementIssues } from "@t3tools/client-runtime/state/requirement-board";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { sourceControlEnvironment } from "../../state/sourceControl";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -145,17 +148,25 @@ function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  onIntent,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  onIntent?: () => void;
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              onClick={onClick}
+              onPointerEnter={onIntent}
+              onFocus={onIntent}
+              size="icon"
+            >
               {icon}
             </SidebarMenuButton>
           }
@@ -175,6 +186,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
   const pullRequestsSupported = usePullRequestsSupported();
+  const environmentIds = useConnectedEnvironmentIds();
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -230,6 +242,13 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           <SidebarUtilityItem
             icon={<ClipboardListIcon />}
             label={t("Requirements board")}
+            onIntent={() => {
+              void prefetchRequirementIssues(
+                appAtomRegistry,
+                sourceControlEnvironment.issues,
+                environmentIds,
+              );
+            }}
             onClick={() => {
               closeMobileSidebar();
               void navigate({ to: "/requirements" });

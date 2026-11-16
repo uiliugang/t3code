@@ -325,6 +325,8 @@ function UnifiedRequirementBoard({
         .map((person) => [person.value, person]),
     ).values(),
   ];
+  if (!people.some((person) => person.value === assignee))
+    people.push({ value: assignee, label: assignee });
   const renderRow = (entry: EnvironmentRequirementEntry) => (
     <Pressable
       key={entry.key}
@@ -580,7 +582,11 @@ function UnifiedRequirementBoard({
                       ...projects.map((project) => ({
                         id: `project:${projectKey(project)}`,
                         title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-                        state: projectId === project.id ? ("on" as const) : ("off" as const),
+                        state:
+                          projectId === project.id &&
+                          (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId
+                            ? ("on" as const)
+                            : ("off" as const),
                       })),
                     ],
                   },
@@ -719,8 +725,20 @@ function UnifiedRequirementBoard({
             </Text>
             {data.isPending && !entries.length ? (
               <Text>{t("Loading...")}</Text>
+            ) : !entries.length && errors.length ? (
+              <View className="gap-3">
+                <Text className="text-foreground-muted">
+                  {t("Some requirements could not be loaded")}
+                </Text>
+                <Button label={t("Retry")} onPress={refresh} />
+              </View>
             ) : !entries.length ? (
               <Text className="text-foreground-muted">{t("No matching work items.")}</Text>
+            ) : null}
+            {data.isPending && entries.length ? (
+              <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+                {t("Updating")}
+              </Text>
             ) : null}
             {view === "list" ? (
               REQUIREMENT_GROUPS.map(renderGroup)
