@@ -581,6 +581,24 @@ describe("SkillManager", () => {
         yield* recovered.drain;
         expect((yield* recovered.snapshot).skills[0]?.bindings).toHaveLength(1);
         expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: ["fixture", "removed-account"],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]?.failureReason).toBe("not-found");
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: ["fixture", "alias"],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]?.status).toBe("ready");
+        expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
+        expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("completed");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
@@ -1291,6 +1309,20 @@ describe("SkillManager", () => {
       yield* manager.drain;
       expect((yield* manager.snapshot).skills[0]?.failureReason).toBe("local-changes");
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("user edit");
+      for (let attempt = 0; attempt < 2; attempt++) {
+        yield* manager.mutate({
+          type: "configure",
+          id: first.id,
+          policy: first.policy,
+          targetIds: ["fixture"],
+        });
+        yield* manager.drain;
+      }
+      const configured = yield* manager.snapshot;
+      expect(configured.skills[0]?.failureReason).toBe("local-changes");
+      expect(configured.skills[0]?.status).toBe("failed");
+      expect(configured.jobs?.at(-1)?.status).toBe("completed");
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("user edit");
       const diff = yield* manager.inspect({ type: "diff", id: first.id });
       expect(diff.files.find((file) => file.path === "script.sh")).toMatchObject({
         status: "changed",
@@ -1314,13 +1346,21 @@ describe("SkillManager", () => {
       yield* manager.drain;
       expect((yield* manager.snapshot).skills[0]?.policy).toBe("pinned");
       expect((yield* manager.snapshot).skills[0]?.activeDigest).toBe(diff.digest);
-      yield* manager.mutate({ type: "policy", id: first.id, policy: "automatic" });
       yield* manager.mutate({ type: "check", id: first.id });
       yield* manager.drain;
-      const candidate = (yield* manager.snapshot).skills[0]?.availableDigest;
-      yield* manager.mutate({ type: "update", id: first.id, digest: candidate! });
+      const candidate = yield* manager.inspect({ type: "diff", id: first.id });
+      yield* manager.mutate({
+        type: "resolve",
+        id: first.id,
+        resolution: "upstream",
+        digest: candidate.candidateDigest!,
+      });
       yield* manager.drain;
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("upstream");
+      expect((yield* manager.snapshot).skills[0]?.policy).toBe("pinned");
+      expect((yield* manager.snapshot).skills[0]?.versions).toContainEqual(
+        expect.objectContaining({ digest: diff.digest }),
+      );
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 

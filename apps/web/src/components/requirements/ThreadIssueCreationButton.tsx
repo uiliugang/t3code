@@ -21,6 +21,12 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import { useThreadStatus, waitForThreadShell } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { ThreadDetailsControl } from "../chat/ThreadDetailsControl";
+import {
+  THREAD_DETAILS_PANEL_ICON_CLASS,
+  THREAD_DETAILS_PANEL_LABEL_CLASS,
+} from "../chat/threadDetailsPanelStyles";
+import { cn } from "~/lib/utils";
 import { IssueSelect } from "./IssueSelect";
 
 export function ThreadIssueCreationButton({
@@ -115,7 +121,7 @@ export function ThreadIssueCreationButton({
   return (
     <div className="space-y-2">
       {choosing ? (
-        <div className="min-w-0">
+        <div className="min-w-0 px-1.5">
           <IssueSelect
             label={t("Issue source")}
             value={selected}
@@ -130,9 +136,8 @@ export function ThreadIssueCreationButton({
           />
         </div>
       ) : null}
-      <Button
-        size="xs"
-        variant="outline"
+      <ThreadDetailsControl
+        part="row"
         disabled={!allowed || busy || options.length === 0 || (choosing && selected === "")}
         onClick={() => {
           if (options.length === 1) void run(options[0]!);
@@ -140,16 +145,18 @@ export function ThreadIssueCreationButton({
           else if (options[Number(selected)]) void run(options[Number(selected)]!);
         }}
       >
-        <PlusIcon />
-        {t("Create issue")}
-      </Button>
+        <PlusIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+        <span className={cn(THREAD_DETAILS_PANEL_LABEL_CLASS, "min-w-0 truncate")}>
+          {t("Create issue")}
+        </span>
+      </ThreadDetailsControl>
       {sources.error ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="px-2.5 text-xs text-destructive">
           {sources.error}
         </p>
       ) : null}
       {failed ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="px-2.5 text-xs text-destructive">
           {t(failed)}
         </p>
       ) : null}

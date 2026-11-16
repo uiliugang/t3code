@@ -15,6 +15,7 @@ import {
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
   shouldPreserveWorktreeBaseBranch,
+  shouldShowComposerContextStrip,
   isBranchHoldCurrent,
 } from "./BranchToolbar.logic";
 
@@ -434,6 +435,38 @@ describe("sanitizeNewRefName", () => {
   it("does not collapse dashes the user typed", () => {
     expect(sanitizeNewRefName("new - branch")).toBe("new---branch");
     expect(sanitizeNewRefName("foo--bar")).toBe("foo--bar");
+  });
+});
+
+describe("shouldShowComposerContextStrip", () => {
+  it("hides the duplicate strip in active threads only when the inline details panel covers its controls, while keeping draft strips visible", () => {
+    const base = {
+      persistInActiveThreads: true,
+      hasActiveProject: true,
+      isGitRepo: true,
+      showEnvironmentIndicator: false,
+    };
+    expect(
+      shouldShowComposerContextStrip({
+        ...base,
+        isDraftHeroState: false,
+        inlineDetailsPanelCoversControls: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowComposerContextStrip({
+        ...base,
+        isDraftHeroState: false,
+        inlineDetailsPanelCoversControls: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowComposerContextStrip({
+        ...base,
+        isDraftHeroState: true,
+        inlineDetailsPanelCoversControls: true,
+      }),
+    ).toBe(true);
   });
 });
 

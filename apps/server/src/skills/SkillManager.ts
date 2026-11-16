@@ -1302,9 +1302,18 @@ const make = Effect.gen(function* () {
                 (yield* readLink(linkPath(skill, previous))) === activePath(skill.id)
               )
                 yield* fs.remove(linkPath(skill, previous));
+            const previousResult = current.jobs?.findLast(
+              (job) =>
+                job.skillId === skill.id && (job.status === "completed" || job.status === "failed"),
+            );
             const recovered =
               skill.activeDigest &&
-              (skill.failureReason === "target-disabled" || skill.failureReason === "conflict");
+              (skill.failureReason === "target-disabled" ||
+                skill.failureReason === "conflict" ||
+                (previousResult?.status === "failed" &&
+                  previousResult.input.type === "configure" &&
+                  previousResult.reason === skill.failureReason &&
+                  ["not-found", "busy", "io", "interrupted"].includes(skill.failureReason ?? "")));
             const next = {
               ...skill,
               policy: input.policy,
@@ -1440,6 +1449,9 @@ const make = Effect.gen(function* () {
           const resultingSkill = resultingId
             ? completed.skills.find((skill) => skill.id === resultingId)
             : undefined;
+          const failed =
+            resultingSkill?.status === "failed" &&
+            (input.type !== "configure" || resultingSkill.failureReason === "conflict");
           const after = resultingSkill?.availableDigest ?? resultingSkill?.activeDigest;
           const finishedAt = yield* now;
           yield* saveJobs((jobs) =>
@@ -1452,13 +1464,10 @@ const make = Effect.gen(function* () {
                         ? "cancelled"
                         : resultingSkill?.status === "pending"
                           ? "waiting"
-                          : resultingSkill?.status === "failed"
+                          : failed
                             ? "failed"
                             : "completed",
-                    reason:
-                      resultingSkill?.status === "failed"
-                        ? (resultingSkill.failureReason ?? "io")
-                        : entry.reason,
+                    reason: failed ? (resultingSkill.failureReason ?? "io") : entry.reason,
                     finishedAt,
                     afterDigest: after ?? null,
                   }

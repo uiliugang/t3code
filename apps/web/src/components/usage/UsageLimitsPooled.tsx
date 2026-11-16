@@ -15,10 +15,17 @@ import {
   remainingPercent,
   type ResetCreditChoice,
   resetCreditChoices,
+  summarizeLimitNotice,
 } from "@t3tools/shared/usageLimits";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
-import { AlertTriangleIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ExternalLinkIcon,
+  TicketIcon,
+} from "lucide-react";
 import {
   createContext,
   Fragment,
@@ -40,7 +47,6 @@ import { providerClients } from "../settings/providerDriverMeta";
 import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
 import { Button } from "../ui/button";
 import { OpenAI } from "../Icons";
-import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { PaceIcon, ResetCreditDialog, barColor, usePaceMark, useResetCredit } from "./UsageLimits";
 
@@ -700,15 +706,41 @@ export function UsageLimitsPooled({
 }
 
 function LimitNotices({ notices }: { readonly notices: readonly string[] }) {
+  const t = useUiTranslation();
+  const [expanded, setExpanded] = useState(false);
   if (notices.length === 0) return null;
+  const summary =
+    notices.length === 1
+      ? summarizeLimitNotice(notices[0]!, t)
+      : t("Provider notices ({count})", { count: notices.length });
   return (
-    <Alert variant="warning" controlAlignment="first-line">
-      <AlertTriangleIcon />
-      {notices.map((notice) => (
-        <AlertTitle key={notice} className="break-words">
-          {notice}
-        </AlertTitle>
-      ))}
-    </Alert>
+    <div className="rounded-lg border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+      <div role="status" aria-live="polite" className="sr-only">
+        {summary}
+      </div>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full cursor-pointer items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <AlertTriangleIcon className="size-3.5 shrink-0 text-warning-foreground" aria-hidden />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground/80">{summary}</span>
+        {expanded ? (
+          <ChevronUpIcon className="size-3.5 shrink-0" aria-hidden />
+        ) : (
+          <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden />
+        )}
+      </button>
+      {expanded ? (
+        <div className="mt-2 space-y-1.5 border-t border-border/60 pt-2 text-xs text-muted-foreground">
+          {notices.map((notice) => (
+            <p key={notice} className="break-words">
+              {notice}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

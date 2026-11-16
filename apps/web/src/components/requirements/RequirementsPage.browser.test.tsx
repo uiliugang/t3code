@@ -1,7 +1,7 @@
 import "~/index.css";
 import { RegistryContext } from "@effect/atom-react";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -42,41 +42,46 @@ vi.mock(
 );
 vi.mock(import("~/state/server"), async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
+  const workItems = Atom.family((environmentId: string) =>
+    Atom.make(
+      AsyncResult.success({
+        items: [],
+        nextCursor: null,
+        candidates:
+          environmentId === "remote"
+            ? [
+                {
+                  id: "candidate",
+                  projectId: "project",
+                  title: "Remote conversation",
+                  description: "",
+                  status: "idle",
+                  updatedAt: "2026-11-15T00:00:00Z",
+                },
+              ]
+            : [],
+      }),
+    ),
+  );
   return {
     serverEnvironment: {
       configValueAtom: Atom.family(() => Atom.make({ workItems: true, workItemDiscovery: true })),
       mutateWorkItem: { permissionAtom: Atom.family(() => Atom.make(true)) },
       discoverWorkItems: { permissionAtom: Atom.family(() => Atom.make(true)) },
-      workItemsLive: Atom.family(({ environmentId }: { environmentId: string }) =>
-        Atom.make(
-          AsyncResult.success({
-            items: [],
-            nextCursor: null,
-            candidates:
-              environmentId === "remote"
-                ? [
-                    {
-                      id: "candidate",
-                      projectId: "project",
-                      title: "Remote conversation",
-                      description: "",
-                      status: "idle",
-                      updatedAt: "2026-11-15T00:00:00Z",
-                    },
-                  ]
-                : [],
-          }),
-        ),
-      ),
+      workItemsLive: ({ environmentId }: { environmentId: string }) => workItems(environmentId),
       issueWorkItems: Atom.family(() => Atom.make(new Map())),
     },
   } as never;
 });
 vi.mock(import("~/state/sourceControl"), async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
+  const issues = Atom.family((_key: string) =>
+    Atom.make(AsyncResult.success({ groups: [], failures: [] })),
+  );
   return {
     sourceControlEnvironment: {
-      issues: Atom.family(() => Atom.make(AsyncResult.success({ groups: [], failures: [] }))),
+      issues: ({ environmentId, input }: { environmentId: string; input: { provider: string } }) =>
+        issues(`${environmentId}/${input.provider}`),
       createIssue: { permissionAtom: Atom.family(() => Atom.make(true)) },
     },
   } as never;
@@ -96,6 +101,7 @@ vi.mock(import("../ui/toast"), () => ({ toastManager: { add: vi.fn() } }) as nev
 
 import { act, render } from "../../../test/render";
 import { serverEnvironment } from "~/state/server";
+import { sourceControlEnvironment } from "~/state/sourceControl";
 import { RequirementBoard } from "./RequirementsPage";
 import type { RequirementsSearch } from "~/routes/_chat.requirements";
 
@@ -126,6 +132,7 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
     assignee: "selected-user",
   };
   await using screen = await render(fixture.board(search, updateSearch));
+  await expect.element(screen.getByText("Remote conversation")).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Filters" }).click();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "Show archived" })).toBeChecked();
   await page.getByRole("menuitem", { name: "Project", exact: true }).hover();
@@ -138,6 +145,7 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
   await page.getByRole("menuitemcheckbox", { name: "All projects" }).click();
   expect(updateSearch).toHaveBeenLastCalledWith({ projectId: undefined });
   await screen.rerender(fixture.board({ archived: true, assignee: "selected-user" }, updateSearch));
+  await expect.element(screen.getByText("Remote conversation")).toBeVisible();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "All projects" })).toBeChecked();
   await userEvent.keyboard("{Escape}");
   await page.getByRole("menuitem", { name: "Assignee", exact: true }).hover();
@@ -216,4 +224,75 @@ it("keeps the scan action locked after its menu closes until the request settles
     settle({ _tag: "Success", value: [] });
   }
   await expect.element(trigger).toBeEnabled();
+});
+
+it("keeps compact panel horizontal padding when the main sidebar is collapsed", async () => {
+  using fixture = setup();
+  document.documentElement.setAttribute("data-sidebar-state", "collapsed");
+  try {
+    await using screen = await render(
+      <RegistryContext.Provider value={fixture.registry}>
+        <RequirementBoard
+          compact
+          environmentId={EnvironmentId.make("local")}
+          search={{}}
+          updateSearch={vi.fn()}
+        />
+      </RegistryContext.Provider>,
+    );
+    const header = screen.container.querySelector("header")!;
+    expect(getComputedStyle(header).paddingLeft).toBe("16px");
+  } finally {
+    document.documentElement.removeAttribute("data-sidebar-state");
+  }
+});
+
+it("keeps the updating indicator inside the topbar on narrow viewports without vertical wrapping", async () => {
+  using fixture = setup();
+  const workItemsAtom = serverEnvironment.workItemsLive({
+    environmentId: "local",
+    input: { archived: false, cursor: undefined },
+  } as never) as Atom.Writable<unknown>;
+  fixture.registry.set(
+    workItemsAtom,
+    AsyncResult.success({
+      items: [
+        {
+          id: "item-1",
+          projectId: "project",
+          title: "Narrow viewport task",
+          description: "",
+          priority: "P2",
+          status: "todo",
+          archived: false,
+          specRevision: 1,
+          version: 1,
+          executionCount: 0,
+          createdAt: "2026-11-16T00:00:00Z",
+          activeExecutionCount: 0,
+          updatedAt: "2026-11-16T00:00:00Z",
+        },
+      ],
+      nextCursor: null,
+      candidates: [],
+    }),
+  );
+  const issuesAtom = sourceControlEnvironment.issues({
+    environmentId: "local",
+    input: { provider: "github", assignee: "me", query: "", page: 1 },
+  } as never) as Atom.Writable<unknown>;
+  fixture.registry.set(issuesAtom, AsyncResult.waiting(AsyncResult.initial()));
+
+  await using screen = await render(
+    <div style={{ width: "390px", height: "844px", display: "flex" }}>{fixture.board()}</div>,
+  );
+
+  const header = screen.container.querySelector("header")!;
+  const status = header.querySelector<HTMLElement>('[role="status"]')!;
+  expect(status).not.toBeNull();
+  const headerRect = header.getBoundingClientRect();
+  const statusRect = status.getBoundingClientRect();
+  expect(statusRect.height).toBeLessThanOrEqual(headerRect.height);
+  expect(statusRect.top).toBeGreaterThanOrEqual(headerRect.top);
+  expect(statusRect.bottom).toBeLessThanOrEqual(headerRect.bottom);
 });

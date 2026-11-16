@@ -27,6 +27,9 @@ describe("UI translations", () => {
     ["Needs approval", "需要批准"],
     ["Needs your input", "需要你输入"],
     ["Stopped", "已停止"],
+    ["Add project script", "添加项目脚本"],
+    ["The environment credential is invalid.", "环境配对凭据无效。"],
+    ["Turn diffs and worktree changes", "本轮差异与工作树变更"],
   ])("translates settings and action text: %s", (message, translated) => {
     expect(translateUi("zh-CN", message)).toBe(translated);
     expect(translateUi("en", message)).toBe(message);
