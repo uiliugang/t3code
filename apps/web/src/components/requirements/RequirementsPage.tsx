@@ -48,7 +48,17 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { Input } from "../ui/input";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/empty";
 import { SidebarInset } from "../ui/sidebar";
+import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { isElectron } from "../../env";
 import {
   Menu,
   MenuTrigger,
@@ -107,10 +117,18 @@ export function RequirementsPage() {
       />
     </SidebarInset>
   ) : (
-    <SidebarInset>
-      <p className="p-5 text-sm text-muted-foreground">
-        {t("Connect an environment and add a project to use the task board.")}
-      </p>
+    <SidebarInset className="flex h-dvh overflow-hidden">
+      <Empty size="compact">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ClipboardListIcon />
+          </EmptyMedia>
+          <EmptyTitle>{t("Requirements board")}</EmptyTitle>
+          <EmptyDescription>
+            {t("Connect an environment and add a project to use the task board.")}
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     </SidebarInset>
   );
 }
@@ -291,16 +309,28 @@ export function RequirementBoard({
         <div
           className={`${selected ? (compact ? "hidden" : "hidden md:flex") : "flex"} min-h-0 min-w-0 flex-1 flex-col`}
         >
-          <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
-            <div className="flex min-w-0 items-center gap-3">
-              <ClipboardListIcon className="size-5 shrink-0 text-muted-foreground" />
-              <h1 className="truncate text-base font-semibold">{t("Requirements board")}</h1>
+          <WorkspacePageHeader
+            electron={!compact && isElectron}
+            className={
+              compact
+                ? "justify-between border-b border-border px-4"
+                : "justify-between border-b border-border/60"
+            }
+          >
+            <div className="flex min-w-0 items-center gap-2.5">
+              <ClipboardListIcon className="size-4 shrink-0 text-muted-foreground" />
+              <h1 className="truncate text-sm font-semibold">{t("Requirements board")}</h1>
+              {entries.length > 0 ? (
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground tabular-nums">
+                  {entries.length}
+                </span>
+              ) : null}
               {errors.length ? (
                 <Popover>
                   <PopoverTrigger
                     render={
-                      <Button size="icon-sm" variant="ghost" aria-label={t("View loading errors")}>
-                        <AlertTriangleIcon className="text-destructive" />
+                      <Button size="icon-xs" variant="ghost" aria-label={t("View loading errors")}>
+                        <AlertTriangleIcon className="size-3.5 text-warning-foreground" />
                       </Button>
                     }
                   />
@@ -308,7 +338,7 @@ export function RequirementBoard({
                     <div className="space-y-3">
                       <PopoverTitle>{t("Some requirements could not be loaded")}</PopoverTitle>
                       {errors.map((error) => (
-                        <p key={error} className="text-sm text-destructive wrap-anywhere">
+                        <p key={error} className="text-xs text-muted-foreground wrap-anywhere">
                           {error}
                         </p>
                       ))}
@@ -320,85 +350,91 @@ export function RequirementBoard({
                   </PopoverPopup>
                 </Popover>
               ) : null}
-              <span className="text-xs text-muted-foreground">{entries.length}</span>
+              {data.isPending && entries.length ? (
+                <span role="status" className="text-xs text-muted-foreground">
+                  {t("Updating")}
+                </span>
+              ) : null}
             </div>
-            <RequirementCreateMenu
-              environments={visibleEnvironments}
-              {...(search.projectId ? { projectId: search.projectId } : {})}
-              createIssue={(id, provider) => {
-                setCreatingEnvironmentId(id);
-                setCreatingIssue(provider);
-              }}
-              createLocal={(id, projectId) => {
-                setCreatingEnvironmentId(id);
-                setCandidate(null);
-                setCreatingLocal(projectId);
-              }}
-            />
-          </header>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-5 py-3">
-            <Menu>
-              <MenuTrigger
-                render={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={compact}
-                    aria-label={t("Environment")}
-                  >
-                    <ServerIcon />
-                    <span className="max-w-40 truncate">
-                      {filterEnvironmentId
-                        ? environmentLabel(filterEnvironmentId)
-                        : t("All environments")}
-                    </span>
-                    <ChevronDownIcon />
-                  </Button>
-                }
-              />
-              <MenuPopup align="start">
-                {[
-                  { environmentId: undefined, label: t("All environments") },
-                  ...onlineEnvironments,
-                ].map((environment) => (
-                  <MenuCheckboxItem
-                    key={environment.environmentId ?? "all"}
-                    checked={filterEnvironmentId === environment.environmentId}
-                    onCheckedChange={() =>
-                      updateSearch({
-                        environmentId: environment.environmentId,
-                        projectId: undefined,
-                        detailEnvironmentId: undefined,
-                        issueId: undefined,
-                        issueProjectId: undefined,
-                        issueProvider: undefined,
-                        issueScope: undefined,
-                        workItemId: undefined,
-                      })
-                    }
-                  >
-                    {environment.label}
-                  </MenuCheckboxItem>
-                ))}
-              </MenuPopup>
-            </Menu>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5">
               <RequirementScanMenu
                 environments={visibleEnvironments}
                 {...(search.projectId ? { projectId: search.projectId } : {})}
                 refreshed={refresh}
               />
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => void navigate({ to: "/settings/requirements" })}
-              >
-                <SettingsIcon />
-                {t("Requirement settings")}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t("Requirement settings")}
+                      onClick={() => void navigate({ to: "/settings/requirements" })}
+                    >
+                      <SettingsIcon />
+                    </Button>
+                  }
+                />
+                <TooltipPopup>{t("Requirement settings")}</TooltipPopup>
+              </Tooltip>
+              <RequirementCreateMenu
+                environments={visibleEnvironments}
+                {...(search.projectId ? { projectId: search.projectId } : {})}
+                createIssue={(id, provider) => {
+                  setCreatingEnvironmentId(id);
+                  setCreatingIssue(provider);
+                }}
+                createLocal={(id, projectId) => {
+                  setCreatingEnvironmentId(id);
+                  setCandidate(null);
+                  setCreatingLocal(projectId);
+                }}
+              />
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1 px-5 pt-3">
+          </WorkspacePageHeader>
+          <div className="flex shrink-0 items-center gap-1.5 px-5 pt-3 pb-2">
+            {!compact ? (
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button size="sm" variant="outline" aria-label={t("Environment")}>
+                      <ServerIcon />
+                      <span className="max-w-36 truncate">
+                        {filterEnvironmentId
+                          ? environmentLabel(filterEnvironmentId)
+                          : t("All environments")}
+                      </span>
+                      <ChevronDownIcon />
+                    </Button>
+                  }
+                />
+                <MenuPopup align="start">
+                  {[
+                    { environmentId: undefined, label: t("All environments") },
+                    ...onlineEnvironments,
+                  ].map((environment) => (
+                    <MenuCheckboxItem
+                      key={environment.environmentId ?? "all"}
+                      checked={filterEnvironmentId === environment.environmentId}
+                      onCheckedChange={() =>
+                        updateSearch({
+                          environmentId: environment.environmentId,
+                          projectId: undefined,
+                          detailEnvironmentId: undefined,
+                          issueId: undefined,
+                          issueProjectId: undefined,
+                          issueProvider: undefined,
+                          issueScope: undefined,
+                          workItemId: undefined,
+                        })
+                      }
+                    >
+                      {environment.label}
+                    </MenuCheckboxItem>
+                  ))}
+                </MenuPopup>
+              </Menu>
+            ) : null}
             <form
               className="min-w-0 flex-1"
               onSubmit={(event) => {
@@ -547,24 +583,32 @@ export function RequirementBoard({
               <RefreshCwIcon />
             </Button>
           </div>
-          <div className="flex flex-wrap gap-2 px-5 py-2 text-xs text-muted-foreground">
-            <span>
-              {source === "all"
-                ? t("All sources")
-                : source === "local"
-                  ? t("Local work items")
-                  : source === "github"
-                    ? "GitHub Issues"
-                    : "MEP ONES"}
-            </span>
-            <span>·</span>
-            <span>
-              {projects.find((project) => project.id === search.projectId)?.title ??
-                t("All projects")}
-            </span>
-            {archived ? <span>· {t("Show archived")}</span> : null}
-            <span role="status">{data.isPending && entries.length ? t("Updating") : null}</span>
-          </div>
+          {source !== "all" || search.projectId !== undefined || archived ? (
+            <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2 text-xs text-muted-foreground">
+              {source !== "all" ? (
+                <span>
+                  {source === "local"
+                    ? t("Local work items")
+                    : source === "github"
+                      ? "GitHub Issues"
+                      : "MEP ONES"}
+                </span>
+              ) : null}
+              {source !== "all" && search.projectId !== undefined ? <span>·</span> : null}
+              {search.projectId !== undefined ? (
+                <span>
+                  {projects.find((project) => project.id === search.projectId)?.title ??
+                    search.projectId}
+                </span>
+              ) : null}
+              {archived ? (
+                <span>
+                  {source !== "all" || search.projectId !== undefined ? "· " : ""}
+                  {t("Show archived")}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <div
             aria-busy={data.isPending}
             className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
@@ -584,17 +628,33 @@ export function RequirementBoard({
                 ))}
               </div>
             ) : !entries.length && errors.length ? (
-              <div className="space-y-3 py-8">
-                <p className="text-sm text-muted-foreground">
-                  {t("Some requirements could not be loaded")}
-                </p>
-                <Button size="sm" variant="outline" onClick={refresh}>
-                  <RefreshCwIcon />
-                  {t("Retry")}
-                </Button>
-              </div>
+              <Empty size="compact">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <AlertTriangleIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>{t("Some requirements could not be loaded")}</EmptyTitle>
+                  <EmptyDescription>{errors[0]}</EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button size="sm" variant="outline" onClick={refresh}>
+                    <RefreshCwIcon />
+                    {t("Retry")}
+                  </Button>
+                </EmptyContent>
+              </Empty>
             ) : !entries.length ? (
-              <p className="py-8 text-sm text-muted-foreground">{t("No matching work items.")}</p>
+              <Empty size="compact">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ClipboardListIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>{t("No matching work items.")}</EmptyTitle>
+                  <EmptyDescription>
+                    {t("Create or scan items, or adjust your filters.")}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div
                 className={

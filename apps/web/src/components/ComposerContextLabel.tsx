@@ -23,8 +23,8 @@ export function ComposerContextLabel({
       <span
         data-composer-label-motion
         className={cn(
-          "block w-full min-w-0 truncate",
           THREAD_DETAILS_PANEL_LABEL_CLASS,
+          "block w-full min-w-0 truncate",
           displayMode === "toolbar" &&
             "max-w-[240px] transition-opacity duration-180 ease-drawer group-data-[compact]/composer-context:opacity-0 motion-reduce:transition-none",
         )}

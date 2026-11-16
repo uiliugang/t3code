@@ -4144,7 +4144,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           >
             <ThreadFeedPlaceholder
               title={t("No conversation yet")}
-              detail="Ask the agent to inspect the repo, run a command, or continue the active thread."
+              detail={t(
+                "Ask the agent to inspect the repo, run a command, or continue the active thread.",
+              )}
               topInset={topContentInset}
               bottomInset={bottomContentInset}
               horizontalPadding={horizontalPadding}

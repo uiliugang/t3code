@@ -1370,9 +1370,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               ? t(thread.runtime.lastError)
               : thread.runtime.lastError}
           </Text>
-        ) : props.environmentLabel ? (
+        ) : thread.branch || props.environmentLabel ? (
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            {props.environmentMachine ? (
+            {props.environmentLabel && props.environmentMachine ? (
               <EnvironmentMachineSymbol
                 kind={props.environmentMachine}
                 size={machineIconSize}
@@ -1391,8 +1391,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                   : rowAppearance.tertiaryForegroundClassName,
               )}
               numberOfLines={1}
+              ellipsizeMode="middle"
             >
               {props.environmentLabel}
+              {props.environmentLabel && thread.branch ? " · " : null}
+              {thread.branch ? (
+                <Text
+                  className={cn(
+                    "text-xs",
+                    selected
+                      ? selectedThreadRowColors.mutedForegroundClassName
+                      : rowAppearance.mutedForegroundClassName,
+                  )}
+                  style={{ fontFamily: MONO_FONT }}
+                >
+                  {thread.branch}
+                </Text>
+              ) : null}
             </Text>
           </View>
         ) : (

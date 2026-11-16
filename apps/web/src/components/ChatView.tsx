@@ -1809,15 +1809,6 @@ export default function ChatView(props: ChatViewProps) {
           providerSubagentModels,
           reportedModelSelection,
         );
-  const showComposerContextStrip =
-    !embedded &&
-    shouldShowComposerContextStrip({
-      isDraftHeroState,
-      persistInActiveThreads: settings.persistComposerContextStrip,
-      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-      isGitRepo,
-      showEnvironmentIndicator: showComposerEnvironmentIndicator,
-    });
   const terminalShortcutLabelOptions = {
     context: {
       terminalFocus: true,
@@ -2015,6 +2006,16 @@ export default function ChatView(props: ChatViewProps) {
       threadPanelPresentation,
     ),
   );
+  const showComposerContextStrip =
+    !embedded &&
+    shouldShowComposerContextStrip({
+      isDraftHeroState,
+      persistInActiveThreads: settings.persistComposerContextStrip,
+      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      inlineDetailsPanelOpen: threadPanelPresentation === "inline" && threadPanelOpen,
+    });
   const supportsThreadPullRequests = serverConfig !== null;
   const visiblePullRequests = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],

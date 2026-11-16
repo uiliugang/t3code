@@ -499,32 +499,87 @@ export function UsageLimitsSection({
           </Pressable>
         </View>
       ))}
-      {notices.length > 0 || failedLabels.length > 0 ? (
-        <View
-          accessible
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-          className="flex-row items-start gap-2 rounded-xl border border-warning-border bg-warning px-3.5 py-3"
+      <MobileLimitNoticesCard notices={notices} failedLabels={failedLabels} />
+    </View>
+  );
+}
+
+function compactMobileLimitNotice(notice: string, t: ReturnType<typeof useUiTranslation>): string {
+  const separator = notice.indexOf(":");
+  const subject = separator > 0 ? notice.slice(0, separator).trim() : notice;
+  const detail = separator > 0 ? notice.slice(separator + 1).trim() : "";
+  if (/not authenticated/i.test(detail)) return `${subject}: ${t("Not authenticated")}`;
+  if (/failed to fetch|transport error|econnrefused|network/i.test(detail))
+    return `${subject}: ${t("Connection offline")}`;
+  const firstSentence = detail.split(/\.\s+/)[0];
+  return firstSentence && firstSentence.length < 72
+    ? `${subject}: ${firstSentence}${firstSentence.endsWith(".") ? "" : "."}`
+    : subject;
+}
+
+function MobileLimitNoticesCard(props: {
+  readonly notices: readonly string[];
+  readonly failedLabels: readonly string[];
+}) {
+  const t = useUiTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const { notices, failedLabels } = props;
+  const totalCount = notices.length + (failedLabels.length > 0 ? 1 : 0);
+  if (totalCount === 0) return null;
+  const summary =
+    totalCount === 1
+      ? notices[0]
+        ? compactMobileLimitNotice(notices[0], t)
+        : t("{accounts} could not refresh limits. Showing the last known values.", {
+            accounts: failedLabels.join(", "),
+          })
+      : t("Provider notices ({count})", { count: totalCount });
+
+  return (
+    <View
+      accessible
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      className="rounded-xl border border-warning-border bg-warning px-3.5 py-2.5"
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((value) => !value)}
+        className="min-h-8 flex-row items-center gap-2.5 active:opacity-70"
+      >
+        <SymbolView
+          name="exclamationmark.triangle"
+          size={15}
+          tintColorClassName="accent-warning-foreground"
+        />
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          className="min-w-0 flex-1 text-xs font-t3-medium text-warning-foreground"
         >
-          <SymbolView
-            name="exclamationmark.triangle"
-            size={16}
-            tintColorClassName="accent-warning-foreground"
-          />
-          <View className="min-w-0 flex-1 gap-0.5">
-            {notices.map((notice) => (
-              <Text key={notice} className="text-sm font-t3-medium text-warning-foreground">
-                {notice}
-              </Text>
-            ))}
-            {failedLabels.length > 0 ? (
-              <Text className="text-sm font-t3-medium text-warning-foreground">
-                {t("{accounts} could not refresh limits. Showing the last known values.", {
-                  accounts: failedLabels.join(", "),
-                })}
-              </Text>
-            ) : null}
-          </View>
+          {summary}
+        </Text>
+        <SymbolView
+          name={expanded ? "chevron.up" : "chevron.down"}
+          size={11}
+          tintColorClassName="accent-warning-foreground"
+        />
+      </Pressable>
+      {expanded ? (
+        <View className="mt-2 gap-1.5 border-t border-warning-border/60 pt-2">
+          {notices.map((notice) => (
+            <Text key={notice} selectable className="text-xs text-warning-foreground">
+              {notice}
+            </Text>
+          ))}
+          {failedLabels.length > 0 ? (
+            <Text className="text-xs text-warning-foreground">
+              {t("{accounts} could not refresh limits. Showing the last known values.", {
+                accounts: failedLabels.join(", "),
+              })}
+            </Text>
+          ) : null}
         </View>
       ) : null}
     </View>

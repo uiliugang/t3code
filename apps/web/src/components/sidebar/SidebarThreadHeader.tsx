@@ -1,5 +1,12 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { FolderPlusIcon, LayersIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import {
+  FolderPlusIcon,
+  LayersIcon,
+  PlusIcon,
+  SearchIcon,
+  SquarePenIcon,
+  XIcon,
+} from "lucide-react";
 import { openCreateWorkspace } from "../CreateWorkspaceDialog";
 import {
   type ComponentProps,
@@ -11,6 +18,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuTrigger } from "../ui/menu";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -100,17 +108,44 @@ export function SidebarThreadHeader({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center">
-        {hasProjects ? (
-          <>
-            {projectScope}
-            <SidebarHeaderIconButton label={t("Add project")} onClick={onNewProject}>
-              <FolderPlusIcon />
-            </SidebarHeaderIconButton>
-          </>
-        ) : null}
-        <SidebarHeaderIconButton label={t("Create group")} onClick={() => openCreateWorkspace()}>
-          <LayersIcon />
-        </SidebarHeaderIconButton>
+        {hasProjects ? projectScope : null}
+        <Menu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <MenuTrigger
+                  render={
+                    <SidebarMenuButton
+                      size="icon"
+                      type="button"
+                      aria-label={t("Add project or group")}
+                      className="relative size-7 shrink-0"
+                    />
+                  }
+                />
+              }
+            >
+              <PlusIcon />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+              />
+            </TooltipTrigger>
+            <TooltipPopup side="top">{t("Add project or group")}</TooltipPopup>
+          </Tooltip>
+          <MenuPopup align="end">
+            {hasProjects ? (
+              <MenuItem onClick={onNewProject}>
+                <FolderPlusIcon />
+                <MenuItemLabel>{t("Add project")}</MenuItemLabel>
+              </MenuItem>
+            ) : null}
+            <MenuItem onClick={() => openCreateWorkspace()}>
+              <LayersIcon />
+              <MenuItemLabel>{t("Create group")}</MenuItemLabel>
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
         <SidebarHeaderIconButton
           label={t("New thread")}
           tooltip={

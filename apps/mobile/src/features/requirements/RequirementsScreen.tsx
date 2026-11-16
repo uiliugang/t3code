@@ -18,9 +18,15 @@ import { useContext, useRef, useState } from "react";
 import * as Schema from "effect/Schema";
 import { Keyboard, Linking, View, Pressable, ScrollView } from "react-native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import type { AppBarMenu } from "../../components/ui/AppBar.types";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { Chip } from "../../components/ui/Chip";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
+import { useDebouncedValue } from "../../state/queries";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useHardwareBack } from "../../lib/backHandler";
 import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab";
@@ -115,7 +121,13 @@ export function RequirementsScreen({
     />
   ) : (
     <SettingsScreen workspaceRoot={workspace} title={t("Requirements board")}>
-      <Text>{t("Connect an environment and add a project to use the task board.")}</Text>
+      <View className="flex-1 items-center justify-center px-5 py-12">
+        <EmptyState
+          variant="plain"
+          title={t("Requirements board")}
+          detail={t("Connect an environment and add a project to use the task board.")}
+        />
+      </View>
     </SettingsScreen>
   );
 }
@@ -163,7 +175,7 @@ function UnifiedRequirementBoard({
   );
   const [assignee, setAssignee] = useState("me");
   const [queryText, setQueryText] = useState("");
-  const [query, setQuery] = useState("");
+  const query = useDebouncedValue(queryText.trim(), 180);
   const [archived, setArchived] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
   const [pagination, setPagination] = useState<{ key: string; pages: RequirementPagination }>({
@@ -417,20 +429,220 @@ function UnifiedRequirementBoard({
       </View>
     );
   };
+  const showingList = !creating && !selectedId;
+  const isFiltered =
+    filterEnvironmentId !== null ||
+    source !== "all" ||
+    projectId !== null ||
+    assignee !== "me" ||
+    archived;
+  const resetFilters = () => {
+    onEnvironment(null);
+    setSource("all");
+    setProjectId(null);
+    setAssignee("me");
+    setArchived(false);
+  };
+  const assigneeChoices = [
+    { value: "me", label: t("Assigned to me") },
+    { value: "all", label: t("All assignees") },
+    { value: "unassigned", label: t("Unassigned") },
+    ...people.filter((person) => !["me", "all", "unassigned"].includes(person.value)),
+  ];
+  const sourceChoices = [
+    { value: "all" as const, label: t("All sources") },
+    { value: "meituan" as const, label: "MEP ONES" },
+    { value: "github" as const, label: "GitHub Issues" },
+    { value: "local" as const, label: t("Local work items") },
+  ];
+  const createMenuActions = (["meituan", "github", "local"] as const).map((provider) => ({
+    id: provider,
+    title:
+      provider === "local"
+        ? t("Local work item")
+        : provider === "github"
+          ? "GitHub Issue"
+          : "MEP ONES",
+    subactions: projects.map((project) => ({
+      id: `${provider}:${projectKey(project)}`,
+      title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+      attributes: {
+        disabled:
+          provider === "local"
+            ? !permissions.get(project.environmentId)?.mutateWorkItem ||
+              registry.get(serverEnvironment.configValueAtom(project.environmentId))?.workItems !==
+                true
+            : !permissions.get(project.environmentId)?.createIssue,
+      },
+    })),
+  }));
+  const handleCreateOrScanAction = (id: string) => {
+    if (id.startsWith("scan:")) {
+      const project = projects.find((candidate) => projectKey(candidate) === id.slice(5));
+      if (project) void scan({ environmentId: project.environmentId, projectId: project.id });
+      return;
+    }
+    const colon = id.indexOf(":");
+    if (colon <= 0) return;
+    const provider = id.slice(0, colon);
+    const project = projects.find((candidate) => projectKey(candidate) === id.slice(colon + 1));
+    if (!project) return;
+    if (provider === "local")
+      createLocal({ environmentId: project.environmentId, projectId: project.id });
+    else if (provider === "github" || provider === "meituan")
+      navigation.navigate("IssueCreate", {
+        environmentId: project.environmentId,
+        projectId: project.id,
+        provider,
+      });
+  };
+  const headerMenu: AppBarMenu = {
+    title: t("Filter requirements"),
+    icon: isFiltered
+      ? "line.3.horizontal.decrease.circle.fill"
+      : "line.3.horizontal.decrease.circle",
+    items: [
+      {
+        id: "environment",
+        title: t("Environment"),
+        items: [
+          {
+            id: "env:all",
+            title: t("All environments"),
+            selected: filterEnvironmentId === null,
+            onPress: () => {
+              onEnvironment(null);
+              setProjectId(null);
+            },
+          },
+          ...onlineEnvironments.map((environment) => ({
+            id: `env:${environment.environmentId}`,
+            title: environment.label,
+            selected: filterEnvironmentId === environment.environmentId,
+            onPress: () => {
+              onEnvironment(environment.environmentId);
+              setProjectId(null);
+            },
+          })),
+        ],
+      },
+      {
+        id: "source",
+        title: t("Issue source"),
+        items: sourceChoices.map((option) => ({
+          id: `source:${option.value}`,
+          title: option.label,
+          selected: source === option.value,
+          onPress: () => {
+            setSource(option.value);
+            setAssignee("me");
+          },
+        })),
+      },
+      {
+        id: "project",
+        title: t("Project"),
+        items: [
+          {
+            id: "project:all",
+            title: t("All projects"),
+            selected: projectId === null,
+            onPress: () => setProjectId(null),
+          },
+          ...projects.map((project) => ({
+            id: `project:${projectKey(project)}`,
+            title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+            selected:
+              projectId === project.id &&
+              (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId,
+            onPress: () => {
+              setProjectId(project.id);
+              onEnvironment(project.environmentId);
+            },
+          })),
+        ],
+      },
+      ...(source !== "local"
+        ? [
+            {
+              id: "assignee",
+              title: t("Assignee"),
+              items: assigneeChoices.map((person) => ({
+                id: `assignee:${person.value}`,
+                title: person.label,
+                selected: assignee === person.value,
+                onPress: () => setAssignee(person.value),
+              })),
+            },
+          ]
+        : []),
+      {
+        id: "view",
+        title: t("View"),
+        items: [
+          {
+            id: "view:list",
+            title: t("List view"),
+            selected: view === "list",
+            onPress: () => setView("list"),
+          },
+          {
+            id: "view:board",
+            title: t("Board view"),
+            selected: view === "board",
+            onPress: () => setView("board"),
+          },
+        ],
+      },
+      {
+        id: "archived",
+        title: t("Show archived"),
+        selected: archived,
+        onPress: () => setArchived((value) => !value),
+      },
+      {
+        id: "refresh",
+        title: t("Refresh issues"),
+        icon: "arrow.clockwise",
+        disabled: data.isPending,
+        onPress: refresh,
+      },
+      {
+        id: "settings",
+        title: t("Requirement settings"),
+        icon: "gearshape",
+        onPress: () => navigation.navigate("SettingsRequirements"),
+      },
+      {
+        id: "reset",
+        title: t("Reset filters"),
+        disabled: !isFiltered,
+        onPress: resetFilters,
+      },
+    ],
+  };
+
   return (
     <SettingsScreen
       workspaceRoot={workspace}
       title={t("Requirements board")}
-      actions={
-        errors.length && !creating && !selectedId
-          ? [
-              {
-                accessibilityLabel: t("View loading errors"),
-                icon: "exclamationmark.triangle",
-                onPress: () =>
-                  Dialog.alert(t("Some requirements could not be loaded"), errors.join("\n\n")),
-              },
-            ]
+      menus={showingList ? [headerMenu] : undefined}
+      search={
+        showingList
+          ? {
+              value: queryText,
+              onChangeText: setQueryText,
+              placeholder: t("Search title or number"),
+            }
+          : undefined
+      }
+      refresh={
+        showingList
+          ? {
+              accessibilityLabel: t("Refresh issues"),
+              disabled: data.isPending,
+              onPress: refresh,
+            }
           : undefined
       }
     >
@@ -480,260 +692,194 @@ function UnifiedRequirementBoard({
           )
         ) : (
           <>
-            <View className="flex-row flex-wrap items-center justify-between gap-2">
-              <IssuePicker
-                label={t("Environment")}
-                value={filterEnvironmentId ?? "all"}
-                options={[
-                  { value: "all", label: t("All environments") },
-                  ...onlineEnvironments.map((environment) => ({
-                    value: environment.environmentId,
-                    label: environment.label,
-                  })),
-                ]}
-                onChange={(value) => {
-                  onEnvironment(value === "all" ? null : EnvironmentId.make(value));
-                  setProjectId(null);
-                }}
-              />
-              <Menu
-                title={t("Scan chats")}
-                actions={projects.map((project) => ({
-                  id: projectKey(project),
-                  title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-                  attributes: {
-                    disabled:
-                      busy ||
-                      !permissions.get(project.environmentId)?.discoverWorkItems ||
-                      registry.get(serverEnvironment.configValueAtom(project.environmentId))
-                        ?.workItemDiscovery !== true,
-                  },
-                }))}
-                onPressAction={({ nativeEvent }) => {
-                  const project = projects.find(
-                    (project) => projectKey(project) === nativeEvent.event,
-                  );
-                  if (project)
-                    void scan({ environmentId: project.environmentId, projectId: project.id });
-                }}
-              >
-                <Button
-                  label={t("Scan chats")}
-                  tone="secondary"
-                  onPress={() => {}}
-                  disabled={!projects.length || busy}
-                />
-              </Menu>
-              <Button
-                label={t("Requirement settings")}
-                tone="text"
-                onPress={() => navigation.navigate("SettingsRequirements")}
-              />
-            </View>
-            <View className="flex-row items-center gap-1">
-              <View className="min-w-0 flex-1">
-                <AppTextInput
-                  accessibilityLabel={t("Search title or number")}
-                  placeholder={t("Search title or number")}
-                  value={queryText}
-                  onChangeText={setQueryText}
-                  onSubmitEditing={() => setQuery(queryText)}
-                  returnKeyType="search"
-                />
-              </View>
-              <Menu
-                title={t("Filters")}
-                actions={[
-                  {
-                    id: "source",
-                    title: t("Issue source"),
-                    subactions: [
-                      {
-                        id: "source:all",
-                        title: t("All sources"),
-                        state: source === "all" ? "on" : "off",
-                      },
-                      {
-                        id: "source:meituan",
-                        title: "MEP ONES",
-                        state: source === "meituan" ? "on" : "off",
-                      },
-                      {
-                        id: "source:github",
-                        title: "GitHub Issues",
-                        state: source === "github" ? "on" : "off",
-                      },
-                      {
-                        id: "source:local",
-                        title: t("Local work items"),
-                        state: source === "local" ? "on" : "off",
-                      },
-                    ],
-                  },
-                  {
-                    id: "project",
-                    title: t("Project"),
-                    subactions: [
-                      {
-                        id: "project:",
-                        title: t("All projects"),
-                        state: !projectId ? ("on" as const) : ("off" as const),
-                      },
-                      ...projects.map((project) => ({
-                        id: `project:${projectKey(project)}`,
-                        title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-                        state:
-                          projectId === project.id &&
-                          (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId
-                            ? ("on" as const)
-                            : ("off" as const),
-                      })),
-                    ],
-                  },
-                  ...(source !== "local"
-                    ? [
-                        {
-                          id: "assignee",
-                          title: t("Assignee"),
-                          subactions: [
-                            { value: "me", label: t("Assigned to me") },
-                            { value: "all", label: t("All assignees") },
-                            { value: "unassigned", label: t("Unassigned") },
-                            ...people.filter(
-                              (person) => !["me", "all", "unassigned"].includes(person.value),
-                            ),
-                          ].map((person) => ({
-                            id: `assignee:${person.value}`,
-                            title: person.label,
-                            state: assignee === person.value ? ("on" as const) : ("off" as const),
-                          })),
-                        },
-                      ]
-                    : []),
-                  { id: "archived", title: t("Show archived"), state: archived ? "on" : "off" },
-                  { id: "refresh", title: t("Refresh issues") },
-                ]}
-                onPressAction={({ nativeEvent }) => {
-                  const id = nativeEvent.event;
-                  if (id.startsWith("project:")) {
-                    const project = projects.find((project) => projectKey(project) === id.slice(8));
-                    setProjectId(project?.id ?? null);
-                    if (project) onEnvironment(project.environmentId);
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginHorizontal: -20, overflow: "visible" }}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingTop: 12,
+                paddingBottom: 4,
+                gap: 8,
+              }}
+            >
+              {onlineEnvironments.length > 1 ? (
+                <ListFilterMenu
+                  label={
+                    filterEnvironmentId
+                      ? environmentLabel(filterEnvironmentId)
+                      : t("All environments")
                   }
-                  if (id.startsWith("source:")) {
-                    setSource(id.slice(7) as RequirementSource);
-                    setAssignee("me");
-                  }
-                  if (id.startsWith("assignee:")) setAssignee(id.slice(9));
-                  if (id === "archived") setArchived(!archived);
-                  if (id === "refresh") refresh();
-                }}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t("Filters")}
-                  className="size-12 items-center justify-center"
-                >
-                  <SymbolView
-                    name="line.3.horizontal.decrease"
-                    size={22}
-                    tintColorClassName="accent-foreground"
-                  />
-                </Pressable>
-              </Menu>
-              <Menu
-                title={t("View")}
-                actions={[
-                  { id: "list", title: t("List view"), state: view === "list" ? "on" : "off" },
-                  { id: "board", title: t("Board view"), state: view === "board" ? "on" : "off" },
-                ]}
-                onPressAction={({ nativeEvent }) =>
-                  setView(nativeEvent.event === "board" ? "board" : "list")
-                }
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t("View")}
-                  className="size-12 items-center justify-center"
-                >
-                  <SymbolView
-                    name={view === "list" ? "list.number" : "square.grid.2x2"}
-                    size={22}
-                    tintColorClassName="accent-foreground"
-                  />
-                </Pressable>
-              </Menu>
-              <Menu
-                title={t("New")}
-                actions={(["meituan", "github", "local"] as const).map((provider) => ({
-                  id: provider,
-                  title:
-                    provider === "local"
-                      ? t("Local work item")
-                      : provider === "github"
-                        ? "GitHub Issue"
-                        : "MEP ONES",
-                  subactions: projects.map((project) => ({
-                    id: `${provider}:${projectKey(project)}`,
-                    title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-                    attributes: {
-                      disabled:
-                        provider === "local"
-                          ? !permissions.get(project.environmentId)?.mutateWorkItem ||
-                            registry.get(serverEnvironment.configValueAtom(project.environmentId))
-                              ?.workItems !== true
-                          : !permissions.get(project.environmentId)?.createIssue,
+                  accessibilityLabel={t("Environment")}
+                  active={filterEnvironmentId !== null}
+                  actions={[
+                    {
+                      id: "all",
+                      title: t("All environments"),
+                      state: filterEnvironmentId === null ? "on" : "off",
                     },
-                  })),
+                    ...onlineEnvironments.map((environment) => ({
+                      id: environment.environmentId,
+                      title: environment.label,
+                      state:
+                        filterEnvironmentId === environment.environmentId
+                          ? ("on" as const)
+                          : ("off" as const),
+                    })),
+                  ]}
+                  onSelect={(id) => {
+                    onEnvironment(id === "all" ? null : EnvironmentId.make(id));
+                    setProjectId(null);
+                  }}
+                />
+              ) : null}
+              <ListFilterMenu
+                label={
+                  sourceChoices.find((option) => option.value === source)?.label ?? t("All sources")
+                }
+                accessibilityLabel={t("Issue source")}
+                active={source !== "all"}
+                actions={sourceChoices.map((option) => ({
+                  id: option.value,
+                  title: option.label,
+                  state: source === option.value ? ("on" as const) : ("off" as const),
                 }))}
-                onPressAction={({ nativeEvent }) => {
-                  const id = nativeEvent.event;
-                  const provider = id.slice(0, id.indexOf(":"));
-                  const project = projects.find(
-                    (project) => projectKey(project) === id.slice(id.indexOf(":") + 1),
-                  );
-                  if (!project) return;
-                  if (provider === "local")
-                    createLocal({ environmentId: project.environmentId, projectId: project.id });
-                  else if (provider === "github" || provider === "meituan")
-                    navigation.navigate("IssueCreate", {
-                      environmentId: project.environmentId,
-                      projectId: project.id,
-                      provider,
-                    });
+                onSelect={(id) => {
+                  setSource(id as RequirementSource);
+                  setAssignee("me");
                 }}
+              />
+              <ListFilterMenu
+                label={
+                  projects.find((project) => project.id === projectId)?.title ?? t("All projects")
+                }
+                accessibilityLabel={t("Project")}
+                active={projectId !== null}
+                actions={[
+                  {
+                    id: "",
+                    title: t("All projects"),
+                    state: !projectId ? ("on" as const) : ("off" as const),
+                  },
+                  ...projects.map((project) => ({
+                    id: projectKey(project),
+                    title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+                    state:
+                      projectId === project.id &&
+                      (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId
+                        ? ("on" as const)
+                        : ("off" as const),
+                  })),
+                ]}
+                onSelect={(id) => {
+                  const project = projects.find((candidate) => projectKey(candidate) === id);
+                  setProjectId(project?.id ?? null);
+                  if (project) onEnvironment(project.environmentId);
+                }}
+              />
+              {source !== "local" ? (
+                <ListFilterMenu
+                  label={
+                    assigneeChoices.find((option) => option.value === assignee)?.label ?? assignee
+                  }
+                  accessibilityLabel={t("Assignee")}
+                  active={assignee !== "me"}
+                  actions={assigneeChoices.map((person) => ({
+                    id: person.value,
+                    title: person.label,
+                    state: assignee === person.value ? ("on" as const) : ("off" as const),
+                  }))}
+                  onSelect={setAssignee}
+                />
+              ) : null}
+              <Menu
+                title={t("New or scan")}
+                actions={[
+                  ...createMenuActions,
+                  {
+                    id: "scan",
+                    title: t("Scan chats"),
+                    image: "magnifyingglass",
+                    subactions: projects.map((project) => ({
+                      id: `scan:${projectKey(project)}`,
+                      title: `${environmentLabel(project.environmentId)} · ${project.title}`,
+                      attributes: {
+                        disabled:
+                          busy ||
+                          !permissions.get(project.environmentId)?.discoverWorkItems ||
+                          registry.get(serverEnvironment.configValueAtom(project.environmentId))
+                            ?.workItemDiscovery !== true,
+                      },
+                    })),
+                  },
+                ]}
+                onPressAction={({ nativeEvent }) => handleCreateOrScanAction(nativeEvent.event)}
               >
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={t("New")}
-                  className="size-12 items-center justify-center"
+                  hitSlop={6}
+                  disabled={!projects.length || busy}
+                  className={!projects.length || busy ? "opacity-45" : "active:opacity-70"}
                 >
-                  <SymbolView name="plus" size={22} tintColorClassName="accent-foreground" />
+                  <Chip label={t("New")} icon="plus" />
                 </Pressable>
               </Menu>
-            </View>
-            <Text className="text-xs text-foreground-muted">
-              {source === "all"
-                ? t("All sources")
-                : source === "local"
-                  ? t("Local work items")
-                  : source === "github"
-                    ? "GitHub Issues"
-                    : "MEP ONES"}{" "}
-              · {projects.find((project) => project.id === projectId)?.title ?? t("All projects")}
-              {archived ? ` · ${t("Show archived")}` : ""}
-            </Text>
-            {data.isPending && !entries.length ? (
-              <Text>{t("Loading...")}</Text>
-            ) : !entries.length && errors.length ? (
-              <View className="gap-3">
-                <Text className="text-foreground-muted">
-                  {t("Some requirements could not be loaded")}
+              {isFiltered ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("Reset filters")}
+                  className="h-8 w-8 items-center justify-center"
+                  onPress={resetFilters}
+                >
+                  <SymbolView
+                    name="xmark.circle.fill"
+                    size={18}
+                    tintColorClassName="accent-icon-muted"
+                  />
+                </Pressable>
+              ) : null}
+            </ScrollView>
+            {errors.length ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("View loading errors")}
+                onPress={() =>
+                  Dialog.alert(t("Some requirements could not be loaded"), errors.join("\n\n"))
+                }
+                className="flex-row items-center gap-2.5 rounded-2xl bg-subtle/80 px-3.5 py-2.5 active:opacity-70"
+              >
+                <SymbolView
+                  name="exclamationmark.triangle"
+                  size={15}
+                  tintColorClassName="accent-icon-muted"
+                />
+                <Text numberOfLines={1} className="min-w-0 flex-1 text-xs text-foreground-muted">
+                  {errors.length === 1
+                    ? errors[0]
+                    : `${t("Some requirements could not be loaded")} (${errors.length})`}
                 </Text>
-                <Button label={t("Retry")} onPress={refresh} />
+                <SymbolView name="chevron.right" size={11} tintColorClassName="accent-icon-muted" />
+              </Pressable>
+            ) : null}
+            {data.isPending && !entries.length ? (
+              <View className="items-center py-12">
+                <AppActivityIndicator colorClassName="accent-icon" />
               </View>
+            ) : !entries.length && errors.length ? (
+              <EmptyState
+                variant="plain"
+                title={t("Some requirements could not be loaded")}
+                detail={errors[0] ?? ""}
+                actionLabel={t("Retry")}
+                onAction={refresh}
+              />
             ) : !entries.length ? (
-              <Text className="text-foreground-muted">{t("No matching work items.")}</Text>
+              <EmptyState
+                variant="plain"
+                title={t("No matching work items.")}
+                detail={t("Create or scan items, or adjust your filters.")}
+              />
             ) : null}
             {data.isPending && entries.length ? (
               <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">

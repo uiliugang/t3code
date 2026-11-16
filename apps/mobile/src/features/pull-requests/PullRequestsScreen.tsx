@@ -48,38 +48,82 @@ import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { useSearchScrollRestoration } from "../layout/workspace/useSearchScrollRestoration";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
-function PullRequestListError(props: { readonly message: string }) {
+function simplifyPullRequestErrorMessage(
+  rawMessage: string,
+  t: ReturnType<typeof useUiTranslation>,
+): string {
+  if (
+    /Failed to fetch remote environment endpoint|HttpClientError|Transport error|Environment is not connected|ECONNREFUSED|Network request failed/i.test(
+      rawMessage,
+    )
+  ) {
+    return t("Connection offline");
+  }
+  return t(rawMessage);
+}
+
+function PullRequestListErrorsBanner(props: {
+  readonly items: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly message: string;
+    readonly hasProject: boolean;
+  }[];
+}) {
+  const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
+  const first = props.items[0];
+  if (!first) return null;
+  const allEnvironmentErrors = props.items.every((item) => !item.hasProject);
+  const summary =
+    props.items.length === 1
+      ? `${first.label}: ${simplifyPullRequestErrorMessage(first.message, t)}`
+      : t(
+          allEnvironmentErrors
+            ? "{count} environments could not load pull requests"
+            : "{count} projects could not load pull requests",
+          { count: props.items.length },
+        );
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={props.message}
-      accessibilityState={{ expanded }}
-      onPress={() => setExpanded((value) => !value)}
-      // A long press selects the text; collapsing under that selection crashes Android's
-      // smart-select animation, so it must not also count as a press.
-      onLongPress={() => undefined}
-      className="min-h-11 flex-row items-center gap-3 px-4 py-2.5 active:opacity-70"
-    >
-      <SymbolView
-        name="exclamationmark.triangle"
-        size={18}
-        tintColorClassName="accent-icon-muted"
-      />
-      <Text
-        selectable={expanded}
-        numberOfLines={expanded ? undefined : 1}
-        ellipsizeMode="tail"
-        className="min-w-0 flex-1 text-sm text-foreground-muted"
+    <View className="mx-3 mb-2 rounded-2xl bg-subtle/80 px-3.5 py-2.5">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${summary}. ${t("Tap to view details")}`}
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((value) => !value)}
+        // A long press selects the text; collapsing under that selection crashes Android's
+        // smart-select animation, so it must not also count as a press.
+        onLongPress={() => undefined}
+        className="min-h-8 flex-row items-center gap-2.5 active:opacity-70"
       >
-        {props.message}
-      </Text>
-      <SymbolView
-        name={expanded ? "chevron.up" : "chevron.down"}
-        size={11}
-        tintColorClassName="accent-icon-muted"
-      />
-    </Pressable>
+        <SymbolView
+          name="exclamationmark.triangle"
+          size={15}
+          tintColorClassName="accent-icon-muted"
+        />
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          className="min-w-0 flex-1 text-xs font-t3-medium text-foreground-muted"
+        >
+          {summary}
+        </Text>
+        <SymbolView
+          name={expanded ? "chevron.up" : "chevron.down"}
+          size={11}
+          tintColorClassName="accent-icon-muted"
+        />
+      </Pressable>
+      {expanded ? (
+        <View className="mt-2 gap-1.5 border-t border-border-subtle pt-2">
+          {props.items.map((item) => (
+            <Text key={item.key} selectable className="text-xs text-foreground-muted">
+              {item.label}: {simplifyPullRequestErrorMessage(item.message, t)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -323,14 +367,20 @@ export function PullRequestsScreen(
           <>
             <PullRequestListFilters sidebar={sidebar} filters={filters} />
             {result.data?.errors.length ? (
-              <View key={JSON.stringify(targets)}>
-                {result.data.errors.map((error) => (
-                  <PullRequestListError
-                    key={`${error.environmentId} ${error.projectTitle} ${error.message}`}
-                    message={`${error.projectTitle || environments.find((environment) => environment.environmentId === error.environmentId)?.environmentLabel || "Environment"}: ${error.message}`}
-                  />
-                ))}
-              </View>
+              <PullRequestListErrorsBanner
+                key={JSON.stringify(targets)}
+                items={result.data.errors.map((error) => ({
+                  key: `${error.environmentId} ${error.projectTitle} ${error.message}`,
+                  label:
+                    error.projectTitle ||
+                    environments.find(
+                      (environment) => environment.environmentId === error.environmentId,
+                    )?.environmentLabel ||
+                    t("Environment"),
+                  message: error.message,
+                  hasProject: Boolean(error.projectTitle),
+                }))}
+              />
             ) : null}
           </>
         }
