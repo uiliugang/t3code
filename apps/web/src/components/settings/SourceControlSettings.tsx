@@ -3,11 +3,12 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { ChevronDownIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   SourceControlDiscoveryResult,
   SourceControlProviderAuth,
   SourceControlProviderDiscoveryItem,
+  SourceControlTool,
   VcsDriverKind,
   VcsDiscoveryItem,
 } from "@t3tools/contracts";
@@ -39,6 +40,7 @@ import { SourceControlHostSettings } from "./SourceControlHostSettings";
 import { SourceControlAccountSettings } from "./SourceControlAccountSettings";
 import { SourceControlAppSignInSettings } from "./SourceControlAppSignInSettings";
 import { SourceControlTokenSettings } from "./SourceControlTokenSettings";
+import { SourceControlToolControls, SourceControlToolStatus } from "./SourceControlToolControls";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import {
@@ -76,19 +78,6 @@ function isProviderDiscoveryItem(
 
 function isVcsNotReady(item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem): boolean {
   return !isProviderDiscoveryItem(item) && !item.implemented;
-}
-
-function authPresentation(auth: SourceControlProviderAuth): {
-  readonly label: string;
-  readonly badge: "secondary" | null;
-} {
-  if (auth.status === "authenticated") {
-    return { label: "Authenticated", badge: null };
-  }
-  if (auth.status === "unauthenticated") {
-    return { label: "Not authenticated", badge: "secondary" };
-  }
-  return { label: "Status unknown", badge: null };
 }
 
 function RedactedAccount(props: { readonly account: string | null }) {
@@ -161,16 +150,11 @@ function ItemSummary({
 }) {
   const t = useUiTranslation();
   if (isVcsNotReady(item)) {
-    return <span>{t("Support for {name} is coming soon.", { name: item.label })}</span>;
-  }
-
-  if (item.status !== "available") {
-    return <span>{t("Not available on this server: {hint}", { hint: item.installHint })}</span>;
+    return null;
   }
 
   if (auth) {
     if (auth.status === "authenticated") {
-      const authDetail = optionLabel(auth.detail);
       return (
         <>
           <span>{t(authAccount ? "Authenticated as" : "Authenticated")}</span>
@@ -179,16 +163,7 @@ function ItemSummary({
               <RedactedAccount account={authAccount} />
             </>
           ) : null}
-          {authDetail ? <span>· {authDetail}</span> : null}
         </>
-      );
-    }
-
-    if (!item.executable && auth.status === "unauthenticated") {
-      return (
-        <span>
-          {t("Available.")} {item.installHint}
-        </span>
       );
     }
 
@@ -200,22 +175,8 @@ function ItemSummary({
       );
     }
 
-    if (auth.status === "unauthenticated" && item.kind === "meituan") {
-      return (
-        <span>{t("Expand to configure your MIS ID and request authorization in DaXiang.")}</span>
-      );
-    }
-
     if (auth.status === "unauthenticated") {
-      return (
-        <span>
-          {t(
-            "{name} is not authenticated on this server. Sign in or configure credentials using the tool below on the server host to enable change request features.",
-            { name: item.label },
-          )}{" "}
-          <code className="rounded bg-muted px-1 py-px text-2xs">{item.executable}</code>
-        </span>
-      );
+      return <span>{t("Not authenticated")}</span>;
     }
     const authDetail = optionLabel(auth.detail);
     return (
@@ -225,16 +186,19 @@ function ItemSummary({
     );
   }
 
-  return <span>{t("Available")}</span>;
+  return <span>{t(item.status === "available" ? "Installed" : "Not installed")}</span>;
 }
 
 function DiscoveryItemRow({
   item,
   offered,
+  tool,
+  action,
   children,
 }: {
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
-  /** A provider's switch chooses whether the project pickers offer it; a VCS switch only reports. */
+  readonly tool?: SourceControlTool;
+  readonly action?: ReactNode;
   readonly offered?: {
     readonly checked: boolean;
     readonly disabled: boolean;
@@ -243,9 +207,8 @@ function DiscoveryItemRow({
   readonly children?: ReactNode;
 }) {
   const t = useUiTranslation();
-  const version = optionLabel(item.version);
+  const version = tool ? tool.version : optionLabel(item.version);
   const auth = isProviderDiscoveryItem(item) ? item.auth : null;
-  const authStatus = auth ? authPresentation(auth) : null;
   const authAccount = auth ? optionLabel(auth.account) : null;
   const [isExpanded, setIsExpanded] = useState(false);
   const hasDetails = children !== undefined;
@@ -265,7 +228,7 @@ function DiscoveryItemRow({
       )}
     >
       <div className="px-3 py-3 sm:px-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <SourceControlItemMark item={item} />
@@ -276,29 +239,40 @@ function DiscoveryItemRow({
                   {t("Coming Soon")}
                 </Badge>
               ) : null}
-              {authStatus?.badge ? (
-                <Badge variant={authStatus.badge} size="sm">
-                  {t(authStatus.label)}
+              {tool && tool.status !== "installed" ? (
+                <Badge variant="secondary" size="sm">
+                  {t(tool.status === "unknown" ? "Inspection failed." : "Not installed")}
                 </Badge>
               ) : null}
             </div>
-            <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs leading-normal text-muted-foreground/80">
-              <ItemSummary item={item} auth={auth} authAccount={authAccount} />
-            </p>
+            {auth || !tool ? (
+              <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs leading-normal text-muted-foreground/80">
+                <ItemSummary item={item} auth={auth} authAccount={authAccount} />
+              </p>
+            ) : null}
+            {tool ? <SourceControlToolStatus tool={tool} /> : null}
           </div>
-          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            {action}
             {hasDetails ? (
-              <Button
-                size="icon-xs"
-                variant="ghost-muted"
-                onClick={() => setIsExpanded((open) => !open)}
-                aria-expanded={isExpanded}
-                aria-label={t("Toggle {name} details", { name: item.label })}
-              >
-                <ChevronDownIcon
-                  className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant="ghost-muted"
+                      onClick={() => setIsExpanded((open) => !open)}
+                      aria-expanded={isExpanded}
+                      aria-label={t("Toggle {name} details", { name: item.label })}
+                    >
+                      <ChevronDownIcon
+                        className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")}
+                      />
+                    </Button>
+                  }
                 />
-              </Button>
+                <TooltipPopup>{t("Toggle {name} details", { name: item.label })}</TooltipPopup>
+              </Tooltip>
             ) : null}
             {offered ? (
               <Tooltip>
@@ -308,18 +282,16 @@ function DiscoveryItemRow({
                       checked={offered.checked}
                       disabled={offered.disabled}
                       onCheckedChange={offered.onChange}
-                      aria-label={`Offer ${item.label} when adding or publishing a project`}
+                      aria-label={t("Offer {name} when adding or publishing a project", {
+                        name: item.label,
+                      })}
                     />
                   }
                 />
-                <TooltipPopup side="top">Offer when adding or publishing a project</TooltipPopup>
+                <TooltipPopup side="top">
+                  {t("Offer when adding or publishing a project")}
+                </TooltipPopup>
               </Tooltip>
-            ) : !isVcsNotReady(item) ? (
-              <Switch
-                checked={item.status === "available"}
-                disabled
-                aria-label={`${item.label} availability`}
-              />
             ) : null}
           </div>
         </div>
@@ -429,6 +401,15 @@ export function SourceControlSettingsPanel({
     environment?.connection.phase === "connected" ? environment.environmentId : null;
   const aggregate = scope.environmentIds.length !== 1 && connectedEnvironments.length > 1;
   const environmentSuffix = aggregate && environment ? ` · ${environment.label}` : "";
+  const maintenanceAvailable =
+    environmentId !== null &&
+    environment?.serverConfig?.environment.capabilities.sourceControlToolMaintenance === true;
+  const tools = useEnvironmentQuery(
+    maintenanceAvailable ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
+  );
+  const refreshTools = useAtomCommand(sourceControlEnvironment.refreshTools);
+  const toolsBusy =
+    tools.data?.some((tool) => tool.phase === "running" || tool.phase === "verifying") ?? false;
   const discovery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -438,6 +419,33 @@ export function SourceControlSettingsPanel({
         }),
   );
   const discovered = discovery.data ?? EMPTY_DISCOVERY_RESULT;
+  const refreshDiscovery = discovery.refresh;
+  const completedTools =
+    tools.data
+      ?.filter((tool) => ["succeeded", "unchanged", "failed"].includes(tool.phase))
+      .map((tool) => `${tool.id}:${tool.phase}:${tool.version}`)
+      .join(",") ?? "";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- installer events invalidate the server's separate tool and authentication discovery query
+  useEffect(() => {
+    if (completedTools) refreshDiscovery();
+  }, [completedTools, refreshDiscovery]);
+  const maintenanceProps = (kind: string) => {
+    const tool = tools.data?.find((entry) => entry.id === kind);
+    return tool && environmentId !== null
+      ? {
+          tool,
+          action: (
+            <SourceControlToolControls
+              key={`${environmentId}:${kind}`}
+              tool={tool}
+              environmentId={environmentId}
+              environmentLabel={environment?.label ?? environmentId}
+              busy={toolsBusy}
+            />
+          ),
+        }
+      : {};
+  };
   const result = {
     ...discovered,
     sourceControlProviders: discovered.sourceControlProviders.filter(
@@ -451,6 +459,7 @@ export function SourceControlSettingsPanel({
   const isInitialScanPending = discovery.isPending && discovery.data === null;
   const handleScan = () => {
     discovery.refresh();
+    if (maintenanceAvailable) void refreshTools({ environmentId, input: {} });
   };
   const offeredProviders = environment?.serverConfig?.settings.offeredSourceControlProviders;
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
@@ -549,6 +558,11 @@ export function SourceControlSettingsPanel({
   return (
     <SettingsPageContainer>
       {children}
+      {tools.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t(tools.error)}
+        </p>
+      ) : null}
       {environmentId !== null ? (
         <MeituanCodeAuthorizationObserver
           environmentId={environmentId}
@@ -587,7 +601,11 @@ export function SourceControlSettingsPanel({
               headerAction={scanButton}
             >
               {result.versionControlSystems.map((item) => (
-                <DiscoveryItemRow key={`vcs:${item.kind}`} item={item} />
+                <DiscoveryItemRow
+                  key={`vcs:${item.kind}`}
+                  item={item}
+                  {...maintenanceProps(item.kind)}
+                />
               ))}
             </SettingsSection>
           ) : null}
@@ -597,7 +615,7 @@ export function SourceControlSettingsPanel({
               id={hasVersionControlSystems ? undefined : searchableSetting("source-control").id}
               title={
                 hasVersionControlSystems
-                  ? "Source control providers"
+                  ? t("Source control providers")
                   : `${t("Source control providers")}${environmentSuffix}`
               }
               headerAction={hasVersionControlSystems ? null : scanButton}
@@ -606,6 +624,7 @@ export function SourceControlSettingsPanel({
                 <DiscoveryItemRow
                   key={`provider:${item.kind}`}
                   item={item}
+                  {...maintenanceProps(item.kind)}
                   offered={{
                     checked: isSourceControlProviderOffered(offeredProviders, item.kind),
                     disabled: !canUpdateSettings,

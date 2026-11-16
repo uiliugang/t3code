@@ -33,6 +33,7 @@ export * from "./managedPolicy.ts";
 export * from "./git.ts";
 export * from "./vcs.ts";
 export * from "./sourceControl.ts";
+export * from "./sourceControlTools.ts";
 export * from "./branchIssues.ts";
 export * from "./issues.ts";
 export * from "./workItemDelivery.ts";

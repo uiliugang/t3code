@@ -19,6 +19,7 @@ import type { SettingsTarget } from "../settings-environment-filter";
 import { SettingsRow } from "./SettingsRow";
 import { MeituanCodeSettingsSection } from "./MeituanCodeSettingsSection";
 import { SettingsSection } from "./SettingsSection";
+import { SourceControlToolsSection } from "./SourceControlToolsSection";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 
 const failureMessage = (cause: Cause.Cause<unknown>) => {
@@ -44,6 +45,12 @@ export function SourceControlSignInSection(props: {
 }) {
   return (
     <>
+      {props.environments.map((environment) => (
+        <SourceControlToolsSection
+          key={`tools:${environment.environmentId}`}
+          environment={environment}
+        />
+      ))}
       {props.environments.map((environment) => (
         <MeituanCodeSettingsSection
           key={environment.environmentId}

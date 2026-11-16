@@ -493,6 +493,11 @@ import {
   SourceControlSignInPrompt,
   SourceControlSignInResult,
 } from "./sourceControl.ts";
+import {
+  SourceControlTool,
+  SourceControlToolError,
+  SourceControlToolStartInput,
+} from "./sourceControlTools.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 import {
@@ -746,6 +751,9 @@ export const WS_METHODS = {
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
   sourceControlSignInStart: "sourceControl.signInStart",
+  sourceControlToolsSubscribe: "sourceControl.toolsSubscribe",
+  sourceControlToolsRefresh: "sourceControl.toolsRefresh",
+  sourceControlToolStart: "sourceControl.toolStart",
   sourceControlSignInWait: "sourceControl.signInWait",
   sourceControlSignInCancel: "sourceControl.signInCancel",
   sourceControlAppAccess: "sourceControl.appAccess",
@@ -1554,6 +1562,23 @@ const WsSourceControlCloneRepositoryRpc = Rpc.make(WS_METHODS.sourceControlClone
   payload: SourceControlCloneRepositoryInput,
   success: SourceControlCloneRepositoryResult,
   error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+const WsSourceControlToolsSubscribeRpc = Rpc.make(WS_METHODS.sourceControlToolsSubscribe, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(SourceControlTool),
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+const WsSourceControlToolsRefreshRpc = Rpc.make(WS_METHODS.sourceControlToolsRefresh, {
+  payload: Schema.Struct({}),
+  success: Schema.Void,
+  error: EnvironmentAuthorizationError,
+});
+const WsSourceControlToolStartRpc = Rpc.make(WS_METHODS.sourceControlToolStart, {
+  payload: SourceControlToolStartInput,
+  success: Schema.Void,
+  error: Schema.Union([SourceControlToolError, EnvironmentAuthorizationError]),
 });
 
 // Starts a device-flow sign-in the server finishes on its own, so a client can leave meanwhile.
@@ -2620,6 +2645,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
   WsSourceControlSignInStartRpc,
+  WsSourceControlToolsSubscribeRpc,
+  WsSourceControlToolsRefreshRpc,
+  WsSourceControlToolStartRpc,
   WsSourceControlSignInWaitRpc,
   WsSourceControlSignInCancelRpc,
   WsSourceControlAppAccessRpc,

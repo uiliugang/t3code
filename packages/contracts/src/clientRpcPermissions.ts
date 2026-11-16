@@ -68,6 +68,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.sourceControlStar]: AuthSourceControlWriteScope,
   // Signing in replaces the server's GitHub credential, as saving a token in Settings does.
   [WS_METHODS.sourceControlSignInStart]: AuthSettingsWriteScope,
+  [WS_METHODS.sourceControlToolStart]: AuthEnvironmentMaintainScope,
   [WS_METHODS.sourceControlSignInWait]: AuthSettingsWriteScope,
   [WS_METHODS.sourceControlSignInCancel]: AuthSettingsWriteScope,
   [WS_METHODS.projectCloneStart]: AuthSourceControlWriteScope,

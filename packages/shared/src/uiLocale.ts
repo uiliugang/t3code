@@ -9,6 +9,56 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Source control tools": "版本控制工具",
+  "Updating tool...": "正在更新工具…",
+  "Installing tool...": "正在安装工具…",
+  "Verifying active executable...": "正在验证生效版本…",
+  "Installation verified.": "安装已验证。",
+  "The version is unchanged.": "版本未变化。",
+  "Installation failed.": "安装失败。",
+  "Manual maintenance": "手动维护",
+  "Inspection failed.": "检查失败。",
+  "Retry {name}": "重试 {name}",
+  "Update {name}": "更新 {name}",
+  "Install {name}": "安装 {name}",
+  "Manage {name} on the server": "在服务器上维护 {name}",
+  "Environment maintenance permission required.": "需要环境维护权限。",
+  "Target environment: {name}": "目标环境：{name}",
+  "Current version": "当前版本",
+  "Installation command": "安装命令",
+  "Server command": "服务器命令",
+  "Could not copy command.": "无法复制命令。",
+  "Offer {name} when adding or publishing a project": "添加或发布项目时提供 {name}",
+  "Offer when adding or publishing a project": "添加或发布项目时提供此来源",
+  "Another tool installation is running on this environment.": "此环境正在安装其他工具。",
+  "The installation changed. Refresh and confirm the new command.":
+    "安装信息已变化，请刷新后重新确认命令。",
+  "This installation must be managed on the server.": "此安装需要在服务器上手动维护。",
+  "Could not inspect this tool on the server. Refresh and try again.":
+    "无法检查服务器上的工具，请刷新后重试。",
+  "The installer failed. Run the displayed command on the server for details.":
+    "安装失败，请在服务器上执行所示命令查看详情。",
+  "The active tool could not be verified. Check its installation and server PATH.":
+    "无法验证生效工具，请检查安装和服务器的 PATH。",
+  "Could not read the installed version. Check the executable on the server.":
+    "无法读取已安装版本，请检查服务器上的可执行文件。",
+  "Automatic installation is not supported on this server platform.":
+    "此服务器平台不支持自动安装。",
+  "Install Node.js and npm on the server first.": "请先在服务器上安装 Node.js 和 npm。",
+  "This installation must be updated with the tool that installed it.":
+    "请使用原安装方式更新此工具。",
+  "The package manager's bin directory is not on the server PATH.":
+    "包管理器的 bin 目录不在服务器 PATH 中。",
+  "This executable is not managed by Homebrew. Update it on the server and check PATH.":
+    "此程序不由 Homebrew 管理，请在服务器上更新并检查 PATH。",
+  "Install a supported package manager on the server first.":
+    "请先在服务器上安装受支持的包管理器。",
+  "Administrator access is required on the server.": "需要服务器管理员权限。",
+  "Already up to date.": "已是最新版本。",
+  "The version is unchanged. Check the package manager's available version on the server.":
+    "版本未变化，请检查服务器包管理器提供的版本。",
+  "Installation was interrupted. Check the tool on the server before retrying.":
+    "安装已中断，请先检查服务器上的工具再重试。",
   "Sampling on demand": "按需采样",
   "Syncing messages…": "正在同步消息…",
   "Loading messages…": "正在加载消息…",
