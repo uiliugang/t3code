@@ -35,14 +35,20 @@ it("keeps local pages available when an issue source fails and refreshes overlap
   };
   const cursor = { id: item.id, updatedAt: item.updatedAt };
   const first = Atom.make(
-    AsyncResult.success<WorkItemListResult>({ items: [item], candidates: [], nextCursor: cursor }),
+    AsyncResult.success<WorkItemListResult>(
+      { items: [item], candidates: [], nextCursor: cursor },
+      { waiting: true },
+    ),
   );
   const second = Atom.make<AsyncResult.AsyncResult<WorkItemListResult, unknown>>(
-    AsyncResult.success<WorkItemListResult>({
-      items: [{ ...item, version: 2, status: "in_progress" }],
-      candidates: [],
-      nextCursor: null,
-    }),
+    AsyncResult.success<WorkItemListResult>(
+      {
+        items: [{ ...item, version: 2, status: "in_progress" }],
+        candidates: [],
+        nextCursor: null,
+      },
+      { waiting: true },
+    ),
   );
   const empty = Atom.make(
     AsyncResult.success<typeof IssueListResult.Type>({
@@ -73,6 +79,7 @@ it("keeps local pages available when an issue source fails and refreshes overlap
   const unmount = registry.mount(board(key));
   try {
     const data = registry.get(board(key));
+    expect(data.isPending).toBe(false);
     expect(data.errors).toEqual(["Source unavailable"]);
     expect(data.items).toEqual([{ ...item, version: 2, status: "in_progress" }]);
     expect(data.nextCursor).toBeNull();
@@ -119,6 +126,8 @@ it("keeps local pages available when an issue source fails and refreshes overlap
       }),
     );
     expect(registry.get(board(key)).items[0]?.version).toBe(3);
+    registry.set(second, AsyncResult.initial(true));
+    expect(registry.get(board(key)).isPending).toBe(true);
     registry.set(
       second,
       AsyncResult.failure<WorkItemListResult>(Cause.die(new Error("Page unavailable"))),

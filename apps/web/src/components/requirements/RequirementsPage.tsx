@@ -283,6 +283,8 @@ export function RequirementBoard({
         .map((person) => [person.value, person]),
     ).values(),
   ];
+  if (!assigneeOptions.some((person) => person.value === assignee))
+    assigneeOptions.push({ value: assignee, label: assignee });
   return (
     <div className="flex h-full min-h-0 flex-1 overflow-hidden">
       <div className="relative flex h-full min-h-0 flex-1 overflow-hidden">
@@ -456,13 +458,20 @@ export function RequirementBoard({
                   <MenuSub>
                     <MenuSubTrigger>{t("Project")}</MenuSubTrigger>
                     <MenuSubPopup>
-                      <MenuItem onClick={() => updateSearch({ projectId: undefined })}>
+                      <MenuCheckboxItem
+                        checked={!search.projectId}
+                        onCheckedChange={() => updateSearch({ projectId: undefined })}
+                      >
                         {t("All projects")}
-                      </MenuItem>
+                      </MenuCheckboxItem>
                       {projects.map((project) => (
-                        <MenuItem
+                        <MenuCheckboxItem
                           key={`${project.environmentId}:${project.id}`}
-                          onClick={() =>
+                          checked={
+                            search.projectId === project.id &&
+                            (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId
+                          }
+                          onCheckedChange={() =>
                             updateSearch({
                               environmentId: project.environmentId,
                               projectId: project.id,
@@ -472,7 +481,7 @@ export function RequirementBoard({
                           {filterEnvironmentId
                             ? project.title
                             : `${environmentLabel(project.environmentId)} · ${project.title}`}
-                        </MenuItem>
+                        </MenuCheckboxItem>
                       ))}
                     </MenuSubPopup>
                   </MenuSub>
@@ -489,12 +498,13 @@ export function RequirementBoard({
                           (person) => !["me", "all", "unassigned"].includes(person.value),
                         ),
                       ].map((person) => (
-                        <MenuItem
+                        <MenuCheckboxItem
                           key={person.value}
-                          onClick={() => updateSearch({ assignee: person.value })}
+                          checked={assignee === person.value}
+                          onCheckedChange={() => updateSearch({ assignee: person.value })}
                         >
                           {person.label}
-                        </MenuItem>
+                        </MenuCheckboxItem>
                       ))}
                     </MenuSubPopup>
                   </MenuSub>
@@ -530,6 +540,8 @@ export function RequirementBoard({
               size="icon-sm"
               variant="ghost"
               aria-label={t("Refresh issues")}
+              aria-busy={data.isPending}
+              disabled={data.isPending}
               onClick={refresh}
             >
               <RefreshCwIcon />
@@ -551,12 +563,36 @@ export function RequirementBoard({
                 t("All projects")}
             </span>
             {archived ? <span>· {t("Show archived")}</span> : null}
+            <span role="status">{data.isPending && entries.length ? t("Updating") : null}</span>
           </div>
           <div
+            aria-busy={data.isPending}
             className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
           >
             {data.isPending && !entries.length ? (
-              <p className="py-8 text-sm text-muted-foreground">{t("Loading...")}</p>
+              <div role="status" aria-label={t("Loading...")} className="space-y-4 py-4">
+                <span className="sr-only">{t("Loading...")}</span>
+                {[0, 1, 2, 3].map((row) => (
+                  <div
+                    key={row}
+                    aria-hidden="true"
+                    className="space-y-3 border-b border-border/50 py-3"
+                  >
+                    <div className="h-4 w-2/3 rounded-sm bg-muted-foreground/15" />
+                    <div className="h-3 w-1/3 rounded-sm bg-muted-foreground/15" />
+                  </div>
+                ))}
+              </div>
+            ) : !entries.length && errors.length ? (
+              <div className="space-y-3 py-8">
+                <p className="text-sm text-muted-foreground">
+                  {t("Some requirements could not be loaded")}
+                </p>
+                <Button size="sm" variant="outline" onClick={refresh}>
+                  <RefreshCwIcon />
+                  {t("Retry")}
+                </Button>
+              </div>
             ) : !entries.length ? (
               <p className="py-8 text-sm text-muted-foreground">{t("No matching work items.")}</p>
             ) : (

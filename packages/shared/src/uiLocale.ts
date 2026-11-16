@@ -883,6 +883,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Another WeChat operation is running. Try again shortly.": "有其他微信操作正在进行，请稍后重试。",
   Requirements: "需求",
   "Requirements board": "需求看板",
+  "Some requirements could not be loaded": "部分需求加载失败",
   "All sources": "全部来源",
   "No matching work items.": "没有符合条件的需求或任务。",
   "Development stage": "开发",
