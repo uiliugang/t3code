@@ -15,6 +15,7 @@ test(
         "---\nname: candidate-review\ndescription: Review changes\n---\nOriginal.\n",
     });
     await t3.open("/settings/skills");
+    await expect(screen.getByRole("button", /^(Install skill|安装技能)$/)).toBeEnabled();
     const mutate = (input: SkillMutation) =>
       browser.evaluate(async (input) => {
         const serverModule = "/src/state/server.ts";
@@ -28,7 +29,8 @@ test(
           environmentId,
           input,
         });
-        return result._tag;
+        if (result._tag !== "Success") throw new Error("Could not prepare the skill fixture.");
+        return null;
       }, input);
     await mutate({
       type: "install",
