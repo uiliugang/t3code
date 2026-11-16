@@ -581,6 +581,24 @@ describe("SkillManager", () => {
         yield* recovered.drain;
         expect((yield* recovered.snapshot).skills[0]?.bindings).toHaveLength(1);
         expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: ["fixture", "removed-account"],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]?.failureReason).toBe("not-found");
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: ["fixture", "alias"],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]?.status).toBe("ready");
+        expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
+        expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("completed");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 

@@ -23,6 +23,7 @@ import {
   skillSelection,
   skillTargetGroups,
   skillDefaultTargetIds,
+  skillBindingTargetIds,
   skillStatus,
   skillFailure,
   skillNextCheck,
@@ -378,9 +379,12 @@ function BindingDialog({
 }) {
   const t = useUiTranslation();
   const skills = [skill, ...otherSkills];
-  const [selected, setSelected] = useState([
-    ...new Set(skills.flatMap((entry) => entry.bindings.map((target) => target.id))),
-  ]);
+  const [selected, setSelected] = useState(() =>
+    skillBindingTargetIds(
+      data.targets,
+      skills.flatMap((entry) => entry.bindings),
+    ),
+  );
   const [saving, setSaving] = useState(false);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

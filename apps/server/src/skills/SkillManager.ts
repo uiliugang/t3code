@@ -1302,9 +1302,15 @@ const make = Effect.gen(function* () {
                 (yield* readLink(linkPath(skill, previous))) === activePath(skill.id)
               )
                 yield* fs.remove(linkPath(skill, previous));
+            const previousResult = current.jobs?.findLast(
+              (job) =>
+                job.skillId === skill.id && (job.status === "completed" || job.status === "failed"),
+            );
             const recovered =
               skill.activeDigest &&
-              (skill.failureReason === "target-disabled" || skill.failureReason === "conflict");
+              (skill.failureReason === "target-disabled" ||
+                skill.failureReason === "conflict" ||
+                (previousResult?.status === "failed" && previousResult.input.type === "configure"));
             const next = {
               ...skill,
               policy: input.policy,

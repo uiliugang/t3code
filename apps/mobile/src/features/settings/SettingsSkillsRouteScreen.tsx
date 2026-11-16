@@ -24,6 +24,7 @@ import {
   skillSelection,
   skillTargetGroups,
   skillDefaultTargetIds,
+  skillBindingTargetIds,
   skillStatus,
   skillFailure,
   skillNextCheck,
@@ -353,6 +354,10 @@ function Skill({
   const [choices, setChoices] = useState<string[]>([]);
   const [origin, setOrigin] = useState(false);
   const [inspection, setInspection] = useState<SkillInspection | null>(null);
+  const [configuring, setConfiguring] = useState(false);
+  const configuration = data.jobs?.findLast(
+    (job) => job.input.type === "configure" && job.input.id === skill.id,
+  );
   const name = skill.description ? skill.name : skill.requestedSkill || skill.locator;
   const failure = skillFailure(skill);
   const confirm = (label: string, action: SkillMutation) =>
@@ -536,12 +541,22 @@ function Skill({
           ) : null}
           <TargetSelection
             data={data}
-            selected={skill.bindings.map((target) => target.id)}
-            disabled={disabled}
-            onChange={(targetIds) =>
-              void mutate({ type: "configure", id: skill.id, targetIds, policy: skill.policy })
+            selected={skillBindingTargetIds(data.targets, skill.bindings)}
+            disabled={
+              disabled ||
+              configuring ||
+              configuration?.status === "queued" ||
+              configuration?.status === "running"
             }
+            onChange={async (targetIds) => {
+              setConfiguring(true);
+              await mutate({ type: "configure", id: skill.id, targetIds, policy: skill.policy });
+              setConfiguring(false);
+            }}
           />
+          {configuration?.status === "failed" && (
+            <ErrorBanner message={t(skillFailureMessage(configuration.reason ?? "io"))} />
+          )}
           {skill.bindings
             .filter((target) => target.status !== "linked")
             .map((target) => (

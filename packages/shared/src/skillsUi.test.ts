@@ -6,6 +6,7 @@ import {
   skillSelection,
   skillTargetGroups,
   skillDefaultTargetIds,
+  skillBindingTargetIds,
   skillFailure,
   skillStatus,
   skillSourceFailure,
@@ -195,6 +196,16 @@ describe("skill management views", () => {
     ]);
     expect(skillDefaultTargetIds(targets)).toEqual([]);
     expect(skillDefaultTargetIds([{ ...available[3]!, enabled: false }])).toEqual([]);
+    expect(
+      skillBindingTargetIds(available, [
+        { directory: "/skills" },
+        { directory: "/skills" },
+        { directory: "/removed-account" },
+        { directory: "/disabled" },
+      ]),
+    ).toEqual(["codex", "chatgpt"]);
+    expect(skillBindingTargetIds(available, [])).toEqual([]);
+    expect(skillBindingTargetIds(available, [{ directory: "/claude" }])).toEqual(["claude"]);
   });
 
   it("selects multiple skills without discarding policy or usage locations", () => {

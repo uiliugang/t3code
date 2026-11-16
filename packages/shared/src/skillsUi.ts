@@ -153,6 +153,19 @@ export function skillDefaultTargetIds(
     .map((target) => target.id);
 }
 
+export function skillBindingTargetIds(
+  targets: ReadonlyArray<SkillTarget>,
+  bindings: ReadonlyArray<Pick<SkillTarget, "directory">>,
+) {
+  return targets
+    .filter(
+      (target) =>
+        target.enabled !== false &&
+        bindings.some((binding) => binding.directory === target.directory),
+    )
+    .map((target) => target.id);
+}
+
 export function skillTargetGroups(targets: ReadonlyArray<SkillTarget>) {
   const groups = new Map<string, { directory: string; targets: SkillTarget[] }>();
   for (const target of targets) {
