@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - Exercises the shell installer with isolated macOS command fixtures.
+// @effect-diagnostics nodeBuiltinImport:off - Exercises the shell installer with isolated platform command fixtures.
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -14,6 +14,11 @@ const asset = `T3-Code-${version}-arm64.dmg`;
 const dmg = "desktop disk image";
 const checksum = NodeCrypto.createHash("sha256").update(dmg).digest("hex");
 const installer = NodePath.resolve(import.meta.dirname, "install-desktop.sh");
+const appImage = Buffer.concat([
+  Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0, 0x41, 0x49, 2]),
+  Buffer.from("new desktop"),
+]);
+const oldAppImage = Buffer.concat([appImage.subarray(0, 11), Buffer.from("old desktop")]);
 
 const commandFixture = `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -22,6 +27,9 @@ const root = process.env.FIXTURE_ROOT;
 const options = JSON.parse(process.env.FIXTURE_OPTIONS);
 const command = path.basename(process.argv[1]);
 const args = process.argv.slice(2);
+const linux = options.platform === 'Linux';
+const linuxAsset = 'T3-Code-' + (['arm64', 'aarch64'].includes(options.arch) ? 'arm64' : 'x86_64') + '.AppImage';
+const destination = path.join(root, 'Applications', linux ? linuxAsset : '${appName}');
 fs.appendFileSync(path.join(root, 'commands.jsonl'), JSON.stringify({ command, args }) + '\\n');
 switch (command) {
   case 'uname':
@@ -37,11 +45,16 @@ switch (command) {
     const url = args.at(-1);
     const output = args[args.indexOf('-o') + 1];
     if (options.downloadFailure && url.endsWith(options.downloadFailure)) process.exit(22);
+    if (args.includes('%{url_effective}')) {
+      process.stdout.write('https://github.com/uiliugang/t3code/releases/tag/' + (options.tag || 'v1.2.3'));
+      break;
+    }
+    const image = linux ? fs.readFileSync(path.join(root, 'appimage')) : null;
     const body = url.endsWith('/releases/latest')
       ? JSON.stringify({ tag_name: options.tag || 'v1.2.3' })
       : url.endsWith('/SHA256SUMS')
-        ? (options.nativeImage ? fs.readFileSync(path.join(root, 'SHA256SUMS')) : options.checksums ?? '${checksum}  ${asset}\\n')
-        : options.nativeImage ? fs.readFileSync(path.join(root, '${asset}')) : '${dmg}';
+        ? (options.nativeImage ? fs.readFileSync(path.join(root, 'SHA256SUMS')) : options.checksums ?? (linux ? require('node:crypto').createHash('sha256').update(image).digest('hex') + '  ' + linuxAsset + '\\n' : '${checksum}  ${asset}\\n'))
+        : options.nativeImage ? fs.readFileSync(path.join(root, '${asset}')) : linux ? image : '${dmg}';
     fs.writeFileSync(output, body);
     break;
   }
@@ -62,18 +75,24 @@ switch (command) {
   case 'lsappinfo':
     if (options.running || (options.runningAfterCopy && fs.existsSync(path.join(root, 'copied')))) console.log('ASN:0x0-0x1:');
     break;
+  case 'pgrep': {
+    const running = options.running || (options.runningAfterCopy && fs.existsSync(path.join(root, 'copied'))) || (options.otherUserRunning && !args.includes('-u'));
+    process.exit(options.processCheckFailure ? 2 : running ? 0 : 1);
+    break;
+  }
   case 'codesign':
     if (options.badSignature) process.exit(1);
     break;
+  case 'cp':
   case 'ditto':
     if (options.copyFailure) process.exit(1);
     fs.cpSync(args.at(-2), args.at(-1), { recursive: true });
     fs.writeFileSync(path.join(root, 'copied'), '');
     break;
   case 'mv':
-    if (options.restoreFailure && args.at(-2).endsWith('/previous.app')) process.exit(1);
-    if (options.backupFailure && args.at(-1).endsWith('/previous.app')) process.exit(1);
-    if (options.replaceFailure && args.at(-1) === path.join(root, 'Applications', '${appName}') && !args.at(-2).endsWith('/previous.app')) {
+    if (options.restoreFailure && args.at(-2).endsWith('/previous')) process.exit(1);
+    if (options.backupFailure && args.at(-1).endsWith('/previous')) process.exit(1);
+    if (options.replaceFailure && args.at(-1) === destination && !args.at(-2).endsWith('/previous')) {
       console.error('fixture: replacement failed');
       process.exit(1);
     }
@@ -85,12 +104,22 @@ switch (command) {
 `;
 
 async function fixture(options: Record<string, unknown> = {}) {
+  options = { arch: "arm64", ...options };
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-desktop-install-"));
   const bin = NodePath.join(root, "bin");
   const installDir = NodePath.join(root, "Applications");
-  const destination = NodePath.join(installDir, appName);
+  const linuxAsset = `T3-Code-${["arm64", "aarch64"].includes(String(options.arch)) ? "arm64" : "x86_64"}.AppImage`;
+  const destination = NodePath.join(
+    installDir,
+    options.platform === "Linux" ? linuxAsset : appName,
+  );
+  const source = await NodeFSP.readFile(installer, "utf8");
   await NodeFSP.mkdir(bin);
   await NodeFSP.mkdir(installDir);
+  await NodeFSP.writeFile(
+    NodePath.join(root, "appimage"),
+    options.badImage ? "not an AppImage" : appImage,
+  );
   await NodeFSP.mkdir(NodePath.join(root, "home", ".t3"), { recursive: true });
   await NodeFSP.writeFile(NodePath.join(root, "home", ".t3", "user-data"), "keep me");
   await NodeFSP.mkdir(NodePath.join(root, "image", appName, "Contents"), { recursive: true });
@@ -110,8 +139,10 @@ async function fixture(options: Record<string, unknown> = {}) {
     "plutil",
     "hdiutil",
     "lsappinfo",
+    "pgrep",
     "codesign",
     "ditto",
+    "cp",
     "mv",
   ]) {
     if (options.nativeImage && !["curl", "lsappinfo"].includes(command)) continue;
@@ -122,6 +153,14 @@ async function fixture(options: Record<string, unknown> = {}) {
     destination,
     installDir,
     async existingApp(id = bundleId) {
+      if (options.platform === "Linux") {
+        await NodeFSP.writeFile(destination, oldAppImage);
+        await NodeFSP.writeFile(
+          NodePath.join(installDir, ".t3-desktop-source"),
+          "uiliugang/t3code\n",
+        );
+        return;
+      }
       await NodeFSP.mkdir(NodePath.join(destination, "Contents"), { recursive: true });
       await NodeFSP.writeFile(
         NodePath.join(destination, "Contents", "Info.plist"),
@@ -130,7 +169,8 @@ async function fixture(options: Record<string, unknown> = {}) {
       await NodeFSP.writeFile(NodePath.join(destination, "old.txt"), "old app");
     },
     run(env: NodeJS.ProcessEnv = {}) {
-      return NodeChildProcess.spawnSync("sh", [installer], {
+      return NodeChildProcess.spawnSync("sh", options.pipe ? [] : [installer], {
+        input: options.pipe ? source : undefined,
         env: {
           ...process.env,
           HOME: NodePath.join(root, "home"),
@@ -227,7 +267,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("desktop instal
     [{ mountFailure: true }, "mount"],
     [{ running: true }, "Quit T3 Code"],
     [{ runningAfterCopy: true }, "Quit T3 Code"],
-    [{ platform: "Linux" }, "macOS"],
+    [{ platform: "FreeBSD" }, "operating system"],
     [{ arch: "x86_64", appleSilicon: false }, "Apple Silicon"],
     [{ tag: "v1.2.3/../../escape" }, "version"],
     [{ tag: "v1.2.3\n1.2.4" }, "version"],
@@ -256,21 +296,24 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("desktop instal
     expect(await NodeFSP.readdir(test.installDir)).toEqual([appName]);
   });
 
-  it("preserves the backup when restoring it fails", async () => {
-    await using test = await fixture({ replaceFailure: true, restoreFailure: true });
-    await test.existingApp();
-    const result = test.run();
-    expect(result.status).not.toBe(0);
-    expect(result.stdout + result.stderr).toContain("Previous app preserved at");
-    const [staging] = await NodeFSP.readdir(test.installDir);
-    expect(staging).toMatch(/^\.t3-desktop\./);
-    expect(
-      await NodeFSP.readFile(
-        NodePath.join(test.installDir, staging!, "previous.app", "old.txt"),
-        "utf8",
-      ),
-    ).toBe("old app");
-  });
+  it.each(["Darwin", "Linux"])(
+    "preserves the backup when restoring it fails on %s",
+    async (platform) => {
+      await using test = await fixture({ platform, replaceFailure: true, restoreFailure: true });
+      await test.existingApp();
+      const result = test.run();
+      expect(result.status).not.toBe(0);
+      expect(result.stdout + result.stderr).toContain("Previous app preserved at");
+      const staging = (await NodeFSP.readdir(test.installDir)).find((entry) =>
+        entry.startsWith(".t3-desktop."),
+      );
+      expect(staging).toMatch(/^\.t3-desktop\./);
+      const previous = NodePath.join(test.installDir, staging!, "previous");
+      if (platform === "Linux") expect(await NodeFSP.readFile(previous)).toEqual(oldAppImage);
+      else
+        expect(await NodeFSP.readFile(NodePath.join(previous, "old.txt"), "utf8")).toBe("old app");
+    },
+  );
 
   it("refuses another application or a symlink at the destination", async () => {
     await using test = await fixture();
@@ -291,14 +334,140 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("desktop instal
     expect(await NodeFSP.readdir(test.installDir)).toEqual([appName]);
   });
 
-  it("does not remove another installer's lock", async () => {
-    await using test = await fixture();
-    const lock = NodePath.join(test.installDir, ".t3-desktop-install.lock");
-    await NodeFSP.mkdir(lock);
-    const result = test.run();
-    expect(result.status).not.toBe(0);
-    expect(result.stdout + result.stderr).toContain("another installer");
-    expect(await NodeFSP.readdir(test.installDir)).toEqual([NodePath.basename(lock)]);
+  it.each(["Darwin", "Linux"])(
+    "does not remove another installer's lock on %s",
+    async (platform) => {
+      await using test = await fixture({ platform });
+      const lock = NodePath.join(test.installDir, ".t3-desktop-install.lock");
+      await NodeFSP.mkdir(lock);
+      const result = test.run();
+      expect(result.status).not.toBe(0);
+      expect(result.stdout + result.stderr).toContain("another installer");
+      expect(await NodeFSP.readdir(test.installDir)).toEqual([NodePath.basename(lock)]);
+    },
+  );
+
+  describe("Linux AppImage", () => {
+    it.each(["x86_64", "amd64", "arm64", "aarch64"])(
+      "selects the published package for %s",
+      async (arch) => {
+        await using test = await fixture({
+          platform: "Linux",
+          arch,
+          pipe: true,
+          otherUserRunning: true,
+        });
+        const result = test.run();
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+        expect(await NodeFSP.readFile(test.destination)).toEqual(appImage);
+        expect((await NodeFSP.stat(test.destination)).mode & 0o111).not.toBe(0);
+        const commands = await test.commands();
+        expect(commands.find(({ command }) => command === "pgrep")?.args).toEqual([
+          "-u",
+          String(process.getuid?.()),
+          "-x",
+          "t3code",
+        ]);
+        expect(
+          commands
+            .filter(({ command }) => command === "curl")
+            .at(-1)
+            ?.args.at(-1),
+        ).toBe(
+          `https://mirror.example/download/v${version}/${NodePath.basename(test.destination)}`,
+        );
+        expect(
+          commands.some(({ command }) => ["hdiutil", "plutil", "codesign"].includes(command)),
+        ).toBe(false);
+        expect(
+          await NodeFSP.readFile(NodePath.join(test.installDir, ".t3-desktop-source"), "utf8"),
+        ).toBe("uiliugang/t3code\n");
+      },
+    );
+
+    it("updates its own installation without touching T3 home", async () => {
+      await using test = await fixture({ platform: "Linux", arch: "x86_64" });
+      await test.existingApp();
+      const result = test.run({ T3CODE_VERSION: version });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(await NodeFSP.readFile(test.destination)).toEqual(appImage);
+      expect(await NodeFSP.readdir(test.installDir)).toEqual([
+        ".t3-desktop-source",
+        NodePath.basename(test.destination),
+      ]);
+      expect(
+        await NodeFSP.readFile(NodePath.join(test.root, "home", ".t3", "user-data"), "utf8"),
+      ).toBe("keep me");
+      expect((await test.commands()).filter(({ command }) => command === "curl")).toHaveLength(2);
+    });
+
+    it("defaults to the current user's Applications directory", async () => {
+      await using test = await fixture({ platform: "Linux", arch: "x86_64" });
+      const result = test.run({ T3CODE_DESKTOP_INSTALL_DIR: "" });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(
+        await NodeFSP.readFile(
+          NodePath.join(test.root, "home", "Applications", "T3-Code-x86_64.AppImage"),
+        ),
+      ).toEqual(appImage);
+    });
+
+    it("removes its source marker if the first installation fails", async () => {
+      await using test = await fixture({ platform: "Linux", arch: "x86_64", replaceFailure: true });
+      const result = test.run();
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("could not install the new app");
+      expect(await NodeFSP.readdir(test.installDir)).toEqual([]);
+    });
+
+    it.each([
+      [{ checksums: `${"0".repeat(64)}  T3-Code-x86_64.AppImage\n` }, "checksum mismatch"],
+      [{ badImage: true }, "AppImage"],
+      [{ downloadFailure: ".AppImage" }, "download"],
+      [{ copyFailure: true }, "copy"],
+      [{ backupFailure: true }, "back up"],
+      [{ replaceFailure: true }, "could not install"],
+      [{ running: true }, "Quit T3 Code"],
+      [{ runningAfterCopy: true }, "Quit T3 Code"],
+      [{ processCheckFailure: true }, "could not check"],
+      [{ arch: "riscv64" }, "architecture"],
+    ] as const)(
+      "keeps the previous image when installation fails: %j",
+      async (options, message) => {
+        await using test = await fixture({ platform: "Linux", arch: "x86_64", ...options });
+        await test.existingApp();
+        const result = test.run();
+        expect(result.status, result.stdout + result.stderr).not.toBe(0);
+        expect(result.stdout + result.stderr).toContain(message);
+        expect(await NodeFSP.readFile(test.destination)).toEqual(oldAppImage);
+        expect(await NodeFSP.readdir(test.installDir)).toEqual([
+          ".t3-desktop-source",
+          NodePath.basename(test.destination),
+        ]);
+      },
+    );
+
+    it("refuses unmanaged files and symbolic links", async () => {
+      await using test = await fixture({ platform: "Linux", arch: "x86_64" });
+      await NodeFSP.writeFile(test.destination, appImage);
+      const unmanaged = test.run();
+      expect(unmanaged.status).not.toBe(0);
+      expect(unmanaged.stderr).toContain("unmanaged AppImage");
+      expect(await NodeFSP.readFile(test.destination)).toEqual(appImage);
+      await NodeFSP.writeFile(
+        NodePath.join(test.installDir, ".t3-desktop-source"),
+        "example/other\n",
+      );
+      const foreign = test.run();
+      expect(foreign.status).not.toBe(0);
+      expect(foreign.stderr).toContain("source marker");
+      expect(await NodeFSP.readFile(test.destination)).toEqual(appImage);
+      await NodeFSP.rm(test.destination);
+      await NodeFSP.symlink(NodePath.join(test.root, "appimage"), test.destination);
+      const symlink = test.run();
+      expect(symlink.status).not.toBe(0);
+      expect(await NodeFSP.readlink(test.destination)).toBe(NodePath.join(test.root, "appimage"));
+    });
   });
 
   it.skipIf(HostProcess.Platform.defaultValue() !== "darwin").each([undefined, "99.0"])(

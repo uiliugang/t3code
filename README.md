@@ -47,13 +47,13 @@
 
 上游的 `npx t3@latest`、应用商店和包管理器入口分发的是上游版本，不包含本分支的增强。要安装本分支的 CLI，请使用[本仓库的安装脚本](docs/user/install.md#command-line)。
 
-macOS Apple Silicon 桌面应用也可以通过一条命令安装或更新。先退出 T3 Code，再运行：
+macOS Apple Silicon 和 Linux x86_64／arm64 桌面应用也可以通过同一条命令安装或更新。先退出 T3 Code，再运行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install-desktop.sh | sh
 ```
 
-脚本校验安装包后替换 `/Applications` 中的应用，不修改用户数据，也不启用应用内自动更新。指定版本或安装目录见[macOS 安装说明](docs/user/install.md#macos)。
+脚本自动识别系统和架构，校验后安装对应的 DMG 或 AppImage。macOS 默认安装到 `/Applications`，Linux 默认安装到 `~/Applications`，不修改用户数据，也不会启用 macOS 应用内自动更新。指定版本、安装目录及更新方式见[桌面安装说明](docs/user/install.md#install-or-update-with-curl)。
 
 #### macOS 提示无法验证应用
 
