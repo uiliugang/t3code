@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as ServerConfig from "../config.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -23,6 +24,7 @@ const decodeProvider = Schema.decodeUnknownEffect(ServerProvider);
 it.effect("includes default providers and respects per-account skill homes", () =>
   Effect.gen(function* () {
     const host = yield* SkillHost.SkillHost;
+    const { stateDir } = yield* ServerConfig.ServerConfig;
     const targets = yield* host.targets;
     expect(targets.find((entry) => entry.id === "codex")?.directory).toBe("/fixture/.codex/skills");
     expect(targets.find((entry) => entry.id === "claudeAgent")?.directory).toBe(
@@ -36,6 +38,9 @@ it.effect("includes default providers and respects per-account skill homes", () 
     );
     expect(targets.find((entry) => entry.id === "secret-home")?.directory).toBe(
       "/fixture/secret-home/skills",
+    );
+    expect(targets.find((entry) => entry.id === "byok")?.directory).toBe(
+      `${stateDir}/providers/codex/byok/byok/skills`,
     );
   }).pipe(
     Effect.provide(
@@ -70,6 +75,11 @@ it.effect("includes default providers and respects per-account skill homes", () 
                     },
                   ],
                 },
+                byok: {
+                  driver: ProviderDriverKind.make("codex"),
+                  config: { connectionMode: "byok", homePath: "/fixture/ignored-config" },
+                  environment: [{ name: "CODEX_HOME", value: "/fixture/ignored-environment" }],
+                },
               },
             }),
           }),
@@ -78,6 +88,7 @@ it.effect("includes default providers and respects per-account skill homes", () 
           Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
         ),
         Layer.provide(Sqlite.layerMemory),
+        Layer.provideMerge(ServerConfig.layerTest("/fixture", { prefix: "t3-skill-host-" })),
         Layer.provide(Layer.succeed(HostProcess.HomeDirectory, "/fixture")),
         Layer.provide(Layer.succeed(HostProcess.Environment, {})),
       ),
@@ -125,6 +136,7 @@ it.effect("refreshes provider skill discoveries after a shared location changes"
           ),
           Layer.provide(Layer.mock(SecretResolver.SecretResolver)({})),
           Layer.provide(Sqlite.layerMemory),
+          Layer.provide(ServerConfig.layerTest("/fixture", { prefix: "t3-skill-host-" })),
           Layer.provide(Layer.succeed(HostProcess.HomeDirectory, "/fixture")),
           Layer.provide(Layer.succeed(HostProcess.Environment, {})),
         ),
