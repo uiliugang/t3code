@@ -3290,6 +3290,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Choose a provider that supports read-only side chats, then try again.":
     "请切换到支持只读侧聊的提供方后重试。",
   "Continue in isolated worktree": "转为独立工作树任务",
+  "Fork in the current folder": "在当前目录分叉",
+  "Fork in the current worktree": "在当前工作树中分叉",
+  "Fork into a new worktree": "在新工作树中分叉",
+  "Includes uncommitted changes": "带上未提交的改动",
   "Could not start an isolated task": "无法创建独立任务",
   "Files may change while the main thread works.": "主对话运行期间，文件内容可能发生变化。",
   Sandbox: "沙箱",

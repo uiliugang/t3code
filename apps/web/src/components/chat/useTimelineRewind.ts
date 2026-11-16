@@ -3,6 +3,7 @@ import type { ComposerThreadTarget } from "../../composerDraftStore";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { SessionPhase } from "../../types";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -77,6 +78,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     composerDraftTarget,
     setThreadError,
   } = input;
+  const t = useUiTranslation();
   const navigate = useNavigate();
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
@@ -87,6 +89,9 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     reportFailure: false,
   });
   const forkThreadFromRun = useAtomCommand(threadEnvironment.forkFromRun, {
+    reportFailure: false,
+  });
+  const forkThreadToWorktree = useAtomCommand(threadEnvironment.forkToWorktree, {
     reportFailure: false,
   });
 
@@ -176,19 +181,37 @@ export function useTimelineRewind(input: TimelineRewindInput) {
   const onForkFromRun = async (input: {
     readonly sourceThreadId: ThreadId;
     readonly runId: RunId;
+    readonly destination?: "current" | "worktree";
   }) => {
     if (!activeThread || activeEnvironmentUnavailable) return;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
-    const result = await forkThreadFromRun({
-      environmentId,
-      input: {
-        sourceThreadId: input.sourceThreadId,
-        targetThreadId,
-        runId: input.runId,
-        title: `${activeThread.title} fork`,
-      },
-    });
+    const title = t("{title} fork", { title: activeThread.title });
+    const result =
+      input.destination === "worktree" && activeThread.projectId !== null
+        ? await forkThreadToWorktree({
+            environmentId,
+            input: {
+              sourceThreadId: input.sourceThreadId,
+              targetThreadId,
+              runId: input.runId,
+              projectId: activeThread.projectId,
+              modelSelection: activeThread.modelSelection,
+              runtimeMode: activeThread.runtimeMode,
+              interactionMode: activeThread.interactionMode,
+              baseRef: activeThread.branch ?? "HEAD",
+              title,
+            },
+          })
+        : await forkThreadFromRun({
+            environmentId,
+            input: {
+              sourceThreadId: input.sourceThreadId,
+              targetThreadId,
+              runId: input.runId,
+              title,
+            },
+          });
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);

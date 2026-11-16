@@ -92,9 +92,11 @@ import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import {
   executeAtomQuery,
+  isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
@@ -264,10 +266,13 @@ import {
 } from "@t3tools/client-runtime/workspace-basename-lookup";
 import {
   resolveThreadLink,
+  useEnvironmentServerConfig,
   useLiveThreadLinkLabels,
+  useProject,
   useQuietThreadShell,
   useThreadChipIcons,
 } from "../../state/entities";
+import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useEnvironmentQuery } from "../../state/query";
@@ -428,7 +433,23 @@ function AssistantForkButton(props: {
     sourceThreadId: props.projectedItem.sourceThreadId,
     sourceItemId: props.projectedItem.sourceItemId,
   });
-  const forkFromRun = useAtomCommand(threadEnvironment.forkFromRun, "fork from response");
+  const sourceShell = useQuietThreadShell(
+    scopeThreadRef(props.environmentId, props.projectedItem.sourceThreadId),
+  );
+  const project = useProject(
+    sourceShell?.projectId
+      ? { environmentId: props.environmentId, projectId: sourceShell.projectId }
+      : null,
+  );
+  const serverConfig = useEnvironmentServerConfig(props.environmentId);
+  const gitCwd = sourceShell?.worktreePath ?? project?.workspaceRoot ?? null;
+  const gitStatus = useEnvironmentQuery(
+    gitCwd
+      ? vcsEnvironment.status({ environmentId: props.environmentId, input: { cwd: gitCwd } })
+      : null,
+  );
+  const forkFromRun = useAtomCommand(threadEnvironment.forkFromRun, { reportFailure: false });
+  const forkToWorktree = useAtomCommand(threadEnvironment.forkToWorktree, { reportFailure: false });
   const selectDetail = useSelectWorkspaceDetail();
   const [busy, setBusy] = useState(false);
   const canFork = canForkProjectedAssistantItem({
@@ -439,44 +460,83 @@ function AssistantForkButton(props: {
 
   if (!canFork || runId === null) return null;
 
-  return (
+  const canForkToWorktree =
+    sourceShell !== null &&
+    sourceShell.projectId !== null &&
+    project !== null &&
+    !isScratchProject(project, serverConfig?.scratchWorkspaceRoot) &&
+    gitStatus.data?.isRepo !== false;
+  const inWorktree =
+    sourceShell?.worktreePath !== null || sourceShell?.workspace?.mode === "isolated";
+
+  const performFork = (destination: "current" | "worktree") => {
+    const targetThreadId = ThreadId.make(uuidv4());
+    setBusy(true);
+    void Haptics.selectionAsync();
+    const title = t("{title} fork", { title: props.sourceTitle });
+    const command =
+      destination === "worktree" && sourceShell?.projectId != null
+        ? forkToWorktree({
+            environmentId: props.environmentId,
+            input: {
+              sourceThreadId: props.projectedItem.sourceThreadId,
+              targetThreadId,
+              runId,
+              projectId: sourceShell.projectId,
+              modelSelection: sourceShell.modelSelection,
+              runtimeMode: sourceShell.runtimeMode,
+              interactionMode: sourceShell.interactionMode,
+              baseRef: sourceShell.branch ?? "HEAD",
+              title,
+              creationSource: "mobile",
+            },
+          })
+        : forkFromRun({
+            environmentId: props.environmentId,
+            input: {
+              sourceThreadId: props.projectedItem.sourceThreadId,
+              targetThreadId,
+              runId,
+              title,
+              creationSource: "mobile",
+            },
+          });
+    void command
+      .then(async (result) => {
+        if (result._tag !== "Success") {
+          if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            Dialog.alert(
+              t("Could not start task"),
+              error instanceof Error ? error.message : undefined,
+            );
+          }
+          return;
+        }
+        const targetThreadReady = await waitForThreadShell(
+          scopeThreadRef(props.environmentId, targetThreadId),
+        );
+        if (!targetThreadReady) {
+          Dialog.alert(
+            "Fork created",
+            "Its thread data did not reach this client. Reconnect and try opening it from the thread list.",
+          );
+          return;
+        }
+        selectDetail({
+          name: "Thread",
+          params: { environmentId: props.environmentId, threadId: targetThreadId },
+        });
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const button = (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t("Fork from this response")}
       disabled={busy}
-      onPress={() => {
-        const targetThreadId = ThreadId.make(uuidv4());
-        setBusy(true);
-        void Haptics.selectionAsync();
-        void forkFromRun({
-          environmentId: props.environmentId,
-          input: {
-            sourceThreadId: props.projectedItem.sourceThreadId,
-            targetThreadId,
-            runId,
-            title: t("{title} fork", { title: props.sourceTitle }),
-            creationSource: "mobile",
-          },
-        })
-          .then(async (result) => {
-            if (result._tag !== "Success") return;
-            const targetThreadReady = await waitForThreadShell(
-              scopeThreadRef(props.environmentId, targetThreadId),
-            );
-            if (!targetThreadReady) {
-              Dialog.alert(
-                "Fork created",
-                "Its thread data did not reach this client. Reconnect and try opening it from the thread list.",
-              );
-              return;
-            }
-            selectDetail({
-              name: "Thread",
-              params: { environmentId: props.environmentId, threadId: targetThreadId },
-            });
-          })
-          .finally(() => setBusy(false));
-      }}
+      onPress={canForkToWorktree ? undefined : () => performFork("current")}
       className="h-7 w-7 items-center justify-center disabled:opacity-40"
       style={
         Platform.OS === "android"
@@ -495,6 +555,36 @@ function AssistantForkButton(props: {
         />
       )}
     </Pressable>
+  );
+
+  if (busy || !canForkToWorktree) return button;
+
+  return (
+    <Menu
+      accessible
+      accessibilityLabel={t("Fork from this response")}
+      accessibilityRole="button"
+      actions={[
+        {
+          id: "current",
+          title: t(inWorktree ? "Fork in the current worktree" : "Fork in the current folder"),
+          image: "arrow.triangle.branch",
+        },
+        {
+          id: "worktree",
+          title: t("Fork into a new worktree"),
+          subtitle: t("Includes uncommitted changes"),
+          image: "folder.badge.plus",
+        },
+      ]}
+      onPressAction={({ nativeEvent }) => {
+        if (nativeEvent.event === "current" || nativeEvent.event === "worktree") {
+          performFork(nativeEvent.event);
+        }
+      }}
+    >
+      {button}
+    </Menu>
   );
 }
 

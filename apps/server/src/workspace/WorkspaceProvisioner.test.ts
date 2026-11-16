@@ -579,6 +579,46 @@ it.live(
           yield* fs.realPath(roots[0]!.sourcePath),
         );
         assert.isFalse(yield* fs.exists(path.join(preparedPath, "setup.txt")));
+        yield* fs.writeFileString(path.join(preparedPath, "staged.txt"), "staged work");
+        yield* git.execute({ operation: "test", cwd: preparedPath, args: ["add", "staged.txt"] });
+        yield* fs.writeFileString(path.join(preparedPath, "pr.txt"), "PR head + unstaged");
+        yield* fs.writeFileString(path.join(preparedPath, "untracked.txt"), "untracked work");
+        const { workspace: carried } = yield* provisioner.prepare({
+          ...existingInput,
+          threadId: ThreadId.make("carried-fork"),
+          strategy: {
+            type: "worktree",
+            baseRef: "feature/prepared-pr",
+            startFromOrigin: false,
+          },
+          carryChanges: true,
+          carrySourceWorkspace: existing,
+          carrySourceWorktreePath: preparedPath,
+        });
+        const carriedRoot = carried.resources[0]!.checkoutRoot;
+        assert.notEqual(carriedRoot, yield* fs.realPath(preparedPath));
+        assert.equal(carried.bindings[0]!.launchBaseCommit, preparedHead);
+        assert.equal(yield* fs.readFileString(path.join(carriedRoot, "staged.txt")), "staged work");
+        assert.equal(
+          yield* fs.readFileString(path.join(carriedRoot, "pr.txt")),
+          "PR head + unstaged",
+        );
+        assert.equal(
+          yield* fs.readFileString(path.join(carriedRoot, "untracked.txt")),
+          "untracked work",
+        );
+        const carriedStaged = (yield* git.execute({
+          operation: "test",
+          cwd: carriedRoot,
+          args: ["diff", "--cached", "--name-only"],
+        })).stdout.trim();
+        assert.equal(carriedStaged, "staged.txt");
+        const carriedUnstaged = (yield* git.execute({
+          operation: "test",
+          cwd: carriedRoot,
+          args: ["diff", "--name-only"],
+        })).stdout.trim();
+        assert.equal(carriedUnstaged, "pr.txt");
         for (const [suffix, config, strategy, message] of [
           ["multi", input.config, existingInput.strategy, "single existing worktree"],
           [

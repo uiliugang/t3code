@@ -84,6 +84,10 @@ import {
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import {
+  applyCarriedCheckoutChanges,
+  readCarriedCheckoutChanges,
+} from "../workspace/carryCheckoutChanges.ts";
 import * as WorkspaceAccess from "../workspace/WorkspaceAccess.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
@@ -131,6 +135,10 @@ interface SourceControlTextGenerationSettings {
   readonly style: SourceControlWritingStyleSettings;
 }
 
+export interface GitCreateWorktreeOptions extends GitVcsDriver.CreateWorktreeOptions {
+  readonly carryChangesFromCwd?: string;
+}
+
 export class GitManager extends Context.Service<
   GitManager,
   {
@@ -139,7 +147,7 @@ export class GitManager extends Context.Service<
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
-      options?: GitVcsDriver.CreateWorktreeOptions,
+      options?: GitCreateWorktreeOptions,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
     readonly status: (
       input: VcsStatusInput,
@@ -867,7 +875,11 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-      if (input.newRefName && settings.newWorktreesMainBranchOnly) {
+      if (
+        input.newRefName &&
+        settings.newWorktreesMainBranchOnly &&
+        options?.carryChangesFromCwd === undefined
+      ) {
         const base = input.baseRefName ?? input.refName;
         const resolved = yield* gitCore.execute({
           operation: "GitManager.createWorktree.validateBase",
@@ -898,6 +910,21 @@ export const make = Effect.gen(function* () {
           });
         }
       }
+      const carriedChanges =
+        options?.carryChangesFromCwd === undefined
+          ? null
+          : yield* gitCore
+              .resolveCommit({ cwd: options.carryChangesFromCwd, revision: input.refName })
+              .pipe(
+                Effect.flatMap(({ commitSha }) =>
+                  readCarriedCheckoutChanges({
+                    git: gitCore,
+                    fs: fileSystem,
+                    sourceCwd: options.carryChangesFromCwd!,
+                    commit: commitSha,
+                  }),
+                ),
+              );
       const submodules =
         options?.submodules !== undefined ? options.submodules : settings.worktreeSubmodules;
       const result = yield* gitCore.createWorktree(input, {
@@ -905,6 +932,34 @@ export const make = Effect.gen(function* () {
         ...options,
         submodules,
       });
+      if (carriedChanges !== null) {
+        yield* applyCarriedCheckoutChanges({
+          git: gitCore,
+          fs: fileSystem,
+          path,
+          targetCheckoutRoot: result.worktree.path,
+          changes: carriedChanges,
+        }).pipe(
+          Effect.onError(() =>
+            gitCore
+              .removeWorktree({ cwd: input.cwd, path: result.worktree.path, force: true })
+              .pipe(
+                Effect.andThen(
+                  input.newRefName
+                    ? gitCore
+                        .deleteLocalBranch({
+                          cwd: input.cwd,
+                          refName: result.worktree.refName,
+                          force: true,
+                        })
+                        .pipe(Effect.ignore)
+                    : Effect.void,
+                ),
+                Effect.ignore,
+              ),
+          ),
+        );
+      }
       if (input.newRefName && input.baseRefName) {
         yield* shareBranchBase(input.cwd, result.worktree.refName);
       }

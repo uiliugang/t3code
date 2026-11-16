@@ -47,6 +47,11 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import { sameDirectoryIdentity } from "./directoryIdentity.ts";
+import {
+  applyCarriedCheckoutChanges,
+  readCarriedCheckoutChanges,
+  type CarriedCheckoutChanges,
+} from "./carryCheckoutChanges.ts";
 
 const PreparedResource = Schema.Struct({
   source: WorkspaceExecutionResource,
@@ -56,6 +61,8 @@ const PreparedResource = Schema.Struct({
   baseRef: Schema.String,
   submodules: Schema.NullOr(WorktreeSubmodules),
   submodulesReady: Schema.Boolean,
+  carryCheckoutRoot: Schema.optional(Schema.String),
+  changesCarried: Schema.optional(Schema.Boolean),
   resource: Schema.optional(WorkspaceExecutionResource),
   setup: Schema.Literals(["pending", "running", "failed", "done"]),
   ready: Schema.Boolean,
@@ -98,6 +105,9 @@ export class WorkspaceProvisioner extends Context.Service<
       readonly scripts?: readonly ProjectScript[];
       readonly strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
       readonly generatedBranchName?: GitVcsDriver.CreateWorktreeOptions["generatedBranchName"];
+      readonly carryChanges?: boolean;
+      readonly carrySourceWorkspace?: ThreadWorkspaceRevision;
+      readonly carrySourceWorktreePath?: string | null;
     }) => Effect.Effect<
       {
         readonly workspace: ThreadWorkspaceRevision;
@@ -149,6 +159,7 @@ export const layer = Layer.effect(
               const settings = Option.isSome(settingsService)
                 ? yield* settingsService.value.getSettings
                 : null;
+              const carryChangesByPath = new Map<string, CarriedCheckoutChanges>();
               let state: typeof Preparation.Type;
               if (rows[0]) {
                 state = yield* Schema.decodeEffect(json)(rows[0].payload_json);
@@ -205,9 +216,30 @@ export const layer = Layer.effect(
                     ? null
                     : resolveProjectSettings(settings, input.projectId).settings;
                 const submodules = projectSettings?.worktreeSubmodules ?? null;
+                const carryChanges =
+                  input.strategy.type === "worktree" && input.carryChanges === true;
+                const carryCheckoutByRootId = new Map<string, string>();
                 const launchRoots = [];
                 const baseRefs = new Map<string, string>();
                 for (const root of config.roots) {
+                  const carryBinding = carryChanges
+                    ? input.carrySourceWorkspace?.bindings.find(
+                        (binding) => binding.rootId === root.id,
+                      )
+                    : undefined;
+                  const carryResource =
+                    carryBinding === undefined
+                      ? undefined
+                      : input.carrySourceWorkspace?.resources.find(
+                          (entry) => entry.id === carryBinding.resourceId,
+                        );
+                  const carryCwd = carryChanges
+                    ? (carryResource?.checkoutRoot ??
+                      carryBinding?.executionPath ??
+                      (root.id === config.primaryRootId && input.carrySourceWorktreePath != null
+                        ? input.carrySourceWorktreePath
+                        : root.sourcePath))
+                    : null;
                   const taskBranch =
                     root.defaultSelected && input.strategy.type === "root"
                       ? yield* git.prepareTaskBranch({
@@ -216,11 +248,29 @@ export const layer = Layer.effect(
                           startFromOrigin: projectSettings?.newWorktreesStartFromOrigin ?? true,
                         })
                       : null;
-                  let baseRef =
-                    root.id === config.primaryRootId && input.strategy.type === "worktree"
+                  let baseRef = carryChanges
+                    ? "HEAD"
+                    : root.id === config.primaryRootId && input.strategy.type === "worktree"
                       ? input.strategy.baseRef
                       : (taskBranch?.branch ?? root.defaultBaseRef ?? "HEAD");
+                  if (carryChanges && carryCwd !== null && root.defaultSelected) {
+                    const headSha = (yield* git.execute({
+                      operation: "WorkspaceProvisioner.resolveCarryHead",
+                      cwd: carryCwd,
+                      args: ["rev-parse", "--verify", "HEAD^{commit}"],
+                    })).stdout.trim();
+                    const carryToplevel = yield* fs.realPath(
+                      (yield* git.execute({
+                        operation: "WorkspaceProvisioner.resolveCarryToplevel",
+                        cwd: carryCwd,
+                        args: ["rev-parse", "--show-toplevel"],
+                      })).stdout.replace(/\r?\n$/, ""),
+                    );
+                    baseRef = headSha;
+                    carryCheckoutByRootId.set(root.id, carryToplevel);
+                  }
                   if (
+                    !carryChanges &&
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
                     projectSettings?.newWorktreesMainBranchOnly
@@ -251,6 +301,7 @@ export const layer = Layer.effect(
                   }
                   let recordedBaseRef = baseRef;
                   if (
+                    !carryChanges &&
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
                     (input.strategy.startFromOrigin ??
@@ -345,15 +396,28 @@ export const layer = Layer.effect(
                 const resources = [];
                 for (const [index, source] of resolved.resources.entries()) {
                   const binding = resolved.bindings.find((item) => item.resourceId === source.id)!;
+                  const targetPath = isolated
+                    ? path.join(
+                        worktreesDirectory,
+                        `workspace-${token}`,
+                        `${index + 1}-${source.name}`,
+                      )
+                    : source.checkoutRoot;
+                  const carryCheckoutRoot = carryChanges
+                    ? carryCheckoutByRootId.get(binding.rootId)
+                    : undefined;
+                  if (carryCheckoutRoot !== undefined) {
+                    const changes = yield* readCarriedCheckoutChanges({
+                      git,
+                      fs,
+                      sourceCwd: carryCheckoutRoot,
+                      commit: binding.launchBaseCommit!,
+                    });
+                    carryChangesByPath.set(targetPath, changes);
+                  }
                   resources.push({
                     source,
-                    path: isolated
-                      ? path.join(
-                          worktreesDirectory,
-                          `workspace-${token}`,
-                          `${index + 1}-${source.name}`,
-                        )
-                      : source.checkoutRoot,
+                    path: targetPath,
                     branch: isolated
                       ? `${input.strategy.branch ?? `t3-multi-${token}`}${resolved.resources.filter((entry) => entry.storeId === source.storeId).length > 1 ? `-${index + 1}` : ""}`
                       : null,
@@ -361,6 +425,7 @@ export const layer = Layer.effect(
                     baseRef: baseRefs.get(binding.rootId)!,
                     submodules,
                     submodulesReady: !isolated,
+                    ...(carryCheckoutRoot === undefined ? {} : { carryCheckoutRoot }),
                     ...(isolated ? {} : { resource: source }),
                     setup:
                       input.strategy.type === "existing_worktree"
@@ -447,6 +512,50 @@ export const layer = Layer.effect(
                       threadId: input.threadId,
                       detail: `Cannot recover the prepared checkout at ${item.path}; its identity or branch changed.`,
                     });
+                  if (item.carryCheckoutRoot !== undefined && item.changesCarried !== true) {
+                    const changes =
+                      carryChangesByPath.get(item.path) ??
+                      (yield* readCarriedCheckoutChanges({
+                        git,
+                        fs,
+                        sourceCwd: item.carryCheckoutRoot,
+                        commit: item.baseCommit,
+                      }));
+                    yield* applyCarriedCheckoutChanges({
+                      git,
+                      fs,
+                      path,
+                      targetCheckoutRoot: item.path,
+                      changes,
+                    }).pipe(
+                      Effect.onError(() =>
+                        withWorkspaceLease(
+                          item.source.identity.commonDir,
+                          git
+                            .removeWorktree({
+                              cwd: item.source.checkoutRoot,
+                              path: item.path,
+                              force: true,
+                            })
+                            .pipe(
+                              Effect.andThen(
+                                item.branch === null
+                                  ? Effect.void
+                                  : git
+                                      .deleteLocalBranch({
+                                        cwd: item.source.checkoutRoot,
+                                        refName: item.branch,
+                                        force: true,
+                                      })
+                                      .pipe(Effect.ignore),
+                              ),
+                              Effect.ignore,
+                            ),
+                        ),
+                      ),
+                    );
+                    item = yield* update(index, { changesCarried: true });
+                  }
                   const root = state.config.roots.find((entry) =>
                     state.bindings.some(
                       (binding) =>

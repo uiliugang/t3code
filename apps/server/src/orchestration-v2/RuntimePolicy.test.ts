@@ -273,7 +273,16 @@ it.effect(
         id: EventId.make("created"),
         threadId: ThreadId.make("other"),
         occurredAt: now,
-        payload: { ...thread, id: ThreadId.make("other"), workspace },
+        payload: {
+          ...thread,
+          id: ThreadId.make("other"),
+          lineage: {
+            parentThreadId: null,
+            relationshipToParent: null,
+            rootThreadId: ThreadId.make("other"),
+          },
+          workspace,
+        },
       });
       const sharedLayer = layerTest.pipe(
         Layer.provide(
@@ -331,6 +340,20 @@ it.effect(
         policy.resolve({ thread: { ...sideChat, workspace }, modelSelection }),
       ).pipe(Effect.provide(sharedLayer));
       assert.equal(boundReadOnly.approvalPolicy, "never");
+      const inPlaceFork = {
+        ...thread,
+        id: ThreadId.make("fork-child"),
+        workspace,
+        lineage: {
+          parentThreadId: ThreadId.make("other"),
+          relationshipToParent: "fork" as const,
+          rootThreadId: ThreadId.make("other"),
+        },
+      };
+      const resolvedFork = yield* RuntimePolicy.RuntimePolicyV2.use((policy) =>
+        policy.resolve({ thread: inPlaceFork, modelSelection }),
+      ).pipe(Effect.provide(sharedLayer));
+      assert.equal(resolvedFork.cwd, "/tasks/frontend");
     }).pipe(Effect.provide(NodeServices.layer)),
 );
 it.layer(

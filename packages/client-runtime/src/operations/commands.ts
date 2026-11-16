@@ -256,6 +256,14 @@ export interface ContinueSideChatInput extends ForkThreadFromRunInput {
   readonly baseRef: string;
 }
 
+export interface ForkThreadToWorktreeInput extends ForkThreadFromRunInput {
+  readonly projectId: ProjectId;
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+  readonly baseRef?: string;
+}
+
 export interface MergeThreadBackInput extends CommandMetadata {
   readonly sourceThreadId: ThreadId;
   readonly targetThreadId: ThreadId;
@@ -1131,6 +1139,27 @@ export const continueSideChat = Effect.fn("EnvironmentCommands.continueSideChat"
     workspaceStrategy: { type: "worktree", baseRef: input.baseRef, startFromOrigin: false },
   });
 });
+
+export const forkThreadToWorktree = Effect.fn("EnvironmentCommands.forkThreadToWorktree")(
+  function* (input: ForkThreadToWorktreeInput) {
+    return yield* request(ORCHESTRATION_V2_WS_METHODS.launchThread, {
+      commandId: yield* allocateCommandId(input),
+      creationSource: input.creationSource ?? "web",
+      threadId: input.targetThreadId,
+      projectId: input.projectId,
+      title: input.title ?? "Forked task",
+      forkFrom: { threadId: input.sourceThreadId, runId: input.runId, carryChanges: true },
+      modelSelection: input.modelSelection,
+      runtimeMode: input.runtimeMode,
+      interactionMode: input.interactionMode,
+      workspaceStrategy: {
+        type: "worktree",
+        baseRef: input.baseRef ?? "HEAD",
+        startFromOrigin: false,
+      },
+    });
+  },
+);
 
 export const mergeThreadBack = Effect.fn("EnvironmentCommands.mergeThreadBack")(function* (
   input: MergeThreadBackInput,

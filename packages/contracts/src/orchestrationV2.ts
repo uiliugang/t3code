@@ -3937,7 +3937,13 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   creationSource: Schema.optional(OrchestrationV2CreationSource),
   threadId: Schema.optional(ThreadId),
   reuseExistingThread: Schema.optional(Schema.Boolean),
-  forkFrom: Schema.optional(Schema.Struct({ threadId: ThreadId, runId: RunId })),
+  forkFrom: Schema.optional(
+    Schema.Struct({
+      threadId: ThreadId,
+      runId: RunId,
+      carryChanges: Schema.optional(Schema.Boolean),
+    }),
+  ),
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   generateTitle: Schema.optional(Schema.Boolean),

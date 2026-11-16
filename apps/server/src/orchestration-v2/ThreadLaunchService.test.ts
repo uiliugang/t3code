@@ -253,6 +253,7 @@ function makeHarness(options: HarnessOptions = {}) {
         options.fetchWorktreeBaseCommit ??
         (() => Effect.succeed({ commitSha: "remote-main-sha", remoteRefName: "origin/main" })),
       hasCommit: options.hasCommit ?? (() => Effect.succeed(false)),
+      resolveCommit: () => Effect.succeed({ commitSha: "parent-head-sha" }),
       resolveWorktreeBaseRemote: () => Effect.succeed({ remoteName: "origin", branchName: "main" }),
       resolvePrimaryRemoteName: () => Effect.succeed("origin"),
       resolveDefaultBranchName: () => Effect.succeed("main"),
@@ -576,6 +577,77 @@ it.effect.each(
         assert.equal(invalid._tag, "ThreadLaunchError");
       }).pipe(Effect.provide(harness.layer));
     }),
+);
+
+it.effect(
+  "forks a regular thread into a new isolated worktree carrying uncommitted changes",
+  () => {
+    const harness = makeHarness({
+      hasCommit: () => Effect.succeed(true),
+    });
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const sink = yield* EventSink.EventSinkV2;
+      const parent = yield* launches.launch(
+        launchInput({
+          command: "parent-worktree",
+          thread: "parent-worktree",
+          workspace: { type: "existing_worktree", worktreePath: "/repo-worktrees/parent" },
+        }),
+      );
+      const runId = RunId.make("parent-run-1");
+      const now = yield* DateTime.now;
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make("parent-run-1"),
+            threadId: parent.threadId,
+            type: "run.created",
+            occurredAt: now,
+            payload: {
+              id: runId,
+              threadId: parent.threadId,
+              ordinal: 1,
+              providerInstanceId: modelSelection.instanceId,
+              modelSelection,
+              providerThreadId: null,
+              userMessageId: MessageId.make("parent-msg-1"),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: "completed",
+              queuePosition: null,
+              requestedAt: now,
+              startedAt: now,
+              completedAt: now,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+        ],
+      });
+      const forked = yield* launches.launch({
+        ...launchInput({
+          command: "fork-to-worktree",
+          thread: "forked-worktree",
+          workspace: {
+            type: "worktree",
+            baseRef: "HEAD",
+            startFromOrigin: false,
+          },
+        }),
+        forkFrom: { threadId: parent.threadId, runId, carryChanges: true },
+      });
+      assert.equal(forked.projection.thread.worktreePath, "/repo-worktrees/feature");
+      assert.deepEqual(forked.projection.thread.forkedFrom, {
+        type: "run",
+        threadId: parent.threadId,
+        runId,
+      });
+      const createCall = harness.createWorktree.mock.calls.at(-1);
+      assert.equal(createCall?.[0].refName, "parent-head-sha");
+      assert.equal(createCall?.[1]?.carryChangesFromCwd, "/repo-worktrees/parent");
+    }).pipe(Effect.provide(harness.layer));
+  },
 );
 
 it.effect.each(

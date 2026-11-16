@@ -2331,3 +2331,38 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
     .element(screen.getByRole("button", { name: "Open the current tab", exact: true }))
     .toBeVisible();
 });
+
+it("offers current-worktree and new-worktree destinations when forking in a git repository", async () => {
+  setup();
+  const onForkFromRun = vi.fn(async () => {});
+  const assistantEntry: Entry = {
+    ...message(
+      "Completed response",
+      { role: "assistant", runId: RunId.make("run-1") },
+      "assistant-1",
+    ),
+    projectedItem: v2Item("assistant_message", {
+      id: "assistant-1",
+      text: "Completed response",
+    }),
+  } as Entry;
+  await using screen = await renderTimeline([assistantEntry], {
+    onForkFromRun,
+    forkDestinationMenu: { inWorktree: true },
+  });
+  await userEvent.hover(screen.getByText("Completed response"));
+  await userEvent.click(screen.getByRole("button", { name: "Fork from this response" }));
+  await expect
+    .element(page.getByRole("menuitem", { name: "Fork in the current worktree" }))
+    .toBeVisible();
+  const forkToWorktree = page.getByRole("menuitem", {
+    name: /Fork into a new worktree.*Includes uncommitted changes/,
+  });
+  await expect.element(forkToWorktree).toBeVisible();
+  await userEvent.click(forkToWorktree);
+  expect(onForkFromRun).toHaveBeenCalledWith({
+    sourceThreadId: "thread-1",
+    runId: "run-1",
+    destination: "worktree",
+  });
+});

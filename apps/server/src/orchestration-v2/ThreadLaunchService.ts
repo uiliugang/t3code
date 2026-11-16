@@ -89,7 +89,11 @@ export interface ThreadLaunchInput {
   readonly commandId: CommandId;
   readonly threadId?: ThreadId;
   readonly reuseExistingThread?: boolean;
-  readonly forkFrom?: { readonly threadId: ThreadId; readonly runId: RunId };
+  readonly forkFrom?: {
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+    readonly carryChanges?: boolean | undefined;
+  };
   readonly projectId: ProjectId;
   readonly title: string;
   readonly generateTitle?: boolean;
@@ -116,7 +120,7 @@ export interface ThreadLaunchInput {
 
 type PreparationInput = Pick<
   ThreadLaunchInput,
-  "commandId" | "projectId" | "workspaceStrategy" | "initialMessage"
+  "commandId" | "projectId" | "workspaceStrategy" | "initialMessage" | "forkFrom"
 > & {
   readonly reusedWorktree?: { readonly baseRef: string };
 };
@@ -537,6 +541,15 @@ const make = Effect.gen(function* () {
     const workspaceThread = yield* threads
       .getThreadShell(threadId)
       .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+    const carryChanges =
+      input.workspaceStrategy.type === "worktree" &&
+      input.forkFrom?.carryChanges === true &&
+      workspaceThread?.lineage.parentThreadId != null;
+    const carrySourceThread = carryChanges
+      ? yield* threads
+          .getThreadShell(workspaceThread.lineage.parentThreadId!)
+          .pipe(Effect.mapError(mapError(input, "update-thread", threadId)))
+      : null;
     const settings = resolveProjectSettings(
       yield* serverSettings.getSettings.pipe(Effect.orElseSucceed(() => DEFAULT_SERVER_SETTINGS)),
       input.projectId,
@@ -704,6 +717,13 @@ const make = Effect.gen(function* () {
             config: workspaceThread.workspaceConfiguration,
             scripts: project.scripts,
             strategy: input.workspaceStrategy,
+            ...(carryChanges ? { carryChanges: true } : {}),
+            ...(carrySourceThread?.workspace === undefined
+              ? {}
+              : { carrySourceWorkspace: carrySourceThread.workspace }),
+            ...(carrySourceThread === null
+              ? {}
+              : { carrySourceWorktreePath: carrySourceThread.worktreePath }),
           })
           .pipe(
             Effect.mapError(mapError(input, "provision-worktree", threadId)),
@@ -904,10 +924,23 @@ const make = Effect.gen(function* () {
             })
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
         }
+        const carrySourceCwd = carryChanges
+          ? (carrySourceThread?.worktreePath ??
+            carrySourceThread?.projectWorkspaceRoot ??
+            project.workspaceRoot)
+          : null;
         const requestedBaseRef = input.workspaceStrategy.baseRef;
         let startRef = requestedBaseRef;
         let baseRefName = requestedBaseRef;
+        if (carrySourceCwd !== null) {
+          const headCommit = yield* git
+            .resolveCommit({ cwd: carrySourceCwd, revision: "HEAD" })
+            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+          startRef = headCommit.commitSha;
+          baseRefName = headCommit.commitSha;
+        }
         const remote =
+          carrySourceCwd === null &&
           (input.workspaceStrategy.startFromOrigin ?? settings.newWorktreesStartFromOrigin)
             ? yield* git
                 .resolveWorktreeBaseRemote({
@@ -1008,6 +1041,7 @@ const make = Effect.gen(function* () {
               path: null,
             },
             {
+              ...(carrySourceCwd === null ? {} : { carryChangesFromCwd: carrySourceCwd }),
               progress: {
                 onWorktreeClaimed: (path) =>
                   Effect.sync(() => {
@@ -1417,14 +1451,13 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(mapError(request, "create-thread")));
         if (
           source.thread.projectId !== request.projectId ||
-          source.thread.lineage.sideChat !== true ||
           request.workspaceStrategy.type !== "worktree" ||
           request.reuseExistingThread === true
         ) {
           return yield* mapError(
             request,
             "create-thread",
-          )("A side chat must continue in a new isolated worktree in the same project.");
+          )("A forked worktree task must start in a new isolated worktree in the same project.");
         }
       }
       // Scratch has no Git repository. Normalize before folder allocation so
