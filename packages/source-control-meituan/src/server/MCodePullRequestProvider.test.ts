@@ -14,6 +14,62 @@ const layerFor = (run: SourceControlHost.SourceControlHost["Service"]["process"]
   MCodeCli.layer.pipe(Layer.provide(TestHost.layer({ process: { run } })));
 
 describe("Meituan pull requests", () => {
+  it.effect("adds multiple MIS reviewers without replacing existing reviewers or searching", () =>
+    Effect.gen(function* () {
+      const writes: ReadonlyArray<string>[] = [];
+      const provider = yield* Provider.make.pipe(
+        Effect.provide(
+          layerFor((input) => {
+            writes.push(input.args);
+            return Effect.succeed(TestHost.processOutput(""));
+          }),
+        ),
+      );
+      expect(provider.capabilities.reviewers).toMatchObject({
+        request: true,
+        listCandidates: false,
+        remove: false,
+      });
+      yield* provider.setReviewerRequest({
+        ...repositoryRef,
+        reviewers: [
+          { id: "liugang59", kind: "user" },
+          { id: "zhangsan", kind: "user" },
+        ],
+        requested: true,
+      });
+      expect(writes).toEqual([
+        [
+          "pr",
+          "-R",
+          "team/service",
+          "add-reviewer",
+          "22",
+          "--reviewer",
+          "liugang59",
+          "--reviewer",
+          "zhangsan",
+        ],
+      ]);
+    }),
+  );
+
+  it.effect.each([
+    { reviewers: [{ id: "reviewer", kind: "user" as const }], requested: false },
+    { reviewers: [{ id: "team", kind: "team" as const }], requested: true },
+    { reviewers: [{ id: "--json", kind: "user" as const }], requested: true },
+  ])("rejects unsupported reviewer changes before running the CLI: %j", (change) =>
+    Effect.gen(function* () {
+      const provider = yield* Provider.make.pipe(
+        Effect.provide(layerFor(() => Effect.die("Unexpected command"))),
+      );
+      const result = yield* provider
+        .setReviewerRequest({ ...repositoryRef, ...change })
+        .pipe(Effect.result);
+      expect(Result.isFailure(result)).toBe(true);
+    }),
+  );
+
   it("does not treat cached offline authentication as verified", () => {
     expect(
       MCodeCli.parseMCodeAuth(
@@ -203,6 +259,7 @@ describe("Meituan pull requests", () => {
       expect(result.additions).toBe(0);
       expect(result.deletions).toBe(0);
       expect(result.viewerPermissions?.verdicts).toContain("approve");
+      expect(result.viewerPermissions.requestReviewers).toBe(true);
     }),
   );
 

@@ -64,6 +64,7 @@ import {
 } from "./pullRequestPresentation";
 import { PullRequestLabelPicker } from "./PullRequestLabelPicker";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
+import { PullRequestReviewerInput } from "./PullRequestReviewerInput";
 import { Toggle } from "../ui/toggle";
 import { PullRequestSendReviewLink } from "./PullRequestSendReviewLink";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
@@ -960,7 +961,6 @@ export function PullRequestSummaryTab({
                   })}
                 </span>
               )}
-              {/* Azure DevOps accepts reviewers but cannot list candidates. */}
               {showReviewerLogins ? (
                 <PullRequestSendReviewLink
                   key={detail.url}
@@ -979,14 +979,24 @@ export function PullRequestSummaryTab({
                   }
                 />
               ) : null}
-              {detail.capabilities.reviewers.request &&
-              detail.capabilities.reviewers.listCandidates ? (
-                <PullRequestReviewerPicker
-                  searchable={detail.capabilities.reviewers.searchCandidates === true}
-                  environmentId={environmentId}
-                  reference={reference}
-                  allowed={detail.viewerPermissions.requestReviewers}
-                />
+              {detail.capabilities.reviewers.request ? (
+                detail.capabilities.reviewers.listCandidates ? (
+                  <PullRequestReviewerPicker
+                    searchable={detail.capabilities.reviewers.searchCandidates === true}
+                    environmentId={environmentId}
+                    reference={reference}
+                    allowed={detail.viewerPermissions.requestReviewers}
+                  />
+                ) : (
+                  <PullRequestReviewerInput
+                    key={`reviewer-input:${detail.url}`}
+                    provider={detail.provider}
+                    environmentId={environmentId}
+                    reference={reference}
+                    allowed={detail.state === "open" && detail.viewerPermissions.requestReviewers}
+                    removable={detail.capabilities.reviewers.remove !== false}
+                  />
+                )
               ) : null}
             </span>
           </MetaRow>

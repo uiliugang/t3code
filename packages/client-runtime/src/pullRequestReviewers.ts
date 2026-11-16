@@ -3,6 +3,18 @@ import type {
   PullRequestReviewerCandidateList,
 } from "@t3tools/contracts";
 
+export function parseReviewerIds(input: string): ReadonlyArray<string> {
+  const ids = input
+    .split(/[,\uFF0C]/u)
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const unique = new Map<string, string>();
+  for (const id of ids) {
+    if (!unique.has(id.toLowerCase())) unique.set(id.toLowerCase(), id);
+  }
+  return [...unique.values()];
+}
+
 // Loaded rows retain the request state updated by mutations.
 export function mergeReviewerCandidates(
   loaded: ReadonlyArray<PullRequestReviewerCandidate>,

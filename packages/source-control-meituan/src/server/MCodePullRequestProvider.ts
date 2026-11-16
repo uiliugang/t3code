@@ -28,8 +28,7 @@ const CAPABILITIES: PullRequestCapabilities = {
     resolve: true,
     verdicts: ["comment", "approve", "request-changes"],
   },
-  // code-cli can add reviewers but cannot remove them, so the toggle is not offered.
-  reviewers: { request: false, listCandidates: true },
+  reviewers: { request: true, listCandidates: false, remove: false },
 };
 
 export const make = Effect.gen(function* () {
@@ -102,7 +101,7 @@ export const make = Effect.gen(function* () {
     actions: CAPABILITIES.actions,
     comment: true,
     resolve: true,
-    requestReviewers: false,
+    requestReviewers: pr.state === "OPEN" || pr.state === "DRAFT",
     verdicts:
       pr.author.mis.toLowerCase() === viewer.toLowerCase()
         ? ["comment"]
@@ -369,7 +368,20 @@ export const make = Effect.gen(function* () {
         };
       },
     ),
-    setReviewerRequest: () => unsupported("setReviewerRequest"),
+    setReviewerRequest: Effect.fn("MCodePullRequestProvider.setReviewerRequest")(function* (input) {
+      if (
+        !input.requested ||
+        input.reviewers.some(
+          (reviewer) => reviewer.kind !== "user" || !/^[a-zA-Z][a-zA-Z0-9._-]*$/u.test(reviewer.id),
+        )
+      )
+        return yield* unsupported("setReviewerRequest");
+      yield* run(input, "setReviewerRequest", [
+        "add-reviewer",
+        String(input.number),
+        ...input.reviewers.flatMap((reviewer) => ["--reviewer", reviewer.id]),
+      ]);
+    }),
     replyToThread: () => unsupported("replyToThread"),
     setReaction: () => unsupported("setReaction"),
     setThreadResolution: (input) =>

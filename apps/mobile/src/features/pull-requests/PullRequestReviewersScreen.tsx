@@ -10,6 +10,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   hostReviewerQuery,
+  parseReviewerIds,
   reviewerCandidateView,
   type ReviewerTruncation,
 } from "@t3tools/client-runtime/pull-request-reviewers";
@@ -106,6 +107,8 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
     candidate: Pick<PullRequestReviewerCandidate, "id" | "kind" | "isRequested">,
   ) => {
     if (!allowed || inFlight.current) return;
+    const ids = parseReviewerIds(query);
+    if (!pr?.capabilities.reviewers.listCandidates && (ids.length === 0 || ids.length > 25)) return;
     inFlight.current = true;
     setPending(`${candidate.kind}:${candidate.id}`);
     setError(null);
@@ -113,7 +116,9 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
       ...target,
       input: {
         ...target.input,
-        reviewers: [{ id: candidate.id, kind: candidate.kind }],
+        reviewers: pr?.capabilities.reviewers.listCandidates
+          ? [{ id: candidate.id, kind: candidate.kind }]
+          : ids.map((id) => ({ id, kind: "user" })),
         requested: !candidate.isRequested,
       },
     });
@@ -133,6 +138,8 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
     }
   };
   const listCandidates = pr?.capabilities.reviewers.listCandidates === true;
+  const reviewerIds = parseReviewerIds(query);
+  const tooMany = reviewerIds.length > 25;
   const reviewerSearch: AppBarSearch | undefined = listCandidates
     ? {
         mode: "inline",
@@ -274,34 +281,41 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           ) : (
             <>
               <Text className="text-sm text-foreground-muted">
-                {t("This provider accepts a reviewer ID but cannot list candidates.")}
+                {t(pr.provider === "meituan" ? "Reviewer MIS" : "Reviewer IDs")}
               </Text>
               <TextInput
-                accessibilityLabel={t("Reviewer ID")}
-                placeholder={t("Reviewer login or ID")}
+                accessibilityLabel={t(pr.provider === "meituan" ? "Reviewer MIS" : "Reviewer IDs")}
+                placeholder={t(
+                  pr.provider === "meituan"
+                    ? "mis1, mis2"
+                    : "Reviewer login or ID, separated by commas",
+                )}
                 placeholderTextColorClassName="accent-foreground-muted"
                 value={query}
                 onChangeText={search}
                 autoCapitalize="none"
                 autoCorrect={false}
+                editable={pending === null}
                 className="min-h-12 rounded-xl bg-grouped-card px-3 text-base"
               />
               <Button
                 label={t("Request review")}
                 fullWidth
-                disabled={!allowed || !query.trim() || pending !== null}
+                disabled={!allowed || reviewerIds.length === 0 || tooMany || pending !== null}
                 onPress={() => void update({ id: query.trim(), kind: "user", isRequested: false })}
               />
-              <Button
-                label={t("Remove review request")}
-                fullWidth
-                tone="text"
-                disabled={!allowed || !query.trim() || pending !== null}
-                onPress={() => void update({ id: query.trim(), kind: "user", isRequested: true })}
-              />
-              {error ? (
+              {pr.capabilities.reviewers.remove !== false ? (
+                <Button
+                  label={t("Remove review request")}
+                  fullWidth
+                  tone="text"
+                  disabled={!allowed || reviewerIds.length === 0 || tooMany || pending !== null}
+                  onPress={() => void update({ id: query.trim(), kind: "user", isRequested: true })}
+                />
+              ) : null}
+              {tooMany || error ? (
                 <Text selectable className="text-danger-foreground">
-                  {error}
+                  {tooMany ? t("Add up to 25 reviewers at a time.") : error}
                 </Text>
               ) : null}
             </>

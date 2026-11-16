@@ -1,8 +1,9 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { EnvironmentId, ProjectId, type PullRequestDetailView } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import * as Cause from "effect/Cause";
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 const state = vi.hoisted(() => ({ update: vi.fn(), canUpdate: true }));
 
@@ -26,6 +27,10 @@ vi.mock(import("~/state/pullRequests"), async (original) => {
       ...actual.pullRequestEnvironment,
       update: {
         ...actual.pullRequestEnvironment.update,
+        permissionAtom: () => (state.canUpdate ? allowed : denied),
+      },
+      requestReviewers: {
+        ...actual.pullRequestEnvironment.requestReviewers,
         permissionAtom: () => (state.canUpdate ? allowed : denied),
       },
     },
@@ -151,6 +156,46 @@ it("keeps an unsaved description when collapsed and reopened, and after a failed
   expect(state.update).toHaveBeenCalledTimes(1);
   await expect.element(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   expect(screen.container.querySelector("textarea")!.value).toBe("Unsaved description");
+});
+
+it("submits manual MIS reviewers on Enter and keeps input after a failed request", async () => {
+  using _settings = setup();
+  state.update.mockResolvedValueOnce({ _tag: "Failure", cause: Cause.fail(new Error("offline")) });
+  await using screen = await render({
+    ...detail,
+    provider: SourceControlProviderKind.make("meituan"),
+    capabilities: {
+      ...detail.capabilities,
+      reviewers: { request: true, listCandidates: false, remove: false },
+    },
+    viewerPermissions: { ...detail.viewerPermissions, requestReviewers: true },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Request a review" }));
+  const input = page.getByRole("textbox", { name: "Reviewer MIS" });
+  await expect.element(page.getByRole("button", { name: "Add reviewers" })).toBeDisabled();
+  await userEvent.type(input, "liugang59, zhangsan{Enter}");
+  await expect.element(page.getByRole("alert")).toBeVisible();
+  await expect.element(input).toHaveValue("liugang59, zhangsan");
+  expect(state.update).toHaveBeenCalledWith({
+    environmentId: EnvironmentId.make("environment"),
+    input: expect.objectContaining({
+      provider: SourceControlProviderKind.make("meituan"),
+      reviewers: [
+        { id: "liugang59", kind: "user" },
+        { id: "zhangsan", kind: "user" },
+      ],
+      requested: true,
+    }),
+  });
+  await expect
+    .element(page.getByRole("button", { name: "Remove review request" }))
+    .not.toBeInTheDocument();
+  await userEvent.click(page.getByRole("button", { name: "Add reviewers" }));
+  await expect
+    .element(screen.getByRole("button", { name: "Request a review" }))
+    .toHaveAttribute("aria-expanded", "false");
+  await userEvent.click(screen.getByRole("button", { name: "Request a review" }));
+  await expect.element(page.getByRole("textbox", { name: "Reviewer MIS" })).toHaveValue("");
 });
 
 it("ticks a description checkbox placed after an attachment and edits from the ticked body", async () => {
