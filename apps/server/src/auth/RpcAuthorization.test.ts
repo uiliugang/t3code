@@ -5,11 +5,14 @@ import {
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
+  CommandId,
   DEFAULT_SERVER_SETTINGS,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   SecretProviderId,
   ThreadId,
+  WorkspaceRootId,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSourceControlWriteScope,
@@ -321,6 +324,95 @@ describe("settings mutation authorization", () => {
           }).pipe(Effect.flip),
         ).toMatchObject({ requiredPermission: AuthAccessWriteScope });
         expect(handled).toBe(false);
+      }),
+  );
+});
+
+describe("project mutation authorization", () => {
+  const group = WsRpcGroup.omit(
+    ...[...WsRpcGroup.requests.keys()].filter(
+      (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof WS_METHODS.projectsMutate> =>
+        tag !== WS_METHODS.projectsMutate,
+    ),
+  );
+
+  it.effect(
+    "rejects nested workspaceConfig setupScript on create and update without settings:write",
+    () =>
+      Effect.gen(function* () {
+        let handled = 0;
+        const root = {
+          id: WorkspaceRootId.make("frontend"),
+          alias: "frontend",
+          sourcePath: "/work/frontend",
+          description: "",
+          defaultSelected: true,
+          accessIntent: "write" as const,
+        };
+        const setupScript = {
+          id: "setup",
+          name: "Setup",
+          command: "echo harmless",
+          icon: "configure" as const,
+          runOnWorktreeCreate: true,
+        };
+        const handler = group.toLayerHandler(WS_METHODS.projectsMutate, (mutation) =>
+          Effect.sync(() => {
+            handled++;
+            return {
+              id: mutation.projectId,
+              title: "Group",
+              workspaceRoot: "/work/frontend",
+              repositoryIdentity: null,
+              faviconPath: null,
+              defaultModelSelection: null,
+              defaultThreadEnvMode: null,
+              autoPull: false,
+              projectIcon: null,
+              scripts: [],
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              deletedAt: null,
+            };
+          }),
+        );
+        const operateOnly = yield* RpcTest.makeClient(group).pipe(
+          Effect.provide(
+            Layer.merge(handler, RpcAuthorization.layer([AuthOrchestrationOperateScope])),
+          ),
+        );
+
+        yield* operateOnly[WS_METHODS.projectsMutate]({
+          type: "project.create",
+          commandId: CommandId.make("cmd-plain"),
+          projectId: ProjectId.make("proj-1"),
+          title: "Group",
+          workspaceRoot: "/work/frontend",
+          workspaceConfig: { primaryRootId: root.id, roots: [root] },
+        });
+        expect(handled).toBe(1);
+
+        expect(
+          yield* operateOnly[WS_METHODS.projectsMutate]({
+            type: "project.create",
+            commandId: CommandId.make("cmd-create-script"),
+            projectId: ProjectId.make("proj-2"),
+            title: "Group",
+            workspaceRoot: "/work/frontend",
+            workspaceConfig: { primaryRootId: root.id, roots: [{ ...root, setupScript }] },
+          }).pipe(Effect.flip),
+        ).toMatchObject({ requiredPermission: AuthSettingsWriteScope });
+
+        expect(
+          yield* operateOnly[WS_METHODS.projectsMutate]({
+            type: "project.update",
+            commandId: CommandId.make("cmd-update-script"),
+            projectId: ProjectId.make("proj-1"),
+            expectedWorkspaceVersion: 1,
+            workspaceConfig: { primaryRootId: root.id, roots: [{ ...root, setupScript }] },
+          }).pipe(Effect.flip),
+        ).toMatchObject({ requiredPermission: AuthSettingsWriteScope });
+        expect(handled).toBe(1);
       }),
   );
 });

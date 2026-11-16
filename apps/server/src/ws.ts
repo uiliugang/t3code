@@ -108,6 +108,7 @@ import {
   ChatAttachmentId,
   PersistChatAttachmentsError,
   RpcClientId,
+  AuthSettingsWriteScope,
   EnvironmentAuthorizationError,
   ThreadId,
   type TerminalMetadataStreamEvent,
@@ -3104,16 +3105,26 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.projectsMutate]: (mutation) =>
-          startup.enqueueCommand(mutateProject(mutation)).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ProjectMutationError({
-                  commandId: mutation.commandId,
-                  message: projectMutationFailureMessage(cause),
-                  cause,
-                }),
+          startup
+            .enqueueCommand(
+              mutateProject(mutation).pipe(
+                Effect.provideService(
+                  ProjectService.ProjectMutationCallerScopes,
+                  new Set(currentSession.scopes),
+                ),
+              ),
+            )
+            .pipe(
+              Effect.mapError((cause) =>
+                cause._tag === "ProjectSetupScriptAuthorizationError"
+                  ? rpcAuthorizationError(AuthSettingsWriteScope)
+                  : new ProjectMutationError({
+                      commandId: mutation.commandId,
+                      message: projectMutationFailureMessage(cause),
+                      cause,
+                    }),
+              ),
             ),
-          ),
         [WS_METHODS.shellOpenInEditor]: (input) => externalLauncher.launchEditor(input),
         [WS_METHODS.filesystemGetMetadata]: (input) => workspaceFileSystem.getMetadata(input),
         [WS_METHODS.filesystemBrowse]: (input) =>

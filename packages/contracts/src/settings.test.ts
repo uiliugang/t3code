@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { type CommandId, ProjectId } from "./baseSchemas.ts";
+import { type CommandId, ProjectId, WorkspaceRootId } from "./baseSchemas.ts";
+import { ProjectMutation } from "./project.ts";
 import {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
@@ -631,11 +632,42 @@ describe("resolveProjectProviderInstanceEnabled", () => {
 });
 
 describe("requiredScopesForProjectMutation", () => {
-  it("adds the settings scope only when a mutation carries scripts", () => {
+  it("adds the settings scope for top-level scripts and nested workspace root setup scripts", () => {
     const projectId = "project-1" as ProjectId;
     const commandId = "command-1" as CommandId;
+    const decodeMutation = Schema.decodeUnknownSync(ProjectMutation);
+    const script = {
+      id: "setup",
+      name: "Setup",
+      command: "echo harmless",
+      icon: "configure" as const,
+      runOnWorktreeCreate: true,
+    };
+    const rootWithoutScript = {
+      id: WorkspaceRootId.make("frontend"),
+      alias: "frontend",
+      sourcePath: "/work/frontend",
+      description: "",
+      defaultSelected: true,
+      accessIntent: "write" as const,
+    };
     expect(
       requiredScopesForProjectMutation({ type: "project.update", commandId, projectId }),
+    ).toEqual(["orchestration:operate"]);
+    expect(
+      requiredScopesForProjectMutation(
+        decodeMutation({
+          type: "project.create",
+          commandId,
+          projectId,
+          title: "Group",
+          workspaceRoot: "/work/frontend",
+          workspaceConfig: {
+            primaryRootId: "frontend",
+            roots: [rootWithoutScript],
+          },
+        }),
+      ),
     ).toEqual(["orchestration:operate"]);
     expect(
       requiredScopesForProjectMutation({
@@ -644,6 +676,35 @@ describe("requiredScopesForProjectMutation", () => {
         projectId,
         scripts: [],
       }),
+    ).toEqual(["orchestration:operate", "settings:write"]);
+    expect(
+      requiredScopesForProjectMutation(
+        decodeMutation({
+          type: "project.create",
+          commandId,
+          projectId,
+          title: "Group",
+          workspaceRoot: "/work/frontend",
+          workspaceConfig: {
+            primaryRootId: "frontend",
+            roots: [{ ...rootWithoutScript, setupScript: script }],
+          },
+        }),
+      ),
+    ).toEqual(["orchestration:operate", "settings:write"]);
+    expect(
+      requiredScopesForProjectMutation(
+        decodeMutation({
+          type: "project.update",
+          commandId,
+          projectId,
+          expectedWorkspaceVersion: 1,
+          workspaceConfig: {
+            primaryRootId: "frontend",
+            roots: [{ ...rootWithoutScript, setupScript: script }],
+          },
+        }),
+      ),
     ).toEqual(["orchestration:operate", "settings:write"]);
   });
 });
