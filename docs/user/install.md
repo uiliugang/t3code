@@ -86,7 +86,58 @@ For upstream builds, including Windows and Intel Macs, use
 | Arch Linux nightly | `yay -S t3code-nightly-bin`                                  |
 | Nix                | `nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code` |
 
+### Install or update with curl
+
+On an Apple Silicon Mac or x86_64/ARM64 Linux, quit T3 Code and run this command
+to install or update the fork's desktop app:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install-desktop.sh | sh
+```
+
+The script detects the OS and CPU architecture, downloads the latest stable
+release, and verifies it against the release's `SHA256SUMS` before replacing the
+app. It installs a DMG on macOS or an AppImage on Linux, without changing your T3
+home, threads, provider accounts, or projects. It does not launch the app
+afterwards. Repeat the command to update.
+
+To install a specific release without looking up the latest version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install-desktop.sh | T3CODE_VERSION=0.0.17 sh
+```
+
+The default installation directory is `/Applications` on macOS and
+`~/Applications` on Linux. Set `T3CODE_DESKTOP_INSTALL_DIR` on the `sh` command to
+use another absolute path. For example, a Mac without write access to
+`/Applications` can use `T3CODE_DESKTOP_INSTALL_DIR="$HOME/Applications"`.
+To download from a trusted mirror, set `T3CODE_RELEASE_BASE_URL` to its
+`releases/download` root. A mirror-only installation also needs `T3CODE_VERSION`
+to avoid the GitHub version lookup.
+
+The script installs the desktop app only; use the separate
+[CLI installer](#command-line) for a standalone server.
+
+### macOS
+
+The curl installer checks the app's minimum macOS version and bundle signature
+before replacing an existing installation. It does not enable in-app automatic
+updates. These builds use ad hoc signing, not Apple notarization. The installer does not
+remove quarantine attributes or change Gatekeeper settings. If macOS blocks the
+app, follow [the fork's macOS instructions](../../README.md#macos-提示无法验证应用).
+
 ### Linux
+
+The [curl installer](#install-or-update-with-curl) automatically downloads
+`T3-Code-x86_64.AppImage` or `T3-Code-arm64.AppImage`, makes it executable, and
+installs it in `~/Applications`. Open that file to start T3 Code. It needs `curl`,
+`pgrep` (from procps/procps-ng), and `sha256sum` or `shasum`, along with the app's
+normal Linux desktop libraries. It does not install OS dependencies or use `sudo`.
+
+Keep `.t3-desktop-source` in the installation directory: it identifies files the
+script may update. An existing unmanaged AppImage or symbolic link is left alone;
+move it aside before installing there. DEB and package-manager installations stay
+separate and are not updated by this script.
 
 AppImage and `.deb` downloads are available for x86_64 and ARM64. Check your
 architecture with `uname -m`: for `x86_64`, choose a file ending in
