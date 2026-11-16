@@ -965,7 +965,7 @@ export const make = Effect.gen(function* () {
       }
       return result;
     },
-    (effect, input) => withWorkspaceLease(input.cwd, effect),
+    (effect, input) => Effect.scoped(withWorkspaceLease(input.cwd, effect)),
   );
 
   const readRepositoryInstructions = Effect.fn("GitManager.readRepositoryInstructions")(

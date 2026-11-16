@@ -238,6 +238,7 @@ export type StopThreadSessionInput = ThreadCommandInput;
 
 export interface ForkThreadFromRunInput extends CommandMetadata {
   readonly sourceThreadId: ThreadId;
+  readonly workspaceThreadId?: ThreadId;
   readonly targetThreadId: ThreadId;
   readonly runId: RunId;
   readonly title?: string;
@@ -1100,6 +1101,9 @@ export const forkThreadFromRun = Effect.fn("EnvironmentCommands.forkThreadFromRu
     createdBy: "user",
     creationSource: input.creationSource ?? "web",
     sourceThreadId: input.sourceThreadId,
+    ...(input.workspaceThreadId === undefined || input.workspaceThreadId === input.sourceThreadId
+      ? {}
+      : { workspaceThreadId: input.workspaceThreadId }),
     targetThreadId: input.targetThreadId,
     sourcePoint: { type: "run", runId: input.runId },
     ...(input.title === undefined ? {} : { title: input.title }),
@@ -1148,7 +1152,15 @@ export const forkThreadToWorktree = Effect.fn("EnvironmentCommands.forkThreadToW
       threadId: input.targetThreadId,
       projectId: input.projectId,
       title: input.title ?? "Forked task",
-      forkFrom: { threadId: input.sourceThreadId, runId: input.runId, carryChanges: true },
+      forkFrom: {
+        threadId: input.sourceThreadId,
+        runId: input.runId,
+        ...(input.workspaceThreadId === undefined ||
+        input.workspaceThreadId === input.sourceThreadId
+          ? {}
+          : { workspaceThreadId: input.workspaceThreadId }),
+        carryChanges: true,
+      },
       modelSelection: input.modelSelection,
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,

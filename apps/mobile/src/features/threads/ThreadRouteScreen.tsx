@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { terminalEnvironment } from "../../state/terminal";
 import * as Dialog from "../../components/ui/Dialog";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useRememberThreadProject } from "./useRememberThreadProject";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
@@ -1037,6 +1038,19 @@ function ThreadRouteContent(
   }
 
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
+  const forkDestinationMenu =
+    canOperateThread &&
+    selectedThread.lineage.sideChat !== true &&
+    serverConfig?.environment.capabilities.worktreeForkCarryChanges === true &&
+    selectedThreadProject !== null &&
+    !isScratchProject(selectedThreadProject, serverConfig.scratchWorkspaceRoot) &&
+    gitStatus.data?.isRepo !== false
+      ? {
+          projectId: selectedThreadProject.id,
+          inWorktree:
+            selectedThread.worktreePath !== null || selectedThread.workspace?.mode === "isolated",
+        }
+      : null;
   const renderThreadRouteBody = () => (
     <>
       <GitActionProgressOverlay
@@ -1072,6 +1086,7 @@ function ThreadRouteContent(
             )
           }
           canOperateThread={canOperateThread}
+          forkDestinationMenu={forkDestinationMenu}
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           selectedThreadDetailRef={selectedThreadDetailRef}
           contentPresentation={contentPresentation}

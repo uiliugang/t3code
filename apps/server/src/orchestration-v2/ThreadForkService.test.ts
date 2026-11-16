@@ -406,3 +406,102 @@ it.effect("preserves side chat permissions until an isolated fork is requested",
     assert.equal(fromDelegated.cause, "A subagent cannot start a side chat.");
   }),
 );
+
+it.effect(
+  "separates inherited run origin from the current workspace thread and honors explicit mode overrides",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* ThreadForkService.ThreadForkServiceV2;
+      const sourceRun = makeSourceRun("completed");
+      const sourceProjection = {
+        ...makeSourceProjection(sourceRun),
+        thread: {
+          ...makeSourceThread(),
+          lineage: { ...makeSourceThread().lineage, sideChat: true },
+          branch: null,
+          worktreePath: null,
+        },
+      };
+      const workspaceThreadId = ThreadId.make("thread:fork-current-workspace");
+      const overrideSelection = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      } satisfies ModelSelection;
+      const workspaceThread: OrchestrationV2AppThread = {
+        ...makeSourceThread(),
+        id: workspaceThreadId,
+        title: "Promoted worktree task",
+        branch: "feature/current-worktree",
+        worktreePath: "/tmp/current-worktree",
+        workspace: workspaceFixture(),
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        lineage: {
+          parentThreadId: sourceThreadId,
+          relationshipToParent: "fork",
+          rootThreadId: sourceThreadId,
+          isolatedWorkspace: true,
+        },
+        forkedFrom: {
+          type: "run",
+          threadId: sourceThreadId,
+          runId: sourceRunId,
+        },
+      };
+
+      const inPlace = yield* service.plan({
+        sourceProjection,
+        workspaceProjection: { thread: workspaceThread },
+        workspaceInheritsSource: true,
+        sourceRun,
+        sourceProviderThread: undefined,
+        canonicalSourcePoint: { threadId: sourceThreadId, runId: sourceRunId },
+        transferId: ContextTransferId.make("context-transfer:fork-inherited-in-place"),
+        targetThreadId,
+        modelSelection: overrideSelection,
+        runtimeMode: "auto-accept-edits",
+        createdBy: "user",
+        creationSource: "web",
+        createdAt: forkCreatedAt,
+      });
+
+      assert.equal(inPlace.targetThread.worktreePath, "/tmp/current-worktree");
+      assert.equal(inPlace.targetThread.branch, "feature/current-worktree");
+      assert.deepEqual(inPlace.targetThread.workspace, workspaceThread.workspace);
+      assert.equal(inPlace.targetThread.providerInstanceId, overrideSelection.instanceId);
+      assert.deepEqual(inPlace.targetThread.modelSelection, overrideSelection);
+      assert.equal(inPlace.targetThread.runtimeMode, "auto-accept-edits");
+      assert.equal(inPlace.targetThread.interactionMode, "default");
+      assert.isUndefined(inPlace.targetThread.lineage.sideChat);
+      assert.isTrue(inPlace.targetThread.lineage.isolatedWorkspace);
+      assert.deepEqual(inPlace.targetThread.lineage, {
+        parentThreadId: workspaceThreadId,
+        relationshipToParent: "fork",
+        rootThreadId: sourceThreadId,
+        isolatedWorkspace: true,
+      });
+      assert.deepEqual(inPlace.targetThread.forkedFrom, {
+        type: "run",
+        threadId: sourceThreadId,
+        runId: sourceRunId,
+      });
+      assert.equal(inPlace.transfer.sourceThreadId, sourceThreadId);
+
+      const uninherited = yield* service
+        .plan({
+          sourceProjection,
+          workspaceProjection: { thread: workspaceThread },
+          workspaceInheritsSource: false,
+          sourceRun,
+          sourceProviderThread: undefined,
+          canonicalSourcePoint: { threadId: sourceThreadId, runId: sourceRunId },
+          transferId: ContextTransferId.make("context-transfer:fork-uninherited"),
+          targetThreadId,
+          createdBy: "user",
+          creationSource: "web",
+          createdAt: forkCreatedAt,
+        })
+        .pipe(Effect.flip);
+      assert.equal(uninherited.cause, "Workspace thread must inherit from the fork source thread.");
+    }).pipe(Effect.provide(ThreadForkService.layer)),
+);

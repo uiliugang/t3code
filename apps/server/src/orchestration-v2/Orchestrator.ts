@@ -1832,6 +1832,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
     );
 
+  // Immutable run ancestry orders source/workspace locks; node ancestry must not reverse parent locks.
+  const inheritsRunHistoryFrom = Effect.fn("Orchestrator.inheritsRunHistoryFrom")(function* (
+    thread: OrchestrationV2AppThread,
+    ancestorThreadId: ThreadId,
+  ) {
+    if (thread.lineage.sideChat === true) return false;
+    const seen = new Set<ThreadId>([thread.id]);
+    let current: OrchestrationV2AppThread | null = thread;
+    while (current !== null) {
+      const forkedFrom: OrchestrationV2AppThread["forkedFrom"] = current.forkedFrom;
+      if (forkedFrom?.type !== "run") return false;
+      if (forkedFrom.threadId === ancestorThreadId) return true;
+      if (seen.has(forkedFrom.threadId)) return false;
+      seen.add(forkedFrom.threadId);
+      current = yield* findThread(forkedFrom.threadId);
+    }
+    return false;
+  });
+
   /** Side chats live inside their parent, so deleting the parent deletes them too. */
   const liveSideChatIds = Effect.fn("Orchestrator.liveSideChatIds")(
     function* (threadId: ThreadId) {
@@ -5730,6 +5749,33 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.sourceThreadId} was deleted.`,
       });
     }
+    const workspaceProjection =
+      command.workspaceThreadId === undefined ||
+      command.workspaceThreadId === command.sourceThreadId
+        ? undefined
+        : yield* projectionStore.getThreadRecords(command.workspaceThreadId, []).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestratorProjectionError({
+                  threadId: command.workspaceThreadId!,
+                  cause,
+                }),
+            ),
+          );
+    if (workspaceProjection !== undefined) {
+      yield* refuseAboveDispatchModeLimit(
+        command,
+        command.workspaceThreadId!,
+        workspaceProjection.thread,
+      );
+      if (workspaceProjection.thread.deletedAt !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Thread ${command.workspaceThreadId} was deleted.`,
+        });
+      }
+    }
     // The fork would copy no worktree path and run in the project checkout.
     if (
       command.sideChat === true &&
@@ -5779,9 +5825,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         type: "fork",
       }),
     );
+    const workspaceInheritsSource =
+      workspaceProjection === undefined
+        ? false
+        : yield* inheritsRunHistoryFrom(workspaceProjection.thread, sourceProjection.thread.id);
     const { targetThread, transfer } = yield* threadForkService
       .plan({
         sourceProjection,
+        ...(workspaceProjection === undefined
+          ? {}
+          : { workspaceProjection, workspaceInheritsSource }),
         sourceRun,
         sourceProviderThread,
         sourceTokenUsage:
@@ -5797,6 +5850,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.title === undefined ? {} : { title: command.title }),
         ...(command.sideChat ? { sideChat: true } : {}),
         ...(command.isolateWorkspace ? { isolateWorkspace: true } : {}),
+        ...(command.modelSelection === undefined ? {} : { modelSelection: command.modelSelection }),
+        ...(command.runtimeMode === undefined ? {} : { runtimeMode: command.runtimeMode }),
         ...(command.interactionMode === undefined
           ? {}
           : { interactionMode: command.interactionMode }),
@@ -15863,6 +15918,29 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (command.type === "thread.fork" && command.sourceThreadId !== command.targetThreadId) {
       const source = yield* findThread(command.sourceThreadId);
       const target = yield* findThread(command.targetThreadId);
+      const workspaceThreadId = command.workspaceThreadId;
+      const distinctWorkspace =
+        workspaceThreadId !== undefined && workspaceThreadId !== command.sourceThreadId;
+      if (distinctWorkspace) {
+        if (workspaceThreadId === command.targetThreadId || target !== null || source === null) {
+          return yield* dispatch;
+        }
+        const workspaceThread = yield* findThread(workspaceThreadId);
+        if (
+          workspaceThread === null ||
+          !(yield* inheritsRunHistoryFrom(workspaceThread, command.sourceThreadId)) ||
+          (command.sideChat === true &&
+            (source.lineage.sideChat === true || workspaceThread.lineage.sideChat === true))
+        ) {
+          return yield* dispatch;
+        }
+        return yield* threadDispatch.withDeletionLock(
+          threadDispatch.withLock(
+            command.sourceThreadId,
+            threadDispatch.withLock(workspaceThreadId, dispatch),
+          ),
+        );
+      }
       const skipsSourceLock =
         source === null ||
         target !== null ||

@@ -92,6 +92,7 @@ export interface ThreadLaunchInput {
   readonly forkFrom?: {
     readonly threadId: ThreadId;
     readonly runId: RunId;
+    readonly workspaceThreadId?: ThreadId | undefined;
     readonly carryChanges?: boolean | undefined;
   };
   readonly projectId: ProjectId;
@@ -218,7 +219,7 @@ export class ThreadLaunchService extends Context.Service<
     >;
     /** Check a new worktree's base ref and branch name before creation for early errors; launch otherwise accepts and reports these failures inside the thread. */
     readonly checkWorktreeBase: (
-      input: Pick<ThreadLaunchInput, "projectId" | "workspaceStrategy"> & {
+      input: Pick<ThreadLaunchInput, "projectId" | "workspaceStrategy" | "forkFrom"> & {
         /** Skips the check when this launch was already accepted, so its retry replays. */
         readonly commandId?: CommandId;
       },
@@ -372,6 +373,7 @@ const make = Effect.gen(function* () {
   )(function* (input) {
     const strategy = input.workspaceStrategy;
     if (strategy.type !== "worktree") return;
+    if (input.forkFrom?.carryChanges === true) return;
     const commandId = input.commandId;
     const [isScratch, receipt, projectOption] = yield* Effect.all(
       [
@@ -387,7 +389,7 @@ const make = Effect.gen(function* () {
     if (isScratch) return;
     if (Option.isSome(receipt) && receipt.value.status === "accepted") return;
     const project = Option.getOrUndefined(projectOption);
-    if (project === undefined) return;
+    if (project === undefined || project.workspaceConfig !== undefined) return;
     const cwd = project.workspaceRoot;
     const { baseRef, branch } = strategy;
     const checksBranch = branch !== undefined && !isTemporaryWorktreeBranch(branch);
@@ -936,8 +938,11 @@ const make = Effect.gen(function* () {
           const headCommit = yield* git
             .resolveCommit({ cwd: carrySourceCwd, revision: "HEAD" })
             .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+          const sourceBranch = yield* git
+            .currentBranch(carrySourceCwd)
+            .pipe(Effect.orElseSucceed(() => null));
           startRef = headCommit.commitSha;
-          baseRefName = headCommit.commitSha;
+          baseRefName = sourceBranch ?? requestedBaseRef;
         }
         const remote =
           carrySourceCwd === null &&
@@ -1449,8 +1454,16 @@ const make = Effect.gen(function* () {
         const source = yield* threads
           .getThreadRecords(request.forkFrom.threadId, [])
           .pipe(Effect.mapError(mapError(request, "create-thread")));
+        const workspaceSource =
+          request.forkFrom.workspaceThreadId === undefined ||
+          request.forkFrom.workspaceThreadId === request.forkFrom.threadId
+            ? source
+            : yield* threads
+                .getThreadRecords(request.forkFrom.workspaceThreadId, [])
+                .pipe(Effect.mapError(mapError(request, "create-thread")));
         if (
           source.thread.projectId !== request.projectId ||
+          workspaceSource.thread.projectId !== request.projectId ||
           request.workspaceStrategy.type !== "worktree" ||
           request.reuseExistingThread === true
         ) {
@@ -1577,9 +1590,14 @@ const make = Effect.gen(function* () {
                 type: "thread.fork",
                 commandId: input.commandId,
                 sourceThreadId: input.forkFrom.threadId,
+                ...(input.forkFrom.workspaceThreadId === undefined
+                  ? {}
+                  : { workspaceThreadId: input.forkFrom.workspaceThreadId }),
                 targetThreadId: candidateThreadId,
                 sourcePoint: { type: "run", runId: input.forkFrom.runId },
                 isolateWorkspace: true,
+                modelSelection: input.modelSelection,
+                runtimeMode: input.runtimeMode,
                 interactionMode: input.interactionMode,
                 title: input.title,
                 createdBy: input.createdBy,
@@ -1734,11 +1752,21 @@ const make = Effect.gen(function* () {
           projection.thread.workspace?.mode !== "isolated"
         ) {
           if (preparationFiber === null && (yield* setupTracker.get(threadId)) === null) {
+            if (runId === null) {
+              yield* threads
+                .dispatch({
+                  type: "thread.delete",
+                  commandId: CommandId.make(`${input.commandId}:cleanup`),
+                  threadId,
+                  onlyIfUnused: true,
+                })
+                .pipe(Effect.ignore);
+            }
             return yield* mapError(
               input,
               "provision-worktree",
               threadId,
-            )("Isolated worktree setup was interrupted. Create a new task from the side chat.");
+            )("Isolated worktree setup was interrupted. Try creating the worktree task again.");
           }
           yield* Effect.raceFirst(
             threads.streamStoredEventsFrom({ threadId }).pipe(
@@ -1771,6 +1799,16 @@ const make = Effect.gen(function* () {
           preparedProjection.thread.workspace?.mode !== "isolated"
         ) {
           const setup = yield* setupTracker.get(threadId);
+          if (runId === null) {
+            yield* threads
+              .dispatch({
+                type: "thread.delete",
+                commandId: CommandId.make(`${input.commandId}:cleanup`),
+                threadId,
+                onlyIfUnused: true,
+              })
+              .pipe(Effect.ignore);
+          }
           return yield* mapError(
             input,
             "provision-worktree",

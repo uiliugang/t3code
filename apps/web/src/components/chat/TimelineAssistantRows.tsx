@@ -12,6 +12,7 @@ import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Spinner } from "../ui/spinner";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
@@ -187,12 +188,13 @@ function AssistantForkButton({
               size="xs"
               variant="ghost"
               disabled={busy}
+              data-fork-busy={busy ? "true" : undefined}
               onClick={() => runFork()}
               aria-label={label}
             />
           }
         >
-          <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
+          {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
         </TooltipTrigger>
         <TooltipPopup side="top">{label}</TooltipPopup>
       </Tooltip>
@@ -205,12 +207,20 @@ function AssistantForkButton({
         <TooltipTrigger
           render={
             <MenuTrigger
-              render={<Button type="button" size="xs" variant="ghost" aria-label={label} />}
+              render={
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  data-fork-busy={busy ? "true" : undefined}
+                  aria-label={label}
+                />
+              }
               disabled={busy}
             />
           }
         >
-          <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
+          {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
         </TooltipTrigger>
         <TooltipPopup side="top">{label}</TooltipPopup>
       </Tooltip>
@@ -282,7 +292,7 @@ function AssistantMessageMeta({
         "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
         alwaysVisible
           ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 has-data-popup-open:opacity-100 group-hover/assistant:opacity-100",
+          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 has-data-fork-busy:opacity-100 has-data-popup-open:opacity-100 group-hover/assistant:opacity-100",
         className,
       )}
     >

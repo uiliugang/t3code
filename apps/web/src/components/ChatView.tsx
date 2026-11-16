@@ -2896,6 +2896,8 @@ export default function ChatView(props: ChatViewProps) {
       isSendBusy,
       isRevertingCheckpoint,
       supportsConversationRollback,
+      supportsWorktreeForkCarryChanges:
+        serverConfig?.environment.capabilities.worktreeForkCarryChanges === true,
       activeEnvironmentUnavailable,
       activeEnvironmentUnavailableLabel,
       promptRef,
@@ -3528,9 +3530,14 @@ export default function ChatView(props: ChatViewProps) {
                     ? {}
                     : {
                         onOpenTurnDiff: onOpenTurnDiffStable,
-                        onForkFromRun: onForkFromRunStable,
+                        ...(canOperateThread ? { onForkFromRun: onForkFromRunStable } : {}),
                         forkDestinationMenu:
-                          activeThread.projectId !== null && !activeProjectIsScratch && isGitRepo
+                          canOperateThread &&
+                          serverConfig?.environment.capabilities.worktreeForkCarryChanges ===
+                            true &&
+                          activeThread.projectId !== null &&
+                          !activeProjectIsScratch &&
+                          isGitRepo
                             ? {
                                 inWorktree:
                                   activeThread.worktreePath !== null ||

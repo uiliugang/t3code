@@ -46,6 +46,7 @@ interface TimelineRewindInput {
   readonly isSendBusy: boolean;
   readonly isRevertingCheckpoint: boolean;
   readonly supportsConversationRollback: boolean;
+  readonly supportsWorktreeForkCarryChanges: boolean;
   readonly activeEnvironmentUnavailable: boolean;
   readonly activeEnvironmentUnavailableLabel: string | null;
   readonly promptRef: { current: string };
@@ -71,6 +72,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     isSendBusy,
     isRevertingCheckpoint,
     supportsConversationRollback,
+    supportsWorktreeForkCarryChanges,
     activeEnvironmentUnavailable,
     activeEnvironmentUnavailableLabel,
     promptRef,
@@ -183,16 +185,28 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     readonly runId: RunId;
     readonly destination?: "current" | "worktree";
   }) => {
-    if (!activeThread || activeEnvironmentUnavailable) return;
+    if (
+      !activeThread ||
+      activeEnvironmentUnavailable ||
+      !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
+    )
+      return;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
     const title = t("{title} fork", { title: activeThread.title });
+    const workspaceThreadId =
+      supportsWorktreeForkCarryChanges && activeThread.id !== input.sourceThreadId
+        ? activeThread.id
+        : undefined;
     const result =
-      input.destination === "worktree" && activeThread.projectId !== null
+      input.destination === "worktree" &&
+      supportsWorktreeForkCarryChanges &&
+      activeThread.projectId !== null
         ? await forkThreadToWorktree({
             environmentId,
             input: {
               sourceThreadId: input.sourceThreadId,
+              ...(workspaceThreadId === undefined ? {} : { workspaceThreadId }),
               targetThreadId,
               runId: input.runId,
               projectId: activeThread.projectId,
@@ -207,6 +221,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
             environmentId,
             input: {
               sourceThreadId: input.sourceThreadId,
+              ...(workspaceThreadId === undefined ? {} : { workspaceThreadId }),
               targetThreadId,
               runId: input.runId,
               title,

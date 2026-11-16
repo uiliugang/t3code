@@ -234,11 +234,11 @@ export const layer = Layer.effect(
                           (entry) => entry.id === carryBinding.resourceId,
                         );
                   const carryCwd = carryChanges
-                    ? (carryResource?.checkoutRoot ??
-                      carryBinding?.executionPath ??
-                      (root.id === config.primaryRootId && input.carrySourceWorktreePath != null
+                    ? input.carrySourceWorkspace !== undefined
+                      ? (carryResource?.checkoutRoot ?? carryBinding?.executionPath ?? null)
+                      : root.id === config.primaryRootId && input.carrySourceWorktreePath != null
                         ? input.carrySourceWorktreePath
-                        : root.sourcePath))
+                        : root.sourcePath
                     : null;
                   const taskBranch =
                     root.defaultSelected && input.strategy.type === "root"
@@ -249,16 +249,27 @@ export const layer = Layer.effect(
                         })
                       : null;
                   let baseRef = carryChanges
-                    ? "HEAD"
+                    ? (root.defaultBaseRef ?? "HEAD")
                     : root.id === config.primaryRootId && input.strategy.type === "worktree"
                       ? input.strategy.baseRef
                       : (taskBranch?.branch ?? root.defaultBaseRef ?? "HEAD");
+                  let recordedBaseRef = baseRef;
                   if (carryChanges && carryCwd !== null && root.defaultSelected) {
                     const headSha = (yield* git.execute({
                       operation: "WorkspaceProvisioner.resolveCarryHead",
                       cwd: carryCwd,
                       args: ["rev-parse", "--verify", "HEAD^{commit}"],
                     })).stdout.trim();
+                    const carryBranch = yield* git
+                      .execute({
+                        operation: "WorkspaceProvisioner.resolveCarryBranch",
+                        cwd: carryCwd,
+                        args: ["symbolic-ref", "--quiet", "--short", "HEAD"],
+                      })
+                      .pipe(
+                        Effect.map((result) => result.stdout.trim()),
+                        Effect.orElseSucceed(() => ""),
+                      );
                     const carryToplevel = yield* fs.realPath(
                       (yield* git.execute({
                         operation: "WorkspaceProvisioner.resolveCarryToplevel",
@@ -267,6 +278,7 @@ export const layer = Layer.effect(
                       })).stdout.replace(/\r?\n$/, ""),
                     );
                     baseRef = headSha;
+                    recordedBaseRef = carryBranch.length > 0 ? carryBranch : headSha;
                     carryCheckoutByRootId.set(root.id, carryToplevel);
                   }
                   if (
@@ -298,8 +310,8 @@ export const layer = Layer.effect(
                         threadId: input.threadId,
                         detail: `${root.alias}: new worktree branches must start from main or master. Change this in Settings → Source Control → Branch management.`,
                       });
+                    recordedBaseRef = baseRef;
                   }
-                  let recordedBaseRef = baseRef;
                   if (
                     !carryChanges &&
                     root.defaultSelected &&
@@ -469,6 +481,7 @@ export const layer = Layer.effect(
                 let item = state.resources[index]!;
                 yield* resolver.verify(item.source.identity);
                 if (item.resource === undefined) {
+                  let createdThisPass = false;
                   yield* fs.makeDirectory(path.dirname(item.path), { recursive: true });
                   if (!(yield* fs.exists(item.path))) {
                     const created = yield* withWorkspaceLease(
@@ -490,6 +503,7 @@ export const layer = Layer.effect(
                         },
                       ),
                     );
+                    createdThisPass = true;
                     item = yield* update(index, { branch: created.worktree.refName });
                   }
                   const identity = yield* resolver.inspect(item.path);
@@ -513,6 +527,18 @@ export const layer = Layer.effect(
                       detail: `Cannot recover the prepared checkout at ${item.path}; its identity or branch changed.`,
                     });
                   if (item.carryCheckoutRoot !== undefined && item.changesCarried !== true) {
+                    if (!createdThisPass) {
+                      yield* git.execute({
+                        operation: "WorkspaceProvisioner.resetCarryCheckout",
+                        cwd: item.path,
+                        args: ["reset", "--hard", item.baseCommit],
+                      });
+                      yield* git.execute({
+                        operation: "WorkspaceProvisioner.cleanCarryCheckout",
+                        cwd: item.path,
+                        args: ["clean", "-fd"],
+                      });
+                    }
                     const changes =
                       carryChangesByPath.get(item.path) ??
                       (yield* readCarriedCheckoutChanges({
@@ -529,29 +555,58 @@ export const layer = Layer.effect(
                       changes,
                     }).pipe(
                       Effect.onError(() =>
-                        withWorkspaceLease(
-                          item.source.identity.commonDir,
-                          git
-                            .removeWorktree({
-                              cwd: item.source.checkoutRoot,
-                              path: item.path,
-                              force: true,
-                            })
-                            .pipe(
-                              Effect.andThen(
-                                item.branch === null
-                                  ? Effect.void
-                                  : git
+                        Effect.gen(function* () {
+                          let allRemoved = true;
+                          for (const [index, prepared] of state.resources.entries()) {
+                            if (prepared.branch === null) continue;
+                            const removed = yield* withWorkspaceLease(
+                              prepared.source.identity.commonDir,
+                              git
+                                .removeWorktree({
+                                  cwd: prepared.source.checkoutRoot,
+                                  path: prepared.path,
+                                  force: true,
+                                })
+                                .pipe(
+                                  Effect.andThen(
+                                    git
                                       .deleteLocalBranch({
-                                        cwd: item.source.checkoutRoot,
-                                        refName: item.branch,
+                                        cwd: prepared.source.checkoutRoot,
+                                        refName: prepared.branch,
                                         force: true,
                                       })
                                       .pipe(Effect.ignore),
-                              ),
-                              Effect.ignore,
-                            ),
-                        ),
+                                  ),
+                                  Effect.as(true),
+                                  Effect.orElseSucceed(() => false),
+                                ),
+                            );
+                            if (removed) {
+                              const { resource: _resource, ...pending } = prepared;
+                              state = {
+                                ...state,
+                                resources: state.resources.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? {
+                                        ...pending,
+                                        changesCarried: false,
+                                        ready: false,
+                                        setup: "pending",
+                                        submodulesReady: false,
+                                      }
+                                    : entry,
+                                ),
+                              };
+                            } else {
+                              allRemoved = false;
+                            }
+                          }
+                          yield* (
+                            allRemoved
+                              ? sql`DELETE FROM workspace_preparations WHERE thread_id = ${input.threadId}`
+                              : save(state)
+                          ).pipe(Effect.ignore);
+                        }),
                       ),
                     );
                     item = yield* update(index, { changesCarried: true });
@@ -856,7 +911,7 @@ export const layer = Layer.effect(
           );
         },
         (effect, input) =>
-          effect.pipe(
+          Effect.scoped(effect).pipe(
             Effect.mapError((cause) =>
               isWorkspacePreparationError(cause) || isGitCommandError(cause)
                 ? cause

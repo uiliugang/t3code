@@ -95,7 +95,7 @@ const requireIsolatedWorkspace = (thread: OrchestrationV2AppThread) =>
           projectId: thread.projectId,
           providerInstanceId: thread.modelSelection.instanceId,
           cause:
-            "The isolated worktree is not ready. Wait for setup, or return to the side chat and create a new isolated task.",
+            "The isolated worktree is not ready. Wait for setup, or return to the source conversation and create a new isolated task.",
         }),
       )
     : Effect.void;

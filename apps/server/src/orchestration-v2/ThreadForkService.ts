@@ -1,5 +1,6 @@
 import {
   ContextTransferId,
+  ModelSelection,
   OrchestrationV2Actor,
   OrchestrationV2AppThread,
   OrchestrationV2ContextSourcePoint,
@@ -10,6 +11,7 @@ import {
   OrchestrationV2Run,
   OrchestrationV2ThreadProjection,
   ProviderInteractionMode,
+  RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -52,6 +54,10 @@ export function forkableSourceRunStatusError(
 export interface ThreadForkServiceV2Shape {
   readonly plan: (input: {
     readonly sourceProjection: Pick<OrchestrationV2ThreadProjection, "thread">;
+    /** Current thread whose checkout/settings an inherited-message fork stays in. */
+    readonly workspaceProjection?: Pick<OrchestrationV2ThreadProjection, "thread">;
+    /** True when `workspaceProjection` inherits `sourceProjection` through `forkedFrom.threadId`. */
+    readonly workspaceInheritsSource?: boolean;
     /** Null only for a side chat whose parent has no stable run yet. */
     readonly sourceRun: OrchestrationV2Run | null;
     readonly sourceProviderThread: OrchestrationV2ProviderThread | undefined;
@@ -62,6 +68,8 @@ export interface ThreadForkServiceV2Shape {
     readonly title?: string;
     readonly sideChat?: boolean;
     readonly isolateWorkspace?: boolean;
+    readonly modelSelection?: ModelSelection;
+    readonly runtimeMode?: RuntimeMode;
     readonly interactionMode?: ProviderInteractionMode;
     readonly createdBy: OrchestrationV2Actor;
     readonly creationSource: OrchestrationV2CreationSource;
@@ -102,33 +110,55 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           cause: forkableSourceRunStatusError(sourceRun),
         });
       }
+      const workspaceThread = input.workspaceProjection?.thread ?? input.sourceProjection.thread;
+      if (
+        input.workspaceProjection !== undefined &&
+        workspaceThread.id !== input.sourceProjection.thread.id &&
+        input.workspaceInheritsSource !== true
+      ) {
+        return yield* new ThreadForkPlanError({
+          sourceThreadId: input.sourceProjection.thread.id,
+          targetThreadId: input.targetThreadId,
+          cause: "Workspace thread must inherit from the fork source thread.",
+        });
+      }
+      if (workspaceThread.projectId !== input.sourceProjection.thread.projectId) {
+        return yield* new ThreadForkPlanError({
+          sourceThreadId: input.sourceProjection.thread.id,
+          targetThreadId: input.targetThreadId,
+          cause: "Workspace thread must belong to the same project as the fork source.",
+        });
+      }
+      const workspaceLineage = workspaceThread.lineage;
       // The remote parent delegated the source thread, not its forks.
-      const { delegatedFrom: _delegatedFrom, ...inherited } = input.sourceProjection.thread;
+      const { delegatedFrom: _delegatedFrom, ...inherited } = workspaceThread;
+      const modelSelection = input.modelSelection ?? inherited.modelSelection;
       const targetThread: OrchestrationV2AppThread = {
         ...inherited,
+        providerInstanceId: modelSelection.instanceId,
+        modelSelection,
+        runtimeMode: input.runtimeMode ?? inherited.runtimeMode,
         interactionMode: input.interactionMode ?? inherited.interactionMode,
         ...(input.isolateWorkspace
           ? { workspace: undefined, branch: null, worktreePath: null }
           : {}),
         // PR context follows the conversation; watching remains the source thread's responsibility.
-        pullRequests: input.sourceProjection.thread.pullRequests?.map(
-          ({ watch: _watch, ...link }) => link,
-        ),
+        pullRequests: workspaceThread.pullRequests?.map(({ watch: _watch, ...link }) => link),
         createdBy: input.createdBy,
         creationSource: input.creationSource,
         id: input.targetThreadId,
-        title: input.title ?? `${input.sourceProjection.thread.title} fork`,
+        title: input.title ?? `${workspaceThread.title} fork`,
         // The source's title job completes only on the source thread.
         titleRegeneration: null,
         activeProviderThreadId: null,
         lineage: {
-          parentThreadId: input.sourceProjection.thread.id,
+          parentThreadId: workspaceThread.id,
           relationshipToParent: "fork",
-          rootThreadId: input.sourceProjection.thread.lineage.rootThreadId,
-          ...(input.sideChat || (sourceLineage.sideChat && !input.isolateWorkspace)
+          rootThreadId: workspaceLineage.rootThreadId,
+          ...(input.sideChat || (workspaceLineage.sideChat && !input.isolateWorkspace)
             ? { sideChat: true }
             : {}),
-          ...(input.isolateWorkspace || sourceLineage.isolatedWorkspace
+          ...(input.isolateWorkspace || workspaceLineage.isolatedWorkspace
             ? { isolatedWorkspace: true }
             : {}),
         },

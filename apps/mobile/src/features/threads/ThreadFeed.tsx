@@ -60,7 +60,11 @@ import {
   type ChatImageAttachment,
   type EnvironmentId,
   type MessageId,
+  type ModelSelection,
   type OrchestrationV2ProjectedTurnItem,
+  type ProjectId,
+  type ProviderInteractionMode,
+  type RuntimeMode,
   type RunId,
   type AssistantCitation,
   type ResponseContextRecord,
@@ -96,7 +100,6 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
@@ -266,13 +269,10 @@ import {
 } from "@t3tools/client-runtime/workspace-basename-lookup";
 import {
   resolveThreadLink,
-  useEnvironmentServerConfig,
   useLiveThreadLinkLabels,
-  useProject,
   useQuietThreadShell,
   useThreadChipIcons,
 } from "../../state/entities";
-import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useEnvironmentQuery } from "../../state/query";
@@ -352,6 +352,18 @@ export interface ThreadFeedProps {
   /** Null while the thread's creation is queued: reading detail then caches a not-found as deleted. */
   readonly detailRef: ScopedThreadRef | null;
   readonly threadTitle: string;
+  readonly canForkThread?: boolean;
+  readonly forkSettings?: {
+    readonly supportsWorktreeForkCarryChanges: boolean;
+    readonly modelSelection: ModelSelection;
+    readonly runtimeMode: RuntimeMode;
+    readonly interactionMode: ProviderInteractionMode;
+    readonly branch: string | null;
+  };
+  readonly forkDestinationMenu?: {
+    readonly projectId: ProjectId;
+    readonly inWorktree: boolean;
+  } | null;
   readonly workspaceRoot?: string | null;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
   readonly pendingHandoff?: HandoffEndpoints | null;
@@ -420,11 +432,14 @@ function UserMessageCopyButton(props: {
 
 function AssistantForkButton(props: {
   readonly environmentId: EnvironmentId;
+  readonly conversationThreadId: ThreadId;
   readonly iconColor: ColorValue;
   readonly buttonSize: number;
   readonly iconSize: number;
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
   readonly sourceTitle: string;
+  readonly forkSettings?: ThreadFeedProps["forkSettings"];
+  readonly forkDestinationMenu?: ThreadFeedProps["forkDestinationMenu"];
 }) {
   const t = useUiTranslation();
 
@@ -433,21 +448,6 @@ function AssistantForkButton(props: {
     sourceThreadId: props.projectedItem.sourceThreadId,
     sourceItemId: props.projectedItem.sourceItemId,
   });
-  const sourceShell = useQuietThreadShell(
-    scopeThreadRef(props.environmentId, props.projectedItem.sourceThreadId),
-  );
-  const project = useProject(
-    sourceShell?.projectId
-      ? { environmentId: props.environmentId, projectId: sourceShell.projectId }
-      : null,
-  );
-  const serverConfig = useEnvironmentServerConfig(props.environmentId);
-  const gitCwd = sourceShell?.worktreePath ?? project?.workspaceRoot ?? null;
-  const gitStatus = useEnvironmentQuery(
-    gitCwd
-      ? vcsEnvironment.status({ environmentId: props.environmentId, input: { cwd: gitCwd } })
-      : null,
-  );
   const forkFromRun = useAtomCommand(threadEnvironment.forkFromRun, { reportFailure: false });
   const forkToWorktree = useAtomCommand(threadEnvironment.forkToWorktree, { reportFailure: false });
   const selectDetail = useSelectWorkspaceDetail();
@@ -460,14 +460,12 @@ function AssistantForkButton(props: {
 
   if (!canFork || runId === null) return null;
 
-  const canForkToWorktree =
-    sourceShell !== null &&
-    sourceShell.projectId !== null &&
-    project !== null &&
-    !isScratchProject(project, serverConfig?.scratchWorkspaceRoot) &&
-    gitStatus.data?.isRepo !== false;
-  const inWorktree =
-    sourceShell?.worktreePath !== null || sourceShell?.workspace?.mode === "isolated";
+  const destinationMenu = props.forkDestinationMenu ?? null;
+  const workspaceThreadId =
+    props.forkSettings?.supportsWorktreeForkCarryChanges === true &&
+    props.conversationThreadId !== props.projectedItem.sourceThreadId
+      ? props.conversationThreadId
+      : undefined;
 
   const performFork = (destination: "current" | "worktree") => {
     const targetThreadId = ThreadId.make(uuidv4());
@@ -475,18 +473,19 @@ function AssistantForkButton(props: {
     void Haptics.selectionAsync();
     const title = t("{title} fork", { title: props.sourceTitle });
     const command =
-      destination === "worktree" && sourceShell?.projectId != null
+      destination === "worktree" && destinationMenu !== null && props.forkSettings !== undefined
         ? forkToWorktree({
             environmentId: props.environmentId,
             input: {
               sourceThreadId: props.projectedItem.sourceThreadId,
+              ...(workspaceThreadId === undefined ? {} : { workspaceThreadId }),
               targetThreadId,
               runId,
-              projectId: sourceShell.projectId,
-              modelSelection: sourceShell.modelSelection,
-              runtimeMode: sourceShell.runtimeMode,
-              interactionMode: sourceShell.interactionMode,
-              baseRef: sourceShell.branch ?? "HEAD",
+              projectId: destinationMenu.projectId,
+              modelSelection: props.forkSettings.modelSelection,
+              runtimeMode: props.forkSettings.runtimeMode,
+              interactionMode: props.forkSettings.interactionMode,
+              baseRef: props.forkSettings.branch ?? "HEAD",
               title,
               creationSource: "mobile",
             },
@@ -495,6 +494,7 @@ function AssistantForkButton(props: {
             environmentId: props.environmentId,
             input: {
               sourceThreadId: props.projectedItem.sourceThreadId,
+              ...(workspaceThreadId === undefined ? {} : { workspaceThreadId }),
               targetThreadId,
               runId,
               title,
@@ -536,7 +536,7 @@ function AssistantForkButton(props: {
       accessibilityRole="button"
       accessibilityLabel={t("Fork from this response")}
       disabled={busy}
-      onPress={canForkToWorktree ? undefined : () => performFork("current")}
+      onPress={destinationMenu ? undefined : () => performFork("current")}
       className="h-7 w-7 items-center justify-center disabled:opacity-40"
       style={
         Platform.OS === "android"
@@ -557,7 +557,7 @@ function AssistantForkButton(props: {
     </Pressable>
   );
 
-  if (busy || !canForkToWorktree) return button;
+  if (busy || !destinationMenu) return button;
 
   return (
     <Menu
@@ -567,7 +567,11 @@ function AssistantForkButton(props: {
       actions={[
         {
           id: "current",
-          title: t(inWorktree ? "Fork in the current worktree" : "Fork in the current folder"),
+          title: t(
+            destinationMenu.inWorktree
+              ? "Fork in the current worktree"
+              : "Fork in the current folder",
+          ),
           image: "arrow.triangle.branch",
         },
         {
@@ -1843,6 +1847,9 @@ function renderFeedEntry(
     | "onEditPendingMessage"
     | "threadId"
     | "workspaceRoot"
+    | "canForkThread"
+    | "forkSettings"
+    | "forkDestinationMenu"
   > & {
     readonly t: ReturnType<typeof useUiTranslation>;
     readonly formatMessageTime: (input: string) => string;
@@ -2561,14 +2568,17 @@ function renderFeedEntry(
               buttonSize={props.replyActionSize.button}
               iconSize={props.replyActionSize.icon}
             />
-            {message.projectedItem ? (
+            {props.canForkThread && message.projectedItem ? (
               <AssistantForkButton
                 environmentId={props.environmentId}
+                conversationThreadId={props.threadId}
                 iconColor={iconSubtleColor}
                 buttonSize={props.replyActionSize.button}
                 iconSize={props.replyActionSize.icon}
                 projectedItem={message.projectedItem}
                 sourceTitle={props.threadTitle}
+                forkSettings={props.forkSettings}
+                forkDestinationMenu={props.forkDestinationMenu}
               />
             ) : null}
             {props.onQuote && message.projectedItem && renderedText.trim() ? (
@@ -3655,6 +3665,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     viewportWidth,
     contentWidth,
     skills: props.skills,
+    canForkThread: props.canForkThread,
+    forkSettings: props.forkSettings,
+    forkDestinationMenu: props.forkDestinationMenu,
     workflowOpening,
   };
   const reportHeaderMaterialVisibility = (visible: boolean) => {
@@ -4091,6 +4104,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             markdownContentWidth,
             contentWidth,
             threadTitle: props.threadTitle,
+            canForkThread: props.canForkThread,
+            forkSettings: props.forkSettings,
+            forkDestinationMenu: props.forkDestinationMenu,
             skills: props.skills,
             workspaceRoot: props.workspaceRoot,
             workflowOpening,

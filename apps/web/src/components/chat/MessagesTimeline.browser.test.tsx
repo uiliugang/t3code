@@ -2334,7 +2334,11 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
 
 it("offers current-worktree and new-worktree destinations when forking in a git repository", async () => {
   setup();
-  const onForkFromRun = vi.fn(async () => {});
+  let completeFork!: () => void;
+  const pendingFork = new Promise<void>((resolve) => {
+    completeFork = resolve;
+  });
+  const onForkFromRun = vi.fn(() => pendingFork);
   const assistantEntry: Entry = {
     ...message(
       "Completed response",
@@ -2365,4 +2369,10 @@ it("offers current-worktree and new-worktree destinations when forking in a git 
     runId: "run-1",
     destination: "worktree",
   });
+  const busy = screen.container.querySelector('[data-fork-busy="true"]');
+  expect(busy).not.toBeNull();
+  await userEvent.unhover(screen.getByText("Completed response"));
+  expect(busy?.closest(".has-data-fork-busy\\:opacity-100")).not.toBeNull();
+  completeFork();
+  await vi.waitFor(() => expect(screen.container.querySelector("[data-fork-busy]")).toBeNull());
 });

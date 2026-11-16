@@ -2223,6 +2223,7 @@ export const layerWsRpc = (
                       commandId: input.commandId,
                       projectId: input.projectId,
                       workspaceStrategy: input.workspaceStrategy,
+                      ...(input.forkFrom === undefined ? {} : { forkFrom: input.forkFrom }),
                     })
                     .pipe(
                       Effect.andThen(

@@ -517,6 +517,7 @@ it.effect.each(
           }
           const failed = yield* threads.getThreadProjection(ThreadId.make("isolated"));
           assert.equal(failed.runs[0]?.status, withMessage ? "failed" : undefined);
+          assert.equal(failed.thread.deletedAt !== null, !withMessage);
           assert.isEmpty(
             yield* outbox.listByCommandId(CommandId.make("continue-side-chat:release")),
           );
@@ -584,6 +585,7 @@ it.effect(
   () => {
     const harness = makeHarness({
       hasCommit: () => Effect.succeed(true),
+      git: { currentBranch: () => Effect.succeed("feature/renamed-parent") },
     });
     return Effect.gen(function* () {
       const launches = yield* ThreadLaunch.ThreadLaunchService;
@@ -636,6 +638,8 @@ it.effect(
           },
         }),
         forkFrom: { threadId: parent.threadId, runId, carryChanges: true },
+        modelSelection: { ...modelSelection, model: "gpt-5.4" },
+        runtimeMode: "approval-required",
       });
       assert.equal(forked.projection.thread.worktreePath, "/repo-worktrees/feature");
       assert.deepEqual(forked.projection.thread.forkedFrom, {
@@ -645,7 +649,37 @@ it.effect(
       });
       const createCall = harness.createWorktree.mock.calls.at(-1);
       assert.equal(createCall?.[0].refName, "parent-head-sha");
+      assert.equal(createCall?.[0].baseRefName, "feature/renamed-parent");
       assert.equal(createCall?.[1]?.carryChangesFromCwd, "/repo-worktrees/parent");
+      assert.equal(forked.projection.thread.modelSelection.model, "gpt-5.4");
+      assert.equal(forked.projection.thread.runtimeMode, "approval-required");
+      const inheritedFork = yield* launches.launch({
+        ...launchInput({
+          command: "inherited-fork",
+          thread: "inherited-fork",
+          workspace: {
+            type: "worktree",
+            baseRef: "removed-old-branch",
+            startFromOrigin: false,
+          },
+        }),
+        forkFrom: {
+          threadId: parent.threadId,
+          workspaceThreadId: forked.threadId,
+          runId,
+          carryChanges: true,
+        },
+      });
+      assert.equal(inheritedFork.projection.thread.lineage.parentThreadId, forked.threadId);
+      assert.equal(
+        harness.createWorktree.mock.calls.at(-1)?.[1]?.carryChangesFromCwd,
+        "/repo-worktrees/feature",
+      );
+      yield* launches.checkWorktreeBase({
+        projectId,
+        workspaceStrategy: { type: "worktree", baseRef: "removed-old-branch" },
+        forkFrom: { threadId: parent.threadId, runId, carryChanges: true },
+      });
     }).pipe(Effect.provide(harness.layer));
   },
 );
