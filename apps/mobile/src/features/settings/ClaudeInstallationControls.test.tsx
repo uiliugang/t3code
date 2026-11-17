@@ -40,17 +40,37 @@ vi.mock("react-native", () => ({
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
+vi.mock("../../components/ui/KeyboardSheetBody", () => ({ KeyboardSheetBody: Children }));
+vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
+vi.mock("../../components/ui/Sheet", () => ({
+  Sheet: ({
+    children,
+    onClose,
+    dismissDisabled,
+  }: {
+    children: ReactNode;
+    onClose: () => void;
+    dismissDisabled?: boolean;
+  }) => (
+    <section role="dialog">
+      <button aria-label="Close" disabled={dismissDisabled} onClick={onClose} />
+      {children}
+    </section>
+  ),
+}));
 vi.mock("../../components/ui/ControlPill", () => ({
   ControlPill: ({
     label,
+    accessibilityLabel,
     disabled,
     onPress,
   }: {
-    label: string;
+    label?: string;
+    accessibilityLabel?: string;
     disabled?: boolean;
     onPress?: () => void;
   }) => (
-    <button disabled={disabled} onClick={onPress}>
+    <button aria-label={accessibilityLabel ?? label} disabled={disabled} onClick={onPress}>
       {label}
     </button>
   ),
@@ -194,14 +214,19 @@ it.each(["codex", "claudeAgent"])(
       } as SettingsTarget;
       act(() => root.render(<AddProviderConnection environment={environment} providers={[]} />));
       act(() => container.querySelector("button")!.click());
-      act(() =>
+      const selectDriver = () =>
         [...container.querySelectorAll("button")]
           .find(
             (button) =>
               button.textContent === (driver === "codex" ? "Add Codex" : "Add Claude Code"),
           )!
-          .click(),
-      );
+          .click();
+      act(selectDriver);
+      act(() => container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+      expect(mutate).not.toHaveBeenCalled();
+      act(() => container.querySelector("button")!.click());
+      expect(container.querySelector("input")).toBeNull();
+      act(selectDriver);
       await act(async () =>
         [...container.querySelectorAll("button")]
           .find((button) => button.textContent === "Add")!
@@ -263,8 +288,10 @@ it("reenables a saved provider only from Add without replacing its settings or s
       instance: { ...instance, enabled: true },
     });
     expect(enable.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.disabled).toBe(true);
     await act(async () => finish({ _tag: "Success" }));
-    expect(container.textContent).toBe("Add provider");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Add provider"]')).not.toBeNull();
   } finally {
     act(() => root.unmount());
   }

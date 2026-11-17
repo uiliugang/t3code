@@ -11,7 +11,10 @@ import { useRef, useState } from "react";
 import { TextInput, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
+import { KeyboardSheetBody } from "../../components/ui/KeyboardSheetBody";
 import { ListActionRow } from "../../components/ui/ListActionRow";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { Sheet } from "../../components/ui/Sheet";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -120,96 +123,122 @@ export function AddProviderConnection({
       setExpanded(false);
     }
   };
-  if (!expanded)
-    return (
-      <ListActionRow
+  const close = () => {
+    setExpanded(false);
+    setDriver(null);
+    setName("");
+  };
+  return (
+    <>
+      <ControlPill
         icon="plus"
-        label={t("Add provider")}
-        disabled={!allowed}
+        accessibilityLabel={t("Add provider")}
+        variant="primary"
+        disabled={!allowed || pending}
         onPress={() => setExpanded(true)}
       />
-    );
-  return (
-    <View className="gap-2 p-4">
-      {driver ? (
-        <>
-          <TextInput
-            accessibilityLabel={t("Display name")}
-            value={name}
-            onChangeText={setName}
-            editable={!pending}
-            className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
-          />
-          <Text textRole="footnote" className="text-foreground-muted">
-            {t(
-              "Choose a connection method after creating the provider. Each method keeps its own settings.",
-            )}
-          </Text>
-          <View className="flex-row gap-2">
-            <ControlPill
-              label={t("Add")}
-              variant="primary"
-              disabled={!allowed || pending}
-              onPress={() => void create()}
-            />
-            <ControlPill label={t("Cancel")} disabled={pending} onPress={() => setDriver(null)} />
-          </View>
-        </>
-      ) : (
-        <>
-          {disabledProviders.map((provider) => (
-            <ListActionRow
-              key={provider.instanceId}
-              icon="plus"
-              label={t("Enable {name}", { name: provider.displayName ?? provider.driver })}
-              disabled={
-                !allowed ||
-                pending ||
-                isManagedSettingPath(
-                  environment.serverConfig.managedPolicy,
-                  `providerInstances.${provider.instanceId}.enabled`,
-                )
-              }
-              onPress={() => void enable(provider)}
-            />
-          ))}
-          {unified ? (
-            <View className="flex-row flex-wrap gap-2">
-              {(["codex", "claudeAgent"] as const)
-                .filter((kind) =>
-                  isManagedDriverAllowed(
-                    environment.serverConfig.managedPolicy,
-                    ProviderDriverKind.make(kind),
-                  ),
-                )
-                .map((kind) => (
-                  <ControlPill
-                    key={kind}
-                    label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
-                    disabled={!allowed || pending}
-                    onPress={() => {
-                      setName(kind === "codex" ? "Codex" : "Claude Code");
-                      setDriver(kind);
-                    }}
-                  />
-                ))}
-            </View>
-          ) : (
-            <>
-              {canAddClaude ? (
+      {expanded ? (
+        <Sheet title={t("Add provider")} onClose={close} dismissDisabled={pending} expanded>
+          <KeyboardSheetBody>
+            <ScreenScrollView
+              className="flex-1"
+              contentContainerClassName="gap-2 pb-2"
+              contentInsetAdjustmentBehavior="never"
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
+              {driver ? (
                 <>
-                  <AddClaudeAccount environment={environment} />
-                  <ClaudeByokProviderSettings environment={environment} createOnly />
+                  <TextInput
+                    accessibilityLabel={t("Display name")}
+                    value={name}
+                    onChangeText={setName}
+                    editable={!pending}
+                    className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
+                  />
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    {t(
+                      "Choose a connection method after creating the provider. Each method keeps its own settings.",
+                    )}
+                  </Text>
+                  <View className="flex-row gap-2">
+                    <ControlPill
+                      label={t("Add")}
+                      variant="primary"
+                      disabled={!allowed || pending}
+                      onPress={() => void create()}
+                    />
+                    <ControlPill
+                      label={t("Cancel")}
+                      disabled={pending}
+                      onPress={() => setDriver(null)}
+                    />
+                  </View>
                 </>
-              ) : null}
-              {canAddCodex && environment.serverConfig.environment.capabilities?.codexByok ? (
-                <ClaudeByokProviderSettings environment={environment} driver="codex" createOnly />
-              ) : null}
-            </>
-          )}
-          <ControlPill label={t("Cancel")} disabled={pending} onPress={() => setExpanded(false)} />
-        </>
-      )}
-    </View>
+              ) : (
+                <>
+                  {unified ? (
+                    <View className="flex-row flex-wrap gap-2">
+                      {(["codex", "claudeAgent"] as const)
+                        .filter((kind) =>
+                          isManagedDriverAllowed(
+                            environment.serverConfig.managedPolicy,
+                            ProviderDriverKind.make(kind),
+                          ),
+                        )
+                        .map((kind) => (
+                          <ControlPill
+                            key={kind}
+                            label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
+                            disabled={!allowed || pending}
+                            onPress={() => {
+                              setName(kind === "codex" ? "Codex" : "Claude Code");
+                              setDriver(kind);
+                            }}
+                          />
+                        ))}
+                    </View>
+                  ) : (
+                    <>
+                      {canAddClaude ? (
+                        <>
+                          <AddClaudeAccount environment={environment} />
+                          <ClaudeByokProviderSettings environment={environment} createOnly />
+                        </>
+                      ) : null}
+                      {canAddCodex &&
+                      environment.serverConfig.environment.capabilities?.codexByok ? (
+                        <ClaudeByokProviderSettings
+                          environment={environment}
+                          driver="codex"
+                          createOnly
+                        />
+                      ) : null}
+                    </>
+                  )}
+                  {disabledProviders.map((provider) => (
+                    <ListActionRow
+                      key={provider.instanceId}
+                      icon="plus"
+                      label={t("Enable {name}", { name: provider.displayName ?? provider.driver })}
+                      disabled={
+                        !allowed ||
+                        pending ||
+                        isManagedSettingPath(
+                          environment.serverConfig.managedPolicy,
+                          `providerInstances.${provider.instanceId}.enabled`,
+                        )
+                      }
+                      onPress={() => void enable(provider)}
+                    />
+                  ))}
+                  <ControlPill label={t("Cancel")} disabled={pending} onPress={close} />
+                </>
+              )}
+            </ScreenScrollView>
+          </KeyboardSheetBody>
+        </Sheet>
+      ) : null}
+    </>
   );
 }

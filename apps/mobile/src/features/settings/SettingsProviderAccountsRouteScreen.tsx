@@ -68,9 +68,9 @@ export function SettingsProviderAccountsRouteScreen() {
         {selectedTargets.length === 0 ? (
           <Text className="text-foreground-muted">{t("Select a connected environment.")}</Text>
         ) : (
-          selectedTargets.map((environment) => (
-            <SettingsSection key={environment.environmentId} title={environment.label}>
-              {!permittedEnvironments.has(environment.environmentId) ? (
+          selectedTargets.map((environment) =>
+            !permittedEnvironments.has(environment.environmentId) ? (
+              <SettingsSection key={environment.environmentId} title={environment.label}>
                 <View className="gap-1 p-4">
                   <Text className="text-base text-foreground">{t("Limited permissions")}</Text>
                   <Text className="text-sm text-foreground-muted">
@@ -80,14 +80,15 @@ export function SettingsProviderAccountsRouteScreen() {
                     )}
                   </Text>
                 </View>
-              ) : (
-                <EnvironmentProviders
-                  environment={environment}
-                  providers={managedProviders(environment, providersByEnvironment)}
-                />
-              )}
-            </SettingsSection>
-          ))
+              </SettingsSection>
+            ) : (
+              <EnvironmentProviders
+                key={environment.environmentId}
+                environment={environment}
+                providers={managedProviders(environment, providersByEnvironment)}
+              />
+            ),
+          )
         )}
       </ScreenScrollView>
     </SettingsScreen>
@@ -102,6 +103,7 @@ function EnvironmentProviders({
   readonly providers: ReadonlyArray<ServerProvider>;
 }) {
   const t = useUiTranslation();
+  const [removalError, setRemovalError] = useState<string | null>(null);
   const visibleProviders = providers.filter((provider) => provider.enabled);
   const isByok = (provider: ServerProvider) =>
     provider.driver === "codex"
@@ -124,7 +126,22 @@ function EnvironmentProviders({
     CLAUDE_DRIVER,
   );
   return (
-    <>
+    <SettingsSection
+      title={environment.label}
+      trailing={
+        <View className="flex-row items-center gap-2">
+          <RemoveProvider
+            environment={environment}
+            providers={visibleProviders}
+            onError={setRemovalError}
+          />
+          <AddProviderConnection environment={environment} providers={providers} />
+        </View>
+      }
+    >
+      {removalError ? (
+        <Text className="p-4 text-sm text-danger-foreground">{removalError}</Text>
+      ) : null}
       {canAddClaude ? (
         <ClaudeByokProviderSettings
           environment={environment}
@@ -167,9 +184,7 @@ function EnvironmentProviders({
       {claudeAccounts.map((provider) => (
         <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider} />
       ))}
-      <AddProviderConnection environment={environment} providers={providers} />
-      <RemoveProvider environment={environment} providers={visibleProviders} />
-    </>
+    </SettingsSection>
   );
 }
 

@@ -46,7 +46,7 @@ vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => mutate })
 
 import { RemoveProvider } from "./RemoveProvider";
 
-it("keeps cleanup errors visible after the last provider disappears", async () => {
+it("reports cleanup errors after the last provider disappears", async () => {
   mutate.mockReset();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const environmentId = EnvironmentId.make("remote");
@@ -62,6 +62,7 @@ it("keeps cleanup errors visible after the last provider disappears", async () =
   } as ServerProvider;
   const container = document.createElement("div");
   const root = createRoot(container);
+  const onError = vi.fn();
   let finish!: (result: AsyncResult.Failure<never, Error>) => void;
   mutate.mockImplementation(
     () =>
@@ -70,17 +71,23 @@ it("keeps cleanup errors visible after the last provider disappears", async () =
       }),
   );
   try {
-    act(() => root.render(<RemoveProvider environment={environment} providers={[provider]} />));
+    act(() =>
+      root.render(
+        <RemoveProvider environment={environment} providers={[provider]} onError={onError} />,
+      ),
+    );
     act(() => container.querySelector("button")!.click());
     expect(mutate).toHaveBeenCalledWith({
       environmentId,
       input: { patch: {}, providerInstanceMutation: { operation: "delete", instanceId } },
     });
-    act(() => root.render(<RemoveProvider environment={environment} providers={[]} />));
+    act(() =>
+      root.render(<RemoveProvider environment={environment} providers={[]} onError={onError} />),
+    );
     await act(async () =>
       finish(AsyncResult.failure(Cause.fail(new Error("Managed files remain")))),
     );
-    expect(container.textContent).toContain("Managed files remain");
+    expect(onError).toHaveBeenLastCalledWith("Managed files remain");
     expect(container.querySelector("button")).toBeNull();
   } finally {
     act(() => root.unmount());
