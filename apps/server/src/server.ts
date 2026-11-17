@@ -157,6 +157,7 @@ import * as SourceControlRateLimit from "@t3tools/source-control-core/server/Sou
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as BranchIssueService from "./sourceControl/BranchIssueService.ts";
 import * as IssueService from "./sourceControl/IssueService.ts";
+import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
 import * as McmRelease from "./work-items/McmReleaseService.ts";
 import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
@@ -479,6 +480,7 @@ const layerSourceControlRepositoryService = Layer.mergeAll(
   SourceControlRepositoryService.layer,
   BranchIssueService.layer,
   IssueService.layer.pipe(
+    Layer.provide(ManagedProjectFolders.layer.pipe(Layer.provide(layerGitWorkflow))),
     Layer.provide(RuntimeLayer.layerProjectService),
     Layer.provide(layerServerSettings),
   ),
