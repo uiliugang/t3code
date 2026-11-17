@@ -1,6 +1,7 @@
 import { WorkItemMessageAction } from "../work-items/WorkItemMessageAction";
 import { mobileAssistantCitation, mobileResponseContext } from "../../lib/assistantCitations";
 import { requestThreadMessageJump } from "./threadMessageJump";
+import { threadForkFailure } from "./threadForkFailure";
 import { searchableMessageSegments } from "@t3tools/shared/threadFindText";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { toServerClock } from "@t3tools/client-runtime/clock";
@@ -109,7 +110,6 @@ import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import {
   executeAtomQuery,
-  isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
@@ -528,12 +528,9 @@ function AssistantForkButton(props: {
           });
     void command
       .then(async (result) => {
-        if (isAtomCommandInterrupted(result)) return;
         if (result._tag !== "Success") {
-          Dialog.alert(
-            t("Could not confirm fork"),
-            t("Reconnect and check the thread list before trying again."),
-          );
+          const failure = threadForkFailure(result.cause);
+          if (failure) Dialog.alert(t(failure.title), t(failure.message));
           return;
         }
         const targetThreadReady = await waitForThreadShell(

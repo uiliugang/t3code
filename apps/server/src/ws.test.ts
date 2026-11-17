@@ -21,6 +21,9 @@ import {
   AuthOrchestrationReadScope,
   AuthSessionId,
   AuthSourceControlWriteScope,
+  CommandId,
+  GitCommandError,
+  ORCHESTRATION_V2_WS_METHODS,
   ORCHESTRATION_PROTOCOL_VERSION,
   ORCHESTRATION_PROTOCOL_QUERY_PARAM,
   EnvironmentId,
@@ -981,6 +984,85 @@ const layerConfigSources = Layer.mergeAll(
     ),
   ),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
+
+it.effect("preserves workspace rejection details in the thread launch RPC error", () =>
+  Effect.gen(function* () {
+    const detail =
+      "Resolve merge conflicts in the current checkout before forking into a new worktree.";
+    const commandId = CommandId.make("fork-conflict");
+    const projectId = ProjectId.make("fork-project");
+    const services = Layer.mergeAll(
+      layerUnusedConfigRpcServices,
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+        checkWorktreeBase: () => Effect.void,
+        launch: () =>
+          Effect.fail(
+            new ThreadLaunchService.ThreadLaunchError({
+              operation: "provision-worktree",
+              commandId,
+              projectId,
+              cause: new GitCommandError({
+                operation: "carryCheckoutChanges",
+                command: "git ls-files --unmerged",
+                cwd: "/repo",
+                detail,
+              }),
+            }),
+          ),
+      }),
+      Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({
+        enqueueCommand: (command) => command,
+      }),
+      Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+      Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+      Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+      Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
+      Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+    );
+    const client = yield* RpcTest.makeClient(WsRpcGroup).pipe(
+      Effect.provide(
+        layerWsRpc(
+          {
+            sessionId: AuthSessionId.make("fork-test"),
+            subject: "fork-test",
+            method: "browser-session-cookie",
+            scopes: [AuthOrchestrationOperateScope],
+          },
+          {},
+          yield* ServerBrowser.ServerBrowser,
+          () => Effect.void,
+          { secretReferences: true },
+        ).pipe(
+          Layer.provide(services),
+          Layer.merge(RpcAuthorization.layer([AuthOrchestrationOperateScope])),
+        ),
+      ),
+    );
+    const error = yield* client[ORCHESTRATION_V2_WS_METHODS.launchThread]({
+      commandId,
+      projectId,
+      title: "Fork",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      workspaceStrategy: { type: "worktree", baseRef: "main", startFromOrigin: false },
+    }).pipe(Effect.flip);
+    assert.equal(error._tag, "OrchestrationV2ThreadLaunchError");
+    assert.include(error.message, detail);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.fresh(layerConfigSources),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+        Layer.mock(ServerBrowser.ServerBrowser)({}),
+      ),
+    ),
+  ),
 );
 
 it.live.each([
