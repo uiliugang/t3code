@@ -36,7 +36,7 @@ import {
   resolveLocalVersionStatusLabel,
   resolveTailscaleServeBaseUrl,
 } from "./ConnectionsSettings.logic";
-import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
+import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
 import { useAccessEnvironment } from "./useAccessEnvironment";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { ManagedByOrganization } from "../ManagedPolicy";
@@ -180,7 +180,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 }
 
 function AccessSettings() {
-  const t = useUiTranslation();
   // A link that names an environment, such as the MCP wizard's, opens the page on it. The
   // settings layout remounts this page when the link changes.
   const linkedEnvironmentId = useSearch({
@@ -194,49 +193,16 @@ function AccessSettings() {
   const accessEnvironmentId = accessEnvironment?.environmentId ?? null;
   const picker =
     candidates.length > 1 && accessEnvironmentId !== null ? (
-      <div className="flex min-w-0 items-center gap-1.5 px-3 text-sm text-muted-foreground sm:px-4">
-        <span className="shrink-0">{t("Showing access for")}</span>
-        <Select
-          value={accessEnvironmentId}
-          onValueChange={(next) => {
-            if (next !== null) setSelectedEnvironmentId(next);
-          }}
-        >
-          <SelectTrigger size="sm" className="w-auto max-w-72" aria-label={t("Environment")}>
-            <SelectValue>
-              {(value: EnvironmentId) => {
-                const environment = candidates.find(
-                  (candidate) => candidate.environmentId === value,
-                );
-                return environment ? settingsScopeEnvironmentLabel(environment, candidates) : null;
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup alignItemWithTrigger={false}>
-            {candidates.map((environment) => (
-              <SelectItem
-                hideIndicator
-                key={environment.environmentId}
-                value={environment.environmentId}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <EnvironmentMachineIcon
-                    aria-hidden
-                    kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-                    className="size-3.5 shrink-0"
-                  />
-                  <span className="min-w-0 truncate">
-                    {settingsScopeEnvironmentLabel(environment, candidates)}
-                  </span>
-                  {environment.connection.phase !== "connected" ? (
-                    <span className="shrink-0 text-xs text-muted-foreground">{t("Offline")}</span>
-                  ) : null}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-      </div>
+      <EnvironmentScopeMenu
+        value={{ machine: accessEnvironmentId }}
+        groups={[]}
+        environments={candidates}
+        singleEnvironment
+        variant="ghost"
+        onChange={(next) => {
+          if (next.machine) setSelectedEnvironmentId(EnvironmentId.make(next.machine));
+        }}
+      />
     ) : null;
   // Keyed so pairing credentials and pending work never carry over to another environment.
   return (
@@ -1207,22 +1173,27 @@ function ConnectionsSettingsContent({
   const accessServerConfig = accessEnvironment?.serverConfig ?? null;
   const primarySettings = (
     <>
-      {accessEnvironmentPicker}
       {accessEnvironmentId !== null ? (
         <>
           <SettingsSection
             {...searchableSetting("connections-environment")}
             title={
-              accessEnvironment?.label ?? (desktopBridge ? "This machine" : "Primary environment")
+              accessEnvironmentPicker ??
+              accessEnvironment?.label ??
+              (desktopBridge ? "This machine" : "Primary environment")
             }
             icon={
-              <EnvironmentMachineIcon
-                aria-hidden
-                kind={
-                  accessServerConfig ? resolveEnvironmentMachineKind(accessServerConfig) : "desktop"
-                }
-                className="size-4"
-              />
+              accessEnvironmentPicker ? undefined : (
+                <EnvironmentMachineIcon
+                  aria-hidden
+                  kind={
+                    accessServerConfig
+                      ? resolveEnvironmentMachineKind(accessServerConfig)
+                      : "desktop"
+                  }
+                  className="size-4"
+                />
+              )
             }
             headerAction={
               accessEnvironmentId !== null ? (
