@@ -104,7 +104,7 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
       <SearchField
         inputRef={searchState.inputRef}
         accessibilityLabel={searchLabel}
-        clearAccessibilityLabel={search.clearAccessibilityLabel ?? "Clear search"}
+        clearAccessibilityLabel={search.clearAccessibilityLabel ?? t("Clear search")}
         placeholder={
           search.compactToolbar
             ? (search.compactPlaceholder ?? search.placeholder)
