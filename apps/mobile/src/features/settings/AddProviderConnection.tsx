@@ -14,6 +14,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { KeyboardSheetBody } from "../../components/ui/KeyboardSheetBody";
 import { ListActionRow } from "../../components/ui/ListActionRow";
+import { ListSection } from "../../components/ui/ListSection";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { Sheet } from "../../components/ui/Sheet";
 import { useUiTranslation } from "../../lib/useUiTranslation";
@@ -191,61 +192,71 @@ export function AddProviderConnection({
                 </>
               ) : (
                 <>
-                  {unified ? (
-                    <View className="flex-row flex-wrap gap-2">
-                      {(["codex", "claudeAgent"] as const)
-                        .filter((kind) =>
-                          isManagedDriverAllowed(
-                            environment.serverConfig.managedPolicy,
-                            ProviderDriverKind.make(kind),
-                          ),
-                        )
-                        .map((kind) => (
-                          <ControlPill
-                            key={kind}
-                            label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
-                            disabled={!allowed || pending}
-                            onPress={() => {
-                              setName(kind === "codex" ? "Codex" : "Claude Code");
-                              setDriver(kind);
-                            }}
+                  <ListSection>
+                    {unified ? (
+                      <View>
+                        {(["codex", "claudeAgent"] as const)
+                          .filter((kind) =>
+                            isManagedDriverAllowed(
+                              environment.serverConfig.managedPolicy,
+                              ProviderDriverKind.make(kind),
+                            ),
+                          )
+                          .map((kind, index) => (
+                            <View
+                              key={kind}
+                              className={index > 0 ? "border-t border-border-subtle" : undefined}
+                            >
+                              <ListActionRow
+                                icon="plus"
+                                label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
+                                disabled={!allowed || pending}
+                                onPress={() => {
+                                  setName(kind === "codex" ? "Codex" : "Claude Code");
+                                  setDriver(kind);
+                                }}
+                              />
+                            </View>
+                          ))}
+                      </View>
+                    ) : (
+                      <>
+                        {canAddClaude ? (
+                          <>
+                            <AddClaudeAccount environment={environment} />
+                            <ClaudeByokProviderSettings environment={environment} createOnly />
+                          </>
+                        ) : null}
+                        {canAddCodex &&
+                        environment.serverConfig.environment.capabilities?.codexByok ? (
+                          <ClaudeByokProviderSettings
+                            environment={environment}
+                            driver="codex"
+                            createOnly
                           />
-                        ))}
-                    </View>
-                  ) : (
-                    <>
-                      {canAddClaude ? (
-                        <>
-                          <AddClaudeAccount environment={environment} />
-                          <ClaudeByokProviderSettings environment={environment} createOnly />
-                        </>
-                      ) : null}
-                      {canAddCodex &&
-                      environment.serverConfig.environment.capabilities?.codexByok ? (
-                        <ClaudeByokProviderSettings
-                          environment={environment}
-                          driver="codex"
-                          createOnly
+                        ) : null}
+                      </>
+                    )}
+                    {disabledProviders.map((provider) => (
+                      <View key={provider.instanceId} className="border-t border-border-subtle">
+                        <ListActionRow
+                          icon="plus"
+                          label={t("Enable {name}", {
+                            name: provider.displayName ?? provider.driver,
+                          })}
+                          disabled={
+                            !allowed ||
+                            pending ||
+                            isManagedSettingPath(
+                              environment.serverConfig.managedPolicy,
+                              `providerInstances.${provider.instanceId}.enabled`,
+                            )
+                          }
+                          onPress={() => void enable(provider)}
                         />
-                      ) : null}
-                    </>
-                  )}
-                  {disabledProviders.map((provider) => (
-                    <ListActionRow
-                      key={provider.instanceId}
-                      icon="plus"
-                      label={t("Enable {name}", { name: provider.displayName ?? provider.driver })}
-                      disabled={
-                        !allowed ||
-                        pending ||
-                        isManagedSettingPath(
-                          environment.serverConfig.managedPolicy,
-                          `providerInstances.${provider.instanceId}.enabled`,
-                        )
-                      }
-                      onPress={() => void enable(provider)}
-                    />
-                  ))}
+                      </View>
+                    ))}
+                  </ListSection>
                   <ControlPill label={t("Cancel")} disabled={pending} onPress={close} />
                 </>
               )}

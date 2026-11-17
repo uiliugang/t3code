@@ -112,6 +112,7 @@ vi.mock("../../components/ui/ListActionRow", () => ({
   ),
 }));
 vi.mock("../../components/ui/ListToggleRow", () => ({ ListToggleRow: () => null }));
+vi.mock("../../components/ui/ListSection", () => ({ ListSection: Children }));
 vi.mock("../../components/ui/Menu", () => ({
   Menu: ({
     children,

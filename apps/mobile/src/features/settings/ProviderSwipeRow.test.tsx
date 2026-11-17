@@ -22,16 +22,25 @@ vi.mock("@effect/atom-react", () => ({ useAtomValue: () => permission.allowed })
 vi.mock("../home/thread-swipe-actions", () => ({
   ThreadSwipeable: ({
     primaryAction,
+    secondaryAction,
     enabled,
     children,
   }: {
     primaryAction: { onPress: () => void };
+    secondaryAction: { onPress: () => void } | null;
     enabled: boolean;
     children: () => ReactNode;
   }) => (
     <>
       {children()}
-      <button disabled={!enabled} onClick={primaryAction.onPress}>
+      {secondaryAction ? (
+        <button aria-label="Edit" disabled={!enabled} onClick={primaryAction.onPress} />
+      ) : null}
+      <button
+        aria-label="Remove"
+        disabled={!enabled}
+        onClick={(secondaryAction ?? primaryAction).onPress}
+      >
         Remove
       </button>
     </>
@@ -65,6 +74,7 @@ it("reports cleanup errors after the last provider disappears", async () => {
   const container = document.createElement("div");
   const root = createRoot(container);
   const onError = vi.fn();
+  const onEdit = vi.fn();
   let finish!: (result: AsyncResult.Failure<never, Error>) => void;
   mutate.mockImplementation(
     () =>
@@ -79,13 +89,18 @@ it("reports cleanup errors after the last provider disappears", async () => {
           environment={environment}
           provider={provider}
           onError={onError}
+          onEdit={onEdit}
           onSwipeableWillOpen={() => {}}
         >
           Codex
         </ProviderSwipeRow>,
       ),
     );
-    act(() => container.querySelector("button")!.click());
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Edit"]')!.click());
+    expect(onEdit).toHaveBeenCalledOnce();
+    expect(alert).not.toHaveBeenCalled();
+    expect(mutate).not.toHaveBeenCalled();
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Remove"]')!.click());
     expect(mutate).not.toHaveBeenCalled();
     const buttons = alert.mock.calls[0]![2] as { style?: string; onPress?: () => void }[];
     act(() => buttons.find((button) => button.style === "cancel")?.onPress?.());

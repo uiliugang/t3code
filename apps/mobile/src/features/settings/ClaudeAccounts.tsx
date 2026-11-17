@@ -29,6 +29,7 @@ import {
 } from "./claude-accounts";
 import type { SettingsTarget } from "./settings-environment-filter";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
+import type { ProviderRowRenderer } from "./ProviderSwipeRow";
 
 function useProviderInstanceMutation(environment: SettingsTarget) {
   const t = useUiTranslation();
@@ -65,9 +66,11 @@ function useProviderInstanceMutation(environment: SettingsTarget) {
 export function ClaudeAccount({
   environment,
   provider,
+  renderRow,
 }: {
   readonly environment: SettingsTarget;
   readonly provider: ServerProvider;
+  readonly renderRow: ProviderRowRenderer;
 }) {
   const t = useUiTranslation();
   const [editing, setEditing] = useState(false);
@@ -130,15 +133,10 @@ export function ClaudeAccount({
     );
   }
   const showDetails = expanded || editing || pending || Boolean(error);
-  return (
+  const content = (
     <View className="border-t border-border-subtle">
       {!showDetails ? (
-        <ListRow
-          label={name}
-          description={status ?? undefined}
-          detail={t("Edit")}
-          onPress={() => setExpanded(true)}
-        />
+        <ListRow label={name} description={status ?? undefined} onPress={() => setExpanded(true)} />
       ) : null}
       <View className={showDetails ? undefined : "hidden"}>
         <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
@@ -196,6 +194,7 @@ export function ClaudeAccount({
       </View>
     </View>
   );
+  return renderRow(content, () => setExpanded(true));
 }
 
 export function AddClaudeAccount({ environment }: { readonly environment: SettingsTarget }) {

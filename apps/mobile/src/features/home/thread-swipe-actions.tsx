@@ -68,7 +68,7 @@ const THREAD_SWIPE_SPRING = {
 interface ThreadSwipeAction {
   readonly accessibilityLabel: string;
   readonly icon: ComponentProps<typeof SymbolView>["name"];
-  readonly label: string;
+  readonly label?: string;
   readonly destructive?: boolean;
   readonly menu?: {
     readonly actions: MenuAction[];
@@ -116,7 +116,7 @@ function resolveSecondaryAction(input: {
   const action = input.secondaryAction;
   return {
     ...action,
-    tone: "secondary",
+    tone: action.destructive ? "danger" : "secondary",
     menu:
       action.menu === undefined
         ? undefined
@@ -586,7 +586,7 @@ function SwipeActionButton(props: {
   readonly entryRange: readonly [number, number];
   readonly fullSwipeThreshold: number;
   readonly icon: ComponentProps<typeof SymbolView>["name"];
-  readonly label: string;
+  readonly label?: string;
   readonly menu?: ThreadSwipeAction["menu"];
   readonly onPress: () => void;
   readonly rowHeight: number;
@@ -747,26 +747,28 @@ function SwipeActionButton(props: {
           />
         </Animated.View>
       </View>
-      {/* An offset, not padding: padding would grow the box and move the circle at 1x. */}
-      <Animated.View
-        style={[
-          {
-            justifyContent: "center",
-            minHeight: ACTION_LABEL_MIN_HEIGHT,
-            top: props.compact ? 0 : ACTION_LABEL_OFFSET,
-          },
-          labelStyle,
-        ]}
-      >
-        <Text
-          className="text-3xs font-t3-medium text-foreground-muted"
-          maxFontSizeMultiplier={ACTION_LABEL_MAX_FONT_SCALE}
-          numberOfLines={1}
-          style={labelTextStyle}
+      {props.label ? (
+        <Animated.View
+          style={[
+            {
+              justifyContent: "center",
+              minHeight: ACTION_LABEL_MIN_HEIGHT,
+              // Offset without growing the box or moving the circle at 1x.
+              top: props.compact ? 0 : ACTION_LABEL_OFFSET,
+            },
+            labelStyle,
+          ]}
         >
-          {t(props.label)}
-        </Text>
-      </Animated.View>
+          <Text
+            className="text-3xs font-t3-medium text-foreground-muted"
+            maxFontSizeMultiplier={ACTION_LABEL_MAX_FONT_SCALE}
+            numberOfLines={1}
+            style={labelTextStyle}
+          >
+            {t(props.label)}
+          </Text>
+        </Animated.View>
+      ) : null}
     </Pressable>
   );
 

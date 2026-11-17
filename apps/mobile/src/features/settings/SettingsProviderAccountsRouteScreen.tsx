@@ -43,7 +43,7 @@ import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-en
 import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
 import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
-import { ProviderSwipeRow } from "./ProviderSwipeRow";
+import { ProviderSwipeRow, type ProviderRowRenderer } from "./ProviderSwipeRow";
 
 import {
   canManageProvider,
@@ -109,12 +109,14 @@ function EnvironmentProviders({
   const renderProvider = (
     provider: Pick<ServerProvider, "instanceId" | "displayName">,
     content: ReactNode,
+    onEdit?: () => void,
   ) => (
     <ProviderSwipeRow
       key={provider.instanceId}
       environment={environment}
       provider={provider}
       onError={setRemovalError}
+      onEdit={onEdit}
       onSwipeableClose={(methods) => {
         if (openSwipeable.current === methods) openSwipeable.current = null;
       }}
@@ -176,28 +178,39 @@ function EnvironmentProviders({
           renderInstance={renderProvider}
         />
       ) : null}
-      {accounts.map((provider, index) =>
-        renderProvider(
-          provider,
-          <View className={index > 0 ? "border-t border-border-subtle" : undefined}>
-            <ProviderAccount environment={environment} provider={provider} />
-          </View>,
-        ),
-      )}
+      {accounts.map((provider, index) => (
+        <View
+          key={provider.instanceId}
+          className={index > 0 ? "border-t border-border-subtle" : undefined}
+        >
+          <ProviderAccount
+            environment={environment}
+            provider={provider}
+            renderRow={(content, onEdit) => renderProvider(provider, content, onEdit)}
+          />
+        </View>
+      ))}
       {visibleProviders
         .filter((provider) => !isByok(provider) && needsProviderSummary(provider))
-        .map((provider) =>
-          renderProvider(
-            provider,
-            <ProviderSummary environment={environment} provider={provider} />,
-          ),
-        )}
+        .map((provider) => (
+          <ProviderSummary
+            key={provider.instanceId}
+            environment={environment}
+            provider={provider}
+            renderRow={(content, onEdit) => renderProvider(provider, content, onEdit)}
+          />
+        ))}
       {visibleProviders.length === 0 ? (
         <Text className="p-4 text-foreground-muted">{t("No providers available.")}</Text>
       ) : null}
-      {claudeAccounts.map((provider) =>
-        renderProvider(provider, <ClaudeAccount environment={environment} provider={provider} />),
-      )}
+      {claudeAccounts.map((provider) => (
+        <ClaudeAccount
+          key={provider.instanceId}
+          environment={environment}
+          provider={provider}
+          renderRow={(content, onEdit) => renderProvider(provider, content, onEdit)}
+        />
+      ))}
     </SettingsSection>
   );
 }
@@ -205,22 +218,23 @@ function EnvironmentProviders({
 function ProviderSummary({
   environment,
   provider,
+  renderRow,
 }: {
   readonly environment: SettingsTarget;
   readonly provider: ServerProvider;
+  readonly renderRow: ProviderRowRenderer;
 }) {
   const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
   const hasSettings =
     provider.driver === "codex" && environment.serverConfig.environment.capabilities?.codexByok;
   const email = provider.auth.status === "authenticated" ? provider.auth.email?.trim() : undefined;
-  return (
+  const content = (
     <View className="border-t border-border-subtle">
       {hasSettings && !expanded ? (
         <ListRow
           label={provider.displayName ?? provider.driver}
           description={t(providerSummaryStatus(provider))}
-          detail={t("Edit")}
           onPress={() => setExpanded(true)}
         />
       ) : (
@@ -243,6 +257,7 @@ function ProviderSummary({
       ) : null}
     </View>
   );
+  return renderRow(content, hasSettings ? () => setExpanded(true) : undefined);
 }
 
 /** Providers the environment's managed policy allows; the rest cannot run or sign in. */
@@ -258,9 +273,11 @@ function managedProviders(
 function ProviderAccount({
   environment,
   provider,
+  renderRow,
 }: {
   readonly environment: SettingsTarget;
   readonly provider: ServerProvider;
+  readonly renderRow: ProviderRowRenderer;
 }) {
   const t = useUiTranslation();
   const environmentId = environment.environmentId;
@@ -528,13 +545,12 @@ function ProviderAccount({
     />
   ) : null;
   const showDetails = expanded || active || pending || Boolean(error || auth.error);
-  return (
+  const content = (
     <View>
       {!showDetails ? (
         <ListRow
           label={name}
           description={status ? t(status) : undefined}
-          detail={t("Edit")}
           onPress={() => setExpanded(true)}
         />
       ) : null}
@@ -668,6 +684,7 @@ function ProviderAccount({
       </View>
     </View>
   );
+  return renderRow(content, () => setExpanded(true));
 }
 
 function ProviderAccountSummary({

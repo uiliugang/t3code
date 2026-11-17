@@ -6,7 +6,7 @@ import {
   CODEX_BYOK_LABEL,
 } from "@t3tools/shared/codexByok";
 import { useAtomValue } from "@effect/atom-react";
-import { Fragment, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { TextInput, View } from "react-native";
 import {
   ProviderDriverKind,
@@ -37,6 +37,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { SettingsTarget } from "./settings-environment-filter";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
+import type { ProviderRowRenderer } from "./ProviderSwipeRow";
 
 export function ClaudeByokProviderSettings({
   environment,
@@ -54,6 +55,7 @@ export function ClaudeByokProviderSettings({
   readonly renderInstance?: (
     provider: Pick<ServerProvider, "instanceId" | "displayName">,
     editor: ReactNode,
+    onEdit?: () => void,
   ) => ReactNode;
 }) {
   const t = useUiTranslation();
@@ -77,24 +79,25 @@ export function ClaudeByokProviderSettings({
     <View>
       {instances.map(([instanceId, instance]) => {
         const id = ProviderInstanceId.make(instanceId);
-        const editor = (
+        return (
           <ClaudeByokEditor
+            key={`${instanceId}:${JSON.stringify(instance.environment)}`}
             driver={driver}
             environment={environment}
             instanceId={id}
             instance={instance}
             provider={providers.find((provider) => provider.instanceId === instanceId)}
+            renderRow={
+              renderInstance
+                ? (content, onEdit) =>
+                    renderInstance(
+                      { instanceId: id, displayName: instance.displayName ?? label },
+                      content,
+                      onEdit,
+                    )
+                : undefined
+            }
           />
-        );
-        return (
-          <Fragment key={`${instanceId}:${JSON.stringify(instance.environment)}`}>
-            {renderInstance
-              ? renderInstance(
-                  { instanceId: id, displayName: instance.displayName ?? label },
-                  editor,
-                )
-              : editor}
-          </Fragment>
         );
       })}
       {adding ? (
@@ -122,6 +125,7 @@ function ClaudeByokEditor({
   instance,
   provider,
   onClose,
+  renderRow,
 }: {
   readonly environment: SettingsTarget;
   readonly driver: "claudeAgent" | "codex";
@@ -129,6 +133,7 @@ function ClaudeByokEditor({
   readonly instance?: ProviderInstanceConfig;
   readonly provider?: ServerProvider | undefined;
   readonly onClose?: () => void;
+  readonly renderRow?: ProviderRowRenderer;
 }) {
   const t = useUiTranslation();
   const codex = driver === "codex";
@@ -246,13 +251,13 @@ function ClaudeByokEditor({
             : t("Check failed.")),
     });
   };
-  return (
+  const content = (
     <View className="border-b border-border-subtle">
       {instance ? (
         <ListRow
           label={instance.displayName ?? label}
           description={label}
-          detail={t(expanded ? "Done" : "Edit")}
+          detail={expanded ? t("Done") : undefined}
           disabled={pending}
           onPress={() => setExpanded(!expanded)}
         />
@@ -493,4 +498,5 @@ function ClaudeByokEditor({
       ) : null}
     </View>
   );
+  return renderRow ? renderRow(content, () => setExpanded(true)) : content;
 }

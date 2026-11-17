@@ -14,10 +14,13 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { SettingsTarget } from "./settings-environment-filter";
 
+export type ProviderRowRenderer = (content: ReactNode, onEdit?: () => void) => ReactNode;
+
 export function ProviderSwipeRow({
   environment,
   provider,
   onError,
+  onEdit,
   onSwipeableClose,
   onSwipeableWillOpen,
   children,
@@ -25,6 +28,7 @@ export function ProviderSwipeRow({
   readonly environment: SettingsTarget;
   readonly provider: Pick<ServerProvider, "instanceId" | "displayName">;
   readonly onError: (error: string | null) => void;
+  readonly onEdit?: () => void;
   readonly onSwipeableClose?: (methods: SwipeableMethods) => void;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly children: ReactNode;
@@ -91,19 +95,31 @@ export function ProviderSwipeRow({
     <ThreadSwipeable
       backgroundColor="transparent"
       enabled={allowed && !pending}
-      fullSwipeAction="primary"
+      fullSwipeAction="delete"
       fullSwipeWidth={width - 40}
       onDelete={remove}
       onSwipeableClose={onSwipeableClose}
       onSwipeableWillOpen={onSwipeableWillOpen}
-      primaryAction={{
-        accessibilityLabel: `${t("Remove provider")}: ${name}`,
-        destructive: true,
-        icon: "trash",
-        label: t("Remove"),
-        onPress: remove,
-      }}
-      secondaryAction={null}
+      primaryAction={
+        onEdit
+          ? { accessibilityLabel: `${t("Edit")}: ${name}`, icon: "pencil", onPress: onEdit }
+          : {
+              accessibilityLabel: `${t("Remove provider")}: ${name}`,
+              destructive: true,
+              icon: "trash",
+              onPress: remove,
+            }
+      }
+      secondaryAction={
+        onEdit
+          ? {
+              accessibilityLabel: `${t("Remove provider")}: ${name}`,
+              destructive: true,
+              icon: "trash",
+              onPress: remove,
+            }
+          : null
+      }
       threadKey={`${environment.environmentId}:${provider.instanceId}`}
       threadTitle={name}
     >
