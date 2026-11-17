@@ -14,11 +14,12 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Linking, Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { MenuAction } from "@react-native-menu/menu";
+import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -42,7 +43,7 @@ import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-en
 import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
 import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
-import { RemoveProvider } from "./RemoveProvider";
+import { ProviderSwipeRow } from "./ProviderSwipeRow";
 
 import {
   canManageProvider,
@@ -104,6 +105,27 @@ function EnvironmentProviders({
 }) {
   const t = useUiTranslation();
   const [removalError, setRemovalError] = useState<string | null>(null);
+  const openSwipeable = useRef<SwipeableMethods | null>(null);
+  const renderProvider = (
+    provider: Pick<ServerProvider, "instanceId" | "displayName">,
+    content: ReactNode,
+  ) => (
+    <ProviderSwipeRow
+      key={provider.instanceId}
+      environment={environment}
+      provider={provider}
+      onError={setRemovalError}
+      onSwipeableClose={(methods) => {
+        if (openSwipeable.current === methods) openSwipeable.current = null;
+      }}
+      onSwipeableWillOpen={(methods) => {
+        if (openSwipeable.current !== methods) openSwipeable.current?.close();
+        openSwipeable.current = methods;
+      }}
+    >
+      {content}
+    </ProviderSwipeRow>
+  );
   const visibleProviders = providers.filter((provider) => provider.enabled);
   const isByok = (provider: ServerProvider) =>
     provider.driver === "codex"
@@ -128,16 +150,7 @@ function EnvironmentProviders({
   return (
     <SettingsSection
       title={environment.label}
-      trailing={
-        <View className="flex-row items-center gap-2">
-          <RemoveProvider
-            environment={environment}
-            providers={visibleProviders}
-            onError={setRemovalError}
-          />
-          <AddProviderConnection environment={environment} providers={providers} />
-        </View>
-      }
+      trailing={<AddProviderConnection environment={environment} providers={providers} />}
     >
       {removalError ? (
         <Text className="p-4 text-sm text-danger-foreground">{removalError}</Text>
@@ -147,6 +160,7 @@ function EnvironmentProviders({
           environment={environment}
           allowCreate={false}
           providers={providers}
+          renderInstance={renderProvider}
         />
       ) : null}
       {environment.serverConfig.environment.capabilities?.codexByok &&
@@ -159,31 +173,31 @@ function EnvironmentProviders({
           driver="codex"
           allowCreate={false}
           providers={providers}
+          renderInstance={renderProvider}
         />
       ) : null}
-      {accounts.map((provider, index) => (
-        <View
-          key={provider.instanceId}
-          className={index > 0 ? "border-t border-border-subtle" : undefined}
-        >
-          <ProviderAccount environment={environment} provider={provider} />
-        </View>
-      ))}
+      {accounts.map((provider, index) =>
+        renderProvider(
+          provider,
+          <View className={index > 0 ? "border-t border-border-subtle" : undefined}>
+            <ProviderAccount environment={environment} provider={provider} />
+          </View>,
+        ),
+      )}
       {visibleProviders
         .filter((provider) => !isByok(provider) && needsProviderSummary(provider))
-        .map((provider) => (
-          <ProviderSummary
-            key={provider.instanceId}
-            environment={environment}
-            provider={provider}
-          />
-        ))}
+        .map((provider) =>
+          renderProvider(
+            provider,
+            <ProviderSummary environment={environment} provider={provider} />,
+          ),
+        )}
       {visibleProviders.length === 0 ? (
         <Text className="p-4 text-foreground-muted">{t("No providers available.")}</Text>
       ) : null}
-      {claudeAccounts.map((provider) => (
-        <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider} />
-      ))}
+      {claudeAccounts.map((provider) =>
+        renderProvider(provider, <ClaudeAccount environment={environment} provider={provider} />),
+      )}
     </SettingsSection>
   );
 }

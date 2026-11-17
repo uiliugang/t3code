@@ -19,6 +19,21 @@ const { mutate, Children } = vi.hoisted(() => ({
 }));
 vi.mock("react-native", () => ({
   View: Children,
+  Pressable: ({
+    children,
+    accessibilityLabel,
+    disabled,
+    onPress,
+  }: {
+    children: ReactNode;
+    accessibilityLabel?: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>
+      {children}
+    </button>
+  ),
   TextInput: ({
     value,
     onChangeText,
@@ -40,6 +55,7 @@ vi.mock("react-native", () => ({
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../../components/ui/KeyboardSheetBody", () => ({ KeyboardSheetBody: Children }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
 vi.mock("../../components/ui/Sheet", () => ({

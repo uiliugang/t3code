@@ -6,7 +6,7 @@ import {
   CODEX_BYOK_LABEL,
 } from "@t3tools/shared/codexByok";
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { TextInput, View } from "react-native";
 import {
   ProviderDriverKind,
@@ -44,12 +44,17 @@ export function ClaudeByokProviderSettings({
   allowCreate = true,
   providers = [],
   createOnly = false,
+  renderInstance,
 }: {
   readonly allowCreate?: boolean;
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly createOnly?: boolean;
   readonly driver?: "claudeAgent" | "codex";
   readonly environment: SettingsTarget;
+  readonly renderInstance?: (
+    provider: Pick<ServerProvider, "instanceId" | "displayName">,
+    editor: ReactNode,
+  ) => ReactNode;
 }) {
   const t = useUiTranslation();
   const label = driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL;
@@ -70,16 +75,28 @@ export function ClaudeByokProviderSettings({
   for (let suffix = 2; existing.has(id); suffix++) id = `${driver}_byok_${suffix}`;
   return (
     <View>
-      {instances.map(([instanceId, instance]) => (
-        <ClaudeByokEditor
-          driver={driver}
-          key={`${instanceId}:${JSON.stringify(instance.environment)}`}
-          environment={environment}
-          instanceId={ProviderInstanceId.make(instanceId)}
-          instance={instance}
-          provider={providers.find((provider) => provider.instanceId === instanceId)}
-        />
-      ))}
+      {instances.map(([instanceId, instance]) => {
+        const id = ProviderInstanceId.make(instanceId);
+        const editor = (
+          <ClaudeByokEditor
+            driver={driver}
+            environment={environment}
+            instanceId={id}
+            instance={instance}
+            provider={providers.find((provider) => provider.instanceId === instanceId)}
+          />
+        );
+        return (
+          <Fragment key={`${instanceId}:${JSON.stringify(instance.environment)}`}>
+            {renderInstance
+              ? renderInstance(
+                  { instanceId: id, displayName: instance.displayName ?? label },
+                  editor,
+                )
+              : editor}
+          </Fragment>
+        );
+      })}
       {adding ? (
         <ClaudeByokEditor
           driver={driver}

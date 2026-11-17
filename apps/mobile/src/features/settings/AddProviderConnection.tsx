@@ -8,7 +8,8 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useRef, useState } from "react";
-import { TextInput, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { KeyboardSheetBody } from "../../components/ui/KeyboardSheetBody";
@@ -130,13 +131,26 @@ export function AddProviderConnection({
   };
   return (
     <>
-      <ControlPill
-        icon="plus"
+      <Pressable
         accessibilityLabel={t("Add provider")}
-        variant="primary"
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !allowed || pending }}
         disabled={!allowed || pending}
         onPress={() => setExpanded(true)}
-      />
+        className="size-11 items-center justify-center active:opacity-70"
+      >
+        <View
+          className={`size-8 items-center justify-center rounded-full ${!allowed || pending ? "bg-subtle-strong" : "bg-primary"}`}
+        >
+          <SymbolView
+            name="plus"
+            size={18}
+            tintColorClassName={
+              !allowed || pending ? "accent-icon-subtle" : "accent-primary-foreground"
+            }
+          />
+        </View>
+      </Pressable>
       {expanded ? (
         <Sheet title={t("Add provider")} onClose={close} dismissDisabled={pending} expanded>
           <KeyboardSheetBody>
