@@ -97,7 +97,6 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
   }),
 );
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
-const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 7;
 
 export const MAX_SNOOZE_PRESET_MINUTES = 30 * 24 * 60;
 export const MAX_SNOOZE_PRESETS = 8;
@@ -165,7 +164,7 @@ export const PanelAnimationDurationMs = Schema.Int.check(
   }),
 );
 export type PanelAnimationDurationMs = typeof PanelAnimationDurationMs.Type;
-const DEFAULT_PANEL_ANIMATION_DURATION_MS: PanelAnimationDurationMs = 0;
+const DEFAULT_PANEL_ANIMATION_DURATION_MS: PanelAnimationDurationMs = 25;
 
 export const MIN_INTERFACE_FONT_SIZE = 12;
 export const MAX_INTERFACE_FONT_SIZE = 20;
@@ -209,7 +208,7 @@ export const EnvironmentIdentificationMode = Schema.Literals([
   "none",
 ]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
-export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "none";
+export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "dev-artwork";
 
 export const SnapShotKeyChord = KeybindingShortcut.check(
   Schema.makeFilter(
@@ -442,18 +441,17 @@ export const ClientSettingsSchema = Schema.Struct({
   chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),
   showRepositoryIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   showGroupIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  capitalizeProjectNames: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  capitalizeProjectNames: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showRepositoryTerminalButton: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
-  showTerminalDrawerButton: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  showTerminalDrawerButton: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   effortDisplay: EffortDisplay.pipe(Schema.withDecodingDefault(Effect.succeed("bars" as const))),
   loadBalancingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   loadBalancingWeights: LoadBalancingWeights.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
   ),
-  // Zero avoids per-frame layout work from width/height transitions.
   panelAnimationDurationMs: PanelAnimationDurationMs.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PANEL_ANIMATION_DURATION_MS)),
   ),
@@ -528,10 +526,14 @@ export const ClientSettingsSchema = Schema.Struct({
   fontSizeTerminal: TerminalFontSize.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TERMINAL_FONT_SIZE)),
   ),
-  fontFamilyCode: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  fontFamilyCode: FontFamilyPreference.pipe(
+    Schema.withDecodingDefault(Effect.succeed("JetBrains Mono")),
+  ),
   fontFamilyComposer: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   fontFamilySans: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  fontFamilyTerminal: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  fontFamilyTerminal: FontFamilyPreference.pipe(
+    Schema.withDecodingDefault(Effect.succeed("JetBrains Mono")),
+  ),
 
   fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Older installs also decode to null; onboarding must additionally require an empty workspace.
@@ -554,7 +556,7 @@ export const ClientSettingsSchema = Schema.Struct({
   pullRequestLinksOpenInApp: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 
   contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  composerRichTextEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  composerRichTextEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showPredictedMessages: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("enter")),
@@ -581,7 +583,7 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   branchIssuesPlacement: Schema.Literals(["inline", "separate"]).pipe(
-    Schema.withDecodingDefault(Effect.succeed("inline")),
+    Schema.withDecodingDefault(Effect.succeed("separate")),
   ),
   branchIssuesExpanded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   branchIssuesShowEmpty: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -636,7 +638,7 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   snapShotFlash: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   snapShotAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
@@ -1409,7 +1411,7 @@ export const StorageCleanupSettings = Schema.Struct({
   ),
   worktreeAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   worktreeSettledAfterDays: SettledWorktreeRetentionDays.pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
+    Schema.withDecodingDefault(Effect.succeed(7)),
   ),
   worktreeOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   worktreeOnDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -1443,7 +1445,7 @@ export const ServerSettings = Schema.Struct({
 
   worktreesDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** macOS only, Labs beta: clone new worktrees from a cached checkout instead of writing every file. */
-  fastWorktreeCheckout: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  fastWorktreeCheckout: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Server-maintained history keeps old worktrees eligible for cleanup and review diffs. */
   previousWorktreesDirectories: Schema.Array(TrimmedString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1494,7 +1496,14 @@ export const ServerSettings = Schema.Struct({
   ),
   defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(
-      Effect.succeed({ instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" }),
+      Effect.succeed({
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-6.1-sol",
+        options: [
+          { id: "reasoningEffort", value: "xhigh" },
+          { id: "serviceTier", value: "priority" },
+        ],
+      }),
     ),
   ),
   fallbackModelSelection: Schema.NullOr(ModelSelection).pipe(
@@ -1530,7 +1539,7 @@ export const ServerSettings = Schema.Struct({
   /** Alpha: Simlock device hosts. Off, the server ignores `simlockDeviceHosts`. */
   simlockDeviceHostsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
+    Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   compactIdleThreads: LegacyCompactIdleThreads.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -1554,14 +1563,14 @@ export const ServerSettings = Schema.Struct({
   ),
   hideTaggedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Beta: guest links for this machine's threads. Off refuses new links and pauses existing ones. */
-  guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
    * Beta: links to the user's other machines, both ways. Off refuses new links, calls over links
    * and tasks on another machine; tasks already running there finish.
    */
-  linkedEnvironmentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  linkedEnvironmentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Beta: Claude and Codex predict the next prompt after completed turns. Codex follows a change at once; open Claude threads after they restart. */
-  promptSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  promptSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1607,7 +1616,7 @@ export const ServerSettings = Schema.Struct({
   ),
   newWorktreesMainBranchOnly: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   worktreeSharedDependencies: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  remoteBranchDisplayDays: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(21))),
+  remoteBranchDisplayDays: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(14))),
   hideMergedRemoteBranches: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   autoDeleteMergedBranches: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Null inherits t3.json, then recursive; unknown values decode to null for older clients. */
@@ -1647,8 +1656,8 @@ export const ServerSettings = Schema.Struct({
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-6.1-sol",
         options: [
-          { id: "reasoningEffort", value: "high" },
-          { id: "serviceTier", value: "priority" },
+          { id: "reasoningEffort", value: "xhigh" },
+          { id: "serviceTier", value: "default" },
         ],
       }),
     ),
@@ -1664,6 +1673,11 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   removedProviderInstances: Schema.optionalKey(Schema.Array(ProviderInstanceId)),
+  meituanIntegrationEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  meituanSourceControlEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  meituanRequirementsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   daxiang: Schema.Struct({
     clientId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
     clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
@@ -1675,7 +1689,7 @@ export const ServerSettings = Schema.Struct({
   issueProjectSources: IssueProjectSources.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /** Hosts the add and publish project pickers offer, by kind. An unset host is off, except the default one. */
   offeredSourceControlProviders: Schema.Record(Schema.String, Schema.Boolean).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
+    Schema.withDecodingDefault(Effect.succeed({ meituan: true })),
   ),
   // User-chosen ids preserve rows across edits; undecodable entries round-trip untouched.
   usageLimitSources: Schema.Record(UsageLimitSourceId, UsageLimitSourceConfig).pipe(
@@ -1700,6 +1714,25 @@ export const ServerSettings = Schema.Struct({
   usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
 });
 export type ServerSettings = typeof ServerSettings.Type;
+
+export function isMeituanServiceEnabled(
+  settings:
+    | {
+        readonly meituanIntegrationEnabled: boolean;
+        readonly meituanSourceControlEnabled?: boolean;
+        readonly meituanRequirementsEnabled?: boolean;
+      }
+    | null
+    | undefined,
+  service: "sourceControl" | "requirements",
+): boolean {
+  return (
+    settings?.meituanIntegrationEnabled === true &&
+    (service === "sourceControl"
+      ? settings.meituanSourceControlEnabled !== false
+      : settings.meituanRequirementsEnabled !== false)
+  );
+}
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
@@ -2084,6 +2117,9 @@ export const ServerSettingsPatch = Schema.Struct({
   /** Merges per host, replacing patched fields whole; redaction markers retain secrets, empty secrets remove them. A non-empty token map keeps the saved tokens of hosts it omits; an empty map clears them all. */
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
   issueProjectSources: Schema.optionalKey(IssueProjectSources),
+  meituanIntegrationEnabled: Schema.optionalKey(Schema.Boolean),
+  meituanSourceControlEnabled: Schema.optionalKey(Schema.Boolean),
+  meituanRequirementsEnabled: Schema.optionalKey(Schema.Boolean),
   daxiang: Schema.optionalKey(
     Schema.Struct({
       clientId: Schema.String,

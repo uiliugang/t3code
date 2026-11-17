@@ -1,6 +1,7 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
 import type { StaticScreenProps } from "@react-navigation/native";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   EnvironmentId,
   ProjectId,
@@ -90,6 +91,7 @@ const boardAtoms = createRequirementOverviewAtoms({
   issues: sourceControlEnvironment.issues,
   workItemsLive: serverEnvironment.workItemsLive,
   config: serverEnvironment.configValueAtom,
+  settings: serverEnvironment.settingsValueAtom,
   tracked: serverEnvironment.issueWorkItems,
 });
 const permissionAtoms = createRequirementPermissionAtoms({
@@ -177,7 +179,7 @@ function UnifiedRequirementBoard({
   const sourceThread = useThreadShell(
     initial?.sourceThreadId ? scopeThreadRef(environmentId, initial.sourceThreadId) : null,
   );
-  const [source, setSource] = useState<RequirementSource>("all");
+  const [selectedSource, setSource] = useState<RequirementSource>("all");
   const initialProjectId = initial?.projectId ?? sourceThread?.projectId ?? null;
   const [projectFilter, setProjectFilter] = useState<RequirementProjectRef | null>(
     initialProjectId
@@ -204,6 +206,10 @@ function UnifiedRequirementBoard({
   });
   const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
   const queryEnvironmentIds = queryEnvironments.map((environment) => environment.environmentId);
+  const meituanEnabled = queryEnvironments.some((environment) =>
+    isMeituanServiceEnabled(environment.serverConfig?.settings, "requirements"),
+  );
+  const source = selectedSource === "meituan" && !meituanEnabled ? "all" : selectedSource;
   const permissions = useAtomValue(permissionAtoms(environmentIds));
   const filterKey = JSON.stringify([
     queryEnvironmentIds,
@@ -495,7 +501,7 @@ function UnifiedRequirementBoard({
   ];
   const sourceChoices = [
     { value: "all" as const, label: t("All sources") },
-    { value: "meituan" as const, label: "MEP ONES" },
+    ...(meituanEnabled ? [{ value: "meituan" as const, label: "MEP ONES" }] : []),
     { value: "github" as const, label: "GitHub Issues" },
     { value: "local" as const, label: t("Local work items") },
   ];
@@ -939,7 +945,9 @@ function RequirementCreateSheet({
     ...(issueAllowed
       ? [
           { value: "github", label: "GitHub Issue" },
-          { value: "meituan", label: "MEP ONES" },
+          ...(isMeituanServiceEnabled(config?.settings, "requirements")
+            ? [{ value: "meituan", label: "MEP ONES" }]
+            : []),
         ]
       : []),
   ];
@@ -1018,8 +1026,14 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
   const t = useUiTranslation();
   const target = route.params;
   const { environmentId } = target;
+  const config = useEnvironmentServerConfig(environmentId);
+  const enabled =
+    target.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "requirements");
+  const branchesEnabled =
+    enabled &&
+    (target.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "sourceControl"));
   const result = useEnvironmentQuery(
-    sourceControlEnvironment.issueDetail({ environmentId, input: target }),
+    enabled ? sourceControlEnvironment.issueDetail({ environmentId, input: target }) : null,
   );
   const tracking = useEnvironmentQuery(
     result.data
@@ -1037,7 +1051,7 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
     (entry) => entry.environmentId === environmentId && entry.id === target.projectId,
   );
   const branches = useEnvironmentQuery(
-    project && result.data
+    project && result.data && branchesEnabled
       ? sourceControlEnvironment.issueBranches({
           environmentId,
           input: { cwd: project.workspaceRoot, url: result.data.url },
@@ -1045,9 +1059,10 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
       : null,
   );
   const link = useAtomCommand(sourceControlEnvironment.updateBranchIssues);
-  const canLink = useAtomValue(
+  const linkAllowed = useAtomValue(
     sourceControlEnvironment.updateBranchIssues.permissionAtom(environmentId),
   );
+  const canLink = linkAllowed && branchesEnabled;
   const [branch, setBranch] = useState("");
   const update = async () => {
     if (!state) return;
@@ -1157,7 +1172,9 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
             />
           </>
         ) : (
-          <Text>{t("Loading...")}</Text>
+          <Text>
+            {t(enabled ? "Loading..." : "This service is disabled. Saved settings are retained.")}
+          </Text>
         )}
       </ScreenScrollView>
     </SettingsScreen>
@@ -1211,15 +1228,19 @@ function IssueCreateFormBody({
   const [selectedProvider, setProvider] = useState<IssueProvider | null>(
     allowProjectChange ? null : initialProvider,
   );
+  const config = useEnvironmentServerConfig(environmentId);
   const sources = useEnvironmentQuery(
     sourceControlEnvironment.issueSources({
       environmentId,
       input: { projectIds: [projectId] },
     }),
   );
-  const availableProviders = [
-    ...new Set(sources.data?.[0]?.sources.map((source) => source.provider) ?? []),
-  ];
+  const availableSources =
+    sources.data?.[0]?.sources.filter(
+      (source) =>
+        source.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "requirements"),
+    ) ?? [];
+  const availableProviders = [...new Set(availableSources.map((source) => source.provider))];
   const platformSelected =
     !allowProjectChange ||
     availableProviders.length === 1 ||
@@ -1230,7 +1251,7 @@ function IssueCreateFormBody({
       ? availableProviders[0]!
       : (selectedProvider ?? initialProvider);
   const scopes =
-    sources.data?.[0]?.sources
+    availableSources
       .filter((source) => source.provider === provider)
       .map((source) => source.scope) ?? [];
   const scope = scopes.includes(selectedScope) ? selectedScope : scopes[0];

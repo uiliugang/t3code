@@ -37,7 +37,7 @@ export type SettingsPath =
   | "/settings/source-control"
   | "/settings/worktrees"
   | "/settings/connections"
-  | "/settings/communication"
+  | "/settings/meituan"
   | "/settings/access"
   | "/settings/secrets"
   | "/settings/maintenance"
@@ -115,7 +115,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/source-control": "Source control",
   "/settings/worktrees": "Worktrees",
   "/settings/connections": "Environments",
-  "/settings/communication": "Communication",
+  "/settings/meituan": "Meituan integration",
   "/settings/access": "Sharing & access",
   "/settings/secrets": "Secrets",
   "/settings/maintenance": "Maintenance",
@@ -168,7 +168,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: msg("Connections"),
     paths: [
       "/settings/connections",
-      "/settings/communication",
+      "/settings/meituan",
       "/settings/access",
       ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
     ],
@@ -220,7 +220,10 @@ export function sourceControlHostSearchItems(
         title: credentials
           ? `${definition.label} accounts and token`
           : `${definition.label} credentials`,
-        to: "/settings/source-control" as const,
+        to:
+          definition.kind === "meituan"
+            ? ("/settings/meituan" as const)
+            : ("/settings/source-control" as const),
         searchTerms: [
           credentials
             ? `${names} ${credentials.cliName} account login user host switch multiple accounts disable sign in token personal access token pat api key credential`
@@ -1473,10 +1476,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
-    id: "communication",
-    title: "Communication",
-    to: "/settings/communication",
-    searchTerms: ["wechat 微信 bot 扫码 推送 daxiang 大象 通讯 client id secret message PR link"],
+    id: "meituan-integration",
+    title: "Meituan integration",
+    to: "/settings/meituan",
+    searchTerms: ["Meituan 美团 MIS MEP ONES MCM mtskills daxiang 大象 client id secret"],
+  },
+  {
+    id: "wechat",
+    title: "WeChat",
+    to: "/settings/access",
+    searchTerms: ["wechat 微信 bot 扫码 推送 通讯"],
   },
   {
     id: "secret-providers",
@@ -1524,7 +1533,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/source-control": "environment-defaults",
   "/settings/worktrees": "project-defaults",
   "/settings/connections": "connections",
-  "/settings/communication": "environment",
+  "/settings/meituan": "environment",
   "/settings/access": "connections",
   "/settings/secrets": null,
   "/settings/scheduled-tasks": null,

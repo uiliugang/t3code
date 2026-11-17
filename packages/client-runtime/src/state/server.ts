@@ -766,14 +766,18 @@ export function resolveServerConfigValue(
   projection: ServerConfigProjection | null,
   initialConfig: ServerConfig | null,
 ): ServerConfig | null {
-  if (
+  const config =
     projection?.source === "live" &&
     (initialConfig === null ||
       projection.config.environment.serverVersion === initialConfig.environment.serverVersion)
-  ) {
-    return projection.config;
-  }
-  return initialConfig ?? projection?.config ?? null;
+      ? projection.config
+      : (initialConfig ?? projection?.config ?? null);
+  // Older servers cannot opt out; their missing setting decodes to the new default of false.
+  return config !== null &&
+    config.environment.capabilities?.meituanIntegration !== true &&
+    config.settings.meituanIntegrationEnabled === false
+    ? { ...config, settings: { ...config.settings, meituanIntegrationEnabled: true } }
+    : config;
 }
 
 /**

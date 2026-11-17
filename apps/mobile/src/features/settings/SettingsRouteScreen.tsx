@@ -197,7 +197,24 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   const sections = filterSettingsSections(
     [
       { rows: overflowRows },
-      { title: gt("Connections"), rows: props.connections },
+      {
+        title: gt("Connections"),
+        rows: [
+          ...props.connections,
+          {
+            id: "SettingsMeituan",
+            icon: "cube",
+            label: t("Meituan integration"),
+            target: "SettingsMeituan",
+          },
+          {
+            id: "SettingsSharingAccess",
+            icon: "square.and.arrow.up",
+            label: t("Sharing & access"),
+            target: "SettingsSharingAccess",
+          },
+        ] satisfies readonly SettingsListRow[],
+      },
       ...indexSections,
     ],
     query,

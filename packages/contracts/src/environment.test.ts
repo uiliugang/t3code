@@ -17,6 +17,7 @@ describe("ExecutionEnvironmentDescriptor", () => {
   it("decodes old, recognized and future manual installation descriptors", () => {
     expect(decodeDescriptor(descriptor).capabilities.serverInstallation).toBeUndefined();
     expect(decodeDescriptor(descriptor).capabilities.threadTerminalCleanup).toBeUndefined();
+    expect(decodeDescriptor(descriptor).capabilities.meituanIntegration).toBeUndefined();
     expect(
       decodeDescriptor({
         ...descriptor,

@@ -5,6 +5,12 @@ import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { resolveMCodeCommand } from "./MCodeRuntime.ts";
+import {
+  VcsProcessSpawnError,
+  VcsUnsupportedOperationError,
+  VcsDriverKind,
+  isMeituanServiceEnabled,
+} from "@t3tools/contracts";
 
 import * as SecretResolverLayer from "../secrets/SecretResolver.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -41,12 +47,39 @@ export const layer = Layer.effect(
         update: serverSettings.updateSettings,
       },
       process: {
-        run: (input) =>
-          resolveMCodeCommand(input).pipe(
+        run: Effect.fn("SourceControlHost.run")(function* (
+          input: SourceControlHost.SourceControlProcessInput,
+        ) {
+          if (input.command === "code-cli" || input.command === "ones2") {
+            const settings = yield* serverSettings.getSettings.pipe(
+              Effect.mapError(
+                (cause) =>
+                  new VcsProcessSpawnError({
+                    operation: input.operation,
+                    command: input.command,
+                    cwd: input.cwd,
+                    cause,
+                  }),
+              ),
+            );
+            if (
+              !isMeituanServiceEnabled(
+                settings,
+                input.command === "code-cli" ? "sourceControl" : "requirements",
+              )
+            )
+              return yield* new VcsUnsupportedOperationError({
+                operation: input.operation,
+                kind: VcsDriverKind.make("git"),
+                detail: "Meituan integration is disabled on this environment.",
+              });
+          }
+          return yield* resolveMCodeCommand(input).pipe(
             Effect.provideService(FileSystem.FileSystem, fs),
             Effect.provideService(Path.Path, path),
             Effect.flatMap(process.run),
-          ),
+          );
+        }),
       },
       git: {
         execute: git.execute,

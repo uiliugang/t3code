@@ -156,6 +156,7 @@ it.layer(
           worktreesDirectory: true,
           threadAutoSettlementScope: true,
           threadTerminalCleanup: true,
+          meituanIntegration: true,
         });
       }
     }),

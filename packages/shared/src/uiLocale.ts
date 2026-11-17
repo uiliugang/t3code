@@ -688,6 +688,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "More actions for {name}": "{name} 的更多操作",
   "Show models": "查看模型",
   "Enable {name}": "启用 {name}",
+  Paused: "已暂停",
+  "This service is disabled. Saved settings are retained.": "此服务已关闭，配置已保留。",
   "This deletes the API key stored on {environment}. Anything set to use this generator falls back to the text generation model.":
     "这会删除保存在 {environment} 上的 API 密钥。使用此生成器的任务将改用文本生成模型。",
   "Add a text generator": "添加文本生成器",
@@ -985,6 +987,12 @@ const zhCN: Readonly<Record<string, string>> = {
     "请求可能已成功，请在原平台核实后再提交。",
   "Could not access issues. Check the connection and your account on this environment.":
     "无法读取需求，请检查此环境的连接和账号授权。",
+  "Could not resolve this project's repository. Check that its workspace exists and is a Git repository.":
+    "无法识别此项目的代码仓库，请确认工作目录存在且为 Git 仓库。",
+  "Could not discover issue sources for this repository. Check its issue associations or configure a source in Requirements settings.":
+    "无法发现此仓库的需求来源，请检查仓库的需求关联，或在需求设置中手动配置来源。",
+  "Could not access issues on this environment. Check the connection or try again.":
+    "无法读取此环境的需求，请检查连接或重试。",
   "Add device host": "添加设备主机",
   "Edit device host": "编辑设备主机",
   "{tool}: {version}. Show details": "{tool}：{version}。显示详情",
@@ -1793,6 +1801,36 @@ const zhCN: Readonly<Record<string, string>> = {
   "Read your existing Cursor CLI login from macOS Keychain to show account history and monthly limits. macOS may ask you to allow access.":
     "从 macOS 钥匙串读取已有的 Cursor CLI 登录信息，以显示账户历史和月度额度。macOS 可能请求访问授权。",
   "No hubs configured.": "尚未配置 Hub。",
+  "Meituan integration": "美团集成",
+  "Enable Meituan integration": "启用美团集成",
+  "Server update required": "需更新服务器",
+  "Back to Meituan integration": "返回美团集成",
+  "Requirements and delivery": "需求与交付",
+  "Meituan Skills": "美团 Skills",
+  "Service configuration": "服务配置",
+  "Configuration retained": "配置已保留",
+  "Application credentials and review messages": "应用凭据与评审消息",
+  "Project associations": "项目关联",
+  "Add project association": "添加项目关联",
+  "No project associations": "尚未关联项目",
+  "Select project": "选择项目",
+  "Remove association": "移除关联",
+  Registry: "软件源地址",
+  "Enable Meituan skill source": "启用美团技能源",
+  "Show in add project": "在添加项目中显示",
+  "Command line tools": "命令行工具",
+  "{count} projects": "{count} 个项目",
+  "Not configured": "未配置",
+  Configure: "配置",
+  "Meituan integration is paused. Saved settings are read-only.":
+    "美团集成已停用，以下已保存配置仅供查看。",
+  "Automatic Meituan activity is paused. Saved settings and history are retained.":
+    "美团自动活动已暂停，已有配置与历史记录保留。",
+  "Pause Meituan integration on this environment? Saved settings and history are retained. WeChat, GitHub and local tasks are unaffected.":
+    "停用此环境的美团集成？已有配置与历史记录保留，微信、GitHub 和本地任务不受影响。",
+  "Meituan integration is disabled on this environment.": "此环境的美团集成已停用。",
+  "Configure DaXiang in Meituan integration on this environment.":
+    "请在此环境的“美团集成”中配置大象凭据。",
   Communication: "通讯",
   DaXiang: "大象",
   "Send PR link": "发送 PR 链接",
@@ -2009,8 +2047,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Hide merged remote branches": "隐藏已合并的远程分支",
   "Hide remote branches already merged into main or master. Local and default branches remain visible.":
     "隐藏已合并到 main 或 master 的远程分支。本地分支和默认分支始终保留。",
-  "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.":
-    "展示最近 N 天内有提交的远程分支，默认为 21 天（3 周）。设为 0 不限制时间。本地分支和默认分支始终保留。",
+  "Show remote branches with commits in the last N days. Default: {days} days. Use 0 for no age limit. Local and default branches remain visible.":
+    "展示最近 N 天内有提交的远程分支，默认为 {days} 天。设为 0 不限制时间。本地分支和默认分支始终保留。",
   Cleanup: "清理",
   "Worktree location": "工作树位置",
   "worktree location": "工作树位置",

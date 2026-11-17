@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import "~/index.css";
 
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests, getClientSettings } from "~/hooks/useSettings";
 import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./sidebar";
 
 function CollapseFromInside() {
@@ -165,15 +166,17 @@ it("keeps closed mobile sheet contents mounted and reports the sheet only while 
 
 it("opens the mobile sheet without a transition while panel animations are off", async () => {
   await page.viewport(390, 844);
+  using stack = new DisposableStack();
+  const previousSettings = getClientSettings();
+  stack.defer(() => __setClientSettingsForTests(previousSettings));
+  __setClientSettingsForTests({ ...previousSettings, panelAnimationDurationMs: 0 });
   await using screen = await render(
-    <div data-panel-animations="false">
-      <SidebarProvider>
-        <Sidebar>
-          <span>Sheet contents</span>
-        </Sidebar>
-        <SidebarTrigger />
-      </SidebarProvider>
-    </div>,
+    <SidebarProvider>
+      <Sidebar>
+        <span>Sheet contents</span>
+      </Sidebar>
+      <SidebarTrigger />
+    </SidebarProvider>,
     { router: false /* no routes involved */ },
   );
   await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));

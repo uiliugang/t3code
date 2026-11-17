@@ -3,6 +3,9 @@
 Customize shortcuts in **Settings → Keybindings** on web and desktop. That page
 also lists the command IDs and defaults available in your version.
 
+Use `mod+n` or `mod+t` to start a new thread when the terminal is not focused.
+With the right panel open, `mod+t` opens its new-tab menu instead.
+
 ## Composer controls
 
 `mod+shift+d` starts dictation in the focused editor, or the composer, and finishes it on the next press;

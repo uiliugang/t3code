@@ -15,6 +15,8 @@ const SETTINGS_SEARCH_TERMS = {
     "tailscale",
   ],
   SettingsNotifications: ["push", "alerts", "live activity", "agent activity"],
+  SettingsMeituan: ["meituan", "美团", "MIS", "MEP", "ONES", "MCM", "daxiang", "大象", "mtskills"],
+  SettingsSharingAccess: ["sharing", "access", "wechat", "微信", "配对", "推送"],
   SettingsAppearance: [
     "theme",
     "dark mode",
@@ -130,7 +132,7 @@ const SETTINGS_SEARCH_TERMS = {
     "remote branch display days",
     "hide merged remote branches",
     "隐藏已合并的远程分支",
-    "21 days",
+    "14 days",
     "远程分支展示天数",
     "worktree",
     "branch naming",

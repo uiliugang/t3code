@@ -5,6 +5,7 @@ import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   scopedThreadKey,
   scopeProjectRef,
@@ -1117,7 +1118,15 @@ function OpenCommandPaletteDialog(props: {
 
     const orderedSources: ReadonlyArray<AddProjectRemoteSource> = [
       "url",
-      ...sortAddProjectProviderSources(readinessBySource, offeredProvidersFor(environmentId)),
+      ...sortAddProjectProviderSources(
+        readinessBySource,
+        offeredProvidersFor(environmentId),
+        isMeituanServiceEnabled(
+          environments.find((environment) => environment.environmentId === environmentId)
+            ?.serverConfig?.settings,
+          "sourceControl",
+        ),
+      ),
     ];
 
     for (const source of orderedSources) {
@@ -2092,6 +2101,12 @@ function OpenCommandPaletteDialog(props: {
       : getNewProjectPublishTargets(
           sourceControlDiscovery.data ?? null,
           offeredProvidersFor(newProjectFlow.environmentId),
+          isMeituanServiceEnabled(
+            environments.find(
+              (environment) => environment.environmentId === newProjectFlow.environmentId,
+            )?.serverConfig?.settings,
+            "sourceControl",
+          ),
         );
   const newProjectPublishTarget = getNewProjectPublishTarget(
     newProjectPublishTargets,

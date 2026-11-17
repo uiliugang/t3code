@@ -17,7 +17,6 @@ import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import type { SettingsTarget } from "../settings-environment-filter";
 import { SettingsRow } from "./SettingsRow";
-import { MeituanCodeSettingsSection } from "./MeituanCodeSettingsSection";
 import { SettingsSection } from "./SettingsSection";
 import { SourceControlToolsSection } from "./SourceControlToolsSection";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
@@ -49,14 +48,6 @@ export function SourceControlSignInSection(props: {
         <SourceControlToolsSection
           key={`tools:${environment.environmentId}`}
           environment={environment}
-        />
-      ))}
-      {props.environments.map((environment) => (
-        <MeituanCodeSettingsSection
-          key={environment.environmentId}
-          environment={environment}
-          disabled={!props.canWrite(environment.environmentId)}
-          multiple={props.environments.length > 1}
         />
       ))}
       {appSignInHosts.flatMap(({ definition, appSignIn }) =>

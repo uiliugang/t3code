@@ -52,7 +52,7 @@ const INPUT: UsageSummaryInput = {
 
 const CONFIG = {
   settings: DEFAULT_SERVER_SETTINGS,
-  environment: { serverVersion: "0.0.1", capabilities: {} },
+  environment: { serverVersion: "0.0.1", capabilities: { meituanIntegration: true } },
 } as ServerConfig;
 
 const PRICING = { status: "unavailable" as const, source: "test", fetchedAt: null, knownModels: 0 };

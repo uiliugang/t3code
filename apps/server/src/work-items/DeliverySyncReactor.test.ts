@@ -8,6 +8,7 @@ import {
   WorkItemError,
   IssueError,
   ThreadId,
+  DEFAULT_SERVER_SETTINGS,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -19,11 +20,17 @@ import * as Sqlite from "../persistence/Sqlite.ts";
 import * as WorkItems from "./WorkItemService.ts";
 import * as Mcm from "./McmReleaseService.ts";
 import * as DeliverySync from "./DeliverySyncReactor.ts";
+import * as Settings from "../serverSettings.ts";
 import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
 const encodeItemJson = Schema.encodeEffect(Schema.fromJsonString(WorkItem));
 const isWorkItemError = Schema.is(WorkItemError);
 
-function setup(provider: IssueProvider, mergedCount?: number, invalidCompletion = false) {
+function setup(
+  provider: IssueProvider,
+  mergedCount?: number,
+  invalidCompletion = false,
+  setting: "meituanIntegrationEnabled" | "meituanRequirementsEnabled" = "meituanIntegrationEnabled",
+) {
   const sourceId = ThreadId.make("source");
   const prs = ["https://github.com/acme/app/pull/1", "https://github.com/acme/app/pull/2"];
   let published = 0;
@@ -78,6 +85,7 @@ function setup(provider: IssueProvider, mergedCount?: number, invalidCompletion 
   };
   let closed = 0;
   let failWrite = false;
+  let enabled = true;
   let detail: IssueDetail = {
     id: "1",
     url: item.delivery!.issue.url,
@@ -96,6 +104,13 @@ function setup(provider: IssueProvider, mergedCount?: number, invalidCompletion 
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       return Layer.mergeAll(
+        Layer.mock(Settings.ServerSettingsService)({
+          getSettings: Effect.sync(() => ({
+            ...DEFAULT_SERVER_SETTINGS,
+            meituanIntegrationEnabled: true,
+            [setting]: enabled,
+          })),
+        }),
         Layer.mock(Threads.ThreadManagementService)({
           getThreadShell: () =>
             Effect.succeed({
@@ -169,6 +184,9 @@ function setup(provider: IssueProvider, mergedCount?: number, invalidCompletion 
     layer: DeliverySync.layer.pipe(Layer.provide(deps), Layer.provideMerge(Sqlite.layerMemory)),
     item: () => item,
     closed: () => closed,
+    enableMeituan: (value: boolean) => {
+      enabled = value;
+    },
     publish: (count: number) => {
       published = count;
     },
@@ -240,26 +258,36 @@ it.effect("retains a repeated external write failure without duplicate history",
   }).pipe(Effect.provide(test.layer), Effect.scoped);
 });
 
-it.effect("requires all service releases before completing ONES and flags release reversal", () => {
-  const test = setup("meituan", 2);
-  return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const item = test.item();
-    const json = yield* encodeItemJson(item);
-    yield* sql`INSERT INTO work_items (id, project_id, updated_at, active_count, item_json) VALUES (${item.id}, ${item.projectId}, ${item.updatedAt}, 0, ${json})`;
-    const sync = yield* DeliverySync.DeliverySyncReactor;
-    test.publish(1);
-    yield* sync.drain();
-    expect(test.closed()).toBe(0);
-    test.publish(2);
-    yield* sync.drain();
-    expect(test.closed()).toBe(1);
-    test.publish(0);
-    yield* sync.drain();
-    expect(test.closed()).toBe(1);
-    expect(test.item().delivery?.evidence.anomaly).toContain("no longer covers");
-  }).pipe(Effect.provide(test.layer), Effect.scoped);
-});
+it.effect.each(["meituanIntegrationEnabled", "meituanRequirementsEnabled"] as const)(
+  "requires %s and all service releases before completing ONES and flags release reversal",
+  (setting) => {
+    const test = setup("meituan", 2, false, setting);
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const item = test.item();
+      const json = yield* encodeItemJson(item);
+      yield* sql`INSERT INTO work_items (id, project_id, updated_at, active_count, item_json) VALUES (${item.id}, ${item.projectId}, ${item.updatedAt}, 0, ${json})`;
+      const sync = yield* DeliverySync.DeliverySyncReactor;
+      test.enableMeituan(false);
+      test.publish(2);
+      const pausedVersion = test.item().version;
+      yield* sync.drain();
+      expect(test.item().version).toBe(pausedVersion);
+      expect(test.closed()).toBe(0);
+      test.enableMeituan(true);
+      test.publish(1);
+      yield* sync.drain();
+      expect(test.closed()).toBe(0);
+      test.publish(2);
+      yield* sync.drain();
+      expect(test.closed()).toBe(1);
+      test.publish(0);
+      yield* sync.drain();
+      expect(test.closed()).toBe(1);
+      expect(test.item().delivery?.evidence.anomaly).toContain("no longer covers");
+    }).pipe(Effect.provide(test.layer), Effect.scoped);
+  },
+);
 
 it.effect(
   "does not write a non-completed workflow state or repeat an unchanged configuration error",

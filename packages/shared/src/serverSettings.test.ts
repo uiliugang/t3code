@@ -136,6 +136,7 @@ describe("serverSettings helpers", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: {
         worktreeAfterDays: 8,
+        worktreeSettledAfterDays: null,
         worktreeOnMerge: true,
         worktreeOnDelete: false,
         worktreeUnchanged: false,

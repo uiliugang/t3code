@@ -63,8 +63,7 @@ function ProjectSourceRow({
   const sources = [
     ...(result?.sources ?? []).filter((entry) => !overridden.has(entry.provider)),
     ...saved,
-  ];
-  const mep = sources.filter((entry) => entry.provider === "meituan");
+  ].filter((source) => source.provider === "github");
   const github = sources.find((entry) => entry.provider === "github");
   return (
     <tr className="border-b border-border text-sm">
@@ -102,12 +101,7 @@ function ProjectSourceRow({
       <td className="py-4 pr-4 align-top">
         <div className="flex items-center gap-3 overflow-hidden">
           {github ? <span className="shrink-0">GitHub Issues</span> : null}
-          {mep.length ? (
-            <SourceValue
-              value={`MEP ${[...new Set(mep.map((entry) => entry.scope))].join(", ")}`}
-            />
-          ) : null}
-          {!github && !mep.length ? <SourceValue value={undefined} /> : null}
+          {!github ? <SourceValue value={undefined} /> : null}
         </div>
       </td>
       <td className="py-4 text-right align-top text-xs text-muted-foreground">
@@ -124,7 +118,7 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
   const { connectedEnvironments } = useSettingsScope();
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
-  const [provider, setProvider] = useState<IssueProvider>("meituan");
+  const [provider, setProvider] = useState<IssueProvider>("github");
   const [scope, setScope] = useState("");
   const [host, setHost] = useState("github.com");
   const [busy, setBusy] = useState(false);
@@ -278,10 +272,7 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
             <IssueSelect
               label={t("Issue source")}
               value={provider}
-              options={[
-                { value: "meituan", label: "MEP ONES" },
-                { value: "github", label: "GitHub Issues" },
-              ]}
+              options={[{ value: "github", label: "GitHub Issues" }]}
               onChange={(value) => {
                 setProvider(value === "github" ? "github" : "meituan");
                 setScope("");

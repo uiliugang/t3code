@@ -1,5 +1,6 @@
 import {
   SourceControlToolError,
+  isMeituanServiceEnabled,
   type SourceControlTool,
   type SourceControlToolId,
   type SourceControlToolStartInput,
@@ -13,6 +14,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as SourceControlToolInstaller from "./SourceControlToolInstaller.ts";
+import * as Settings from "../serverSettings.ts";
 
 export class SourceControlToolMaintenance extends Context.Service<
   SourceControlToolMaintenance,
@@ -27,6 +29,7 @@ export class SourceControlToolMaintenance extends Context.Service<
 
 const make = Effect.gen(function* () {
   const installer = yield* SourceControlToolInstaller.SourceControlToolInstaller;
+  const settings = yield* Settings.ServerSettingsService;
   const scope = yield* Effect.scope;
   const lock = yield* Semaphore.make(1);
   const state = yield* SubscriptionRef.make<ReadonlyArray<SourceControlTool>>([]);
@@ -40,8 +43,13 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const previous = yield* SubscriptionRef.get(state);
       if (isActive(previous)) return;
+      const saved = yield* settings.getSettings.pipe(
+        Effect.orElseSucceed(() => ({ meituanIntegrationEnabled: false })),
+      );
       const tools = yield* Effect.forEach(
-        ["git", "github", "meituan"] as const,
+        (["git", "github", "meituan"] as const).filter(
+          (id) => id !== "meituan" || isMeituanServiceEnabled(saved, "sourceControl"),
+        ),
         (id) =>
           installer.inspect(id).pipe(
             Effect.map(({ tool }) => {

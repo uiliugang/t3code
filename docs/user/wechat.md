@@ -1,6 +1,6 @@
 # WeChat
 
-Use **Settings → Communication → WeChat** to connect your account on the environment that runs your tasks. Scan the pairing code, confirm in WeChat, and enter the verification code if requested. Send the bot a first message to activate the connection, then select the target thread in T3 Code.
+Use **Settings → Sharing & access → WeChat** to connect your account on the environment that runs your tasks. Scan the pairing code, confirm in WeChat, and enter the verification code if requested. Send the bot a first message to activate the connection, then select the target thread in T3 Code.
 
 If T3 shows a `/bind` code after pairing, send that exact command to the bot within ten minutes to verify your identity.
 

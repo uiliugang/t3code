@@ -3747,6 +3747,7 @@ describe("OrchestratorMcpService provider resolution", () => {
         const environmentDefault = {
           instanceId: ProviderInstanceId.make("claudeAgent"),
           model: "claude-opus-5-5",
+          options: [],
         };
         const inputs = yield* Ref.make<ReadonlyArray<ScheduledTaskUpsertInput>>([]);
         const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(

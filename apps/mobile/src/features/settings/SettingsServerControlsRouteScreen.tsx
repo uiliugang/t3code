@@ -4,7 +4,9 @@ import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
+  DEFAULT_SERVER_SETTINGS,
   type ResponseStreamingMode,
   type ServerSettings,
   type ServerSettingsPatch,
@@ -71,7 +73,9 @@ function RemoteBranchDisplayDaysField(props: {
       accessibilityLabel={t("Remote branch display days")}
       keyboardType="number-pad"
       defaultValue={props.value === null ? "" : String(props.value)}
-      placeholder={props.value === null ? t("Mixed") : "21"}
+      placeholder={
+        props.value === null ? t("Mixed") : String(DEFAULT_SERVER_SETTINGS.remoteBranchDisplayDays)
+      }
       editable={!props.disabled}
       className="min-h-10 w-24 rounded-xl border border-border px-3 py-2 text-right text-base text-foreground"
       onChangeText={(text) => {
@@ -469,27 +473,53 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                 )}
                 {projectSelected ? null : (
                   <SettingsSection title="Project sources">
-                    {sourceControlClients.definitions.map((definition) => {
-                      const offered = displayTargets.map((target) =>
-                        isSourceControlProviderOffered(
-                          target.settings.offeredSourceControlProviders,
-                          definition.kind,
-                        ),
-                      );
-                      return (
-                        <SettingsSwitchRow
-                          key={definition.kind}
-                          label={definition.pickerLabel}
-                          value={
-                            offered.every((value) => value === offered[0]) ? offered[0]! : null
-                          }
-                          disabled={disabledFor("offeredSourceControlProviders")}
-                          onValueChange={(value) =>
-                            write({ offeredSourceControlProviders: { [definition.kind]: value } })
-                          }
-                        />
-                      );
-                    })}
+                    {sourceControlClients.definitions
+                      .filter(
+                        (definition) =>
+                          definition.kind !== "meituan" ||
+                          displayTargets.some((target) =>
+                            isMeituanServiceEnabled(target.settings, "sourceControl"),
+                          ),
+                      )
+                      .map((definition) => {
+                        const offered = displayTargets.map((target) =>
+                          definition.kind === "meituan"
+                            ? isMeituanServiceEnabled(target.settings, "sourceControl")
+                            : isSourceControlProviderOffered(
+                                target.settings.offeredSourceControlProviders,
+                                definition.kind,
+                              ),
+                        );
+                        return (
+                          <SettingsSwitchRow
+                            key={definition.kind}
+                            label={definition.pickerLabel}
+                            value={
+                              offered.every((value) => value === offered[0]) ? offered[0]! : null
+                            }
+                            disabled={
+                              disabledFor(
+                                definition.kind === "meituan"
+                                  ? "meituanSourceControlEnabled"
+                                  : "offeredSourceControlProviders",
+                              ) ||
+                              (definition.kind === "meituan" &&
+                                displayTargets.some(
+                                  (target) =>
+                                    target.environment.serverConfig.environment.capabilities
+                                      .meituanIntegration !== true,
+                                ))
+                            }
+                            onValueChange={(value) =>
+                              write(
+                                definition.kind === "meituan"
+                                  ? { meituanSourceControlEnabled: value }
+                                  : { offeredSourceControlProviders: { [definition.kind]: value } },
+                              )
+                            }
+                          />
+                        );
+                      })}
                   </SettingsSection>
                 )}
                 <SettingsSection title="Pull requests">
@@ -538,7 +568,8 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                 <SettingsSection
                   title={t("Branches")}
                   footer={t(
-                    "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.",
+                    "Show remote branches with commits in the last N days. Default: {days} days. Use 0 for no age limit. Local and default branches remain visible.",
+                    { days: DEFAULT_SERVER_SETTINGS.remoteBranchDisplayDays },
                   )}
                   trailing={
                     isMixed("remoteBranchDisplayDays") ? (

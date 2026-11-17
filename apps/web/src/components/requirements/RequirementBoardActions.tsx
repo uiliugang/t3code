@@ -9,6 +9,7 @@ import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   Menu,
   MenuTrigger,
@@ -88,6 +89,10 @@ function EnvironmentCreateItems({
       (!projectId || project.id === projectId),
   );
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const meituanEnabled = isMeituanServiceEnabled(
+    useAtomValue(serverEnvironment.settingsValueAtom(environmentId)),
+    "requirements",
+  );
   const canCreateLocal = useAtomValue(
     serverEnvironment.mutateWorkItem.permissionAtom(environmentId),
   );
@@ -96,15 +101,17 @@ function EnvironmentCreateItems({
   );
   return (
     <>
-      {(["meituan", "github"] as const).map((provider) => (
-        <MenuItem
-          key={provider}
-          disabled={!canCreateIssue || !projects.length}
-          onClick={() => createIssue(environmentId, provider)}
-        >
-          {provider === "github" ? "GitHub Issue" : "MEP ONES"}
-        </MenuItem>
-      ))}
+      {(["meituan", "github"] as const)
+        .filter((provider) => provider !== "meituan" || meituanEnabled)
+        .map((provider) => (
+          <MenuItem
+            key={provider}
+            disabled={!canCreateIssue || !projects.length}
+            onClick={() => createIssue(environmentId, provider)}
+          >
+            {provider === "github" ? "GitHub Issue" : "MEP ONES"}
+          </MenuItem>
+        ))}
       <MenuSub>
         <MenuSubTrigger
           disabled={!canCreateLocal || config?.workItems !== true || !projects.length}

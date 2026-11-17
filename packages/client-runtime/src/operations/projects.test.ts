@@ -103,6 +103,8 @@ describe("add project shared logic", () => {
     expect(sortAddProjectProviderSources(ready, { meituan: true, github: false })).toEqual([
       "meituan",
     ]);
+    expect(sortAddProjectProviderSources(ready, { meituan: true }, false)).toEqual(["github"]);
+    expect(sortAddProjectProviderSources(ready, { meituan: false }, true)).toContain("meituan");
   });
   it("asks for a repository name when GitHub input is only an owner path", () => {
     const github = SourceControlProviderKind.make("github");

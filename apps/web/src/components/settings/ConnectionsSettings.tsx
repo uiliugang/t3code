@@ -38,6 +38,7 @@ import {
 } from "./ConnectionsSettings.logic";
 import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
 import { useAccessEnvironment } from "./useAccessEnvironment";
+import { WechatSettings } from "./WechatSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { ManagedByOrganization } from "../ManagedPolicy";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
@@ -1662,7 +1663,21 @@ function ConnectionsSettingsContent({
     </>
   );
 
-  if (showsAccess) return <SettingsPageContainer>{primarySettings}</SettingsPageContainer>;
+  if (showsAccess)
+    return (
+      <SettingsPageContainer>
+        {primarySettings}
+        {accessEnvironmentId !== null ? (
+          <SettingsSection id="wechat" title={t("WeChat")}>
+            <WechatSettings
+              key={accessEnvironmentId}
+              environmentId={accessEnvironmentId}
+              label={accessEnvironment?.label ?? accessEnvironmentId}
+            />
+          </SettingsSection>
+        ) : null}
+      </SettingsPageContainer>
+    );
 
   return (
     <SettingsPageContainer>
