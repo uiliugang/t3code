@@ -26,11 +26,22 @@ CLI installers, and npm launcher download runtimes from `uiliugang/t3code`,
 independently of desktop update settings. Use a tagged release for SSH connections:
 manual branch builds have temporary versions with no matching published runtime.
 Android uses `com.uiliugang.t3code`. Its versionCode is
-`100000000 + major * 1000000 + minor * 1000 + patch`, with major at most 1999
-and minor/patch at most 999. This keeps stable versions ordered and above the old
-epoch-minute codes. Rebuilding the same version keeps the same versionCode;
+`101000000 + major * 1000000 + minor * 1000 + patch`, with major at most 1998
+and minor/patch at most 999. Historical `0.0.0` through `0.0.18` and the misnumbered
+`0.1.9` retain the old base of `100000000`. The corrected `0.0.19` sequence can thus
+upgrade both `0.0.18` and `0.1.9` without uninstalling. Do not reuse `0.1.9` for a new
+release. Rebuilding the same version keeps the same versionCode;
 bump the release version to distribute a binary correction. Manual branch builds
 use the source version without its prerelease suffix for this calculation.
+
+The fork release sequence is `0.0.17`, corrected `0.0.18`, then `0.0.19`.
+Retain the misnumbered `v0.1.9` tag and its assets as historical evidence, but mark
+its GitHub Release as a prerelease so stable-release discovery excludes it. After
+publishing `v0.0.19`, explicitly select it as GitHub's latest release; the old
+`v0.0.18` workflow uses semantic version ordering. Existing `0.1.9` desktop and CLI
+installs need one manual installation of `0.0.19`, because their updater sees the
+corrected number as a downgrade. Do not bypass this by changing signed metadata
+or renaming the old binaries.
 
 The macOS app is ad hoc signed without Apple notarization, so Gatekeeper can require
 approval in System Settings. It has no automatic update feed: Settings → About →
