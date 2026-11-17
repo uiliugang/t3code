@@ -5,6 +5,7 @@ import type { AppBarMenu } from "../../components/ui/AppBar.types";
 import {
   AuthSourceControlWriteScope,
   EnvironmentId,
+  isMeituanServiceEnabled,
   type GitRunStackedActionResult,
   type ProjectScript,
   ThreadId,
@@ -19,6 +20,7 @@ import { useNavigation } from "@react-navigation/native";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
 import { useEnvironmentScope } from "../../state/session";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import {
   basename,
@@ -122,6 +124,10 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   );
   const threadId = props.threadId;
   const { gitStatus, gitOperationLabel, onPull, onRunAction } = props;
+  const config = useEnvironmentServerConfig(EnvironmentId.make(String(environmentId)));
+  const pullRequestsEnabled =
+    gitStatus?.sourceControlProvider?.kind !== "meituan" ||
+    isMeituanServiceEnabled(config?.settings, "sourceControl");
 
   const currentBranchLabel = gitStatus?.refName ?? props.currentBranch ?? t("Detached HEAD");
   const busy = gitOperationLabel !== null;
@@ -138,7 +144,13 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
         hint: "This workspace is not a git repository.",
       };
     }
-    const action = resolveQuickAction(gitStatus, busy, isDefaultRef, hasPrimaryRemote);
+    const action = resolveQuickAction(
+      gitStatus,
+      busy,
+      isDefaultRef,
+      hasPrimaryRemote,
+      pullRequestsEnabled,
+    );
     return !canWriteSourceControl && (action.kind === "run_pull" || action.kind === "run_action")
       ? {
           ...action,

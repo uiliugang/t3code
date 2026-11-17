@@ -49,6 +49,18 @@ describe("git action copy", () => {
     const [, , prItem] = buildMenuItems(status(), false);
     expect(prItem?.label).toBe("Create PR");
     expect(
+      buildMenuItems(status({ pr: openPr }), false, true, false).map((item) => item.id),
+    ).toEqual(["commit", "push"]);
+    expect(resolveQuickAction(status({ aheadCount: 1 }), false, false, true, false).action).toBe(
+      "push",
+    );
+    expect(
+      resolveQuickAction(status({ hasWorkingTreeChanges: true }), false, false, true, false).action,
+    ).toBe("commit_push");
+    expect(resolveQuickAction(status({ pr: openPr }), false, false, true, false).kind).toBe(
+      "show_hint",
+    );
+    expect(
       getGitActionDisabledReason({
         item: prItem!,
         gitStatus: status(),

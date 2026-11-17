@@ -64,7 +64,7 @@ describe("IssueService", () => {
           Effect.provide(
             Layer.mergeAll(
               KeyValueStore.layerFileSystem(directory),
-              Settings.ServerSettingsService.layerTest(),
+              Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true }),
               Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
                 namedProjectsRoot: "/projects",
                 scratchRoot: Effect.succeedNone,
@@ -298,6 +298,37 @@ describe("IssueService", () => {
               .pipe(Effect.flip)).reason,
           ).toBe("invalid-target");
           const settings = yield* Settings.ServerSettingsService;
+          for (const setting of [
+            "meituanIntegrationEnabled",
+            "meituanRequirementsEnabled",
+          ] as const) {
+            yield* settings.updateSettings({ [setting]: false });
+            const searches = searched.length;
+            const probes = discoveries;
+            expect(
+              yield* service.list({ provider: "meituan", assignee: "all", query: "", page: 1 }),
+            ).toEqual({ groups: [], failures: [] });
+            expect(
+              (yield* service.sources({ projectIds: [projects[0]!.id], refresh: true }))[0]
+                ?.sources,
+            ).toEqual([]);
+            expect(
+              (yield* service
+                .read({ provider: "meituan", projectId: projects[0]!.id, scope: "456", id: "1" })
+                .pipe(Effect.flip)).reason,
+            ).toBe("invalid-target");
+            expect(searched).toHaveLength(searches);
+            expect(discoveries).toBe(probes);
+            yield* settings.updateSettings({ [setting]: true });
+            expect(
+              (yield* service.read({
+                provider: "meituan",
+                projectId: projects[0]!.id,
+                scope: "456",
+                id: "1",
+              })).title,
+            ).toBe("456");
+          }
           yield* settings.updateSettings({ issueProjectSources: { [projects[0]!.id]: [] } });
           expect(
             (yield* service
@@ -380,7 +411,10 @@ describe("IssueService", () => {
                 }),
               ),
               Layer.provideMerge(
-                Settings.ServerSettingsService.layerTest({ issueProjectSources: sources }),
+                Settings.ServerSettingsService.layerTest({
+                  issueProjectSources: sources,
+                  meituanIntegrationEnabled: true,
+                }),
               ),
             ),
           ),

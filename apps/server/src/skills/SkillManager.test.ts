@@ -19,6 +19,7 @@ import * as Sqlite from "../persistence/Sqlite.ts";
 import * as SkillManager from "./SkillManager.ts";
 import * as SkillPackages from "./SkillPackages.ts";
 import * as SkillHost from "./SkillHost.ts";
+import * as Settings from "../serverSettings.ts";
 
 const harness = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -37,6 +38,7 @@ const harness = Effect.gen(function* () {
   );
   const dependencies = yield* Layer.build(
     Layer.mergeAll(
+      Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true }),
       SkillPackages.layer,
       Layer.succeed(SkillHost.SkillHost, {
         targets: Effect.succeed([{ id: "fixture", label: "Fixture", directory: target }]),
@@ -882,6 +884,9 @@ describe("SkillManager", () => {
       });
       yield* manager.drain;
       expect((yield* manager.snapshot).lastFailure).toMatch(/Enable this skill source/);
+      yield* manager.mutate({ type: "source.check", sourceId: "meituan" });
+      yield* manager.drain;
+      expect((yield* manager.snapshot).lastFailureReason).toBe("source-disabled");
       yield* fs.writeFileString(`${directory}/private`, "secret");
       yield* fs.symlink(`${directory}/private`, `${source}/outside`);
       yield* install;

@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import {
   CommandId,
+  isMeituanServiceEnabled,
   type EnvironmentId,
   type WorkItem,
   type WorkItemCommandInput,
@@ -13,6 +14,7 @@ import { DELIVERY_PROGRESS_LABELS, pullRequestLabel } from "@t3tools/client-runt
 import { useState } from "react";
 import { randomUUID } from "~/lib/utils";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -41,6 +43,10 @@ export function RequirementDeliveryPanel({
   const [busy, setBusy] = useState(false);
   const [state, setState] = useState("");
   const delivery = item.delivery;
+  const meituanEnabled = useEnvironmentSettings(environmentId, (settings) =>
+    isMeituanServiceEnabled(settings, "requirements"),
+  );
+  const enabled = delivery?.issue.provider !== "meituan" || meituanEnabled;
   if (!delivery) return null;
   const run = async (input: WorkItemCommandInput) => {
     setBusy(true);
@@ -58,7 +64,7 @@ export function RequirementDeliveryPanel({
                 size="icon-xs"
                 variant="ghost"
                 aria-label={t("Refresh delivery")}
-                disabled={!allowed || busy}
+                disabled={!allowed || busy || !enabled}
                 onClick={async () => {
                   setBusy(true);
                   await refresh({ environmentId, input: { id: item.id } });
@@ -94,7 +100,7 @@ export function RequirementDeliveryPanel({
           {t(delivery.evidence.anomaly)}
         </p>
       ) : null}
-      {delivery.evidence.anomaly && transitions.length > 0 ? (
+      {enabled && delivery.evidence.anomaly && transitions.length > 0 ? (
         <div className="space-y-2">
           <IssueSelect
             label={t("Reopen issue")}
@@ -256,7 +262,7 @@ export function RequirementDeliveryPanel({
           {t("Confirm delivery scope")}
         </Button>
       ) : null}
-      {delivery.issue.provider === "meituan" && transitions.length > 0 ? (
+      {enabled && delivery.issue.provider === "meituan" && transitions.length > 0 ? (
         <details className="border-t border-border/60 pt-3">
           <summary className="cursor-pointer text-xs font-medium">
             {t("Completed workflow state")}

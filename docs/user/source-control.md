@@ -125,14 +125,14 @@ custom server name as GitHub once it has a credential for that host.
 ### Meituan Code
 
 To send a PR link to reviewers, configure your application's Client ID and Client Secret under
-**Settings → Connections → Communication** on the environment that owns the PR. The application
+**Settings → Meituan integration → DaXiang** on the environment that owns the PR. Enable Meituan integration first. The application
 needs permission to look up employees and send DaXiang robot messages. Select current reviewers
 in the PR summary, then choose **Send PR link**. Messages come from the application robot.
 If delivery is reported as unknown, check DaXiang before sending again to avoid duplicates.
 
 Install code-cli 0.1.27 or newer on your T3 Code server. MOA seamless login is used automatically
 when available, without configuring a MIS ID in T3 Code. If you are still unauthenticated, open
-**Settings → Source control → Meituan Code** and save your MIS ID to receive an authorization request in DaXiang the first time
+**Settings → Meituan integration → Source control** and save your MIS ID to receive an authorization request in DaXiang the first time
 T3 Code detects that you are not authenticated. Confirm it in DaXiang to finish signing in.
 Later requests, including after a decline or timeout, require **Send again**. Refreshing or
 restarting the server does not send another automatic request for the same MIS ID.

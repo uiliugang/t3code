@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as Settings from "../serverSettings.ts";
 import * as Installer from "./SourceControlToolInstaller.ts";
 
 const fixture = Effect.fn("test.toolInstaller")(function* (options: {
@@ -19,6 +20,7 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
   owned?: boolean;
   npmVersion?: string;
   installExit?: number;
+  meituanEnabled?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -61,6 +63,11 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
     });
   const context = yield* Layer.build(
     Installer.layer.pipe(
+      Layer.provide(
+        Settings.ServerSettingsService.layerTest({
+          meituanIntegrationEnabled: options.meituanEnabled ?? true,
+        }),
+      ),
       Layer.provide(Layer.succeed(VcsProcess.VcsProcess, { run })),
       Layer.provide(Layer.succeed(HostProcess.Environment, { PATH: bin })),
       Layer.provide(Layer.succeed(HostProcess.Platform, options.platform ?? "linux")),
@@ -74,6 +81,18 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
     bin,
   };
 });
+
+it.effect("does not probe Meituan tools while the environment integration is disabled", () =>
+  Effect.gen(function* () {
+    const { installer, calls } = yield* fixture({
+      binaries: ["code-cli", "npm"],
+      meituanEnabled: false,
+    });
+    const result = yield* Effect.flip(installer.inspect("meituan"));
+    assert.strictEqual(result.reason, "inspection");
+    assert.isEmpty(calls);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
 
 it.effect.each(["apt-get", "yum", "dnf"] as const)(
   "updates only the package-owned Git via %s",

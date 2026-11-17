@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
@@ -13,6 +14,7 @@ import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useConnectedEnvironmentIds, usePullRequestsSupported } from "../../state/environments";
 import { prefetchRequirementIssues } from "@t3tools/client-runtime/state/requirement-board";
+import { serverEnvironment } from "../../state/server";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { T3Wordmark } from "../T3Wordmark";
@@ -247,6 +249,12 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
                 appAtomRegistry,
                 sourceControlEnvironment.issues,
                 environmentIds,
+                undefined,
+                (id) =>
+                  isMeituanServiceEnabled(
+                    appAtomRegistry.get(serverEnvironment.settingsValueAtom(id)),
+                    "requirements",
+                  ),
               );
             }}
             onClick={() => {

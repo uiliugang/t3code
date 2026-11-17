@@ -1,12 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   branchIssuePlaceholder,
+  isMeituanServiceEnabled,
   parseBranchIssueUrl,
   type BranchIssue,
   type EnvironmentId,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Linking, View } from "react-native";
 import { AppText, AppTextInput } from "../../../components/ui/AppText";
@@ -18,6 +19,7 @@ import { SelectableMarkdownText } from "../../../native/SelectableMarkdownText";
 import { mobilePreferencesAtom } from "../../../state/preferences";
 import type { Preferences } from "../../../persistence/mobile-preferences";
 import { useEnvironmentQuery } from "../../../state/query";
+import { useEnvironmentServerConfig } from "../../../state/entities";
 import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { useMarkdownPreviewStyles } from "../../files/FileMarkdownPreview";
@@ -92,17 +94,32 @@ function IssueRow({
   );
 }
 
-export function BranchIssuesPanel({ target, provider }: { target: Target; provider: string }) {
+export function BranchIssuesPanel({
+  target,
+  provider,
+  creationControl,
+}: {
+  target: Target;
+  provider: string;
+  creationControl?: ReactNode;
+}) {
   const t = useUiTranslation();
+  const config = useEnvironmentServerConfig(target.environmentId);
+  const enabled =
+    provider !== "meituan" ||
+    (isMeituanServiceEnabled(config?.settings, "requirements") &&
+      isMeituanServiceEnabled(config?.settings, "sourceControl"));
   const preferences = AsyncResult.getOrElse(
     useAtomValue(mobilePreferencesAtom),
     (): Preferences => ({}),
   );
   const query = useEnvironmentQuery(
-    sourceControlEnvironment.branchIssues({
-      environmentId: target.environmentId,
-      input: { cwd: target.cwd, branch: target.branch },
-    }),
+    enabled
+      ? sourceControlEnvironment.branchIssues({
+          environmentId: target.environmentId,
+          input: { cwd: target.cwd, branch: target.branch },
+        })
+      : null,
   );
   const allowed = useAtomValue(
     sourceControlEnvironment.updateBranchIssues.permissionAtom(target.environmentId),
@@ -143,10 +160,11 @@ export function BranchIssuesPanel({ target, provider }: { target: Target; provid
     }
   }
   if (
+    !enabled ||
     preferences.branchIssuesVisible === false ||
     (preferences.branchIssuesShowEmpty === false && query.data && !issues.length && !adding)
   )
-    return null;
+    return creationControl ? <View className="px-4 pb-2">{creationControl}</View> : null;
   return (
     <View>
       <View className="flex-row items-center justify-between gap-2 px-4 py-2">
@@ -164,6 +182,14 @@ export function BranchIssuesPanel({ target, provider }: { target: Target; provid
           onPress={() => setAdding(!adding)}
         />
       </View>
+      <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2">
+        {creationControl ? <View className="min-w-0 shrink-0">{creationControl}</View> : null}
+        {query.data && !unpublished && !issues.length ? (
+          <AppText className="text-xs text-foreground-muted">
+            {t("No issues linked to this branch.")}
+          </AppText>
+        ) : null}
+      </View>
       {unpublished ? (
         <AppText className="px-4 pb-3 text-foreground-muted">
           {t("Push this branch before linking an issue.")}
@@ -174,11 +200,6 @@ export function BranchIssuesPanel({ target, provider }: { target: Target; provid
           <AppText>{t("Could not load linked issues.")}</AppText>
           <Button label={t("Retry")} onPress={query.refresh} />
         </View>
-      ) : null}
-      {query.data && !unpublished && !issues.length ? (
-        <AppText className="px-4 py-2 text-foreground-muted">
-          {t("No issues linked to this branch.")}
-        </AppText>
       ) : null}
       {issues.slice(0, limit).map((issue) => (
         <IssueRow

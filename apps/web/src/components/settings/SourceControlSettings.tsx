@@ -1,6 +1,8 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, SettingsIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { useEffect, useState, type ReactNode } from "react";
@@ -36,7 +38,7 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 import { GitIcon, JujutsuIcon, type Icon } from "../Icons";
-import { MeituanCodeSettings, MeituanCodeAuthorizationObserver } from "./MeituanCodeSettings";
+import { MeituanCodeAuthorizationObserver } from "./MeituanCodeSettings";
 import { SourceControlHostSettings } from "./SourceControlHostSettings";
 import { SourceControlAccountSettings } from "./SourceControlAccountSettings";
 import { SourceControlAppSignInSettings } from "./SourceControlAppSignInSettings";
@@ -283,14 +285,21 @@ function DiscoveryItemRow({
                       checked={offered.checked}
                       disabled={offered.disabled}
                       onCheckedChange={offered.onChange}
-                      aria-label={t("Offer {name} when adding or publishing a project", {
-                        name: item.label,
-                      })}
+                      aria-label={t(
+                        item.kind === "meituan"
+                          ? "Enable {name}"
+                          : "Offer {name} when adding or publishing a project",
+                        {
+                          name: item.label,
+                        },
+                      )}
                     />
                   }
                 />
                 <TooltipPopup side="top">
-                  {t("Offer when adding or publishing a project")}
+                  {item.kind === "meituan"
+                    ? t("Enable {name}", { name: item.label })
+                    : t("Offer when adding or publishing a project")}
                 </TooltipPopup>
               </Tooltip>
             ) : null}
@@ -396,6 +405,7 @@ export function SourceControlSettingsPanel({
   children?: ReactNode;
 }) {
   const t = useUiTranslation();
+  const navigate = useNavigate();
   const { scope, environment, connectedEnvironments } = useSettingsScope();
 
   const environmentId =
@@ -452,6 +462,8 @@ export function SourceControlSettingsPanel({
     sourceControlProviders: discovered.sourceControlProviders.filter(
       (item) =>
         sourceControlClients.definitions.some((definition) => definition.kind === item.kind) &&
+        (item.kind !== "meituan" ||
+          isMeituanServiceEnabled(environment?.serverConfig?.settings, "sourceControl")) &&
         (!integrationsOnly || item.kind === "github" || item.kind === "meituan"),
     ),
   };
@@ -487,12 +499,13 @@ export function SourceControlSettingsPanel({
     if (item.kind === "meituan")
       return (
         <SettingsSearchTarget id={sourceControlHostSettingsSearchId(item.kind)}>
-          <MeituanCodeSettings
-            key={environmentId}
-            environmentId={environmentId}
-            item={item}
-            onChanged={handleScan}
-          />
+          <Button
+            variant="outline"
+            onClick={() => void navigate({ to: "/settings/meituan", search: { section: "code" } })}
+          >
+            <SettingsIcon />
+            {t("Meituan integration")}
+          </Button>
         </SettingsSearchTarget>
       );
     const { credentials } = definition;
@@ -639,13 +652,26 @@ export function SourceControlSettingsPanel({
                   item={item}
                   {...maintenanceProps(item.kind)}
                   offered={{
-                    checked: isSourceControlProviderOffered(offeredProviders, item.kind),
-                    disabled: !canUpdateSettings,
+                    checked:
+                      item.kind === "meituan"
+                        ? isMeituanServiceEnabled(
+                            environment?.serverConfig?.settings,
+                            "sourceControl",
+                          )
+                        : isSourceControlProviderOffered(offeredProviders, item.kind),
+                    disabled:
+                      !canUpdateSettings ||
+                      (item.kind === "meituan" &&
+                        environment?.serverConfig?.environment.capabilities.meituanIntegration !==
+                          true),
                     onChange: (checked) =>
                       void updateSettings({
                         environmentId,
                         input: {
-                          patch: { offeredSourceControlProviders: { [item.kind]: checked } },
+                          patch:
+                            item.kind === "meituan"
+                              ? { meituanSourceControlEnabled: checked }
+                              : { offeredSourceControlProviders: { [item.kind]: checked } },
                         },
                       }),
                   }}

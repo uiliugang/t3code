@@ -53,18 +53,27 @@ export function RequirementsSettingsScreen() {
   );
 }
 
-function ProjectSources({ environmentId }: { environmentId: EnvironmentId }) {
+export function ProjectSources({
+  environmentId,
+  providerOnly = "github",
+  disabled = false,
+}: {
+  environmentId: EnvironmentId;
+  providerOnly?: IssueProvider;
+  disabled?: boolean;
+}) {
   const t = useUiTranslation();
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
   const settings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
   const saved = settings?.issueProjectSources ?? {};
-  const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
+  const allowed =
+    useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId)) && !disabled;
   const command = useAtomCommand(serverEnvironment.updateSettings);
   const refresh = useAtomCommand(sourceControlEnvironment.refreshIssueSources);
   const [projectId, setProjectId] = useState<ProjectId | null>(null);
-  const [provider, setProvider] = useState<IssueProvider>("meituan");
+  const [provider, setProvider] = useState<IssueProvider>(providerOnly);
   const [scope, setScope] = useState("");
   const [busy, setBusy] = useState(false);
   const selected = projectId ?? projects[0]?.id;
@@ -121,23 +130,25 @@ function ProjectSources({ environmentId }: { environmentId: EnvironmentId }) {
   return (
     <View className="gap-4">
       {projects.flatMap((project) =>
-        (saved[project.id] ?? []).map((source) => (
-          <View
-            key={`${project.id}/${source.provider}/${source.scope}`}
-            className="gap-2 border-b border-border-subtle py-3"
-          >
-            <Text>
-              {project.title} · {source.provider === "meituan" ? "MEP ONES" : "GitHub Issues"}
-            </Text>
-            <Text className="text-foreground-muted">{source.scope}</Text>
-            <Button
-              label={t("Remove issue source")}
-              tone="text"
-              disabled={!allowed || busy}
-              onPress={() => void remove(project.id, source.provider)}
-            />
-          </View>
-        )),
+        (saved[project.id] ?? [])
+          .filter((source) => source.provider === providerOnly)
+          .map((source) => (
+            <View
+              key={`${project.id}/${source.provider}/${source.scope}`}
+              className="gap-2 border-b border-border-subtle py-3"
+            >
+              <Text>
+                {project.title} · {source.provider === "meituan" ? "MEP ONES" : "GitHub Issues"}
+              </Text>
+              <Text className="text-foreground-muted">{source.scope}</Text>
+              <Button
+                label={t("Remove issue source")}
+                tone="text"
+                disabled={!allowed || busy}
+                onPress={() => void remove(project.id, source.provider)}
+              />
+            </View>
+          )),
       )}
       <IssuePicker
         label={t("Project")}
@@ -149,10 +160,11 @@ function ProjectSources({ environmentId }: { environmentId: EnvironmentId }) {
       <IssuePicker
         label={t("Issue source")}
         value={provider}
-        options={[
-          { value: "meituan", label: "MEP ONES" },
-          { value: "github", label: "GitHub Issues" },
-        ]}
+        options={
+          providerOnly === "meituan"
+            ? [{ value: "meituan", label: "MEP ONES" }]
+            : [{ value: "github", label: "GitHub Issues" }]
+        }
         onChange={(value) => {
           setProvider(value === "github" ? "github" : "meituan");
           setScope("");

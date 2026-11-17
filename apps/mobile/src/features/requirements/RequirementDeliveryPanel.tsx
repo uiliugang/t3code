@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import {
   CommandId,
+  isMeituanServiceEnabled,
   type EnvironmentId,
   type WorkItem,
   type WorkItemCommandInput,
@@ -17,6 +18,7 @@ import { ListRow } from "../../components/ui/ListRow";
 import { uuidv4 } from "../../lib/uuid";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { serverEnvironment } from "../../state/server";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { IssuePicker } from "./IssuePicker";
 import { DeliveryStages } from "./DeliveryStages";
@@ -44,6 +46,10 @@ export function RequirementDeliveryPanel({
   const [busy, setBusy] = useState(false);
   const [state, setState] = useState("");
   const delivery = item.delivery;
+  const config = useEnvironmentServerConfig(environmentId);
+  const enabled =
+    delivery?.issue.provider !== "meituan" ||
+    isMeituanServiceEnabled(config?.settings, "requirements");
   const run = async (input: WorkItemCommandInput) => {
     setBusy(true);
     await mutate({ environmentId, input });
@@ -57,7 +63,7 @@ export function RequirementDeliveryPanel({
         <IconButton
           accessibilityLabel={t("Refresh delivery")}
           icon="arrow.clockwise"
-          disabled={!allowed || busy}
+          disabled={!allowed || busy || !enabled}
           onPress={async () => {
             setBusy(true);
             await refresh({ environmentId, input: { id: item.id } });
@@ -79,7 +85,7 @@ export function RequirementDeliveryPanel({
       {delivery.evidence.anomaly ? (
         <Text className="text-danger">{t(delivery.evidence.anomaly)}</Text>
       ) : null}
-      {delivery.evidence.anomaly && transitions.length > 0 ? (
+      {enabled && delivery.evidence.anomaly && transitions.length > 0 ? (
         <>
           <IssuePicker
             label={t("Reopen issue")}
@@ -204,7 +210,7 @@ export function RequirementDeliveryPanel({
           }
         />
       ) : null}
-      {delivery.issue.provider === "meituan" && transitions.length > 0 ? (
+      {enabled && delivery.issue.provider === "meituan" && transitions.length > 0 ? (
         <Disclosure title={t("Completed workflow state")}>
           <IssuePicker
             label={t("Completed workflow state")}

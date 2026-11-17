@@ -16,8 +16,10 @@ import { SettingsSection } from "./SettingsSection";
 
 export function SourceControlToolsSection({
   environment,
+  only,
 }: {
   readonly environment: SettingsTarget;
+  readonly only?: SourceControlTool["id"];
 }) {
   const t = useUiTranslation();
   const environmentId = environment.environmentId;
@@ -112,23 +114,25 @@ export function SourceControlToolsSection({
   if (!supported) return null;
   return (
     <SettingsSection title={`${t("Source control tools")} · ${environment.label}`}>
-      {tools.data?.map((tool) => (
-        <SettingsRow
-          key={tool.id}
-          icon={
-            tool.command === null
-              ? "wrench.and.screwdriver"
-              : tool.version
-                ? "arrow.up.circle"
-                : "arrow.down.circle"
-          }
-          label={tool.label}
-          value={[tool.version, t(sourceControlToolStatus(tool))].filter(Boolean).join(" · ")}
-          valuePosition="below"
-          disabled={busy || (tool.command !== null && !canMaintain)}
-          onPress={() => confirm(tool)}
-        />
-      ))}
+      {tools.data
+        ?.filter((tool) => (only ? tool.id === only : tool.id !== "meituan"))
+        .map((tool) => (
+          <SettingsRow
+            key={tool.id}
+            icon={
+              tool.command === null
+                ? "wrench.and.screwdriver"
+                : tool.version
+                  ? "arrow.up.circle"
+                  : "arrow.down.circle"
+            }
+            label={tool.label}
+            value={[tool.version, t(sourceControlToolStatus(tool))].filter(Boolean).join(" · ")}
+            valuePosition="below"
+            disabled={busy || (tool.command !== null && !canMaintain)}
+            onPress={() => confirm(tool)}
+          />
+        ))}
       <SettingsRow
         icon="arrow.clockwise"
         label={t("Rescan server environment")}

@@ -1,4 +1,3 @@
-import { WechatSettingsSection } from "./WechatSettingsSection";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtom, useAtomValue } from "@effect/atom-react";
@@ -32,7 +31,6 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
 import { EnvironmentRoutesSection } from "./EnvironmentRoutesSection";
-import { DaxiangSettingsSection } from "./DaxiangSettingsSection";
 import { OutdatedServerUpdateSection } from "./OutdatedServerUpdateSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -252,12 +250,6 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                   </View>
                 </View>
               </SettingsSection>
-            ) : null}
-            {connected && !outdated ? (
-              <>
-                <DaxiangSettingsSection environmentId={environmentId} />
-                <WechatSettingsSection environmentId={environmentId} />
-              </>
             ) : null}
             <EnvironmentRoutesSection
               environmentId={environmentId}

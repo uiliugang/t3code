@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { SourceControlProviderKind, type EnvironmentId } from "@t3tools/contracts";
+import {
+  SourceControlProviderKind,
+  isMeituanServiceEnabled,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 import { readMeituanCodeMis as readMis } from "@t3tools/client-runtime/source-control-clients";
 import { useEffect, useEffectEvent, useState } from "react";
 import { View } from "react-native";
@@ -19,16 +23,19 @@ export function MeituanCodeSettingsSection(props: {
   readonly environment: SettingsTarget;
   readonly disabled: boolean;
   readonly multiple: boolean;
+  readonly initialExpanded?: boolean;
 }) {
   const t = useUiTranslation();
   const environmentId = props.environment.environmentId;
   const discovery = useEnvironmentQuery(
-    sourceControlEnvironment.discovery({ environmentId, input: {} }),
+    isMeituanServiceEnabled(props.environment.serverConfig.settings, "sourceControl")
+      ? sourceControlEnvironment.discovery({ environmentId, input: {} })
+      : null,
   );
   const item = discovery.data?.sourceControlProviders.find((entry) => entry.kind === "meituan");
   const saved = props.environment.serverConfig.settings.sourceControlHosts.meituan;
   const savedMis = readMis(saved);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(props.initialExpanded ?? false);
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,11 +60,10 @@ export function MeituanCodeSettingsSection(props: {
       active = false;
     };
   }, [environmentId, pending, canSignIn]);
-  if (!item) return null;
   const value = draft ?? savedMis;
   const mis = readMis({ mis: value });
   const dirty = value.trim() !== savedMis;
-  const errorMessage = error ?? (savedMis ? item.authorization?.detail : null);
+  const errorMessage = error ?? (savedMis ? item?.authorization?.detail : null);
   const attempted =
     Array.isArray(saved?.authorizationAttemptedMis) &&
     saved.authorizationAttemptedMis.includes(savedMis);
@@ -90,7 +96,7 @@ export function MeituanCodeSettingsSection(props: {
       <SettingsRow
         icon="person.crop.circle"
         label="Meituan Code"
-        value={t(item.auth.status === "authenticated" ? "Authenticated" : "Not authenticated")}
+        value={t(item?.auth.status === "authenticated" ? "Authenticated" : "Not authenticated")}
         onPress={() => setExpanded((open) => !open)}
       />
       {expanded ? (
@@ -134,7 +140,7 @@ export function MeituanCodeSettingsSection(props: {
             disabled={props.disabled || busy || pending || !dirty || Boolean(value.trim() && !mis)}
             onPress={() => void save()}
           />
-          {item.auth.status !== "authenticated" || pending ? (
+          {item?.auth.status !== "authenticated" || pending ? (
             <SettingsRow
               icon="person.crop.circle"
               label={
@@ -147,7 +153,7 @@ export function MeituanCodeSettingsSection(props: {
               disabled={
                 !canSignIn ||
                 busy ||
-                (!pending && (!savedMis || dirty || item.status !== "available"))
+                (!pending && (!savedMis || dirty || item?.status !== "available"))
               }
               onPress={() => void request()}
             />

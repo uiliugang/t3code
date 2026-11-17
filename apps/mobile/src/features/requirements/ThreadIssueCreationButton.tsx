@@ -3,6 +3,7 @@ import { StackActions, useNavigation } from "@react-navigation/native";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   CommandId,
+  isMeituanServiceEnabled,
   type EnvironmentId,
   type ProjectId,
   type ThreadId,
@@ -52,7 +53,11 @@ export function ThreadIssueCreationButton({
       ? serverEnvironment.workItemsLive({ environmentId, input: { threadId } })
       : null,
   );
-  const options = sources.data?.[0]?.sources ?? [];
+  const options =
+    sources.data?.[0]?.sources.filter(
+      (source) =>
+        source.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "requirements"),
+    ) ?? [];
   const execution = task.data?.item?.executions.at(-1);
   const executionStatus = useAtomValue(
     environmentThreadDetails.statusAtom(

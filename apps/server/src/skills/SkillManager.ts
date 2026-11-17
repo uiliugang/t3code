@@ -39,6 +39,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as SkillPackages from "./SkillPackages.ts";
 import * as SkillHost from "./SkillHost.ts";
 import { makeSkillCopy } from "./SkillCopy.ts";
@@ -103,6 +104,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const sql = yield* SqlClient.SqlClient;
   const config = yield* ServerConfig.ServerConfig;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const packages = yield* SkillPackages.SkillPackages;
   const host = yield* SkillHost.SkillHost;
   const discovery = yield* makeSkillDiscovery;
@@ -985,6 +987,20 @@ const make = Effect.gen(function* () {
   }, copyLock.withPermits(1));
   const execute = Effect.fn("SkillManager.execute")(function* (input: SkillAction) {
     const current = yield* Ref.get(state);
+    if (["install", "check", "update", "source.prepare", "source.check"].includes(input.type)) {
+      const sourceId =
+        "sourceId" in input
+          ? input.sourceId
+          : "id" in input
+            ? current.skills.find((skill) => skill.id === input.id)?.sourceId
+            : undefined;
+      const source = current.sources.find((source) => source.id === sourceId);
+      if (
+        source?.kind === "mtskills" &&
+        (!source.enabled || !(yield* settings.getSettings).meituanIntegrationEnabled)
+      )
+        return yield* new SkillManagerError({ operation: input.type, reason: "source-disabled" });
+    }
     yield* save({
       ...current,
       lastFailure: null,
@@ -1702,7 +1718,17 @@ const make = Effect.gen(function* () {
     }
     const current = yield* Ref.get(state);
     const time = yield* Clock.currentTimeMillis;
+    const meituanEnabled = (yield* settings.getSettings).meituanIntegrationEnabled;
     for (const skill of current.skills) {
+      if (
+        current.sources.some(
+          (source) =>
+            source.id === skill.sourceId &&
+            source.kind === "mtskills" &&
+            (!meituanEnabled || !source.enabled),
+        )
+      )
+        continue;
       if (skill.status === "pending" && skill.availableDigest && !skill.snapshotOnly) {
         if (!(yield* host.busy))
           yield* enqueue(

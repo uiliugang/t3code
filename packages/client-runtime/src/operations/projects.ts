@@ -220,10 +220,13 @@ export function isSourceControlProviderOffered(
 export function sortAddProjectProviderSources(
   readiness: AddProjectRemoteSourceReadiness,
   offered: OfferedSourceControlProviders | undefined,
+  meituanEnabled?: boolean,
 ): ReadonlyArray<SourceControlProviderKind> {
   return Arr.sort(
     ADD_PROJECT_REMOTE_PROVIDER_SOURCES.filter((source) =>
-      isSourceControlProviderOffered(offered, source),
+      source === "meituan" && meituanEnabled !== undefined
+        ? meituanEnabled
+        : isSourceControlProviderOffered(offered, source),
     ),
     Order.mapInput(
       Order.Struct({
@@ -336,10 +339,16 @@ export interface NewProjectPublishTarget {
 export function getNewProjectPublishTargets(
   discovery: SourceControlDiscoveryResult | null,
   offered: OfferedSourceControlProviders | undefined,
+  meituanEnabled?: boolean,
 ): ReadonlyArray<NewProjectPublishTarget> {
   const readiness = buildAddProjectRemoteSourceReadiness(discovery);
   return sourceControlClients.definitions.flatMap((definition) => {
-    if (!isSourceControlProviderOffered(offered, definition.kind)) return [];
+    if (
+      !(definition.kind === "meituan" && meituanEnabled !== undefined
+        ? meituanEnabled
+        : isSourceControlProviderOffered(offered, definition.kind))
+    )
+      return [];
     if (!readiness(definition.kind).ready) return [];
     const provider = discovery?.sourceControlProviders.find(
       (candidate) => candidate.kind === definition.kind,

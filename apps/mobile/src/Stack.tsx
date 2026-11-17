@@ -103,6 +103,14 @@ import { SettingsProviderAccountsRouteScreen } from "./features/settings/Setting
 import { SettingsSkillsRouteScreen } from "./features/settings/SettingsSkillsRouteScreen";
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
+import {
+  SettingsMeituanRouteScreen,
+  SettingsMeituanCodeRouteScreen,
+  SettingsMeituanIssuesRouteScreen,
+  SettingsMeituanDaxiangRouteScreen,
+  SettingsMeituanSkillsRouteScreen,
+  SettingsSharingAccessRouteScreen,
+} from "./features/settings/SettingsMeituanRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsFollowUpRouteScreen } from "./features/settings/SettingsFollowUpRouteScreen";
 import { SettingsLanguageRouteScreen } from "./features/settings/SettingsLanguageRouteScreen";
@@ -168,6 +176,36 @@ const THREAD_SETTINGS_ROUTE = sheetRoute({
 const SEARCH_SHEET_ROUTE = sheetRoute({ detent: 0.75, android: "card", itemStyle: "editor" });
 
 const SETTINGS_SCREENS = {
+  SettingsMeituan: createNativeStackScreen({
+    screen: SettingsMeituanRouteScreen,
+    linking: "settings/meituan",
+    options: settingsPage("Meituan integration"),
+  }),
+  SettingsMeituanCode: createNativeStackScreen({
+    screen: SettingsMeituanCodeRouteScreen,
+    linking: "settings/meituan/code",
+    options: settingsPage("Meituan Code"),
+  }),
+  SettingsMeituanIssues: createNativeStackScreen({
+    screen: SettingsMeituanIssuesRouteScreen,
+    linking: "settings/meituan/issues",
+    options: settingsPage("Requirements and delivery"),
+  }),
+  SettingsMeituanDaxiang: createNativeStackScreen({
+    screen: SettingsMeituanDaxiangRouteScreen,
+    linking: "settings/meituan/daxiang",
+    options: settingsPage("DaXiang"),
+  }),
+  SettingsMeituanSkills: createNativeStackScreen({
+    screen: SettingsMeituanSkillsRouteScreen,
+    linking: "settings/meituan/skills",
+    options: settingsPage("Meituan Skills"),
+  }),
+  SettingsSharingAccess: createNativeStackScreen({
+    screen: SettingsSharingAccessRouteScreen,
+    linking: "settings/access",
+    options: settingsPage("Sharing & access"),
+  }),
   WorkItems: createNativeStackScreen({
     screen: RequirementsScreen,
     linking: "tasks",

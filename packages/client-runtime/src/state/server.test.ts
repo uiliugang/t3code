@@ -85,7 +85,7 @@ const CONFIG = {
   observability: null,
   providers: [],
   settings: DEFAULT_SERVER_SETTINGS,
-  environment: { capabilities: { environmentThemes: true } },
+  environment: { capabilities: { environmentThemes: true, meituanIntegration: true } },
 } as unknown as ServerConfig;
 
 const snapshotEvent = (config: ServerConfig): ServerConfigStreamEvent => ({
@@ -1263,6 +1263,15 @@ describe("server state projection", () => {
         initial,
       ),
     ).toBe(live);
+  });
+
+  it("keeps Meituan enabled on older servers that cannot manage the environment switch", () => {
+    const legacy = {
+      ...CONFIG,
+      environment: { ...CONFIG.environment, capabilities: {} },
+    } as ServerConfig;
+    expect(resolveServerConfigValue(null, legacy)?.settings.meituanIntegrationEnabled).toBe(true);
+    expect(resolveServerConfigValue(null, CONFIG)?.settings.meituanIntegrationEnabled).toBe(false);
   });
 
   it("merges fetched workspace snapshots only from servers that omit them", () => {

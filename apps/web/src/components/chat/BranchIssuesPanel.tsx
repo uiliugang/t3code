@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   branchIssuePlaceholder,
+  isMeituanServiceEnabled,
   parseBranchIssueUrl,
   type BranchIssue,
   type EnvironmentId,
@@ -14,9 +15,9 @@ import {
   RefreshCwIcon,
   UnlinkIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useClientSettings } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -154,10 +155,12 @@ function IssueList({
   target,
   provider,
   separate,
+  creationControl,
 }: {
   target: Target;
   provider: string;
   separate: boolean;
+  creationControl?: ReactNode;
 }) {
   const t = useUiTranslation();
   const showEmpty = useClientSettings((settings) => settings.branchIssuesShowEmpty);
@@ -205,7 +208,8 @@ function IssueList({
       );
     }
   }
-  if (query.data && issues.length === 0 && !showEmpty && !adding) return null;
+  if (query.data && issues.length === 0 && !showEmpty && !adding)
+    return creationControl ? <div className="px-4 pb-2">{creationControl}</div> : null;
   return (
     <section
       aria-label={t("Linked issues")}
@@ -262,6 +266,14 @@ function IssueList({
           </TooltipPopup>
         </Tooltip>
       </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2 empty:hidden">
+        <div className="min-w-0 shrink-0 empty:hidden">{creationControl}</div>
+        {query.data && !unpublished && issues.length === 0 ? (
+          <p className="min-w-0 text-xs text-muted-foreground">
+            {t("No issues linked to this branch.")}
+          </p>
+        ) : null}
+      </div>
       {unpublished ? (
         <p className="px-4 pb-3 text-xs text-muted-foreground">
           {t("Push this branch before linking an issue.")}
@@ -277,11 +289,6 @@ function IssueList({
       ) : null}
       {!query.data && !query.error ? (
         <p className="px-4 pb-3 text-xs text-muted-foreground">{t("Loading...")}</p>
-      ) : null}
-      {query.data && !unpublished && issues.length === 0 ? (
-        <p className="px-4 pb-3 text-xs text-muted-foreground">
-          {t("No issues linked to this branch.")}
-        </p>
       ) : null}
       {issues.slice(0, limit).map((issue) => (
         <IssueRow
@@ -354,21 +361,35 @@ export function BranchIssuesPanel({
   environmentId,
   cwd,
   separate = false,
+  creationControl,
 }: {
   environmentId: EnvironmentId;
   cwd: string;
   separate?: boolean;
+  creationControl?: ReactNode;
 }) {
   const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
+  const meituanEnabled = useEnvironmentSettings(
+    environmentId,
+    (settings) =>
+      isMeituanServiceEnabled(settings, "requirements") &&
+      isMeituanServiceEnabled(settings, "sourceControl"),
+  );
   const provider = status.data?.sourceControlProvider?.kind;
   const branch = status.data?.refName;
-  if (!branch || (provider !== "github" && provider !== "meituan")) return null;
+  if (
+    !branch ||
+    (provider !== "github" && provider !== "meituan") ||
+    (provider === "meituan" && !meituanEnabled)
+  )
+    return creationControl ? <div className="px-4 pb-2">{creationControl}</div> : null;
   return (
     <IssueList
       key={`${environmentId}:${cwd}:${branch}`}
       target={{ environmentId, cwd, branch }}
       provider={provider}
       separate={separate}
+      creationControl={creationControl}
     />
   );
 }

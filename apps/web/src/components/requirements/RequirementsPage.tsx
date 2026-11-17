@@ -1,5 +1,6 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   parseBranchIssueUrl,
   type IssueProvider,
@@ -85,6 +86,7 @@ const boardAtoms = createRequirementOverviewAtoms({
   issues: sourceControlEnvironment.issues,
   workItemsLive: serverEnvironment.workItemsLive,
   config: serverEnvironment.configValueAtom,
+  settings: serverEnvironment.settingsValueAtom,
   tracked: serverEnvironment.issueWorkItems,
 });
 const permissionAtoms = createRequirementPermissionAtoms({
@@ -162,6 +164,9 @@ export function RequirementBoard({
   const queryEnvironments = onlineEnvironments.filter(
     (environment) => !queryEnvironmentId || environment.environmentId === queryEnvironmentId,
   );
+  const meituanEnabled = queryEnvironments.some((environment) =>
+    isMeituanServiceEnabled(environment.serverConfig?.settings, "requirements"),
+  );
   const [creatingEnvironmentId, setCreatingEnvironmentId] = useState<EnvironmentId | null>(null);
   const detailEnvironmentId =
     search.detailEnvironmentId ?? filterEnvironmentId ?? fallbackEnvironmentId;
@@ -175,8 +180,9 @@ export function RequirementBoard({
   const actionProjects = allProjects.filter((project) => project.environmentId === environmentId);
   const environmentLabel = (id: EnvironmentId) =>
     environments.find((environment) => environment.environmentId === id)?.label ?? id;
-  const source: RequirementSource =
+  const requestedSource: RequirementSource =
     search.source ?? (search.local ? "local" : (search.provider ?? "all"));
+  const source = requestedSource === "meituan" && !meituanEnabled ? "all" : requestedSource;
   const assignee = search.assignee ?? "me";
   const view = search.view ?? "list";
   const archived = search.archived ?? false;
@@ -488,24 +494,26 @@ export function RequirementBoard({
                         { value: "github", label: "GitHub Issues" },
                         { value: "local", label: t("Local work items") },
                       ] as const
-                    ).map((option) => (
-                      <MenuCheckboxItem
-                        key={option.value}
-                        checked={source === option.value}
-                        onCheckedChange={() =>
-                          updateSearch({
-                            source: option.value,
-                            provider: undefined,
-                            local: undefined,
-                            assignee: undefined,
-                            issueId: undefined,
-                            workItemId: undefined,
-                          })
-                        }
-                      >
-                        {option.label}
-                      </MenuCheckboxItem>
-                    ))}
+                    )
+                      .filter((option) => option.value !== "meituan" || meituanEnabled)
+                      .map((option) => (
+                        <MenuCheckboxItem
+                          key={option.value}
+                          checked={source === option.value}
+                          onCheckedChange={() =>
+                            updateSearch({
+                              source: option.value,
+                              provider: undefined,
+                              local: undefined,
+                              assignee: undefined,
+                              issueId: undefined,
+                              workItemId: undefined,
+                            })
+                          }
+                        >
+                          {option.label}
+                        </MenuCheckboxItem>
+                      ))}
                   </MenuSubPopup>
                 </MenuSub>
                 {!compact ? (

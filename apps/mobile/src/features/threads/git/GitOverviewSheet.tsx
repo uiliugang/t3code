@@ -16,7 +16,7 @@ import {
   getGitActionDisabledReason,
   requiresDefaultBranchConfirmation,
 } from "@t3tools/client-runtime/state/vcs";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, isMeituanServiceEnabled } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   CommonActions,
@@ -39,6 +39,7 @@ import { SheetPane } from "../../../components/ui/SheetPane";
 import { InspectorSheetContext } from "../../layout/workspace-inspector-sheet";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { useEnvironmentQuery } from "../../../state/query";
+import { useEnvironmentServerConfig } from "../../../state/entities";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
@@ -163,14 +164,16 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
           key={`${environmentId}:${selectedThreadCwd}:${gitStatus.data.refName}`}
           target={{ environmentId, cwd: selectedThreadCwd, branch: gitStatus.data.refName }}
           provider={issueProvider}
+          creationControl={
+            selectedThread ? (
+              <ThreadIssueCreationButton
+                environmentId={environmentId}
+                projectId={selectedThread.projectId}
+                threadId={selectedThread.id}
+              />
+            ) : null
+          }
         />
-        {selectedThread ? (
-          <ThreadIssueCreationButton
-            environmentId={environmentId}
-            projectId={selectedThread.projectId}
-            threadId={selectedThread.id}
-          />
-        ) : null}
       </View>
     ) : null;
   const currentStatusSummary = statusSummary(gitStatus.data, t);
@@ -180,8 +183,14 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const isRepo = gitStatus.data?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus.data?.hasPrimaryRemote ?? false;
   const isDefaultRef = gitStatus.data?.isDefaultRef ?? false;
+  const config = useEnvironmentServerConfig(environmentId);
+  const pullRequestsEnabled =
+    gitStatus.data?.sourceControlProvider?.kind !== "meituan" ||
+    isMeituanServiceEnabled(config?.settings, "sourceControl");
 
-  const menuItems = isRepo ? buildMenuItems(gitStatus.data, busy, hasPrimaryRemote) : [];
+  const menuItems = isRepo
+    ? buildMenuItems(gitStatus.data, busy, hasPrimaryRemote, pullRequestsEnabled)
+    : [];
 
   const sheetMenuItems = menuItems.map((item) => ({
     item: {
