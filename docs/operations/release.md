@@ -51,8 +51,13 @@ with updates disabled need one manual install of a release containing this chang
 Release stamping preserves the source version for provider compatibility checks;
 the fork's independent version numbers must not select upstream protocol policies.
 Android disables the upstream Expo OTA feed and bundles its JavaScript; it needs no Metro server, Expo account,
-or Google Play credentials. Connect directly to your T3 server; these builds do not
-provision a private T3 Connect relay or configure fork-specific cloud authentication.
+or Google Play publishing credentials. Fork releases use the official T3 Connect public configuration
+and [Firebase client resources](../../.github/config/google-services.fork.json), reconstructed from
+the [official Android 2.3.0 (801) APK](https://github.com/pingdotgg/t3code/releases/tag/v0.1.11-nightly.20261117.4838).
+The Firebase app ID remains upstream's; the build-time package selector matches `com.uiliugang.t3code`
+so the fork retains its install and update identity. This file contains no service-account private key.
+Upstream Firebase and Connect policy still controls access; obtaining an FCM token does not verify
+end-to-end delivery. These builds do not provision a private relay or fork-specific cloud authentication.
 
 Beta is the product label, not a release channel or version suffix. Release channels
 remain stable and nightly. To ship 0.1.0 Beta, use `channel=stable` and
