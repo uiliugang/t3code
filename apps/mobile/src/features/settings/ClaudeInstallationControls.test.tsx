@@ -278,7 +278,7 @@ it.each(["codex", "claudeAgent"])(
   },
 );
 
-it("reenables a saved provider from Add, preserving settings and allowing retry after failure", async () => {
+it("keeps saved providers in Add for both toggle directions, preserving settings and retrying failures", async () => {
   mutate.mockReset();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const instanceId = ProviderInstanceId.make("codex_work");
@@ -310,10 +310,24 @@ it("reenables a saved provider from Add, preserving settings and allowing retry 
   );
   const container = document.createElement("div");
   const root = createRoot(container);
-  try {
-    act(() =>
-      root.render(<AddProviderConnection environment={environment} providers={[provider]} />),
+  const renderProvider = (enabled: boolean) =>
+    root.render(
+      <AddProviderConnection
+        environment={{
+          ...environment,
+          serverConfig: {
+            ...environment.serverConfig,
+            settings: {
+              ...environment.serverConfig.settings,
+              providerInstances: { [instanceId]: { ...instance, enabled } },
+            },
+          },
+        }}
+        providers={[{ ...provider, enabled }]}
+      />,
     );
+  try {
+    act(() => renderProvider(false));
     expect(container.querySelector('[role="switch"]')).toBeNull();
     act(() => container.querySelector("button")!.click());
     const enable = container.querySelector<HTMLButtonElement>(
@@ -341,9 +355,45 @@ it("reenables a saved provider from Add, preserving settings and allowing retry 
     );
     act(() => enable.click());
     expect(mutate).toHaveBeenCalledTimes(2);
-    await act(async () => finish({ _tag: "Success" }));
+    await act(async () => {
+      renderProvider(true);
+      finish({ _tag: "Success" });
+    });
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.contains(enable)).toBe(true);
+    expect(enable.getAttribute("aria-checked")).toBe("true");
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
     expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.querySelector('[aria-label="Add provider"]')).not.toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Add provider"]')!.click());
+    const disable = container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Work Codex"]',
+    )!;
+    expect(disable.getAttribute("aria-checked")).toBe("true");
+    act(() => {
+      disable.click();
+      disable.click();
+    });
+    expect(mutate).toHaveBeenCalledTimes(3);
+    expect(mutate.mock.calls[2]?.[0].input.providerInstanceMutation).toEqual({
+      operation: "upsert",
+      instanceId,
+      instance: { ...instance, enabled: false },
+    });
+    expect(disable.getAttribute("aria-checked")).toBe("false");
+    expect(disable.disabled).toBe(true);
+    await act(async () => finish({ _tag: "Failure" }));
+    expect(disable.getAttribute("aria-checked")).toBe("true");
+    expect(disable.disabled).toBe(false);
+    act(() => disable.click());
+    expect(mutate).toHaveBeenCalledTimes(4);
+    await act(async () => {
+      renderProvider(false);
+      finish({ _tag: "Success" });
+    });
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.contains(disable)).toBe(true);
+    expect(disable.getAttribute("aria-checked")).toBe("false");
+    expect(disable.disabled).toBe(false);
   } finally {
     act(() => root.unmount());
   }

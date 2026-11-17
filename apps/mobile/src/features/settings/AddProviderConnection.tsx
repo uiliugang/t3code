@@ -37,8 +37,11 @@ export function AddProviderConnection({
   const [driver, setDriver] = useState<"codex" | "claudeAgent" | null>(null);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [enablingId, setEnablingId] = useState<ProviderInstanceId | null>(null);
-  const pending = creating || enablingId !== null;
+  const [pendingToggle, setPendingToggle] = useState<{
+    instanceId: ProviderInstanceId;
+    enabled: boolean;
+  } | null>(null);
+  const pending = creating || pendingToggle !== null;
   const pendingRef = useRef(false);
   const mutate = useAtomCommand(serverEnvironment.mutateProviderInstance);
   const allowed = useAtomValue(
@@ -54,12 +57,10 @@ export function AddProviderConnection({
     environment.serverConfig.managedPolicy,
     ProviderDriverKind.make("codex"),
   );
-  const disabledProviders = providers.filter(
-    (provider) =>
-      !provider.enabled &&
-      isManagedDriverAllowed(environment.serverConfig.managedPolicy, provider.driver),
+  const availableProviders = providers.filter((provider) =>
+    isManagedDriverAllowed(environment.serverConfig.managedPolicy, provider.driver),
   );
-  const enable = async (provider: ServerProvider) => {
+  const setProviderEnabled = async (provider: ServerProvider, enabled: boolean) => {
     if (
       pendingRef.current ||
       !allowed ||
@@ -70,8 +71,8 @@ export function AddProviderConnection({
     )
       return;
     pendingRef.current = true;
-    setEnablingId(provider.instanceId);
-    const result = await mutate({
+    setPendingToggle({ instanceId: provider.instanceId, enabled });
+    await mutate({
       environmentId: environment.environmentId,
       input: {
         patch: {},
@@ -81,14 +82,13 @@ export function AddProviderConnection({
           instance: {
             driver: provider.driver,
             ...environment.serverConfig.settings.providerInstances[provider.instanceId],
-            enabled: true,
+            enabled,
           },
         },
       },
     });
     pendingRef.current = false;
-    setEnablingId(null);
-    if (result._tag === "Success") setExpanded(false);
+    setPendingToggle(null);
   };
   const create = async () => {
     if (!driver || pendingRef.current || !allowed) return;
@@ -240,11 +240,15 @@ export function AddProviderConnection({
                         ) : null}
                       </>
                     )}
-                    {disabledProviders.map((provider) => (
+                    {availableProviders.map((provider) => (
                       <View key={provider.instanceId} className="border-t border-border-subtle">
                         <ListToggleRow
                           label={provider.displayName ?? provider.driver}
-                          value={provider.enabled || enablingId === provider.instanceId}
+                          value={
+                            pendingToggle?.instanceId === provider.instanceId
+                              ? pendingToggle.enabled
+                              : provider.enabled
+                          }
                           disabled={
                             !allowed ||
                             pending ||
@@ -253,9 +257,7 @@ export function AddProviderConnection({
                               `providerInstances.${provider.instanceId}.enabled`,
                             )
                           }
-                          onValueChange={(value) => {
-                            if (value) void enable(provider);
-                          }}
+                          onValueChange={(value) => void setProviderEnabled(provider, value)}
                         />
                       </View>
                     ))}

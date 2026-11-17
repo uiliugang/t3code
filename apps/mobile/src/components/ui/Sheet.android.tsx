@@ -2,7 +2,9 @@ import { useState } from "react";
 import { View } from "react-native";
 import { FormSheet } from "react-native-screens";
 import { useResolveClassNames } from "uniwind";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AppBar } from "./AppBar";
+import { AndroidHeaderIconButton } from "./AndroidScreenHeader.android";
 import { BottomSheetContext } from "./BottomSheetContext";
 import { RoutedFormSheetContext } from "./RoutedFormSheetContext";
 import { ScreenContent } from "./ScreenContent";
@@ -10,6 +12,7 @@ import type { SheetProps } from "./Sheet.types";
 export type { SheetProps } from "./Sheet.types";
 
 export function Sheet(props: SheetProps) {
+  const t = useUiTranslation();
   const containerStyle = useResolveClassNames("bg-header");
   const [isOpen, setIsOpen] = useState(true);
   return (
@@ -29,7 +32,17 @@ export function Sheet(props: SheetProps) {
             <AppBar
               sheet
               title={props.title}
-              onBack={props.dismissDisabled ? undefined : () => setIsOpen(false)}
+              // Keep Compose's navigation slot mounted while dismissal is disabled.
+              leading={
+                <AndroidHeaderIconButton
+                  accessibilityLabel={t("Navigate up")}
+                  icon="arrow.left"
+                  disabled={props.dismissDisabled}
+                  onPress={() => {
+                    if (!props.dismissDisabled) setIsOpen(false);
+                  }}
+                />
+              }
               hideBottomBorder
             />
             <ScreenContent>{props.children}</ScreenContent>
