@@ -199,10 +199,7 @@ export function skillBatchBindingOperations(
   );
   const operations: SkillAction[] = [];
   for (const skill of skills) {
-    // A directory may gain a canonical path after its first managed link creates it.
-    const bindings = skill.bindings.map((binding) => ({
-      directory: targets.find((target) => target.id === binding.id)?.directory ?? binding.directory,
-    }));
+    const bindings = skill.bindings;
     const changes = locations.some((group) =>
       mode === "add"
         ? !bindings.some((binding) => binding.directory === group.directory)

@@ -258,16 +258,25 @@ describe("skill management views", () => {
     expect(skillBatchBindingOperations(skills, targets, ["codex"], "add")).toEqual([
       { type: "configure", id: "debug", policy: "pinned", targetIds: ["claude", "codex", "alias"] },
     ]);
-    const canonicalTargets = targets.map((target) => ({
-      ...target,
-      directory: `/private${target.directory}`,
-    }));
-    expect(skillBatchBindingOperations(skills, canonicalTargets, ["shared"], "add")).toEqual(
-      skillBatchBindingOperations(skills, targets, ["shared"], "add"),
+    const movedTargets = targets.map((target) =>
+      target.id === "codex" ? { ...target, directory: "/new-codex" } : target,
     );
-    expect(skillBatchBindingOperations(skills, canonicalTargets, ["alias"], "remove")).toEqual(
-      skillBatchBindingOperations(skills, targets, ["alias"], "remove"),
-    );
+    expect(skillBatchBindingOperations(skills, movedTargets, ["shared"], "add")).toEqual([
+      { type: "configure", id: "review", policy: "automatic", targetIds: ["alias", "shared"] },
+      { type: "configure", id: "debug", policy: "pinned", targetIds: ["claude", "shared"] },
+    ]);
+    expect(skillBatchBindingOperations(skills, movedTargets, ["codex"], "remove")).toEqual([]);
+    expect(skillBatchBindingOperations(skills, movedTargets, ["alias"], "remove")).toEqual([
+      { type: "configure", id: "review", policy: "automatic", targetIds: [] },
+    ]);
+    expect(
+      skillBatchBindingOperations(
+        skills,
+        movedTargets.filter((target) => target.id !== "alias"),
+        ["shared"],
+        "add",
+      ),
+    ).toBeNull();
     expect(skillBatchBindingOperations(skills, targets, [], "remove")).toEqual([]);
     expect(skillBatchBindingOperations(skills, targets, ["missing"], "add")).toEqual([]);
     expect(

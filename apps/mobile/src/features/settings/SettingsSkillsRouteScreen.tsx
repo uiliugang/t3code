@@ -957,7 +957,6 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
         {showCopy && (
           <ControlPill
             icon="square.on.square"
-            label={t("Copy")}
             accessibilityLabel={t("Copy to environment...")}
             variant="primary"
             disabled={disabled || chosen.length + discovered.length === 0}
@@ -967,7 +966,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
         {chosen.length > 0 && (
           <ControlPill
             icon="folder"
-            label={t("Usage locations")}
+            accessibilityLabel={t("Usage locations")}
             disabled={disabled}
             onPress={() => setBatchBindings(true)}
           />

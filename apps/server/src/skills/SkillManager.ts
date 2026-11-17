@@ -1735,9 +1735,27 @@ const make = Effect.gen(function* () {
   const snapshot = Effect.gen(function* () {
     const current = yield* Ref.get(state);
     const populated = yield* Ref.get(populatedTargets);
+    const directories = new Map(
+      yield* Effect.forEach(
+        new Set(
+          current.skills.flatMap((skill) => skill.bindings.map((binding) => binding.directory)),
+        ),
+        (directory) =>
+          canonicalDirectory(directory).pipe(
+            Effect.map((canonical) => [directory, canonical] as const),
+          ),
+      ),
+    );
     return {
       ...current,
       skills: current.skills.map((skill) => {
+        skill = {
+          ...skill,
+          bindings: skill.bindings.map((binding) => ({
+            ...binding,
+            directory: directories.get(binding.directory) ?? binding.directory,
+          })),
+        };
         if (skill.failureReason === "needs-source") {
           skill = {
             ...skill,
