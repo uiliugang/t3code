@@ -920,10 +920,24 @@ const make = Effect.gen(function* () {
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     let parseFailure = Option.none<unknown>();
     let migrateMeituan = true;
+    let legacyMeituanOffered = false;
 
     if (yield* readConfigExists) {
       const raw = yield* readRawConfig;
       const parsed = decodeSettingsFileJsonExit(raw);
+      if (
+        Exit.isSuccess(parsed) &&
+        typeof parsed.value === "object" &&
+        parsed.value !== null &&
+        "offeredSourceControlProviders" in parsed.value
+      ) {
+        const offered = parsed.value.offeredSourceControlProviders;
+        legacyMeituanOffered =
+          typeof offered === "object" &&
+          offered !== null &&
+          "meituan" in offered &&
+          offered.meituan === true;
+      }
       migrateMeituan =
         Exit.isSuccess(parsed) &&
         typeof parsed.value === "object" &&
@@ -986,7 +1000,7 @@ const make = Effect.gen(function* () {
             Object.keys(settings.sourceControlHosts.meituan).length,
           ) ||
           Boolean(settings.daxiang.clientId) ||
-          settings.offeredSourceControlProviders.meituan === true ||
+          legacyMeituanOffered ||
           Object.values(settings.issueProjectSources).some((sources) =>
             sources.some((source) => source.provider === "meituan"),
           ) ||

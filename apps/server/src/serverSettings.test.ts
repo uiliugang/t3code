@@ -47,6 +47,7 @@ const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch
 
 it.effect.each([
   ["new environments", {}, false],
+  ["explicit legacy Meituan offerings", { offeredSourceControlProviders: { meituan: true } }, true],
   ["existing Meituan accounts", { sourceControlHosts: { meituan: { mis: "demo.user" } } }, true],
   ["existing DaXiang credentials", { daxiang: { clientId: "demo-app" } }, true],
   [
