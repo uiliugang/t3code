@@ -4,23 +4,19 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../test/render";
+import { projectFaviconUrlAtom } from "../state/assets";
 import { ProjectFavicon, type ProjectFaviconProject } from "./ProjectFavicon";
 
-const state = vi.hoisted(() => ({ favicon: undefined as Atom.Atom<string | null> | undefined }));
-vi.mock(import("../state/assets"), () => ({
-  projectFaviconUrlAtom: () => {
-    if (!state.favicon) throw new Error("Favicon resource not configured");
-    return state.favicon;
-  },
-}));
+vi.mock(import("../state/assets"), { spy: true });
 
 function setup() {
   const activeResources = new Set<string>();
-  state.favicon = Atom.make((get) => {
+  const favicon = Atom.make((get) => {
     activeResources.add("favicon");
     get.addFinalizer(() => activeResources.delete("favicon"));
     return null;
   });
+  vi.mocked(projectFaviconUrlAtom).mockReturnValue(favicon);
   return { activeResources };
 }
 
