@@ -3,10 +3,10 @@ import {
   ProjectId,
   WorkItemId,
   WorkItem,
-  type IssueDetail,
+  type RequirementIssueDetail,
   type IssueProvider,
   WorkItemError,
-  IssueError,
+  RequirementIssueError,
   ThreadId,
   DEFAULT_SERVER_SETTINGS,
 } from "@t3tools/contracts";
@@ -86,7 +86,7 @@ function setup(
   let closed = 0;
   let failWrite = false;
   let enabled = true;
-  let detail: IssueDetail = {
+  let detail: RequirementIssueDetail = {
     id: "1",
     url: item.delivery!.issue.url,
     title: item.title,
@@ -139,7 +139,9 @@ function setup(
           read: () => Effect.succeed(detail),
           setState: () =>
             failWrite
-              ? Effect.fail(new IssueError({ operation: "setState", reason: "unavailable" }))
+              ? Effect.fail(
+                  new RequirementIssueError({ operation: "setState", reason: "unavailable" }),
+                )
               : Effect.sync(() => {
                   closed++;
                   detail = { ...detail, state: "closed", stateCategory: "done" };

@@ -127,7 +127,7 @@ export function useOpenChangeRequestLink(
           ...(revealUrl === undefined ? {} : { revealUrl }),
           number,
         });
-        if (!resolvedThreadRef) {
+        if (!resolvedThreadRef && resolvedPanelRef.threadId === "pull-requests-panel") {
           void navigate({
             to: "/pull-requests",
             search: (previous) => ({

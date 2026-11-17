@@ -4,6 +4,7 @@ import {
   isMeituanServiceEnabled,
   type EnvironmentId,
   type IssueTarget,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { ArrowUpRightIcon, GitBranchIcon, LinkIcon, UnlinkIcon, XIcon } from "lucide-react";
 import { useState } from "react";
@@ -31,14 +32,18 @@ export function IssueDetailPanel({
   projectTitle,
   close,
   changed,
+  embedded = false,
+  panelRef,
 }: {
   environmentId: EnvironmentId;
   target: IssueTarget;
   id: string;
   cwd: string;
   projectTitle: string;
-  close: () => void;
-  changed: () => void;
+  close?: () => void;
+  changed?: () => void;
+  embedded?: boolean;
+  panelRef?: ScopedThreadRef | undefined;
 }) {
   const t = useUiTranslation();
   const settings = useEnvironmentSettings(environmentId, (settings) => settings);
@@ -88,7 +93,7 @@ export function IssueDetailPanel({
     query.refresh();
     if (result._tag === "Success") {
       setNextState("");
-      changed();
+      changed?.();
     }
   };
   const associate = async (name: string, action: "associate" | "disassociate") => {
@@ -104,31 +109,39 @@ export function IssueDetailPanel({
   return (
     <aside
       onKeyDown={(event) => {
-        if (event.key === "Escape") close();
+        if (event.key === "Escape") close?.();
       }}
-      className="flex h-full min-h-0 flex-col border-l border-border/60 bg-background max-md:absolute max-md:inset-0 max-md:z-20 md:w-[min(42%,440px)] md:min-w-80 md:shrink-0"
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-1 flex-col bg-background"
+          : "flex h-full min-h-0 flex-col border-l border-border/60 bg-background max-md:absolute max-md:inset-0 max-md:z-20 md:w-[min(42%,440px)] md:min-w-80 md:shrink-0"
+      }
       aria-label={t("Issue details")}
     >
-      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
+      <div
+        className={`flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 ${embedded ? "h-10" : "h-14"}`}
+      >
         <span className="text-xs text-muted-foreground">
           {target.provider === "meituan" ? "MEP ONES" : "GitHub Issues"} · #{id}
         </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t("Close details")}
-                autoFocus
-                onClick={close}
-              />
-            }
-          >
-            <XIcon />
-          </TooltipTrigger>
-          <TooltipPopup>{t("Close details")}</TooltipPopup>
-        </Tooltip>
+        {!embedded && close ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t("Close details")}
+                  autoFocus
+                  onClick={close}
+                />
+              }
+            >
+              <XIcon />
+            </TooltipTrigger>
+            <TooltipPopup>{t("Close details")}</TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
         {query.error ? (
@@ -158,6 +171,7 @@ export function IssueDetailPanel({
                 item={deliveryQuery.data.item}
                 summary={deliveryQuery.data.items[0]?.deliverySummary}
                 transitions={detail.transitions}
+                panelRef={panelRef}
               />
             ) : null}
             <details className="border-t border-border/60 pt-3">

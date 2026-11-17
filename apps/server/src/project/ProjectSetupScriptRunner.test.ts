@@ -6,6 +6,7 @@ import {
   ProjectId,
   TerminalNotRunningError,
   type TerminalEvent,
+  type TerminalOpenInput,
   type TerminalSessionSnapshot,
   type ServerSettings as ServerSettingsValue,
 } from "@t3tools/contracts";
@@ -52,15 +53,18 @@ const makeHarness = Effect.fn(function* (options: {
   readonly settings?: Partial<ServerSettingsValue>;
 }) {
   const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
+  const opens: TerminalOpenInput[] = [];
   const writes = yield* Queue.unbounded<string>();
   const outputLines = yield* Queue.unbounded<string>();
   const opened = yield* Queue.unbounded<Record<string, string> | undefined>();
   const terminals = Layer.mock(TerminalManager.TerminalManager)({
     open: (input) =>
-      (options.opening
-        ? Deferred.succeed(options.opening, undefined).pipe(Effect.andThen(Effect.never))
-        : Effect.void
-      ).pipe(
+      Effect.sync(() => opens.push(input)).pipe(
+        Effect.andThen(
+          options.opening
+            ? Deferred.succeed(options.opening, undefined).pipe(Effect.andThen(Effect.never))
+            : Effect.void,
+        ),
         Effect.andThen(Queue.offer(opened, input.env)),
         Effect.as(openSnapshot(options.history ?? "")),
       ),
@@ -114,7 +118,7 @@ const makeHarness = Effect.fn(function* (options: {
   });
   const emit = (terminalEvent: TerminalEvent) =>
     Effect.forEach([...listeners], (listener) => listener(terminalEvent), { discard: true });
-  return { start, listeners, writes, outputLines, opened, emit };
+  return { start, listeners, writes, outputLines, opened, emit, opens };
 });
 
 const setup = Effect.fn(function* (
@@ -132,6 +136,13 @@ const setup = Effect.fn(function* (
 });
 
 describe("ProjectSetupScriptRunner", () => {
+  it.effect("keeps setup scripts independent of the interactive shell preference", () =>
+    Effect.gen(function* () {
+      const { opens } = yield* setup();
+      expect(opens[0]?.env?.T3CODE_TERMINAL_SHELL).toBe("");
+    }),
+  );
+
   it.effect("uses shared dependencies by default and honors environment and project opt-outs", () =>
     Effect.gen(function* () {
       for (const [settings, expected] of [

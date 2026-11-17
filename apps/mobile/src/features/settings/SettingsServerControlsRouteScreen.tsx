@@ -4,7 +4,6 @@ import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
-import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   DEFAULT_SERVER_SETTINGS,
   type ResponseStreamingMode,
@@ -30,7 +29,8 @@ import { DatabaseStorageNotice } from "./components/DatabaseStorageNotice";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
-import { SourceControlSignInSection } from "./components/SourceControlSignInSection";
+import { IssueTrackerSection } from "./components/IssueTrackerSection";
+import { SourceControlProvidersSection } from "./components/SourceControlProvidersSection";
 import { SettingsProjectOverridesSection } from "./components/SettingsProjectOverridesSection";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { useSettingsWriter } from "./useSettingsWriter";
@@ -48,6 +48,7 @@ import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { mergedWorktreeCleanupState } from "@t3tools/shared/projectSettings";
 import { ManagedWorktreesSection } from "./ManagedWorktreesSection";
+import { SourceControlToolsSection } from "./components/SourceControlToolsSection";
 
 function RemoteBranchDisplayDaysField(props: {
   value: number | null;
@@ -85,14 +86,12 @@ function RemoteBranchDisplayDaysField(props: {
     />
   );
 }
-import { isSourceControlProviderOffered } from "@t3tools/client-runtime/operations/projects";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
 type SettingsPage = "threads" | "source-control" | "worktrees" | "maintenance";
 
 const PAGE_TITLES: Record<SettingsPage, string> = {
   threads: "Threads",
-  "source-control": "Source control",
+  "source-control": "Source control & issues",
   worktrees: "Worktrees",
   maintenance: "Maintenance",
 };
@@ -466,61 +465,21 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
             {props.page === "source-control" ? (
               <>
                 {projectSelected ? null : (
-                  <SourceControlSignInSection
+                  <SourceControlProvidersSection
                     environments={selectedTargets}
                     canWrite={(environmentId) => writableEnvironments.has(environmentId)}
                   />
                 )}
                 {projectSelected ? null : (
-                  <SettingsSection title="Project sources">
-                    {sourceControlClients.definitions
-                      .filter(
-                        (definition) =>
-                          definition.kind !== "meituan" ||
-                          displayTargets.some((target) =>
-                            isMeituanServiceEnabled(target.settings, "sourceControl"),
-                          ),
-                      )
-                      .map((definition) => {
-                        const offered = displayTargets.map((target) =>
-                          definition.kind === "meituan"
-                            ? isMeituanServiceEnabled(target.settings, "sourceControl")
-                            : isSourceControlProviderOffered(
-                                target.settings.offeredSourceControlProviders,
-                                definition.kind,
-                              ),
-                        );
-                        return (
-                          <SettingsSwitchRow
-                            key={definition.kind}
-                            label={definition.pickerLabel}
-                            value={
-                              offered.every((value) => value === offered[0]) ? offered[0]! : null
-                            }
-                            disabled={
-                              disabledFor(
-                                definition.kind === "meituan"
-                                  ? "meituanSourceControlEnabled"
-                                  : "offeredSourceControlProviders",
-                              ) ||
-                              (definition.kind === "meituan" &&
-                                displayTargets.some(
-                                  (target) =>
-                                    target.environment.serverConfig.environment.capabilities
-                                      .meituanIntegration !== true,
-                                ))
-                            }
-                            onValueChange={(value) =>
-                              write(
-                                definition.kind === "meituan"
-                                  ? { meituanSourceControlEnabled: value }
-                                  : { offeredSourceControlProviders: { [definition.kind]: value } },
-                              )
-                            }
-                          />
-                        );
-                      })}
-                  </SettingsSection>
+                  <>
+                    {selectedTargets.map((environment) => (
+                      <SourceControlToolsSection
+                        key={`tools:${environment.environmentId}`}
+                        environment={environment}
+                      />
+                    ))}
+                    <IssueTrackerSection environments={selectedTargets} />
+                  </>
                 )}
                 <SettingsSection title="Pull requests">
                   <SettingsSwitchRow

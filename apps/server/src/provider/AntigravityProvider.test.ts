@@ -306,7 +306,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         models: [],
         setup: { canAuthenticate: true, canInstall: true },
         showInteractionModeToggle: false,
-        supportsConversationRollback: false,
+        supportsConversationRollback: true,
         supportsTextGeneration: false,
       });
       expect(yield* Ref.get(harness.probeCalls)).toBe(0);

@@ -100,20 +100,20 @@ import {
 } from "./branchIssues.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import {
-  IssueListInput,
+  RequirementIssueListInput,
   IssueSourcesInput,
   IssueSourcesResult,
-  IssueListResult,
+  RequirementIssueListResult,
   IssueReadInput,
-  IssueDetail,
+  RequirementIssueDetail,
   IssuePeopleInput,
   IssueOption,
   IssueMetadataInput,
   IssueMetadata,
-  IssueCreateInput,
+  RequirementIssueCreateInput,
   Issue,
-  IssueSetStateInput,
-  IssueError,
+  RequirementIssueSetStateInput,
+  RequirementIssueError,
 } from "./issues.ts";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -251,6 +251,30 @@ import {
   ProviderUploadFeedbackResult,
 } from "./provider.ts";
 import { ProviderInstanceId, ProviderInstanceMutation } from "./providerInstance.ts";
+import {
+  IssueCandidates,
+  IssueCommentInput,
+  IssueCommentsPage,
+  IssueCommentsPageInput,
+  IssueCreateInput,
+  IssueCreateResult,
+  IssueDetail,
+  IssueListInput,
+  IssueListResult,
+  IssueOperationError,
+  IssueReactionInput,
+  IssueRef,
+  IssueScopeRef,
+  IssueSetStateInput,
+  IssueTemplateList,
+  IssueTrackerBindProjectInput,
+  IssueTrackerConnectInput,
+  IssueTrackerConnection,
+  IssueTrackerConnectionError,
+  IssueTrackerConnectionList,
+  IssueUnavailableError,
+  IssueUpdateInput,
+} from "./issue.ts";
 import {
   GuestShareCreateError,
   GuestShareCreateInput,
@@ -736,16 +760,31 @@ export const WS_METHODS = {
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
 
+  // Issue tracking methods
+  issuesList: "issues.list",
+  issuesDetail: "issues.detail",
+  issuesComments: "issues.comments",
+  issuesTemplates: "issues.templates",
+  issuesCandidates: "issues.candidates",
+  issuesCreate: "issues.create",
+  issuesComment: "issues.comment",
+  issuesUpdate: "issues.update",
+  issuesSetState: "issues.setState",
+  issuesReact: "issues.react",
+  issueTrackersList: "issueTrackers.list",
+  issueTrackersConnect: "issueTrackers.connect",
+  issueTrackersBindProject: "issueTrackers.bindProject",
+
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   branchIssuesList: "sourceControl.branchIssuesList",
-  issuesList: "issues.list",
+  requirementIssuesList: "requirementIssues.list",
   issuesSources: "issues.sources",
   issueBranches: "issues.branches",
   issuesRead: "issues.read",
   issuesPeople: "issues.people",
   issuesMetadata: "issues.metadata",
-  issuesCreate: "issues.create",
-  issuesSetState: "issues.setState",
+  requirementIssuesCreate: "requirementIssues.create",
+  requirementIssuesSetState: "requirementIssues.setState",
   branchIssuesRead: "sourceControl.branchIssuesRead",
   branchIssuesUpdate: "sourceControl.branchIssuesUpdate",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -1496,6 +1535,102 @@ const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
   error: PullRequestRpcError,
 });
 
+const IssueRpcError = Schema.Union([
+  IssueUnavailableError,
+  IssueOperationError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
+  payload: IssueListInput,
+  success: IssueListResult,
+  error: IssueRpcError,
+});
+
+const WsIssuesDetailRpc = Rpc.make(WS_METHODS.issuesDetail, {
+  payload: IssueRef,
+  success: IssueDetail,
+  error: IssueRpcError,
+});
+
+/** Older comments, one page at a time, past the cursor the detail handed over. */
+const WsIssuesCommentsRpc = Rpc.make(WS_METHODS.issuesComments, {
+  payload: IssueCommentsPageInput,
+  success: IssueCommentsPage,
+  error: IssueRpcError,
+});
+
+const WsIssuesTemplatesRpc = Rpc.make(WS_METHODS.issuesTemplates, {
+  payload: IssueScopeRef,
+  success: IssueTemplateList,
+  error: IssueRpcError,
+});
+
+/** Read when a label or assignee picker opens, not with every issue. */
+const WsIssuesCandidatesRpc = Rpc.make(WS_METHODS.issuesCandidates, {
+  payload: IssueScopeRef,
+  success: IssueCandidates,
+  error: IssueRpcError,
+});
+
+const WsIssuesCreateRpc = Rpc.make(WS_METHODS.issuesCreate, {
+  payload: IssueCreateInput,
+  success: IssueCreateResult,
+  error: IssueRpcError,
+});
+
+const WsIssuesCommentRpc = Rpc.make(WS_METHODS.issuesComment, {
+  payload: IssueCommentInput,
+  success: Schema.Void,
+  error: IssueRpcError,
+});
+
+const WsIssuesUpdateRpc = Rpc.make(WS_METHODS.issuesUpdate, {
+  payload: IssueUpdateInput,
+  success: Schema.Void,
+  error: IssueRpcError,
+});
+
+const WsIssuesSetStateRpc = Rpc.make(WS_METHODS.issuesSetState, {
+  payload: IssueSetStateInput,
+  success: Schema.Void,
+  error: IssueRpcError,
+});
+
+const WsIssuesReactRpc = Rpc.make(WS_METHODS.issuesReact, {
+  payload: IssueReactionInput,
+  success: Schema.Void,
+  error: IssueRpcError,
+});
+
+const IssueTrackerRpcError = Schema.Union([
+  IssueTrackerConnectionError,
+  EnvironmentAuthorizationError,
+]);
+
+/** Every standalone tracker this server ships, each with its connection probed afresh. */
+const WsIssueTrackersListRpc = Rpc.make(WS_METHODS.issueTrackersList, {
+  payload: Schema.Struct({}),
+  success: IssueTrackerConnectionList,
+  error: IssueTrackerRpcError,
+});
+
+/**
+ * Verifies the credential against the tracker before storing it; the result is the new status.
+ * A null token disconnects, which also unbinds every project that pointed at the tracker.
+ */
+const WsIssueTrackersConnectRpc = Rpc.make(WS_METHODS.issueTrackersConnect, {
+  payload: IssueTrackerConnectInput,
+  success: IssueTrackerConnection,
+  error: IssueTrackerRpcError,
+});
+
+const WsIssueTrackersBindProjectRpc = Rpc.make(WS_METHODS.issueTrackersBindProject, {
+  payload: IssueTrackerBindProjectInput,
+  success: Schema.Void,
+  error: IssueTrackerRpcError,
+});
+
 const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLookupRepository, {
   payload: SourceControlRepositoryLookupInput,
   success: SourceControlRepositoryInfo,
@@ -1507,15 +1642,15 @@ const WsBranchIssuesListRpc = Rpc.make(WS_METHODS.branchIssuesList, {
   success: BranchIssuesResult,
   error: Schema.Union([BranchIssueError, EnvironmentAuthorizationError]),
 });
-const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
-  payload: IssueListInput,
-  success: IssueListResult,
-  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+const WsRequirementIssuesListRpc = Rpc.make(WS_METHODS.requirementIssuesList, {
+  payload: RequirementIssueListInput,
+  success: RequirementIssueListResult,
+  error: Schema.Union([RequirementIssueError, EnvironmentAuthorizationError]),
 });
 const WsIssuesSourcesRpc = Rpc.make(WS_METHODS.issuesSources, {
   payload: IssueSourcesInput,
   success: IssueSourcesResult,
-  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+  error: Schema.Union([RequirementIssueError, EnvironmentAuthorizationError]),
 });
 const WsIssueBranchesRpc = Rpc.make(WS_METHODS.issueBranches, {
   payload: IssueBranchesInput,
@@ -1524,28 +1659,28 @@ const WsIssueBranchesRpc = Rpc.make(WS_METHODS.issueBranches, {
 });
 const WsIssuesReadRpc = Rpc.make(WS_METHODS.issuesRead, {
   payload: IssueReadInput,
-  success: IssueDetail,
-  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+  success: RequirementIssueDetail,
+  error: Schema.Union([RequirementIssueError, EnvironmentAuthorizationError]),
 });
 const WsIssuesPeopleRpc = Rpc.make(WS_METHODS.issuesPeople, {
   payload: IssuePeopleInput,
   success: Schema.Array(IssueOption),
-  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+  error: Schema.Union([RequirementIssueError, EnvironmentAuthorizationError]),
 });
 const WsIssuesMetadataRpc = Rpc.make(WS_METHODS.issuesMetadata, {
   payload: IssueMetadataInput,
   success: IssueMetadata,
-  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+  error: Schema.Union([RequirementIssueError, EnvironmentAuthorizationError]),
 });
-const WsIssuesCreateRpc = Rpc.make(WS_METHODS.issuesCreate, {
-  payload: IssueCreateInput,
+const WsRequirementIssuesCreateRpc = Rpc.make(WS_METHODS.requirementIssuesCreate, {
+  payload: RequirementIssueCreateInput,
   success: Issue,
-  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+  error: Schema.Union([RequirementIssueError, EnvironmentAuthorizationError]),
 });
-const WsIssuesSetStateRpc = Rpc.make(WS_METHODS.issuesSetState, {
-  payload: IssueSetStateInput,
+const WsRequirementIssuesSetStateRpc = Rpc.make(WS_METHODS.requirementIssuesSetState, {
+  payload: RequirementIssueSetStateInput,
   success: Schema.Void,
-  error: Schema.Union([IssueError, EnvironmentAuthorizationError]),
+  error: Schema.Union([RequirementIssueError, EnvironmentAuthorizationError]),
 });
 const WsBranchIssuesReadRpc = Rpc.make(WS_METHODS.branchIssuesRead, {
   payload: BranchIssueDetailInput,
@@ -2504,6 +2639,19 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  WsIssuesListRpc,
+  WsIssuesDetailRpc,
+  WsIssuesCommentsRpc,
+  WsIssuesTemplatesRpc,
+  WsIssuesCandidatesRpc,
+  WsIssuesCreateRpc,
+  WsIssuesCommentRpc,
+  WsIssuesUpdateRpc,
+  WsIssuesSetStateRpc,
+  WsIssuesReactRpc,
+  WsIssueTrackersListRpc,
+  WsIssueTrackersConnectRpc,
+  WsIssueTrackersBindProjectRpc,
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -2632,14 +2780,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,
   WsBranchIssuesListRpc,
-  WsIssuesListRpc,
+  WsRequirementIssuesListRpc,
   WsIssuesSourcesRpc,
   WsIssueBranchesRpc,
   WsIssuesReadRpc,
   WsIssuesPeopleRpc,
   WsIssuesMetadataRpc,
-  WsIssuesCreateRpc,
-  WsIssuesSetStateRpc,
+  WsRequirementIssuesCreateRpc,
+  WsRequirementIssuesSetStateRpc,
   WsBranchIssuesReadRpc,
   WsBranchIssuesUpdateRpc,
   WsSourceControlCloneRepositoryRpc,

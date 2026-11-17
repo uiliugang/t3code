@@ -15,12 +15,12 @@ import type {
   BranchIssueDetail,
   Issue,
   IssueSource,
-  IssueDetail,
+  RequirementIssueDetail,
   IssueOption,
-  IssueError,
+  RequirementIssueError,
   IssueMetadataInput,
   IssueMetadata,
-  IssueCreateInput,
+  RequirementIssueCreateInput,
 } from "@t3tools/contracts";
 
 export interface SourceControlLinkSubject {
@@ -144,23 +144,23 @@ export class SourceControlProvider extends Context.Service<
         },
       ) => Effect.Effect<
         { readonly issues: ReadonlyArray<Issue>; readonly hasMore: boolean },
-        IssueError
+        RequirementIssueError
       >;
       readonly read: (
         input: IssueContext & { readonly id: string },
-      ) => Effect.Effect<IssueDetail, IssueError>;
+      ) => Effect.Effect<RequirementIssueDetail, RequirementIssueError>;
       readonly people: (
         input: IssueContext & { readonly query: string },
-      ) => Effect.Effect<ReadonlyArray<IssueOption>, IssueError>;
+      ) => Effect.Effect<ReadonlyArray<IssueOption>, RequirementIssueError>;
       readonly metadata: (
         input: typeof IssueMetadataInput.Type & IssueContext,
-      ) => Effect.Effect<typeof IssueMetadata.Type, IssueError>;
+      ) => Effect.Effect<typeof IssueMetadata.Type, RequirementIssueError>;
       readonly create: (
-        input: typeof IssueCreateInput.Type & IssueContext,
-      ) => Effect.Effect<Issue, IssueError>;
+        input: typeof RequirementIssueCreateInput.Type & IssueContext,
+      ) => Effect.Effect<Issue, RequirementIssueError>;
       readonly setState: (
         input: IssueContext & { readonly id: string; readonly state: string },
-      ) => Effect.Effect<void, IssueError>;
+      ) => Effect.Effect<void, RequirementIssueError>;
     };
     readonly issues?: {
       readonly branches?: (input: {

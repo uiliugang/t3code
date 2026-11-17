@@ -14,6 +14,7 @@ import { useCompactWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWor
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 
 const PULL_REQUEST_ICON = require("../../../../assets/icons/pull-request.png");
+const ISSUE_ICON = require("../../../../assets/icons/issue.png");
 
 export function WorkspaceTabToolbarButtons() {
   const t = useUiTranslation();
@@ -38,7 +39,9 @@ export function WorkspaceTabToolbarButtons() {
           icon={
             tab === "pullRequests"
               ? { type: "image", source: PULL_REQUEST_ICON, tinted: true }
-              : NAVIGATION_TAB_ICONS[tab]
+              : tab === "issues"
+                ? { type: "image", source: ISSUE_ICON, tinted: true }
+                : NAVIGATION_TAB_ICONS[tab]
           }
           tintColor={selected === tab ? selectedTint : undefined}
           onPress={() => selectTab(tab)}

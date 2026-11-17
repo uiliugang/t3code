@@ -39,6 +39,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 import { GitIcon, JujutsuIcon, type Icon } from "../Icons";
 import { MeituanCodeAuthorizationObserver } from "./MeituanCodeSettings";
+import { IssueTrackerSettings } from "./IssueTrackerSettings";
 import { SourceControlHostSettings } from "./SourceControlHostSettings";
 import { SourceControlAccountSettings } from "./SourceControlAccountSettings";
 import { SourceControlAppSignInSettings } from "./SourceControlAppSignInSettings";
@@ -688,6 +689,9 @@ export function SourceControlSettingsPanel({
           isPending={discovery.isPending}
           onScan={handleScan}
         />
+      )}
+      {environmentId === null || integrationsOnly ? null : (
+        <IssueTrackerSettings key={environmentId} environmentId={environmentId} />
       )}
 
       {!integrationsOnly ? <SourceControlWritingSettingsSection /> : null}

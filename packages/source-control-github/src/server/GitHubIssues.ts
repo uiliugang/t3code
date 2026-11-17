@@ -1,4 +1,4 @@
-import { IssueError, type Issue, type IssueSource } from "@t3tools/contracts";
+import { RequirementIssueError, type Issue, type IssueSource } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as GitHubRest from "./GitHubRest.ts";
@@ -51,7 +51,7 @@ export const make = Effect.gen(function* () {
         Effect.flatMap((result) => Schema.decodeEffect(Schema.fromJsonString(schema))(result.body)),
         Effect.mapError(
           (cause) =>
-            new IssueError({
+            new RequirementIssueError({
               operation: "github",
               reason:
                 cause._tag === "GitHubApiResponseError" && cause.status === 422
@@ -86,7 +86,7 @@ export const make = Effect.gen(function* () {
         Row,
       );
       if (row.pull_request !== undefined)
-        return yield* new IssueError({ operation: "read", reason: "invalid-target" });
+        return yield* new RequirementIssueError({ operation: "read", reason: "invalid-target" });
       return {
         ...issue(row),
         body: row.body ?? "",
@@ -104,7 +104,7 @@ export const make = Effect.gen(function* () {
     search: Effect.fn("GitHubIssues.search")(function* (input) {
       const assignee = input.assignee === "me" ? yield* viewer(input.source) : input.assignee;
       if (!["all", "unassigned"].includes(assignee) && !/^[a-z\d-]+$/iu.test(assignee))
-        return yield* new IssueError({ operation: "search", reason: "validation" });
+        return yield* new RequirementIssueError({ operation: "search", reason: "validation" });
       if (input.query) {
         const terms = [`repo:${input.source.scope}`, "is:issue"];
         if (assignee !== "all")
@@ -187,7 +187,7 @@ export const make = Effect.gen(function* () {
     setState: Effect.fn("GitHubIssues.setState")(function* (input) {
       const current = yield* read(input);
       if (!current.transitions.some((option) => option.value === input.state))
-        return yield* new IssueError({ operation: "setState", reason: "invalid-state" });
+        return yield* new RequirementIssueError({ operation: "setState", reason: "invalid-state" });
       yield* request(
         input.source,
         `repos/${input.source.scope}/issues/${encodeURIComponent(input.id)}`,

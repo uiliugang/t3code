@@ -5,7 +5,7 @@ import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   EnvironmentId,
   ProjectId,
-  IssueError,
+  RequirementIssueError,
   BranchIssueError,
   type IssueProvider,
   type IssueMetadataInput,
@@ -85,7 +85,7 @@ type Target = {
   scope?: string;
 };
 const isBranchIssueError = Schema.is(BranchIssueError);
-const isIssueError = Schema.is(IssueError);
+const isIssueError = Schema.is(RequirementIssueError);
 
 const boardAtoms = createRequirementOverviewAtoms({
   issues: sourceControlEnvironment.issues,

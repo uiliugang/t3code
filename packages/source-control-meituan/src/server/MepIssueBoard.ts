@@ -1,4 +1,9 @@
-import { IssueError, type Issue, type IssueOption, type IssueSource } from "@t3tools/contracts";
+import {
+  RequirementIssueError,
+  type Issue,
+  type IssueOption,
+  type IssueSource,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Host from "@t3tools/source-control-core/server/SourceControlHost";
@@ -135,7 +140,7 @@ export const make = Effect.gen(function* () {
       .pipe(
         Effect.mapError(
           (cause) =>
-            new IssueError({
+            new RequirementIssueError({
               operation: "mep",
               reason: write ? "outcome-unknown" : "unavailable",
               cause,
@@ -151,7 +156,7 @@ export const make = Effect.gen(function* () {
     const output = yield* execute(cwd, args, write);
     if (output.exitCode !== 0) {
       const fields = validationFields(output.stderr);
-      return yield* new IssueError({
+      return yield* new RequirementIssueError({
         operation: "mep",
         reason: fields.length ? "validation" : write ? "outcome-unknown" : "unavailable",
         fields,
@@ -168,7 +173,7 @@ export const make = Effect.gen(function* () {
       mepIssueJson(yield* run(cwd, args)),
     ).pipe(
       Effect.mapError(
-        (cause) => new IssueError({ operation: "decode", reason: "unavailable", cause }),
+        (cause) => new RequirementIssueError({ operation: "decode", reason: "unavailable", cause }),
       ),
     );
   });
@@ -221,7 +226,7 @@ export const make = Effect.gen(function* () {
       Row,
     );
     if (row.projectId?.value && String(row.projectId.value) !== source.scope)
-      return yield* new IssueError({ operation: "read", reason: "invalid-target" });
+      return yield* new RequirementIssueError({ operation: "read", reason: "invalid-target" });
     return row;
   });
   const read: NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>["read"] =
@@ -248,7 +253,8 @@ export const make = Effect.gen(function* () {
       if (assignee === "me") {
         const config = yield* run(input.cwd, ["config"]);
         assignee = /MIS 账号[：:]\s+([\w.-]+)/u.exec(config)?.[1] ?? "";
-        if (!assignee) return yield* new IssueError({ operation: "viewer", reason: "unavailable" });
+        if (!assignee)
+          return yield* new RequirementIssueError({ operation: "viewer", reason: "unavailable" });
       }
       const id = /^#?([1-9]\d*)$/u.exec(input.query)?.[1];
       if (id) {
@@ -290,7 +296,8 @@ export const make = Effect.gen(function* () {
         return { issues: [], hasMore: false };
       const rows = yield* decodeRows(payload).pipe(
         Effect.mapError(
-          (cause) => new IssueError({ operation: "search", reason: "unavailable", cause }),
+          (cause) =>
+            new RequirementIssueError({ operation: "search", reason: "unavailable", cause }),
         ),
       );
       return {
@@ -320,7 +327,7 @@ export const make = Effect.gen(function* () {
       );
       if (!input.subtype) return { subtypes, fields: [] };
       if (!subtypes.some((option) => option.value === input.subtype))
-        return yield* new IssueError({
+        return yield* new RequirementIssueError({
           operation: "metadata",
           reason: "validation",
           fields: [{ variable: "subtypeId", message: "Select a work item subtype." }],
@@ -340,7 +347,7 @@ export const make = Effect.gen(function* () {
       ]);
       const required = mepRequiredFields(probe.stdout);
       if (probe.exitCode === 0 || !required.length || !/标题|无法创建/u.test(probe.stderr))
-        return yield* new IssueError({ operation: "metadata", reason: "unavailable" });
+        return yield* new RequirementIssueError({ operation: "metadata", reason: "unavailable" });
       const menus = yield* json(
         input.cwd,
         [
@@ -362,7 +369,10 @@ export const make = Effect.gen(function* () {
               (entry) => entry.name === name && entry.canEdit && entry.scopes.includes(input.type),
             );
             if (!field)
-              return yield* new IssueError({ operation: "metadata", reason: "unavailable" });
+              return yield* new RequirementIssueError({
+                operation: "metadata",
+                reason: "unavailable",
+              });
             const choices = field.possibleValues?.length
               ? field.possibleValues
                   .filter((option) => !option.disabled)
@@ -407,7 +417,7 @@ export const make = Effect.gen(function* () {
     }),
     create: Effect.fn("MepIssueBoard.create")(function* (input) {
       if (!input.subtype)
-        return yield* new IssueError({
+        return yield* new RequirementIssueError({
           operation: "create",
           reason: "validation",
           fields: [{ variable: "subtypeId", message: "Select a work item subtype." }],
@@ -433,23 +443,25 @@ export const make = Effect.gen(function* () {
             variable,
           )
         )
-          return yield* new IssueError({ operation: "create", reason: "validation" });
+          return yield* new RequirementIssueError({ operation: "create", reason: "validation" });
         if (value) args.push("--set", `${variable}=${value}`);
       }
       const stdout = yield* run(input.cwd, args, true);
       // ones2 has no JSON create result; verify its returned id through the structured detail command.
       const id = /^\s*工作项 ID[：:]\s+([1-9]\d*)\s*$/mu.exec(stdout)?.[1];
-      if (!id) return yield* new IssueError({ operation: "create", reason: "outcome-unknown" });
+      if (!id)
+        return yield* new RequirementIssueError({ operation: "create", reason: "outcome-unknown" });
       return yield* read({ cwd: input.cwd, source: input.source, id }).pipe(
         Effect.mapError(
-          (cause) => new IssueError({ operation: "create", reason: "outcome-unknown", cause }),
+          (cause) =>
+            new RequirementIssueError({ operation: "create", reason: "outcome-unknown", cause }),
         ),
       );
     }),
     setState: Effect.fn("MepIssueBoard.setState")(function* (input) {
       const current = yield* read(input);
       if (!current.transitions.some((option) => option.value === input.state))
-        return yield* new IssueError({ operation: "setState", reason: "invalid-state" });
+        return yield* new RequirementIssueError({ operation: "setState", reason: "invalid-state" });
       yield* run(
         input.cwd,
         [
@@ -466,7 +478,10 @@ export const make = Effect.gen(function* () {
       );
       const updated = yield* readRow(input);
       if (String(updated.state.value) !== input.state)
-        return yield* new IssueError({ operation: "setState", reason: "outcome-unknown" });
+        return yield* new RequirementIssueError({
+          operation: "setState",
+          reason: "outcome-unknown",
+        });
     }),
   } satisfies NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
 });

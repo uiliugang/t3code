@@ -10,9 +10,6 @@ import { mobilePreferencesAtom } from "../state/preferences";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./locales";
 import zh from "./translations/zh.json";
 
-// Screens import GT from here so the polyfills above always load first.
-export { useGT } from "gt-react-native";
-
 // Committed catalogs, so forks and offline installs never reach GT's CDN. English is the source.
 const TRANSLATIONS: Readonly<Record<string, Record<string, string>>> = {
   zh,

@@ -5,9 +5,9 @@ import { vi } from "vite-plus/test";
 import {
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
   EnvironmentId,
-  IssueError,
-  type IssueListInput,
-  type IssueListResult,
+  RequirementIssueError,
+  type RequirementIssueListInput,
+  type RequirementIssueListResult,
   type FilesystemBrowseEntry,
   ORCHESTRATION_V2_WS_METHODS,
   type OrchestrationV2ArchivedShellSnapshot,
@@ -1735,16 +1735,16 @@ describe("persisted environment queries", () => {
     "shares requirement prefetches with board readers and releases only its own readers",
     () =>
       Effect.gen(function* () {
-        const requests = yield* Queue.unbounded<IssueListInput>();
+        const requests = yield* Queue.unbounded<RequirementIssueListInput>();
         const replies = {
-          github: yield* Deferred.make<typeof IssueListResult.Type>(),
-          meituan: yield* Deferred.make<typeof IssueListResult.Type>(),
+          github: yield* Deferred.make<typeof RequirementIssueListResult.Type>(),
+          meituan: yield* Deferred.make<typeof RequirementIssueListResult.Type>(),
         };
         let executions = 0;
         const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
           rpcSession: {
             client: {
-              [WS_METHODS.issuesList]: (input: IssueListInput) =>
+              [WS_METHODS.requirementIssuesList]: (input: RequirementIssueListInput) =>
                 Effect.gen(function* () {
                   executions++;
                   yield* Queue.offer(requests, input);
@@ -1794,7 +1794,7 @@ describe("persisted environment queries", () => {
       const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
         rpcSession: {
           client: {
-            [WS_METHODS.issuesList]: () =>
+            [WS_METHODS.requirementIssuesList]: () =>
               Effect.sync(() => {
                 executions++;
                 return { groups: [], failures: [] };
@@ -1831,13 +1831,13 @@ describe("persisted environment queries", () => {
     "restores failed requirement pages against %s source configuration",
     (sourceState) =>
       Effect.gen(function* () {
-        const input: IssueListInput = {
+        const input: RequirementIssueListInput = {
           provider: "github",
           assignee: "me",
           query: "",
           page: 1,
         };
-        const cached: typeof IssueListResult.Type = {
+        const cached: typeof RequirementIssueListResult.Type = {
           groups: [
             {
               source: { provider: "github", host: "github.com", scope: "owner/repo" },
@@ -1873,7 +1873,10 @@ describe("persisted environment queries", () => {
         };
         const refreshed = yield* Deferred.make<void>();
         const saved = yield* Deferred.make<string>();
-        const refresh = yield* Deferred.make<typeof IssueListResult.Type, IssueError>();
+        const refresh = yield* Deferred.make<
+          typeof RequirementIssueListResult.Type,
+          RequirementIssueError
+        >();
         const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
           initialState: queryConnectionState({ phase: "offline", network: "offline" }),
           queryStore: {
@@ -1889,21 +1892,25 @@ describe("persisted environment queries", () => {
           },
           rpcSession: {
             client: {
-              [WS_METHODS.issuesList]: () =>
+              [WS_METHODS.requirementIssuesList]: () =>
                 Deferred.succeed(refreshed, undefined).pipe(
                   Effect.andThen(Deferred.await(refresh)),
                 ),
               [WS_METHODS.issuesSources]: () =>
                 sourceState === "lookup-failure"
-                  ? Effect.fail(new IssueError({ operation: "sources", reason: "unavailable" }))
+                  ? Effect.fail(
+                      new RequirementIssueError({ operation: "sources", reason: "unavailable" }),
+                    )
                   : Effect.succeed([
                       {
                         projectId: deletedProject,
                         repository: null,
                         manual: false,
                         sources: [],
-                        error: new IssueError({ operation: "project", reason: "invalid-target" })
-                          .message,
+                        error: new RequirementIssueError({
+                          operation: "project",
+                          reason: "invalid-target",
+                        }).message,
                       },
                       {
                         projectId: ProjectId.make("requirements"),
@@ -1927,7 +1934,7 @@ describe("persisted environment queries", () => {
         });
         const registry = yield* mountEnvironmentQuery(atom);
         expect(yield* readEnvironmentQuery(registry, atom)).toEqual(stored);
-        const answers = yield* Queue.unbounded<typeof IssueListResult.Type>();
+        const answers = yield* Queue.unbounded<typeof RequirementIssueListResult.Type>();
         const unsubscribe = registry.subscribe(atom, (result) => {
           if (AsyncResult.isSuccess(result) && !result.waiting && result.value.failures.length)
             Queue.offerUnsafe(answers, result.value);

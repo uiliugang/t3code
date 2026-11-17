@@ -1,9 +1,9 @@
-import { IssueError, isMeituanServiceEnabled } from "@t3tools/contracts";
+import { RequirementIssueError, isMeituanServiceEnabled } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   ProjectId,
-  IssueListInput,
-  IssueListResult,
+  RequirementIssueListInput,
+  RequirementIssueListResult,
   WorkItemListInput,
   WorkItemListResult,
   WorkItemSummary,
@@ -20,8 +20,10 @@ import {
   type RequirementSource,
 } from "../workItem.ts";
 
-const unconfiguredSourceMessage = new IssueError({ operation: "resolve", reason: "invalid-target" })
-  .message;
+const unconfiguredSourceMessage = new RequirementIssueError({
+  operation: "resolve",
+  reason: "invalid-target",
+}).message;
 
 export function prefetchRequirementIssues(
   registry: AtomRegistry.AtomRegistry,
@@ -61,8 +63,8 @@ export class RequirementBoardKey extends Data.Class<{
 export function createRequirementBoardAtoms(queries: {
   issues: (target: {
     environmentId: EnvironmentId;
-    input: IssueListInput;
-  }) => Atom.Atom<AsyncResult.AsyncResult<typeof IssueListResult.Type, unknown>>;
+    input: RequirementIssueListInput;
+  }) => Atom.Atom<AsyncResult.AsyncResult<typeof RequirementIssueListResult.Type, unknown>>;
   workItemsLive: (target: {
     environmentId: EnvironmentId;
     input: WorkItemListInput;
@@ -70,7 +72,7 @@ export function createRequirementBoardAtoms(queries: {
 }) {
   return Atom.family((key: RequirementBoardKey) =>
     Atom.make((get) => {
-      const issuePages: Array<typeof IssueListResult.Type> = [];
+      const issuePages: Array<typeof RequirementIssueListResult.Type> = [];
       const itemPages: WorkItemListResult[] = [];
       const atoms: Array<Atom.Atom<AsyncResult.AsyncResult<unknown, unknown>>> = [];
       const errors: string[] = [];

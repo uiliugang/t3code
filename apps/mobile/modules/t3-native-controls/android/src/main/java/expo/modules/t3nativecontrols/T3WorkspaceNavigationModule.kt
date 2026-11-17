@@ -420,6 +420,7 @@ class T3WorkspaceNavigationView(
     "threads" -> "Chats"
     "requirements" -> "Requirements"
     "pullRequests" -> "Pulls"
+    "issues" -> "Issues"
     "usage" -> "Usage"
     else -> "Settings"
   }
@@ -433,6 +434,7 @@ class T3WorkspaceNavigationView(
       "threads" -> R.drawable.t3_chats
       "requirements" -> R.drawable.t3_requirements
       "pullRequests" -> R.drawable.t3_pull_requests
+      "issues" -> R.drawable.t3_issues
       "usage" -> R.drawable.t3_usage
       else -> R.drawable.t3_settings
     }

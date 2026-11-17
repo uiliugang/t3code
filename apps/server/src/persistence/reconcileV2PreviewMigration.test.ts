@@ -89,6 +89,8 @@ describe("V2 preview upgrade", () => {
         [107, "AuthSessionProofKeyIndex"],
         [108, "TurnItemInlineWorkOutput"],
         [109, "RepairStaleTitleRegeneration"],
+        [110, "IssueTrackerBindings"],
+        [111, "ActiveShellIndexIndexes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -221,6 +223,8 @@ describe("V2 preview upgrade", () => {
         [107, "AuthSessionProofKeyIndex"],
         [108, "TurnItemInlineWorkOutput"],
         [109, "RepairStaleTitleRegeneration"],
+        [110, "IssueTrackerBindings"],
+        [111, "ActiveShellIndexIndexes"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

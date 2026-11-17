@@ -12,36 +12,37 @@ vi.mock(import("~/hooks/useUiTranslation"), () => ({
 vi.mock(import("~/state/use-atom-command"), () => ({
   useAtomCommand: () => mocks.command,
 }));
-vi.mock(
-  import("~/state/environments"),
-  () =>
+vi.mock(import("~/state/environments"), () => ({
+  usePrimaryEnvironmentId: () => "local" as never,
+  usePrimaryEnvironment: () => null,
+  useEnvironments: () =>
     ({
-      usePrimaryEnvironmentId: () => "local",
-      useEnvironments: () => ({
-        environments: ["local", "remote"].map((environmentId) => ({
-          environmentId,
-          label: environmentId,
-          connection: { phase: "connected" },
-        })),
-      }),
+      environments: ["local", "remote"].map((environmentId) => ({
+        environmentId,
+        label: environmentId,
+        connection: { phase: "connected" },
+      })),
     }) as never,
-);
-vi.mock(
-  import("~/state/entities"),
-  () =>
-    ({
-      useProjects: () =>
-        ["local", "remote"].map((environmentId) => ({
-          environmentId,
-          id: "project",
-          title: `${environmentId} project`,
-          archivedAt: null,
-          isScratch: false,
-        })),
-    }) as never,
-);
+}));
+vi.mock(import("~/state/entities"), () => ({
+  useProjects: () =>
+    ["local", "remote"].map((environmentId) => ({
+      environmentId,
+      id: "project",
+      title: `${environmentId} project`,
+      archivedAt: null,
+      isScratch: false,
+    })) as never,
+  useQuietThreadShell: () => null,
+  useThreadShells: () => [],
+  useServerConfigs: () => new Map(),
+  readProjects: () => [],
+  readProject: () => null,
+  readThreadShell: () => null,
+}));
 vi.mock(import("~/state/server"), async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
+  const { compileResolvedKeybindingsConfig } = await import("@t3tools/shared/keybindings");
   const workItems = Atom.family((environmentId: string) =>
     Atom.make(
       AsyncResult.success({
@@ -64,8 +65,15 @@ vi.mock(import("~/state/server"), async () => {
     ),
   );
   return {
+    primaryServerKeybindingsAtom: Atom.make(compileResolvedKeybindingsConfig([])),
+    environmentServerConfigsAtom: Atom.make(new Map()),
+    themeServerEnvironmentThemesAtom: Atom.make([]),
+    themeServerSettingsAtom: Atom.make(null),
+    primaryServerSettingsAtom: Atom.make(null),
+    primaryServerConfigAtom: Atom.make(null),
     serverEnvironment: {
       configValueAtom: Atom.family(() => Atom.make({ workItems: true, workItemDiscovery: true })),
+      settingsValueAtom: Atom.family(() => Atom.make(null)),
       mutateWorkItem: { permissionAtom: Atom.family(() => Atom.make(true)) },
       discoverWorkItems: { permissionAtom: Atom.family(() => Atom.make(true)) },
       workItemsLive: ({ environmentId }: { environmentId: string }) => workItems(environmentId),
@@ -91,21 +99,44 @@ vi.mock(
   () =>
     ({
       WorkItemEditor: () => null,
-      WorkItemDetailPanel: () => null,
+      WorkItemDetailPanel: ({ id }: { id: string }) => (
+        <div data-testid={`work-item-detail:${id}`}>Work item {id}</div>
+      ),
+      ThreadWorkItemsPanel: () => null,
     }) as never,
 );
 vi.mock(import("./IssueCreateDialog"), () => ({ IssueCreateDialog: () => <></> }));
-vi.mock(import("./IssueDetailPanel"), () => ({ IssueDetailPanel: () => <></> }));
-vi.mock(import("../ui/sidebar"), () => ({ SidebarInset: () => null }) as never);
+vi.mock(import("./IssueDetailPanel"), () => ({
+  IssueDetailPanel: ({ id }: { id: string }) => (
+    <div data-testid={`issue-detail:${id}`}>Issue {id}</div>
+  ),
+}));
+vi.mock(
+  import("../pullRequest/PullRequestDetailPanel"),
+  () =>
+    ({
+      PullRequestDetailPanel: () => null,
+    }) as never,
+);
+vi.mock(
+  import("../ui/sidebar"),
+  () =>
+    ({
+      SidebarInset: () => null,
+      useMobileSidebarSheetMounted: () => false,
+    }) as never,
+);
 vi.mock(import("../ui/toast"), () => ({ toastManager: { add: vi.fn() } }) as never);
 
 import { act, render } from "../../../test/render";
+import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "~/rightPanelStore";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { RequirementBoard } from "./RequirementsPage";
 import type { RequirementsSearch } from "~/routes/_chat.requirements";
 
 function setup() {
+  useRightPanelStore.getState().closeAllSurfaces(REQUIREMENTS_PANEL_REF);
   mocks.command.mockReset().mockResolvedValue({ _tag: "Success", value: [] });
   const registry = AtomRegistry.make();
   return {
@@ -295,4 +326,122 @@ it("keeps the updating indicator inside the topbar on narrow viewports without v
   expect(statusRect.height).toBeLessThanOrEqual(headerRect.height);
   expect(statusRect.top).toBeGreaterThanOrEqual(headerRect.top);
   expect(statusRect.bottom).toBeLessThanOrEqual(headerRect.bottom);
+
+  fixture.registry.set(issuesAtom, AsyncResult.success({ groups: [], failures: [] }));
+  fixture.registry.set(
+    workItemsAtom,
+    AsyncResult.success({ items: [], nextCursor: null, candidates: [] }),
+  );
+});
+
+it("opens clicked requirement items as peer tabs in the right panel and switches or closes them", async () => {
+  using fixture = setup();
+  const workItemsAtom = serverEnvironment.workItemsLive({
+    environmentId: "local",
+    input: { archived: false, cursor: undefined },
+  } as never) as Atom.Writable<unknown>;
+  const issuesAtom = sourceControlEnvironment.issues({
+    environmentId: "local",
+    input: { provider: "github", assignee: "me", query: "", page: 1 },
+  } as never) as Atom.Writable<unknown>;
+  await page.viewport(1280, 800);
+  const updateSearch = vi.fn();
+  await using screen = await render(
+    <div style={{ width: "1280px", height: "800px", display: "flex" }}>
+      {fixture.board({}, updateSearch)}
+    </div>,
+  );
+  await act(async () => {
+    fixture.registry.set(
+      workItemsAtom,
+      AsyncResult.success({
+        items: [
+          {
+            id: "item-alpha",
+            projectId: "project",
+            title: "Alpha requirement",
+            description: "",
+            priority: "P1",
+            status: "todo",
+            archived: false,
+            specRevision: 1,
+            version: 1,
+            executionCount: 0,
+            createdAt: "2026-11-16T00:00:00Z",
+            activeExecutionCount: 0,
+            updatedAt: "2026-11-16T00:00:00Z",
+          },
+          {
+            id: "item-beta",
+            projectId: "project",
+            title: "Beta requirement",
+            description: "",
+            priority: "P2",
+            status: "todo",
+            archived: false,
+            specRevision: 1,
+            version: 1,
+            executionCount: 0,
+            createdAt: "2026-11-16T00:00:00Z",
+            activeExecutionCount: 0,
+            updatedAt: "2026-11-16T00:00:00Z",
+          },
+        ],
+        nextCursor: null,
+        candidates: [],
+      }),
+    );
+    fixture.registry.set(
+      issuesAtom,
+      AsyncResult.success({
+        groups: [
+          {
+            source: { provider: "github", host: "github.com", scope: "acme/app" },
+            projectIds: ["project"],
+            issues: [
+              {
+                id: "42",
+                url: "https://github.com/acme/app/issues/42",
+                title: "GitHub bug report",
+                state: "open",
+                stateCategory: "todo",
+                type: "Issue",
+                assignees: [],
+                priority: "",
+                updatedAt: "2026-11-16T00:00:00Z",
+              },
+            ],
+            hasMore: false,
+          },
+        ],
+        failures: [],
+      }),
+    );
+  });
+
+  await screen.getByRole("button", { name: /Alpha requirement/ }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
+  expect(updateSearch).toHaveBeenLastCalledWith(
+    expect.objectContaining({ workItemId: "item-alpha" }),
+  );
+
+  await screen.getByRole("button", { name: /Beta requirement/ }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
+
+  await screen.getByRole("button", { name: /GitHub bug report/ }).click();
+  await expect.element(screen.getByTestId("issue-detail:42")).toBeVisible();
+
+  const tabList = screen.container.querySelector("[data-right-panel-tab-list]")!;
+  expect(tabList).not.toBeNull();
+  expect(tabList.textContent).toContain("Alpha requirement");
+  expect(tabList.textContent).toContain("Beta requirement");
+  expect(tabList.textContent).toContain("#42");
+
+  // Switch back to Alpha requirement tab
+  await page.getByRole("button", { name: "Alpha requirement", exact: true }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
+
+  // Close Alpha requirement tab and verify fallback tab stays open
+  await page.getByRole("button", { name: "Close Alpha requirement" }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
 });

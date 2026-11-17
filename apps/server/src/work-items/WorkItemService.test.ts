@@ -14,7 +14,7 @@ import {
   ProviderInstanceId,
   RunId,
   RuntimeRequestId,
-  IssueError,
+  RequirementIssueError,
   type OrchestrationV2Run,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
@@ -733,7 +733,8 @@ it.effect(
           create: () =>
             Effect.gen(function* () {
               creates++;
-              if (failure) return yield* new IssueError({ operation: "create", reason: failure });
+              if (failure)
+                return yield* new RequirementIssueError({ operation: "create", reason: failure });
               return {
                 id: String(41 + creates),
                 url: `https://github.com/acme/app/issues/${41 + creates}`,

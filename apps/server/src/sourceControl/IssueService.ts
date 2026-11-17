@@ -1,17 +1,17 @@
 import {
-  IssueError,
+  RequirementIssueError,
   isMeituanServiceEnabled,
   IssueSource,
   SourceControlProviderError,
   SourceControlProviderKind,
   type IssueTarget,
-  type IssueListInput,
-  type IssueListResult,
-  type IssueCreateInput,
+  type RequirementIssueListInput,
+  type RequirementIssueListResult,
+  type RequirementIssueCreateInput,
   type IssueMetadataInput,
   type IssuePeopleInput,
   type IssueReadInput,
-  type IssueSetStateInput,
+  type RequirementIssueSetStateInput,
   type IssueSourcesInput,
   type IssueSourcesResult,
 } from "@t3tools/contracts";
@@ -62,15 +62,19 @@ export class IssueService extends Context.Service<
   {
     readonly sources: (
       input: typeof IssueSourcesInput.Type,
-    ) => Effect.Effect<typeof IssueSourcesResult.Type, IssueError>;
+    ) => Effect.Effect<typeof IssueSourcesResult.Type, RequirementIssueError>;
     readonly list: (
-      input: IssueListInput,
-    ) => Effect.Effect<typeof IssueListResult.Type, IssueError>;
+      input: RequirementIssueListInput,
+    ) => Effect.Effect<typeof RequirementIssueListResult.Type, RequirementIssueError>;
     readonly read: (input: typeof IssueReadInput.Type) => ReturnType<Board["read"]>;
     readonly people: (input: typeof IssuePeopleInput.Type) => ReturnType<Board["people"]>;
     readonly metadata: (input: typeof IssueMetadataInput.Type) => ReturnType<Board["metadata"]>;
-    readonly create: (input: typeof IssueCreateInput.Type) => ReturnType<Board["create"]>;
-    readonly setState: (input: typeof IssueSetStateInput.Type) => ReturnType<Board["setState"]>;
+    readonly create: (
+      input: typeof RequirementIssueCreateInput.Type,
+    ) => ReturnType<Board["create"]>;
+    readonly setState: (
+      input: typeof RequirementIssueSetStateInput.Type,
+    ) => ReturnType<Board["setState"]>;
   }
 >()("t3/sourceControl/IssueService") {}
 
@@ -102,22 +106,24 @@ export const make = Effect.gen(function* () {
       .getShell(projectId)
       .pipe(
         Effect.mapError(
-          (cause) => new IssueError({ operation: "project", reason: "invalid-target", cause }),
+          (cause) =>
+            new RequirementIssueError({ operation: "project", reason: "invalid-target", cause }),
         ),
       );
     if (Option.isNone(project))
-      return yield* new IssueError({ operation: "project", reason: "invalid-target" });
+      return yield* new RequirementIssueError({ operation: "project", reason: "invalid-target" });
     const cwd = project.value.workspaceRoot;
     const saved = yield* settings.getSettings.pipe(
       Effect.mapError(
-        (cause) => new IssueError({ operation: "settings", reason: "unavailable", cause }),
+        (cause) =>
+          new RequirementIssueError({ operation: "settings", reason: "unavailable", cause }),
       ),
     );
     const manual = saved.issueProjectSources[projectId] ?? [];
     const automatic: IssueSource[] = [];
     const handle = yield* providers.resolveHandle({ cwd }).pipe(Effect.result);
     let repository: string | null = null;
-    let failure: IssueError | undefined;
+    let failure: RequirementIssueError | undefined;
     if (handle._tag === "Success" && handle.success.context) {
       const { provider, context } = handle.success;
       repository =
@@ -149,14 +155,14 @@ export const make = Effect.gen(function* () {
         ).pipe(Effect.result);
         if (result._tag === "Success") automatic.push(...result.success);
         else
-          failure = new IssueError({
+          failure = new RequirementIssueError({
             operation: "discovery",
             reason: "unavailable",
             cause: result.failure,
           });
       }
     } else if (handle._tag === "Failure")
-      failure = new IssueError({
+      failure = new RequirementIssueError({
         operation: "repository",
         reason: "unavailable",
         cause: handle.failure,
@@ -190,27 +196,29 @@ export const make = Effect.gen(function* () {
           ? !/^[1-9]\d*$/u.test(source.scope) || source.host !== "mep.sankuai.com"
           : !/^[\w.-]+\/[\w.-]+$/u.test(source.scope) || !/^[\w.-]+$/u.test(source.host)
       )
-        return yield* new IssueError({ operation: "resolve", reason: "invalid-target" });
+        return yield* new RequirementIssueError({ operation: "resolve", reason: "invalid-target" });
     }
     if (!sources.length)
       return yield* (
-        resolved.failure ?? new IssueError({ operation: "resolve", reason: "invalid-target" })
+        resolved.failure ??
+          new RequirementIssueError({ operation: "resolve", reason: "invalid-target" })
       );
     const provider = yield* providers
       .get(SourceControlProviderKind.make(input.provider))
       .pipe(
         Effect.mapError(
-          (cause) => new IssueError({ operation: "provider", reason: "unsupported", cause }),
+          (cause) =>
+            new RequirementIssueError({ operation: "provider", reason: "unsupported", cause }),
         ),
       );
     if (!provider.issueBoard)
-      return yield* new IssueError({ operation: "provider", reason: "unsupported" });
+      return yield* new RequirementIssueError({ operation: "provider", reason: "unsupported" });
     return sources.map((source) => ({ cwd: resolved.cwd, source, board: provider.issueBoard! }));
   });
   const resolve = Effect.fn("IssueService.resolve")(function* (input: IssueTarget) {
     const targets = yield* resolveAll(input);
     if (targets.length !== 1)
-      return yield* new IssueError({ operation: "resolve", reason: "invalid-target" });
+      return yield* new RequirementIssueError({ operation: "resolve", reason: "invalid-target" });
     return targets[0]!;
   });
   return IssueService.of({
@@ -242,7 +250,8 @@ export const make = Effect.gen(function* () {
         !isMeituanServiceEnabled(
           yield* settings.getSettings.pipe(
             Effect.mapError(
-              (cause) => new IssueError({ operation: "list", reason: "unavailable", cause }),
+              (cause) =>
+                new RequirementIssueError({ operation: "list", reason: "unavailable", cause }),
             ),
           ),
           "requirements",
@@ -254,7 +263,8 @@ export const make = Effect.gen(function* () {
         .listShells(input.projectId ? { projectIds: [input.projectId] } : undefined)
         .pipe(
           Effect.mapError(
-            (cause) => new IssueError({ operation: "projects", reason: "unavailable", cause }),
+            (cause) =>
+              new RequirementIssueError({ operation: "projects", reason: "unavailable", cause }),
           ),
           Effect.map((projects) =>
             projects.filter(
@@ -280,7 +290,7 @@ export const make = Effect.gen(function* () {
           projectIds: Array<(typeof all)[number]["id"]>;
         }
       >();
-      const failures: Array<(typeof IssueListResult.Type)["failures"][number]> = [];
+      const failures: Array<(typeof RequirementIssueListResult.Type)["failures"][number]> = [];
       for (let index = 0; index < targets.length; index++) {
         const entry = targets[index]!;
         if (entry._tag === "Failure") {

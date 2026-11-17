@@ -4,7 +4,7 @@ import { RequirementsScreen } from "../../requirements/RequirementsScreen";
 import { UsageRouteScreen } from "../../usage/UsageRouteScreen";
 
 export function WorkspaceExtraTab(props: {
-  tab: Exclude<NavigationTab, "threads" | "pullRequests">;
+  tab: Extract<NavigationTab, "usage" | "requirements">;
 }) {
   return (
     <>

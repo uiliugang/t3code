@@ -82,6 +82,8 @@ describe("command permissions", () => {
     WS_METHODS.providerEndpointValidate,
     WS_METHODS.issuesCreate,
     WS_METHODS.issuesSetState,
+    WS_METHODS.requirementIssuesCreate,
+    WS_METHODS.requirementIssuesSetState,
   ])("requires clone, project and settings grants on the destination for %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -92,7 +94,10 @@ describe("command permissions", () => {
         const required =
           method === WS_METHODS.providerEndpointValidate
             ? [AuthProvidersManageScope, AuthOrchestrationOperateScope]
-            : method === WS_METHODS.issuesCreate || method === WS_METHODS.issuesSetState
+            : method === WS_METHODS.issuesCreate ||
+                method === WS_METHODS.issuesSetState ||
+                method === WS_METHODS.requirementIssuesCreate ||
+                method === WS_METHODS.requirementIssuesSetState
               ? [AuthSourceControlWriteScope]
               : method.startsWith("skills.")
                 ? [AuthProvidersManageScope]
@@ -295,6 +300,31 @@ describe("command permissions", () => {
         expect(registry.get(check.permissionAtom(env))).toBe(true);
         yield* check.authorize(registry, env);
       }),
+  );
+
+  it.effect("requires the destination settings grant to connect or bind an issue tracker", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const connect = createCommandPermissions(runtime, WS_METHODS.issueTrackersConnect);
+        const bind = createCommandPermissions(runtime, WS_METHODS.issueTrackersBindProject);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(connect.permissionAtom(env))).toBe(false);
+        expect(registry.get(bind.permissionAtom(env))).toBe(false);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthSettingsWriteScope],
+            permissions: [AuthSettingsWriteScope],
+          }),
+        );
+        expect(registry.get(connect.permissionAtom(env))).toBe(true);
+        expect(registry.get(bind.permissionAtom(env))).toBe(true);
+        yield* connect.authorize(registry, env);
+        yield* bind.authorize(registry, env);
+      }),
+    ),
   );
 
   it.effect.each([

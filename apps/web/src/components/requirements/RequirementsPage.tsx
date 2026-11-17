@@ -6,7 +6,9 @@ import {
   type IssueProvider,
   type ProjectId,
   type EnvironmentId,
+  type ScopedThreadRef,
   type WorkItemCommandInput,
+  type WorkItemId,
 } from "@t3tools/contracts";
 import {
   createRequirementOverviewAtoms,
@@ -33,11 +35,11 @@ import {
   ListIcon,
   LayoutGridIcon,
 } from "lucide-react";
-import { useContext, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { sourceControlEnvironment } from "../../state/sourceControl";
-import { serverEnvironment } from "../../state/server";
+import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
@@ -61,7 +63,22 @@ import { RefreshIcon } from "../ui/refresh-icon";
 import { SidebarInset } from "../ui/sidebar";
 import { Spinner } from "../ui/spinner";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { RightPanelTabs } from "../RightPanelTabs";
+import { PanelLayoutControls } from "../chat/PanelLayoutControls";
+import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { isElectron } from "../../env";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { isTerminalFocused } from "../../lib/terminalFocus";
+import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
+import {
+  REQUIREMENTS_PANEL_REF,
+  selectActiveRightPanelSurface,
+  selectSelectedRightPanelSurface,
+  selectThreadRightPanelState,
+  useRightPanelStore,
+  type PullRequestSurface,
+  type RightPanelSurface,
+} from "../../rightPanelStore";
 import {
   Menu,
   MenuTrigger,
@@ -96,6 +113,29 @@ const permissionAtoms = createRequirementPermissionAtoms({
 });
 const CollapsedGroups = Schema.Array(Schema.String);
 type SearchPatch = { [Key in keyof RequirementsSearch]?: RequirementsSearch[Key] | undefined };
+const EMPTY_SET: ReadonlySet<string> = new Set();
+const EMPTY_RECORD = {} as const;
+const EMPTY_MAP = new Map<string, string>();
+
+function getShortcutContext() {
+  return {
+    terminalFocus: isTerminalFocused(),
+    terminalOpen: false,
+    previewFocus: false,
+    previewOpen: false,
+    modelPickerOpen: false,
+    isWeb: !isElectron,
+    isDesktop: isElectron,
+  };
+}
+
+function isRequirementPanelSurface(surface: RightPanelSurface | null | undefined) {
+  return (
+    surface?.kind === "work-item" ||
+    surface?.kind === "requirement-issue" ||
+    surface?.kind === "pull-request"
+  );
+}
 
 export function RequirementsPage() {
   const t = useUiTranslation();
@@ -139,11 +179,13 @@ export function RequirementsPage() {
 
 export function RequirementBoard({
   environmentId: fallbackEnvironmentId,
+  panelRef,
   search,
   updateSearch,
   compact = false,
 }: {
   environmentId: NonNullable<ReturnType<typeof usePrimaryEnvironmentId>>;
+  panelRef?: ScopedThreadRef;
   search: RequirementsSearch;
   updateSearch: (patch: SearchPatch) => void;
   compact?: boolean;
@@ -151,6 +193,32 @@ export function RequirementBoard({
   const t = useUiTranslation();
   const navigate = useNavigate();
   const registry = useContext(RegistryContext);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const rightPanelRef = panelRef ?? REQUIREMENTS_PANEL_REF;
+  const usesStandalonePanel = !compact && panelRef === undefined;
+  const rightPanelState = useRightPanelStore((state) =>
+    selectThreadRightPanelState(state.byThreadKey, rightPanelRef),
+  );
+  const selectedRightPanelSurface = useRightPanelStore((state) =>
+    selectSelectedRightPanelSurface(state.byThreadKey, rightPanelRef),
+  );
+  const panelSurface =
+    usesStandalonePanel && isRequirementPanelSurface(selectedRightPanelSurface)
+      ? selectedRightPanelSurface
+      : null;
+  const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
+  const presenceValue = {
+    activeSurface: panelSurface,
+    surfaces: rightPanelState.surfaces.filter(isRequirementPanelSurface),
+  };
+  const presence = usePanelPresence(
+    usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null,
+    presenceValue,
+    panelAnimationsActive,
+    rightPanelRef.threadId,
+    durationMs,
+  );
+  const renderedSurface = presence.value?.activeSurface ?? null;
   const { environments } = useEnvironments();
   const onlineEnvironments = environments.filter(
     (environment) => environment.connection.phase === "connected",
@@ -242,25 +310,68 @@ export function RequirementBoard({
   const refresh = () => {
     for (const atom of data.atoms) registry.refresh(atom);
   };
-  const close = () =>
-    updateSearch({
-      detailEnvironmentId: undefined,
-      issueId: undefined,
-      issueProjectId: undefined,
-      issueScope: undefined,
-      issueProvider: undefined,
-      workItemId: undefined,
-    });
-  const open = (entry: EnvironmentRequirementEntry) => {
-    if (entry.kind === "local")
+  const clearedSelection: SearchPatch = {
+    detailEnvironmentId: undefined,
+    issueId: undefined,
+    issueProjectId: undefined,
+    issueScope: undefined,
+    issueProvider: undefined,
+    workItemId: undefined,
+  };
+  const selectSurfaceInUrl = (surface: RightPanelSurface | null) => {
+    if (surface?.kind === "work-item") {
       updateSearch({
-        detailEnvironmentId: entry.environmentId,
+        detailEnvironmentId:
+          (surface.environmentId as EnvironmentId | undefined) ?? fallbackEnvironmentId,
         issueId: undefined,
         issueProjectId: undefined,
         issueScope: undefined,
-        workItemId: entry.item.id,
+        issueProvider: undefined,
+        workItemId: surface.workItemId as WorkItemId,
       });
-    else
+      return;
+    }
+    if (surface?.kind === "requirement-issue") {
+      updateSearch({
+        detailEnvironmentId:
+          (surface.environmentId as EnvironmentId | undefined) ?? fallbackEnvironmentId,
+        workItemId: undefined,
+        issueId: surface.issueId,
+        issueProjectId: surface.projectId as ProjectId,
+        issueScope: surface.scope,
+        issueProvider: surface.provider,
+      });
+      return;
+    }
+    updateSearch(clearedSelection);
+  };
+  const open = (entry: EnvironmentRequirementEntry) => {
+    if (entry.kind === "local") {
+      useRightPanelStore.getState().openWorkItem(rightPanelRef, {
+        environmentId: entry.environmentId,
+        workItemId: entry.item.id,
+        title: entry.title,
+      });
+      if (!compact) {
+        updateSearch({
+          detailEnvironmentId: entry.environmentId,
+          issueId: undefined,
+          issueProjectId: undefined,
+          issueScope: undefined,
+          workItemId: entry.item.id,
+        });
+      }
+      return;
+    }
+    useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
+      environmentId: entry.environmentId,
+      projectId: entry.projectId,
+      provider: entry.provider,
+      ...(entry.scope ? { scope: entry.scope } : {}),
+      issueId: entry.issue.id,
+      title: entry.title,
+    });
+    if (!compact) {
       updateSearch({
         detailEnvironmentId: entry.environmentId,
         workItemId: undefined,
@@ -269,6 +380,72 @@ export function RequirementBoard({
         issueScope: entry.scope,
         issueProvider: entry.provider,
       });
+    }
+  };
+  // Open URL-linked requirement items in the shared tabbed panel on initial entry or navigation.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs URL deep-linked work item or issue into the right panel store
+  useEffect(() => {
+    if (!usesStandalonePanel) return;
+    if (search.workItemId) {
+      const title = entries.find(
+        (entry) =>
+          entry.kind === "local" &&
+          entry.environmentId === detailEnvironmentId &&
+          entry.item.id === search.workItemId,
+      )?.title;
+      useRightPanelStore.getState().openWorkItem(rightPanelRef, {
+        environmentId: detailEnvironmentId,
+        workItemId: search.workItemId,
+        ...(title ? { title } : {}),
+      });
+      return;
+    }
+    if (search.issueId && search.issueProjectId) {
+      const provider = search.issueProvider ?? search.provider ?? "meituan";
+      const title = entries.find(
+        (entry) =>
+          entry.kind === "issue" &&
+          entry.environmentId === detailEnvironmentId &&
+          entry.projectId === search.issueProjectId &&
+          entry.provider === provider &&
+          entry.issue.id === search.issueId,
+      )?.title;
+      useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
+        environmentId: detailEnvironmentId,
+        projectId: search.issueProjectId,
+        provider,
+        ...(search.issueScope ? { scope: search.issueScope } : {}),
+        issueId: search.issueId,
+        ...(title ? { title } : {}),
+      });
+    }
+  }, [
+    usesStandalonePanel,
+    rightPanelRef,
+    detailEnvironmentId,
+    search.workItemId,
+    search.issueId,
+    search.issueProjectId,
+    search.issueProvider,
+    search.provider,
+    search.issueScope,
+    entries,
+  ]);
+  const closeSurface = (surface: RightPanelSurface) => {
+    useRightPanelStore.getState().closeSurface(rightPanelRef, surface.id);
+    selectSurfaceInUrl(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, rightPanelRef),
+    );
+  };
+  const toggleRightPanel = () => {
+    if (rightPanelState.isOpen) {
+      useRightPanelStore.getState().close(rightPanelRef);
+      updateSearch(clearedSelection);
+      return;
+    }
+    if (panelSurface === null) return;
+    useRightPanelStore.getState().show(rightPanelRef);
+    selectSurfaceInUrl(panelSurface);
   };
   const run = async (input: WorkItemCommandInput, intent?: string) => {
     if (pending.current || !canCreateLocal) return false;
@@ -289,23 +466,36 @@ export function RequirementBoard({
       return false;
     }
     retries.current.delete(request.key);
-    updateSearch({
-      source: "all",
-      provider: undefined,
-      local: undefined,
-      archived: false,
-      q: undefined,
-      detailEnvironmentId: environmentId,
+    useRightPanelStore.getState().openWorkItem(rightPanelRef, {
+      environmentId,
       workItemId: result.value.item.id,
-      issueId: undefined,
+      title: result.value.item.title,
     });
+    if (!compact) {
+      updateSearch({
+        source: "all",
+        provider: undefined,
+        local: undefined,
+        archived: false,
+        q: undefined,
+        detailEnvironmentId: environmentId,
+        workItemId: result.value.item.id,
+        issueId: undefined,
+      });
+    }
     return true;
   };
-  const selectedProject = allProjects.find(
-    (project) =>
-      project.environmentId === detailEnvironmentId && project.id === search.issueProjectId,
-  );
-  const selected = Boolean(search.workItemId || search.issueId);
+  const panelOpen = usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null;
+  const panelEnvironmentId =
+    (renderedSurface?.environmentId as EnvironmentId | undefined) ?? detailEnvironmentId;
+  const renderedIssueProject =
+    renderedSurface?.kind === "requirement-issue"
+      ? allProjects.find(
+          (project) =>
+            project.environmentId === panelEnvironmentId &&
+            project.id === renderedSurface.projectId,
+        )
+      : undefined;
   const assigneeOptions = [
     ...new Map(
       data.issuePages
@@ -321,11 +511,11 @@ export function RequirementBoard({
     <div className="flex h-full min-h-0 flex-1 overflow-hidden">
       <div className="relative flex h-full min-h-0 flex-1 overflow-hidden">
         <div
-          className={`${selected ? (compact ? "hidden" : "hidden md:flex") : "flex"} min-h-0 min-w-0 flex-1 flex-col`}
+          className={`${panelOpen ? "max-sm:hidden flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}
         >
           <WorkspacePageHeader
             electron={!compact && isElectron}
-            reserveNativeControls={!compact && isElectron}
+            reserveNativeControls={!compact && isElectron && !panelOpen}
             className={
               compact
                 ? "justify-between border-b border-border px-4!"
@@ -414,6 +604,33 @@ export function RequirementBoard({
                   setCreatingLocal(projectId);
                 }}
               />
+              {usesStandalonePanel ? (
+                <div
+                  className="flex items-center gap-1 [-webkit-app-region:no-drag]"
+                  data-workspace-titlebar-controls
+                >
+                  <PanelLayoutControls
+                    showTerminalControl={false}
+                    showThreadPanelControl={false}
+                    terminalAvailable={false}
+                    terminalOpen={false}
+                    terminalShortcutLabel={null}
+                    threadPanelOpen={false}
+                    threadPanelPresentation="inline"
+                    threadPanelShortcutLabel={null}
+                    onToggleThreadPanel={() => undefined}
+                    rightPanelAvailable={panelSurface !== null}
+                    rightPanelOpen={panelOpen}
+                    rightPanelShortcutLabel={shortcutLabelForCommand(
+                      keybindings,
+                      "rightPanel.toggle",
+                    )}
+                    rightPanelUnavailableLabel={t("Select a requirement first")}
+                    onToggleTerminal={() => undefined}
+                    onToggleRightPanel={toggleRightPanel}
+                  />
+                </div>
+              ) : null}
             </div>
           </WorkspacePageHeader>
           <div className="flex shrink-0 items-center gap-1.5 px-5 pt-3 pb-2">
@@ -731,14 +948,19 @@ export function RequirementBoard({
                             type="button"
                             key={entry.key}
                             aria-current={
-                              detailEnvironmentId === entry.environmentId &&
-                              ((search.workItemId ===
-                                (entry.kind === "local" ? entry.item.id : undefined) &&
-                                entry.kind === "local") ||
+                              panelOpen &&
+                              ((entry.kind === "local" &&
+                                panelSurface?.kind === "work-item" &&
+                                (panelSurface.environmentId ?? fallbackEnvironmentId) ===
+                                  entry.environmentId &&
+                                panelSurface.workItemId === entry.item.id) ||
                                 (entry.kind === "issue" &&
-                                  search.issueId === entry.issue.id &&
-                                  search.issueProjectId === entry.projectId &&
-                                  search.issueProvider === entry.provider))
+                                  panelSurface?.kind === "requirement-issue" &&
+                                  (panelSurface.environmentId ?? fallbackEnvironmentId) ===
+                                    entry.environmentId &&
+                                  panelSurface.projectId === entry.projectId &&
+                                  panelSurface.provider === entry.provider &&
+                                  panelSurface.issueId === entry.issue.id))
                                 ? "true"
                                 : undefined
                             }
@@ -894,28 +1116,104 @@ export function RequirementBoard({
             ) : null}
           </div>
         </div>
-        {search.workItemId ? (
-          <WorkItemDetailPanel
-            key={`${detailEnvironmentId}/${search.workItemId}`}
-            environmentId={detailEnvironmentId}
-            id={search.workItemId}
-            close={close}
-          />
-        ) : selectedProject && search.issueId ? (
-          <IssueDetailPanel
-            key={`${detailEnvironmentId}/${search.issueProvider}/${selectedProject.id}/${search.issueScope}/${search.issueId}`}
-            environmentId={detailEnvironmentId}
-            target={{
-              projectId: selectedProject.id,
-              provider: search.issueProvider ?? search.provider ?? "meituan",
-              ...(search.issueScope ? { scope: search.issueScope } : {}),
+        {presence.present && renderedSurface ? (
+          <RightPanelTabs
+            mode="inline"
+            open={rightPanelState.isOpen}
+            keybindings={keybindings}
+            getShortcutContext={getShortcutContext}
+            widthStorageKey="t3code:requirement-panel-width"
+            defaultWidth={typeof window === "undefined" ? 560 : Math.floor(window.innerWidth / 2)}
+            surfaces={presence.value?.surfaces ?? []}
+            environmentId={panelEnvironmentId}
+            activeSurfaceId={renderedSurface.id}
+            pendingSurfaceIds={EMPTY_SET}
+            previewSessions={EMPTY_RECORD}
+            desktopByTabId={EMPTY_RECORD}
+            terminalLabelsById={EMPTY_MAP}
+            onActivate={(surface) => {
+              useRightPanelStore.getState().activateSurface(rightPanelRef, surface.id);
+              selectSurfaceInUrl(surface);
             }}
-            id={search.issueId}
-            cwd={selectedProject.workspaceRoot}
-            projectTitle={selectedProject.title}
-            close={close}
-            changed={refresh}
-          />
+            onCloseSurface={closeSurface}
+            onCloseOtherSurfaces={(surface) => {
+              useRightPanelStore.getState().closeOtherSurfaces(rightPanelRef, surface.id);
+              selectSurfaceInUrl(surface);
+            }}
+            onCloseSurfacesToRight={(surface) => {
+              useRightPanelStore.getState().closeSurfacesToRight(rightPanelRef, surface.id);
+              selectSurfaceInUrl(
+                selectActiveRightPanelSurface(
+                  useRightPanelStore.getState().byThreadKey,
+                  rightPanelRef,
+                ),
+              );
+            }}
+            onCloseAllSurfaces={() => {
+              useRightPanelStore.getState().closeAllSurfaces(rightPanelRef);
+              selectSurfaceInUrl(null);
+            }}
+            onMoveSurface={(surfaceId, toIndex) =>
+              useRightPanelStore.getState().moveSurface(rightPanelRef, surfaceId, toIndex)
+            }
+            onCopyFilePath={() => undefined}
+            onAddBrowser={() => undefined}
+            onAddBrowserInProfile={() => undefined}
+            onAddTerminal={() => undefined}
+            onAddDiff={() => undefined}
+            onAddFiles={() => undefined}
+            onAddPullRequest={() => undefined}
+            onAddPullRequests={() => undefined}
+            onAddDevice={() => undefined}
+            browserAvailable={false}
+            terminalAvailable={false}
+            diffAvailable={false}
+            filesAvailable={false}
+            pullRequestAvailable={false}
+            pullRequestsAvailable={false}
+            deviceAvailable={false}
+          >
+            {renderedSurface.kind === "work-item" ? (
+              <WorkItemDetailPanel
+                key={renderedSurface.id}
+                embedded
+                panelRef={rightPanelRef}
+                environmentId={panelEnvironmentId}
+                id={renderedSurface.workItemId as WorkItemId}
+              />
+            ) : renderedSurface.kind === "requirement-issue" ? (
+              <IssueDetailPanel
+                key={renderedSurface.id}
+                embedded
+                panelRef={rightPanelRef}
+                environmentId={panelEnvironmentId}
+                target={{
+                  projectId: renderedSurface.projectId as ProjectId,
+                  provider: renderedSurface.provider,
+                  ...(renderedSurface.scope ? { scope: renderedSurface.scope } : {}),
+                }}
+                id={renderedSurface.issueId}
+                cwd={renderedIssueProject?.workspaceRoot ?? ""}
+                projectTitle={renderedIssueProject?.title ?? renderedSurface.projectId}
+                changed={refresh}
+              />
+            ) : (
+              <PullRequestDetailPanel
+                key={renderedSurface.id}
+                getShortcutContext={getShortcutContext}
+                shortcutsEnabled={panelSurface?.id === renderedSurface.id}
+                environmentId={panelEnvironmentId}
+                reference={{
+                  projectId: (renderedSurface as PullRequestSurface).projectId as ProjectId,
+                  repository: (renderedSurface as PullRequestSurface).repository,
+                  number: (renderedSurface as PullRequestSurface).number,
+                  ...((renderedSurface as PullRequestSurface).host
+                    ? { host: (renderedSurface as PullRequestSurface).host }
+                    : {}),
+                }}
+              />
+            )}
+          </RightPanelTabs>
         ) : null}
         {creatingIssue ? (
           <IssueCreateDialog
@@ -928,22 +1226,33 @@ export function RequirementBoard({
               setCreatingEnvironmentId(null);
             }}
             created={(issue, projectId) => {
+              const issueScope = parseBranchIssueUrl(issue.url)?.repository;
               setCreatingIssue(null);
               setCreatingEnvironmentId(null);
               refresh();
-              updateSearch({
-                detailEnvironmentId: environmentId,
-                workItemId: undefined,
+              useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
+                environmentId,
+                projectId,
+                provider: creatingIssue,
+                ...(issueScope ? { scope: issueScope } : {}),
                 issueId: issue.id,
-                issueProjectId: projectId,
-                issueProvider: creatingIssue,
-                issueScope: parseBranchIssueUrl(issue.url)?.repository,
-                source: "all",
-                provider: undefined,
-                local: undefined,
-                archived: false,
-                q: undefined,
+                title: issue.title,
               });
+              if (!compact) {
+                updateSearch({
+                  detailEnvironmentId: environmentId,
+                  workItemId: undefined,
+                  issueId: issue.id,
+                  issueProjectId: projectId,
+                  issueProvider: creatingIssue,
+                  issueScope,
+                  source: "all",
+                  provider: undefined,
+                  local: undefined,
+                  archived: false,
+                  q: undefined,
+                });
+              }
             }}
           />
         ) : null}

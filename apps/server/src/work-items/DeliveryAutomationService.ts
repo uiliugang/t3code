@@ -8,7 +8,7 @@ import {
   WorkItemIssueInput,
   WorkItemIssueResult,
   BranchIssueRef,
-  IssueError,
+  RequirementIssueError,
   ThreadId,
   parseBranchIssueUrl,
   type WorkItemMutationResult,
@@ -29,7 +29,7 @@ const encodeSourceJson = Schema.encodeEffect(Schema.fromJsonString(IssueSource))
 const encodeCommandJson = Schema.encodeEffect(Schema.fromJsonString(WorkItemCommandInput));
 const decodeCommandJson = Schema.decodeEffect(Schema.fromJsonString(WorkItemCommandInput));
 const isWorkItemError = Schema.is(WorkItemError);
-const isIssueError = Schema.is(IssueError);
+const isRequirementIssueError = Schema.is(RequirementIssueError);
 const decodeSourceJson = Schema.decodeEffect(Schema.fromJsonString(IssueSource));
 const decodeIssueJson = Schema.decodeEffect(Schema.fromJsonString(BranchIssueRef));
 const encodeIssueJson = Schema.encodeEffect(Schema.fromJsonString(BranchIssueRef));
@@ -279,7 +279,7 @@ export const layer = Layer.effect(
           ? cause
           : new WorkItemError({
               code: "execution",
-              message: isIssueError(cause)
+              message: isRequirementIssueError(cause)
                 ? `${cause.message}${cause.fields ? ` ${JSON.stringify(cause.fields)}` : ""}`
                 : "Could not complete issue creation.",
               cause,

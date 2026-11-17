@@ -100,7 +100,8 @@ function OfferedAppSignIn(props: {
   );
 }
 
-function AppSignInRow(props: {
+/** Signs an environment in through a forge's own app, such as T3 Code for GitHub. */
+export function AppSignInRow(props: {
   readonly environment: SettingsTarget;
   readonly label: string;
   readonly definition: SourceControlDefinition;

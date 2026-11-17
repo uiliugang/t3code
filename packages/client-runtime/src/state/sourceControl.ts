@@ -1,6 +1,6 @@
 import {
-  IssueError,
-  IssueListResult,
+  RequirementIssueError,
+  RequirementIssueListResult,
   WS_METHODS,
   type EnvironmentId,
   type SourceControlTool,
@@ -23,12 +23,14 @@ import { invalidateCachedVcsRefs } from "./vcsRefInvalidation.ts";
 import { persistQuery } from "./queryPersistence.ts";
 import { request } from "../rpc/client.ts";
 
-const unconfiguredSourceMessage = new IssueError({ operation: "resolve", reason: "invalid-target" })
-  .message;
+const unconfiguredSourceMessage = new RequirementIssueError({
+  operation: "resolve",
+  reason: "invalid-target",
+}).message;
 
 const retainFailedIssueGroups = Effect.fn("sourceControl.retainFailedIssueGroups")(function* (
-  result: typeof IssueListResult.Type,
-  previous: Option.Option<typeof IssueListResult.Type>,
+  result: typeof RequirementIssueListResult.Type,
+  previous: Option.Option<typeof RequirementIssueListResult.Type>,
 ) {
   if (Option.isNone(previous) || result.failures.length === 0) return result;
   const failedProjects = new Set(
@@ -128,10 +130,10 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     }),
     issues: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:list",
-      tag: WS_METHODS.issuesList,
-      persistence: persistQuery(IssueListResult),
+      tag: WS_METHODS.requirementIssuesList,
+      persistence: persistQuery(RequirementIssueListResult),
       execute: (input, _emit, previous) =>
-        request(WS_METHODS.issuesList, input).pipe(
+        request(WS_METHODS.requirementIssuesList, input).pipe(
           Effect.flatMap((result) => retainFailedIssueGroups(result, previous)),
         ),
       refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
@@ -156,7 +158,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     }),
     createIssue: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:create",
-      tag: WS_METHODS.issuesCreate,
+      tag: WS_METHODS.requirementIssuesCreate,
       scheduler: commandScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
       onSuccess: ({ environmentId }, registry) =>
@@ -164,7 +166,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     }),
     setIssueState: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:set-state",
-      tag: WS_METHODS.issuesSetState,
+      tag: WS_METHODS.requirementIssuesSetState,
       scheduler: commandScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
       onSuccess: ({ environmentId }, registry) =>
