@@ -109,7 +109,7 @@ export function ClaudeByokProviderSettings({
         />
       ) : allowCreate ? (
         <ListActionRow
-          icon="plus"
+          trailingIcon="plus"
           label={t("Add {name}", { name: label })}
           onPress={() => setAdding(true)}
         />

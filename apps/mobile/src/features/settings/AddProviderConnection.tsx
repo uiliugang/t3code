@@ -15,6 +15,7 @@ import { ControlPill } from "../../components/ui/ControlPill";
 import { KeyboardSheetBody } from "../../components/ui/KeyboardSheetBody";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { ListSection } from "../../components/ui/ListSection";
+import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { Sheet } from "../../components/ui/Sheet";
 import { useUiTranslation } from "../../lib/useUiTranslation";
@@ -35,7 +36,9 @@ export function AddProviderConnection({
   const [expanded, setExpanded] = useState(false);
   const [driver, setDriver] = useState<"codex" | "claudeAgent" | null>(null);
   const [name, setName] = useState("");
-  const [pending, setPending] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [enablingId, setEnablingId] = useState<ProviderInstanceId | null>(null);
+  const pending = creating || enablingId !== null;
   const pendingRef = useRef(false);
   const mutate = useAtomCommand(serverEnvironment.mutateProviderInstance);
   const allowed = useAtomValue(
@@ -67,7 +70,7 @@ export function AddProviderConnection({
     )
       return;
     pendingRef.current = true;
-    setPending(true);
+    setEnablingId(provider.instanceId);
     const result = await mutate({
       environmentId: environment.environmentId,
       input: {
@@ -84,13 +87,13 @@ export function AddProviderConnection({
       },
     });
     pendingRef.current = false;
-    setPending(false);
+    setEnablingId(null);
     if (result._tag === "Success") setExpanded(false);
   };
   const create = async () => {
     if (!driver || pendingRef.current || !allowed) return;
     pendingRef.current = true;
-    setPending(true);
+    setCreating(true);
     const settings = environment.serverConfig.settings;
     const reserved = new Set([
       ...Object.keys(settings.providerInstances),
@@ -119,7 +122,7 @@ export function AddProviderConnection({
       },
     });
     pendingRef.current = false;
-    setPending(false);
+    setCreating(false);
     if (result._tag === "Success") {
       setDriver(null);
       setExpanded(false);
@@ -138,7 +141,7 @@ export function AddProviderConnection({
         accessibilityState={{ disabled: !allowed || pending }}
         disabled={!allowed || pending}
         onPress={() => setExpanded(true)}
-        className="size-11 items-center justify-center active:opacity-70"
+        className="size-[44px] items-center justify-center active:opacity-70"
       >
         <View
           className={`size-8 items-center justify-center rounded-full ${!allowed || pending ? "bg-subtle-strong" : "bg-primary"}`}
@@ -208,7 +211,7 @@ export function AddProviderConnection({
                               className={index > 0 ? "border-t border-border-subtle" : undefined}
                             >
                               <ListActionRow
-                                icon="plus"
+                                trailingIcon="plus"
                                 label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
                                 disabled={!allowed || pending}
                                 onPress={() => {
@@ -239,11 +242,9 @@ export function AddProviderConnection({
                     )}
                     {disabledProviders.map((provider) => (
                       <View key={provider.instanceId} className="border-t border-border-subtle">
-                        <ListActionRow
-                          icon="plus"
-                          label={t("Enable {name}", {
-                            name: provider.displayName ?? provider.driver,
-                          })}
+                        <ListToggleRow
+                          label={provider.displayName ?? provider.driver}
+                          value={provider.enabled || enablingId === provider.instanceId}
                           disabled={
                             !allowed ||
                             pending ||
@@ -252,7 +253,9 @@ export function AddProviderConnection({
                               `providerInstances.${provider.instanceId}.enabled`,
                             )
                           }
-                          onPress={() => void enable(provider)}
+                          onValueChange={(value) => {
+                            if (value) void enable(provider);
+                          }}
                         />
                       </View>
                     ))}

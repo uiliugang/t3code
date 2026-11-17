@@ -52,6 +52,9 @@ const ACTION_CIRCLE_SIZE = 36;
 const ACTION_ICON_SIZE = 15;
 const COMPACT_ACTION_CIRCLE_SIZE = 28;
 const COMPACT_ACTION_ICON_SIZE = 13;
+// Match the provider header's size-8 circle with mobile's 14px rem.
+const ICON_ONLY_ACTION_CIRCLE_SIZE = 28;
+const ICON_ONLY_ACTION_ICON_SIZE = 18;
 // At the default app text size, "Unarchive", the longest label, fills its slot at about 1.12x.
 const ACTION_LABEL_MAX_FONT_SCALE = 1.1;
 const ACTION_LABEL_MIN_HEIGHT = 14;
@@ -601,8 +604,16 @@ function SwipeActionButton(props: {
     stretchesOnFullSwipe,
     translation,
   } = props;
-  const circleSize = props.compact ? COMPACT_ACTION_CIRCLE_SIZE : ACTION_CIRCLE_SIZE;
-  const iconSize = props.compact ? COMPACT_ACTION_ICON_SIZE : ACTION_ICON_SIZE;
+  const circleSize = !props.label
+    ? ICON_ONLY_ACTION_CIRCLE_SIZE
+    : props.compact
+      ? COMPACT_ACTION_CIRCLE_SIZE
+      : ACTION_CIRCLE_SIZE;
+  const iconSize = !props.label
+    ? ICON_ONLY_ACTION_ICON_SIZE
+    : props.compact
+      ? COMPACT_ACTION_ICON_SIZE
+      : ACTION_ICON_SIZE;
   const { fontScale } = useWindowDimensions();
   // Even compact actions can outgrow a short row at large app text sizes; shrink the label's
   // leading to the room left under the circle.

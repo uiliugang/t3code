@@ -211,7 +211,7 @@ export function AddClaudeAccount({ environment }: { readonly environment: Settin
         />
       ) : (
         <ListActionRow
-          icon="plus"
+          trailingIcon="plus"
           label={t("Add Claude account")}
           description={t("Use a Claude config folder that is already signed in on this server.")}
           onPress={() => setAdding(true)}

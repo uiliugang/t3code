@@ -111,7 +111,27 @@ vi.mock("../../components/ui/ListActionRow", () => ({
     </button>
   ),
 }));
-vi.mock("../../components/ui/ListToggleRow", () => ({ ListToggleRow: () => null }));
+vi.mock("../../components/ui/ListToggleRow", () => ({
+  ListToggleRow: ({
+    label,
+    value,
+    disabled,
+    onValueChange,
+  }: {
+    label: string;
+    value: boolean;
+    disabled?: boolean;
+    onValueChange: (value: boolean) => void;
+  }) => (
+    <button
+      role="switch"
+      aria-label={label}
+      aria-checked={value}
+      disabled={disabled}
+      onClick={() => onValueChange(!value)}
+    />
+  ),
+}));
 vi.mock("../../components/ui/ListSection", () => ({ ListSection: Children }));
 vi.mock("../../components/ui/Menu", () => ({
   Menu: ({
@@ -258,7 +278,7 @@ it.each(["codex", "claudeAgent"])(
   },
 );
 
-it("reenables a saved provider only from Add without replacing its settings or submitting twice", async () => {
+it("reenables a saved provider from Add, preserving settings and allowing retry after failure", async () => {
   mutate.mockReset();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const instanceId = ProviderInstanceId.make("codex_work");
@@ -275,8 +295,13 @@ it("reenables a saved provider only from Add without replacing its settings or s
       settings: { ...DEFAULT_SERVER_SETTINGS, providerInstances: { [instanceId]: instance } },
     },
   } as SettingsTarget;
-  const provider = { instanceId, driver: instance.driver, enabled: false } as ServerProvider;
-  let finish!: (result: { _tag: "Success" }) => void;
+  const provider = {
+    instanceId,
+    driver: instance.driver,
+    displayName: "Work Codex",
+    enabled: false,
+  } as ServerProvider;
+  let finish!: (result: { _tag: "Success" | "Failure" }) => void;
   mutate.mockImplementation(
     () =>
       new Promise((resolve) => {
@@ -289,11 +314,12 @@ it("reenables a saved provider only from Add without replacing its settings or s
     act(() =>
       root.render(<AddProviderConnection environment={environment} providers={[provider]} />),
     );
-    expect(container.textContent).not.toContain("Enable");
+    expect(container.querySelector('[role="switch"]')).toBeNull();
     act(() => container.querySelector("button")!.click());
-    const enable = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Enable {name}",
+    const enable = container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Work Codex"]',
     )!;
+    expect(enable.getAttribute("aria-checked")).toBe("false");
     act(() => {
       enable.click();
       enable.click();
@@ -305,7 +331,16 @@ it("reenables a saved provider only from Add without replacing its settings or s
       instance: { ...instance, enabled: true },
     });
     expect(enable.disabled).toBe(true);
+    expect(enable.getAttribute("aria-checked")).toBe("true");
     expect(container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.disabled).toBe(true);
+    await act(async () => finish({ _tag: "Failure" }));
+    expect(enable.getAttribute("aria-checked")).toBe("false");
+    expect(enable.disabled).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.disabled).toBe(
+      false,
+    );
+    act(() => enable.click());
+    expect(mutate).toHaveBeenCalledTimes(2);
     await act(async () => finish({ _tag: "Success" }));
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector('[aria-label="Add provider"]')).not.toBeNull();
