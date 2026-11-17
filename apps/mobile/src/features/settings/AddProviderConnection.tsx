@@ -1,21 +1,21 @@
 import { useAtomValue } from "@effect/atom-react";
 import { deriveAvailableInstanceId } from "@t3tools/client-runtime/provider-instance-ids";
+import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import {
   isManagedDriverAllowed,
-  isManagedSettingPath,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useRef, useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
+import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { KeyboardSheetBody } from "../../components/ui/KeyboardSheetBody";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { ListSection } from "../../components/ui/ListSection";
-import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { Sheet } from "../../components/ui/Sheet";
 import { useUiTranslation } from "../../lib/useUiTranslation";
@@ -28,20 +28,18 @@ import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
 export function AddProviderConnection({
   environment,
   providers,
+  onCreated,
 }: {
   readonly environment: SettingsTarget;
   readonly providers: ReadonlyArray<ServerProvider>;
+  readonly onCreated?: () => void;
 }) {
   const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
-  const [driver, setDriver] = useState<"codex" | "claudeAgent" | null>(null);
+  const [driver, setDriver] = useState<ProviderDriverKind | null>(null);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [pendingToggle, setPendingToggle] = useState<{
-    instanceId: ProviderInstanceId;
-    enabled: boolean;
-  } | null>(null);
-  const pending = creating || pendingToggle !== null;
+  const pending = creating;
   const pendingRef = useRef(false);
   const mutate = useAtomCommand(serverEnvironment.mutateProviderInstance);
   const allowed = useAtomValue(
@@ -57,39 +55,16 @@ export function AddProviderConnection({
     environment.serverConfig.managedPolicy,
     ProviderDriverKind.make("codex"),
   );
-  const availableProviders = providers.filter((provider) =>
-    isManagedDriverAllowed(environment.serverConfig.managedPolicy, provider.driver),
+  const availableDrivers = providerClients.definitions.filter(
+    (definition) =>
+      definition.hasDefaultInstance !== false &&
+      (unified || !["codex", "claudeAgent"].includes(definition.driverKind)) &&
+      isManagedDriverAllowed(environment.serverConfig.managedPolicy, definition.driverKind),
   );
-  const setProviderEnabled = async (provider: ServerProvider, enabled: boolean) => {
-    if (
-      pendingRef.current ||
-      !allowed ||
-      isManagedSettingPath(
-        environment.serverConfig.managedPolicy,
-        `providerInstances.${provider.instanceId}.enabled`,
-      )
-    )
-      return;
-    pendingRef.current = true;
-    setPendingToggle({ instanceId: provider.instanceId, enabled });
-    await mutate({
-      environmentId: environment.environmentId,
-      input: {
-        patch: {},
-        providerInstanceMutation: {
-          operation: "upsert",
-          instanceId: provider.instanceId,
-          instance: {
-            driver: provider.driver,
-            ...environment.serverConfig.settings.providerInstances[provider.instanceId],
-            enabled,
-          },
-        },
-      },
-    });
-    pendingRef.current = false;
-    setPendingToggle(null);
-  };
+  const driverLabel =
+    driver === "claudeAgent"
+      ? "Claude Code"
+      : (providerClients.get(driver ?? undefined)?.label ?? "");
   const create = async () => {
     if (!driver || pendingRef.current || !allowed) return;
     pendingRef.current = true;
@@ -97,9 +72,11 @@ export function AddProviderConnection({
     const settings = environment.serverConfig.settings;
     const reserved = new Set([
       ...Object.keys(settings.providerInstances),
-      ...["codex", "claudeAgent"].filter(
-        (id) => !settings.removedProviderInstances?.includes(ProviderInstanceId.make(id)),
-      ),
+      ...providers.map((provider) => provider.instanceId),
+      ...providerClients.definitions
+        .filter((definition) => definition.hasDefaultInstance !== false)
+        .map((definition) => definition.driverKind)
+        .filter((id) => !settings.removedProviderInstances?.includes(ProviderInstanceId.make(id))),
     ]);
     const id = deriveAvailableInstanceId(() => driver, name, reserved);
     const result = await mutate({
@@ -111,7 +88,7 @@ export function AddProviderConnection({
           instanceId: ProviderInstanceId.make(id),
           instance: {
             driver: ProviderDriverKind.make(driver),
-            displayName: name.trim() || (driver === "codex" ? "Codex" : "Claude Code"),
+            displayName: name.trim() || driverLabel,
             enabled: true,
             config:
               driver === "codex"
@@ -126,6 +103,7 @@ export function AddProviderConnection({
     if (result._tag === "Success") {
       setDriver(null);
       setExpanded(false);
+      onCreated?.();
     }
   };
   const close = () => {
@@ -156,7 +134,12 @@ export function AddProviderConnection({
         </View>
       </Pressable>
       {expanded ? (
-        <Sheet title={t("Add provider")} onClose={close} dismissDisabled={pending} expanded>
+        <Sheet
+          title={driver ? driverLabel : t("Add provider")}
+          onClose={close}
+          dismissDisabled={pending}
+          expanded
+        >
           <KeyboardSheetBody>
             <ScreenScrollView
               className="flex-1"
@@ -174,11 +157,13 @@ export function AddProviderConnection({
                     editable={!pending}
                     className="rounded-lg border border-border-subtle px-3 py-2 text-base text-foreground"
                   />
-                  <Text textRole="footnote" className="text-foreground-muted">
-                    {t(
-                      "Choose a connection method after creating the provider. Each method keeps its own settings.",
-                    )}
-                  </Text>
+                  {driver === "codex" || driver === "claudeAgent" ? (
+                    <Text textRole="footnote" className="text-foreground-muted">
+                      {t(
+                        "Choose a connection method after creating the provider. Each method keeps its own settings.",
+                      )}
+                    </Text>
+                  ) : null}
                   <View className="flex-row gap-2">
                     <ControlPill
                       label={t("Add")}
@@ -196,33 +181,7 @@ export function AddProviderConnection({
               ) : (
                 <>
                   <ListSection>
-                    {unified ? (
-                      <View>
-                        {(["codex", "claudeAgent"] as const)
-                          .filter((kind) =>
-                            isManagedDriverAllowed(
-                              environment.serverConfig.managedPolicy,
-                              ProviderDriverKind.make(kind),
-                            ),
-                          )
-                          .map((kind, index) => (
-                            <View
-                              key={kind}
-                              className={index > 0 ? "border-t border-border-subtle" : undefined}
-                            >
-                              <ListActionRow
-                                trailingIcon="plus"
-                                label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
-                                disabled={!allowed || pending}
-                                onPress={() => {
-                                  setName(kind === "codex" ? "Codex" : "Claude Code");
-                                  setDriver(kind);
-                                }}
-                              />
-                            </View>
-                          ))}
-                      </View>
-                    ) : (
+                    {!unified ? (
                       <>
                         {canAddClaude ? (
                           <>
@@ -239,28 +198,30 @@ export function AddProviderConnection({
                           />
                         ) : null}
                       </>
-                    )}
-                    {availableProviders.map((provider) => (
-                      <View key={provider.instanceId} className="border-t border-border-subtle">
-                        <ListToggleRow
-                          label={provider.displayName ?? provider.driver}
-                          value={
-                            pendingToggle?.instanceId === provider.instanceId
-                              ? pendingToggle.enabled
-                              : provider.enabled
+                    ) : null}
+                    {availableDrivers.map((definition, index) => {
+                      const label =
+                        definition.driverKind === "claudeAgent" ? "Claude Code" : definition.label;
+                      return (
+                        <View
+                          key={definition.driverKind}
+                          className={
+                            index > 0 || !unified ? "border-t border-border-subtle" : undefined
                           }
-                          disabled={
-                            !allowed ||
-                            pending ||
-                            isManagedSettingPath(
-                              environment.serverConfig.managedPolicy,
-                              `providerInstances.${provider.instanceId}.enabled`,
-                            )
-                          }
-                          onValueChange={(value) => void setProviderEnabled(provider, value)}
-                        />
-                      </View>
-                    ))}
+                        >
+                          <ListActionRow
+                            leading={<ProviderIcon provider={definition.driverKind} size={22} />}
+                            trailingIcon="plus"
+                            label={label}
+                            disabled={!allowed || pending}
+                            onPress={() => {
+                              setName(label);
+                              setDriver(definition.driverKind);
+                            }}
+                          />
+                        </View>
+                      );
+                    })}
                   </ListSection>
                   <ControlPill label={t("Cancel")} disabled={pending} onPress={close} />
                 </>

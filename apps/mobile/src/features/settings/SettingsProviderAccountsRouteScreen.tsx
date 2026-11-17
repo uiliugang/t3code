@@ -27,6 +27,7 @@ import { ControlPill } from "../../components/ui/ControlPill";
 import { ListRow } from "../../components/ui/ListRow";
 import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -105,9 +106,11 @@ function EnvironmentProviders({
 }) {
   const t = useUiTranslation();
   const [removalError, setRemovalError] = useState<string | null>(null);
+  const [providerState, setProviderState] = useState<"enabled" | "disabled">("enabled");
+  const showDisabled = providerState === "disabled";
   const openSwipeable = useRef<SwipeableMethods | null>(null);
   const renderProvider = (
-    provider: Pick<ServerProvider, "instanceId" | "displayName">,
+    provider: Pick<ServerProvider, "instanceId" | "displayName" | "driver" | "enabled">,
     content: ReactNode,
     onEdit?: () => void,
   ) => (
@@ -128,7 +131,7 @@ function EnvironmentProviders({
       {content}
     </ProviderSwipeRow>
   );
-  const visibleProviders = providers.filter((provider) => provider.enabled);
+  const visibleProviders = providers.filter((provider) => provider.enabled !== showDisabled);
   const isByok = (provider: ServerProvider) =>
     provider.driver === "codex"
       ? codexConnectionMode(
@@ -152,8 +155,30 @@ function EnvironmentProviders({
   return (
     <SettingsSection
       title={environment.label}
-      trailing={<AddProviderConnection environment={environment} providers={providers} />}
+      trailing={
+        <AddProviderConnection
+          environment={environment}
+          providers={providers}
+          onCreated={() => setProviderState("enabled")}
+        />
+      }
     >
+      <View className="px-3 pb-2 pt-3">
+        <SegmentedControl
+          options={[
+            { value: "enabled", label: t("Enabled") },
+            { value: "disabled", label: t("Disabled providers") },
+          ]}
+          selected={providerState}
+          onSelect={(value) => {
+            openSwipeable.current?.close();
+            setProviderState(value);
+            setRemovalError(null);
+          }}
+          size="compact"
+          role="tab"
+        />
+      </View>
       {removalError ? (
         <Text className="p-4 text-sm text-danger-foreground">{removalError}</Text>
       ) : null}
@@ -162,6 +187,7 @@ function EnvironmentProviders({
           environment={environment}
           allowCreate={false}
           providers={providers}
+          showDisabled={showDisabled}
           renderInstance={renderProvider}
         />
       ) : null}
@@ -175,6 +201,7 @@ function EnvironmentProviders({
           driver="codex"
           allowCreate={false}
           providers={providers}
+          showDisabled={showDisabled}
           renderInstance={renderProvider}
         />
       ) : null}
@@ -201,7 +228,9 @@ function EnvironmentProviders({
           />
         ))}
       {visibleProviders.length === 0 ? (
-        <Text className="p-4 text-foreground-muted">{t("No providers available.")}</Text>
+        <Text className="p-4 text-foreground-muted">
+          {showDisabled ? t("No disabled providers.") : t("No providers available.")}
+        </Text>
       ) : null}
       {claudeAccounts.map((provider) => (
         <ClaudeAccount

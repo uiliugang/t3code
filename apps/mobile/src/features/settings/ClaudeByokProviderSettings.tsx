@@ -45,15 +45,17 @@ export function ClaudeByokProviderSettings({
   allowCreate = true,
   providers = [],
   createOnly = false,
+  showDisabled = false,
   renderInstance,
 }: {
   readonly allowCreate?: boolean;
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly createOnly?: boolean;
+  readonly showDisabled?: boolean;
   readonly driver?: "claudeAgent" | "codex";
   readonly environment: SettingsTarget;
   readonly renderInstance?: (
-    provider: Pick<ServerProvider, "instanceId" | "displayName">,
+    provider: Pick<ServerProvider, "instanceId" | "displayName" | "driver" | "enabled">,
     editor: ReactNode,
     onEdit?: () => void,
   ) => ReactNode;
@@ -67,7 +69,7 @@ export function ClaudeByokProviderSettings({
       instance.driver === driver &&
       (providers.find((provider) => provider.instanceId === instanceId)?.enabled ??
         instance.enabled ??
-        true) &&
+        true) !== showDisabled &&
       (driver === "codex"
         ? codexConnectionMode(instance.config) === "byok"
         : isClaudeByok(instance.config)),
@@ -91,7 +93,12 @@ export function ClaudeByokProviderSettings({
               renderInstance
                 ? (content, onEdit) =>
                     renderInstance(
-                      { instanceId: id, displayName: instance.displayName ?? label },
+                      {
+                        instanceId: id,
+                        displayName: instance.displayName ?? label,
+                        driver: instance.driver,
+                        enabled: !showDisabled,
+                      },
                       content,
                       onEdit,
                     )

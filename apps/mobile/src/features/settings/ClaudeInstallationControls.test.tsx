@@ -11,6 +11,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 import { CLAUDE_DRIVER, DEFAULT_CLAUDE_INSTANCE_ID } from "./claude-accounts";
+import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import type { SettingsTarget } from "./settings-environment-filter";
 
 const { mutate, Children } = vi.hoisted(() => ({
@@ -56,6 +57,7 @@ vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ProviderIcon", () => ({ ProviderIcon: () => null }));
 vi.mock("../../components/ui/KeyboardSheetBody", () => ({ KeyboardSheetBody: Children }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
 vi.mock("../../components/ui/Sheet", () => ({
@@ -234,9 +236,11 @@ it("keeps API edits until they are reverted before switching the Claude connecti
   }
 });
 
-it.each(["codex", "claudeAgent"])(
-  "adds %s without replacing its implicit default",
-  async (driver) => {
+it.each(
+  providerClients.definitions.filter((definition) => definition.hasDefaultInstance !== false),
+)(
+  "adds $driverKind without replacing its implicit default",
+  async ({ driverKind: driver, label }) => {
     mutate.mockReset().mockResolvedValue({ _tag: "Success" });
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
@@ -254,8 +258,7 @@ it.each(["codex", "claudeAgent"])(
       const selectDriver = () =>
         [...container.querySelectorAll("button")]
           .find(
-            (button) =>
-              button.textContent === (driver === "codex" ? "Add Codex" : "Add Claude Code"),
+            (button) => button.textContent === (driver === "claudeAgent" ? "Claude Code" : label),
           )!
           .click();
       act(selectDriver);
@@ -272,20 +275,24 @@ it.each(["codex", "claudeAgent"])(
       expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation.instanceId).toBe(
         `${driver}_2`,
       );
+      expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation).toMatchObject({
+        operation: "create",
+        instance: { driver, enabled: true },
+      });
     } finally {
       act(() => root.unmount());
     }
   },
 );
 
-it("keeps saved providers in Add for both toggle directions, preserving settings and retrying failures", async () => {
+it("adds another connection without toggling existing providers and allows retry after failure", async () => {
   mutate.mockReset();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const instanceId = ProviderInstanceId.make("codex_work");
+  const instanceId = ProviderInstanceId.make("cursor_2");
   const instance: ProviderInstanceConfig = {
-    driver: ProviderDriverKind.make("codex"),
-    enabled: false,
-    config: { connectionMode: "byok", homePath: "/work/codex" },
+    driver: ProviderDriverKind.make("cursor"),
+    enabled: true,
+    config: { binaryPath: "/work/cursor" },
     environment: [{ name: "API_KEY", value: "", sensitive: true, valueRedacted: true }],
   };
   const environment = {
@@ -298,8 +305,8 @@ it("keeps saved providers in Add for both toggle directions, preserving settings
   const provider = {
     instanceId,
     driver: instance.driver,
-    displayName: "Work Codex",
-    enabled: false,
+    displayName: "Work Cursor",
+    enabled: true,
   } as ServerProvider;
   let finish!: (result: { _tag: "Success" | "Failure" }) => void;
   mutate.mockImplementation(
@@ -310,90 +317,46 @@ it("keeps saved providers in Add for both toggle directions, preserving settings
   );
   const container = document.createElement("div");
   const root = createRoot(container);
-  const renderProvider = (enabled: boolean) =>
-    root.render(
-      <AddProviderConnection
-        environment={{
-          ...environment,
-          serverConfig: {
-            ...environment.serverConfig,
-            settings: {
-              ...environment.serverConfig.settings,
-              providerInstances: { [instanceId]: { ...instance, enabled } },
-            },
-          },
-        }}
-        providers={[{ ...provider, enabled }]}
-      />,
-    );
+  const renderProvider = () =>
+    root.render(<AddProviderConnection environment={environment} providers={[provider]} />);
   try {
-    act(() => renderProvider(false));
-    expect(container.querySelector('[role="switch"]')).toBeNull();
+    act(renderProvider);
     act(() => container.querySelector("button")!.click());
-    const enable = container.querySelector<HTMLButtonElement>(
-      '[role="switch"][aria-label="Work Codex"]',
-    )!;
-    expect(enable.getAttribute("aria-checked")).toBe("false");
+    expect(container.querySelector('[role="switch"]')).toBeNull();
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Cursor")!
+        .click(),
+    );
+    const add = () => container.querySelector<HTMLButtonElement>('[aria-label="Add"]')!;
     act(() => {
-      enable.click();
-      enable.click();
+      add().click();
+      add().click();
     });
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation).toEqual({
-      operation: "upsert",
-      instanceId,
-      instance: { ...instance, enabled: true },
+      operation: "create",
+      instanceId: "cursor_3",
+      instance: { driver: "cursor", displayName: "Cursor", enabled: true, config: {} },
     });
-    expect(enable.disabled).toBe(true);
-    expect(enable.getAttribute("aria-checked")).toBe("true");
+    expect(add().disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.disabled).toBe(true);
     await act(async () => finish({ _tag: "Failure" }));
-    expect(enable.getAttribute("aria-checked")).toBe("false");
-    expect(enable.disabled).toBe(false);
+    expect(add().disabled).toBe(false);
     expect(container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.disabled).toBe(
       false,
     );
-    act(() => enable.click());
+    act(() => add().click());
     expect(mutate).toHaveBeenCalledTimes(2);
     await act(async () => {
-      renderProvider(true);
       finish({ _tag: "Success" });
     });
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(container.contains(enable)).toBe(true);
-    expect(enable.getAttribute("aria-checked")).toBe("true");
-    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Add provider"]')!.click());
-    const disable = container.querySelector<HTMLButtonElement>(
-      '[role="switch"][aria-label="Work Codex"]',
-    )!;
-    expect(disable.getAttribute("aria-checked")).toBe("true");
-    act(() => {
-      disable.click();
-      disable.click();
-    });
-    expect(mutate).toHaveBeenCalledTimes(3);
-    expect(mutate.mock.calls[2]?.[0].input.providerInstanceMutation).toEqual({
-      operation: "upsert",
-      instanceId,
-      instance: { ...instance, enabled: false },
-    });
-    expect(disable.getAttribute("aria-checked")).toBe("false");
-    expect(disable.disabled).toBe(true);
-    await act(async () => finish({ _tag: "Failure" }));
-    expect(disable.getAttribute("aria-checked")).toBe("true");
-    expect(disable.disabled).toBe(false);
-    act(() => disable.click());
-    expect(mutate).toHaveBeenCalledTimes(4);
-    await act(async () => {
-      renderProvider(false);
-      finish({ _tag: "Success" });
-    });
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(container.contains(disable)).toBe(true);
-    expect(disable.getAttribute("aria-checked")).toBe("false");
-    expect(disable.disabled).toBe(false);
+    expect(
+      [...container.querySelectorAll("button")].filter((button) => button.textContent === "Cursor"),
+    ).toHaveLength(1);
+    expect(environment.serverConfig.settings.providerInstances[instanceId]).toEqual(instance);
   } finally {
     act(() => root.unmount());
   }
