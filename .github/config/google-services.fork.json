@@ -1,0 +1,23 @@
+{
+  "project_info": {
+    "project_number": "833042137903",
+    "project_id": "t3-code",
+    "storage_bucket": "t3-code.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:833042137903:android:c884c6a5e8c1429c3c17da",
+        "android_client_info": {
+          "package_name": "com.uiliugang.t3code"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1XmHeLm6o5CMyuiOTpAHgfdvQOwerUYQ"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}

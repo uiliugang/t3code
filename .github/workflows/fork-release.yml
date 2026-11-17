@@ -163,6 +163,7 @@ jobs:
     env:
       APP_VARIANT: production
       T3CODE_ANDROID_PACKAGE: com.uiliugang.t3code
+      T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/.github/config/google-services.fork.json
       T3CODE_ANDROID_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
       T3CODE_MOBILE_VERSION: ${{ needs.prepare.outputs.version }}
       T3CODE_MOBILE_UPDATES_ENABLED: "0"
@@ -278,6 +279,10 @@ jobs:
           fingerprint=$(sha256sum "$RUNNER_TEMP/release-cert.der" | cut -d ' ' -f1)
           "$tools/apksigner" verify --print-certs "$apk" | grep -F "certificate SHA-256 digest: $fingerprint"
           unzip -l "$apk" | grep -F assets/index.android.bundle
+          "$tools/aapt2" dump resources "$apk" > "$RUNNER_TEMP/apk-resources.txt"
+          for resource in google_app_id gcm_defaultSenderId google_api_key project_id; do
+            grep -F "string/$resource" "$RUNNER_TEMP/apk-resources.txt"
+          done
           mkdir -p release
           cp "$apk" "release/T3-Code-${RELEASE_VERSION}-android.apk"
       - uses: actions/upload-artifact@v7
