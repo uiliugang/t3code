@@ -22,6 +22,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { releaseComposerDraftUploads } from "../../lib/composerDraftUploads";
 import type { SideChatParentPanel } from "../../lib/sideChatPane";
 import { readLocalApi } from "../../localApi";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { hostRightPanel, useRightPanelStore } from "../../rightPanelStore";
 import {
   useQuietThreadProjection,
@@ -32,7 +33,7 @@ import { newThreadId } from "../../lib/utils";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentShellHasSnapshot } from "../../state/shell";
-import { threadEnvironment } from "../../state/threads";
+import { threadEnvironment, threadFamilies } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import ChatView from "../ChatView";
 import { Button } from "../ui/button";
@@ -54,6 +55,11 @@ export default function SideChatPane(props: {
   useEffect(
     () => hostRightPanel(scopeThreadRef(parentRef.environmentId, threadId), parentRef),
     [parentRef, threadId],
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds side chats omitted from the shell while their parent panel is open
+  useEffect(
+    () => threadFamilies.mount(appAtomRegistry, parentRef.environmentId, parentRef.threadId),
+    [parentRef.environmentId, parentRef.threadId],
   );
   const shell = useQuietThreadShell(threadRef);
   const parent = useQuietThreadShell(parentRef);

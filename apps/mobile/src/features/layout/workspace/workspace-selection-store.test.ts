@@ -16,21 +16,21 @@ vi.mock("react-native", () => ({
   Dimensions: { get: () => ({ width: 1180, height: 820 }) },
   Platform: { OS: "ios" },
 }));
-// The real createURL, configured as a development build with the dev scheme.
+// Keep createURL's real encoding; scheme discovery otherwise loads Expo's native modules.
 const expoLinking = await vi.hoisted(async () => {
   const { createRequire } = await import("node:module");
   const packageJson = createRequire(import.meta.url).resolve("expo-linking/package.json");
   return {
     createURL: packageJson.replace(/package\.json$/, "build/createURL.js"),
-    modulesCore: createRequire(packageJson).resolve("expo-modules-core"),
+    schemes: packageJson.replace(/package\.json$/, "build/Schemes.js"),
   };
 });
-vi.mock(expoLinking.modulesCore, () => ({
-  Platform: { select: (options: { readonly ios?: unknown }) => options.ios },
+vi.mock(expoLinking.schemes, () => ({
+  hasCustomScheme: () => true,
+  resolveScheme: () => "t3code-dev",
 }));
 vi.mock("expo-constants", () => ({
   default: { executionEnvironment: "bare", expoConfig: { scheme: "t3code-dev" } },
-  ExecutionEnvironment: { Bare: "bare", Standalone: "standalone", StoreClient: "storeClient" },
 }));
 vi.mock("expo/internal/bundle-origin", () => ({ getBundleOrigin: () => null }));
 vi.mock("expo-linking", () => import(expoLinking.createURL));

@@ -455,8 +455,11 @@ it.effect("resolves a link at its answering address without waiting out a sleepi
         Effect.flatMap((response) => response.text),
         Effect.provide(FetchHttpClient.layer),
       );
+      // Answer only after the first address is asleep, without advancing either probe's timeout.
       const elsewhere = yield* serveRaw(() =>
-        Effect.succeed(HttpServerResponse.text(described, { contentType: "application/json" })),
+        Queue.take(b.unanswered).pipe(
+          Effect.as(HttpServerResponse.text(described, { contentType: "application/json" })),
+        ),
       );
       const a = yield* makeA(laptop);
       const pairing = yield* b.auth.issuePairingCredential();
@@ -468,12 +471,9 @@ it.effect("resolves a link at its answering address without waiting out a sleepi
       });
 
       yield* Ref.set(b.asleep, true);
-      const first = yield* a.links.resolve(box.environmentId).pipe(Effect.forkScoped);
-      yield* Queue.take(b.unanswered);
-      yield* TestClock.adjust(Duration.seconds(3));
-      expect((yield* Fiber.join(first)).url).toBe(elsewhere);
+      expect((yield* a.links.resolve(box.environmentId)).url).toBe(elsewhere);
 
-      // The clock no longer moves: a resolve that probes the sleeping address first never returns.
+      // The clock never moves: both the initial resolve and later resolves must race the addresses.
       expect((yield* a.links.resolve(box.environmentId)).url).toBe(elsewhere);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),

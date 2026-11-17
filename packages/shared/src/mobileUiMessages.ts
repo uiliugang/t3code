@@ -867,6 +867,9 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "Not connected": "未连接",
   "Connecting...": "正在连接…",
   "Reconnecting...": "正在重新连接…",
+  "Reconnecting…": "正在重新连接…",
+  "Retrying connection…": "正在重试连接…",
+  "Awaiting device approval": "等待设备批准",
   "Connection failed": "连接失败",
   "Failed to connect. Reconnecting...": "连接失败，正在重新连接…",
   "Your DNS or firewall may be blocking T3 Connect. Try another network, such as a different Wi-Fi or mobile data.":
