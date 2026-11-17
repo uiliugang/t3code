@@ -32,7 +32,8 @@ export function RemoteBranchDisplayDaysRow() {
       settingKeys={[key]}
       {...setting}
       description={t(
-        "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.",
+        "Show remote branches with commits in the last N days. Default: {days} days. Use 0 for no age limit. Local and default branches remain visible.",
+        { days: DEFAULT_UNIFIED_SETTINGS.remoteBranchDisplayDays },
       )}
       resetAction={
         mixed || settings[key] !== DEFAULT_UNIFIED_SETTINGS[key] ? (

@@ -478,6 +478,20 @@ describe("chat/editor shortcuts", () => {
 
 describe("cross-command precedence", () => {
   it("uses when + order so a later focused rule overrides a global rule", () => {
+    const defaults = mergeWithDefaultKeybindings([]);
+    for (const [context, expected] of [
+      [{ rightPanelOpen: false }, "chat.new"],
+      [{ rightPanelOpen: true }, "rightPanel.new"],
+      [{ terminalFocus: true }, null],
+    ] as const) {
+      assert.strictEqual(
+        resolveShortcutCommand(event({ key: "t", metaKey: true }), defaults, {
+          platform: "MacIntel",
+          context,
+        }),
+        expected,
+      );
+    }
     const keybindings = compile([
       { shortcut: modShortcut("n"), command: "chat.new" },
       {

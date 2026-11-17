@@ -28,7 +28,7 @@ const selection = (id: string, model = "gpt-6.1-sol"): ModelSelection => ({
 });
 
 function fixture() {
-  const defaultModel = selection("byok");
+  const defaultModel = { ...selection("byok"), options: [] };
   let thread: Pick<OrchestrationV2ThreadShell, "modelSelection" | "activeRunId"> | null = {
     modelSelection: selection("chatgpt"),
     activeRunId: null,

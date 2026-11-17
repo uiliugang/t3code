@@ -85,22 +85,29 @@ describe("built-in preferences", () => {
       uiLanguage: "zh-CN",
       inAppNotificationsEnabled: true,
       showRepositoryTerminalButton: true,
+      showTerminalDrawerButton: true,
+      capitalizeProjectNames: false,
       effortDisplay: "bars",
       appearanceContrast: 130,
+      panelAnimationDurationMs: 25,
       browserLinkTarget: "app",
       browserSearchEngine: "google",
-      environmentIdentificationMode: "none",
+      environmentIdentificationMode: "dev-artwork",
       glassOpacity: 50,
       fontSizeInterface: 15,
+      fontFamilyCode: "JetBrains Mono",
+      fontFamilyTerminal: "JetBrains Mono",
       persistComposerContextStrip: true,
       contextWindowMeterEnabled: true,
+      composerRichTextEnabled: false,
       followUpBehavior: "queue",
       proactivePanelsEnabled: true,
       boringSidebarEnabled: true,
       boringSidebarMultilineRows: true,
+      branchIssuesPlacement: "separate",
       timestampFormat: "24-hour",
       snapShotPlaySound: false,
-      wordWrap: false,
+      wordWrap: true,
       mathRenderingEnabled: true,
     };
     expect(decodeClientSettings({})).toMatchObject(preferences);
@@ -110,21 +117,58 @@ describe("built-in preferences", () => {
       contextWindowMeterEnabled: false,
       appearanceContrast: 100,
       followUpBehavior: "steer",
+      showTerminalDrawerButton: false,
+      capitalizeProjectNames: true,
+      panelAnimationDurationMs: 0,
+      environmentIdentificationMode: "none",
+      fontFamilyCode: "",
+      fontFamilyTerminal: "",
+      composerRichTextEnabled: true,
+      branchIssuesPlacement: "inline",
+      wordWrap: false,
     };
     expect(
       decodeClientSettings(encodeClientSettings(decodeClientSettings(overrides))),
     ).toMatchObject(overrides);
     expect(decodeServerSettings({})).toMatchObject({
       defaultAutoPull: true,
-      defaultModelSelection: { instanceId: "codex", model: "gpt-6.1-sol" },
+      defaultModelSelection: {
+        instanceId: "codex",
+        model: "gpt-6.1-sol",
+        options: [
+          { id: "reasoningEffort", value: "xhigh" },
+          { id: "serviceTier", value: "priority" },
+        ],
+      },
       fallbackModelSelection: { instanceId: "codex", model: "gpt-6.1-sol" },
       textGenerationModelSelection: { instanceId: "codex", model: "gpt-6.1-terra" },
-      reviewGuideModelSelection: { instanceId: "codex", model: "gpt-6.1-sol" },
+      reviewGuideModelSelection: {
+        instanceId: "codex",
+        model: "gpt-6.1-sol",
+        options: [
+          { id: "reasoningEffort", value: "xhigh" },
+          { id: "serviceTier", value: "default" },
+        ],
+      },
       reviewGuidesEnabled: true,
       removeAgentCreditsOnMerge: true,
       sidebarAutoSettleOnMerge: false,
       snoozeLimitedThreads: true,
       defaultThreadEnvMode: "worktree",
+      sidebarAutoSettleAfterDays: null,
+      fastWorktreeCheckout: true,
+      guestSharingEnabled: true,
+      linkedEnvironmentsEnabled: true,
+      promptSuggestionsEnabled: true,
+      offeredSourceControlProviders: { meituan: true },
+      enableAgentDeviceAccess: false,
+      enableDeviceSupport: false,
+      deviceOnboardingCompleted: false,
+      deviceHosts: [],
+      easDeviceHosts: [],
+      simlockDeviceHosts: [],
+      simlockDeviceHostsEnabled: false,
+      projectSettingsFolded: false,
       providerInstances: {},
       sourceControlHosts: {},
       daxiang: { clientId: "", clientSecret: "" },
@@ -137,6 +181,12 @@ describe("built-in preferences", () => {
       reviewGuideModelSelection: null,
       reviewGuidesEnabled: false,
       snoozeLimitedThreads: false,
+      sidebarAutoSettleAfterDays: 7,
+      fastWorktreeCheckout: false,
+      guestSharingEnabled: false,
+      linkedEnvironmentsEnabled: false,
+      promptSuggestionsEnabled: false,
+      offeredSourceControlProviders: {},
     };
     expect(
       decodeServerSettings(encodeServerSettings(decodeServerSettings(serverOverrides))),
@@ -161,12 +211,12 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettings({}).autoDeleteMergedBranches).toBe(true);
     expect(decodeServerSettings({}).newWorktreesMainBranchOnly).toBe(true);
     expect(decodeServerSettings({}).worktreeSharedDependencies).toBe(true);
-    expect(decodeServerSettings({}).remoteBranchDisplayDays).toBe(21);
+    expect(decodeServerSettings({}).remoteBranchDisplayDays).toBe(14);
     expect(decodeServerSettings({}).hideMergedRemoteBranches).toBe(true);
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
-      worktreeSettledAfterDays: null,
+      worktreeSettledAfterDays: 7,
       worktreeOnMerge: true,
       worktreeOnDelete: true,
       worktreeUnchanged: true,
@@ -177,7 +227,9 @@ describe("storage cleanup settings", () => {
     const overrides = {
       autoDeleteMergedBranches: false,
       worktreeSharedDependencies: false,
+      remoteBranchDisplayDays: 21,
       storageCleanup: {
+        worktreeSettledAfterDays: null,
         worktreeOnMerge: false,
         worktreeOnDelete: false,
         worktreeUnchanged: false,
