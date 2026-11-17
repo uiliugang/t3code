@@ -335,9 +335,9 @@ const zhCN: Readonly<Record<string, string>> = {
   "Revoke all other clients?": "撤销所有其他客户端的访问权限？",
   "{host} is waiting for someone to approve this device": "{host} 正在等待批准此设备",
   "On a device already connected to {host}, open Settings > Sharing & access and approve the device showing {code}.":
-    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问权限”，批准显示验证码 {code} 的设备。",
+    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问”，批准显示验证码 {code} 的设备。",
   "On a device already connected to {host}, open Settings > Sharing & access and approve this device.":
-    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问权限”并批准此设备。",
+    "在已连接到 {host} 的设备上，打开“设置 > 共享与访问”并批准此设备。",
   "Or run `t3 auth connect-device approve {code}` on {host}.":
     "也可以在 {host} 上运行 `t3 auth connect-device approve {code}`。",
   "Waiting for approval on the host": "等待主机批准",
@@ -368,7 +368,7 @@ const zhCN: Readonly<Record<string, string>> = {
   " Search to find the rest.": " 可通过搜索查找其余文件。",
   "Workspace panel": "工作区面板",
   "Agents here can then launch, message and wait on threads there. Revoke it in that machine's Sharing & access.":
-    "连接后，此处的智能体可在目标机器启动会话、发送消息并等待结果。可在目标机器的“共享与访问权限”中撤销连接。",
+    "连接后，此处的智能体可在目标机器启动会话、发送消息并等待结果。可在目标机器的“共享与访问”中撤销连接。",
   "Commit {sha}": "提交 {sha}",
   "{share} of cost": "占总费用 {share}",
   "{tokens} tokens have no known price": "{tokens} Token 暂无已知价格",
@@ -542,7 +542,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Sign-in code": "登录码",
   "Paste a code": "粘贴授权码",
   "Get a code from Use T3 Code in another app (MCP), Settings → Sharing & access, or run t3 auth pairing create on this machine.":
-    "可从“在其他应用中使用 T3 Code（MCP）”或“设置 → 共享与访问权限”获取授权码，也可以在此机器上运行 t3 auth pairing create。",
+    "可从“在其他应用中使用 T3 Code（MCP）”或“设置 → 共享与访问”获取授权码，也可以在此机器上运行 t3 auth pairing create。",
   "What it may do": "允许执行的操作",
   "Beyond read only, it can start, message and stop threads, and none of them can run with more than the mode you pick.":
     "除只读权限外，应用还可启动、发送消息和停止会话；这些会话的权限不会超过你选择的模式。",
@@ -2201,7 +2201,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Weekly remaining": "每周剩余用量",
   "{provider}: weekly usage unavailable": "{provider}：暂无每周用量数据",
   "{provider}: {percent}% weekly remaining": "{provider}：每周剩余 {percent}%",
-  "Sharing & access": "共享与访问权限",
+  "Sharing & access": "共享与访问",
   Repositories: "仓库",
   "Default merge method": "默认合并方式",
   "default merge method": "默认合并方式",
@@ -2242,7 +2242,7 @@ const zhCN: Readonly<Record<string, string>> = {
     "选择项目或分组，管理名称、图标、仓库及操作。",
   "Show all environments": "显示所有环境",
   Chat: "聊天",
-  "Diffs & pull requests": "差异与合并请求",
+  "Diffs & pull requests": "差异与合并",
   Keybindings: "快捷键",
   SnapShots: "快照",
   Providers: "模型提供商",
@@ -2539,6 +2539,18 @@ const zhCN: Readonly<Record<string, string>> = {
   "Follow-ups": "后续消息",
   Queue: "排队",
   Steer: "调整当前任务",
+  "Screen reader": "屏幕阅读器",
+  "Screen reader announcements": "屏幕阅读器播报",
+  "screen reader announcements": "屏幕阅读器播报",
+  "What a screen reader hears from the open thread: a turn starting, needing you, and ending. Status and messages adds what the agent writes before its last message. Everything adds each step.":
+    "播报当前会话的状态：本轮开始、需要你处理和本轮结束。“状态与消息”还会播报智能体在最终回复前输出的消息；“全部内容”还会播报每个步骤。",
+  "Status only": "仅状态",
+  "Status and messages": "状态与消息",
+  Everything: "全部内容",
+  "Screen reader window title": "屏幕阅读器窗口标题",
+  "screen reader window title": "屏幕阅读器窗口标题",
+  "Start the window title with the thread's status, like Needs approval, and its name, so screen readers read them first when you switch apps. Taskbars, shared screens, and time trackers see it too.":
+    "将会话状态（如“需要批准”）和名称放在窗口标题开头，便于屏幕阅读器在切换应用时优先朗读。任务栏、共享屏幕和时间记录工具也会显示这些信息。",
   "Choose colors for additions and deletions, including change counts.":
     "选择新增与删除内容的配色，包括变更计数。",
   "Blue & orange": "蓝色与橙色",
@@ -5109,7 +5121,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Loading deliveries…": "正在加载投递记录…",
   "No requests yet.": "尚无请求。",
   "The URL appears after you save.": "保存后将显示地址。",
-  "Change in Sharing & access": "在“共享与访问权限”中更改",
+  "Change in Sharing & access": "在“共享与访问”中更改",
   "No threads found.": "未找到会话。",
   "Deleting the thread also deletes this task.": "删除会话也会删除此任务。",
   "Run a prompt automatically on an interval, at a fixed time, once at a set date, or when a webhook is called.":
@@ -5486,22 +5498,21 @@ const zhCN: Readonly<Record<string, string>> = {
     "使用本地 SSH 配置、代理和隧道连接环境。",
   "unlink environment": "解除环境关联",
   "Forget {environment}? Agents here stop working there. Revoke “T3 Code · …” in that environment’s Sharing & access to end the session there too.":
-    "忘记 {environment}？此处的智能体将停止在该环境中工作。若还要结束目标环境中的连接，请在其“共享与访问权限”设置中撤销“T3 Code · …”。",
+    "忘记 {environment}？此处的智能体将停止在该环境中工作。若还要结束目标环境中的连接，请在其“共享与访问”设置中撤销“T3 Code · …”。",
   "Could not forget the link": "无法移除此关联",
   "Forgetting…": "正在移除关联…",
   "Could not link the environment": "无法关联环境",
   "Linked {environment}": "已关联 {environment}",
   "Link an environment": "关联环境",
   "Agents here can then launch, message and wait on threads there. It appears under Authorized clients in that environment's Sharing & access, where it can be revoked.":
-    "关联后，此处的智能体可在目标环境中启动会话、发送消息并等待结果。该连接会显示在目标环境的“共享与访问权限 → 已授权客户端”中，可随时撤销。",
+    "关联后，此处的智能体可在目标环境中启动会话、发送消息并等待结果。该连接会显示在目标环境的“共享与访问 → 已授权客户端”中，可随时撤销。",
   "Already linked. Linking again renews it with the access you pick.":
     "已关联。再次关联会续期，并应用所选权限。",
   "This app has no address for {environment} that another machine can reach. Enter its https or Tailscale address.":
     "应用没有其他机器可访问的 {environment} 地址，请输入其 HTTPS 或 Tailscale 地址。",
-  "From Sharing & access there, or t3 pair":
-    "从目标环境的“共享与访问权限”获取，或在该环境运行 t3 pair",
+  "From Sharing & access there, or t3 pair": "从目标环境的“共享与访问”获取，或在该环境运行 t3 pair",
   "Create a link on {environment}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.":
-    "在 {environment} 中打开“设置 → 共享与访问权限 → 已授权客户端 → 创建链接”，然后将配对码粘贴到此处。",
+    "在 {environment} 中打开“设置 → 共享与访问 → 已授权客户端 → 创建链接”，然后将配对码粘贴到此处。",
   "Linking…": "正在关联…",
   "Expires in {count} day. Link it again to renew.": "将在 {count} 天后过期，重新关联可续期。",
   "Expires in {count} days. Link it again to renew.": "将在 {count} 天后过期，重新关联可续期。",
@@ -5903,7 +5914,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "T3 Code on {host} did not accept this device": "{host} 上的 T3 Code 未接受此设备的连接",
   "T3 Code on {host} did not answer": "{host} 上的 T3 Code 没有响应",
   "On {host}, check Settings > Sharing & access or run `t3 connect status`.":
-    "在 {host} 上检查“设置 > 共享与访问权限”，或运行 `t3 connect status`。",
+    "在 {host} 上检查“设置 > 共享与访问”，或运行 `t3 connect status`。",
   "Connect this device to the internet. T3 Code reconnects on its own.":
     "将此设备连接到互联网，T3 Code 会自动重新连接。",
   "Wait a moment. T3 Code retries on its own.": "请稍候，T3 Code 会自动重试。",
@@ -5915,7 +5926,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Check that this device is signed in to the same T3 Connect account as the host.":
     "确认此设备与主机登录了同一个 T3 Connect 账号。",
   "On {host}, open Settings > Sharing & access and turn T3 Connect on.":
-    "在 {host} 上打开“设置 > 共享与访问权限”，并开启 T3 Connect。",
+    "在 {host} 上打开“设置 > 共享与访问”，并开启 T3 Connect。",
   "Wait a minute. T3 Code retries on its own.": "请等待一分钟，T3 Code 会自动重试。",
   "Wait a few minutes. T3 Code retries on its own.": "请等待几分钟，T3 Code 会自动重试。",
   "If it keeps failing, copy the diagnostics and report it.":

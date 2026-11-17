@@ -1464,7 +1464,7 @@ export function ChatSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection id="screen-reader" title="Screen reader">
+      <SettingsSection id="screen-reader" title={t("Screen reader")}>
         <ScreenReaderAnnouncementsRow />
         <ScreenReaderWindowTitleRow />
       </SettingsSection>
@@ -1533,17 +1533,20 @@ const SCREEN_READER_ANNOUNCEMENTS_LABELS: Record<ScreenReaderAnnouncements, stri
 const isScreenReaderAnnouncements = Schema.is(ScreenReaderAnnouncements);
 
 function ScreenReaderAnnouncementsRow() {
+  const t = useUiTranslation();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
       {...searchableSetting("screen-reader-announcements")}
-      description="What a screen reader hears from the open thread: a turn starting, needing you, and ending. Status and messages adds what the agent writes before its last message. Everything adds each step."
+      description={t(
+        "What a screen reader hears from the open thread: a turn starting, needing you, and ending. Status and messages adds what the agent writes before its last message. Everything adds each step.",
+      )}
       resetAction={
         settings.screenReaderAnnouncements !==
         DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements ? (
           <SettingResetButton
-            label="screen reader announcements"
+            label={t("screen reader announcements")}
             onClick={() =>
               updateSettings({
                 screenReaderAnnouncements: DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements,
@@ -1564,16 +1567,16 @@ function ScreenReaderAnnouncementsRow() {
           <SelectTrigger
             size="sm"
             className="w-full sm:w-48"
-            aria-label="Screen reader announcements"
+            aria-label={t("Screen reader announcements")}
           >
             <SelectValue>
-              {SCREEN_READER_ANNOUNCEMENTS_LABELS[settings.screenReaderAnnouncements]}
+              {t(SCREEN_READER_ANNOUNCEMENTS_LABELS[settings.screenReaderAnnouncements])}
             </SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {ScreenReaderAnnouncements.literals.map((value) => (
               <SelectItem key={value} value={value}>
-                {SCREEN_READER_ANNOUNCEMENTS_LABELS[value]}
+                {t(SCREEN_READER_ANNOUNCEMENTS_LABELS[value])}
               </SelectItem>
             ))}
           </SelectPopup>
@@ -1584,16 +1587,19 @@ function ScreenReaderAnnouncementsRow() {
 }
 
 function ScreenReaderWindowTitleRow() {
+  const t = useUiTranslation();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
       {...searchableSetting("screen-reader-window-title")}
-      description="Start the window title with the thread's status, like Needs approval, and its name, so screen readers read them first when you switch apps. Taskbars, shared screens, and time trackers see it too."
+      description={t(
+        "Start the window title with the thread's status, like Needs approval, and its name, so screen readers read them first when you switch apps. Taskbars, shared screens, and time trackers see it too.",
+      )}
       resetAction={
         settings.screenReaderWindowTitle !== DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle ? (
           <SettingResetButton
-            label="screen reader window title"
+            label={t("screen reader window title")}
             onClick={() =>
               updateSettings({
                 screenReaderWindowTitle: DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle,
@@ -1606,7 +1612,7 @@ function ScreenReaderWindowTitleRow() {
         <Switch
           checked={settings.screenReaderWindowTitle}
           onCheckedChange={(checked) => updateSettings({ screenReaderWindowTitle: checked })}
-          aria-label="Screen reader window title"
+          aria-label={t("Screen reader window title")}
         />
       }
     />
@@ -2260,7 +2266,7 @@ export function ThreadsSettingsPanel() {
                 >
                   <SelectValue>
                     {(value: ResponseStreamingMode | null) =>
-                      value === null ? "Mixed" : RESPONSE_STREAMING_MODE_LABELS[value]
+                      t(value === null ? "Mixed" : RESPONSE_STREAMING_MODE_LABELS[value])
                     }
                   </SelectValue>
                 </SelectTrigger>
