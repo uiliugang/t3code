@@ -591,6 +591,7 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "By model": "按模型",
   "Dismiss voice input error": "关闭语音输入错误",
   "Cancel dictation": "取消听写",
+  "Start dictation": "开始听写",
   "Shows dictation controls": "显示听写控件",
   "Hides dictation controls": "隐藏听写控件",
   "Finish dictation": "完成听写",
