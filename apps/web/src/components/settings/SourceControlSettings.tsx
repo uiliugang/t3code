@@ -14,6 +14,7 @@ import type {
 } from "@t3tools/contracts";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { cn } from "../../lib/utils";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -461,6 +462,18 @@ export function SourceControlSettingsPanel({
     discovery.refresh();
     if (maintenanceAvailable) void refreshTools({ environmentId, input: {} });
   };
+  // A CLI login on the server host changes nothing the client reads, so returning to the window
+  // asks again. Discovery runs every hosting CLI, too costly for a timer nobody asked for.
+  useLiveRefresh(
+    () => {
+      if (!discovery.isPending) discovery.refresh();
+    },
+    {
+      enabled: environmentId !== null,
+      key: `source-control-discovery:${environmentId}`,
+      intervalMs: null,
+    },
+  );
   const offeredProviders = environment?.serverConfig?.settings.offeredSourceControlProviders;
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "save source control providers",

@@ -75,5 +75,9 @@ describe("filterSettingsSections", () => {
     for (const query of ["技能", "技能管理", "Skills"]) {
       expect(filterSettingsSections(sections, query, t)).toEqual(sections);
     }
+    const general = [{ rows: [{ id: "SettingsOrganization", label: "General" }] }];
+    for (const query of ["语言", "中文", "简体中文", "英语", "language", "locale", "English"]) {
+      expect(filterSettingsSections(general, query, t)).toEqual(general);
+    }
   });
 });

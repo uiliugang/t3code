@@ -22,6 +22,7 @@ import {
   type RunId,
   type RuntimeMode,
   type ScheduledTaskId,
+  TextGenerationError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -61,6 +62,9 @@ import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { DispatchModeLimit } from "./DispatchModeLimit.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+
+// The agent waits for its branch name; a rate-limited provider would hold it for minutes.
+const BRANCH_NAME_TIMEOUT = "20 seconds";
 
 export type ThreadLaunchWorkspaceStrategy =
   | { readonly type: "root"; readonly branch?: string | undefined }
@@ -583,6 +587,7 @@ const make = Effect.gen(function* () {
         message: message.text,
         attachments: message.attachments,
         ...(message.context ? { context: message.context } : {}),
+        projectId: input.projectId,
       };
       return yield* textGeneration.generateBranchName({ ...namingInput, modelSelection }).pipe(
         Effect.catch((cause) =>
@@ -607,6 +612,16 @@ const make = Effect.gen(function* () {
             });
           }),
         ),
+        Effect.timeoutOrElse({
+          duration: BRANCH_NAME_TIMEOUT,
+          orElse: () =>
+            Effect.fail(
+              new TextGenerationError({
+                operation: "generateBranchName",
+                detail: `Timed out after ${BRANCH_NAME_TIMEOUT}.`,
+              }),
+            ),
+        }),
         Effect.map((result) => ({
           branch: result.branch,
           exactName: settings.branchNamingMode === "custom",
@@ -1243,17 +1258,19 @@ const make = Effect.gen(function* () {
               )(`Setup script exited with ${completion.exitCode ?? "no exit code"}.`);
           });
           if (setup.async) {
-            awaitAsyncSetup = Fiber.join(
-              yield* awaitCompletion.pipe(
-                Effect.catchCause((cause) =>
-                  setupTracker.stage(threadId, "setup-script", {
-                    status: "failed",
-                    detail: failureDetail(Cause.squash(cause)),
-                  }),
+            // Record the result when the script ends, not after the agent starts.
+            const asyncSetup = yield* awaitCompletion.pipe(
+              Effect.catchCause((cause) =>
+                setupTracker.stageStatus(
+                  threadId,
+                  "setup-script",
+                  "failed",
+                  failureDetail(Cause.squash(cause)),
                 ),
-                Effect.forkChild,
               ),
+              Effect.forkChild,
             );
+            awaitAsyncSetup = Fiber.join(asyncSetup);
           } else {
             yield* awaitCompletion;
           }
@@ -1646,7 +1663,10 @@ const make = Effect.gen(function* () {
         const threadId =
           claimed.storedEvents.find((stored) => stored.event.type.startsWith("thread."))?.event
             .threadId ?? candidateThreadId;
-        if (project.id !== input.projectId) {
+        const committedThread = yield* threads
+          .getThreadShell(threadId)
+          .pipe(Effect.mapError(mapError(input, "resolve-project", threadId)));
+        if (committedThread?.projectId !== input.projectId) {
           return yield* mapError(input, "resolve-project", threadId)("Project identity changed.");
         }
         let runId: RunId | null = null;
@@ -1724,7 +1744,8 @@ const make = Effect.gen(function* () {
             // retry's own strategy, whose defaults may resolve differently.
             const accepted = current?.runs.find((run) => run.id === runId)?.workspacePreparation;
             const preparationStrategy: ThreadLaunchWorkspaceStrategy =
-              Option.isSome(launchReceipt) && accepted?.type === "worktree"
+              Option.isSome(launchReceipt) &&
+              (accepted?.type === "worktree" || accepted?.type === "existing_worktree")
                 ? accepted
                 : Option.isSome(launchReceipt) &&
                     workspaceStrategy.type === "root" &&

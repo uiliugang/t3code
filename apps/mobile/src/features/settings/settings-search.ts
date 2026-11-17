@@ -34,7 +34,6 @@ const SETTINGS_SEARCH_TERMS = {
     "zen",
     "final answers only",
   ],
-  SettingsLanguage: ["language", "locale", "translation", "english"],
   SettingsNavigation: ["tabs", "tab order", "reorder", "hide tabs"],
   SettingsKeyboard: ["return key", "send message", "new line", "hardware keyboard"],
   SettingsVoice: [
@@ -65,6 +64,14 @@ const SETTINGS_SEARCH_TERMS = {
     "backup",
   ],
   SettingsOrganization: [
+    "language",
+    "locale",
+    "translation",
+    "english",
+    "语言",
+    "中文",
+    "简体中文",
+    "英语",
     "project grouping",
     "group projects",
     "organization",

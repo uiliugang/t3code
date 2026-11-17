@@ -4035,6 +4035,26 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
+  // A cancel without a message aborts the asking session's step, so the child would never report.
+  it.effect.each(["cancel", "decline"] as const)(
+    "lets a background child carry on when its question is dismissed with %s",
+    (decision) =>
+      Effect.gen(function* () {
+        const form = { ...colorForm, sessionID: CHILD };
+        const { runtime, thread } = yield* resumed([
+          ...launchedAndRunning,
+          event("form.created", { form }),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          out("session.form.cancel", { sessionID: CHILD, formID: form.id, message: "<string>" }),
+          reply("session.form.cancel", null),
+        ]);
+        const requested = yield* requestOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(withLineage(thread));
+        const request = yield* Fiber.join(requested);
+        yield* runtime.respondToRuntimeRequest({ requestId: request!.id, decision });
+      }),
+  );
+
   it.effect("keeps a background child's requests when its parent stops during reconciliation", () =>
     Effect.gen(function* () {
       const reading = yield* Deferred.make<void>();
@@ -5090,6 +5110,59 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           .findLast((node) => node.id === item?.nodeId)?.status,
         "failed",
       );
+    }),
+  );
+
+  // regression: #37816
+  it.effect("keeps the answer and shows a shell report delivered into the turn after it", () =>
+    Effect.gen(function* () {
+      const { runtime, thread } = yield* resumed([
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.text.ended", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_answer",
+          ordinal: 0,
+          text: "The screenshot is at shots/home.png",
+        }),
+        event("session.inbox.enqueued", {
+          inboxID: "msg_shell_report",
+          sessionID: SESSION,
+          item: {
+            type: "synthetic",
+            payload: {
+              text: '<shell id="sh_dev" state="completed">dev server stopped</shell>',
+              description: "Dev server",
+              metadata: { source: "shell", shellID: "sh_dev", state: "completed" },
+            },
+            delivery: "steer",
+          },
+        }),
+        event("session.inbox.delivered", { sessionID: SESSION, inboxID: "msg_shell_report" }),
+        event("session.text.ended", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_note_reply",
+          ordinal: 0,
+          text: "The dev server I started has stopped.",
+        }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ]);
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn(turnInput(thread));
+      const items = (yield* Fiber.join(events)).flatMap((event) =>
+        event.type === "turn_item.updated" ? [event.turnItem] : [],
+      );
+      assert.isTrue(items.some((item) => item.type === "notification"));
+      const answer = items.findLast(
+        (item) =>
+          item.type === "assistant_message" && item.text === "The screenshot is at shots/home.png",
+      );
+      assert.equal(answer?.type === "assistant_message" ? answer.phase : null, "final_answer");
     }),
   );
 

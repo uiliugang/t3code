@@ -1,6 +1,5 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
-import type { EnvironmentId } from "@t3tools/contracts";
 
 export interface FloatingStatusAction {
   readonly label: string;
@@ -10,27 +9,11 @@ export interface FloatingStatusAction {
 }
 
 export type FloatingWorkingStatus =
-  | { readonly kind: "working"; readonly environmentId: EnvironmentId; readonly startedAt: string }
-  | { readonly kind: "compacting" }
   | {
       readonly kind: "child-input";
       readonly label: string;
       readonly accessibilityLabel: string;
       readonly onPress: () => void;
-    }
-  | {
-      readonly kind: "background";
-      readonly label: string;
-      readonly accessibilityLabel: string;
-      readonly waiting: boolean;
-      readonly onPress: () => void;
-      readonly action: FloatingStatusAction;
-    }
-  | {
-      readonly kind: "lifecycle";
-      readonly state: "snoozed" | "settled" | "woke";
-      readonly label: string;
-      readonly action: FloatingStatusAction;
     }
   | {
       readonly kind: "stop";
@@ -43,15 +26,28 @@ export type FloatingWorkingStatus =
   | { readonly kind: "preparing"; readonly label: string }
   | {
       readonly kind: "connection";
-      readonly tone: "reconnecting" | "unavailable";
       readonly label: string;
       readonly onPress: () => void;
     };
 
-export function connectionFloatingStatus(input: {
+/** A connection still retrying on its own; short enough for the thread header subtitle. */
+export function connectionRetryLabel(input: {
   readonly connectionError: string | null;
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionAwaitingApproval?: boolean;
+}): string | null {
+  if (input.connectionState === "reconnecting" && input.connectionAwaitingApproval) {
+    return "Awaiting device approval";
+  }
+  if (input.connectionState !== "connecting" && input.connectionState !== "reconnecting") {
+    return null;
+  }
+  return input.connectionError === null ? "Reconnecting…" : "Retrying connection…";
+}
+
+export function connectionFloatingStatus(input: {
+  readonly connectionError: string | null;
+  readonly connectionState: EnvironmentConnectionPhase;
   readonly environmentLabel: string | null;
   readonly onReconnect: () => void;
   readonly t: UiTranslator;
@@ -60,33 +56,11 @@ export function connectionFloatingStatus(input: {
   const environmentLabel = input.environmentLabel ?? t("Environment");
   const unavailable = (label: string): FloatingWorkingStatus => ({
     kind: "connection",
-    tone: "unavailable",
     label,
     onPress: input.onReconnect,
   });
 
-  if (input.connectionState === "reconnecting" && input.connectionAwaitingApproval) {
-    return {
-      kind: "connection",
-      tone: "reconnecting",
-      label: t("Waiting for {environment} to approve this device", {
-        environment: environmentLabel,
-      }),
-      onPress: input.onReconnect,
-    };
-  }
   switch (input.connectionState) {
-    case "connecting":
-    case "reconnecting":
-      return {
-        kind: "connection",
-        tone: "reconnecting",
-        label:
-          input.connectionError === null
-            ? t("Reconnecting to {environment}...", { environment: environmentLabel })
-            : t("Failed to connect. Retrying {environment}...", { environment: environmentLabel }),
-        onPress: input.onReconnect,
-      };
     case "offline":
       return unavailable(t("You are offline"));
     case "unsupported":
@@ -102,6 +76,8 @@ export function connectionFloatingStatus(input: {
       );
     case "available":
       return unavailable(t("{environment} is not connected", { environment: environmentLabel }));
+    case "connecting":
+    case "reconnecting":
     case "connected":
       return null;
   }

@@ -122,6 +122,7 @@ import Migration0106 from "./Migrations/106_TurnItemMessageOrdinalIndex.ts";
 import Migration0107 from "./Migrations/107_AuthSessionProofKeyIndex.ts";
 
 import Migration0108 from "./Migrations/108_TurnItemInlineWorkOutput.ts";
+import Migration0109 from "./Migrations/109_RepairStaleTitleRegeneration.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -233,6 +234,7 @@ const migrationEntries = [
   [106, "TurnItemMessageOrdinalIndex", Migration0106],
   [107, "AuthSessionProofKeyIndex", Migration0107],
   [108, "TurnItemInlineWorkOutput", Migration0108],
+  [109, "RepairStaleTitleRegeneration", Migration0109],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -320,10 +322,12 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
   // The desktop waits past its readiness budget until the finished line follows this one.
-  if (yield* hasPendingMigrations()) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
+  const hasPending = yield* hasPendingMigrations();
+  if (hasPending) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
   const includesV2 =
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
-  const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
+  // The reconcile takes the write lock; CLI startup must not contend with the server for a no-op.
+  const previewMigrations = includesV2 && hasPending ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }

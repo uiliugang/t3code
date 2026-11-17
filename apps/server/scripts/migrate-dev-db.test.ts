@@ -170,6 +170,23 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-src-" });
       const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-dest-" });
       const source = yield* createFixtureSource(sourceDir);
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`INSERT INTO work_items VALUES ('item', 'project-kept', '2026-08-01', 1, '{}')`;
+          yield* sql`INSERT INTO work_item_commands VALUES ('command', '{}', '{}')`;
+          yield* sql`INSERT INTO work_item_events (work_item_id, event_type, occurred_at, payload_json)
+          VALUES ('item', 'created', '2026-08-01', '{}')`;
+          yield* sql`INSERT INTO work_item_outbox (execution_id, work_item_id, effect_type, command_id)
+          VALUES ('execution', 'item', 'launch', 'command')`;
+          yield* sql`INSERT INTO work_item_discovery VALUES ('project-deleted')`;
+          yield* sql`INSERT INTO work_item_candidates VALUES ('stopped-thread', 'project-kept', '{}')`;
+          yield* sql`INSERT INTO work_item_ignored VALUES ('stopped-thread', '2026-08-01')`;
+          yield* sql`INSERT INTO work_item_delivery_actions VALUES ('item', 1, 'complete', '{}')`;
+          yield* sql`INSERT INTO work_item_issue_projects VALUES ('item', 'project-kept')`;
+        }),
+      );
 
       const result = yield* runMigrateDevDb(
         { baseDir: destDir, source, projects: 5, threadsPerProject: 2 },
@@ -201,6 +218,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             transfers: number;
             links: number;
             wechat: number;
+            workItems: number;
           }>`
             SELECT
               (SELECT COUNT(*) FROM auth_sessions) AS auth,
@@ -212,7 +230,16 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
               (SELECT COUNT(*) FROM wechat_connection) +
                 (SELECT COUNT(*) FROM wechat_inbox) +
                 (SELECT COUNT(*) FROM wechat_deliveries) +
-                (SELECT COUNT(*) FROM wechat_lease) AS wechat`;
+                (SELECT COUNT(*) FROM wechat_lease) AS wechat,
+              (SELECT COUNT(*) FROM work_items) +
+                (SELECT COUNT(*) FROM work_item_commands) +
+                (SELECT COUNT(*) FROM work_item_events) +
+                (SELECT COUNT(*) FROM work_item_outbox) +
+                (SELECT COUNT(*) FROM work_item_discovery) +
+                (SELECT COUNT(*) FROM work_item_candidates) +
+                (SELECT COUNT(*) FROM work_item_ignored) +
+                (SELECT COUNT(*) FROM work_item_delivery_actions) +
+                (SELECT COUNT(*) FROM work_item_issue_projects) AS workItems`;
           return { threads, events, sessions, pullRequest, project, leftovers };
         }),
       );
@@ -260,6 +287,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         transfers: 0,
         links: 0,
         wechat: 0,
+        workItems: 0,
       });
     }),
   );
