@@ -2015,8 +2015,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Hide merged remote branches": "隐藏已合并的远程分支",
   "Hide remote branches already merged into main or master. Local and default branches remain visible.":
     "隐藏已合并到 main 或 master 的远程分支。本地分支和默认分支始终保留。",
-  "Show remote branches with commits in the last N days. Default: 21 days (3 weeks). Use 0 for no age limit. Local and default branches remain visible.":
-    "展示最近 N 天内有提交的远程分支，默认为 21 天（3 周）。设为 0 不限制时间。本地分支和默认分支始终保留。",
+  "Show remote branches with commits in the last N days. Default: {days} days. Use 0 for no age limit. Local and default branches remain visible.":
+    "展示最近 N 天内有提交的远程分支，默认为 {days} 天。设为 0 不限制时间。本地分支和默认分支始终保留。",
   Cleanup: "清理",
   "Worktree location": "工作树位置",
   "worktree location": "工作树位置",

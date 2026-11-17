@@ -442,4 +442,4 @@ Android opens a compatible installed file viewer.
 
 Enable **Show predicted messages** in **Settings → Chat** to suggest your next message after an agent finishes. Press Tab or use the accept control to put the suggestion into an editable draft, then send it yourself. On mobile, tap **Use prediction**. Typing your own message or dismissing a suggestion leaves you in control of the draft.
 
-Predictions use the current conversation and your project’s text generation model. They are off by default and count toward that model’s usage.
+Predictions use the current conversation and your project’s text generation model. They are on by default and count toward that model’s usage.

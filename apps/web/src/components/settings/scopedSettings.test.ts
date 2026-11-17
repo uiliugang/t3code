@@ -474,7 +474,8 @@ describe("scoped settings writes", () => {
             mode: "custom",
             rules: {
               worktreeAfterDays: 30,
-              worktreeSettledAfterDays: null,
+              worktreeSettledAfterDays:
+                DEFAULT_SERVER_SETTINGS.storageCleanup.worktreeSettledAfterDays,
               worktreeOnDelete: true,
               worktreeOnMerge: false,
               worktreeUnchanged: false,

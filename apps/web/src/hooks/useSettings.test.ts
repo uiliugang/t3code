@@ -363,6 +363,8 @@ it("persists language changes across hydration while preserving other device set
   persistenceMocks.getClientSettings.mockResolvedValue({
     ...DEFAULT_CLIENT_SETTINGS,
     chatWidth: "wide",
+    showTerminalDrawerButton: false,
+    capitalizeProjectNames: true,
   });
   await ensureClientSettingsHydrated();
   expect(getClientSettings().showRepositoryTerminalButton).toBe(true);
