@@ -248,7 +248,7 @@ const isThreadLaunchError = Schema.is(ThreadLaunchError);
 const isWorkspacePreparationError = Schema.is(WorkspaceProvisioner.WorkspacePreparationError);
 const isGitCommandError = Schema.is(GitCommandError);
 
-function failureDetail(error: unknown): string {
+export function failureDetail(error: unknown): string {
   if (isThreadLaunchError(error)) {
     const cause = error.cause;
     const gitError = isWorkspacePreparationError(cause) ? cause.cause : cause;
