@@ -164,14 +164,16 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
           key={`${environmentId}:${selectedThreadCwd}:${gitStatus.data.refName}`}
           target={{ environmentId, cwd: selectedThreadCwd, branch: gitStatus.data.refName }}
           provider={issueProvider}
+          creationControl={
+            selectedThread ? (
+              <ThreadIssueCreationButton
+                environmentId={environmentId}
+                projectId={selectedThread.projectId}
+                threadId={selectedThread.id}
+              />
+            ) : null
+          }
         />
-        {selectedThread ? (
-          <ThreadIssueCreationButton
-            environmentId={environmentId}
-            projectId={selectedThread.projectId}
-            threadId={selectedThread.id}
-          />
-        ) : null}
       </View>
     ) : null;
   const currentStatusSummary = statusSummary(gitStatus.data, t);

@@ -417,14 +417,17 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
 
               {!workspace && props.gitCwd && showIssues && issuesPlacement === "inline" ? (
                 <div className="space-y-1">
-                  <BranchIssuesPanel environmentId={props.environmentId} cwd={props.gitCwd} />
-                  <div className="px-2 pb-2 empty:hidden">
-                    <ThreadIssueCreationButton
-                      environmentId={props.environmentId}
-                      projectId={props.projectId}
-                      threadId={props.threadId}
-                    />
-                  </div>
+                  <BranchIssuesPanel
+                    environmentId={props.environmentId}
+                    cwd={props.gitCwd}
+                    creationControl={
+                      <ThreadIssueCreationButton
+                        environmentId={props.environmentId}
+                        projectId={props.projectId}
+                        threadId={props.threadId}
+                      />
+                    }
+                  />
                 </div>
               ) : null}
 
