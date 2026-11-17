@@ -75,7 +75,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102])(
+  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102, 108])(
     "upgrades a database at exactly %s",
     (id) =>
       Effect.gen(function* () {
@@ -150,7 +150,10 @@ describe("runMigrations", () => {
           );
           assert.deepStrictEqual(snapshot.threads[0]?.workspace, thread.workspace);
         }).pipe(Effect.provide(ProjectionStore.layer));
+        // query_only rejects the write lock that an already-current CLI startup must avoid.
+        yield* sql`PRAGMA query_only = ON`;
         assert.deepStrictEqual(yield* runMigrations(), []);
+        assert.deepStrictEqual(yield* history, migrationManifest);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

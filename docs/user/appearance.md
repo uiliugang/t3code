@@ -5,7 +5,7 @@ appearance or stay in light or dark mode. To use different themes for light and 
 the corresponding preview within each theme. Appearance preferences are saved separately on each
 device or browser.
 
-Use **Settings → Appearance → Language** to choose **English** or **简体中文** on web, desktop, or mobile. The choice applies immediately and is saved on this device. On mobile, it also changes native navigation, thread actions, connections, settings, files, pull requests, and usage views. Untranslated text falls back to English. Conversation content, project names, model names, and terminal output are not translated.
+Use **Settings → General → Language** on web or desktop, or search settings for **Language** on mobile, to choose **English** or **简体中文**. The choice applies immediately and is saved on this device. On mobile, it also changes native navigation, thread actions, connections, settings, files, pull requests, and usage views. Untranslated text falls back to English. Conversation content, project names, model names, and terminal output are not translated.
 
 On web and desktop, use **Change theme** in the command palette to select a theme without leaving chat.
 Press **Cmd+Option+A** on macOS or **Ctrl+Alt+A** on Windows/Linux to open the theme picker directly.
@@ -64,7 +64,7 @@ the theme, applies after T3 Code's own styles on web and desktop, and is include
 
 Custom CSS cannot load files. `@import`, `image-set()`, and `url()` are ignored, except `url()`
 with a `data:` address or an `#id`. This keeps an imported theme from sending what is on your screen
-to another site.
+to another site. For a full-size image, use a [background image](#background-image).
 
 Class names in the app change between releases. For rules that keep working, target `data-slot`
 and other `data-` attributes, such as `[data-chat-header]` or `[data-slot="button"]`.
@@ -134,3 +134,18 @@ view. An optional `css` string adds [custom CSS](#custom-css).
 
 Write updates to a temporary file and rename it into place so clients never read a partial theme.
 Invalid files are not published.
+
+### Background image
+
+A published theme can have a full-size background image. Ask an agent, for example "use
+~/Pictures/wallpaper.jpg as T3 Code's background", or save a JPEG, PNG, or WebP file of up to
+16 MB beside the theme file: `nightfall.jpg` beside `nightfall.json`. The theme's CSS decides
+where the image shows:
+
+```css
+[data-workspace-area="conversation"] {
+  background: var(--theme-background-image) center / cover no-repeat;
+}
+```
+
+Delete the image file to remove it.

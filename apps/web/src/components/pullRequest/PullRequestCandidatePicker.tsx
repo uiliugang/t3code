@@ -35,7 +35,7 @@ export function PullRequestCandidatePicker<T>({
   truncated,
   truncatedLabel,
   candidateKey,
-  disabled,
+  disabled = false,
   candidateDisabled,
   onSelect,
   children,
@@ -61,7 +61,7 @@ export function PullRequestCandidatePicker<T>({
   truncated: boolean;
   truncatedLabel: string;
   candidateKey: (candidate: T) => string;
-  disabled: boolean;
+  disabled?: boolean;
   candidateDisabled?: (candidate: T) => boolean;
   onSelect: (candidate: T) => void;
   children: (candidate: T) => ReactNode;

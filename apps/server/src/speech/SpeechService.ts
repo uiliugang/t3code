@@ -585,8 +585,9 @@ const make = Effect.gen(function* () {
   const silenceModelPath = Effect.fn("SpeechService.silenceModelPath")(function* (
     loaded: LoadedModel,
     options: SpeechTranscriptionOptions,
+    nativeStreaming: boolean,
   ) {
-    if (!options.speechSilenceFiltering && (loaded.supportsStreaming || loaded.supportsLongForm))
+    if (!options.speechSilenceFiltering && (nativeStreaming || loaded.supportsLongForm))
       return undefined;
     return yield* acquireSilenceModel("recording");
   });
@@ -622,7 +623,7 @@ const make = Effect.gen(function* () {
                 ),
               catch: (cause) => speechError("model preparation", cause),
             });
-            const vadPath = yield* silenceModelPath(loaded, options);
+            const vadPath = yield* silenceModelPath(loaded, options, false);
             const dictionary = normalizeSpeechCustomWords(options.speechCustomWords);
             const customWords = dictionary.map(({ term }) => term);
             // The vocabulary capability guarantees plain transcription, not translation.
@@ -758,7 +759,7 @@ const make = Effect.gen(function* () {
       loadModel(modelPath, definition, signal, settings.speechAcceleration),
     );
     loaded = streamModel;
-    const vadPath = yield* silenceModelPath(streamModel, options);
+    const vadPath = yield* silenceModelPath(streamModel, options, streamModel.supportsStreaming);
     let translateToEnglish = false;
     const beginStream = async () => {
       translateToEnglish =

@@ -13,6 +13,13 @@ import {
   reviewerCandidateView,
   type ReviewerTruncation,
 } from "@t3tools/client-runtime/pull-request-reviewers";
+import {
+  emptySelection,
+  isSelected,
+  changeBatches,
+  selectionChanges,
+  toggleSelection,
+} from "@t3tools/client-runtime/pull-request-selection";
 import { CheckIcon, UserPlusIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -65,6 +72,7 @@ export function PullRequestReviewerPicker({
   const enabled = allowed && canWrite;
   const ids = parseReviewerIds(query);
   const tooMany = ids.length > 25;
+  const [draft, setDraft] = useState(emptySelection<PullRequestReviewerCandidate>);
 
   const candidatesQuery = useEnvironmentQuery(
     open ? pullRequestEnvironment.reviewerCandidates({ environmentId, input: reference }) : null,
@@ -154,6 +162,54 @@ export function PullRequestReviewerPicker({
     });
   };
 
+  const send = async (people: ReadonlyArray<PullRequestReviewerCandidate>, requested: boolean) => {
+    if (!enabled || (!requested && !removable)) return;
+    for (const batch of changeBatches(people)) {
+      const result = await requestReviewers({
+        environmentId,
+        input: { ...reference, reviewers: batch.map(({ id, kind }) => ({ id, kind })), requested },
+      });
+      if (result._tag === "Success") continue;
+      const login = batch.map((person) => person.login).join(", ");
+      toastManager.add({
+        type: "error",
+        title: requested
+          ? t("Could not ask {login} for a review", { login })
+          : t("Could not take back the review request to {login}", { login }),
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          t(
+            "The host refused it. Check that you have write access on this repository, and that they still have access to it.",
+          ),
+        ),
+      });
+    }
+  };
+
+  const onOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) return;
+    // Loaded rows first: they carry the request state mutations update.
+    const latest = [
+      ...(candidatesQuery.data?.candidates ?? []),
+      ...(searchResult.data?.candidates ?? []),
+    ];
+    const { add, remove } = selectionChanges(
+      draft,
+      (key, person) =>
+        latest.find((entry) => `${entry.kind}:${entry.id}` === key)?.isRequested ??
+        person.isRequested,
+    );
+    setDraft(emptySelection());
+    // A search result is keyed by what was typed, so the writes do not reach it on their own.
+    const refreshSearch =
+      hostQuery !== null && add.length + remove.length > 0 ? searchResult.refresh : null;
+    // Removing first lets a host that keeps one reviewer take the new one.
+    void send(remove, false)
+      .then(() => send(add, true))
+      .then(() => refreshSearch?.());
+  };
+
   return (
     <PullRequestCandidatePicker
       icon={<UserPlusIcon className="size-3.5" />}
@@ -161,7 +217,7 @@ export function PullRequestReviewerPicker({
       allowed={enabled}
       disabledReason={t("Asking someone to review needs write access on this repository")}
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={onOpenChange}
       query={query}
       onQueryChange={(value) => {
         setQuery(value);
@@ -227,7 +283,14 @@ export function PullRequestReviewerPicker({
         candidate.isRequested && !removable
       }
       onSelect={(candidate) =>
-        void update([{ id: candidate.id, kind: candidate.kind }], !candidate.isRequested)
+        setDraft((current) =>
+          toggleSelection(
+            current,
+            `${candidate.kind}:${candidate.id}`,
+            candidate,
+            candidate.isRequested,
+          ),
+        )
       }
     >
       {(candidate) => (
@@ -236,7 +299,7 @@ export function PullRequestReviewerPicker({
           {candidate.kind === "team" ? (
             <span className="shrink-0 text-muted-foreground">{t("team")}</span>
           ) : null}
-          {candidate.isRequested ? (
+          {isSelected(draft, `${candidate.kind}:${candidate.id}`, candidate.isRequested) ? (
             <CheckIcon aria-label={t("Already asked")} className="size-3.5 shrink-0" />
           ) : null}
         </>

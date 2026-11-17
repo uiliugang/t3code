@@ -215,6 +215,15 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
   "wechat_inbox",
   "wechat_deliveries",
   "wechat_lease",
+  "work_items",
+  "work_item_commands",
+  "work_item_events",
+  "work_item_outbox",
+  "work_item_discovery",
+  "work_item_candidates",
+  "work_item_ignored",
+  "work_item_delivery_actions",
+  "work_item_issue_projects",
 ];
 
 const PROVIDER_SESSIONS_TABLE = "orchestration_v2_projection_provider_sessions";

@@ -591,6 +591,7 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "By model": "按模型",
   "Dismiss voice input error": "关闭语音输入错误",
   "Cancel dictation": "取消听写",
+  "Start dictation": "开始听写",
   "Shows dictation controls": "显示听写控件",
   "Hides dictation controls": "隐藏听写控件",
   "Finish dictation": "完成听写",
@@ -867,6 +868,9 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "Not connected": "未连接",
   "Connecting...": "正在连接…",
   "Reconnecting...": "正在重新连接…",
+  "Reconnecting…": "正在重新连接…",
+  "Retrying connection…": "正在重试连接…",
+  "Awaiting device approval": "等待设备批准",
   "Connection failed": "连接失败",
   "Failed to connect. Reconnecting...": "连接失败，正在重新连接…",
   "Your DNS or firewall may be blocking T3 Connect. Try another network, such as a different Wi-Fi or mobile data.":

@@ -678,7 +678,7 @@ it("opens branch shortcuts in inline details and restores composer controls when
 
 it("selecting a side-chat tab focuses that side chat's composer", async () => {
   const parent = threadWithHistory("focus-parent", 1);
-  // The shell loaded by the file's first test stays; a family read serves side chats added later.
+  // The parent is in the shell, but older settled side chats require a family read.
   const sideChat = (name: string) => ({
     ...threadWithHistory(name, 1),
     sideChatOf: parent.id,
@@ -707,6 +707,7 @@ it("selecting a side-chat tab focuses that side chat's composer", async () => {
   const mainEditor = screen.getByRole("textbox", { name: `Message ${parent.title}`, exact: true });
   const sideEditor = screen.getByRole("textbox", { name: `Message ${side.title}`, exact: true });
   await expect.element(sideEditor).toBeVisible();
+  await expect.element(screen.getByText("This side chat was deleted.")).not.toBeInTheDocument();
   await userEvent.click(mainEditor);
   await userEvent.keyboard("main draft");
 

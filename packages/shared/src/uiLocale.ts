@@ -3863,6 +3863,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "{count} hidden": "已隐藏 {count} 条",
   "{count} selected": "已选 {count} 项",
   "{count} merges loaded": "已加载 {count} 次合并",
+  "{count} merge loaded": "已加载 {count} 次合并",
+  "Checking the stack with the host…": "正在向托管平台核查堆叠…",
   "{count} comment is loaded; open it on the host to read the rest.":
     "已加载 {count} 条评论，请在托管平台查看其余内容。",
   "{count} comments are loaded; open it on the host to read the rest.":
@@ -4293,6 +4295,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "{language} unavailable": "{language}不可用",
   "Auto ({language})": "自动（{language}）",
   "Transcription language": "转写语言",
+  "Streaming transcription": "流式转写",
+  "Transcribe while recording. Turn off to transcribe after stopping, which may help when live transcription falls behind.":
+    "录音时同步转写。关闭后将在停止录音后转写，可改善实时转写跟不上的情况。",
+  "This model doesn’t support native streaming.": "此模型不支持原生流式转写。",
   "({percent}% error)": "（错误率 {percent}%）",
   "not benchmarked": "暂无基准测试",
   "Speed:": "速度：",

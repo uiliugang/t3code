@@ -252,7 +252,19 @@ it("lists unselected default reviewers and accepts manual MIS without losing fai
   await act(async () => finishRequest({ _tag: "Success", value: undefined }));
   await expect.element(input).toHaveValue("zhaoliu");
   await userEvent.clear(input);
+  state.update.mockClear();
   await userEvent.click(page.getByRole("option"));
+  await expect.element(page.getByLabelText("Already asked")).toBeVisible();
+  expect(state.update).not.toHaveBeenCalled();
+  await userEvent.click(page.getByRole("option"));
+  await expect.element(page.getByLabelText("Already asked")).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  expect(state.update).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("combobox", { name: "Request a review" }));
+  await userEvent.click(page.getByRole("option"));
+  expect(state.update).not.toHaveBeenCalled();
+  await userEvent.keyboard("{Escape}");
+  await vi.waitFor(() => expect(state.update).toHaveBeenCalledTimes(1));
   expect(state.update).toHaveBeenLastCalledWith({
     environmentId: EnvironmentId.make("environment"),
     input: expect.objectContaining({
@@ -262,6 +274,7 @@ it("lists unselected default reviewers and accepts manual MIS without losing fai
   });
   state.reviewerRequested = true;
   await screen.rerender(tab({ ...value }));
+  await userEvent.click(screen.getByRole("combobox", { name: "Request a review" }));
   await expect.element(page.getByRole("option")).toBeDisabled();
 });
 

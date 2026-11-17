@@ -1,5 +1,6 @@
 import * as NodeBuffer from "node:buffer";
 
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -48,6 +49,7 @@ import {
   splitNullSeparatedGitStdoutPaths,
 } from "./GitVcsDriverCore.ts";
 import * as CheckoutCloner from "./CheckoutCloner.ts";
+import * as CheckpointUntrackedBlobs from "./checkpointUntrackedBlobs.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import { makeCheckpointIndexCache } from "./checkpointIndexCache.ts";
@@ -1016,17 +1018,13 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   });
 
   // Git defaults and macOS writeout-only can leave empty refs after crashes; flush before publication.
-  // Set fsync first: Git 2.36 ignores unknown batch without resetting the method.
-  // Batch fully flushes refs and equals fsync on macOS HFS+/APFS and Windows NTFS/ReFS.
-  // Keep per-object fsync elsewhere; VcsProcess retries unsupported macOS full flushes with plain fsync.
+  // Git 2.56.1 batch fsync fails when loose objects and bulk-checkin packs share a private store.
+  // VcsProcess retries unsupported macOS full flushes with plain fsync.
   const durableWrite = [
     "-c",
     "core.fsync=objects,reference",
     "-c",
     "core.fsyncMethod=fsync",
-    ...(hostPlatform === "darwin" || hostPlatform === "win32"
-      ? ["-c", "core.fsyncMethod=batch"]
-      : []),
   ] as const;
 
   // Checkpoints must handle existing paths beyond Windows MAX_PATH, even when
@@ -1091,6 +1089,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       }),
     );
 
+  const untrackedBlobs = CheckpointUntrackedBlobs.make(execute, fileSystem);
+
   const checkpoints: VcsDriver.VcsCheckpointOps = {
     captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
       const operation = VcsProcess.CHECKPOINT_CAPTURE_OPERATION;
@@ -1117,6 +1117,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         lastMove !== undefined && lastMove.to === head
           ? `${lastMove.at} ${headMoves.filter((move) => move.at === lastMove.at).length}`
           : undefined;
+      const startedAt = yield* Clock.currentTimeMillis;
       const indexId = yield* random.uuidV4();
       const tempIndexPath = path.join(gitCommonDir, `t3-checkpoint-index-${indexId}`);
       const hostEnv = yield* HostProcess.Environment;
@@ -1472,6 +1473,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           }
         }
 
+        // Untracked files have no stat data in a new index, so git add would rehash every one.
+        const untracked =
+          topLevel === undefined || head === undefined || sparseCheckout || workspaceIgnored
+            ? undefined
+            : { cwd: input.cwd, topLevel, head, env: commitEnv };
+        const { reused, before } =
+          untracked === undefined
+            ? CheckpointUntrackedBlobs.NOTHING
+            : yield* untrackedBlobs.reuse({ ...untracked, indexConfig });
+
         const stageFiles = (exclusions: ReadonlyArray<string>) =>
           execute({
             operation,
@@ -1493,6 +1504,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             ],
             env: commitEnv,
           });
+        const stagingAt = yield* Clock.currentTimeMillis;
         yield* stageFiles([]).pipe(
           Effect.catchTags({
             VcsProcessExitError: (error) =>
@@ -1550,6 +1562,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               ),
           }),
         );
+
+        const stagingMs = (yield* Clock.currentTimeMillis) - stagingAt;
 
         const writeTreeResult = yield* execute({
           operation,
@@ -1817,6 +1831,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           args: [...durableWrite, "update-ref", input.checkpointRef, commitOid],
         });
         if (indexSeed) yield* checkpointIndexes.remember(indexSeed, tempIndexPath);
+        if (untracked !== undefined) {
+          yield* untrackedBlobs.remember({
+            ...untracked,
+            tree: treeOid,
+            startedAt,
+            stagingMs,
+            reused,
+            before,
+          });
+        }
       }).pipe(Effect.ensuring(cleanupTempIndex));
 
       // The tree records only each submodule's HEAD, so submodules keep their own ref.
