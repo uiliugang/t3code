@@ -38,6 +38,7 @@ vi.mock("react-native", () => ({
   Switch: () => null,
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
+vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
 vi.mock("../../components/ui/ControlPill", () => ({
   ControlPill: ({
@@ -59,7 +60,21 @@ vi.mock("../../components/ui/ListRow", () => ({
     <button onClick={onPress}>{label}</button>
   ),
 }));
-vi.mock("../../components/ui/ListActionRow", () => ({ ListActionRow: Children }));
+vi.mock("../../components/ui/ListActionRow", () => ({
+  ListActionRow: ({
+    label,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
 vi.mock("../../components/ui/ListToggleRow", () => ({ ListToggleRow: () => null }));
 vi.mock("../../components/ui/Menu", () => ({
   Menu: ({
@@ -172,9 +187,13 @@ it.each(["codex", "claudeAgent"])(
     try {
       const environment = {
         environmentId: EnvironmentId.make("local"),
-        serverConfig: { settings: DEFAULT_SERVER_SETTINGS },
+        serverConfig: {
+          environment: { capabilities: { providerConnectionProfiles: true } },
+          settings: DEFAULT_SERVER_SETTINGS,
+        },
       } as SettingsTarget;
-      act(() => root.render(<AddProviderConnection environment={environment} />));
+      act(() => root.render(<AddProviderConnection environment={environment} providers={[]} />));
+      act(() => container.querySelector("button")!.click());
       act(() =>
         [...container.querySelectorAll("button")]
           .find(
@@ -196,6 +215,60 @@ it.each(["codex", "claudeAgent"])(
     }
   },
 );
+
+it("reenables a saved provider only from Add without replacing its settings or submitting twice", async () => {
+  mutate.mockReset();
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const instanceId = ProviderInstanceId.make("codex_work");
+  const instance: ProviderInstanceConfig = {
+    driver: ProviderDriverKind.make("codex"),
+    enabled: false,
+    config: { connectionMode: "byok", homePath: "/work/codex" },
+    environment: [{ name: "API_KEY", value: "", sensitive: true, valueRedacted: true }],
+  };
+  const environment = {
+    environmentId: EnvironmentId.make("local"),
+    serverConfig: {
+      environment: { capabilities: { providerConnectionProfiles: true } },
+      settings: { ...DEFAULT_SERVER_SETTINGS, providerInstances: { [instanceId]: instance } },
+    },
+  } as SettingsTarget;
+  const provider = { instanceId, driver: instance.driver, enabled: false } as ServerProvider;
+  let finish!: (result: { _tag: "Success" }) => void;
+  mutate.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(<AddProviderConnection environment={environment} providers={[provider]} />),
+    );
+    expect(container.textContent).not.toContain("Enable");
+    act(() => container.querySelector("button")!.click());
+    const enable = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Enable {name}",
+    )!;
+    act(() => {
+      enable.click();
+      enable.click();
+    });
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation).toEqual({
+      operation: "upsert",
+      instanceId,
+      instance: { ...instance, enabled: true },
+    });
+    expect(enable.disabled).toBe(true);
+    await act(async () => finish({ _tag: "Success" }));
+    expect(container.textContent).toBe("Add provider");
+  } finally {
+    act(() => root.unmount());
+  }
+});
 
 it.each([
   { name: "implicit default", instance: undefined },

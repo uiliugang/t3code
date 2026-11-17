@@ -188,6 +188,49 @@ export function skillTargetGroups(targets: ReadonlyArray<SkillTarget>) {
   }));
 }
 
+export function skillBatchBindingOperations(
+  skills: ReadonlyArray<ManagedSkill>,
+  targets: ReadonlyArray<SkillTarget>,
+  selected: ReadonlyArray<string>,
+  mode: "add" | "remove",
+): SkillAction[] | null {
+  const locations = skillTargetGroups(targets).filter(
+    (group) => group.enabled && group.targets.some((target) => selected.includes(target.id)),
+  );
+  const operations: SkillAction[] = [];
+  for (const skill of skills) {
+    // A directory may gain a canonical path after its first managed link creates it.
+    const bindings = skill.bindings.map((binding) => ({
+      directory: targets.find((target) => target.id === binding.id)?.directory ?? binding.directory,
+    }));
+    const changes = locations.some((group) =>
+      mode === "add"
+        ? !bindings.some((binding) => binding.directory === group.directory)
+        : bindings.some((binding) => binding.directory === group.directory),
+    );
+    if (!changes) continue;
+    const retained = bindings.filter(
+      (binding) =>
+        mode === "add" || !locations.some((group) => group.directory === binding.directory),
+    );
+    const targetIds: string[] = [];
+    for (const binding of retained) {
+      const resolved = skillBindingTargetIds(targets, [binding]);
+      if (!resolved.length) return null;
+      targetIds.push(...resolved);
+    }
+    if (mode === "add")
+      targetIds.push(...locations.flatMap((group) => group.targets.map((target) => target.id)));
+    operations.push({
+      type: "configure",
+      id: skill.id,
+      policy: skill.policy,
+      targetIds: [...new Set(targetIds)],
+    });
+  }
+  return operations;
+}
+
 export function skillGroups(rows: ReturnType<typeof skillRows>["rows"]) {
   const groups = new Map<string, { key: string; name: string; rows: typeof rows }>();
   for (const row of rows) {

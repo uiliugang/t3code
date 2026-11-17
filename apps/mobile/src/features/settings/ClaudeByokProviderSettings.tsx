@@ -43,9 +43,11 @@ export function ClaudeByokProviderSettings({
   driver = "claudeAgent",
   allowCreate = true,
   providers = [],
+  createOnly = false,
 }: {
   readonly allowCreate?: boolean;
   readonly providers?: ReadonlyArray<ServerProvider>;
+  readonly createOnly?: boolean;
   readonly driver?: "claudeAgent" | "codex";
   readonly environment: SettingsTarget;
 }) {
@@ -53,8 +55,12 @@ export function ClaudeByokProviderSettings({
   const label = driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL;
   const [adding, setAdding] = useState(false);
   const instances = Object.entries(environment.serverConfig.settings.providerInstances).filter(
-    ([, instance]) =>
+    ([instanceId, instance]) =>
+      !createOnly &&
       instance.driver === driver &&
+      (providers.find((provider) => provider.instanceId === instanceId)?.enabled ??
+        instance.enabled ??
+        true) &&
       (driver === "codex"
         ? codexConnectionMode(instance.config) === "byok"
         : isClaudeByok(instance.config)),

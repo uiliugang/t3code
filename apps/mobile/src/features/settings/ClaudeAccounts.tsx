@@ -17,6 +17,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { ListActionRow } from "../../components/ui/ListActionRow";
+import { ListRow } from "../../components/ui/ListRow";
 import { Menu } from "../../components/ui/Menu";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -70,6 +71,7 @@ export function ClaudeAccount({
 }) {
   const t = useUiTranslation();
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const { run, pending, error } = useProviderInstanceMutation(environment);
   const instance = environment.serverConfig.settings.providerInstances[provider.instanceId];
   const configDir = claudeConfigDir(instance);
@@ -127,55 +129,71 @@ export function ClaudeAccount({
       ],
     );
   }
+  const showDetails = expanded || editing || pending || Boolean(error);
   return (
     <View className="border-t border-border-subtle">
-      <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
-        <View className="min-w-0 shrink grow gap-0.5">
-          <Text textRole="body" className="text-foreground" numberOfLines={1}>
-            {name}
-          </Text>
-          <Text textRole="footnote" className="text-foreground-muted" numberOfLines={2}>
-            {[status, configDir || t("Default config folder")].filter(Boolean).join(" · ")}
-          </Text>
-        </View>
-        {editing ? null : (
-          <Menu
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={t("{name} options", { name })}
-            title={name}
-            actions={actions}
-            onPressAction={({ nativeEvent }) => {
-              if (pending) return;
-              if (nativeEvent.event === "edit") setEditing(true);
-              else if (nativeEvent.event === "remove") remove();
-            }}
-          >
-            <ControlPill
-              icon="ellipsis"
-              accessibilityLabel={t("{name} options", { name })}
-              disabled={pending}
-            />
-          </Menu>
-        )}
-      </View>
-      <ClaudeInstallationControls
-        environment={environment}
-        provider={provider}
-        connectionDisabled={editing || pending}
-      />
-      {editing ? (
-        <ClaudeAccountForm
-          environment={environment}
-          instanceId={provider.instanceId}
-          initial={{ name: instance?.displayName ?? "", configDir }}
-          onDone={() => setEditing(false)}
+      {!showDetails ? (
+        <ListRow
+          label={name}
+          description={status ?? undefined}
+          detail={t("Edit")}
+          onPress={() => setExpanded(true)}
         />
-      ) : error ? (
-        <Text accessibilityRole="alert" className="px-4 pb-3 text-danger-foreground">
-          {error}
-        </Text>
       ) : null}
+      <View className={showDetails ? undefined : "hidden"}>
+        <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
+          <View className="min-w-0 shrink grow gap-0.5">
+            <Text textRole="body" className="text-foreground" numberOfLines={1}>
+              {name}
+            </Text>
+            <Text textRole="footnote" className="text-foreground-muted" numberOfLines={2}>
+              {[status, configDir || t("Default config folder")].filter(Boolean).join(" · ")}
+            </Text>
+          </View>
+          {editing ? null : (
+            <Menu
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={t("{name} options", { name })}
+              title={name}
+              actions={actions}
+              onPressAction={({ nativeEvent }) => {
+                if (pending) return;
+                if (nativeEvent.event === "edit") setEditing(true);
+                else if (nativeEvent.event === "remove") remove();
+              }}
+            >
+              <ControlPill
+                icon="ellipsis"
+                accessibilityLabel={t("{name} options", { name })}
+                disabled={pending}
+              />
+            </Menu>
+          )}
+          <ControlPill
+            label={t("Done")}
+            disabled={editing || pending}
+            onPress={() => setExpanded(false)}
+          />
+        </View>
+        <ClaudeInstallationControls
+          environment={environment}
+          provider={provider}
+          connectionDisabled={editing || pending}
+        />
+        {editing ? (
+          <ClaudeAccountForm
+            environment={environment}
+            instanceId={provider.instanceId}
+            initial={{ name: instance?.displayName ?? "", configDir }}
+            onDone={() => setEditing(false)}
+          />
+        ) : error ? (
+          <Text accessibilityRole="alert" className="px-4 pb-3 text-danger-foreground">
+            {error}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 }

@@ -1,26 +1,90 @@
 import { useAtomValue } from "@effect/atom-react";
 import { deriveAvailableInstanceId } from "@t3tools/client-runtime/provider-instance-ids";
-import { isManagedDriverAllowed, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
-import { useState } from "react";
+import {
+  isManagedDriverAllowed,
+  isManagedSettingPath,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
+import { useRef, useState } from "react";
 import { TextInput, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
+import { ListActionRow } from "../../components/ui/ListActionRow";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { SettingsTarget } from "./settings-environment-filter";
+import { AddClaudeAccount } from "./ClaudeAccounts";
+import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
 
-export function AddProviderConnection({ environment }: { readonly environment: SettingsTarget }) {
+export function AddProviderConnection({
+  environment,
+  providers,
+}: {
+  readonly environment: SettingsTarget;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}) {
   const t = useUiTranslation();
+  const [expanded, setExpanded] = useState(false);
   const [driver, setDriver] = useState<"codex" | "claudeAgent" | null>(null);
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
   const mutate = useAtomCommand(serverEnvironment.mutateProviderInstance);
   const allowed = useAtomValue(
     serverEnvironment.mutateProviderInstance.permissionAtom(environment.environmentId),
   );
+  const unified =
+    environment.serverConfig.environment.capabilities?.providerConnectionProfiles === true;
+  const canAddClaude = isManagedDriverAllowed(
+    environment.serverConfig.managedPolicy,
+    ProviderDriverKind.make("claudeAgent"),
+  );
+  const canAddCodex = isManagedDriverAllowed(
+    environment.serverConfig.managedPolicy,
+    ProviderDriverKind.make("codex"),
+  );
+  const disabledProviders = providers.filter(
+    (provider) =>
+      !provider.enabled &&
+      isManagedDriverAllowed(environment.serverConfig.managedPolicy, provider.driver),
+  );
+  const enable = async (provider: ServerProvider) => {
+    if (
+      pendingRef.current ||
+      !allowed ||
+      isManagedSettingPath(
+        environment.serverConfig.managedPolicy,
+        `providerInstances.${provider.instanceId}.enabled`,
+      )
+    )
+      return;
+    pendingRef.current = true;
+    setPending(true);
+    const result = await mutate({
+      environmentId: environment.environmentId,
+      input: {
+        patch: {},
+        providerInstanceMutation: {
+          operation: "upsert",
+          instanceId: provider.instanceId,
+          instance: {
+            driver: provider.driver,
+            ...environment.serverConfig.settings.providerInstances[provider.instanceId],
+            enabled: true,
+          },
+        },
+      },
+    });
+    pendingRef.current = false;
+    setPending(false);
+    if (result._tag === "Success") setExpanded(false);
+  };
   const create = async () => {
-    if (!driver || pending || !allowed) return;
+    if (!driver || pendingRef.current || !allowed) return;
+    pendingRef.current = true;
     setPending(true);
     const settings = environment.serverConfig.settings;
     const reserved = new Set([
@@ -49,9 +113,22 @@ export function AddProviderConnection({ environment }: { readonly environment: S
         },
       },
     });
+    pendingRef.current = false;
     setPending(false);
-    if (result._tag === "Success") setDriver(null);
+    if (result._tag === "Success") {
+      setDriver(null);
+      setExpanded(false);
+    }
   };
+  if (!expanded)
+    return (
+      <ListActionRow
+        icon="plus"
+        label={t("Add provider")}
+        disabled={!allowed}
+        onPress={() => setExpanded(true)}
+      />
+    );
   return (
     <View className="gap-2 p-4">
       {driver ? (
@@ -79,26 +156,59 @@ export function AddProviderConnection({ environment }: { readonly environment: S
           </View>
         </>
       ) : (
-        <View className="flex-row flex-wrap gap-2">
-          {(["codex", "claudeAgent"] as const)
-            .filter((kind) =>
-              isManagedDriverAllowed(
-                environment.serverConfig.managedPolicy,
-                ProviderDriverKind.make(kind),
-              ),
-            )
-            .map((kind) => (
-              <ControlPill
-                key={kind}
-                label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
-                disabled={!allowed}
-                onPress={() => {
-                  setName(kind === "codex" ? "Codex" : "Claude Code");
-                  setDriver(kind);
-                }}
-              />
-            ))}
-        </View>
+        <>
+          {disabledProviders.map((provider) => (
+            <ListActionRow
+              key={provider.instanceId}
+              icon="plus"
+              label={t("Enable {name}", { name: provider.displayName ?? provider.driver })}
+              disabled={
+                !allowed ||
+                pending ||
+                isManagedSettingPath(
+                  environment.serverConfig.managedPolicy,
+                  `providerInstances.${provider.instanceId}.enabled`,
+                )
+              }
+              onPress={() => void enable(provider)}
+            />
+          ))}
+          {unified ? (
+            <View className="flex-row flex-wrap gap-2">
+              {(["codex", "claudeAgent"] as const)
+                .filter((kind) =>
+                  isManagedDriverAllowed(
+                    environment.serverConfig.managedPolicy,
+                    ProviderDriverKind.make(kind),
+                  ),
+                )
+                .map((kind) => (
+                  <ControlPill
+                    key={kind}
+                    label={t(kind === "codex" ? "Add Codex" : "Add Claude Code")}
+                    disabled={!allowed || pending}
+                    onPress={() => {
+                      setName(kind === "codex" ? "Codex" : "Claude Code");
+                      setDriver(kind);
+                    }}
+                  />
+                ))}
+            </View>
+          ) : (
+            <>
+              {canAddClaude ? (
+                <>
+                  <AddClaudeAccount environment={environment} />
+                  <ClaudeByokProviderSettings environment={environment} createOnly />
+                </>
+              ) : null}
+              {canAddCodex && environment.serverConfig.environment.capabilities?.codexByok ? (
+                <ClaudeByokProviderSettings environment={environment} driver="codex" createOnly />
+              ) : null}
+            </>
+          )}
+          <ControlPill label={t("Cancel")} disabled={pending} onPress={() => setExpanded(false)} />
+        </>
       )}
     </View>
   );

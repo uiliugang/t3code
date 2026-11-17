@@ -7,6 +7,7 @@ import {
   skillTargetGroups,
   skillDefaultTargetIds,
   skillBindingTargetIds,
+  skillBatchBindingOperations,
   skillFailure,
   skillConfigurationJob,
   skillStatus,
@@ -229,6 +230,61 @@ describe("skill management views", () => {
     ).toEqual(["codex", "chatgpt"]);
     expect(skillBindingTargetIds(available, [])).toEqual([]);
     expect(skillBindingTargetIds(available, [{ directory: "/claude" }])).toEqual(["claude"]);
+  });
+
+  it("adds and removes batch locations without replacing each skill's other bindings", () => {
+    const targets = [
+      { id: "codex", label: "Codex", directory: "/codex" },
+      { id: "alias", label: "Codex account", directory: "/codex" },
+      { id: "claude", label: "Claude", directory: "/claude" },
+      { id: "shared", label: "Shared", directory: "/shared" },
+    ];
+    const skills: ManagedSkill[] = [
+      { ...skill, bindings: [{ ...targets[0]!, status: "linked" }] },
+      { ...skill, id: "debug", policy: "pinned", bindings: [{ ...targets[2]!, status: "linked" }] },
+    ];
+    expect(skillBatchBindingOperations(skills, targets, ["shared", "shared"], "add")).toEqual([
+      {
+        type: "configure",
+        id: "review",
+        policy: "automatic",
+        targetIds: ["codex", "alias", "shared"],
+      },
+      { type: "configure", id: "debug", policy: "pinned", targetIds: ["claude", "shared"] },
+    ]);
+    expect(skillBatchBindingOperations(skills, targets, ["alias"], "remove")).toEqual([
+      { type: "configure", id: "review", policy: "automatic", targetIds: [] },
+    ]);
+    expect(skillBatchBindingOperations(skills, targets, ["codex"], "add")).toEqual([
+      { type: "configure", id: "debug", policy: "pinned", targetIds: ["claude", "codex", "alias"] },
+    ]);
+    const canonicalTargets = targets.map((target) => ({
+      ...target,
+      directory: `/private${target.directory}`,
+    }));
+    expect(skillBatchBindingOperations(skills, canonicalTargets, ["shared"], "add")).toEqual(
+      skillBatchBindingOperations(skills, targets, ["shared"], "add"),
+    );
+    expect(skillBatchBindingOperations(skills, canonicalTargets, ["alias"], "remove")).toEqual(
+      skillBatchBindingOperations(skills, targets, ["alias"], "remove"),
+    );
+    expect(skillBatchBindingOperations(skills, targets, [], "remove")).toEqual([]);
+    expect(skillBatchBindingOperations(skills, targets, ["missing"], "add")).toEqual([]);
+    expect(
+      skillBatchBindingOperations(
+        skills,
+        targets.map((target) => ({ ...target, enabled: false })),
+        ["shared"],
+        "add",
+      ),
+    ).toEqual([]);
+    const orphan = {
+      ...skill,
+      bindings: [
+        { id: "removed", label: "Removed", directory: "/removed", status: "missing" as const },
+      ],
+    };
+    expect(skillBatchBindingOperations([orphan], targets, ["shared"], "add")).toBeNull();
   });
 
   it("selects multiple skills without discarding policy or usage locations", () => {
