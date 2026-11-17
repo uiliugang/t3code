@@ -1,4 +1,4 @@
-import { IssueError } from "@t3tools/contracts";
+import { IssueError, isMeituanServiceEnabled } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   ProjectId,
@@ -28,16 +28,19 @@ export function prefetchRequirementIssues(
   issues: Parameters<typeof createRequirementBoardAtoms>[0]["issues"],
   environmentIds: ReadonlyArray<EnvironmentId>,
   signal?: AbortSignal,
+  meituanEnabled?: (environmentId: EnvironmentId) => boolean,
 ) {
   return Promise.all(
     [...new Set(environmentIds)].flatMap((environmentId) =>
-      (["meituan", "github"] as const).map((provider) =>
-        executeAtomQuery(
-          registry,
-          issues({ environmentId, input: { provider, assignee: "me", query: "", page: 1 } }),
-          { ...(signal ? { signal } : {}), reportFailure: false, reportDefect: false },
+      (["meituan", "github"] as const)
+        .filter((provider) => provider !== "meituan" || meituanEnabled?.(environmentId) !== false)
+        .map((provider) =>
+          executeAtomQuery(
+            registry,
+            issues({ environmentId, input: { provider, assignee: "me", query: "", page: 1 } }),
+            { ...(signal ? { signal } : {}), reportFailure: false, reportDefect: false },
+          ),
         ),
-      ),
     ),
   ).then(() => undefined);
 }
@@ -52,6 +55,7 @@ export class RequirementBoardKey extends Data.Class<{
   cursors: ReadonlyArray<WorkItemListInput["cursor"]>;
   localSupported: boolean;
   archived: boolean;
+  meituanEnabled?: boolean;
 }> {}
 
 export function createRequirementBoardAtoms(queries: {
@@ -86,6 +90,7 @@ export function createRequirementBoardAtoms(queries: {
       let nextCursor: WorkItemListInput["cursor"] | null = null;
       if (!key.archived && key.source !== "local") {
         for (const provider of ["meituan", "github"] as const) {
+          if (provider === "meituan" && key.meituanEnabled === false) continue;
           if (key.source !== "all" && key.source !== provider) continue;
           for (let page = 1; page <= key.page; page++) {
             const result = read(
@@ -199,6 +204,9 @@ export function createRequirementPermissionAtoms(
 export function createRequirementOverviewAtoms(
   queries: Parameters<typeof createRequirementBoardAtoms>[0] & {
     config: (environmentId: EnvironmentId) => Atom.Atom<{ readonly workItems?: boolean } | null>;
+    settings?: (
+      environmentId: EnvironmentId,
+    ) => Atom.Atom<Parameters<typeof isMeituanServiceEnabled>[0]>;
     tracked: (
       environmentId: EnvironmentId,
       urls: ReadonlyArray<string>,
@@ -221,6 +229,9 @@ export function createRequirementOverviewAtoms(
               ...pagination,
               environmentId,
               localSupported: get(queries.config(environmentId))?.workItems === true,
+              meituanEnabled: queries.settings
+                ? isMeituanServiceEnabled(get(queries.settings(environmentId)), "requirements")
+                : true,
             }),
           ),
         );

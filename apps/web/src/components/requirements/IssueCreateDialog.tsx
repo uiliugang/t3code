@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   Issue,
@@ -12,6 +13,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -53,9 +55,14 @@ export function IssueCreateDialog({
       : null,
   );
   const [selectedProvider, setProvider] = useState<IssueProvider | null>(null);
-  const availableProviders = [
-    ...new Set(sourceQuery.data?.[0]?.sources.map((source) => source.provider) ?? []),
-  ];
+  const meituanEnabled = useEnvironmentSettings(environmentId, (settings) =>
+    isMeituanServiceEnabled(settings, "requirements"),
+  );
+  const sources =
+    sourceQuery.data?.[0]?.sources.filter(
+      (source) => source.provider !== "meituan" || meituanEnabled,
+    ) ?? [];
+  const availableProviders = [...new Set(sources.map((source) => source.provider))];
   const platformSelected =
     availableProviders.length === 1 ||
     (selectedProvider !== null && availableProviders.includes(selectedProvider));
@@ -64,9 +71,7 @@ export function IssueCreateDialog({
       ? availableProviders[0]!
       : (selectedProvider ?? initialProvider);
   const scopes =
-    sourceQuery.data?.[0]?.sources
-      .filter((source) => source.provider === provider)
-      .map((source) => source.scope) ?? [];
+    sources.filter((source) => source.provider === provider).map((source) => source.scope) ?? [];
   const scope = scopes.includes(selectedScope) ? selectedScope : scopes[0];
   const [type, setType] = useState<(typeof IssueMetadataInput.Type)["type"]>("REQUIREMENT");
   const [subtype, setSubtype] = useState("");

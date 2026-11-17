@@ -1,4 +1,3 @@
-import { WechatSettings } from "./WechatSettings";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -6,13 +5,11 @@ import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
-import type { EnvironmentPresentation } from "~/state/environments";
-import { SettingsSection } from "./settingsLayout";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
 
-function DaxiangSettings({
+export function DaxiangSettings({
   environmentId,
   label,
 }: {
@@ -86,23 +83,5 @@ function DaxiangSettings({
         </Button>
       </div>
     </form>
-  );
-}
-
-export function CommunicationSettings({
-  environments,
-}: {
-  environments: ReadonlyArray<EnvironmentPresentation>;
-}) {
-  const t = useUiTranslation();
-  return (
-    <SettingsSection id="communication" title={t("Communication")}>
-      {environments.map((environment) => (
-        <div key={environment.environmentId} className="divide-y divide-border">
-          <DaxiangSettings environmentId={environment.environmentId} label={environment.label} />
-          <WechatSettings environmentId={environment.environmentId} label={environment.label} />
-        </div>
-      ))}
-    </SettingsSection>
   );
 }

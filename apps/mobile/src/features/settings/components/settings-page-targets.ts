@@ -1,6 +1,8 @@
 /** Settings pages a Settings row opens. */
 export const SETTINGS_PAGE_TARGETS = [
   "SettingsEnvironments",
+  "SettingsMeituan",
+  "SettingsSharingAccess",
   "SettingsNotifications",
   "SettingsThreads",
   "SettingsAbout",

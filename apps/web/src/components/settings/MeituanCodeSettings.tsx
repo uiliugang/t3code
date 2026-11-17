@@ -46,7 +46,7 @@ export function MeituanCodeAuthorizationObserver(props: {
 
 export function MeituanCodeSettings(props: {
   readonly environmentId: EnvironmentId;
-  readonly item: SourceControlProviderDiscoveryItem;
+  readonly item?: SourceControlProviderDiscoveryItem;
   readonly onChanged: () => void;
 }) {
   const t = useUiTranslation();
@@ -61,7 +61,7 @@ export function MeituanCodeSettings(props: {
   const value = draft ?? savedMis;
   const mis = readMis({ mis: value });
   const dirty = value.trim() !== savedMis;
-  const pending = props.item.authorization?.status === "pending";
+  const pending = props.item?.authorization?.status === "pending";
   const canSave = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(props.environmentId),
   );
@@ -71,7 +71,7 @@ export function MeituanCodeSettings(props: {
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const start = useAtomCommand(sourceControlEnvironment.startSignIn, { reportFailure: false });
   const cancel = useAtomCommand(sourceControlEnvironment.cancelSignIn, { reportFailure: false });
-  const errorMessage = error ?? (savedMis ? props.item.authorization?.detail : null);
+  const errorMessage = error ?? (savedMis ? props.item?.authorization?.detail : null);
   const attempted =
     Array.isArray(saved?.authorizationAttemptedMis) &&
     saved.authorizationAttemptedMis.includes(savedMis);
@@ -93,7 +93,7 @@ export function MeituanCodeSettings(props: {
     setError(null);
     const result = await (pending ? cancel : start)({
       environmentId: props.environmentId,
-      input: { provider: props.item.kind, host: "git.sankuai.com" },
+      input: { provider: SourceControlProviderKind.make("meituan"), host: "git.sankuai.com" },
     });
     setBusy(false);
     if (result._tag !== "Success")
@@ -142,7 +142,7 @@ export function MeituanCodeSettings(props: {
           {t(
             pending
               ? "Authorization in progress. Confirm the request in DaXiang when it arrives."
-              : props.item.auth.status === "authenticated"
+              : props.item?.auth.status === "authenticated"
                 ? "Authenticated"
                 : attempted
                   ? "The automatic request has been used. Send another request manually if needed."
@@ -150,7 +150,7 @@ export function MeituanCodeSettings(props: {
           )}
         </p>
         <div className="flex shrink-0 gap-2">
-          {props.item.auth.status !== "authenticated" || pending ? (
+          {props.item?.auth.status !== "authenticated" || pending ? (
             <Button
               type="button"
               size="xs"
@@ -158,7 +158,7 @@ export function MeituanCodeSettings(props: {
               disabled={
                 !canSignIn ||
                 busy ||
-                (!pending && (!savedMis || dirty || props.item.status !== "available"))
+                (!pending && (!savedMis || dirty || props.item?.status !== "available"))
               }
               onClick={() => void request()}
             >

@@ -1,9 +1,11 @@
 import type { DeliveryScope, DeliveryEvidence } from "@t3tools/contracts";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as ProcessRunner from "../processRunner.ts";
+import * as Settings from "../serverSettings.ts";
 
 const Plan = Schema.Struct({
   id: Schema.Number,
@@ -77,8 +79,13 @@ export const layer = Layer.effect(
   McmReleaseService,
   Effect.gen(function* () {
     const runner = yield* ProcessRunner.ProcessRunner;
+    const settings = yield* Settings.ServerSettingsService;
     const read = Effect.fn("McmReleaseService.read")(
       function* (planId: string, services: DeliveryScope["changedServices"]) {
+        if (!isMeituanServiceEnabled(yield* settings.getSettings, "requirements"))
+          return yield* new McmReleaseError({
+            cause: new Error("Meituan integration is disabled on this environment."),
+          });
         if (!/^[1-9]\d*$/.test(planId))
           return yield* new McmReleaseError({ cause: new Error("Invalid MCM plan identifier") });
         const result = yield* runner.run({

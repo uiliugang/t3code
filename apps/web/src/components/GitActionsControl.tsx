@@ -3,6 +3,7 @@ import type { ThreadRepositoryTarget } from "@t3tools/contracts";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -1179,17 +1180,22 @@ export default function GitActionsControl({
   ]);
 
   const isDefaultRef = gitStatusForActions?.isDefaultRef ?? false;
+  const pullRequestsEnabled =
+    gitStatusForActions?.sourceControlProvider?.kind !== "meituan" ||
+    isMeituanServiceEnabled(serverConfig?.settings, "sourceControl");
 
   const gitActionMenuItems = buildMenuItems(
     gitStatusForActions,
     isGitActionRunning,
     hasPrimaryRemote,
+    pullRequestsEnabled,
   );
   const quickAction = resolveQuickAction(
     gitStatusForActions,
     isGitActionRunning,
     isDefaultRef,
     hasPrimaryRemote,
+    pullRequestsEnabled,
   );
   const quickActionDisabledReason = !canWriteSourceControl
     ? "This connection cannot change source control."
@@ -1975,7 +1981,10 @@ export default function GitActionsControl({
           environmentId={activeEnvironmentId}
           threadRef={activeThreadRef}
           gitCwd={gitCwd}
-          offeredProviders={serverConfig?.settings.offeredSourceControlProviders}
+          offeredProviders={{
+            ...serverConfig?.settings.offeredSourceControlProviders,
+            meituan: isMeituanServiceEnabled(serverConfig?.settings, "sourceControl"),
+          }}
         />
       ) : null}
 

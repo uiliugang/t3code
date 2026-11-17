@@ -50,6 +50,17 @@ const PROVIDERS = [
   fakeSourceControlProvider("forgejo"),
   fakeSourceControlProvider("bitbucket"),
   fakeSourceControlProvider("azure-devops"),
+  fakeSourceControlProvider("meituan", {
+    issueBoard: {
+      search: () => Effect.succeed({ issues: [], hasMore: false }),
+      read: () => Effect.die("unused"),
+      people: () => Effect.succeed([]),
+      metadata: () => Effect.die("unused"),
+      create: () => Effect.die("unused"),
+      setState: () => Effect.void,
+    },
+    issues: { read: () => Effect.die("unused") },
+  }),
 ];
 
 /** A host CLI that claims every server it is signed in to, as `glab` does. */
@@ -167,6 +178,69 @@ function makeRegistry(input: {
 
 const signedIn = (host: string) => () =>
   Effect.succeed(TestSourceControlHost.processOutput(`  ✓ Logged in to ${host} as user\n`));
+
+it.effect.each(["meituanIntegrationEnabled", "meituanSourceControlEnabled"] as const)(
+  "stops Meituan discovery and cached repository operations when %s is disabled",
+  (setting) =>
+    Effect.gen(function* () {
+      let enabled = true;
+      let requirementsEnabled = true;
+      let probes = 0;
+      const registry = yield* makeRegistry({
+        remotes: [{ name: "origin", url: "git@git.sankuai.com:team/project.git" }],
+        discovery: [
+          {
+            type: "api",
+            kind: kind("meituan"),
+            label: "Meituan Code",
+            installHint: "unused",
+            probeAuth: Effect.sync(() => {
+              probes++;
+              return {
+                status: "unknown" as const,
+                account: Option.none(),
+                host: Option.none(),
+                detail: Option.none(),
+              };
+            }),
+          },
+        ],
+        settings: {
+          getSettings: Effect.sync(() => ({
+            ...DEFAULT_SERVER_SETTINGS,
+            meituanIntegrationEnabled: true,
+            meituanRequirementsEnabled: requirementsEnabled,
+            [setting]: enabled,
+          })),
+          subscribeChanges: Effect.succeed(Stream.empty),
+        },
+      });
+      yield* registry.discover;
+      const before = yield* registry.resolve({ cwd: "/repo" });
+      assert.strictEqual(before.kind, "meituan");
+      enabled = false;
+      assert.isFalse((yield* registry.discover).some((entry) => entry.kind === "meituan"));
+      assert.strictEqual(probes, 1);
+      const after = yield* registry.resolve({ cwd: "/repo" });
+      assert.notStrictEqual(after, before);
+      assert.strictEqual(Boolean(after.issueBoard), setting === "meituanSourceControlEnabled");
+      assert.deepStrictEqual(
+        yield* after.listChangeRequests({ cwd: "/repo", headSelector: "main", state: "open" }),
+        [],
+      );
+      assert.strictEqual(yield* registry.get(kind("github")), PROVIDERS[0]);
+      enabled = true;
+      yield* registry.discover;
+      assert.strictEqual(probes, 2);
+      requirementsEnabled = false;
+      const codeOnly = yield* registry.get(kind("meituan"));
+      assert.strictEqual(codeOnly.issueBoard, undefined);
+      assert.strictEqual(codeOnly.issues, undefined);
+      assert.strictEqual(codeOnly.createChangeRequest, PROVIDERS[5]!.createChangeRequest);
+      yield* registry.discover;
+      assert.strictEqual(probes, 3);
+    }),
+);
 
 it.effect("routes an unknown remote to the integration that claims its server", () =>
   Effect.gen(function* () {

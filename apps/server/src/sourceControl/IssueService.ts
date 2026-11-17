@@ -1,5 +1,6 @@
 import {
   IssueError,
+  isMeituanServiceEnabled,
   IssueSource,
   SourceControlProviderError,
   SourceControlProviderKind,
@@ -128,7 +129,10 @@ export const make = Effect.gen(function* () {
           scope: repository,
           host: new URL(context.provider.baseUrl).hostname,
         });
-      if (provider.discoverIssueSources) {
+      if (
+        provider.discoverIssueSources &&
+        (provider.kind !== "meituan" || isMeituanServiceEnabled(saved, "requirements"))
+      ) {
         const digest = yield* digester.digest(
           Digest.sha256,
           new TextEncoder().encode(normalizeGitRemoteUrl(context.remoteUrl)),
@@ -162,7 +166,12 @@ export const make = Effect.gen(function* () {
       cwd,
       projectId,
       repository,
-      sources: [...automatic.filter((source) => !overridden.has(source.provider)), ...manual],
+      sources: [
+        ...automatic.filter((source) => !overridden.has(source.provider)),
+        ...manual,
+      ].filter(
+        (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
+      ),
       manual: manual.length > 0,
       ...(failure ? { failure } : {}),
     };
@@ -228,6 +237,18 @@ export const make = Effect.gen(function* () {
       );
     }),
     list: Effect.fn("IssueService.list")(function* (input) {
+      if (
+        input.provider === "meituan" &&
+        !isMeituanServiceEnabled(
+          yield* settings.getSettings.pipe(
+            Effect.mapError(
+              (cause) => new IssueError({ operation: "list", reason: "unavailable", cause }),
+            ),
+          ),
+          "requirements",
+        )
+      )
+        return { groups: [], failures: [] };
       const scratchRoot = yield* managedFolders.scratchRoot;
       const all = yield* projects
         .listShells(input.projectId ? { projectIds: [input.projectId] } : undefined)

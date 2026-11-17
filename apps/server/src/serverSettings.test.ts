@@ -45,6 +45,69 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 
+it.effect.each([
+  ["new environments", {}, false],
+  ["existing Meituan accounts", { sourceControlHosts: { meituan: { mis: "demo.user" } } }, true],
+  ["existing DaXiang credentials", { daxiang: { clientId: "demo-app" } }, true],
+  [
+    "explicit opt-outs",
+    { meituanIntegrationEnabled: false, sourceControlHosts: { meituan: { mis: "demo.user" } } },
+    false,
+  ],
+] as const)(
+  "preserves Meituan integration policy for %s across reloads",
+  ([_name, stored, enabled]) =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const fs = yield* FileSystem.FileSystem;
+      const config = yield* ServerConfig.ServerConfig;
+      yield* fs.writeFileString(config.settingsPath, JSON.stringify(stored));
+      const settings = yield* service.getSettings;
+      assert.propertyVal(settings, "meituanIntegrationEnabled", enabled);
+      yield* service.updateSettings({ enableProviderUpdateChecks: false });
+      const saved = JSON.parse(yield* fs.readFileString(config.settingsPath));
+      assert.propertyVal(saved, "meituanIntegrationEnabled", enabled);
+      assert.isTrue(settings.meituanSourceControlEnabled);
+      assert.isTrue(settings.meituanRequirementsEnabled);
+      yield* service.updateSettings({
+        meituanSourceControlEnabled: false,
+        meituanRequirementsEnabled: false,
+      });
+      yield* service.updateSettings({ meituanIntegrationEnabled: false });
+      assert.isFalse((yield* service.getSettings).meituanIntegrationEnabled);
+      yield* service.updateSettings({ meituanIntegrationEnabled: true });
+      const reloaded = yield* decodeServerSettingsJson(
+        yield* fs.readFileString(config.settingsPath),
+      );
+      assert.isFalse(reloaded.meituanSourceControlEnabled);
+      assert.isFalse(reloaded.meituanRequirementsEnabled);
+    }).pipe(
+      Effect.provide(
+        layerServerSettings().pipe(
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
+);
+
+it.effect("preserves an enabled legacy Meituan skill source on migration", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+    const payload = JSON.stringify({ sources: [{ kind: "mtskills", enabled: true }] });
+    yield* sql`INSERT INTO skill_catalog (id, payload) VALUES (1, ${payload})`;
+    assert.isTrue((yield* service.getSettings).meituanIntegrationEnabled);
+    yield* service.updateSettings({ meituanIntegrationEnabled: false });
+    assert.isFalse((yield* service.getSettings).meituanIntegrationEnabled);
+  }).pipe(
+    Effect.provide(
+      layerServerSettings().pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
 it.effect("removes a default provider across reloads and restores it on upsert", () =>
   Effect.gen(function* () {
     const service = yield* ServerSettingsModule.ServerSettingsService;

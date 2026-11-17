@@ -1,5 +1,6 @@
 import {
   SourceControlToolError,
+  isMeituanServiceEnabled,
   type SourceControlTool,
   type SourceControlToolId,
 } from "@t3tools/contracts";
@@ -16,6 +17,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as Settings from "../serverSettings.ts";
 
 const MCODE_PACKAGE = "@ee/code-cli";
 const MCODE_REGISTRY = "--registry=http://r.npm.sankuai.com";
@@ -59,6 +61,7 @@ const make = Effect.gen(function* () {
   const uid = yield* HostProcess.UserId;
   const home = yield* HostProcess.HomeDirectory;
   const env = yield* HostProcess.Environment;
+  const settings = yield* Settings.ServerSettingsService;
   // Bypass command-result caching: verification must see a binary installed moments ago.
   const find = Effect.fn("SourceControlToolInstaller.find")(function* (name: string) {
     const matches = yield* resolveCommandPaths(name, { env, until: () => true });
@@ -84,6 +87,11 @@ const make = Effect.gen(function* () {
 
   const inspect = Effect.fn("SourceControlToolInstaller.inspect")(
     function* (id: SourceControlToolId) {
+      if (
+        id === "meituan" &&
+        !isMeituanServiceEnabled(yield* settings.getSettings, "sourceControl")
+      )
+        return yield* new SourceControlToolError({ id, reason: "unsupported" });
       const definition = DEFINITIONS[id];
       const executablePath = yield* find(definition.executable);
       const realPath = executablePath ? yield* fs.realPath(executablePath) : null;
@@ -254,6 +262,14 @@ const make = Effect.gen(function* () {
     plan: ToolInstallationPlan,
   ) {
     const id = plan.tool.id;
+    if (
+      id === "meituan" &&
+      !isMeituanServiceEnabled(
+        yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null)),
+        "sourceControl",
+      )
+    )
+      return yield* new SourceControlToolError({ id, reason: "unsupported" });
     if (!plan.executable) return yield* new SourceControlToolError({ id, reason: "unsupported" });
     let args = plan.args;
     if (plan.npm) {

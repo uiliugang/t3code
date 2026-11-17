@@ -10,10 +10,17 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 
-export function DaxiangSettingsSection({ environmentId }: { environmentId: EnvironmentId }) {
+export function DaxiangSettingsSection({
+  environmentId,
+  disabled = false,
+}: {
+  environmentId: EnvironmentId;
+  disabled?: boolean;
+}) {
   const t = useUiTranslation();
   const saved = useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.daxiang;
-  const canSave = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
+  const canSave =
+    useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId)) && !disabled;
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const [draft, setDraft] = useState<typeof saved>(undefined);
   const [busy, setBusy] = useState(false);
@@ -21,7 +28,7 @@ export function DaxiangSettingsSection({ environmentId }: { environmentId: Envir
   const value = draft ?? saved;
   if (!value) return null;
   return (
-    <SettingsSection title="Communication">
+    <SettingsSection title="DaXiang">
       <View className="gap-3 p-4">
         <Text className="text-sm font-t3-medium">{t("DaXiang")}</Text>
         <ConnectionFormField

@@ -7,6 +7,7 @@ import { NavigationRow } from "../../components/ui/NavigationRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { Button } from "../../components/ui/Button";
+import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
@@ -122,6 +123,7 @@ interface EnvironmentOption {
   readonly connectionErrorTraceId: string | null;
   readonly ghqCloneLayout: boolean;
   readonly offeredSourceControlProviders: OfferedSourceControlProviders | undefined;
+  readonly meituanIntegrationEnabled: boolean;
 }
 
 const environmentOptionOrder = Order.mapInput(
@@ -437,6 +439,7 @@ function useEnvironmentOptions(
         connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
         ghqCloneLayout: config?.settings.ghqCloneLayout === true,
         offeredSourceControlProviders: config?.settings.offeredSourceControlProviders,
+        meituanIntegrationEnabled: isMeituanServiceEnabled(config?.settings, "sourceControl"),
       };
     });
     return Arr.sort(
@@ -726,6 +729,7 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
                 ...sortAddProjectProviderSources(
                   readiness,
                   selectedEnvironment.offeredSourceControlProviders,
+                  selectedEnvironment.meituanIntegrationEnabled,
                 ),
               ] as AddProjectRemoteSource[]
             ).map((candidate) => (
@@ -1175,6 +1179,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
   const publishTargets = getNewProjectPublishTargets(
     discoveryState.data,
     environment?.offeredSourceControlProviders,
+    environment?.meituanIntegrationEnabled,
   );
   const [name, setName] = useState("");
   const [publishes, setPublishes] = useState(false);

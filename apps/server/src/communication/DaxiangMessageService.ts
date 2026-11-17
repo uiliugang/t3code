@@ -67,10 +67,15 @@ const make = Effect.gen(function* () {
       );
   const getToken = Effect.fn("DaxiangMessageService.getToken")(
     function* () {
-      const { clientId, clientSecret } = (yield* settings.getSettings).daxiang;
+      const saved = yield* settings.getSettings;
+      if (!saved.meituanIntegrationEnabled)
+        return yield* new DaxiangSendError({
+          message: "Meituan integration is disabled on this environment.",
+        });
+      const { clientId, clientSecret } = saved.daxiang;
       if (!clientId.trim() || !clientSecret) {
         return yield* new DaxiangSendError({
-          message: "Configure DaXiang in Connections > Communication on this environment.",
+          message: "Configure DaXiang in Meituan integration on this environment.",
         });
       }
       const now = yield* Clock.currentTimeMillis;

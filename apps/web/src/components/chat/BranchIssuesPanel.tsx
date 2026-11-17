@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   branchIssuePlaceholder,
+  isMeituanServiceEnabled,
   parseBranchIssueUrl,
   type BranchIssue,
   type EnvironmentId,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useClientSettings } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -360,9 +361,20 @@ export function BranchIssuesPanel({
   separate?: boolean;
 }) {
   const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
+  const meituanEnabled = useEnvironmentSettings(
+    environmentId,
+    (settings) =>
+      isMeituanServiceEnabled(settings, "requirements") &&
+      isMeituanServiceEnabled(settings, "sourceControl"),
+  );
   const provider = status.data?.sourceControlProvider?.kind;
   const branch = status.data?.refName;
-  if (!branch || (provider !== "github" && provider !== "meituan")) return null;
+  if (
+    !branch ||
+    (provider !== "github" && provider !== "meituan") ||
+    (provider === "meituan" && !meituanEnabled)
+  )
+    return null;
   return (
     <IssueList
       key={`${environmentId}:${cwd}:${branch}`}

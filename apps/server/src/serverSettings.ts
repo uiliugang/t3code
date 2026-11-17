@@ -850,7 +850,14 @@ const make = Effect.gen(function* () {
 
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
-      const stripped = stripDefaultServerSettings(settings, managed.defaults) ?? {};
+      // Keep an explicit opt-out so legacy credentials never enable the integration on reload.
+      const defaultsStripped = stripDefaultServerSettings(settings, managed.defaults);
+      const stripped = {
+        ...(typeof defaultsStripped === "object" && defaultsStripped !== null
+          ? defaultsStripped
+          : {}),
+        meituanIntegrationEnabled: settings.meituanIntegrationEnabled,
+      };
       const sparseSettingsJson = yield* encodeServerSettingsJson(
         managed.keepStored === undefined
           ? stripped
@@ -912,10 +919,16 @@ const make = Effect.gen(function* () {
     let legacyProviders: Readonly<Record<string, unknown>> | undefined;
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     let parseFailure = Option.none<unknown>();
+    let migrateMeituan = true;
 
     if (yield* readConfigExists) {
       const raw = yield* readRawConfig;
       const parsed = decodeSettingsFileJsonExit(raw);
+      migrateMeituan =
+        Exit.isSuccess(parsed) &&
+        typeof parsed.value === "object" &&
+        parsed.value !== null &&
+        !Object.hasOwn(parsed.value, "meituanIntegrationEnabled");
       const decoded = Exit.isFailure(parsed)
         ? parsed
         : decodePersistedServerSettingsExit(managed.withDefaults(parsed.value));
@@ -950,6 +963,36 @@ const make = Effect.gen(function* () {
 
     // A file that failed to decode must stay on disk for the user to repair.
     const settingsFileTrusted = Option.isNone(parseFailure);
+    if (migrateMeituan && settingsFileTrusted) {
+      const skillSources = yield* sql<{ enabled: number }>`
+        SELECT EXISTS (
+          SELECT 1 FROM skill_catalog, json_each(payload, '$.sources') AS source
+          WHERE json_extract(source.value, '$.kind') = 'mtskills'
+            AND json_extract(source.value, '$.enabled') = 1
+        ) AS enabled
+      `.pipe(
+        NodeSqliteClient.readOnly,
+        Effect.mapError(
+          (cause) =>
+            new ServerSettingsError({ settingsPath, operation: "read-provider-history", cause }),
+        ),
+      );
+      settings = {
+        ...settings,
+        meituanIntegrationEnabled:
+          settings.meituanIntegrationEnabled ||
+          Boolean(
+            settings.sourceControlHosts.meituan &&
+            Object.keys(settings.sourceControlHosts.meituan).length,
+          ) ||
+          Boolean(settings.daxiang.clientId) ||
+          settings.offeredSourceControlProviders.meituan === true ||
+          Object.values(settings.issueProjectSources).some((sources) =>
+            sources.some((source) => source.provider === "meituan"),
+          ) ||
+          skillSources[0]?.enabled === 1,
+      };
+    }
     const providerHistory = yield* sql<{
       readonly providerName: string;
       readonly providerInstanceId: string | null;
@@ -1040,7 +1083,11 @@ const make = Effect.gen(function* () {
     if (
       migrated !== loaded ||
       (settingsFileTrusted && legacyProviders !== undefined) ||
-      hasLegacySourceControl
+      hasLegacySourceControl ||
+      (migrateMeituan &&
+        settingsFileTrusted &&
+        settings.meituanIntegrationEnabled &&
+        legacySecretsCopied)
     ) {
       yield* writeSettingsAtomically(migrated);
       for (const move of sourceControlMigration.secretMoves) {

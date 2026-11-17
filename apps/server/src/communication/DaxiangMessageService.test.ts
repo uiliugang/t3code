@@ -57,11 +57,18 @@ it.layer(NodeCrypto.layer)("DaXiang messages", (it) => {
             ],
           });
         }
+        const count = paths.length;
+        yield* (yield* Settings.ServerSettingsService).updateSettings({
+          meituanIntegrationEnabled: false,
+        });
+        assert.equal((yield* service.sendLink(input).pipe(Effect.result))._tag, "Failure");
+        assert.equal(paths.length, count);
       }).pipe(
         Effect.provide(Daxiang.layer),
         Effect.provideService(HttpClient.HttpClient, http),
         Effect.provide(
           Settings.ServerSettingsService.layerTest({
+            meituanIntegrationEnabled: true,
             daxiang: { clientId: "test-app", clientSecret: "test-secret" },
           }),
         ),
@@ -104,6 +111,7 @@ it.layer(NodeCrypto.layer)("DaXiang messages", (it) => {
         Effect.provideService(HttpClient.HttpClient, http),
         Effect.provide(
           Settings.ServerSettingsService.layerTest({
+            meituanIntegrationEnabled: true,
             daxiang: { clientId: "app", clientSecret: "secret" },
           }),
         ),
@@ -127,13 +135,12 @@ it.layer(NodeCrypto.layer)("DaXiang messages", (it) => {
         Effect.flip,
         Effect.provide(Daxiang.layer),
         Effect.provideService(HttpClient.HttpClient, http),
-        Effect.provide(Settings.ServerSettingsService.layerTest()),
+        Effect.provide(
+          Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true }),
+        ),
       );
       assert.equal(result._tag, "DaxiangSendError");
-      assert.equal(
-        result.message,
-        "Configure DaXiang in Connections > Communication on this environment.",
-      );
+      assert.equal(result.message, "Configure DaXiang in Meituan integration on this environment.");
       assert.equal(requests, 0);
     }),
   );

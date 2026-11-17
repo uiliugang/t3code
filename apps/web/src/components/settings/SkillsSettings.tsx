@@ -47,7 +47,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { useClientSettings } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -155,19 +155,30 @@ function SourceSelect({
   onChange: (id: string) => void;
 }) {
   const t = useUiTranslation();
-  const source = data.sources.find((item) => item.id === value);
+  const source = data.sources.find((item) => item.id === value && item.enabled);
   return (
-    <Select value={value} onValueChange={(next) => next && onChange(next)}>
+    <Select
+      value={source ? value : null}
+      onValueChange={(next, details) => {
+        // Removing a source must not silently switch a draft to Base UI's initial item.
+        if (!source && details.reason === "none") {
+          details.cancel();
+          return;
+        }
+        if (next) onChange(next);
+      }}
+    >
       <SelectTrigger aria-label={t("Skill source")}>
         <SelectValue>{source ? skillSourceName(source, t) : t("Choose source")}</SelectValue>
       </SelectTrigger>
       <SelectPopup alignItemWithTrigger={false}>
-        {data.sources.map((item) => (
-          <SelectItem key={item.id} value={item.id}>
-            {skillSourceName(item, t)}
-            {!item.enabled && ` · ${t("Disabled")}`}
-          </SelectItem>
-        ))}
+        {data.sources
+          .filter((item) => item.enabled)
+          .map((item) => (
+            <SelectItem key={item.id} value={item.id}>
+              {skillSourceName(item, t)}
+            </SelectItem>
+          ))}
       </SelectPopup>
     </Select>
   );
@@ -238,7 +249,7 @@ function Targets({
     </div>
   );
 }
-function InstallDialog({
+export function InstallDialog({
   data,
   mutate,
   onClose,
@@ -476,7 +487,11 @@ function OriginDialog({
             {t("Cancel")}
           </Button>
           <Button
-            disabled={saving || !locator.trim()}
+            disabled={
+              saving ||
+              !locator.trim() ||
+              !data.sources.some((source) => source.id === sourceId && source.enabled)
+            }
             onClick={async () => {
               setSaving(true);
               const ok = await mutate({
@@ -815,7 +830,16 @@ function SkillPackageGroup({
                 </MenuTrigger>
                 <MenuPopup align="end">
                   <MenuItem
-                    disabled={!canManage || managed.length > 200}
+                    disabled={
+                      !canManage ||
+                      managed.length > 200 ||
+                      managed.some(
+                        (skill) =>
+                          !data.sources.some(
+                            (source) => source.id === skill.sourceId && source.enabled,
+                          ),
+                      )
+                    }
                     onClick={() =>
                       void mutate({
                         type: "batch",
@@ -885,7 +909,7 @@ function SkillRow({
     setDiff(await inspect({ type: "diff", id: skill.id }));
     setInspecting(false);
   };
-  const nextCheck = skillNextCheck(skill);
+  const nextCheck = source?.enabled ? skillNextCheck(skill) : null;
   return (
     <article className="border-b border-border py-4">
       <div className="flex items-start gap-3">
@@ -1122,7 +1146,11 @@ function SkillRow({
                   </p>
                 )}
                 {skill.choices?.length ? (
-                  <SkillChoices skill={skill} mutate={mutate} disabled={disabled} />
+                  <SkillChoices
+                    skill={skill}
+                    mutate={mutate}
+                    disabled={disabled || !source?.enabled}
+                  />
                 ) : null}
               </div>
             )}
@@ -1216,7 +1244,7 @@ function SkillRow({
             <Button
               size="sm"
               variant="outline"
-              disabled={disabled}
+              disabled={disabled || !source?.enabled}
               onClick={() => void mutate({ type: "check", id: skill.id })}
             >
               {t("Check updates")}
@@ -1468,15 +1496,25 @@ function TargetEditor({ mutate, disabled }: { mutate: Mutate; disabled: boolean 
   );
 }
 
-function AddSource({ mutate, disabled }: { mutate: Mutate; disabled: boolean }) {
+export function AddSource({
+  mutate,
+  disabled,
+  meituanEnabled,
+}: {
+  mutate: Mutate;
+  disabled: boolean;
+  meituanEnabled: boolean;
+}) {
   const t = useUiTranslation();
   const [label, setLabel] = useState("");
-  const [kind, setKind] = useState<SkillSource["kind"]>("skills");
+  const [selectedKind, setKind] = useState<SkillSource["kind"]>("skills");
+  const kind = selectedKind === "mtskills" && !meituanEnabled ? null : selectedKind;
   return (
     <form
       className="space-y-3 px-4 py-4"
       onSubmit={async (event) => {
         event.preventDefault();
+        if (disabled || !label.trim() || !kind) return;
         if (
           await mutate({
             type: "source.save",
@@ -1510,34 +1548,54 @@ function AddSource({ mutate, disabled }: { mutate: Mutate; disabled: boolean }) 
       </label>
       <div className="space-y-2">
         <div className="text-sm">{t("Installer type")}</div>
-        <Select value={kind} disabled={disabled} onValueChange={(value) => value && setKind(value)}>
+        <Select
+          value={kind}
+          disabled={disabled}
+          onValueChange={(value, details) => {
+            // Base UI falls back to its initial item when the selected option disappears.
+            if (!kind && details.reason === "none") {
+              details.cancel();
+              return;
+            }
+            if (value) setKind(value);
+          }}
+        >
           <SelectTrigger aria-label={t("Installer type")}>
             <SelectValue>
               {t(
-                kind === "local"
-                  ? "Local directory"
-                  : kind === "skills"
-                    ? "Vercel skills"
-                    : "Meituan mtskills",
+                !kind
+                  ? "Choose source"
+                  : kind === "local"
+                    ? "Local directory"
+                    : kind === "skills"
+                      ? "Vercel skills"
+                      : "Meituan mtskills",
               )}
             </SelectValue>
           </SelectTrigger>
           <SelectPopup alignItemWithTrigger={false}>
-            {(["skills", "mtskills", "local"] as const).map((value) => (
-              <SelectItem key={value} value={value}>
-                {t(
-                  value === "local"
-                    ? "Local directory"
-                    : value === "skills"
-                      ? "Vercel skills"
-                      : "Meituan mtskills",
-                )}
-              </SelectItem>
-            ))}
+            {(["skills", "mtskills", "local"] as const)
+              .filter((value) => value !== "mtskills" || meituanEnabled)
+              .map((value) => (
+                <SelectItem key={value} value={value}>
+                  {t(
+                    value === "local"
+                      ? "Local directory"
+                      : value === "skills"
+                        ? "Vercel skills"
+                        : "Meituan mtskills",
+                  )}
+                </SelectItem>
+              ))}
           </SelectPopup>
         </Select>
       </div>
-      <Button type="submit" size="sm" variant="outline" disabled={disabled || !label.trim()}>
+      <Button
+        type="submit"
+        size="sm"
+        variant="outline"
+        disabled={disabled || !label.trim() || !kind}
+      >
         <PlusIcon />
         {t("Add source")}
       </Button>
@@ -1688,7 +1746,7 @@ function EnvironmentSkills({
   const [tab, setTab] = useState<"skills" | "sources" | "targets">("skills");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+  const [selectedSourceFilter, setSourceFilter] = useState<string | null>(null);
   const [showExternal, setShowExternal] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [install, setInstall] = useState(false);
@@ -1703,7 +1761,18 @@ function EnvironmentSkills({
     const result = await inspectCommand({ environmentId, input });
     return result._tag === "Success" ? result.value : null;
   };
-  const data = query.data;
+  const meituanEnabled = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.meituanIntegrationEnabled,
+  );
+  const data = query.data
+    ? {
+        ...query.data,
+        sources: query.data.sources.map((source) =>
+          source.kind === "mtskills" && !meituanEnabled ? { ...source, enabled: false } : source,
+        ),
+      }
+    : null;
   const canManage = permitted && connected;
   const adopt = async (skills: DiscoveredSkill[]) => {
     setPreviewing(true);
@@ -1729,6 +1798,15 @@ function EnvironmentSkills({
         )}
       </p>
     );
+  const visibleSources = data.sources.filter(
+    (source) => source.kind !== "mtskills" || source.enabled,
+  );
+  const skillsEnabled = visibleSources.some((source) => source.kind === "mtskills");
+  const sourceFilter =
+    selectedSourceFilter === "" ||
+    visibleSources.some((source) => source.id === selectedSourceFilter)
+      ? selectedSourceFilter
+      : null;
   const { rows, counts, sourceCounts, hiddenExternal } = skillRows(
     data,
     search,
@@ -1738,7 +1816,7 @@ function EnvironmentSkills({
   );
   const sourceOptions = [
     { value: "all", label: `${t("All sources")} ${counts.all}` },
-    ...data.sources.map((source) => ({
+    ...visibleSources.map((source) => ({
       value: `source:${source.id}`,
       label: `${skillSourceName(source, t)} ${sourceCounts[source.id] ?? 0}`,
     })),
@@ -1747,6 +1825,9 @@ function EnvironmentSkills({
   const failedSource = skillSourceFailure(data);
   const selectableRows = rows.filter((row) => row.kind === "managed" || !row.skill.external);
   const selectedManaged = data.skills.filter((skill) => selected.includes(skill.id));
+  const selectedSourceDisabled = selectedManaged.some(
+    (skill) => !data.sources.some((source) => source.id === skill.sourceId && source.enabled),
+  );
   const selectedDiscovered = data.discovered.filter(
     (skill) => selected.includes(skill.identity ?? skill.path) && !skill.external,
   );
@@ -1968,7 +2049,7 @@ function EnvironmentSkills({
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!canManage}
+                      disabled={!canManage || selectedSourceDisabled}
                       onClick={() =>
                         void batch(
                           selectedManaged.map((skill) => ({ type: "check", id: skill.id })),
@@ -1980,7 +2061,7 @@ function EnvironmentSkills({
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!canManage}
+                      disabled={!canManage || selectedSourceDisabled}
                       onClick={() =>
                         void batch(
                           selectedManaged
@@ -2238,7 +2319,7 @@ function EnvironmentSkills({
               "Sources tell managed skills where to check for changes. Enabled does not mean verified.",
             )}
           </p>
-          {data.sources.map((source) => (
+          {visibleSources.map((source) => (
             <div key={source.id}>
               <p className="mt-4 text-xs text-muted-foreground">
                 {t("{count} managed skills", {
@@ -2255,7 +2336,7 @@ function EnvironmentSkills({
           ))}
           <details className="py-4">
             <summary className="cursor-pointer text-sm font-medium">{t("Add source")}</summary>
-            <AddSource mutate={mutate} disabled={!canManage} />
+            <AddSource mutate={mutate} disabled={!canManage} meituanEnabled={skillsEnabled} />
           </details>
         </div>
       )}

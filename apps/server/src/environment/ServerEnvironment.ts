@@ -280,6 +280,7 @@ export const make = Effect.gen(function* () {
       serverResolvedCommandContext: true,
       threadStop: true,
       threadTerminalCleanup: true,
+      meituanIntegration: true,
       sourceControlToolMaintenance: true,
       ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
       environmentIcon: true,

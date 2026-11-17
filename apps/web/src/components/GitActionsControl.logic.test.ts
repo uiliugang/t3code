@@ -87,6 +87,18 @@ describe("when: ref is clean, up to date, and has no open PR", () => {
       false,
     );
     assert.equal(pushDisabledReason(dirtyFeature), "No local commits to push.");
+    assert.isUndefined(
+      buildMenuItems(syncedFeature, false, true, false).find((item) => item.id === "pr"),
+    );
+    assert.isTrue(resolveQuickAction(syncedFeature, false, false, true, false).disabled);
+    assert.equal(resolveQuickAction(dirtyFeature, false, false, true, false).action, "commit_push");
+    for (const hasUpstream of [true, false]) {
+      assert.equal(
+        resolveQuickAction(status({ hasUpstream, aheadCount: 1 }), false, false, true, false)
+          .action,
+        "push",
+      );
+    }
   });
 
   it("offers the actions menu only when something in it is usable", () => {

@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind, isMeituanServiceEnabled } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -70,13 +70,14 @@ export class SourceControlProviderRegistry extends Context.Service<
 
 function unsupportedProvider(
   kind: SourceControlProviderKind,
+  disabled = false,
 ): SourceControlProvider.SourceControlProvider["Service"] {
   // Binding context does not create a second provider-operation span.
   return SourceControlProvider.SourceControlProvider.of({
     kind,
     // Unknown hosts have no readable change requests; return none to avoid poll warnings on every refresh.
     listChangeRequests: (input) =>
-      kind === "unknown"
+      kind === "unknown" || disabled
         ? Effect.succeed([])
         : new SourceControlProviderError({
             provider: kind,
@@ -251,8 +252,36 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
     >(registrations.map((registration) => [registration.kind, registration.provider]));
     const discoverySpecs = registrations.map((registration) => registration.discovery);
 
-    const get: SourceControlProviderRegistry["Service"]["get"] = (kind) =>
-      Effect.succeed(providers.get(kind) ?? unsupportedProvider(kind));
+    const get = Effect.fn("SourceControlProviderRegistry.get")(
+      function* (kind: SourceControlProviderKind) {
+        const provider = providers.get(kind) ?? unsupportedProvider(kind);
+        if (kind !== "meituan") return provider;
+        const settings = yield* serverSettings.getSettings;
+        const codeEnabled = isMeituanServiceEnabled(settings, "sourceControl");
+        const issuesEnabled = isMeituanServiceEnabled(settings, "requirements");
+        if (codeEnabled && issuesEnabled) return provider;
+        const { issueBoard, issues, discoverIssueSources, ...codeProvider } = provider;
+        return {
+          ...(codeEnabled ? codeProvider : unsupportedProvider(kind, true)),
+          ...(issuesEnabled && issueBoard ? { issueBoard } : {}),
+          ...(codeEnabled && issuesEnabled && issues ? { issues } : {}),
+          ...(codeEnabled && issuesEnabled && discoverIssueSources ? { discoverIssueSources } : {}),
+        };
+      },
+      (effect, kind) =>
+        effect.pipe(
+          Effect.mapError(
+            (cause) =>
+              new SourceControlProviderError({
+                provider: kind,
+                operation: "get",
+                cwd: config.cwd,
+                detail: "Could not read integration settings.",
+                cause,
+              }),
+          ),
+        ),
+    );
 
     const unknownRemoteCache = yield* Cache.makeWith(
       (request: UnknownRemoteLookup) => request.lookup,
@@ -325,13 +354,17 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
         ? Cache.get(providerContextCache, input.cwd)
         : refineContext(input.cwd, input.context)
       ).pipe(
-        Effect.map((context) => {
+        Effect.flatMap((context) => {
           const kind = context?.provider.kind ?? SourceControlProviderKind.make("unknown");
-          const provider = providers.get(kind) ?? unsupportedProvider(kind);
-          return {
-            provider: bindProviderContext(provider, context),
-            context,
-          } satisfies SourceControlProviderHandle;
+          return get(kind).pipe(
+            Effect.map(
+              (provider) =>
+                ({
+                  provider: bindProviderContext(provider, context),
+                  context,
+                }) satisfies SourceControlProviderHandle,
+            ),
+          );
         }),
       );
 
@@ -348,15 +381,23 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       resolve: Effect.fn("SourceControlProviderRegistry.resolve")(function (input) {
         return resolveHandle(input).pipe(Effect.map((handle) => handle.provider));
       }),
-      discover: Effect.forEach(
-        discoverySpecs,
-        (spec) =>
-          probeSourceControlProvider({
-            spec,
-            process,
-            cwd: config.cwd,
-          }),
-        { concurrency: "unbounded" },
+      discover: serverSettings.getSettings.pipe(
+        Effect.orElseSucceed(() => null),
+        Effect.flatMap((settings) =>
+          Effect.forEach(
+            discoverySpecs.filter(
+              (spec) =>
+                spec.kind !== "meituan" || isMeituanServiceEnabled(settings, "sourceControl"),
+            ),
+            (spec) =>
+              probeSourceControlProvider({
+                spec,
+                process,
+                cwd: config.cwd,
+              }),
+            { concurrency: "unbounded" },
+          ),
+        ),
       ),
     });
   },

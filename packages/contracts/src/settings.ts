@@ -1673,6 +1673,11 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   removedProviderInstances: Schema.optionalKey(Schema.Array(ProviderInstanceId)),
+  meituanIntegrationEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  meituanSourceControlEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  meituanRequirementsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   daxiang: Schema.Struct({
     clientId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
     clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
@@ -1709,6 +1714,25 @@ export const ServerSettings = Schema.Struct({
   usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
 });
 export type ServerSettings = typeof ServerSettings.Type;
+
+export function isMeituanServiceEnabled(
+  settings:
+    | {
+        readonly meituanIntegrationEnabled: boolean;
+        readonly meituanSourceControlEnabled?: boolean;
+        readonly meituanRequirementsEnabled?: boolean;
+      }
+    | null
+    | undefined,
+  service: "sourceControl" | "requirements",
+): boolean {
+  return (
+    settings?.meituanIntegrationEnabled === true &&
+    (service === "sourceControl"
+      ? settings.meituanSourceControlEnabled !== false
+      : settings.meituanRequirementsEnabled !== false)
+  );
+}
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
@@ -2093,6 +2117,9 @@ export const ServerSettingsPatch = Schema.Struct({
   /** Merges per host, replacing patched fields whole; redaction markers retain secrets, empty secrets remove them. A non-empty token map keeps the saved tokens of hosts it omits; an empty map clears them all. */
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
   issueProjectSources: Schema.optionalKey(IssueProjectSources),
+  meituanIntegrationEnabled: Schema.optionalKey(Schema.Boolean),
+  meituanSourceControlEnabled: Schema.optionalKey(Schema.Boolean),
+  meituanRequirementsEnabled: Schema.optionalKey(Schema.Boolean),
   daxiang: Schema.optionalKey(
     Schema.Struct({
       clientId: Schema.String,

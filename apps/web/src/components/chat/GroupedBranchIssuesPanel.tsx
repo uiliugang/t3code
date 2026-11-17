@@ -2,6 +2,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   branchIssuePlaceholder,
+  isMeituanServiceEnabled,
   parseBranchIssueUrl,
   type BranchIssue,
   type EnvironmentId,
@@ -20,7 +21,7 @@ import {
 import { useContext, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-import { useClientSettings } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { vcsEnvironment } from "../../state/vcs";
@@ -283,6 +284,12 @@ export function GroupedBranchIssuesPanel({
 }) {
   const t = useUiTranslation();
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const meituanEnabled = useEnvironmentSettings(
+    environmentId,
+    (settings) =>
+      isMeituanServiceEnabled(settings, "requirements") &&
+      isMeituanServiceEnabled(settings, "sourceControl"),
+  );
   const linked = useEnvironmentQuery(
     threadId && config?.workItemDelivery === true
       ? serverEnvironment.workItemsLive({ environmentId, input: { threadId } })
@@ -309,7 +316,7 @@ export function GroupedBranchIssuesPanel({
       const provider = data?.sourceControlProvider?.kind;
       const branch = data?.refName;
       const issueAtom =
-        branch && (provider === "github" || provider === "meituan")
+        branch && (provider === "github" || (provider === "meituan" && meituanEnabled))
           ? sourceControlEnvironment.branchIssues({ environmentId, input: { cwd, branch } })
           : null;
       const issues = issueAtom ? get(issueAtom) : null;

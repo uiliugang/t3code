@@ -1,5 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { BranchIssueError, type EnvironmentId, type IssueTarget } from "@t3tools/contracts";
+import {
+  BranchIssueError,
+  isMeituanServiceEnabled,
+  type EnvironmentId,
+  type IssueTarget,
+} from "@t3tools/contracts";
 import { ArrowUpRightIcon, GitBranchIcon, LinkIcon, UnlinkIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import * as Schema from "effect/Schema";
@@ -7,6 +12,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ChatMarkdown from "../ChatMarkdown";
@@ -35,8 +41,16 @@ export function IssueDetailPanel({
   changed: () => void;
 }) {
   const t = useUiTranslation();
+  const settings = useEnvironmentSettings(environmentId, (settings) => settings);
+  const enabled =
+    target.provider !== "meituan" || isMeituanServiceEnabled(settings, "requirements");
+  const branchesEnabled =
+    enabled &&
+    (target.provider !== "meituan" || isMeituanServiceEnabled(settings, "sourceControl"));
   const query = useEnvironmentQuery(
-    sourceControlEnvironment.issueDetail({ environmentId, input: { ...target, id } }),
+    enabled
+      ? sourceControlEnvironment.issueDetail({ environmentId, input: { ...target, id } })
+      : null,
   );
   const detail = query.data;
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
@@ -46,7 +60,7 @@ export function IssueDetailPanel({
       : null,
   );
   const branches = useEnvironmentQuery(
-    detail
+    detail && branchesEnabled
       ? sourceControlEnvironment.issueBranches({ environmentId, input: { cwd, url: detail.url } })
       : null,
   );
@@ -57,9 +71,10 @@ export function IssueDetailPanel({
   const allowed = useAtomValue(
     sourceControlEnvironment.setIssueState.permissionAtom(environmentId),
   );
-  const canLink = useAtomValue(
+  const linkAllowed = useAtomValue(
     sourceControlEnvironment.updateBranchIssues.permissionAtom(environmentId),
   );
+  const canLink = linkAllowed && branchesEnabled;
   const setState = useAtomCommand(sourceControlEnvironment.setIssueState);
   const updateBranches = useAtomCommand(sourceControlEnvironment.updateBranchIssues);
   const [nextState, setNextState] = useState("");
@@ -124,7 +139,9 @@ export function IssueDetailPanel({
             </Button>
           </p>
         ) : !detail ? (
-          <p className="text-sm text-muted-foreground">{t("Loading...")}</p>
+          <p className="text-sm text-muted-foreground">
+            {t(enabled ? "Loading..." : "This service is disabled. Saved settings are retained.")}
+          </p>
         ) : (
           <>
             <div className="space-y-3">

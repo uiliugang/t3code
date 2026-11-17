@@ -81,6 +81,12 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     const data = registry.get(board(key));
     expect(data.isPending).toBe(false);
     expect(data.errors).toEqual(["Source unavailable"]);
+    const disabledMeituan = registry.get(
+      board(new RequirementBoardKey({ ...key, meituanEnabled: false })),
+    );
+    expect(disabledMeituan.errors).toEqual([]);
+    expect(disabledMeituan.items).toEqual(data.items);
+    expect(disabledMeituan.issuePages).toHaveLength(1);
     expect(data.items).toEqual([{ ...item, version: 2, status: "in_progress" }]);
     expect(data.nextCursor).toBeNull();
     expect(data.moreIssues).toBe(false);
@@ -160,11 +166,16 @@ it("keeps environment identities, failures and pagination separate in the combin
   };
   const cursor = { id: item.id, updatedAt: item.updatedAt };
   const requested: Array<{ environmentId: EnvironmentId; cursor: unknown }> = [];
+  const settings = Atom.family((_id: EnvironmentId) =>
+    Atom.make({ meituanIntegrationEnabled: true, meituanRequirementsEnabled: true }),
+  );
   const overview = createRequirementOverviewAtoms({
-    issues: ({ environmentId }) =>
+    issues: ({ environmentId, input }) =>
       Atom.make(
         environmentId === firstEnvironment
-          ? AsyncResult.failure<typeof IssueListResult.Type>(Cause.die(new Error("Unavailable")))
+          ? AsyncResult.failure<typeof IssueListResult.Type>(
+              Cause.die(new Error(`${input.provider} unavailable`)),
+            )
           : AsyncResult.success<typeof IssueListResult.Type>({ groups: [], failures: [] }),
       ),
     workItemsLive: ({ environmentId, input }) => {
@@ -178,6 +189,7 @@ it("keeps environment identities, failures and pagination separate in the combin
       );
     },
     config: () => Atom.make({ workItems: true }),
+    settings,
     tracked: () => Atom.make(new Map()),
   });
   const key = new RequirementOverviewKey({
@@ -198,6 +210,19 @@ it("keeps environment identities, failures and pagination separate in the combin
     expect(new Set(result.entries.map((entry) => entry.key)).size).toBe(2);
     expect(result.errors.every((error) => error.environmentId === firstEnvironment)).toBe(true);
     expect(result.hasMore).toBe(true);
+    registry.set(settings(firstEnvironment), {
+      meituanIntegrationEnabled: true,
+      meituanRequirementsEnabled: false,
+    });
+    const paused = registry.get(overview(key));
+    expect(paused.errors).toHaveLength(1);
+    expect(paused.errors[0]?.message).toBe("github unavailable");
+    expect(paused.entries).toEqual(result.entries);
+    registry.set(settings(firstEnvironment), {
+      meituanIntegrationEnabled: true,
+      meituanRequirementsEnabled: true,
+    });
+    expect(registry.get(overview(key)).errors).toHaveLength(2);
     registry.get(
       overview(new RequirementOverviewKey({ ...key, pagination: result.nextPagination })),
     );

@@ -1,11 +1,13 @@
 import { RegistryContext } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { prefetchRequirementIssues } from "@t3tools/client-runtime/state/requirement-board";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { isMeituanServiceEnabled, type EnvironmentId } from "@t3tools/contracts";
 import { useContext, useEffect } from "react";
 
 import { useAppActive } from "../../lib/appState";
 import { useEnvironments } from "../../state/environments";
 import { sourceControlEnvironment } from "../../state/sourceControl";
+import { serverEnvironment } from "../../state/server";
 
 export function RequirementPrefetchCoordinator() {
   const active = useAppActive();
@@ -24,6 +26,10 @@ export function RequirementPrefetchCoordinator() {
 
 function EnvironmentRequirementPrefetch({ environmentId }: { environmentId: EnvironmentId }) {
   const registry = useContext(RegistryContext);
+  const meituanEnabled = isMeituanServiceEnabled(
+    useAtomValue(serverEnvironment.settingsValueAtom(environmentId)),
+    "requirements",
+  );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- preloads the first pages while the app is active and releases its readers on background or disconnect
   useEffect(() => {
     const controller = new AbortController();
@@ -33,6 +39,7 @@ function EnvironmentRequirementPrefetch({ environmentId }: { environmentId: Envi
         sourceControlEnvironment.issues,
         [environmentId],
         controller.signal,
+        () => meituanEnabled,
       );
     };
     const handle = requestIdleCallback(prefetch, { timeout: 2_000 });
@@ -40,6 +47,6 @@ function EnvironmentRequirementPrefetch({ environmentId }: { environmentId: Envi
       cancelIdleCallback(handle);
       controller.abort();
     };
-  }, [environmentId, registry]);
+  }, [environmentId, registry, meituanEnabled]);
   return null;
 }

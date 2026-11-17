@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import * as Installer from "./SourceControlToolInstaller.ts";
+import * as Settings from "../serverSettings.ts";
 import * as Maintenance from "./SourceControlToolMaintenance.ts";
 
 const plan = (patch: Partial<SourceControlTool> = {}): Installer.ToolInstallationPlan => ({
@@ -39,6 +40,7 @@ const confirmation = (tool = plan().tool): SourceControlToolStartInput => ({
 const testLayer = (installer: Installer.SourceControlToolInstaller["Service"]) =>
   Maintenance.layer.pipe(
     Layer.provide(Layer.succeed(Installer.SourceControlToolInstaller, installer)),
+    Layer.provide(Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true })),
   );
 
 it.effect(

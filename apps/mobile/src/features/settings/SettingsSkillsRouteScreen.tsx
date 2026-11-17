@@ -130,10 +130,12 @@ function SourcesMenu({
   onChange: (value: string) => void;
 }) {
   const t = useUiTranslation();
-  const source = data.sources.find((entry) => entry.id === value);
+  const source = data.sources.find((entry) => entry.id === value && entry.enabled);
   return (
     <Menu
-      actions={data.sources.map((entry) => ({ id: entry.id, title: skillSourceName(entry, t) }))}
+      actions={data.sources
+        .filter((entry) => entry.enabled)
+        .map((entry) => ({ id: entry.id, title: skillSourceName(entry, t) }))}
       onPressAction={({ nativeEvent }) => onChange(nativeEvent.event)}
     >
       <ControlPill
@@ -359,6 +361,9 @@ function Skill({
   const configuration = skillConfigurationJob(skill, data.jobs);
   const name = skill.description ? skill.name : skill.requestedSkill || skill.locator;
   const failure = skillFailure(skill);
+  const sourceEnabled = data.sources.some(
+    (source) => source.id === skill.sourceId && source.enabled,
+  );
   const confirm = (label: string, action: SkillMutation) =>
     Dialog.alert(label, name, [
       { text: t("Cancel"), style: "cancel" },
@@ -478,7 +483,7 @@ function Skill({
           <Text className="text-xs text-foreground-muted">{t("Last check")}</Text>
           <SkillDate value={skill.checkedAt} />
           <Text className="text-xs text-foreground-muted">{t("Next check")}</Text>
-          <SkillDate value={skillNextCheck(skill)} />
+          <SkillDate value={sourceEnabled ? skillNextCheck(skill) : null} />
           <Policy
             value={skill.policy}
             disabled={disabled}
@@ -492,7 +497,7 @@ function Skill({
           <View className="flex-row flex-wrap gap-2">
             <ControlPill
               label={t("Check updates")}
-              disabled={disabled}
+              disabled={disabled || !sourceEnabled}
               onPress={() => void mutate({ type: "check", id: skill.id })}
             />
             <ControlPill
@@ -518,7 +523,7 @@ function Skill({
                   <Text className="min-w-0 flex-1 text-foreground">{choice}</Text>
                   <Switch
                     accessibilityLabel={choice}
-                    disabled={disabled}
+                    disabled={disabled || !sourceEnabled}
                     value={choices.includes(choice)}
                     onValueChange={(enabled) =>
                       setChoices(
@@ -533,7 +538,7 @@ function Skill({
               <ControlPill
                 variant="pill"
                 label={t("Install selected ({count})", { count: choices.length })}
-                disabled={disabled || !choices.length || choices.length > 200}
+                disabled={disabled || !sourceEnabled || !choices.length || choices.length > 200}
                 onPress={() => void mutate(skillSelection(skill, choices))}
               />
             </View>
@@ -776,7 +781,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [tab, setTab] = useState("skills");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+  const [selectedSourceFilter, setSourceFilter] = useState<string | null>(null);
   const [showExternal, setShowExternal] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -793,7 +798,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [directory, setDirectory] = useState("");
   const [label, setLabel] = useState("");
   const [sourceName, setSourceName] = useState("");
-  const [sourceKind, setSourceKind] = useState<SkillSource["kind"]>("skills");
+  const [selectedSourceKind, setSourceKind] = useState<SkillSource["kind"]>("skills");
   const mutate: Mutate = async (input) =>
     (await command({ environmentId, input }))._tag === "Success";
   const inspect: Inspect = async (input) => {
@@ -820,7 +825,17 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
     setPreviews(results);
     setPreviewing(false);
   };
-  const data = query.data;
+  const meituanEnabled =
+    useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.meituanIntegrationEnabled ===
+    true;
+  const data = query.data
+    ? {
+        ...query.data,
+        sources: query.data.sources.map((source) =>
+          source.kind === "mtskills" && !meituanEnabled ? { ...source, enabled: false } : source,
+        ),
+      }
+    : null;
   if (!data)
     return (
       <Text
@@ -835,6 +850,17 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       </Text>
     );
   const disabled = !permitted;
+  const visibleSources = data.sources.filter(
+    (source) => source.kind !== "mtskills" || source.enabled,
+  );
+  const skillsEnabled = visibleSources.some((source) => source.kind === "mtskills");
+  const sourceKind =
+    selectedSourceKind === "mtskills" && !skillsEnabled ? null : selectedSourceKind;
+  const sourceFilter =
+    selectedSourceFilter === "" ||
+    visibleSources.some((source) => source.id === selectedSourceFilter)
+      ? selectedSourceFilter
+      : null;
   const failedSource = skillSourceFailure(data);
   const { rows, counts, sourceCounts } = skillRows(
     data,
@@ -848,6 +874,9 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
     (skill) => selected.includes(skill.identity ?? skill.path) && !skill.external,
   );
   const detail = skillRows(data, "", "all", true).rows.find((row) => row.key === detailKey);
+  const selectedSourceDisabled = chosen.some(
+    (skill) => !data.sources.some((source) => source.id === skill.sourceId && source.enabled),
+  );
   const selectionActions = selecting && tab === "skills" && (
     <View
       className="border-t border-border-subtle bg-sheet px-5 pt-3"
@@ -889,8 +918,16 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
               : []),
             ...(chosen.length
               ? [
-                  { id: "check", title: t("Check updates"), attributes: { disabled } },
-                  { id: "update", title: t("Apply available updates"), attributes: { disabled } },
+                  {
+                    id: "check",
+                    title: t("Check updates"),
+                    attributes: { disabled: disabled || selectedSourceDisabled },
+                  },
+                  {
+                    id: "update",
+                    title: t("Apply available updates"),
+                    attributes: { disabled: disabled || selectedSourceDisabled },
+                  },
                   ...Object.entries(skillPolicies)
                     .filter(([id]) => id !== "manual")
                     .map(([id, title]) => ({
@@ -912,6 +949,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
               return;
             }
             if (disabled) return;
+            if ((action === "check" || action === "update") && selectedSourceDisabled) return;
             if (action === "adopt") {
               if (!previewing) void preview(discovered);
               return;
@@ -1183,7 +1221,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                         title: `${sourceFilter === null ? "✓ " : ""}${t("All sources")}`,
                       },
                       ...[
-                        ...data.sources.map((source) => ({
+                        ...visibleSources.map((source) => ({
                           id: source.id,
                           label: skillSourceName(source, t),
                         })),
@@ -1334,7 +1372,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
         )}
         {tab === "sources" && (
           <>
-            {data.sources.map((source) => (
+            {visibleSources.map((source) => (
               <Source
                 key={`${source.id}:${source.enabled}:${source.executable}`}
                 source={source}
@@ -1344,35 +1382,40 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             ))}
             <Field label={t("Source name")} value={sourceName} onChange={setSourceName} />
             <Menu
-              actions={["skills", "mtskills", "local"].map((kind) => ({
-                id: kind,
-                title: t(
-                  kind === "local"
-                    ? "Local directory"
-                    : kind === "mtskills"
-                      ? "Meituan mtskills"
-                      : "Vercel skills",
-                ),
-              }))}
+              actions={["skills", "mtskills", "local"]
+                .filter((kind) => kind !== "mtskills" || skillsEnabled)
+                .map((kind) => ({
+                  id: kind,
+                  title: t(
+                    kind === "local"
+                      ? "Local directory"
+                      : kind === "mtskills"
+                        ? "Meituan mtskills"
+                        : "Vercel skills",
+                  ),
+                }))}
               onPressAction={({ nativeEvent }) =>
                 setSourceKind(nativeEvent.event as SkillSource["kind"])
               }
             >
               <ControlPill
                 label={t(
-                  sourceKind === "local"
-                    ? "Local directory"
-                    : sourceKind === "mtskills"
-                      ? "Meituan mtskills"
-                      : "Vercel skills",
+                  !sourceKind
+                    ? "Choose source"
+                    : sourceKind === "local"
+                      ? "Local directory"
+                      : sourceKind === "mtskills"
+                        ? "Meituan mtskills"
+                        : "Vercel skills",
                 )}
                 accessibilityLabel={t("Installer type")}
               />
             </Menu>
             <ControlPill
               label={t("Add source")}
-              disabled={disabled || !sourceName.trim()}
-              onPress={() =>
+              disabled={disabled || !sourceName.trim() || !sourceKind}
+              onPress={() => {
+                if (disabled || !sourceName.trim() || !sourceKind) return;
                 void mutate({
                   type: "source.save",
                   source: {
@@ -1390,8 +1433,8 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                   },
                 }).then((ok) => {
                   if (ok) setSourceName("");
-                })
-              }
+                });
+              }}
             />
           </>
         )}

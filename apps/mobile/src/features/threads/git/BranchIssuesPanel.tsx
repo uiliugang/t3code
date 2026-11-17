@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   branchIssuePlaceholder,
+  isMeituanServiceEnabled,
   parseBranchIssueUrl,
   type BranchIssue,
   type EnvironmentId,
@@ -18,6 +19,7 @@ import { SelectableMarkdownText } from "../../../native/SelectableMarkdownText";
 import { mobilePreferencesAtom } from "../../../state/preferences";
 import type { Preferences } from "../../../persistence/mobile-preferences";
 import { useEnvironmentQuery } from "../../../state/query";
+import { useEnvironmentServerConfig } from "../../../state/entities";
 import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { useMarkdownPreviewStyles } from "../../files/FileMarkdownPreview";
@@ -94,15 +96,22 @@ function IssueRow({
 
 export function BranchIssuesPanel({ target, provider }: { target: Target; provider: string }) {
   const t = useUiTranslation();
+  const config = useEnvironmentServerConfig(target.environmentId);
+  const enabled =
+    provider !== "meituan" ||
+    (isMeituanServiceEnabled(config?.settings, "requirements") &&
+      isMeituanServiceEnabled(config?.settings, "sourceControl"));
   const preferences = AsyncResult.getOrElse(
     useAtomValue(mobilePreferencesAtom),
     (): Preferences => ({}),
   );
   const query = useEnvironmentQuery(
-    sourceControlEnvironment.branchIssues({
-      environmentId: target.environmentId,
-      input: { cwd: target.cwd, branch: target.branch },
-    }),
+    enabled
+      ? sourceControlEnvironment.branchIssues({
+          environmentId: target.environmentId,
+          input: { cwd: target.cwd, branch: target.branch },
+        })
+      : null,
   );
   const allowed = useAtomValue(
     sourceControlEnvironment.updateBranchIssues.permissionAtom(target.environmentId),
@@ -143,6 +152,7 @@ export function BranchIssuesPanel({ target, provider }: { target: Target; provid
     }
   }
   if (
+    !enabled ||
     preferences.branchIssuesVisible === false ||
     (preferences.branchIssuesShowEmpty === false && query.data && !issues.length && !adding)
   )

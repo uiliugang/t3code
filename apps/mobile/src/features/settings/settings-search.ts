@@ -15,6 +15,8 @@ const SETTINGS_SEARCH_TERMS = {
     "tailscale",
   ],
   SettingsNotifications: ["push", "alerts", "live activity", "agent activity"],
+  SettingsMeituan: ["meituan", "美团", "MIS", "MEP", "ONES", "MCM", "daxiang", "大象", "mtskills"],
+  SettingsSharingAccess: ["sharing", "access", "wechat", "微信", "配对", "推送"],
   SettingsAppearance: [
     "theme",
     "dark mode",

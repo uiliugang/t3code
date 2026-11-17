@@ -1,5 +1,6 @@
 import {
   CommandId,
+  isMeituanServiceEnabled,
   DeliveryScope,
   WorkItem,
   WorkItemCommandInput,
@@ -21,6 +22,7 @@ import * as Issues from "../sourceControl/IssueService.ts";
 import * as WorkItems from "./WorkItemService.ts";
 import * as Mcm from "./McmReleaseService.ts";
 import { decideDelivery } from "./deliveryDecision.ts";
+import * as Settings from "../serverSettings.ts";
 
 export class DeliverySyncReactor extends Context.Service<
   DeliverySyncReactor,
@@ -45,11 +47,17 @@ export const layer = Layer.effect(
     const issues = yield* Issues.IssueService;
     const mcm = yield* Mcm.McmReleaseService;
     const sql = yield* SqlClient.SqlClient;
+    const settings = yield* Settings.ServerSettingsService;
     const serial = yield* Semaphore.make(1);
 
     const refresh = Effect.fn("DeliverySyncReactor.refresh")(function* (initial: WorkItem) {
       let item = initial;
       if (item.delivery === undefined || item.archived) return;
+      if (
+        item.delivery.issue.provider === "meituan" &&
+        !isMeituanServiceEnabled(yield* settings.getSettings, "requirements")
+      )
+        return;
       let delivery: WorkItemDelivery = item.delivery;
       const scope = delivery.scope;
       if (scope.confirmedRevision !== scope.revision && !delivery.reopenRequest) return;

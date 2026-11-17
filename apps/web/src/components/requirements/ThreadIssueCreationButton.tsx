@@ -4,6 +4,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   CommandId,
+  isMeituanServiceEnabled,
   type EnvironmentId,
   type IssueSource,
   type ProjectId,
@@ -14,6 +15,7 @@ import { PlusIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { randomUUID } from "~/lib/utils";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -59,7 +61,13 @@ export function ThreadIssueCreationButton({
       ? serverEnvironment.workItemsLive({ environmentId, input: { threadId } })
       : null,
   );
-  const options = sources.data?.[0]?.sources ?? [];
+  const meituanEnabled = useEnvironmentSettings(environmentId, (settings) =>
+    isMeituanServiceEnabled(settings, "requirements"),
+  );
+  const options =
+    sources.data?.[0]?.sources.filter(
+      (source) => source.provider !== "meituan" || meituanEnabled,
+    ) ?? [];
   const execution = task.data?.item?.executions.at(-1);
   const executionStatus = useThreadStatus(
     execution?.runId ? scopeThreadRef(environmentId, execution.threadId) : null,
