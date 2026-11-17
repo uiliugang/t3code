@@ -132,7 +132,11 @@ export class IssueError extends Schema.TaggedError<IssueError, { readonly brand:
       case "outcome-unknown":
         return "The request may have succeeded. Check the source before submitting again.";
       default:
-        return "Could not access issues. Check the connection and your account on this environment.";
+        if (this.operation === "repository")
+          return "Could not resolve this project's repository. Check that its workspace exists and is a Git repository.";
+        if (this.operation === "discovery")
+          return "Could not discover issue sources for this repository. Check its issue associations or configure a source in Requirements settings.";
+        return "Could not access issues on this environment. Check the connection or try again.";
     }
   }
 }

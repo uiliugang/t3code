@@ -14,6 +14,7 @@ import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as Projects from "../project/ProjectService.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
 import * as Provider from "@t3tools/source-control-core/server/SourceControlProvider";
@@ -64,6 +65,10 @@ describe("IssueService", () => {
             Layer.mergeAll(
               KeyValueStore.layerFileSystem(directory),
               Settings.ServerSettingsService.layerTest(),
+              Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                namedProjectsRoot: "/projects",
+                scratchRoot: Effect.succeedNone,
+              }),
               Layer.mock(Projects.ProjectService)({
                 getShell: () =>
                   Effect.succeedSome({
@@ -97,7 +102,12 @@ describe("IssueService", () => {
         );
         const input = { projectIds: [projectId] };
         const first = yield* create;
-        expect((yield* first.sources(input))[0]?.error).toBeDefined();
+        expect((yield* first.sources(input))[0]?.error).toBe(
+          "Could not discover issue sources for this repository. Check its issue associations or configure a source in Requirements settings.",
+        );
+        expect(
+          yield* first.read({ provider: "meituan", projectId, id: "1" }).pipe(Effect.flip),
+        ).toMatchObject({ operation: "discovery", reason: "unavailable" });
         expect((yield* (yield* create).sources(input))[0]?.error).toBeDefined();
         expect(discoveries).toBe(1);
         yield* TestClock.adjust("31 seconds");
@@ -120,17 +130,28 @@ describe("IssueService", () => {
     "deduplicates shared sources, isolates failures and resolves targets from fresh settings",
     () =>
       Effect.gen(function* () {
-        const projects = ["first", "shared", "offline", "invalid"].map((name) => ({
+        const projects = [
+          "first",
+          "shared",
+          "offline",
+          "invalid",
+          "scratch",
+          "archived",
+          "not-a-repository",
+          "discovery-offline",
+          "manual-offline",
+        ].map((name) => ({
           id: ProjectId.make(name),
           title: name,
           workspaceRoot: `/${name}`,
           defaultModelSelection: null,
           scripts: [],
+          archivedAt: name === "archived" ? "2026-01-01T00:00:00Z" : null,
           createdAt: "2026-01-01T00:00:00Z",
           updatedAt: "2026-01-01T00:00:00Z",
         }));
         const sources = Object.fromEntries(
-          projects.map((project, index) => [
+          projects.slice(0, 4).map((project, index) => [
             project.id,
             [
               {
@@ -141,7 +162,9 @@ describe("IssueService", () => {
             ],
           ]),
         );
+        sources[projects[8]!.id] = [{ provider: "meituan", host: "mep.sankuai.com", scope: "999" }];
         const searched: string[] = [];
+        const resolved: string[] = [];
         let discovered = false;
         let discoveries = 0;
         sources[projects[0]!.id]!.push({
@@ -153,7 +176,16 @@ describe("IssueService", () => {
           Effect.provide(
             Layer.mock(Provider.SourceControlProvider)({
               kind: SourceControlProviderKind.make("meituan"),
-              discoverIssueSources: () => {
+              discoverIssueSources: ({ cwd }) => {
+                if (cwd === "/discovery-offline")
+                  return Effect.fail(
+                    new SourceControlProviderError({
+                      provider: SourceControlProviderKind.make("meituan"),
+                      cwd,
+                      operation: "discoverIssueSources",
+                      detail: "Temporarily offline",
+                    }),
+                  );
                 discoveries++;
                 return Effect.succeed(
                   discovered
@@ -199,11 +231,14 @@ describe("IssueService", () => {
             query: "",
             page: 1,
           });
-          expect(searched.toSorted()).toEqual(["1031008", "123", "456"]);
+          expect(resolved).not.toContain("/scratch");
+          expect(resolved).not.toContain("/archived");
+          expect(searched.toSorted()).toEqual(["1031008", "123", "456", "999"]);
           expect(discoveries).toBe(1);
           expect(result.groups.map((group) => group.projectIds)).toEqual([
             [projects[0]!.id, projects[1]!.id],
             [projects[0]!.id],
+            [projects[8]!.id],
           ]);
           expect(
             (yield* service.read({
@@ -229,7 +264,34 @@ describe("IssueService", () => {
               .read({ provider: "meituan", projectId: projects[0]!.id, id: "1" })
               .pipe(Effect.flip)).reason,
           ).toBe("invalid-target");
-          expect(result.failures.map((failure) => failure.projectId)).toEqual([projects[2]!.id]);
+          expect(result.failures).toEqual(
+            expect.arrayContaining([
+              {
+                projectId: projects[2]!.id,
+                reason: new IssueError({ operation: "search", reason: "unavailable" }).message,
+              },
+              {
+                projectId: projects[6]!.id,
+                reason:
+                  "Could not resolve this project's repository. Check that its workspace exists and is a Git repository.",
+              },
+              {
+                projectId: projects[7]!.id,
+                reason:
+                  "Could not discover issue sources for this repository. Check its issue associations or configure a source in Requirements settings.",
+              },
+            ]),
+          );
+          expect(result.failures).toHaveLength(3);
+          expect(
+            yield* service.list({
+              provider: "meituan",
+              projectId: projects[4]!.id,
+              assignee: "me",
+              query: "",
+              page: 1,
+            }),
+          ).toEqual({ groups: [], failures: [] });
           expect(
             (yield* service
               .read({ provider: "meituan", projectId: ProjectId.make("missing"), id: "1" })
@@ -263,6 +325,12 @@ describe("IssueService", () => {
             Layer.effect(Service.IssueService, Service.make).pipe(
               Layer.provide(Layer.mergeAll(KeyValueStore.layerMemory, NodeCrypto.layer)),
               Layer.provide(
+                Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                  namedProjectsRoot: "/projects",
+                  scratchRoot: Effect.succeedSome("/scratch"),
+                }),
+              ),
+              Layer.provide(
                 Layer.mock(Projects.ProjectService)({
                   getShell: (id) =>
                     Effect.succeed(
@@ -281,8 +349,22 @@ describe("IssueService", () => {
                 Layer.mock(Providers.SourceControlProviderRegistry)({
                   resolveLink: () => undefined,
                   get: () => Effect.succeed(provider),
-                  resolveHandle: () =>
-                    Effect.succeed({
+                  resolveHandle: ({ cwd }) => {
+                    resolved.push(cwd);
+                    if (
+                      ["/scratch", "/archived", "/not-a-repository", "/manual-offline"].includes(
+                        cwd,
+                      )
+                    )
+                      return Effect.fail(
+                        new SourceControlProviderError({
+                          provider: SourceControlProviderKind.make("unknown"),
+                          cwd,
+                          operation: "detectProvider",
+                          detail: "Not a Git repository",
+                        }),
+                      );
+                    return Effect.succeed({
                       provider,
                       context: {
                         provider: {
@@ -291,9 +373,10 @@ describe("IssueService", () => {
                           baseUrl: "https://git.sankuai.com",
                         },
                         remoteName: "origin",
-                        remoteUrl: "https://git.sankuai.com/team/shared.git",
+                        remoteUrl: `https://git.sankuai.com/team/${cwd === "/discovery-offline" ? "discovery-offline" : "shared"}.git`,
                       },
-                    }),
+                    });
+                  },
                 }),
               ),
               Layer.provideMerge(

@@ -32,6 +32,7 @@ import * as PersistedCache from "effect/persistence/PersistedCache";
 import * as Persistence from "effect/persistence/Persistence";
 import * as ServerConfig from "../config.ts";
 import * as Projects from "../project/ProjectService.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
 import * as Provider from "@t3tools/source-control-core/server/SourceControlProvider";
@@ -74,6 +75,7 @@ export class IssueService extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const projects = yield* Projects.ProjectService;
+  const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
   const settings = yield* Settings.ServerSettingsService;
   const providers = yield* Providers.SourceControlProviderRegistry;
   const digester = yield* Digest.Digest;
@@ -114,7 +116,7 @@ export const make = Effect.gen(function* () {
     const automatic: IssueSource[] = [];
     const handle = yield* providers.resolveHandle({ cwd }).pipe(Effect.result);
     let repository: string | null = null;
-    let error: string | undefined;
+    let failure: IssueError | undefined;
     if (handle._tag === "Success" && handle.success.context) {
       const { provider, context } = handle.success;
       repository =
@@ -142,10 +144,19 @@ export const make = Effect.gen(function* () {
             : discovery.get(key)
         ).pipe(Effect.result);
         if (result._tag === "Success") automatic.push(...result.success);
-        else error = new IssueError({ operation: "discovery", reason: "unavailable" }).message;
+        else
+          failure = new IssueError({
+            operation: "discovery",
+            reason: "unavailable",
+            cause: result.failure,
+          });
       }
     } else if (handle._tag === "Failure")
-      error = new IssueError({ operation: "repository", reason: "unavailable" }).message;
+      failure = new IssueError({
+        operation: "repository",
+        reason: "unavailable",
+        cause: handle.failure,
+      });
     const overridden = new Set(manual.map((source) => source.provider));
     return {
       cwd,
@@ -153,7 +164,7 @@ export const make = Effect.gen(function* () {
       repository,
       sources: [...automatic.filter((source) => !overridden.has(source.provider)), ...manual],
       manual: manual.length > 0,
-      ...(error ? { error } : {}),
+      ...(failure ? { failure } : {}),
     };
   });
   const resolveAll = Effect.fn("IssueService.resolveAll")(function* (input: IssueTarget) {
@@ -173,10 +184,9 @@ export const make = Effect.gen(function* () {
         return yield* new IssueError({ operation: "resolve", reason: "invalid-target" });
     }
     if (!sources.length)
-      return yield* new IssueError({
-        operation: "resolve",
-        reason: resolved.error ? "unavailable" : "invalid-target",
-      });
+      return yield* (
+        resolved.failure ?? new IssueError({ operation: "resolve", reason: "invalid-target" })
+      );
     const provider = yield* providers
       .get(SourceControlProviderKind.make(input.provider))
       .pipe(
@@ -200,7 +210,10 @@ export const make = Effect.gen(function* () {
         [...new Set(input.projectIds)],
         (projectId) =>
           projectSources(projectId, input.refresh).pipe(
-            Effect.map(({ cwd: _cwd, ...result }) => result),
+            Effect.map(({ cwd: _cwd, failure, ...result }) => ({
+              ...result,
+              ...(failure ? { error: failure.message } : {}),
+            })),
             Effect.catch((error) =>
               Effect.succeed({
                 projectId,
@@ -215,11 +228,19 @@ export const make = Effect.gen(function* () {
       );
     }),
     list: Effect.fn("IssueService.list")(function* (input) {
+      const scratchRoot = yield* managedFolders.scratchRoot;
       const all = yield* projects
         .listShells(input.projectId ? { projectIds: [input.projectId] } : undefined)
         .pipe(
           Effect.mapError(
             (cause) => new IssueError({ operation: "projects", reason: "unavailable", cause }),
+          ),
+          Effect.map((projects) =>
+            projects.filter(
+              (project) =>
+                !project.archivedAt &&
+                !(Option.isSome(scratchRoot) && project.workspaceRoot === scratchRoot.value),
+            ),
           ),
         );
       const targets = yield* Effect.forEach(

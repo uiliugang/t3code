@@ -985,6 +985,12 @@ const zhCN: Readonly<Record<string, string>> = {
     "请求可能已成功，请在原平台核实后再提交。",
   "Could not access issues. Check the connection and your account on this environment.":
     "无法读取需求，请检查此环境的连接和账号授权。",
+  "Could not resolve this project's repository. Check that its workspace exists and is a Git repository.":
+    "无法识别此项目的代码仓库，请确认工作目录存在且为 Git 仓库。",
+  "Could not discover issue sources for this repository. Check its issue associations or configure a source in Requirements settings.":
+    "无法发现此仓库的需求来源，请检查仓库的需求关联，或在需求设置中手动配置来源。",
+  "Could not access issues on this environment. Check the connection or try again.":
+    "无法读取此环境的需求，请检查连接或重试。",
   "Add device host": "添加设备主机",
   "Edit device host": "编辑设备主机",
   "{tool}: {version}. Show details": "{tool}：{version}。显示详情",
