@@ -29,7 +29,7 @@
 | 分支关联需求    | 为已推送分支关联 GitHub Issue 或 MEP 工作项；按工作区仓库和分支聚合展示关联需求。GitHub 关联保存在 T3 环境中，美团关联写入 MEP；每个分支当前关联一个需求。                |
 | 美团研发集成    | 接入美团代码平台，支持仓库、PR 和评审流程；支持 MOA 免登或大象授权，在 PR 中向选定评审人发送大象链接。                                                                    |
 | Skills 管理     | 统一管理共享安装包和各代理使用位置，收纳已有技能、筛选已托管技能、管理目录链接；支持每日更新检查、更新策略、版本恢复，以及目录冲突备份和原位置恢复。                      |
-| 模型配置        | 增加 Claude BYOK 实例，配置第三方 API 地址、认证和模型 ID，检查连接及模型工具调用；支持编辑内置模型、自定义模型 ID 和同步 API 模型目录。                                  |
+| 模型配置        | 支持 Codex 和 Claude BYOK，分别配置连接方式与运行时来源；同类代理共享托管安装，账号凭据独立保存；支持自定义模型 ID、同步 API 模型目录和模型工具调用检查。                 |
 | Git 与 Worktree | 默认限制新 Worktree 基于 main/master，保护主分支；合并后安全快进本地主分支，可选清理已合并分支和 Worktree；支持按组手动清理和重建。                                       |
 | 配置迁移        | 导入、导出客户端偏好、主题、快捷键、模型配置及项目设置；可在另一环境克隆仓库并恢复项目或工作区分组，查看进度和重试失败导入。                                              |
 | 日常体验        | 可选预测下一条用户消息；优化 Markdown 默认预览、Diff 文件类型筛选、变更预览和用量展示。                                                                                   |
@@ -44,6 +44,8 @@
 - macOS 包采用 ad hoc 签名，未经过 Apple 公证，首次打开可能需要在系统安全设置中明确允许。通过「设置 → 关于」可查找新版安装包，不会自动安装。
 - Linux AppImage 和 DEB 支持应用内更新。仍关闭更新功能的旧版需要先手动安装一次新版。
 - Android 使用独立包名 `com.uiliugang.t3code`。通过本仓库的 APK 更新，安装前需要确认；不接收上游 Android OTA 更新。
+
+每个正式 Release 附带 `SHA256SUMS`。手动下载时，可将安装包或 CLI 压缩包与该文件放在同一目录，使用 `shasum -a 256 <文件名>`（macOS）或 `sha256sum <文件名>`（Linux）计算摘要，并与清单中对应文件的值核对。Android 升级应使用本仓库同一签名的 APK，不要卸载旧版来规避升级失败，以免丢失本地设置。
 
 上游的 `npx t3@latest`、应用商店和包管理器入口分发的是上游版本，不包含本分支的增强。要安装本分支的 CLI，请使用[本仓库的安装脚本](docs/user/install.md#command-line)。
 
@@ -70,13 +72,13 @@ open "/Applications/T3 Code (Beta).app"
 
 ### 从源码运行本分支
 
-需要 Git、[package.json](package.json) 中 `engines.node` 指定的 Node.js 版本，以及 [Vite+](https://viteplus.dev/guide/) 的 `vp` 命令。
+需要 Git。仓库的 `./vp` 启动器会准备 [package.json](package.json) 指定的 Node.js 和 [Vite+](https://viteplus.dev/guide/)；已有匹配工具链时也可直接使用 `vp`。
 
 ```bash
 git clone https://github.com/uiliugang/t3code.git
 cd t3code
-vp i
-vp run dev
+./vp i
+./vp run dev
 ```
 
 使用终端输出的地址访问 Web 客户端，不要假定固定端口。开发环境使用隔离的数据目录，首次启动可能复制本机已有 T3 数据的裁剪副本，详见 [开发指南](./docs/operations/development.md)。
@@ -93,13 +95,13 @@ vp run dev:desktop
 
 在**运行 T3 服务端的机器**上安装并认证至少一种代理，例如 Claude Code。其他代理的安装入口见 [安装与首次运行](./docs/user/install.md)。Antigravity 可在设置中安装并使用 Google 登录。
 
-订阅账号和第三方 API 是不同的配置方式。使用自有 API 时，请按下方 Claude BYOK 流程配置。
+订阅账号和第三方 API 是不同的配置方式。使用自有 API 时，请按下方 BYOK 流程配置。
 
 ## 使用方式
 
 ### 开始一次开发任务
 
-1. 在设置中选择界面语言、代理和默认模型。中文入口为 **Settings → Appearance → Language → 简体中文**；部分未翻译文本仍显示英文。
+1. 在设置中选择界面语言、代理和默认模型。Web 和桌面端的语言入口为 **Settings → General → Language**，移动端可在设置中搜索 **Language** 或 **语言**。仅支持 **English** 和 **简体中文**，选择保存在当前设备；部分未翻译文本仍显示英文。
 2. 添加项目，或通过 **Settings → Projects → Import folders** 批量导入本地仓库。
 3. 新建任务，选择当前检出目录或新的 Worktree，再选择代理和模型并发送需求。
 4. 在变更面板检查代码，完成提交、推送和 PR。需要异地继续时，从另一客户端连接同一环境。
@@ -146,7 +148,11 @@ MOA 免登可用时会自动使用；也可在 **Settings → Source control →
 
 详见 [Skills 管理与更新](./docs/user/skills.md)。
 
-### 使用 Claude BYOK 和自定义模型
+### 使用 Codex、Claude BYOK 和自定义模型
+
+在 **Settings → Providers** 先选择目标环境，再添加 Codex 或 Claude。**连接方式**决定账号或 API 凭据，**运行时来源**决定使用本地 CLI 还是 T3 托管安装。切换安装来源不等于切换账号；同一环境的同类提供商共享托管安装，但凭据、BYOK 状态和代理进程独立。
+
+Codex 的 **API Key** 连接使用 Responses API。填写服务商基础 URL（保留 `/v1` 等前缀，不包含 `/responses`）、密钥或密钥引用，以及准确的模型 ID。已有 CLI 登录和 API 连接分别保存配置，不需要覆盖原有 CLI 认证。模型目录变化后可执行 **Sync models from provider**，手动添加的模型及选项会保留。详见 [Codex 连接与 API 配置](./docs/user/providers-codex.md)。
 
 在 **Settings → Providers** 添加 **Claude**，创建后将连接方式切换为 **API 密钥**，填写服务商地址、协议和凭据，添加准确且区分大小写的模型 ID。账号与 API 连接分别保存配置，切回时恢复。
 
@@ -155,6 +161,14 @@ MOA 免登可用时会自动使用；也可在 **Settings → Source control →
 保存后先执行 **Check connection**；需要验证实际推理和工具调用时，在对应模型旁执行 **Test model & tools**，后者会发送请求并产生 API 用量。密钥保存在所选环境，远程场景中的 `localhost` 指服务端机器。
 
 详见 [Claude 账号、自定义 API 与 BYOK](./docs/user/providers-claude.md)。
+
+配置目录和可执行文件路径都属于选中的服务端环境，而不是当前浏览器或手机。排查账号或模型不一致时，先核对连接方式及高级设置中的路径；不要复制整个代理配置目录来共享账号。模型测试会产生实际 API 用量，连接检查成功不代表推理和工具调用已通过。
+
+### 使用语音输入
+
+在 **Settings → Voice** 选择转写位置。Web 和桌面端需要选择环境；移动端可使用设备语音服务或明确选择已连接环境。环境转写需要下载或选择支持的模型，录音会发送给该环境处理。云端转写另需对应 API 配置，可能产生费用。
+
+转写结果先进入草稿，确认发送后才交给代理。可随时取消录音；选定环境离线时不会自动改用其他环境。详见 [语音输入](./docs/user/voice-input.md)。
 
 ### 迁移配置与开启预测消息
 
