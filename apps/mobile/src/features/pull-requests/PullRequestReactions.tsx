@@ -168,7 +168,7 @@ export function PullRequestCommentFooter(props: {
   const reactions = comment.reactions ?? [];
   const editableKind = comment.kind === "review" ? null : comment.kind;
   const canEdit = editableKind !== null && props.permissions.canEditComment(comment);
-  const canReact = props.permissions.canReactComment(comment);
+  const canReact = props.permissions.canReactComment;
   const onReact = usePullRequestReact(props.params, comment.id);
   if (reactions.length === 0 && !canReact && !canEdit) return null;
   return (

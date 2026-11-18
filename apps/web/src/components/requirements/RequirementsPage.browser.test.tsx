@@ -142,7 +142,10 @@ vi.mock(
       ThreadWorkItemsPanel: () => null,
     }) as never,
 );
-vi.mock(import("./IssueCreateDialog"), () => ({ IssueCreateDialog: () => <></> }));
+vi.mock(import("./IssueCreateDialog"), () => ({
+  IssueCreateDialog: () => <></>,
+  TrackerCreateDialog: () => <></>,
+}));
 vi.mock(import("./IssueDetailPanel"), () => ({
   IssueDetailPanel: ({ id }: { id: string }) => (
     <div data-testid={`issue-detail:${id}`}>Issue {id}</div>
@@ -301,6 +304,19 @@ it("keeps the scan action locked after its menu closes until the request settles
   await expect.element(trigger).toBeEnabled();
 });
 
+it("switches between list and board views with one click, without opening a menu", async () => {
+  using fixture = setup();
+  const updateSearch = vi.fn();
+  await using screen = await render(fixture.board({ view: "list" }, updateSearch));
+  await screen.getByRole("button", { name: "Switch to board view" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ view: "board" });
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await screen.rerender(fixture.board({ view: "board" }, updateSearch));
+  await screen.getByRole("button", { name: "Switch to list view" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ view: "list" });
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
 it("keeps compact panel horizontal padding when the main sidebar is collapsed", async () => {
   using fixture = setup();
   document.documentElement.setAttribute("data-sidebar-state", "collapsed");
@@ -452,26 +468,30 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
     fixture.registry.set(
       issuesAtom,
       AsyncResult.success({
-        groups: [
-          {
-            source: { provider: "github", host: "github.com", scope: "acme/app" },
-            projectIds: ["project"],
-            issues: [
-              {
-                id: "42",
-                url: "https://github.com/acme/app/issues/42",
-                title: "GitHub bug report",
-                state: "open",
-                stateCategory: "todo",
-                type: "Issue",
-                assignees: [],
-                priority: "",
-                updatedAt: "2026-11-16T00:00:00Z",
-              },
-            ],
-            hasMore: false,
-          },
-        ],
+        groups: (
+          [
+            ["github.com", "acme/app", "GitHub bug report"],
+            ["github.com", "acme/other", "Other repository issue"],
+            ["github.example.com", "acme/app", "Other host issue"],
+          ] as const
+        ).map(([host, scope, title]) => ({
+          source: { provider: "github", host, scope },
+          projectIds: ["project"],
+          issues: [
+            {
+              id: "42",
+              url: `https://${host}/${scope}/issues/42`,
+              title,
+              state: "open",
+              stateCategory: "todo",
+              type: "Issue",
+              assignees: [],
+              priority: "",
+              updatedAt: "2026-11-16T00:00:00Z",
+            },
+          ],
+          hasMore: false,
+        })),
         failures: [],
       }),
     );
@@ -504,6 +524,10 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
 
   await screen.getByRole("button", { name: /GitHub bug report/ }).click();
   await expect.element(screen.getByTestId("issue-detail:42")).toBeVisible();
+  expect(screen.container.querySelectorAll('button[aria-current="true"]')).toHaveLength(1);
+  await expect
+    .element(screen.getByRole("button", { name: /GitHub bug report/ }))
+    .toHaveAttribute("aria-current", "true");
 
   const tabList = screen.container.querySelector("[data-right-panel-tab-list]")!;
   expect(tabList).not.toBeNull();

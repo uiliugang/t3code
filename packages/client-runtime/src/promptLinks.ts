@@ -18,10 +18,6 @@ import {
   visibleThreadPullRequests,
 } from "./threadPullRequests.ts";
 
-// A link's `owner/name` is GitHub's. GitCafe syncs a repository two-way with GitHub under the
-// same path, so a checkout cloned from git.cafe counts as the linked repository.
-const PROMPT_LINK_REPOSITORY_HOSTS = ["github.com", "git.cafe", "staging.git.cafe"];
-
 /**
  * The repository's projects in the order given. Callers pass projects most recently active
  * first and open the first, so the user lands where they last worked.
@@ -29,12 +25,11 @@ const PROMPT_LINK_REPOSITORY_HOSTS = ["github.com", "git.cafe", "staging.git.caf
 export function findPromptLinkProjects<
   P extends { readonly repositoryIdentity?: RepositoryIdentity | null | undefined },
 >(projects: ReadonlyArray<P>, repository: PromptLinkRepository): P[] {
-  const path = `${repository.owner}/${repository.name}`.toLowerCase();
-  const keys = new Set(PROMPT_LINK_REPOSITORY_HOSTS.map((host) => `${host}/${path}`));
+  const key = `github.com/${repository.owner}/${repository.name}`.toLowerCase();
   return projects.filter(
     (project) =>
       project.repositoryIdentity != null &&
-      keys.has(repositoryGroupingKeyOf(project.repositoryIdentity).toLowerCase()),
+      repositoryGroupingKeyOf(project.repositoryIdentity).toLowerCase() === key,
   );
 }
 

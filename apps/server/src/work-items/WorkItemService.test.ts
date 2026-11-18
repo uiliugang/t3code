@@ -6,6 +6,7 @@ import {
   CheckpointRef,
   CheckpointScopeId,
   EventId,
+  IssueTrackerKind,
   EnvironmentId,
   MessageId,
   NodeId,
@@ -38,6 +39,10 @@ import * as DeliveryAutomation from "./DeliveryAutomationService.ts";
 import * as Issues from "../sourceControl/IssueService.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import {
+  ThreadIssueService,
+  type LinkThreadIssueInput,
+} from "../orchestration-v2/ThreadIssueService.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
@@ -116,6 +121,7 @@ function setup(
   eventStream?: Stream.Stream<OrchestrationV2DomainEvent>,
 ) {
   const projections = new Map<ThreadId, OrchestrationV2ThreadProjection>();
+  const references: LinkThreadIssueInput[] = [];
   const recordBarriers = new Map<ThreadId, Effect.Effect<void>>();
   const launched: Array<Parameters<ThreadLaunch.ThreadLaunchService["Service"]["launch"]>[0]> = [];
   const stopped: ThreadId[] = [];
@@ -177,6 +183,13 @@ function setup(
               cause: new Error("Lost launch response"),
             });
           return result;
+        }),
+    }),
+    Layer.mock(ThreadIssueService)({
+      link: (input) =>
+        Effect.sync(() => {
+          references.push(input);
+          return { alreadyLinked: false };
         }),
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
@@ -337,6 +350,7 @@ function setup(
     layer,
     dependencies,
     projections,
+    references,
     recordBarriers,
     launched,
     stopped,
@@ -484,6 +498,20 @@ it.effect("deduplicates issue conversations and preserves explicit unlinking acr
       },
     } as const;
     const first = yield* service.associateIssue(input);
+    assert.deepEqual(test.references.at(-1), {
+      threadId,
+      ref: {
+        projectId,
+        tracker: IssueTrackerKind.make("github"),
+        host: "github.com",
+        scope: "acme/app",
+        key: "1",
+      },
+      url: input.issue.url,
+      displayKey: "#1",
+      title: input.title,
+      source: "agent",
+    });
     const repeated = yield* service.associateIssue(input);
     assert.equal(first.id, repeated.id);
     assert.equal(repeated.sources.length, 1);
@@ -516,7 +544,9 @@ it.effect("deduplicates issue conversations and preserves explicit unlinking acr
       threadId,
     });
     assert.equal(unlinked.item.sources.length, 0);
+    const priorReferences = test.references.length;
     assert.equal((yield* service.associateIssue(input)).sources.length, 0);
+    assert.equal(test.references.length, priorReferences);
     assert.equal((yield* service.list({ threadId })).items.length, 0);
     assert.equal((yield* service.associateIssue({ ...input, automatic: false })).sources.length, 1);
     const otherThreadId = ThreadId.make("other-project-source");

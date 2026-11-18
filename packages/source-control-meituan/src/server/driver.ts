@@ -8,6 +8,7 @@ import * as MCodeAuthorization from "./MCodeAuthorization.ts";
 import * as MCodeCli from "./MCodeCli.ts";
 import * as MCodeSourceControlProvider from "./MCodeSourceControlProvider.ts";
 import * as MCodePullRequestProvider from "./MCodePullRequestProvider.ts";
+export { make as makeMepIssueTracker } from "./MepIssueTracker.ts";
 
 export const driver = defineSourceControlDriver({
   kind: definition.kind,

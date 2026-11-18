@@ -38,8 +38,8 @@ export function SavedViewsMenu<Scope extends object>({
   matches: (view: Scope, scope: Scope) => boolean;
   onApply: (view: Scope & SavedViewIdentity) => Promise<void> | void;
 }) {
-  type View = Scope & SavedViewIdentity;
   const t = useUiTranslation();
+  type View = Scope & SavedViewIdentity;
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
   const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
@@ -91,7 +91,7 @@ export function SavedViewsMenu<Scope extends object>({
       title: view
         ? t("Rename {kind} view", { kind: t(shortNoun) })
         : t("Save {kind} view", { kind: t(shortNoun) }),
-      initialValue: view?.name ?? (suggestedName ? t(suggestedName) : ""),
+      initialValue: view?.name ?? t(suggestedName),
       confirmText: t("Save"),
       onConfirm: (value) => {
         const error = savedViewNameError(value, views, view?.id);

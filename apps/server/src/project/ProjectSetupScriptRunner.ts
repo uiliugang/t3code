@@ -16,6 +16,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -377,20 +378,26 @@ export const make = Effect.gen(function* () {
       let reading = false;
       let carry = "";
       let busy = false;
-      let activity = 0;
+      const activity = yield* Queue.make<void>({ capacity: 1, strategy: "sliding" });
       const unsubscribe = yield* terminalManager.subscribe((event) => {
         if (event.threadId !== input.threadId || event.terminalId !== input.terminalId) {
           return Effect.void;
         }
-        activity += 1;
+        let changed = false;
         // A new shell process starts idle; the manager resets its subprocess state without an event.
         if (event.type === "started" || event.type === "restarted") {
+          changed = true;
           busy = false;
           reading = false;
           carry = "";
         }
-        if (event.type === "activity") busy = event.hasRunningSubprocess;
-        if (event.type === "output") {
+        // Grid and label updates share activity events but do not mean the shell is still starting.
+        if (event.type === "activity" && busy !== event.hasRunningSubprocess) {
+          changed = true;
+          busy = event.hasRunningSubprocess;
+        }
+        if (event.type === "output" && event.data.length > 0) {
+          changed = true;
           const text = carry + event.data;
           carry = text.slice(-(BRACKETED_PASTE_ON.length - 1));
           reading = lineEditorReading(text, reading);
@@ -398,14 +405,19 @@ export const make = Effect.gen(function* () {
         if (event.type === "exited" || event.type === "closed") {
           return Deferred.succeed(outcome, "exited").pipe(Effect.asVoid);
         }
-        return reading ? Deferred.succeed(outcome, "ready").pipe(Effect.asVoid) : Effect.void;
+        return reading
+          ? Deferred.succeed(outcome, "ready").pipe(Effect.asVoid)
+          : changed
+            ? Queue.offer(activity, undefined).pipe(Effect.asVoid)
+            : Effect.void;
       });
       // A startup prompt runs as a child process, so a busy shell keeps waiting for the user.
       const quiet = Effect.gen(function* () {
         while (true) {
-          const seen = activity;
-          yield* Effect.sleep(SHELL_QUIET_FALLBACK);
-          if (activity !== seen) continue;
+          const changed = yield* Queue.take(activity).pipe(
+            Effect.timeoutOption(SHELL_QUIET_FALLBACK),
+          );
+          if (Option.isSome(changed)) continue;
           if (!busy) return "ready" as const;
           yield* input.onStartupPrompt;
         }

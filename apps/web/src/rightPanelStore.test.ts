@@ -573,6 +573,18 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("keeps requirement tabs and the active tracker selection during storage migration", () => {
+    const store = useRightPanelStore.getState();
+    for (const [provider, scope, issueId] of [
+      ["gitlab", "acme/app", "42"],
+      ["linear", "ENG", "ENG-42"],
+    ] as const) {
+      store.openRequirementIssue(refA, { projectId: "project", provider, scope, issueId });
+    }
+    const { byThreadKey } = useRightPanelStore.getState();
+    expect(migratePersistedRightPanelState({ byThreadKey }).byThreadKey).toEqual(byThreadKey);
+  });
+
   it("upgrades the legacy singleton pull request surface to a reference-keyed tab", () => {
     const id = pullRequestSurfaceId({
       projectId: "project-a",

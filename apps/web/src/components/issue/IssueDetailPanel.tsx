@@ -37,17 +37,18 @@ import {
   UserPlusIcon,
   UsersIcon,
 } from "lucide-react";
+import DocumentPages from "../files/DocumentPages";
 import { useState, type ReactNode } from "react";
 
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { useUiTranslation } from "~/hooks/useUiTranslation";
-import { useClientSettings } from "~/hooks/useSettings";
 import { issueEnvironment, refreshIssueLists } from "~/state/issues";
 import { useProjects, useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useClientSettings } from "~/hooks/useSettings";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button, InlineButton } from "../ui/button";
@@ -92,7 +93,6 @@ function IssueThreadLinkButton({
   issue: Pick<IssueDetail, "url" | "displayKey" | "title">;
   threadRef: ScopedThreadRef;
 }) {
-  const t = useUiTranslation();
   const thread = useThreadShell(threadRef.environmentId === environmentId ? threadRef : null);
   const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const link = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
@@ -122,7 +122,7 @@ function IssueThreadLinkButton({
       toastManager.add({
         type: "error",
         title: linked ? t("Could not unlink the issue") : t("Could not link the issue"),
-        description: readableFailure(squashAtomCommandFailure(result), t("The server refused it.")),
+        description: readableFailure(squashAtomCommandFailure(result), "The server refused it."),
       });
     }
   };
@@ -146,9 +146,7 @@ function IssueThreadLinkButton({
           <Link2Icon aria-hidden className="size-3.5" />
         )}
       </TooltipTrigger>
-      <TooltipPopup>
-        {linked ? t("Unlink from this thread") : t("Link to this thread")}
-      </TooltipPopup>
+      <TooltipPopup>{linked ? t("Unlink from this thread") : t("Link to this thread")}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -200,7 +198,6 @@ function IssueLabelPicker({
   allowed: boolean;
   disabledReason: string;
 }) {
-  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueLabelCandidate>);
@@ -242,10 +239,7 @@ function IssueLabelPicker({
       toastManager.add({
         type: "error",
         title: t("Could not change labels"),
-        description: readableFailure(
-          squashAtomCommandFailure(result),
-          t("The tracker refused it."),
-        ),
+        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
     });
   };
@@ -259,15 +253,15 @@ function IssueLabelPicker({
       onOpenChange={onOpenChange}
       query={query}
       onQueryChange={setQuery}
-      searchLabel={t("Search labels")}
+      searchLabel="Search labels"
       isPending={candidatesQuery.isPending && candidatesQuery.data === null}
       error={candidatesQuery.data === null ? candidatesQuery.error : null}
       candidates={candidates}
-      emptyLabel={t("This tracker has no labels.")}
-      noMatchLabel={t("No label matches that.")}
-      errorLabel={t("The labels could not be read.")}
+      emptyLabel="This tracker has no labels."
+      noMatchLabel="No label matches that."
+      errorLabel="The labels could not be read."
       truncated={candidatesQuery.data?.truncated === true}
-      truncatedLabel={t("More labels exist than are listed here.")}
+      truncatedLabel="More labels exist than are listed here."
       candidateKey={(candidate) => candidate.name}
       onSelect={(candidate) =>
         setPicks({
@@ -314,7 +308,6 @@ function IssueAssigneePicker({
   allowed: boolean;
   disabledReason: string;
 }) {
-  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueAssigneeCandidate>);
@@ -355,10 +348,7 @@ function IssueAssigneePicker({
       toastManager.add({
         type: "error",
         title: t("Could not change assignees"),
-        description: readableFailure(
-          squashAtomCommandFailure(result),
-          t("The tracker refused it."),
-        ),
+        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
     });
   };
@@ -372,15 +362,15 @@ function IssueAssigneePicker({
       onOpenChange={onOpenChange}
       query={query}
       onQueryChange={setQuery}
-      searchLabel={t("Search people")}
+      searchLabel="Search people"
       isPending={candidatesQuery.isPending && candidatesQuery.data === null}
       error={candidatesQuery.data === null ? candidatesQuery.error : null}
       candidates={candidates}
-      emptyLabel={t("Nobody can be assigned here.")}
-      noMatchLabel={t("Nobody matches that.")}
-      errorLabel={t("The people could not be read.")}
+      emptyLabel="Nobody can be assigned here."
+      noMatchLabel="Nobody matches that."
+      errorLabel="The people could not be read."
       truncated={candidatesQuery.data?.truncated === true}
-      truncatedLabel={t("More people exist than are listed here.")}
+      truncatedLabel="More people exist than are listed here."
       candidateKey={(candidate) => candidate.id}
       onSelect={(candidate) =>
         setPicks({
@@ -420,7 +410,6 @@ function LinkedPullRequestRow({
   scope: string;
   onSelect: (() => void) | null;
 }) {
-  const t = useUiTranslation();
   const body = (
     <>
       <PullRequestStateGlyph state={link.state} isDraft={link.isDraft} />
@@ -453,7 +442,11 @@ export function IssueDetailPanel({
   threadRef = null,
   listEntry = null,
   onSelectPullRequest,
+  renderSupplement,
+  onIssueChanged,
 }: {
+  renderSupplement?: ((detail: IssueDetail) => ReactNode) | undefined;
+  onIssueChanged?: (() => void) | undefined;
   environmentId: EnvironmentId;
   reference: IssueRef;
   /** The list row this issue was opened from, shown until the detail arrives. */
@@ -463,7 +456,7 @@ export function IssueDetailPanel({
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
 }) {
   const t = useUiTranslation();
-  const uiLanguage = useClientSettings((settings) => settings.uiLanguage);
+  const language = useClientSettings((settings) => settings.uiLanguage);
   const detailQuery = useEnvironmentQuery(
     issueEnvironment.detail({ environmentId, input: reference }),
   );
@@ -548,14 +541,12 @@ export function IssueDetailPanel({
       toastManager.add({
         type: "error",
         title: t("The issue could not be updated"),
-        description: readableFailure(
-          squashAtomCommandFailure(result),
-          t("The tracker refused it."),
-        ),
+        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
       return;
     }
     refreshIssueLists(environmentId);
+    onIssueChanged?.();
     setEditing(null);
   };
 
@@ -571,14 +562,12 @@ export function IssueDetailPanel({
       toastManager.add({
         type: "error",
         title: t("The state could not be changed"),
-        description: readableFailure(
-          squashAtomCommandFailure(result),
-          t("The tracker refused it."),
-        ),
+        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
       return;
     }
     refreshIssueLists(environmentId);
+    onIssueChanged?.();
   };
 
   const currentStateIcon = (
@@ -636,16 +625,16 @@ export function IssueDetailPanel({
         )}
         data-pull-request-summary-scroll
       >
-        <div className="px-4 pb-1">
+        <div className="px-4 pt-2.5 pb-1">
           <PullRequestDetailTitleRow className="h-7 gap-1 text-sm sm:text-xs">
             <span className="min-w-0 truncate font-medium text-muted-foreground">
               {detail.scope}
             </span>
             <InlineButton
               className={cn("shrink-0 font-medium", currentState.toneClassName)}
-              aria-label={t("Open {key} on {provider}", {
+              aria-label={t("Open {key} on {tracker}", {
                 key: detail.displayKey,
-                provider: tracker.providerName,
+                tracker: tracker.providerName,
               })}
               render={<a href={detail.url} target="_blank" rel="noopener noreferrer" />}
             >
@@ -728,16 +717,18 @@ export function IssueDetailPanel({
           )}
 
           <PullRequestMetaLine className="mt-2 min-h-5 text-xs text-muted-foreground">
-            <PullRequestActorLabel actor={detail.author} />
-            <span>
-              {t("opened {time}", {
-                time: formatRelativeTimeLabel(detail.createdAt, undefined, uiLanguage),
-              })}
-            </span>
+            {detail.author ? <PullRequestActorLabel actor={detail.author} /> : null}
+            {detail.createdAt ? (
+              <span>
+                {t("opened {time}", {
+                  time: formatRelativeTimeLabel(detail.createdAt, undefined, language),
+                })}
+              </span>
+            ) : null}
             {detail.closedAt ? (
               <span>
                 {t("closed {time}", {
-                  time: formatRelativeTimeLabel(detail.closedAt, undefined, uiLanguage),
+                  time: formatRelativeTimeLabel(detail.closedAt, undefined, language),
                 })}
               </span>
             ) : null}
@@ -745,55 +736,59 @@ export function IssueDetailPanel({
           </PullRequestMetaLine>
 
           <div className="mt-4 space-y-2">
-            <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label={t("Labels")}>
-              <span className="flex min-w-0 flex-wrap items-center gap-1">
-                {detail.labels.length === 0 ? (
-                  <span className="text-muted-foreground">{t("None")}</span>
-                ) : (
-                  detail.labels.map((label) => (
-                    <PullRequestLabelChip
-                      key={label.name}
-                      label={label}
-                      size="default"
-                      className="max-w-48"
+            {detail.capabilities.labels || detail.labels.length > 0 ? (
+              <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label={t("Labels")}>
+                <span className="flex min-w-0 flex-wrap items-center gap-1">
+                  {detail.labels.length === 0 ? (
+                    <span className="text-muted-foreground">{t("None")}</span>
+                  ) : (
+                    detail.labels.map((label) => (
+                      <PullRequestLabelChip
+                        key={label.name}
+                        label={label}
+                        size="default"
+                        className="max-w-48"
+                      />
+                    ))
+                  )}
+                  {detail.capabilities.labels ? (
+                    <IssueLabelPicker
+                      environmentId={environmentId}
+                      reference={reference}
+                      detail={detail}
+                      allowed={canLabel}
+                      disabledReason={
+                        blocked ?? t("Changing labels needs triage access on this tracker.")
+                      }
                     />
-                  ))
-                )}
-                {detail.capabilities.labels ? (
-                  <IssueLabelPicker
-                    environmentId={environmentId}
-                    reference={reference}
-                    detail={detail}
-                    allowed={canLabel}
-                    disabledReason={
-                      blocked ?? t("Changing labels needs triage access on this tracker.")
-                    }
-                  />
-                ) : null}
-              </span>
-            </PullRequestMetaRow>
-            <PullRequestMetaRow icon={<UsersIcon className="size-3.5" />} label={t("Assignees")}>
-              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {detail.assignees.length === 0 ? (
-                  <span className="text-muted-foreground">{t("None")}</span>
-                ) : (
-                  detail.assignees.map((actor) => (
-                    <PullRequestActorLabel key={actor.login} actor={actor} />
-                  ))
-                )}
-                {detail.capabilities.assignees ? (
-                  <IssueAssigneePicker
-                    environmentId={environmentId}
-                    reference={reference}
-                    detail={detail}
-                    allowed={canAssign}
-                    disabledReason={
-                      blocked ?? t("Changing assignees needs triage access on this tracker.")
-                    }
-                  />
-                ) : null}
-              </span>
-            </PullRequestMetaRow>
+                  ) : null}
+                </span>
+              </PullRequestMetaRow>
+            ) : null}
+            {detail.capabilities.assignees || detail.assignees.length > 0 ? (
+              <PullRequestMetaRow icon={<UsersIcon className="size-3.5" />} label={t("Assignees")}>
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  {detail.assignees.length === 0 ? (
+                    <span className="text-muted-foreground">{t("None")}</span>
+                  ) : (
+                    detail.assignees.map((actor) => (
+                      <PullRequestActorLabel key={actor.login} actor={actor} />
+                    ))
+                  )}
+                  {detail.capabilities.assignees ? (
+                    <IssueAssigneePicker
+                      environmentId={environmentId}
+                      reference={reference}
+                      detail={detail}
+                      allowed={canAssign}
+                      disabledReason={
+                        blocked ?? t("Changing assignees needs triage access on this tracker.")
+                      }
+                    />
+                  ) : null}
+                </span>
+              </PullRequestMetaRow>
+            ) : null}
           </div>
         </div>
 
@@ -824,6 +819,8 @@ export function IssueDetailPanel({
                 onSave={(next) => void save({ body: next })}
                 onCancel={() => setEditing(null)}
               />
+            ) : detail.bodyFormat === "html" ? (
+              <DocumentPages html={detail.body} name={detail.title} output flush />
             ) : (
               <PullRequestMarkdown
                 text={detail.body.trim().length > 0 ? detail.body : t("_No description provided._")}
@@ -843,6 +840,7 @@ export function IssueDetailPanel({
           </div>
         </PullRequestSection>
 
+        {renderSupplement?.(detail)}
         {detail.linkedPullRequests.length > 0 ? (
           <PullRequestSection key={`linked:${detail.url}`} title={t("Linked pull requests")}>
             <div className="flex flex-col gap-1">
@@ -868,83 +866,90 @@ export function IssueDetailPanel({
           </PullRequestSection>
         ) : null}
 
-        <PullRequestSection
-          key={`activity:${detail.url}`}
-          title={
-            detail.commentCount > 0
-              ? t("Activity ({count})", { count: detail.commentCount })
-              : t("Activity")
-          }
-        >
-          <div className="flex flex-col gap-3">
-            {nextCursor !== null ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="self-start"
-                disabled={loadingOlder}
-                onClick={() => void loadOlder()}
-              >
-                {loadingOlder ? t("Loading…") : t("Load older comments")}
-              </Button>
-            ) : null}
-            {timeline.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t("Nothing has happened here yet.")}</p>
-            ) : null}
-            {timeline.map((item) =>
-              item.kind === "comment" ? (
-                <article
-                  key={`c:${item.comment.id}`}
-                  className="flex flex-col gap-2 rounded-lg border border-border/60 p-3"
+        {detail.capabilities.comment ||
+        detail.capabilities.events ||
+        timeline.length > 0 ||
+        nextCursor !== null ? (
+          <PullRequestSection
+            key={`activity:${detail.url}`}
+            title={
+              detail.commentCount > 0
+                ? t("Activity ({count})", { count: detail.commentCount })
+                : t("Activity")
+            }
+          >
+            <div className="flex flex-col gap-3">
+              {nextCursor !== null ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="self-start"
+                  disabled={loadingOlder}
+                  onClick={() => void loadOlder()}
                 >
-                  <PullRequestMetaLine className="text-xs text-muted-foreground">
-                    <PullRequestActorLabel actor={item.comment.author} />
-                    {item.comment.url ? (
-                      <InlineButton
-                        tone="muted"
-                        render={
-                          <a href={item.comment.url} target="_blank" rel="noopener noreferrer" />
-                        }
-                      >
-                        {formatRelativeTimeLabel(item.comment.createdAt, undefined, uiLanguage)}
-                      </InlineButton>
-                    ) : (
-                      <span>
-                        {formatRelativeTimeLabel(item.comment.createdAt, undefined, uiLanguage)}
-                      </span>
-                    )}
-                  </PullRequestMetaLine>
-                  <PullRequestCommentBody
-                    text={item.comment.body}
-                    cwd={cwd}
-                    environmentId={environmentId}
-                    threadRef={threadRef}
-                  />
-                  {item.comment.reactions !== undefined ? (
-                    <IssueReactionBar
-                      reactions={item.comment.reactions}
-                      canReact={canReact}
-                      subjectId={item.comment.id}
+                  {loadingOlder ? t("Loading…") : t("Load older comments")}
+                </Button>
+              ) : null}
+              {timeline.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t("Nothing has happened here yet.")}
+                </p>
+              ) : null}
+              {timeline.map((item) =>
+                item.kind === "comment" ? (
+                  <article
+                    key={`c:${item.comment.id}`}
+                    className="flex flex-col gap-2 rounded-lg border border-border/60 p-3"
+                  >
+                    <PullRequestMetaLine className="text-xs text-muted-foreground">
+                      <PullRequestActorLabel actor={item.comment.author} />
+                      {item.comment.url ? (
+                        <InlineButton
+                          tone="muted"
+                          render={
+                            <a href={item.comment.url} target="_blank" rel="noopener noreferrer" />
+                          }
+                        >
+                          {formatRelativeTimeLabel(item.comment.createdAt, undefined, language)}
+                        </InlineButton>
+                      ) : (
+                        <span>
+                          {formatRelativeTimeLabel(item.comment.createdAt, undefined, language)}
+                        </span>
+                      )}
+                    </PullRequestMetaLine>
+                    <PullRequestCommentBody
+                      text={item.comment.body}
+                      cwd={cwd}
                       environmentId={environmentId}
-                      reference={reference}
+                      threadRef={threadRef}
                     />
-                  ) : null}
-                </article>
-              ) : (
-                <PullRequestMetaLine
-                  key={`e:${item.event.id}`}
-                  className="px-1 text-xs text-muted-foreground"
-                >
-                  <PullRequestActorLabel actor={item.event.actor} />
-                  <span>{issueEventSentence(item.event, t)}</span>
-                  <span>
-                    {formatRelativeTimeLabel(item.event.createdAt, undefined, uiLanguage)}
-                  </span>
-                </PullRequestMetaLine>
-              ),
-            )}
-          </div>
-        </PullRequestSection>
+                    {item.comment.reactions !== undefined ? (
+                      <IssueReactionBar
+                        reactions={item.comment.reactions}
+                        canReact={canReact}
+                        subjectId={item.comment.id}
+                        environmentId={environmentId}
+                        reference={reference}
+                      />
+                    ) : null}
+                  </article>
+                ) : (
+                  <PullRequestMetaLine
+                    key={`e:${item.event.id}`}
+                    className="px-1 text-xs text-muted-foreground"
+                  >
+                    <PullRequestActorLabel actor={item.event.actor} />
+                    <span>{issueEventSentence(item.event, t)}</span>
+                    <span>
+                      {formatRelativeTimeLabel(item.event.createdAt, undefined, language)}
+                    </span>
+                  </PullRequestMetaLine>
+                ),
+              )}
+            </div>
+          </PullRequestSection>
+        ) : null}
       </div>
 
       {detail.capabilities.comment ? (

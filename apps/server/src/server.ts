@@ -953,7 +953,7 @@ const layerMakeRoutes = Layer.mergeAll(
   // Share the service so HTTP/WS clients single-flight reads and invalidate each other's cached patches.
   Layer.provide(layerPullRequestService),
   Layer.provide(layerThreadIssueService),
-  Layer.provide(layerIssueService),
+  Layer.provide(layerIssueService.pipe(Layer.provide(layerSourceControlRepositoryService))),
   // The same activity instance RunExecutionService reports to, by layer memoization.
   Layer.provide(
     ServerBrowser.layer.pipe(

@@ -350,15 +350,6 @@ export interface SourceControlDefinition {
   readonly recognizeRemote: (remote: GitRemoteHost) => SourceControlProviderInfo | null;
   /** The host change requests in the project are listed and keyed under. */
   readonly changeRequestHost?: (identity: ChangeRequestHostIdentity) => string;
-  /**
-   * What the host's tools take to select the project's repository. Absent means the repository
-   * path, `owner/name`.
-   */
-  readonly repositorySelector?: (identity: RepositorySelectorIdentity) => string | null;
-  /**
-   * The container the project's issues live in, where that is not its repository: Azure DevOps
-   * keeps work items per project. Null when the repository cannot be placed.
-   */
   readonly issueScope?: (identity: RepositorySelectorIdentity) => string | null;
   /**
    * The key of a remote's lower case `host/path`, `.git` suffix kept, for a host that spells it
@@ -497,7 +488,7 @@ export function defineSourceControl<const Definition extends SourceControlDefini
   return definition;
 }
 
-export function isChangeRequestAuthorityOfProject(
+function isChangeRequestAuthorityOfProject(
   identity: ChangeRequestProjectIdentity,
   link: ChangeRequestLink | CommitLink,
 ): boolean {
@@ -761,10 +752,6 @@ export function makeSourceControlDefinitionRegistry(
   };
   const remoteOwner = (remote: GitRemoteHost) =>
     recognitionOrder.find((definition) => definition.recognizeRemote(remote) !== null);
-  const repositorySelector = (identity: RepositorySelectorIdentity | null | undefined) =>
-    identity?.provider === undefined
-      ? defaultRepositorySelector(identity)
-      : (byKind.get(identity.provider)?.repositorySelector ?? defaultRepositorySelector)(identity);
   const parseChangeRequestUrl = (value: string): ParsedChangeRequest | null => {
     const url = httpUrl(value);
     if (url === null) return null;
@@ -874,12 +861,12 @@ export function makeSourceControlDefinitionRegistry(
     },
     canonicalRepositoryKey: (key) => repositoryKeyOwner(key)?.canonical ?? canonicalKeyPath(key),
     findByRepositoryKey: (key) => repositoryKeyOwner(key)?.definition,
-    repositorySelector,
+    repositorySelector: defaultRepositorySelector,
     issueScope: (identity) => {
       const issueScope =
         identity?.provider === undefined ? undefined : byKind.get(identity.provider)?.issueScope;
       return issueScope === undefined || identity == null
-        ? repositorySelector(identity)
+        ? defaultRepositorySelector(identity)
         : issueScope(identity);
     },
     changeRequestHost: (identity, kind) =>

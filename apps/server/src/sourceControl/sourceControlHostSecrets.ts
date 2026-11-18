@@ -6,7 +6,7 @@ import {
   type ServerSettings,
 } from "@t3tools/contracts";
 import type * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
-import { knownSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
+import { builtInSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
 import * as Effect from "effect/Effect";
 
 import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
@@ -14,12 +14,14 @@ import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
 export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   string,
   ReadonlyArray<string>
-> = new Map(
-  knownSourceControlDefinitions.definitions.flatMap((definition) => {
+> = new Map<string, ReadonlyArray<string>>([
+  ["bitbucket", ["accessToken", "apiToken"]],
+  ["gitcafe", ["token"]],
+  ...builtInSourceControlDefinitions.definitions.flatMap((definition) => {
     const fields = definition.settings ? secretSettingsFields(definition.settings) : [];
     return fields.length > 0 ? [[definition.kind, fields] as const] : [];
   }),
-);
+]);
 
 export interface SourceControlHostSecretSlot {
   readonly kind: string;
@@ -67,7 +69,7 @@ export function writeSecretFieldValues(
 type SourceControlHostsSettings = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 
 const hostSettingsSchemas = new Map(
-  knownSourceControlDefinitions.definitions.flatMap((definition) =>
+  builtInSourceControlDefinitions.definitions.flatMap((definition) =>
     definition.settings ? [[definition.kind as string, definition.settings] as const] : [],
   ),
 );

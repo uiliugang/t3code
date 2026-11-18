@@ -2367,20 +2367,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       "https://gitlab.example.com/group/subgroup/repository/-/merge_requests/42",
       "gitlab.example.com/group/subgroup/repository",
     ],
-    ["https://bitbucket.org/team/repository/pull-requests/42", "bitbucket.org/team/repository"],
-    ["https://codeberg.org/team/repository/pulls/42", "codeberg.org/team/repository"],
     [
-      "http://code.example:3000/forgejo/team/repository/pulls/42/files",
-      "code.example/forgejo/team/repository",
+      "https://dev.sankuai.com/code/repo-detail/team/repository/pr/42/overview",
+      "git.sankuai.com/team/repository",
     ],
-    [
-      "https://dev.azure.com/org/project/_git/repository/pullrequest/42",
-      "dev.azure.com/org/project/_git/repository",
-    ],
-    [
-      "https://org.visualstudio.com/project/_git/repository/pullrequest/42",
-      "org.visualstudio.com/project/_git/repository",
-    ],
+    ["https://bitbucket.org/team/repository/pull-requests/42", null],
+    ["https://codeberg.org/team/repository/pulls/42", null],
+    ["https://dev.azure.com/org/project/_git/repository/pullrequest/42", null],
     [
       "https://gitlab.example/group/pull/123/repository/-/merge_requests/42",
       "gitlab.example/group/pull/123/repository",
@@ -5810,7 +5803,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const headSha = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim();
       yield* runGit(repoDir, ["checkout", "main"]);
       yield* runGit(repoDir, ["branch", "-D", "feature/no-pull-ref"]);
-      const remoteUrl = "https://dev.azure.com/org/project/_git/repo";
+      const remoteUrl = "https://git.sankuai.com/scm/team/repo.git";
       yield* runGit(repoDir, ["remote", "set-url", "origin", remoteUrl]);
       yield* runGit(repoDir, ["config", `url.${remoteDir}.insteadOf`, remoteUrl]);
 
@@ -5819,7 +5812,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 79,
             title: "Another repository's PR",
-            url: "https://dev.azure.com/org/project/_git/other/pullrequest/79",
+            url: "https://dev.sankuai.com/code/repo-detail/team/other/pr/79",
             baseRefName: "main",
             headRefName: "feature/no-pull-ref",
             state: "open",
@@ -5839,7 +5832,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 77,
             title: "Merged PR",
-            url: "https://dev.azure.com/org/project/_git/repo/pullrequest/77",
+            url: "https://dev.sankuai.com/code/repo-detail/team/repo/pr/77",
             baseRefName: "main",
             headRefName: "feature/no-pull-ref",
             state: "merged",
@@ -5861,8 +5854,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         providerScenario: {
           pullRequest: {
             number: 78,
-            title: "Azure DevOps PR",
-            url: "https://dev.azure.com/org/project/_git/repo/pullrequest/78",
+            title: "Meituan Code PR",
+            url: "https://dev.sankuai.com/code/repo-detail/team/repo/pr/78",
             baseRefName: "main",
             headRefName: "feature/no-pull-ref",
             state: "open",

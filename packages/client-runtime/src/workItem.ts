@@ -6,6 +6,8 @@ import type {
   WorkItemExecutionId,
   DeliverySummary,
   IssueProvider,
+  IssueListResult,
+  IssueScopeRef,
   Issue,
   RequirementIssueListResult,
   ProjectId,
@@ -67,7 +69,41 @@ export function requirementGroup(status: string, summary?: DeliverySummary): Req
   return "active";
 }
 
-export type RequirementSource = "all" | IssueProvider | "local";
+export type RequirementTracker = IssueProvider | "gitlab" | "linear";
+export type TrackerCreateTarget = IssueScopeRef & { provider: "gitlab" | "linear" };
+export function trackerCreateTargets(
+  result: IssueListResult | null | undefined,
+): TrackerCreateTarget[] {
+  return (result?.scopes ?? []).flatMap((scope) => {
+    const provider = String(scope.tracker);
+    return (provider === "gitlab" || provider === "linear") &&
+      result?.trackers.some(
+        (tracker) =>
+          tracker.tracker === scope.tracker &&
+          tracker.host === scope.host &&
+          tracker.configured &&
+          tracker.capabilities?.create,
+      )
+      ? [{ ...scope, provider }]
+      : [];
+  });
+}
+export type RequirementSource = "all" | RequirementTracker | "local";
+type LegacyPage = typeof RequirementIssueListResult.Type;
+type LegacyGroup = LegacyPage["groups"][number];
+export type RequirementBoardPage = Omit<LegacyPage, "groups"> & {
+  groups: ReadonlyArray<
+    Omit<LegacyGroup, "source"> & {
+      source: Omit<LegacyGroup["source"], "provider"> & { provider: RequirementTracker };
+    }
+  >;
+};
+export const requirementTrackerLabel = {
+  github: "GitHub",
+  gitlab: "GitLab",
+  linear: "Linear",
+  meituan: "ONES",
+} as const;
 
 type RequirementEntryBase = {
   key: string;
@@ -81,12 +117,12 @@ type RequirementEntryBase = {
 };
 export type RequirementEntry = RequirementEntryBase &
   (
-    | { kind: "issue"; issue: Issue; provider: IssueProvider; scope: string }
+    | { kind: "issue"; issue: Issue; provider: RequirementTracker; scope: string; host: string }
     | { kind: "local"; item: WorkItemSummary }
   );
 
 export function mergeRequirementEntries(
-  issuePages: ReadonlyArray<typeof RequirementIssueListResult.Type>,
+  issuePages: ReadonlyArray<RequirementBoardPage>,
   items: ReadonlyArray<WorkItemSummary>,
   tracked: ReadonlyMap<string, WorkItemSummary>,
   options: { source?: RequirementSource; query?: string; archived?: boolean } = {},
@@ -114,6 +150,7 @@ export function mergeRequirementEntries(
             issue,
             provider: group.source.provider,
             scope: group.source.scope,
+            host: group.source.host,
           });
         }
       }

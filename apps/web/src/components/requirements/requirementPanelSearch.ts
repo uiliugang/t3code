@@ -23,6 +23,7 @@ export function requirementSelection(surface: RightPanelSurface | null): Require
     issueProjectId: undefined,
     issueProvider: undefined,
     issueScope: undefined,
+    issueHost: undefined,
     pullRequest: undefined,
   };
   const detailEnvironmentId =
@@ -40,6 +41,7 @@ export function requirementSelection(surface: RightPanelSurface | null): Require
         issueProjectId: surface.projectId as ProjectId,
         issueProvider: surface.provider,
         issueScope: surface.scope,
+        issueHost: surface.host,
       };
     case "pull-request":
       return {

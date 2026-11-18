@@ -292,10 +292,10 @@ interface BranchHeadContext {
 }
 
 export function pullRequestRepositoryKey(value: string): string | null {
-  const repositoryUrl = sourceControlDefinitions.parseChangeRequestUrl(value)?.link.repositoryUrl;
-  return repositoryUrl === undefined
-    ? null
-    : sourceControlDefinitions.repositoryKeyFromRemote(repositoryUrl);
+  const link = sourceControlDefinitions.parseChangeRequestUrl(value)?.link;
+  return link
+    ? sourceControlDefinitions.canonicalRepositoryKey(`${link.host}/${link.repository}`)
+    : null;
 }
 
 /** Null when the host did not name the repository the head lives in. */

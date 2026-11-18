@@ -80,11 +80,6 @@
         "@napi-rs/keyring",
         "zod",
         // Disabled hosting integrations remain installed so their entries can be re-enabled.
-        "@t3tools/source-control-azure-devops",
-        "@t3tools/source-control-bitbucket",
-        "@t3tools/source-control-cursor-origin",
-        "@t3tools/source-control-forgejo",
-        "@t3tools/source-control-gitcafe",
         "@t3tools/source-control-gitlab",
         "ffi-rs",
         "transcribe-cpp",

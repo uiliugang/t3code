@@ -11,6 +11,10 @@ export const issueListFiltersAtom = Atom.make<IssueListFilters>({
   labels: [],
   assignee: null,
 }).pipe(Atom.keepAlive, Atom.withLabel("mobile:issues:list-filters"));
+export const requirementLabelsAtom = Atom.make<IssueListFilters>({
+  labels: [],
+  assignee: null,
+}).pipe(Atom.keepAlive, Atom.withLabel("mobile:requirements:label-filter"));
 
 /** The picks the listed scopes no longer offer, which a picker still lists so they can be removed. */
 export function unofferedIssueFilters(

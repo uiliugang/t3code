@@ -46,6 +46,7 @@ export type IssueStateCategory = typeof IssueStateCategory.Type;
 
 export const IssueState = Schema.Struct({
   category: IssueStateCategory,
+  boardCategory: Schema.optional(Schema.Literals(["todo", "doing", "done", "other"])),
   name: TrimmedNonEmptyString,
   /** How a closed state ended, where the tracker says: `completed`, or its word for not done. */
   closeReason: Schema.optional(TrimmedNonEmptyString),
@@ -110,6 +111,7 @@ export const IssueSummary = Schema.Struct({
   assignees: Schema.Array(IssueActor),
   labels: Schema.Array(IssueLabel),
   commentCount: NonNegativeInt,
+  priority: Schema.optional(Schema.String),
 });
 export type IssueSummary = typeof IssueSummary.Type;
 
@@ -226,6 +228,7 @@ export const IssueDetail = Schema.Struct({
   /** The signed-in account, so a comment edit is offered only on the viewer's own remarks. */
   viewer: Schema.NullOr(TrimmedNonEmptyString),
   body: Schema.String,
+  bodyFormat: Schema.optional(Schema.Literals(["markdown", "html"])),
   reactions: Schema.optional(Schema.Array(IssueReaction)),
   comments: Schema.Array(IssueComment),
   /** Where older comments carry on; null once the conversation is whole. */
@@ -257,6 +260,7 @@ export type IssueListCursors = typeof IssueListCursors.Type;
 
 export const IssueListInput = Schema.Struct({
   state: IssueListState,
+  tracker: Schema.optional(IssueTrackerKind),
   involvement: Schema.optional(IssueInvolvement),
   projectId: Schema.optional(ProjectId),
   /** Narrows to one host, named as the host itself. Absent means every host the workspace has. */

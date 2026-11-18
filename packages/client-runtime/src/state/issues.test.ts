@@ -1,7 +1,22 @@
-import type { IssueComment, IssueListEntry, IssueTrackerKind, ProjectId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type IssueComment,
+  type IssueListEntry,
+  type IssueTrackerKind,
+  type ProjectId,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import { Atom } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { issueEntryKey, mergeIssueListPage, prependIssueComments } from "./issues.ts";
+import { EnvironmentRegistry } from "../connection/registry.ts";
+import {
+  createIssueEnvironmentAtoms,
+  issueEntryKey,
+  mergeIssueListPage,
+  prependIssueComments,
+} from "./issues.ts";
 
 function entry(overrides: Partial<IssueListEntry> & { key: string }): IssueListEntry {
   return {
@@ -24,6 +39,22 @@ function entry(overrides: Partial<IssueListEntry> & { key: string }): IssueListE
     ...overrides,
   };
 }
+
+it("refreshes the same issue detail regardless of how a surface orders the reference fields", () => {
+  const issues = createIssueEnvironmentAtoms(
+    Atom.runtime(Layer.effect(EnvironmentRegistry, Effect.die("No connection should be opened"))),
+  );
+  const { projectId, tracker, host, scope, key } = entry({ key: "23" });
+  const environmentId = EnvironmentId.make("local");
+  const opened = issues.detail({ environmentId, input: { projectId, host, scope, key, tracker } });
+  expect(
+    opened === issues.detail({ environmentId, input: { projectId, tracker, host, scope, key } }),
+  ).toBe(true);
+  expect(
+    opened ===
+      issues.detail({ environmentId, input: { projectId, tracker, host, scope: "another", key } }),
+  ).toBe(false);
+});
 
 describe("mergeIssueListPage", () => {
   it("keeps rows from scopes the page did not continue and orders by update", () => {

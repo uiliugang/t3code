@@ -4,6 +4,10 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  requirementTrackerLabel,
+  type RequirementTracker,
+} from "@t3tools/client-runtime/work-item";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -103,7 +107,8 @@ export type RightPanelSurface =
       kind: "requirement-issue";
       environmentId?: string;
       projectId: string;
-      provider: "github" | "meituan";
+      provider: RequirementTracker;
+      host?: string;
       scope?: string;
       issueId: string;
       title?: string;
@@ -371,7 +376,8 @@ export type RequirementIssueSurface = Extract<RightPanelSurface, { kind: "requir
 export interface RequirementIssueSurfaceTarget {
   environmentId?: string;
   projectId: string;
-  provider: "github" | "meituan";
+  provider: RequirementIssueSurface["provider"];
+  host?: string;
   scope?: string;
   issueId: string;
   title?: string;
@@ -383,7 +389,8 @@ function requirementIssueSurfaceId(
   const environment =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
   const scope = target.scope === undefined ? "" : `${encodeURIComponent(target.scope)}:`;
-  return `requirement-issue:${environment}${encodeURIComponent(target.projectId)}:${target.provider}:${scope}${encodeURIComponent(target.issueId)}`;
+  const host = target.host ? `${encodeURIComponent(target.host)}:` : "";
+  return `requirement-issue:${environment}${encodeURIComponent(target.projectId)}:${target.provider}:${host}${scope}${encodeURIComponent(target.issueId)}`;
 }
 
 function requirementIssueSurface(target: RequirementIssueSurfaceTarget): RequirementIssueSurface {
@@ -393,6 +400,7 @@ function requirementIssueSurface(target: RequirementIssueSurfaceTarget): Require
     ...(target.environmentId === undefined ? {} : { environmentId: target.environmentId }),
     projectId: target.projectId,
     provider: target.provider,
+    ...(target.host ? { host: target.host } : {}),
     ...(typeof target.scope === "string" ? { scope: target.scope } : {}),
     issueId: target.issueId,
     ...(typeof target.title === "string" ? { title: target.title } : {}),
@@ -742,7 +750,8 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     if (surface.kind === "requirement-issue") {
                       if (
                         typeof surface.projectId !== "string" ||
-                        (surface.provider !== "github" && surface.provider !== "meituan") ||
+                        typeof surface.provider !== "string" ||
+                        !Object.hasOwn(requirementTrackerLabel, surface.provider) ||
                         typeof surface.issueId !== "string"
                       ) {
                         return [];

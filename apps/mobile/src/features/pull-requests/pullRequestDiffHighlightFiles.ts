@@ -55,7 +55,6 @@ export function createPullRequestDiffHighlightFiles<E>(
     environment: diffHighlightTraceHash(target.environmentId),
     project: diffHighlightTraceHash(target.input.projectId),
     pr: target.input.number,
-    gitcafe: target.input.host === "git.cafe",
   });
   const scope = JSON.stringify([
     target.environmentId,

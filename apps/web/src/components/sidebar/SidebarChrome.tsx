@@ -16,6 +16,7 @@ import { useConnectedEnvironmentIds, usePullRequestsSupported } from "../../stat
 import { prefetchRequirementIssues } from "@t3tools/client-runtime/state/requirement-board";
 import { serverEnvironment } from "../../state/server";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { issueEnvironment } from "../../state/issues";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { T3Wordmark } from "../T3Wordmark";
 import {
@@ -255,6 +256,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
                     appAtomRegistry.get(serverEnvironment.settingsValueAtom(id)),
                     "requirements",
                   ),
+                (id) =>
+                  appAtomRegistry.get(serverEnvironment.configValueAtom(id))
+                    ?.requirementIssueTrackers
+                    ? issueEnvironment.list
+                    : undefined,
               );
             }}
             onClick={() => {

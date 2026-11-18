@@ -1929,8 +1929,8 @@ describe("PullRequestSyncReactor", () => {
 
   it.effect.each([
     "gh pr merge 7 --squash 2>&1 | tail -3",
-    "cafe pr merge 7 --squash",
-    "az repos pr update --id 7 --status completed",
+    "glab mr merge 7 --squash",
+    "glab mr accept 7",
   ])("reads open links fresh only for a thread that ran `%s`", (mergeCommand) =>
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.parse(NOW));

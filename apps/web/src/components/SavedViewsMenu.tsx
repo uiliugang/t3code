@@ -1,13 +1,13 @@
 import { BookmarkIcon, CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { type ComponentProps, useId, useState } from "react";
 import type * as Schema from "effect/Schema";
 import {
   SAVED_VIEW_NAME_MAX_LENGTH,
   savedViewNameError,
 } from "@t3tools/client-runtime/saved-views";
 
-import { getLocalStorageItem, useLocalStorage } from "../hooks/useLocalStorage";
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { getLocalStorageItem, useLocalStorage } from "../hooks/useLocalStorage";
 import { randomUUID } from "../lib/utils";
 import { Button } from "./ui/button";
 import {
@@ -53,10 +53,12 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
   kind,
   preferences,
   onApply,
+  size,
 }: {
   kind: SavedViewsKind<Preferences, Stored, Encoded>;
   preferences: Preferences;
   onApply: (preferences: Preferences) => void;
+  size?: ComponentProps<typeof Button>["size"];
 }) {
   const t = useUiTranslation();
   const [views, setViews] = useLocalStorage(kind.storageKey, kind.empty, kind.schema);
@@ -137,7 +139,7 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
           <TooltipTrigger
             render={
               <MenuTrigger
-                render={<Button variant="outline" />}
+                render={<Button variant="outline" {...(size ? { size } : {})} />}
                 aria-label={t("Saved {kind} views", { kind: t(kind.noun) })}
               />
             }

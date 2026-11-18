@@ -1,4 +1,10 @@
 export const skillMessages: Readonly<Record<string, string>> = {
+  "Select all locations": "全选使用位置",
+  "Updating usage locations...": "正在更新使用位置…",
+  "Some usage locations could not be updated. Review recent operations.":
+    "部分使用位置更新失败，请查看最近操作。",
+  "Usage locations updated. Running agents may need a new session or reload to use the changes.":
+    "使用位置已更新。运行中的智能体可能需要新建会话或重新加载才能使用这些变更。",
   "Add locations": "添加位置",
   "Remove locations": "移除位置",
   "Select up to 200 skills.": "一次最多选择 200 个技能。",

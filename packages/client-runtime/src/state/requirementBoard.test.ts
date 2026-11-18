@@ -34,6 +34,49 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     activeExecutionCount: 0,
   };
   const cursor = { id: item.id, updatedAt: item.updatedAt };
+  const requests: import("@t3tools/contracts").IssueListInput[] = [];
+  const unified = createRequirementBoardAtoms({
+    trackers: ({ input }) => {
+      requests.push(input);
+      return Atom.make(
+        AsyncResult.success<import("@t3tools/contracts").IssueListResult>({
+          viewers: {},
+          entries: [],
+          errors: [],
+          trackers: [],
+          nextCursors: input.cursors ? {} : { "linear.app eng": "opaque" },
+        }),
+      );
+    },
+    issues: () => {
+      throw new Error("legacy query on unified server");
+    },
+    workItemsLive: () => {
+      throw new Error("local items do not have labels");
+    },
+  });
+  const filtered = registry.get(
+    unified(
+      new RequirementBoardKey({
+        environmentId: EnvironmentId.make("env"),
+        source: "all",
+        projectId: null,
+        assignee: "me",
+        query: "",
+        labels: ["urgent"],
+        page: 2,
+        cursors: [undefined],
+        localSupported: true,
+        archived: false,
+        trackerSupported: true,
+      }),
+    ),
+  );
+  expect(requests.map(({ labels, cursors }) => ({ labels, cursors }))).toEqual([
+    { labels: ["urgent"], cursors: undefined },
+    { labels: ["urgent"], cursors: { "linear.app eng": "opaque" } },
+  ]);
+  expect(filtered.moreIssues).toBe(false);
   const first = Atom.make(
     AsyncResult.success<WorkItemListResult>(
       { items: [item], candidates: [], nextCursor: cursor },

@@ -42,7 +42,7 @@ describe("findPromptLinkProjects", () => {
     expect(ids("gitlab", "x")).toEqual([]);
   });
 
-  it("matches a checkout of the repository's GitCafe mirror", () => {
+  it("does not target an unrelated host with the same repository path", () => {
     const projects = [
       { id: "gitcafe", repositoryIdentity: identity("git.cafe/pingdotgg/t3code") },
       { id: "staging", repositoryIdentity: identity("staging.git.cafe/pingdotgg/t3code") },
@@ -52,7 +52,7 @@ describe("findPromptLinkProjects", () => {
       findPromptLinkProjects(projects, { owner: "pingdotgg", name: "t3code" }).map(
         (project) => project.id,
       ),
-    ).toEqual(["gitcafe", "staging"]);
+    ).toEqual([]);
   });
 });
 

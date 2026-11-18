@@ -30,6 +30,91 @@ import { IssueSelect } from "./IssueSelect";
 import { Checkbox } from "../ui/checkbox";
 import { SearchIcon } from "lucide-react";
 import { DraftFillButton } from "./DraftFillButton";
+import {
+  requirementTrackerLabel,
+  type TrackerCreateTarget,
+} from "@t3tools/client-runtime/work-item";
+import { issueEnvironment } from "../../state/issues";
+
+export function TrackerCreateDialog({
+  environmentId,
+  target,
+  close,
+  created,
+}: {
+  environmentId: EnvironmentId;
+  target: TrackerCreateTarget;
+  close: () => void;
+  created: (key: string, title: string) => void;
+}) {
+  const t = useUiTranslation();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const allowed = useAtomValue(issueEnvironment.create.permissionAtom(environmentId));
+  const create = useAtomCommand(issueEnvironment.create);
+  async function submit() {
+    if (busy || !allowed || !title.trim()) return;
+    setBusy(true);
+    const { provider: _provider, ...scope } = target;
+    const result = await create({
+      environmentId,
+      input: { ...scope, title: title.trim(), body, labels: [], assignees: [] },
+    });
+    setBusy(false);
+    if (result._tag === "Success") created(result.value.key, title.trim());
+  }
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) close();
+      }}
+    >
+      <DialogPopup>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {t("New issue")} · {requirementTrackerLabel[target.provider]} · {target.scope}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            <Label>
+              {t("Title")}
+              <Input
+                value={title}
+                maxLength={1024}
+                required
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </Label>
+            <Label>
+              {t("Description")}
+              <Textarea
+                value={body}
+                maxLength={65536}
+                onChange={(event) => setBody(event.target.value)}
+              />
+            </Label>
+          </DialogPanel>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={close}>
+              {t("Cancel")}
+            </Button>
+            <Button type="submit" disabled={!allowed || busy || !title.trim()}>
+              {t(busy ? "Creating..." : "Create issue")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogPopup>
+    </Dialog>
+  );
+}
 
 export function IssueCreateDialog({
   environmentId,

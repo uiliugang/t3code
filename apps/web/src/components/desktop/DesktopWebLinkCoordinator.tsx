@@ -240,7 +240,9 @@ export function DesktopWebLinkCoordinator() {
     const hold =
       openPullRequestsInApp &&
       (sourceControlClients.parseChangeRequestUrl(url) !== null ||
-        sourceControlClients.parseCommitUrl(url) !== null)
+        sourceControlClients.definitions.some(
+          (provider) => sourceControlClients.parseCommitUrl(url, provider.kind) !== null,
+        ))
         ? projectsSettled()
         : Promise.resolve();
     void hold.then(() => {

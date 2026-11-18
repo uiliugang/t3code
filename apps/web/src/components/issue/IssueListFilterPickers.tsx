@@ -119,7 +119,7 @@ export function IssueFiltersMenu(props: {
   );
 }
 
-function LabelChoices(props: {
+export function LabelChoices(props: {
   scopes: ReadonlyArray<IssueCandidatesTarget>;
   value: ReadonlyArray<string>;
   onChange: (value: ReadonlyArray<string>) => void;

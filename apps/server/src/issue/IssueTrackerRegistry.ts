@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { IssueTrackerKind } from "@t3tools/contracts";
 import * as LinearDriver from "@t3tools/issue-tracker-linear/server/driver";
+import { makeMepIssueTracker } from "@t3tools/source-control-meituan/server/driver";
 import {
   isStandaloneIssueTracker,
   type IssueTrackerApi,
@@ -10,6 +11,7 @@ import {
 } from "@t3tools/source-control-core/server/IssueTracker";
 
 import * as BuiltInDrivers from "../sourceControl/builtInDrivers.ts";
+import * as ServerSourceControlHost from "../sourceControl/ServerSourceControlHost.ts";
 import * as IssueTrackerHostLive from "./IssueTrackerHostLive.ts";
 
 export class IssueTrackerRegistry extends Context.Service<
@@ -35,15 +37,19 @@ export function fromTrackers(
   };
 }
 
-/** Trackers that are not a git host's own. Each signs requests with a credential from Settings. */
-const STANDALONE_TRACKERS = [LinearDriver.make];
+const PROJECT_TRACKERS = [LinearDriver.make, makeMepIssueTracker] as const;
 
 const make = Effect.gen(function* () {
   const drivers = yield* BuiltInDrivers.SourceControlDrivers;
-  const standalone = yield* Effect.all(STANDALONE_TRACKERS);
-  return fromTrackers([...drivers.flatMap(({ instance }) => instance.issues ?? []), ...standalone]);
+  const projectTrackers = yield* Effect.all(PROJECT_TRACKERS);
+  return fromTrackers([
+    ...drivers.flatMap(({ instance }) => instance.issues ?? []),
+    ...projectTrackers,
+  ]);
 });
 
 export const layer = Layer.effect(IssueTrackerRegistry, make).pipe(
-  Layer.provide(Layer.merge(BuiltInDrivers.layer, IssueTrackerHostLive.layer)),
+  Layer.provide(
+    Layer.mergeAll(BuiltInDrivers.layer, IssueTrackerHostLive.layer, ServerSourceControlHost.layer),
+  ),
 );

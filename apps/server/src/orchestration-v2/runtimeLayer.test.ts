@@ -4401,7 +4401,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         (yield* orchestrator.getThreadShell(threadId))?.pullRequests
           ?.filter((link) => link.host === "git.cafe")
           .map((link) => link.url),
-        [21353, 21354].map((number) => `https://git.cafe/pingdotgg/t3code/pulls/${number}`),
+        [
+          "https://git.cafe/pingdotgg/t3code/pull/21353",
+          "https://git.cafe/pingdotgg/t3code/pulls/21354",
+        ],
       );
     }),
   );

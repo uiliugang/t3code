@@ -7,6 +7,13 @@ import { useProjects } from "../../state/entities";
 import type { EnvironmentPresentation } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
+import { issueEnvironment } from "../../state/issues";
+import { useEnvironmentQuery } from "../../state/query";
+import {
+  trackerCreateTargets,
+  requirementTrackerLabel,
+  type TrackerCreateTarget,
+} from "@t3tools/client-runtime/work-item";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
@@ -21,6 +28,7 @@ import {
 } from "../ui/menu";
 
 type CreateActions = {
+  createTrackerIssue: (environmentId: EnvironmentId, target: TrackerCreateTarget) => void;
   createIssue: (environmentId: EnvironmentId, provider: IssueProvider) => void;
   createLocal: (environmentId: EnvironmentId, projectId: ProjectId) => void;
 };
@@ -75,6 +83,7 @@ function EnvironmentCreateItems({
   environmentId,
   projectId,
   createIssue,
+  createTrackerIssue,
   createLocal,
 }: CreateActions & {
   environmentId: EnvironmentId;
@@ -89,6 +98,15 @@ function EnvironmentCreateItems({
       (!projectId || project.id === projectId),
   );
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const trackers = useEnvironmentQuery(
+    config?.requirementIssueTrackers
+      ? issueEnvironment.list({
+          environmentId,
+          input: { state: "all", limit: 1, ...(projectId ? { projectId } : {}) },
+        })
+      : null,
+  );
+  const canCreateTracker = useAtomValue(issueEnvironment.create.permissionAtom(environmentId));
   const meituanEnabled = isMeituanServiceEnabled(
     useAtomValue(serverEnvironment.settingsValueAtom(environmentId)),
     "requirements",
@@ -101,6 +119,15 @@ function EnvironmentCreateItems({
   );
   return (
     <>
+      {trackerCreateTargets(trackers.data).map((target) => (
+        <MenuItem
+          key={`${target.host}/${target.scope}`}
+          disabled={!canCreateTracker}
+          onClick={() => createTrackerIssue(environmentId, target)}
+        >
+          {requirementTrackerLabel[target.provider]} · {target.scope}
+        </MenuItem>
+      ))}
       {(["meituan", "github"] as const)
         .filter((provider) => provider !== "meituan" || meituanEnabled)
         .map((provider) => (

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 
 import { act, render, type Screen } from "../../test/render";
+import { __setClientSettingsForTests } from "../hooks/useSettings";
 import type { PullRequestListPreferences } from "./pullRequest/pullRequestListPreferences";
 import { PULL_REQUEST_SAVED_VIEWS } from "./pullRequest/pullRequestSavedViews";
 import { SavedViewsMenu, type SavedView } from "./SavedViewsMenu";
@@ -20,6 +22,7 @@ const reviewing = {
 
 function setup() {
   localStorage.clear();
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   const onApply = vi.fn();
   toastAdd.mockClear();
   return {

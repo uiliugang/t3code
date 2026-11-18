@@ -1958,6 +1958,7 @@ export const layerWsRpc = (
           threadSnapshotPagination: true,
           threadFind: true,
           workItems: true,
+          requirementIssueTrackers: true,
           workItemDelivery: true,
           workItemDiscovery: true,
           workItemDraftGeneration: true,

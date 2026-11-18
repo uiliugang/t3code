@@ -5,6 +5,7 @@ import type {
   ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { canonicalRepositoryPath } from "@t3tools/shared/git";
+import * as savedKeys from "@t3tools/shared/legacyThreadPullRequestKey";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import type { SourceControlDefinitionRegistry } from "./definition.ts";
@@ -68,7 +69,8 @@ export function makeThreadPullRequests(
     "parseChangeRequestUrl" | "canonicalRepositoryKey" | "findByRepositoryKey"
   >,
 ) {
-  const parse = (url: string) => registry.parseChangeRequestUrl(url)?.link ?? null;
+  const parse = (url: string) =>
+    registry.parseChangeRequestUrl(url)?.link ?? savedKeys.parseChangeRequestUrl(url);
 
   function normalizeThreadPullRequestKey(key: ThreadPullRequestKeySource): ThreadPullRequestKey {
     const parsed = key.url === undefined ? null : parse(key.url);
@@ -78,8 +80,10 @@ export function makeThreadPullRequests(
       parsed.number === key.number
         ? parsed.authority
         : undefined);
-    const canonical = registry.canonicalRepositoryKey(
-      `${(authority ?? key.host).trim().toLowerCase()}/${key.repository.trim().toLowerCase()}`,
+    const canonical = savedKeys.canonicalRepositoryKey(
+      registry.canonicalRepositoryKey(
+        `${(authority ?? key.host).trim().toLowerCase()}/${key.repository.trim().toLowerCase()}`,
+      ),
     );
     const separator = canonical.indexOf("/");
     return {
@@ -93,8 +97,9 @@ export function makeThreadPullRequests(
     linked: Pick<ThreadLinkedPullRequest, "repository" | "number" | "url">,
     fallbackHost?: string,
   ): ThreadPullRequestKey {
-    const parsed = parse(linked.url);
-    if (parsed !== null && parsed.number === linked.number) {
+    const parsed = registry.parseChangeRequestUrl(linked.url)?.link;
+    if (!parsed && !fallbackHost) return savedKeys.legacyThreadPullRequestKey(linked);
+    if (parsed && parsed.number === linked.number) {
       if (
         parsed.authority !== undefined ||
         registry.findByRepositoryKey(`${parsed.host}/${parsed.repository}`) !== undefined

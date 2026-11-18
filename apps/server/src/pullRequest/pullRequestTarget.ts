@@ -1,5 +1,4 @@
 import type { OrchestrationProjectShell, SourceControlProviderKind } from "@t3tools/contracts";
-import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -86,7 +85,7 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
     }
     return {
       ...normalizeThreadPullRequestKey(parsed),
-      url: canonicalizeGitCafePullRequestUrl(input.url),
+      url: input.url,
     } satisfies ResolvedTarget;
   }
   if (input.repository === undefined || input.number === undefined) {
@@ -100,24 +99,21 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
   const repository = input.repository.toLowerCase();
   // Without a URL, a public forge host says what shape its change request URLs take;
   // any other host is taken to run the project's own forge.
-  const recognizedKind = sourceControlDefinitions.recognizeRemote(`https://${host}`)?.kind;
-  const kind =
-    sourceControlDefinitions.findByPublicHost(host)?.kind ??
-    (recognizedKind === "gitcafe" ? recognizedKind : projectHost.kind);
+  const kind = sourceControlDefinitions.findByPublicHost(host)?.kind ?? projectHost.kind;
   const url =
     kind === null
       ? null
-      : sourceControlDefinitions.get(kind).changeRequestUrl({
+      : sourceControlDefinitions.find(kind)?.changeRequestUrl({
           host,
           repository,
           number: input.number,
           remoteUrl: project?.repositoryIdentity?.locator.remoteUrl,
         });
-  if (url === null) {
+  if (url == null) {
     return yield* new PullRequestUrlUnavailableError({});
   }
   return {
     ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url }),
-    url: canonicalizeGitCafePullRequestUrl(url),
+    url,
   } satisfies ResolvedTarget;
 });

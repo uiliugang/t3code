@@ -29,6 +29,7 @@ import {
   skillStatus,
   skillFailure,
   skillConfigurationJob,
+  skillConfigurationFeedback,
   skillNextCheck,
   skillSourceName,
   skillSourceFailure,
@@ -39,6 +40,7 @@ import { mobilePreferencesAtom } from "../../state/preferences";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { ErrorBanner } from "../../components/ui/ErrorBanner";
+import { Notice } from "../../components/ui/Notice";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Menu } from "../../components/ui/Menu";
 import * as Dialog from "../../components/ui/Dialog";
@@ -161,43 +163,73 @@ function TargetSelection({
   removing?: boolean;
 }) {
   const t = useUiTranslation();
+  const groups = skillTargetGroups(data.targets).filter((group) => group.enabled);
+  const selectedCount = groups.filter((group) =>
+    group.targets.some((target) => selected.includes(target.id)),
+  ).length;
+  const allSelected = groups.length > 0 && selectedCount === groups.length;
   return (
     <View className="gap-3">
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityLabel={t("Select all locations")}
+        accessibilityState={{
+          checked: selectedCount > 0 && !allSelected ? "mixed" : allSelected,
+          disabled: disabled || !groups.length,
+        }}
+        disabled={disabled || !groups.length}
+        className="min-h-11 flex-row items-center gap-3"
+        onPress={() => {
+          const ids = groups.flatMap((group) => group.targets.map((target) => target.id));
+          onChange(
+            allSelected
+              ? selected.filter((id) => !ids.includes(id))
+              : [...new Set([...selected, ...ids])],
+          );
+        }}
+      >
+        <SymbolView
+          name={allSelected ? "checkmark.circle.fill" : selectedCount ? "minus" : "circle"}
+          size={22}
+          tintColorClassName={disabled ? "accent-icon-subtle" : "accent-primary"}
+        />
+        <Text className="text-xs text-foreground-muted">
+          {t("{count} locations selected", { count: selectedCount })}
+        </Text>
+      </Pressable>
       {!removing && (
         <Text className="text-xs text-foreground-muted">
           {t("Existing files at selected locations are backed up and replaced with managed links.")}
         </Text>
       )}
-      {skillTargetGroups(data.targets)
-        .filter((group) => group.enabled)
-        .map((group) => (
-          <View key={group.directory} className="flex-row items-center gap-3">
-            <View className="min-w-0 flex-1">
-              <Text className="text-foreground">
-                {group.targets
-                  .map((target) =>
-                    target.id === "directory:shared" ? t("Shared skills") : target.label,
-                  )
-                  .join(" · ")}
-              </Text>
-              <Text selectable className="text-xs text-foreground-muted">
-                {group.directory}
-              </Text>
-            </View>
-            <Switch
-              accessibilityLabel={group.targets.map((target) => target.label).join(", ")}
-              value={group.targets.some((target) => selected.includes(target.id))}
-              disabled={disabled}
-              onValueChange={(enabled) =>
-                onChange(
-                  enabled
-                    ? [...new Set([...selected, ...group.targets.map((target) => target.id)])]
-                    : selected.filter((id) => !group.targets.some((target) => target.id === id)),
+      {groups.map((group) => (
+        <View key={group.directory} className="flex-row items-center gap-3">
+          <View className="min-w-0 flex-1">
+            <Text className="text-foreground">
+              {group.targets
+                .map((target) =>
+                  target.id === "directory:shared" ? t("Shared skills") : target.label,
                 )
-              }
-            />
+                .join(" · ")}
+            </Text>
+            <Text selectable className="text-xs text-foreground-muted">
+              {group.directory}
+            </Text>
           </View>
-        ))}
+          <Switch
+            accessibilityLabel={group.targets.map((target) => target.label).join(", ")}
+            value={group.targets.some((target) => selected.includes(target.id))}
+            disabled={disabled}
+            onValueChange={(enabled) =>
+              onChange(
+                enabled
+                  ? [...new Set([...selected, ...group.targets.map((target) => target.id)])]
+                  : selected.filter((id) => !group.targets.some((target) => target.id === id)),
+              )
+            }
+          />
+        </View>
+      ))}
     </View>
   );
 }
@@ -478,6 +510,14 @@ function Skill({
           {target.directory}/{target.entryName ?? skill.name}
         </Text>
       ))}
+      {configuration?.status === "completed" &&
+        skill.bindings.every((binding) => binding.status === "linked") && (
+          <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+            {t(
+              "Usage locations updated. Running agents may need a new session or reload to use the changes.",
+            )}
+          </Text>
+        )}
       {failure && (
         <Text selectable accessibilityRole="alert" className="text-danger-foreground">
           {t(failure)}
@@ -951,6 +991,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       ? selectedSourceFilter
       : null;
   const failedSource = skillSourceFailure(data);
+  const configurationFeedback = skillConfigurationFeedback(data);
   const { rows, counts, sourceCounts } = skillRows(
     data,
     search,
@@ -1114,6 +1155,14 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             )}
           </ScreenScrollView>
         </Sheet>
+      )}
+      {configurationFeedback && (
+        <View className="px-5 pt-3">
+          <Notice
+            tone={configurationFeedback.status === "failed" ? "danger" : "default"}
+            message={t(configurationFeedback.message)}
+          />
+        </View>
       )}
       <ScreenScrollView
         className="flex-1"

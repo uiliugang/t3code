@@ -271,13 +271,13 @@ describe("one server per repository", () => {
     ).toEqual({ "env-2": ["a2"] });
   });
 
-  it("checks the owner's HTTP authority using its own identity in either project order", () => {
+  it("checks host availability in the owning environment regardless of project order", () => {
     const projects = [
       {
         ...project("a1", "env-1", "forge.example/team/repo"),
         repositoryIdentity: {
           canonicalKey: "forge.example/team/repo",
-          provider: SourceControlProviderKind.make("forgejo"),
+          provider: SourceControlProviderKind.make("gitlab"),
           locator: {
             source: "git-remote",
             remoteName: "origin",
@@ -289,7 +289,7 @@ describe("one server per repository", () => {
         ...project("a2", "env-2", "forge.example/team/repo"),
         repositoryIdentity: {
           canonicalKey: "forge.example/team/repo",
-          provider: SourceControlProviderKind.make("forgejo"),
+          provider: SourceControlProviderKind.make("gitlab"),
           locator: {
             source: "git-remote",
             remoteName: "origin",
@@ -299,7 +299,7 @@ describe("one server per repository", () => {
       },
     ] as const;
     const availability = new Map([
-      ["env-1" as EnvironmentId, hostAvailability(new Map([["forge.example:3000", false]]))],
+      ["env-1" as EnvironmentId, hostAvailability(new Map([["forge.example", false]]))],
     ]);
     for (const copies of [projects, projects.toReversed()]) {
       expect(
@@ -320,7 +320,7 @@ describe("one server per repository", () => {
       ...project(`a-${environmentId}`, environmentId, "ssh.forge.example/team/repo"),
       repositoryIdentity: {
         canonicalKey: "ssh.forge.example/team/repo",
-        provider: SourceControlProviderKind.make("forgejo"),
+        provider: SourceControlProviderKind.make("gitlab"),
         locator: {
           source: "git-remote" as const,
           remoteName: "origin",
