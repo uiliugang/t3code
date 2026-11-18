@@ -34,7 +34,7 @@ import {
   ListIcon,
   LayoutGridIcon,
 } from "lucide-react";
-import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -396,7 +396,12 @@ export function RequirementBoard({
       selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, rightPanelRef),
     );
   };
+  const panelControlsRef = useRef<HTMLDivElement>(null);
+  const refocusToggleWhenOpen = useRef<boolean | null>(null);
   const toggleRightPanel = () => {
+    refocusToggleWhenOpen.current = panelControlsRef.current?.matches(":focus-within")
+      ? !rightPanelState.isOpen
+      : null;
     if (rightPanelState.isOpen) {
       useRightPanelStore.getState().close(rightPanelRef);
       selectSurfaceInUrl(null);
@@ -440,6 +445,14 @@ export function RequirementBoard({
     return true;
   };
   const panelOpen = usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restore DOM focus after the toggle moves between the list and detail headers
+  useLayoutEffect(() => {
+    if (refocusToggleWhenOpen.current !== panelOpen) return;
+    refocusToggleWhenOpen.current = null;
+    panelControlsRef.current
+      ?.querySelector<HTMLButtonElement>("[data-right-panel-toggle]")
+      ?.focus({ preventScroll: true });
+  }, [panelOpen]);
   const onPanelKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing || isCommandPaletteOpen() || !panelSurface)
       return;
@@ -462,6 +475,7 @@ export function RequirementBoard({
   }, [usesStandalonePanel]);
   const panelControls = usesStandalonePanel ? (
     <div
+      ref={panelControlsRef}
       className="flex items-center gap-1 [-webkit-app-region:no-drag]"
       data-workspace-titlebar-controls
     >

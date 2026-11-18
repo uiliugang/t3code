@@ -177,6 +177,7 @@ import { sourceControlEnvironment } from "~/state/sourceControl";
 import { RequirementBoard, RequirementsPage } from "./RequirementsPage";
 import { Route as requirementsRoute, type RequirementsSearch } from "~/routes/_chat.requirements";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
+import { getWorkspaceFocusRequestVersion, startWorkspaceFocus } from "~/lib/workspaceFocus";
 
 function setup() {
   useRightPanelStore.getState().closeAllSurfaces(REQUIREMENTS_PANEL_REF);
@@ -407,6 +408,7 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
     </RegistryContext.Provider>,
     { router: false }, // The fixture uses the requirements route and its real search validation.
   );
+  using _focus = { [Symbol.dispose]: startWorkspaceFocus(router) };
   await act(async () => {
     fixture.registry.set(
       workItemsAtom,
@@ -475,8 +477,10 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
     );
   });
 
-  await screen.getByRole("button", { name: /Alpha requirement/ }).click();
+  const alphaRow = screen.getByRole("button", { name: /Alpha requirement.*P1/ });
+  await alphaRow.click();
   await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
+  await expect.element(alphaRow).toHaveFocus();
   expect(router.state.location.search).toMatchObject({ workItemId: "item-alpha", view: "list" });
   await act(() => history.back());
   await expect.element(screen.getByTestId("work-item-detail:item-alpha")).not.toBeInTheDocument();
@@ -516,14 +520,33 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
   await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
   await userEvent.keyboard("{Alt>}w{/Alt}");
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
+  const panelToggle = screen.getByRole("button", { name: "Toggle right panel" });
+  await act(() => panelToggle.element().focus());
+  await userEvent.keyboard("{Enter}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "false");
+  await expect.element(panelToggle).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "true");
+  await expect.element(panelToggle).toHaveFocus();
+
+  const environmentMenu = screen.getByRole("button", { name: "Environment", exact: true });
+  await act(() => environmentMenu.element().focus());
+  const focusVersion = getWorkspaceFocusRequestVersion();
+  await userEvent.keyboard("{Alt>}b{/Alt}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "false");
+  await userEvent.keyboard("{Alt>}b{/Alt}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "true");
+  expect(getWorkspaceFocusRequestVersion()).toBe(focusVersion);
+  await expect.element(environmentMenu).toHaveFocus();
+
   await page.viewport(600, 800);
-  await screen.getByRole("button", { name: "Toggle right panel" }).click();
+  await panelToggle.click();
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
   await userEvent.keyboard("{Alt>}b{/Alt}");
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
   expect(router.state.location.search).toMatchObject({ workItemId: "item-beta", view: "list" });
   await page.viewport(1280, 800);
-  await screen.getByRole("button", { name: "Environment", exact: true }).click();
+  await environmentMenu.click();
   await page.getByRole("menuitemcheckbox", { name: "remote", exact: true }).click();
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
   expect(router.state.location.search).toMatchObject({ environmentId: "remote", view: "list" });

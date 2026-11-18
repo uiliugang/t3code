@@ -1,6 +1,7 @@
 import type { AnyRouter } from "@tanstack/react-router";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { dismissContextMenu } from "../contextMenuFallback";
-import { useRightPanelStore } from "../rightPanelStore";
+import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 
 const AREA_SELECTOR = "[data-workspace-area]";
 const FOCUS_BOUNDARY_SELECTOR =
@@ -390,10 +391,15 @@ export const getWorkspaceFocusRequestVersion = () => focusRequestVersion;
 export function startWorkspaceFocus(router: AnyRouter): () => void {
   const active = createWorkspaceFocusController(document);
   controller = active;
+  const requirementsPanelKey = scopedThreadKey(REQUIREMENTS_PANEL_REF);
   const stopPanels = useRightPanelStore.subscribe((state, previous) => {
     if (state.userActionRevisionByThreadKey === previous.userActionRevisionByThreadKey) return;
     for (const [threadKey, revision] of Object.entries(state.userActionRevisionByThreadKey)) {
-      if (previous.userActionRevisionByThreadKey[threadKey] === revision) continue;
+      if (
+        previous.userActionRevisionByThreadKey[threadKey] === revision ||
+        threadKey === requirementsPanelKey
+      )
+        continue;
       const next = state.byThreadKey[threadKey];
       const before = previous.byThreadKey[threadKey];
       if (next?.isOpen && (!before?.isOpen || next.activeSurfaceId !== before.activeSurfaceId))
