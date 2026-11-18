@@ -7,15 +7,17 @@ import {
 import { useContext } from "react";
 
 import { type ComposerThreadTarget, useComposerDraftStore } from "../../composerDraftStore";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /** Sets an existing thread's composer pick on the thread, so any next turn runs on it. */
 export function useApplyThreadModelPick() {
+  const t = useUiTranslation();
   const registry = useContext(RegistryContext);
   const setModelSelection = useOrchestrationCommand(threadEnvironment.setModelSelection, {
-    label: "change model",
+    label: t("change model"),
   });
   return async (target: ComposerThreadTarget) => {
     if (typeof target === "string") return;
@@ -39,8 +41,10 @@ export function useApplyThreadModelPick() {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not apply model selection",
-          description: `This model pick was not saved. ${error instanceof Error ? error.message : "Try again."}`,
+          title: t("Could not apply model selection"),
+          description: t("This model pick was not saved. {reason}", {
+            reason: error instanceof Error ? error.message : t("Try again."),
+          }),
         }),
       );
     }

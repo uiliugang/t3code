@@ -6,6 +6,7 @@ import type { Dispatch } from "react";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { selectThreadTerminalUiState } from "../../terminalUiStateStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
@@ -85,6 +86,7 @@ interface ChatTerminalActionsInput {
  * code blocks, which run in a reused or new drawer terminal.
  */
 export function useChatTerminalActions(input: ChatTerminalActionsInput) {
+  const t = useUiTranslation();
   const {
     environmentId,
     composerRef,
@@ -312,8 +314,9 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not open preview",
-            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+            title: t("Could not open preview"),
+            description:
+              error instanceof Error ? error.message : t("An unexpected error occurred."),
           }),
         );
       }
@@ -327,7 +330,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     if (activeThread?.workspace) {
       const targets = projectScriptTargets(script, activeThread.workspace);
       if (targets.length === 0 && activeThreadId) {
-        setThreadError(activeThreadId, "This action has no matching repositories in this task.");
+        setThreadError(activeThreadId, t("This action has no matching repositories in this task."));
         return;
       }
       for (const [index, target] of targets.entries()) {
@@ -350,7 +353,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     }
     if (activeThread?.workspaceConfiguration || script.repositoryRootIds !== undefined) {
       if (activeThreadId)
-        setThreadError(activeThreadId, "This action has no prepared repositories in this task.");
+        setThreadError(activeThreadId, t("This action has no prepared repositories in this task."));
       return;
     }
     return runProjectScriptAtLocation(script, options);
@@ -361,7 +364,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     void runProjectScript(
       {
         id: "chat-code-block",
-        name: "Chat code block",
+        name: t("Chat code block"),
         command,
         icon: "play",
         runOnWorktreeCreate: false,

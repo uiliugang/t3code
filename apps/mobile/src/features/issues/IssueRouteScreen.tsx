@@ -29,6 +29,7 @@ import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useComposerBottomInset } from "../../components/ComposerSurface";
 import { ANDROID_READING_MAX_WIDTH, CHAT_CONTENT_MAX_WIDTH } from "../../lib/layout";
 import { relativeTime } from "../../lib/time";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { deriveBottomControlInsets, type NativeLayoutMetrics } from "../../lib/reserved-regions";
 import { NativeLayoutObserver } from "../../native/NativeLayoutObserver";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
@@ -100,12 +101,13 @@ function IssueStateControl(props: {
   readonly busy: boolean;
   readonly onMove: (state: string) => void;
 }) {
+  const t = useUiTranslation();
   const status = issueStatus(props.state);
   const moves = props.states;
   const trigger = (
     <Pressable
       accessibilityRole={moves.length ? "button" : undefined}
-      accessibilityLabel={`Issue state, ${status.label}`}
+      accessibilityLabel={t("Issue state, {state}", { state: status.label })}
       disabled={!moves.length || props.busy}
       className="min-h-8 flex-row items-center gap-1.5 active:opacity-70"
     >
@@ -121,7 +123,7 @@ function IssueStateControl(props: {
     // As wide as the trigger: iOS anchors the menu to this view, not to the text inside it.
     <View className="self-start">
       <Menu
-        title="Issue state"
+        title={t("Issue state")}
         // The name is the id: unique within a workflow, and a NUL separator would end the native string.
         actions={moves.map((move) => ({ id: move.name, title: move.name }))}
         onPressAction={({ nativeEvent }) => {
@@ -143,6 +145,7 @@ function IssueIdentity(props: {
   readonly onEditLabels: () => void;
   readonly onEditAssignees: () => void;
 }) {
+  const t = useUiTranslation();
   const { issue, access } = props;
   const canLabel = access?.labels === true;
   const canAssign = access?.assignees === true;
@@ -160,16 +163,16 @@ function IssueIdentity(props: {
       <View className="flex-row items-center gap-2">
         <PullRequestAvatar actor={issue.author} size={20} />
         <Text className="min-w-0 flex-1 text-xs font-t3-medium" numberOfLines={1}>
-          {issue.author?.login ?? "Unknown author"}
+          {issue.author?.login ?? t("Unknown author")}
         </Text>
         <Text className="shrink text-right text-2xs text-foreground-muted" numberOfLines={1}>
           {issue.closedAt ? (
             <>
-              Closed <RelativeTime timestamp={issue.closedAt} /> ago
+              {t("Closed")} <RelativeTime timestamp={issue.closedAt} /> {t("ago")}
             </>
           ) : (
             <>
-              Opened <RelativeTime timestamp={issue.createdAt} /> ago
+              {t("Opened")} <RelativeTime timestamp={issue.createdAt} /> {t("ago")}
             </>
           )}
         </Text>
@@ -181,19 +184,19 @@ function IssueIdentity(props: {
           ))}
           {canLabel ? (
             <Chip
-              label={issue.labels.length ? "Edit" : "Add labels"}
+              label={issue.labels.length ? t("Edit") : t("Add labels")}
               icon="tag"
               size="small"
-              accessibilityLabel="Edit labels"
+              accessibilityLabel={t("Edit labels")}
               onPress={props.onEditLabels}
             />
           ) : null}
         </View>
       ) : null}
       <View className="flex-row flex-wrap items-center gap-2">
-        <Text className="text-xs text-foreground-muted">Assignees</Text>
+        <Text className="text-xs text-foreground-muted">{t("Assignees")}</Text>
         {issue.assignees.length === 0 ? (
-          <Text className="text-xs text-foreground-muted">none</Text>
+          <Text className="text-xs text-foreground-muted">{t("none")}</Text>
         ) : null}
         {issue.assignees.map((actor) => (
           <View key={actor.login} className="flex-row items-center gap-1.5">
@@ -203,10 +206,10 @@ function IssueIdentity(props: {
         ))}
         {canAssign ? (
           <Chip
-            label={issue.assignees.length ? "Edit" : "Assign"}
+            label={issue.assignees.length ? t("Edit") : t("Assign")}
             icon="person.badge.plus"
             size="small"
-            accessibilityLabel="Edit assignees"
+            accessibilityLabel={t("Edit assignees")}
             onPress={props.onEditAssignees}
           />
         ) : null}
@@ -219,19 +222,24 @@ function LinkedPullRequests(props: {
   readonly params: IssueParams;
   readonly links: ReadonlyArray<IssueLinkedPullRequest>;
 }) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   // Only a git host's tracker shares its host with the change request it links.
   const sameHost = sourceControlClients.find(props.params.tracker) !== undefined;
   return (
     <View className="gap-2">
-      <PullRequestSectionHeading>Linked pull requests</PullRequestSectionHeading>
+      <PullRequestSectionHeading>{t("Linked pull requests")}</PullRequestSectionHeading>
       {props.links.map((link) => {
         const status = pullRequestStatus(link);
         return (
           <Pressable
             key={`${link.repository}#${link.number}`}
             accessibilityRole="button"
-            accessibilityLabel={`${status.label} pull request ${link.number}, ${link.title}`}
+            accessibilityLabel={t("{status} pull request {number}, {title}", {
+              status: status.label,
+              number: link.number,
+              title: link.title,
+            })}
             onPress={() =>
               sameHost
                 ? navigation.dispatch(
@@ -254,7 +262,7 @@ function LinkedPullRequests(props: {
               </Text>
               <Text className="font-mono text-2xs text-foreground-muted" numberOfLines={1}>
                 {link.repository}#{link.number}
-                {link.closesIssue ? " · closes" : ""}
+                {link.closesIssue ? <> · {t("closes")}</> : null}
               </Text>
             </View>
             <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-muted" />
@@ -270,13 +278,14 @@ function IssueCommentCard(props: {
   readonly comment: IssueComment;
   readonly canReact: boolean;
 }) {
+  const t = useUiTranslation();
   const { comment } = props;
   return (
     <View className="gap-3 rounded-2xl bg-grouped-card p-3">
       <View className="flex-row items-center gap-2">
         <PullRequestAvatar actor={comment.author} size={22} />
         <Text className="min-w-0 flex-1 text-sm font-t3-medium" numberOfLines={1}>
-          {comment.author?.login ?? "Unknown author"}
+          {comment.author?.login ?? t("Unknown author")}
         </Text>
         <Text className="text-2xs text-foreground-tertiary">{relativeTime(comment.createdAt)}</Text>
       </View>
@@ -294,12 +303,13 @@ function IssueCommentCard(props: {
 }
 
 function IssueEventRow({ event }: { readonly event: IssueEvent }) {
+  const t = useUiTranslation();
   return (
     <View className="flex-row items-center gap-2 px-1">
       <PullRequestAvatar actor={event.actor} size={18} />
       <Text className="min-w-0 flex-1 text-xs text-foreground-muted">
-        <Text className="text-xs font-t3-medium">{event.actor?.login ?? "Someone"}</Text>{" "}
-        {issueEventSentence(event)}
+        <Text className="text-xs font-t3-medium">{event.actor?.login ?? t("Someone")}</Text>{" "}
+        {issueEventSentence(event, t)}
       </Text>
       <Text className="text-2xs text-foreground-tertiary">{relativeTime(event.createdAt)}</Text>
     </View>
@@ -307,10 +317,15 @@ function IssueEventRow({ event }: { readonly event: IssueEvent }) {
 }
 
 function IssueLoadingBody() {
+  const t = useUiTranslation();
   return (
-    <View className="gap-5" accessibilityLabel="Loading issue" accessibilityState={{ busy: true }}>
+    <View
+      className="gap-5"
+      accessibilityLabel={t("Loading issue")}
+      accessibilityState={{ busy: true }}
+    >
       <View className="gap-3">
-        <PullRequestSectionHeading>Description</PullRequestSectionHeading>
+        <PullRequestSectionHeading>{t("Description")}</PullRequestSectionHeading>
         <View className="gap-3 py-1">
           <View className="h-4 w-full rounded bg-subtle-strong" />
           <View className="h-4 w-full rounded bg-subtle-strong" />
@@ -318,7 +333,7 @@ function IssueLoadingBody() {
         </View>
       </View>
       <View className="gap-3">
-        <PullRequestSectionHeading>Activity</PullRequestSectionHeading>
+        <PullRequestSectionHeading>{t("Activity")}</PullRequestSectionHeading>
         <View className="h-20 rounded-2xl bg-subtle-strong" />
         <View className="h-20 rounded-2xl bg-subtle-strong" />
       </View>
@@ -332,6 +347,7 @@ export function IssueRouteScreen({ route }: StaticScreenProps<IssueParams>) {
 }
 
 function IssueRoute({ params }: { readonly params: IssueParams }) {
+  const t = useUiTranslation();
   const identity = issueIdentity(params);
   const target = issueTarget(params);
   const navigation = useNavigation();
@@ -419,7 +435,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
     setBusy(null);
     if (asked !== refreshes.current) return;
     if (AsyncResult.isFailure(result)) {
-      setError("Older comments could not be read.");
+      setError(t("Older comments could not be read."));
       return;
     }
     setOlder({
@@ -437,7 +453,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
 
   const showComposer = detail?.capabilities.comment === true;
   const commentBlocked =
-    access?.comment === true ? null : (access?.blocked ?? "You cannot comment here.");
+    access?.comment === true ? null : (access?.blocked ?? t("You cannot comment here."));
   const contentMaxWidth =
     Platform.OS === "android"
       ? ANDROID_READING_MAX_WIDTH
@@ -458,25 +474,25 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
       <View className="flex-1 bg-screen">
         <AppBar
           title={issue?.displayKey ?? params.issueKey}
-          subtitle={connected ? params.scope : `${params.scope} · Offline`}
+          subtitle={connected ? params.scope : t("{scope} · Offline", { scope: params.scope })}
           onBack={layout.usesSplitView ? undefined : returnToList}
           menus={[
             {
-              title: "Issue actions",
+              title: t("Issue actions"),
               icon: "ellipsis",
               items: [
                 ...(access?.edit
                   ? [
                       {
                         id: "edit-title",
-                        title: "Edit title",
+                        title: t("Edit title"),
                         icon: "pencil",
                         onPress: () =>
                           navigation.navigate("IssueEdit", { ...identity, field: "title" }),
                       },
                       {
                         id: "edit-description",
-                        title: "Edit description",
+                        title: t("Edit description"),
                         icon: "doc.text",
                         onPress: () =>
                           navigation.navigate("IssueEdit", { ...identity, field: "body" }),
@@ -487,19 +503,19 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
                   ? [
                       {
                         id: "open-on-host",
-                        title: "Open on the tracker",
+                        title: t("Open on the tracker"),
                         icon: "arrow.up.right",
                         onPress: () => void Linking.openURL(url),
                       },
                       {
                         id: "copy-link",
-                        title: "Copy link",
+                        title: t("Copy link"),
                         icon: "link",
                         onPress: () => copyTextWithHaptic(url, { target: "issue link" }),
                       },
                       {
                         id: "share",
-                        title: "Share…",
+                        title: t("Share…"),
                         icon: "square.and.arrow.up",
                         onPress: () =>
                           // Android ignores `url`; iOS shows a `message` URL as plain text.
@@ -540,7 +556,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
           {!issue ? (
             detailQuery.error && !detailQuery.isPending ? (
               <EmptyState
-                title="Couldn't load this issue"
+                title={t("Couldn't load this issue")}
                 detail={detailQuery.error}
                 variant="plain"
               />
@@ -565,7 +581,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
               {!detail ? (
                 detailQuery.error && !detailQuery.isPending ? (
                   <EmptyState
-                    title="Couldn't load this issue"
+                    title={t("Couldn't load this issue")}
                     detail={detailQuery.error}
                     variant="plain"
                   />
@@ -591,21 +607,20 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
                   ) : null}
                   <View className="gap-3">
                     <PullRequestSectionHeading>
-                      Activity
                       {detail.commentCount > 0
-                        ? ` · ${detail.commentCount} ${detail.commentCount === 1 ? "comment" : "comments"}`
-                        : ""}
+                        ? t("Activity ({count})", { count: detail.commentCount })
+                        : t("Activity")}
                     </PullRequestSectionHeading>
                     {nextCursor !== null ? (
                       <Button
-                        label={busy === "older" ? "Loading…" : "Load older comments"}
+                        label={busy === "older" ? t("Loading…") : t("Load older comments")}
                         disabled={busy !== null}
                         onPress={() => void loadOlder()}
                       />
                     ) : null}
                     {timeline.length === 0 ? (
                       <Text className="text-sm text-foreground-muted">
-                        Nothing has happened here yet.
+                        {t("Nothing has happened here yet.")}
                       </Text>
                     ) : null}
                     {timeline.map((item) => (

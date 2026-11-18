@@ -31,6 +31,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { usePaneRole } from "../../components/ui/Pane";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import { useContentTopInset } from "../../components/ui/useBarInset";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
@@ -77,12 +78,13 @@ const FILTER_ROW_STYLE =
 function choices<Value extends string>(
   options: Readonly<Record<Value, string>>,
   selected: Value,
+  t: ReturnType<typeof useUiTranslation>,
   /** Prefixes the ids, for a menu that holds more than one set of choices. */
   field?: string,
 ) {
   return (Object.entries(options) as Array<[Value, string]>).map(([id, title]) => ({
     id: field ? `${field}:${id}` : id,
-    title,
+    title: t(title),
     state: id === selected ? ("on" as const) : ("off" as const),
   }));
 }
@@ -104,6 +106,7 @@ export function IssuesScreen(
     readonly renderFrame?: (filters: PullRequestFilterMenu | null, list: ReactNode) => ReactNode;
   } = {},
 ) {
+  const t = useUiTranslation();
   const primaryColumn = use(NativePrimaryColumnContext);
   const workspace = useWorkspaceTabs()!;
   const { environments } = useWorkspaceState();
@@ -194,7 +197,7 @@ export function IssuesScreen(
     ...groups.flatMap((group) => [
       ...(group.tracker.configured
         ? []
-        : [`${group.tracker.host}: ${group.tracker.detail ?? "This tracker cannot be read."}`]),
+        : [`${group.tracker.host}: ${group.tracker.detail ?? t("This tracker cannot be read.")}`]),
       ...group.errors.map((error) => `${error.projectTitle}: ${error.message}`),
     ]),
   ];
@@ -232,23 +235,32 @@ export function IssuesScreen(
     Platform.OS === "android"
       ? {
           actions: [
-            { id: "state", title: "State", subactions: choices(STATES, state, "state") },
+            {
+              id: "state",
+              title: t("State"),
+              subactions: choices(STATES, state, t, "state"),
+            },
             {
               id: "involvement",
-              title: "Involvement",
-              subactions: choices(INVOLVEMENT, involvement, "involvement"),
+              title: t("Involvement"),
+              subactions: choices(INVOLVEMENT, involvement, t, "involvement"),
             },
             {
               id: "labels",
-              title: labels.length === 0 ? "Labels…" : `Labels (${labels.length})…`,
+              title:
+                labels.length === 0
+                  ? t("Labels…")
+                  : t("Labels ({count})…", { count: labels.length }),
             },
             {
               id: "assignee",
               title:
-                assignee === null ? "Assignee…" : `Assignee: ${assignee.name ?? assignee.login}…`,
+                assignee === null
+                  ? t("Assignee…")
+                  : t("Assignee: {name}…", { name: assignee.name ?? assignee.login }),
             },
-            { id: "sort", title: "Sort", subactions: choices(SORTS, sort, "sort") },
-            { id: "reset", title: "Reset filters", attributes: { disabled: !customized } },
+            { id: "sort", title: t("Sort"), subactions: choices(SORTS, sort, t, "sort") },
+            { id: "reset", title: t("Reset filters"), attributes: { disabled: !customized } },
           ],
           onSelect: (id) => {
             const [field, value] = id.split(":");
@@ -360,20 +372,20 @@ export function IssuesScreen(
                 }}
               />
               <ListFilterMenu
-                label={STATES[state]}
+                label={t(STATES[state])}
                 active={state !== "open"}
-                accessibilityLabel="Filter by state"
-                actions={choices(STATES, state)}
+                accessibilityLabel={t("Filter by state")}
+                actions={choices(STATES, state, t)}
                 onSelect={(id) => {
                   setState(id as IssueListState);
                   scrollToTop();
                 }}
               />
               <ListFilterMenu
-                label={INVOLVEMENT[involvement]}
+                label={t(INVOLVEMENT[involvement])}
                 active={involvement !== "all"}
-                accessibilityLabel="Filter by involvement"
-                actions={choices(INVOLVEMENT, involvement)}
+                accessibilityLabel={t("Filter by involvement")}
+                actions={choices(INVOLVEMENT, involvement, t)}
                 onSelect={(id) => {
                   setInvolvement(id as IssueInvolvement);
                   scrollToTop();
@@ -382,27 +394,27 @@ export function IssuesScreen(
               <Chip
                 label={
                   labels.length === 0
-                    ? "Labels"
+                    ? t("Labels")
                     : labels.length === 1
                       ? labels[0]!
-                      : `Labels ${labels.length}`
+                      : t("Labels {count}", { count: labels.length })
                 }
                 selected={labels.length > 0}
                 trailingIcon="chevron.down"
                 glass
                 colorScheme={themeAppearance}
-                accessibilityLabel="Filter by label"
+                accessibilityLabel={t("Filter by label")}
                 onPress={() =>
                   navigation.navigate("IssueFilterSearch", { kind: "labels", scopes: filterScopes })
                 }
               />
               <Chip
-                label={assignee === null ? "Assignee" : (assignee.name ?? assignee.login)}
+                label={assignee === null ? t("Assignee") : (assignee.name ?? assignee.login)}
                 selected={assignee !== null}
                 trailingIcon="chevron.down"
                 glass
                 colorScheme={themeAppearance}
-                accessibilityLabel="Filter by assignee"
+                accessibilityLabel={t("Filter by assignee")}
                 onPress={() =>
                   navigation.navigate("IssueFilterSearch", {
                     kind: "assignee",
@@ -411,10 +423,10 @@ export function IssuesScreen(
                 }
               />
               <ListFilterMenu
-                label={SORTS[sort]}
+                label={t(SORTS[sort])}
                 active={sort !== "updated"}
-                accessibilityLabel="Sort issues"
-                actions={choices(SORTS, sort)}
+                accessibilityLabel={t("Sort issues")}
+                actions={choices(SORTS, sort, t)}
                 onSelect={(id) => {
                   setSort(id as IssueListSort);
                   scrollToTop();
@@ -433,15 +445,15 @@ export function IssuesScreen(
             <View className="items-center py-5">
               <AppActivityIndicator
                 colorClassName="accent-icon"
-                accessibilityLabel="Loading more issues"
+                accessibilityLabel={t("Loading more issues")}
               />
             </View>
           ) : moreFailure ? (
             <View className="items-center gap-2 px-8 py-4">
               <Text className="text-xs text-foreground-muted">{moreFailure}</Text>
               <Button
-                label="Try again"
-                accessibilityLabel="Retry loading more issues"
+                label={t("Try again")}
+                accessibilityLabel={t("Retry loading more issues")}
                 onPress={() => void loadMore(true)}
               />
             </View>
@@ -449,8 +461,8 @@ export function IssuesScreen(
             // A filtered page can be too short to scroll, which leaves nothing to reach the end of.
             <View className="items-center py-4">
               <Button
-                label="Load more"
-                accessibilityLabel="Load more issues"
+                label={t("Load more")}
+                accessibilityLabel={t("Load more issues")}
                 onPress={() => void loadMore()}
               />
             </View>
@@ -466,26 +478,26 @@ export function IssuesScreen(
               <EmptyState
                 title={
                   list.error
-                    ? "Couldn't load issues"
+                    ? t("Couldn't load issues")
                     : connected.length > 0
                       ? query
-                        ? "No results"
-                        : "No matching issues"
+                        ? t("No results")
+                        : t("No matching issues")
                       : capable.length > 0
-                        ? "Environment offline"
+                        ? t("Environment offline")
                         : environments.length > 0
-                          ? "Issues unavailable"
-                          : "Connect an environment"
+                          ? t("Issues unavailable")
+                          : t("Connect an environment")
                 }
                 detail={
                   list.error ??
                   (connected.length > 0
-                    ? "Issues from your environments' projects appear here."
+                    ? t("Issues from your environments' projects appear here.")
                     : capable.length > 0
-                      ? "Reconnect to load issues."
+                      ? t("Reconnect to load issues.")
                       : environments.length > 0
-                        ? "Update the environment's T3 Code server to browse issues."
-                        : "Add an environment in Settings to browse its issues.")
+                        ? t("Update the environment's T3 Code server to browse issues.")
+                        : t("Add an environment in Settings to browse its issues."))
                 }
                 variant="plain"
               />

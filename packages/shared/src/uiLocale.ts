@@ -1,5 +1,10 @@
-import { skillMessages } from "./skillMessages.ts";
+import { chatUiMessages } from "./chatUiMessages.ts";
+import { deviceUiMessages } from "./deviceUiMessages.ts";
+import { filesUiMessages } from "./filesUiMessages.ts";
+import { issueUiMessages } from "./issueUiMessages.ts";
 import { mobileUiMessages } from "./mobileUiMessages.ts";
+import { previewUiMessages } from "./previewUiMessages.ts";
+import { skillMessages } from "./skillMessages.ts";
 import { workItemMessages } from "./workItemMessages.ts";
 export type UiLocale = "en" | "zh-CN";
 
@@ -732,6 +737,11 @@ const zhCN: Readonly<Record<string, string>> = {
     "长按发送按钮可为单条消息使用另一种方式。使用实体键盘时，发送时按住 {key}。",
   ...mobileUiMessages,
   ...workItemMessages,
+  ...chatUiMessages,
+  ...filesUiMessages,
+  ...deviceUiMessages,
+  ...previewUiMessages,
+  ...issueUiMessages,
   "Queue follow-ups while the agent runs or steer the current run. Press {modifier} + Enter for single-line prompts or {modifier} + Shift + Enter for multiline prompts to do the opposite for one message.":
     "智能体运行时，可将跟进消息加入队列或用于引导当前任务。单行消息按 {modifier} + Enter，多行消息按 {modifier} + Shift + Enter，可临时使用另一种发送方式。",
   "Queue follow-ups while the agent runs or steer the current run. Press {modifier}{shift} + Enter to do the opposite for one message.":
@@ -1434,7 +1444,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Copy the token and pair from another client using this backend's reachable host.":
     "复制令牌，并在其他客户端通过可访问的后端地址进行配对。",
   Share: "共享",
-  "Copy code": "复制验证码",
+  "Copy code": "复制代码",
+  "Copy verification code": "复制验证码",
   "Endpoint the pairing QR code and URL use": "配对二维码和 URL 使用的端点",
   "Reach this machine via": "访问本机的方式",
   "Copy code only": "仅复制验证码",
@@ -3470,7 +3481,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Thread action unavailable": "会话操作不可用",
   "This connection cannot change one or more selected threads.":
     "此连接无权修改一个或多个所选会话。",
-  Supervised: "受监督",
+  Supervised: "监督模式",
   "Auto-accept edits": "自动接受编辑",
   Auto: "自动",
   "Ask before commands and file changes.": "执行命令或修改文件前先询问。",
@@ -6428,6 +6439,20 @@ const zhCN: Readonly<Record<string, string>> = {
   "Switch to list view": "切换为列表视图",
   "New requirement": "新建需求",
   "Requirement source": "需求类型",
+  issue: "需求",
+  Issues: "需求",
+  "Search issues": "搜索需求",
+  "Filter issues": "筛选需求",
+  "T3 Code, Issues": "T3 Code，需求",
+  "Searching…": "正在搜索…",
+  "Couldn't search messages": "无法搜索消息",
+  "Couldn't search thread messages": "无法搜索会话消息",
+  "Sign-in refused": "登录被拒绝",
+  "Fork created": "已创建分叉会话",
+  "Its thread data did not reach this client. Reconnect and try opening it from the thread list.":
+    "会话数据未能到达此客户端。请重新连接，然后从会话列表打开。",
+  "Tool call": "工具调用",
+  "{action} {theme}": "{action} {theme}",
 };
 
 export function hasUiTranslation(message: string): boolean {

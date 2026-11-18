@@ -1,7 +1,7 @@
 import type { DeviceServiceState } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { deviceHubReadiness, platformSetupStatus } from "./DeviceSetup";
+import { deviceHubReadiness, platformSetupStatus } from "./deviceSetupStatus";
 
 const deviceState = (overrides: Partial<DeviceServiceState> = {}): DeviceServiceState => ({
   hosts: [

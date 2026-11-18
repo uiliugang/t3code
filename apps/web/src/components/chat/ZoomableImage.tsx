@@ -1,6 +1,7 @@
 import { useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from "react";
 import { flushSync } from "react-dom";
 
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   onWindowControlsOverlayGeometryChange,
   windowControlsOverlayHeight,
@@ -51,6 +52,7 @@ export function ZoomableImage({
   onError: () => void;
   ref?: Ref<ZoomableImageHandle>;
 }) {
+  const t = useUiTranslation();
   const viewportRef = useRef<HTMLDivElement>(null);
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const viewerSize = useSyncExternalStore(subscribeViewerSize, getViewerSize);
@@ -159,8 +161,10 @@ export function ZoomableImage({
       <div
         ref={attachViewport}
         role="region"
-        aria-label={`${name}, zoomable image`}
-        aria-description="Click to zoom in or return to fit. Pinch or Ctrl+scroll to zoom, scroll or drag to pan. Use Enter to toggle zoom, plus or minus to zoom, and 0 to fit."
+        aria-label={t("{name}, zoomable image", { name })}
+        aria-description={t(
+          "Click to zoom in or return to fit. Pinch or Ctrl+scroll to zoom, scroll or drag to pan. Use Enter to toggle zoom, plus or minus to zoom, and 0 to fit.",
+        )}
         tabIndex={0}
         className="max-w-[var(--media-width)] overflow-auto overscroll-contain rounded-lg bg-background shadow-2xl ring-1 ring-border/70 outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
         style={{
@@ -254,7 +258,7 @@ export function ZoomableImage({
         />
       </div>
       <span className="sr-only" aria-live="polite">
-        {Math.round(zoom * 100)}% zoom
+        {t("{percent}% zoom", { percent: Math.round(zoom * 100) })}
       </span>
     </div>
   );

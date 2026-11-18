@@ -12,6 +12,7 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 export function feedbackBannerItem(
   submission: CodexFeedbackSubmission,
   onDismiss: () => void,
+  t: (message: string) => string,
 ): ComposerBannerStackItem | null {
   const notice = codexFeedbackNotice(submission);
   if (!notice) return null;
@@ -21,6 +22,7 @@ export function feedbackBannerItem(
       submission.status === "failed" ? "error" : submission.status === "sent" ? "success" : "info",
     icon: <MessageSquareIcon />,
     ...notice,
+    title: t(notice.title),
     actions:
       submission.status === "sent" ? (
         <Button
@@ -31,18 +33,18 @@ export function feedbackBannerItem(
               (error: unknown) => {
                 toastManager.add({
                   type: "error",
-                  title: "Could not copy thread ID",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: t("Could not copy thread ID"),
+                  description: error instanceof Error ? error.message : t("An error occurred."),
                 });
               },
             );
           }}
         >
-          Copy ID
+          {t("Copy ID")}
         </Button>
       ) : undefined,
     ...(submission.status !== "uploading"
-      ? { dismissLabel: "Dismiss feedback notice", onDismiss }
+      ? { dismissLabel: t("Dismiss feedback notice"), onDismiss }
       : {}),
   };
 }

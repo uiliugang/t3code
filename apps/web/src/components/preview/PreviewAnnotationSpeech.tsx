@@ -114,7 +114,7 @@ export function PreviewAnnotationSpeech({
         current.current.speech.cancel();
         toastManager.add({
           type: "error",
-          title: "Could not update annotation voice input",
+          title: t("Could not update annotation voice input"),
           description: error instanceof Error ? error.message : String(error),
         });
       }

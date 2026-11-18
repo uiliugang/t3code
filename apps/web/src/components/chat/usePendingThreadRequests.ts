@@ -18,6 +18,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { useRef, useState, type RefObject, type SetStateAction } from "react";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useShallow } from "zustand/react/shallow";
 import {
   type ComposerThreadDraftState,
@@ -280,6 +281,7 @@ export function usePendingThreadRequests(input: {
   readonly composerRef: RefObject<ChatComposerHandle | null>;
   readonly setThreadError: (threadId: ThreadId, error: string | null) => void;
 }) {
+  const t = useUiTranslation();
   const {
     environmentId,
     activeThreadId,
@@ -545,8 +547,8 @@ export function usePendingThreadRequests(input: {
       });
       toastManager.add({
         type: "info",
-        title: "Your typed text was set aside",
-        description: "It will be back in the composer once the question is answered.",
+        title: t("Your typed text was set aside"),
+        description: t("It will be back in the composer once the question is answered."),
         data: { threadRef: activeThreadId ? { environmentId, threadId: activeThreadId } : null },
       });
       if (activeThreadId) {

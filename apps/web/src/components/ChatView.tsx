@@ -672,8 +672,8 @@ export default function ChatView(props: ChatViewProps) {
     if (!accepted) {
       toastManager.add({
         type: "warning",
-        title: "The composer is not ready",
-        description: "Try replying after the connection or pending input is resolved.",
+        title: t("The composer is not ready"),
+        description: t("Try replying after the connection or pending input is resolved."),
       });
     }
     return accepted;
@@ -1544,8 +1544,8 @@ export default function ChatView(props: ChatViewProps) {
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Could not download " + attachment.name,
-        description: error instanceof Error ? error.message : "The attachment is unavailable.",
+        title: t("Could not download {name}", { name: attachment.name }),
+        description: error instanceof Error ? error.message : t("The attachment is unavailable."),
       });
     }
   };
@@ -2612,14 +2612,18 @@ export default function ChatView(props: ChatViewProps) {
   };
   const handleRestoreThreadBranchStable = useStableCallback(handleRestoreThreadBranch);
   const feedbackBannerItems = feedbackSubmissions.flatMap((submission) => {
-    const item = feedbackBannerItem(submission, () => {
-      setFeedbackSubmissionsByThreadKey((current) => ({
-        ...current,
-        [routeThreadKey]: (current[routeThreadKey] ?? []).filter(
-          (entry) => entry.id !== submission.id,
-        ),
-      }));
-    });
+    const item = feedbackBannerItem(
+      submission,
+      () => {
+        setFeedbackSubmissionsByThreadKey((current) => ({
+          ...current,
+          [routeThreadKey]: (current[routeThreadKey] ?? []).filter(
+            (entry) => entry.id !== submission.id,
+          ),
+        }));
+      },
+      t,
+    );
     return item ? [item] : [];
   });
   const limitRecoveryBanner =
@@ -2699,7 +2703,7 @@ export default function ChatView(props: ChatViewProps) {
     // An approval's feedback goes to that approval; the armed session waits for the next message.
     const freshSessionItems =
       freshSessionAvailable && freshSessionArmed && activePendingApproval === null
-        ? [freshSessionBannerItem(() => disarmFreshSession(routeThreadKey))]
+        ? [freshSessionBannerItem(() => disarmFreshSession(routeThreadKey), t)]
         : [];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
@@ -2722,17 +2726,20 @@ export default function ChatView(props: ChatViewProps) {
       ...projectCloneItems,
       ...freshSessionItems,
       ...systemComposerBannerItems,
-      branchMismatchBannerItem({
-        mismatchKey: activeBranchMismatchKey,
-        mismatch: localCheckoutBranchMismatch,
-        restoreDisabled: !canWriteSourceControl || isRestoringThreadBranch,
-        restoring: isRestoringThreadBranch,
-        onRestore: handleRestoreThreadBranchStable,
-        onDismiss: () => {
-          dismissBranchMismatchForSession(activeBranchMismatchKey);
-          setBranchMismatchDismissTick((tick) => tick + 1);
+      branchMismatchBannerItem(
+        {
+          mismatchKey: activeBranchMismatchKey,
+          mismatch: localCheckoutBranchMismatch,
+          restoreDisabled: !canWriteSourceControl || isRestoringThreadBranch,
+          restoring: isRestoringThreadBranch,
+          onRestore: handleRestoreThreadBranchStable,
+          onDismiss: () => {
+            dismissBranchMismatchForSession(activeBranchMismatchKey);
+            setBranchMismatchDismissTick((tick) => tick + 1);
+          },
         },
-      }),
+        t,
+      ),
     ];
   })() as ComposerBannerStackItem[];
 

@@ -1,6 +1,8 @@
 import type { LegendListRef } from "@legendapp/list/react";
 import type { AssistantCitation, MessageId, ScopedThreadRef } from "@t3tools/contracts";
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
+import { useEffect, useEffectEvent, useRef, type ReactNode, type RefObject } from "react";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   resolveAssistantCitationRange,
   type AssistantCitationSourceAnchor,
@@ -104,11 +106,13 @@ function observeAssistantCitationSource({
   itemKey,
   request,
   list,
+  t,
 }: {
   root: HTMLElement;
   itemKey: string;
   request: AssistantCitationTarget;
   list: LegendListRef;
+  t: UiTranslator;
 }) {
   const activation = request.activationRef.current;
   if (activation.dismissed) return;
@@ -194,8 +198,8 @@ function observeAssistantCitationSource({
             request.onComplete();
             toastManager.add({
               type: "warning",
-              title: "Could not open the cited response",
-              description: "Click the citation to try again.",
+              title: t("Could not open the cited response"),
+              description: t("Click the citation to try again."),
             });
           },
         );
@@ -215,8 +219,8 @@ function observeAssistantCitationSource({
       if (!range) {
         toastManager.add({
           type: "warning",
-          title: "The quoted text has changed",
-          description: "Showing the source response. The saved quote is unchanged.",
+          title: t("The quoted text has changed"),
+          description: t("Showing the source response. The saved quote is unchanged."),
         });
       }
     }
@@ -356,12 +360,14 @@ export function AssistantCitationSource({
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const t = useUiTranslation();
+  const translate = useEffectEvent((message: string) => t(message));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes this message's DOM for a citation reveal request and scrolls the LegendList to it
   useEffect(() => {
     const root = rootRef.current;
     const list = listRef.current;
     if (!root || !list || !request || request.citation.messageId !== messageId) return;
-    return observeAssistantCitationSource({ root, itemKey, request, list });
+    return observeAssistantCitationSource({ root, itemKey, request, list, t: translate });
   }, [itemKey, listRef, messageId, request]);
 
   return (

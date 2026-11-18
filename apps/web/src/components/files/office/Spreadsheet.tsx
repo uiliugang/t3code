@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { observeResize } from "~/lib/observeResize";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   cellAtPoint,
   normalizeRange,
@@ -17,6 +17,7 @@ import { FileSurfaceLoading, FileSurfaceNotice } from "../fileSurfaceChrome";
 import type { WorkbookView } from "../officePreviewProtocol";
 import { createWorkerClient, SupersededError } from "./worker-rpc";
 import type { SheetLayout, SheetMethods, SheetFrameRequest, SheetTab } from "./sheet-protocol";
+import { useUiTranslation } from "../../../hooks/useUiTranslation";
 import {
   coverMerges,
   contains,
@@ -51,6 +52,8 @@ export default function Spreadsheet(props: {
   onDetails: (text: string) => void;
   onError: (cause: unknown) => void;
 }) {
+  const t = useUiTranslation();
+  const translate = useEffectEvent(t);
   const { onError, bytes: source, onDetails, view } = props;
   const [opened, setOpened] = useState<Opened>();
   const [error, setError] = useState("");
@@ -71,9 +74,13 @@ export default function Spreadsheet(props: {
     void engine
       .call("open", { bytes, view }, { transfer: [bytes], signal: controller.signal })
       .then((value) => {
-        if (!value) throw new Error("This workbook has no visible sheets.");
+        if (!value) throw new Error(translate("This workbook has no visible sheets."));
         setOpened({ ...value, engine });
-        onDetails(`${value.tabs.length} sheet${value.tabs.length === 1 ? "" : "s"}`);
+        onDetails(
+          value.tabs.length === 1
+            ? translate("{count} sheet", { count: value.tabs.length })
+            : translate("{count} sheets", { count: value.tabs.length }),
+        );
       })
       .catch(fail);
     return () => {
@@ -95,7 +102,7 @@ export default function Spreadsheet(props: {
         setOpened({ ...opened, layout, target });
       })
       .catch(() => {
-        if (!controller.signal.aborted) setError("This sheet could not be opened.");
+        if (!controller.signal.aborted) setError(t("This sheet could not be opened."));
       });
   };
   if (!opened) return <FileSurfaceLoading />;
@@ -114,7 +121,7 @@ export default function Spreadsheet(props: {
       />
       <div
         role="tablist"
-        aria-label="Sheets"
+        aria-label={t("Sheets")}
         className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-t border-border px-2"
         onKeyDown={(event) => {
           const current = opened.tabs.findIndex(
@@ -161,6 +168,8 @@ function SpreadsheetGrid(props: {
   initialCell: CellAddr | undefined;
   onNavigate: (sheet: string, cell: CellAddr) => void;
 }) {
+  const t = useUiTranslation();
+  const translate = useEffectEvent(t);
   const { onNavigate, layout, engine, initialCell } = props;
   const scroller = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -290,7 +299,9 @@ function SpreadsheetGrid(props: {
             received = order;
             if (!reply) {
               if (requested === key) requested = "";
-              setNotice("These cells could not be drawn. Try scrolling to another area.");
+              setNotice(
+                translate("These cells could not be drawn. Try scrolling to another area."),
+              );
               return;
             }
             if (
@@ -315,7 +326,7 @@ function SpreadsheetGrid(props: {
           .catch((cause: unknown) => {
             if (!isSupersededError(cause) && !controller.signal.aborted) {
               if (requested === key) requested = "";
-              setNotice("These cells could not be drawn.");
+              setNotice(translate("These cells could not be drawn."));
             }
           });
       }
@@ -546,7 +557,7 @@ function SpreadsheetGrid(props: {
         schedule();
         if (track.delta === 0) return;
         resizingPending = true;
-        setNotice("Resizing preview...");
+        setNotice(translate("Resizing preview…"));
         void engine
           .call(
             "resize",
@@ -568,7 +579,8 @@ function SpreadsheetGrid(props: {
             schedule();
           })
           .catch(() => {
-            if (!controller.signal.aborted) setNotice("This row or column could not be resized.");
+            if (!controller.signal.aborted)
+              setNotice(translate("This row or column could not be resized."));
           })
           .finally(() => {
             resizingPending = false;
@@ -613,7 +625,7 @@ function SpreadsheetGrid(props: {
         right: Math.min(selected.right, Math.max(selected.left, used?.right ?? 0)),
       };
       if ((clipped.bottom - clipped.top + 1) * (clipped.right - clipped.left + 1) > 200_000) {
-        setNotice("Select fewer than 200,000 cells to copy.");
+        setNotice(translate("Select fewer than 200,000 cells to copy."));
         return;
       }
       void engine
@@ -623,7 +635,8 @@ function SpreadsheetGrid(props: {
           return navigator.clipboard.writeText(text);
         })
         .catch(() => {
-          if (!controller.signal.aborted) setNotice("The selected cells could not be copied.");
+          if (!controller.signal.aborted)
+            setNotice(translate("The selected cells could not be copied."));
         });
     };
     const key = (event: KeyboardEvent) => {

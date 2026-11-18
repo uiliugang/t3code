@@ -2,6 +2,7 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import { useRef, type ComponentProps } from "react";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   serializeTableElementToCsv,
   serializeTableElementToMarkdown,
@@ -13,13 +14,14 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { reportMarkdownActionFailure } from "./markdownActionFailure";
 
 export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
+  const t = useUiTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { copyToClipboard, isCopied: copied } = useCopyToClipboard<"markdown" | "csv">({
     timeout: 1200,
     onError: (cause, format) =>
       reportMarkdownActionFailure({ operation: "copy-table", format }, cause),
   });
-  const copyLabel = copied ? "Copied" : "Copy table";
+  const copyLabel = copied ? t("Copied") : t("Copy table");
 
   const handleCopy = (format: "markdown" | "csv") => {
     const table = containerRef.current?.querySelector("table");
@@ -60,8 +62,8 @@ export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
             <TooltipPopup side="top">{copyLabel}</TooltipPopup>
           </Tooltip>
           <MenuPopup align="end">
-            <MenuItem onClick={() => handleCopy("markdown")}>Copy as Markdown</MenuItem>
-            <MenuItem onClick={() => handleCopy("csv")}>Copy as CSV</MenuItem>
+            <MenuItem onClick={() => handleCopy("markdown")}>{t("Copy as Markdown")}</MenuItem>
+            <MenuItem onClick={() => handleCopy("csv")}>{t("Copy as CSV")}</MenuItem>
           </MenuPopup>
         </Menu>
       </div>

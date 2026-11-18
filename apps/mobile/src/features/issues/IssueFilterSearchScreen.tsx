@@ -3,6 +3,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import type { IssueCandidatesTarget } from "@t3tools/client-runtime/state/issues";
 import { useState } from "react";
 
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { refreshIssueFilterCandidates, useIssueFilterCandidates } from "../../state/issues";
 import { PullRequestLabelDot } from "../pull-requests/PullRequestLabelDot";
 import { PullRequestAvatar } from "../pull-requests/PullRequestPresentation";
@@ -20,6 +21,7 @@ export function IssueFilterSearchScreen({
   readonly kind: "labels" | "assignee";
   readonly scopes: ReadonlyArray<IssueCandidatesTarget>;
 }>) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const { kind, scopes } = route.params;
   const known = useIssueFilterCandidates(scopes);
@@ -56,7 +58,7 @@ export function IssueFilterSearchScreen({
   const loaded = labels ? known.labels.length > 0 : known.assignees.length > 0;
   return (
     <IssueCandidatesSheet
-      title={labels ? "Filter by label" : "Filter by assignee"}
+      title={labels ? t("Filter by label") : t("Filter by assignee")}
       noun={labels ? "labels" : "people"}
       query={query}
       onQueryChange={setQuery}

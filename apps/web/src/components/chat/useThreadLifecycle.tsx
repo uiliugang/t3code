@@ -259,8 +259,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to un-settle thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: t("Failed to un-settle thread"),
+          description: error instanceof Error ? error.message : t("An error occurred."),
         }),
       );
     }
@@ -304,8 +304,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to wake thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: t("Failed to wake thread"),
+          description: error instanceof Error ? error.message : t("An error occurred."),
         }),
       );
     }
@@ -372,7 +372,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to switch checkout",
+            title: t("Failed to switch checkout"),
             description: chatActionErrorMessage(squashAtomCommandFailure(checkoutResult)),
           }),
         );
@@ -396,7 +396,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Checkout switched, but the thread could not be updated",
+              title: t("Checkout switched, but the thread could not be updated"),
               description: chatActionErrorMessage(squashAtomCommandFailure(updateResult)),
             }),
           );
@@ -495,7 +495,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     }
     const shell = readThreadShell(threadRef);
     if (shell === null ? !shellOmitsChildren && isEnvironmentLive() : shell.deletedAt != null) {
-      toastManager.add({ type: "info", title: "This thread is no longer available" });
+      toastManager.add({ type: "info", title: t("This thread is no longer available") });
       return;
     }
     const routeRef = resolveThreadOpenRoute(threadRef, shell);
@@ -582,12 +582,15 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const activeGoal = activeThreadShell?.goal ?? null;
   const goalNow =
     activeThread && activeGoal !== null
-      ? goalNowItem({
-          threadId: activeThread.id,
-          goal: activeGoal,
-          isWorking,
-          onSendCommand: sendStandaloneCommandStable,
-        })
+      ? goalNowItem(
+          {
+            threadId: activeThread.id,
+            goal: activeGoal,
+            isWorking,
+            onSendCommand: sendStandaloneCommandStable,
+          },
+          t,
+        )
       : null;
 
   const forceStop = useForceStopThread(environmentId);
@@ -598,13 +601,16 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const runStop = anyRunStop?.background && activeBackgroundTasks.length === 0 ? null : anyRunStop;
   const runStopNow =
     activeThread && runStop !== null
-      ? runStopNowItem({
-          threadId: activeThread.id,
-          stop: runStop,
-          canForceStop: forceStop.canForceStop,
-          forceStopping: forceStop.stoppingThreadId === activeThread.id,
-          onForceStop: () => void forceStop.forceStopThread(activeThread.id, runStop.runId),
-        })
+      ? runStopNowItem(
+          {
+            threadId: activeThread.id,
+            stop: runStop,
+            canForceStop: forceStop.canForceStop,
+            forceStopping: forceStop.stoppingThreadId === activeThread.id,
+            onForceStop: () => void forceStop.forceStopThread(activeThread.id, runStop.runId),
+          },
+          t,
+        )
       : null;
   const backgroundWorkNow = activeThread
     ? backgroundWorkNowItem(
@@ -632,9 +638,13 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     limitRecoveryHoldsSnooze ? null : (
       <ThreadStatusLine
         icon={<AlarmClockIcon />}
-        label={snoozeWake && snoozeWake !== "now" ? `Snoozed, ${snoozeWake} left` : "Snoozed"}
+        label={
+          snoozeWake && snoozeWake !== "now"
+            ? t("Snoozed, {time} left", { time: snoozeWake })
+            : t("Snoozed")
+        }
         clockMinute={nowMinute}
-        actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
+        actionLabel={isUnsnoozing ? t("Waking...") : t("Wake now")}
         actionDisabled={!canOperateThread || isUnsnoozing}
         onAction={() => void handleUnsnoozeActiveThreadStable()}
       />
@@ -670,7 +680,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         stackedThreadToast({
           type: "error",
           title,
-          description: error instanceof Error ? error.message : "An error occurred.",
+          description: error instanceof Error ? error.message : t("An error occurred."),
         }),
       );
     };

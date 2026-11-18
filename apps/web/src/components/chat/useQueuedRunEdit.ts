@@ -1,4 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
+import { translateUi } from "@t3tools/shared/uiLocale";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { getClientSettings } from "../../hooks/useSettings";
 import {
   makeQueuedRunEditStore,
   makeQueuedRunsAtom,
@@ -112,6 +115,7 @@ async function submitQueuedRunEdit(input: {
   readonly editQueuedRun: ReturnType<typeof useEditQueuedRunCommand>;
   readonly draftChanged: () => boolean;
 }): Promise<string | null> {
+  const t = (message: string) => translateUi(getClientSettings().uiLanguage, message);
   const { environmentId, draftTarget, editing, content } = input;
   const editText = content.prompt.trim();
   const newAttachments = [...content.images, ...content.files];
@@ -133,7 +137,7 @@ async function submitQueuedRunEdit(input: {
     await refreshExpiredAttachmentUploads({ environmentId, images: files, draftTarget });
     validateFiles();
     const uploaded = getUploadedAttachments({ environmentId, images: files });
-    if (uploaded === null) throw new Error("Retry or remove failed uploads before saving.");
+    if (uploaded === null) throw new Error(t("Retry or remove failed uploads before saving."));
     return uploaded;
   };
   try {
@@ -145,7 +149,7 @@ async function submitQueuedRunEdit(input: {
       uploadFiles,
     });
     if (input.draftChanged())
-      return "Draft changed while preparing this message. Review it and save again.";
+      return t("Draft changed while preparing this message. Review it and save again.");
     // The edit draft owns thread and machine mentions, so a chip removed while editing is dropped.
     const keptRecords = (editing.context?.records ?? []).filter(
       (record) =>
@@ -210,6 +214,7 @@ export function useQueuedRunEdit(input: {
   readonly promptRef: { current: string };
   readonly composerRef: RefObject<ChatComposerHandle | null>;
 }) {
+  const t = useUiTranslation();
   const {
     environmentId,
     routeThreadRef,
@@ -319,11 +324,11 @@ export function useQueuedRunEdit(input: {
           toastManager.add(
             stackedThreadToast({
               type: recovery === "kept" ? "info" : "warning",
-              title: "Queued message is no longer queued",
+              title: t("Queued message is no longer queued"),
               description:
                 recovery === "kept"
-                  ? `Your unsaved edit${where} was kept in the composer.`
-                  : `Your unsaved edit${where} was discarded.`,
+                  ? t("Your unsaved edit{where} was kept in the composer.", { where })
+                  : t("Your unsaved edit{where} was discarded.", { where }),
             }),
           );
         },

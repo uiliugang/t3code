@@ -5,6 +5,7 @@ import type { createPhoneInteraction } from "@t3tools/client-runtime/device/phon
 import { createCanvasFrameSink } from "@t3tools/client-runtime/device/frame";
 import type { DeviceScreenSize, DeviceStreamClient } from "@t3tools/client-runtime/device/stream";
 import { createDuoPinch } from "@t3tools/client-runtime/device/duo-control";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { mountDeviceViewer } from "./mountDeviceViewer";
 
 const loadDuoViewer = () => import("@t3tools/client-runtime/device/duo-viewer");
@@ -21,6 +22,7 @@ export function DeviceDuoViewport(props: {
   readonly onControlRejectedListener: (listener: (() => void) | null) => void;
   readonly onUnavailable: () => void;
 }) {
+  const t = useUiTranslation();
   const viewerRef = useRef<
     (DuoViewer & { readonly sources: Record<1 | 3, HTMLCanvasElement> }) | null
   >(null);
@@ -154,7 +156,9 @@ export function DeviceDuoViewport(props: {
         />
         <canvas
           ref={mountViewer}
-          aria-label="Interactive 3D iPhone Duo. Drag the screen to interact. Drag outside it or swipe with two fingers to turn. Pinch over the device to open or close its hinge."
+          aria-label={t(
+            "Interactive 3D iPhone Duo. Drag the screen to interact. Drag outside it or swipe with two fingers to turn. Pinch over the device to open or close its hinge.",
+          )}
           className="size-full touch-none"
           onPointerDown={(event) => {
             if (event.button !== 0) return;

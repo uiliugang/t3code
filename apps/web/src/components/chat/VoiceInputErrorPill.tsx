@@ -43,14 +43,14 @@ export function VoiceInputErrorPill(props: {
 }) {
   const t = useUiTranslation();
   const navigate = useNavigate();
-  const message = props.error ?? "Voice input failed";
+  const message = props.error ?? t("Voice input failed");
   const openSettings = props.errorAction === "settings";
   const compact = props.size === "compact";
   const action = openSettings
-    ? { label: "Open voice settings", text: "Settings" }
+    ? { label: t("Open voice settings"), text: t("Settings") }
     : props.error && RETRYABLE_TRANSCRIPTIONS.has(props.error)
-      ? { label: "Retry transcription", text: "Retry" }
-      : { label: "Record again", text: "Record again" };
+      ? { label: t("Retry transcription"), text: t("Retry") }
+      : { label: t("Record again"), text: t("Record again") };
   return (
     <VoiceInputPill tone="error" size={props.size}>
       <Tooltip>

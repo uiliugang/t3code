@@ -18,6 +18,7 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "~/components/ui/menu";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useIssueFilterCandidates } from "~/state/issues";
 
 import {
@@ -44,6 +45,7 @@ export function IssueFiltersMenu(props: {
   assignee: string | undefined;
   onAssignee: (assignee: string | undefined) => void;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const count = [
     props.state !== "open",
@@ -57,7 +59,7 @@ export function IssueFiltersMenu(props: {
     <Menu onOpenChange={setOpen}>
       <MenuTrigger render={<Button variant="outline" />}>
         <ListFilterIcon className="size-4" />
-        <span>Filters</span>
+        <span>{t("Filters")}</span>
         {count > 0 ? (
           <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
             {count}
@@ -66,28 +68,34 @@ export function IssueFiltersMenu(props: {
       </MenuTrigger>
       <MenuPopup align="end" side="bottom">
         <PullRequestFilterRadioSubmenu
-          label="State"
+          label={t("State")}
           value={props.state}
-          options={props.stateOptions}
+          options={props.stateOptions.map((option) => ({
+            ...option,
+            label: t(option.label),
+          }))}
           onChange={props.onState}
         />
         <PullRequestFilterRadioSubmenu
-          label="Involvement"
+          label={t("Involvement")}
           value={props.involvement}
-          options={props.involvementOptions}
+          options={props.involvementOptions.map((option) => ({
+            ...option,
+            label: t(option.label),
+          }))}
           onChange={props.onInvolvement}
         />
         <MenuSeparator />
         <MenuSub>
           <MenuSubTrigger>
             <TagIcon aria-hidden className="size-3.5" />
-            <span className="flex-1">Labels</span>
+            <span className="flex-1">{t("Labels")}</span>
             <span className="min-w-0 max-w-32 truncate text-xs text-muted-foreground">
               {props.labels.length === 0
-                ? "Any"
+                ? t("Any")
                 : props.labels.length === 1
                   ? props.labels[0]
-                  : `${props.labels.length} labels`}
+                  : t("{count} labels", { count: props.labels.length })}
             </span>
           </MenuSubTrigger>
           <MenuSubPopup>
@@ -97,9 +105,9 @@ export function IssueFiltersMenu(props: {
         <MenuSub>
           <MenuSubTrigger>
             <UserIcon aria-hidden className="size-3.5" />
-            <span className="flex-1">Assignee</span>
+            <span className="flex-1">{t("Assignee")}</span>
             <span className="min-w-0 max-w-32 truncate text-xs text-muted-foreground">
-              {props.assignee ?? "Anyone"}
+              {props.assignee ?? t("Anyone")}
             </span>
           </MenuSubTrigger>
           <MenuSubPopup>
@@ -116,6 +124,7 @@ function LabelChoices(props: {
   value: ReadonlyArray<string>;
   onChange: (value: ReadonlyArray<string>) => void;
 }) {
+  const t = useUiTranslation();
   const [query, setQuery] = useState("");
   const known = useIssueFilterCandidates(props.scopes);
   const needle = query.trim().toLowerCase();
@@ -134,12 +143,12 @@ function LabelChoices(props: {
         busy={known.isPending}
         value={query}
         onChange={(event) => setQuery(event.currentTarget.value)}
-        placeholder="Search labels"
-        aria-label="Search labels"
+        placeholder={t("Search labels")}
+        aria-label={t("Search labels")}
       />
       {visible.length === 0 && !known.isPending ? (
         <MenuItem disabled>
-          {known.error === null ? "No labels found" : "The labels could not be read"}
+          {known.error === null ? t("No labels found") : t("The labels could not be read")}
         </MenuItem>
       ) : null}
       {visible.map((label) => {
@@ -168,7 +177,7 @@ function LabelChoices(props: {
         );
       })}
       {known.truncated ? (
-        <MenuItem disabled>More labels exist than are listed here.</MenuItem>
+        <MenuItem disabled>{t("More labels exist than are listed here.")}</MenuItem>
       ) : null}
     </>
   );
@@ -179,6 +188,7 @@ function AssigneeChoices(props: {
   value: string | undefined;
   onChange: (value: string | undefined) => void;
 }) {
+  const t = useUiTranslation();
   const [query, setQuery] = useState("");
   const known = useIssueFilterCandidates(props.scopes);
   const needle = query.trim().toLowerCase();
@@ -196,8 +206,8 @@ function AssigneeChoices(props: {
         busy={known.isPending}
         value={query}
         onChange={(event) => setQuery(event.currentTarget.value)}
-        placeholder="Search people"
-        aria-label="Search people"
+        placeholder={t("Search people")}
+        aria-label={t("Search people")}
       />
       <MenuRadioGroup
         value={props.value ?? ""}
@@ -206,7 +216,7 @@ function AssigneeChoices(props: {
         <MenuRadioItem value="">
           <span className="flex min-w-0 items-center gap-2">
             <LayersIcon aria-hidden className="size-3.5" />
-            Anyone
+            {t("Anyone")}
           </span>
         </MenuRadioItem>
         {visible.map((actor) => (
@@ -219,10 +229,10 @@ function AssigneeChoices(props: {
         ))}
       </MenuRadioGroup>
       {visible.length === 0 && !known.isPending && known.error !== null ? (
-        <MenuItem disabled>The people could not be read</MenuItem>
+        <MenuItem disabled>{t("The people could not be read")}</MenuItem>
       ) : null}
       {known.truncated ? (
-        <MenuItem disabled>More people exist than are listed here.</MenuItem>
+        <MenuItem disabled>{t("More people exist than are listed here.")}</MenuItem>
       ) : null}
     </>
   );

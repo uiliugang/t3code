@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useLayoutEffect, useRef, useState } from "react";
 
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { observeResize } from "../../lib/observeResize";
 
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
@@ -16,6 +17,7 @@ export const MarkdownMath = memo(function MarkdownMath(props: {
   display: boolean;
   focusable?: boolean;
 }) {
+  const t = useUiTranslation();
   const viewportRef = useRef<HTMLSpanElement>(null);
   const contentRef = useRef<HTMLSpanElement>(null);
   const [overflows, setOverflows] = useState(false);
@@ -47,8 +49,8 @@ export const MarkdownMath = memo(function MarkdownMath(props: {
         props.focusable === false
           ? undefined
           : props.display
-            ? "Display equation"
-            : "Inline equation"
+            ? t("Display equation")
+            : t("Inline equation")
       }
     >
       <span
@@ -59,8 +61,8 @@ export const MarkdownMath = memo(function MarkdownMath(props: {
           !scrollable
             ? undefined
             : props.display
-              ? "Scroll display equation"
-              : "Scroll inline equation"
+              ? t("Scroll display equation")
+              : t("Scroll inline equation")
         }
       >
         <span

@@ -69,9 +69,11 @@ export function childInputNowItem(
       <MessageCircleIcon className="text-info-foreground" />
     ),
     title: childThreadInputsTitle(childThreadInputs, t),
-    waitingLabel: childThreadInputs.every((child) => child.lineage.sideChat === true)
-      ? "Side chat waiting"
-      : "Subagent waiting",
+    waitingLabel: t(
+      childThreadInputs.every((child) => child.lineage.sideChat === true)
+        ? "Side chat waiting"
+        : "Subagent waiting",
+    ),
     description: childThreadInputs.map((child, index) => (
       <Fragment key={child.id}>
         {index > 0 ? " " : null}
@@ -85,19 +87,22 @@ export function childInputNowItem(
     )),
     actions: (
       <InlineButton onClick={() => onOpenThread(first.id, first.environmentId)}>
-        {first.hasPendingApprovals ? "Open approval" : "Open question"}
+        {t(first.hasPendingApprovals ? "Open approval" : "Open question")}
       </InlineButton>
     ),
   };
 }
 
 /** The thread's goal, for the end of the timeline. */
-export function goalNowItem(input: {
-  readonly threadId: ThreadId;
-  readonly goal: OrchestrationV2ProviderGoal;
-  readonly isWorking: boolean;
-  readonly onSendCommand: (text: string, failureMessage: string) => Promise<void>;
-}): ThreadNowItem {
+export function goalNowItem(
+  input: {
+    readonly threadId: ThreadId;
+    readonly goal: OrchestrationV2ProviderGoal;
+    readonly isWorking: boolean;
+    readonly onSendCommand: (text: string, failureMessage: string) => Promise<void>;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): ThreadNowItem {
   const { isWorking, onSendCommand } = input;
   const presentation = presentProviderGoal(input.goal, isWorking);
   return {
@@ -109,7 +114,7 @@ export function goalNowItem(input: {
           {presentation.title}
           {presentation.usage === null ? null : ` · ${presentation.usage}`}
         </PopoverTrigger>
-        <PopoverPopup side="top" width="md" padding="compact" aria-label="Goal objective">
+        <PopoverPopup side="top" width="md" padding="compact" aria-label={t("Goal objective")}>
           <p className="whitespace-pre-wrap wrap-anywhere text-sm">{presentation.objective}</p>
         </PopoverPopup>
       </Popover>
@@ -121,18 +126,18 @@ export function goalNowItem(input: {
         {presentation.canResume && !isWorking ? (
           <>
             <InlineButton
-              onClick={() => void onSendCommand("/goal resume", "Failed to resume goal.")}
+              onClick={() => void onSendCommand("/goal resume", t("Failed to resume goal."))}
             >
-              Resume
+              {t("Resume")}
             </InlineButton>
             <span aria-hidden>·</span>
           </>
         ) : null}
         <InlineButton
           tone="muted"
-          onClick={() => void onSendCommand("/goal clear", "Failed to clear goal.")}
+          onClick={() => void onSendCommand("/goal clear", t("Failed to clear goal."))}
         >
-          Clear
+          {t("Clear")}
         </InlineButton>
       </>
     ),
@@ -140,13 +145,16 @@ export function goalNowItem(input: {
 }
 
 /** A Stop the provider has not finished; Force stop once it stops answering. */
-export function runStopNowItem(input: {
-  readonly threadId: ThreadId;
-  readonly stop: RunStopPresentation;
-  readonly canForceStop: boolean;
-  readonly forceStopping: boolean;
-  readonly onForceStop: () => void;
-}): ThreadNowItem {
+export function runStopNowItem(
+  input: {
+    readonly threadId: ThreadId;
+    readonly stop: RunStopPresentation;
+    readonly canForceStop: boolean;
+    readonly forceStopping: boolean;
+    readonly onForceStop: () => void;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): ThreadNowItem {
   const unresponsive = input.stop.state === "unresponsive";
   const requestedAtMs = Date.parse(input.stop.requestedAt);
   return {
@@ -156,9 +164,9 @@ export function runStopNowItem(input: {
     ) : (
       <CircleStopIcon />
     ),
-    title: unresponsive ? "Agent not responding to Stop" : "Stopping",
+    title: t(unresponsive ? "Agent not responding to Stop" : "Stopping"),
     description: unresponsive
-      ? "It may be short on memory. Force stop kills its processes."
+      ? t("It may be short on memory. Force stop kills its processes.")
       : undefined,
     actions: (
       <>
@@ -171,7 +179,7 @@ export function runStopNowItem(input: {
         />
         {unresponsive && input.canForceStop ? (
           <InlineButton disabled={input.forceStopping} onClick={input.onForceStop}>
-            {input.forceStopping ? "Force stopping..." : "Force stop"}
+            {t(input.forceStopping ? "Force stopping..." : "Force stop")}
           </InlineButton>
         ) : null}
       </>
@@ -271,7 +279,7 @@ export function backgroundWorkNowItem(
           onOpenThread={onOpenThread}
         />
         <InlineButton disabled={input.stopDisabled} onClick={() => void input.onStop()}>
-          {input.stopping ? "Stopping..." : "Stop"}
+          {t(input.stopping ? "Stopping..." : "Stop")}
         </InlineButton>
       </>
     ),
@@ -279,14 +287,17 @@ export function backgroundWorkNowItem(
 }
 
 /** The local checkout moved off the branch this thread last ran on. */
-export function branchMismatchBannerItem(input: {
-  readonly mismatchKey: string;
-  readonly mismatch: { readonly threadBranch: string; readonly currentBranch: string };
-  readonly restoreDisabled: boolean;
-  readonly restoring: boolean;
-  readonly onRestore: () => void;
-  readonly onDismiss: () => void;
-}): ComposerBannerStackItem {
+export function branchMismatchBannerItem(
+  input: {
+    readonly mismatchKey: string;
+    readonly mismatch: { readonly threadBranch: string; readonly currentBranch: string };
+    readonly restoreDisabled: boolean;
+    readonly restoring: boolean;
+    readonly onRestore: () => void;
+    readonly onDismiss: () => void;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): ComposerBannerStackItem {
   const { mismatch } = input;
   return {
     id: `branch-mismatch:${input.mismatchKey}`,
@@ -294,7 +305,9 @@ export function branchMismatchBannerItem(input: {
     icon: <GitBranchIcon />,
     title: (
       <span className="flex min-w-0 items-baseline gap-1.5">
-        <span className="shrink-0 font-normal text-muted-foreground">Branch changed from</span>
+        <span className="shrink-0 font-normal text-muted-foreground">
+          {t("Branch changed from")}
+        </span>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -304,18 +317,20 @@ export function branchMismatchBannerItem(input: {
             }
           />
           <TooltipPopup side="top">
-            This thread last ran on {mismatch.threadBranch}. Sending will continue on{" "}
-            {mismatch.currentBranch}.
+            {t("This thread last ran on {branch}. Sending will continue on {currentBranch}.", {
+              branch: mismatch.threadBranch,
+              currentBranch: mismatch.currentBranch,
+            })}
           </TooltipPopup>
         </Tooltip>
       </span>
     ),
     actions: (
       <Button size="xs" variant="ghost" disabled={input.restoreDisabled} onClick={input.onRestore}>
-        {input.restoring ? "Restoring..." : "Restore branch"}
+        {t(input.restoring ? "Restoring..." : "Restore branch")}
       </Button>
     ),
-    dismissLabel: "Dismiss branch change notice",
+    dismissLabel: t("Dismiss branch change notice"),
     onDismiss: input.onDismiss,
   };
 }

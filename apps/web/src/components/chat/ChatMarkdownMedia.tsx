@@ -95,6 +95,7 @@ export const WorkspaceMutationIdContext = createContext<string | null | undefine
 function expandableMarkdownImageProps(
   onImageExpand: ((preview: ExpandedImagePreview) => void) | undefined,
   alt: string,
+  t: (message: string, values?: Readonly<Record<string, string | number>>) => string,
 ) {
   if (!onImageExpand) return {};
   const previewName = alt.trim() || "image";
@@ -108,7 +109,7 @@ function expandableMarkdownImageProps(
   return {
     role: "button" as const,
     tabIndex: 0,
-    "aria-label": `Preview ${previewName}`,
+    "aria-label": t("Preview {name}", { name: previewName }),
     onClick: expand,
     onKeyDown: (event: ReactKeyboardEvent) => {
       if (event.key === "Enter" || event.key === " ") expand(event);
@@ -187,6 +188,7 @@ export function ChatMarkdownImage(props: {
   readonly originalUrl?: string | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
+  const t = useUiTranslation();
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const src = props.src ?? loadedSrc;
@@ -232,7 +234,7 @@ export function ChatMarkdownImage(props: {
             props.onImageExpand && "cursor-zoom-in",
           )}
           style={props.style}
-          {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
+          {...expandableMarkdownImageProps(props.onImageExpand, props.alt, t)}
           {...imageEvents(src)}
         />
       </MediaActions>
@@ -251,7 +253,7 @@ export function ChatMarkdownImage(props: {
         id={props.imageProps?.id}
         data-markdown-copy={props.copyMarkdown}
         role="status"
-        aria-label="Loading image"
+        aria-label={t("Loading image")}
         className={CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME}
       />
     );
@@ -269,7 +271,7 @@ export function ChatMarkdownImage(props: {
         style={props.style}
         {...(failed
           ? { role: "alert" as const }
-          : { role: "status" as const, "aria-label": "Loading image" })}
+          : { role: "status" as const, "aria-label": t("Loading image") })}
       >
         {failed ? (
           <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">

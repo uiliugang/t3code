@@ -24,6 +24,7 @@ import {
 } from "@t3tools/shared/model";
 import { memo } from "react";
 import { GaugeIcon } from "lucide-react";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   Menu,
   MenuGroup,
@@ -104,9 +105,10 @@ type TraitsPersistence =
     };
 
 function DefaultBadge() {
+  const t = useUiTranslation();
   return (
     <Badge variant="outline" size="sm" className="min-w-0">
-      Default
+      {t("Default")}
     </Badge>
   );
 }
@@ -377,6 +379,7 @@ export const ULTRATHINK_IN_BODY_NOTE =
   'Your prompt contains "ultrathink" in the text. Remove it to change this option.';
 
 const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelectionInput) {
+  const t = useUiTranslation();
   const traits = useTraitsSelection(props);
   const {
     descriptors,
@@ -471,7 +474,7 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
               {(["on", "off"] as const).map((value) => (
                 <MenuRadioItem key={value} value={value} hideIndicator closeOnClick>
                   <span className="flex w-full min-w-0 items-center justify-between gap-3">
-                    <span>{value === "on" ? "On" : "Off"}</span>
+                    <span>{t(value === "on" ? "On" : "Off")}</span>
                   </span>
                 </MenuRadioItem>
               ))}

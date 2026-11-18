@@ -7,7 +7,9 @@ import {
   type ThreadId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { getClientSettings } from "../../hooks/useSettings";
 import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
@@ -113,14 +115,19 @@ export async function startFanoutThread(input: {
     const failureToastId = toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: `Could not start ${input.model}`,
-        description: error instanceof Error ? error.message : "Failed to send message.",
+        title: translateUi(getClientSettings().uiLanguage, "Could not start {model}", {
+          model: input.model,
+        }),
+        description:
+          error instanceof Error
+            ? error.message
+            : translateUi(getClientSettings().uiLanguage, "Failed to send message."),
         ...(retainedThreadId
           ? {
               timeout: 0,
               data: {
                 secondaryActionProps: {
-                  children: "Allow retry",
+                  children: translateUi(getClientSettings().uiLanguage, "Allow retry"),
                   onClick: () => {
                     void readLocalApi()
                       ?.dialogs.confirm(

@@ -78,6 +78,7 @@ export const WorkGroupSection = memo(function WorkGroupSection({
   isExpandedToolGroup: boolean;
   displayLabel?: string | undefined;
 }) {
+  const t = useUiTranslation();
   const {
     workspaceRoot,
     routeThreadKey,
@@ -111,7 +112,7 @@ export const WorkGroupSection = memo(function WorkGroupSection({
   }
 
   return (
-    <section aria-label="Activity">
+    <section aria-label={t("Activity")}>
       {nonEmptyEntries.map((workEntry) => (
         <SimpleWorkEntryRow
           key={workEntry.id}
@@ -196,6 +197,7 @@ function ExpandedWorkGroupEntries({
   groupedEntries: ReadonlyArray<TimelineWorkEntry>;
   workspaceRoot: string | undefined;
 }) {
+  const t = useUiTranslation();
   const {
     workGroupViewState: viewState,
     onToggleWorkEntry,
@@ -331,7 +333,7 @@ function ExpandedWorkGroupEntries({
           onItemSizeChanged={updateExpandedContentHeight}
           tabIndex={0}
           role="region"
-          aria-label="Tool calls"
+          aria-label={t("Tool calls")}
           data-tool-group-scroll
           style={{ maxHeight: `calc(min(18rem, 50dvh) + ${expandedContentHeight}px)` }}
           className={cn(
@@ -382,6 +384,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
 }
 
 function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
+  const t = useUiTranslation();
   const ctx = use(TimelineRowCtx);
   const terminalId = snapshot.setupScript?.terminalId ?? null;
   const openTerminal = ctx.onOpenWorktreeSetupTerminal;
@@ -395,12 +398,14 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
             variant="ghost-muted"
             size="micro"
             className="ml-auto min-w-0 shrink-0"
-            aria-label={`Background setup is still running: ${scriptName}. Show setup progress.`}
+            aria-label={t("Background setup is still running: {script}. Show setup progress.", {
+              script: scriptName,
+            })}
           />
         }
       >
         <Spinner className="size-3 shrink-0" />
-        <span className="truncate">Background setup</span>
+        <span className="truncate">{t("Background setup")}</span>
       </PopoverTrigger>
       <PopoverPopup side="bottom" align="end" width="lg" padding="compact">
         <WorktreeSetupCard
@@ -522,6 +527,7 @@ function LiveActivityContent({
   active?: boolean;
   highlighted?: boolean;
 }) {
+  const t = useUiTranslation();
   const showTrailingFailureMark =
     failed && iconName !== undefined && !toolIconAcceptsTint(toolIcon);
 
@@ -539,7 +545,7 @@ function LiveActivityContent({
                   : "text-icon-muted",
             )}
             role={announceFailure ? "img" : undefined}
-            aria-label={announceFailure ? "Tool call failed" : undefined}
+            aria-label={announceFailure ? t("Tool call failed") : undefined}
           >
             <ToolActivityIconView
               icon={toolIcon}
@@ -602,7 +608,9 @@ export function LiveWorkEntryTimelineRow({
       )}
       aria-label={
         failed
-          ? `${thoughtLine ? `${thoughtLine} ` : ""}${threadLabel?.text ?? label}, tool call failed`
+          ? t("{label}, tool call failed", {
+              label: `${thoughtLine ? `${thoughtLine} ` : ""}${threadLabel?.text ?? label}`,
+            })
           : undefined
       }
       aria-expanded={row.expanded}
@@ -638,9 +646,9 @@ export function LiveWorkEntryTimelineRow({
         label={
           thoughtIsStatus ? (
             row.active ? (
-              "Thinking"
+              t("Thinking")
             ) : (
-              "Thought"
+              t("Thought")
             )
           ) : row.entry.itemType === "reasoning" ? (
             <ChatMarkdown
@@ -699,9 +707,12 @@ function WorkGroupHeader(props: {
   timestampFormat: TimestampFormat;
   onToggle: () => void;
 }) {
+  const t = useUiTranslation();
   return (
     <WorkLogButton
-      aria-label={props.failed ? `${props.label}, tool call failed` : props.label}
+      aria-label={
+        props.failed ? t("{label}, tool call failed", { label: props.label }) : props.label
+      }
       aria-expanded={props.expanded}
       onClick={props.onToggle}
       icon={

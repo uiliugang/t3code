@@ -3,6 +3,7 @@ import { CheckIcon, CopyIcon, ImageIcon, TextIcon } from "lucide-react";
 import { Suspense, useRef, useState } from "react";
 
 import { useRenderedAppearance } from "../../hooks/useTheme";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { cn } from "../../lib/utils";
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import { Button } from "../ui/button";
@@ -82,6 +83,7 @@ export function SnapShotCopyButton({
   onCopy: () => Promise<void>;
   side?: "top" | "right" | "bottom" | "left";
 }) {
+  const t = useUiTranslation();
   const ref = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
 
@@ -91,7 +93,7 @@ export function SnapShotCopyButton({
         render={
           <Button
             ref={ref}
-            aria-label="Copy snapshot"
+            aria-label={t("Copy snapshot")}
             disabled={copied}
             onClick={(event) => {
               event.stopPropagation();
@@ -118,7 +120,7 @@ export function SnapShotCopyButton({
           <CopyIcon className="size-3" aria-hidden="true" />
         )}
       </TooltipTrigger>
-      <TooltipPopup side={side}>Copy snapshot</TooltipPopup>
+      <TooltipPopup side={side}>{t("Copy snapshot")}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -134,10 +136,11 @@ export function SnapShotContentsButton({
   side?: "top" | "right" | "bottom" | "left";
   onCopySnapshot?: (() => Promise<void>) | undefined;
 }) {
+  const t = useUiTranslation();
   const includesAccessibility = snapShotIncludesAccessibility(source);
   const ContentsIcon = includesAccessibility ? TextIcon : ImageIcon;
   const accessibilityDetails = snapShotAccessibilityDetails(source);
-  const tooltip = includesAccessibility ? "Accessibility data" : "No accessibility data";
+  const tooltip = includesAccessibility ? t("Accessibility data") : t("No accessibility data");
 
   return (
     <Popover>
@@ -148,7 +151,9 @@ export function SnapShotContentsButton({
               render={
                 <Button
                   aria-label={
-                    includesAccessibility ? "View accessibility data" : "No accessibility data"
+                    includesAccessibility
+                      ? t("View accessibility data")
+                      : t("No accessibility data")
                   }
                   className={className}
                   onClick={(event) => event.stopPropagation()}
@@ -166,7 +171,7 @@ export function SnapShotContentsButton({
       <PopoverPopup side={side} align="center" width="md">
         <div className="max-h-[min(28rem,70vh)] space-y-2 overflow-y-auto">
           <div className="flex items-center justify-between gap-2">
-            <PopoverTitle>Accessibility data</PopoverTitle>
+            <PopoverTitle>{t("Accessibility data")}</PopoverTitle>
             {onCopySnapshot && (
               <div className="-my-1.5">
                 <SnapShotCopyButton onCopy={onCopySnapshot} side={side} />
@@ -180,12 +185,13 @@ export function SnapShotContentsButton({
             />
           ) : includesAccessibility ? (
             <div className="rounded-md border border-border/70 bg-muted/45 p-2.5 text-muted-foreground text-xs leading-4">
-              Structured accessibility elements were included, but they have no readable names or
-              values.
+              {t(
+                "Structured accessibility elements were included, but they have no readable names or values.",
+              )}
             </div>
           ) : (
             <div className="rounded-md border border-border/70 bg-muted/45 p-2.5 text-muted-foreground text-xs leading-4">
-              The app or capture backend did not provide verified accessibility data.
+              {t("The app or capture backend did not provide verified accessibility data.")}
             </div>
           )}
         </div>
@@ -203,6 +209,7 @@ export function SnapShotAttachmentDetails({
   onCopySnapshot?: (() => Promise<void>) | undefined;
   className?: string;
 }) {
+  const t = useUiTranslation();
   return (
     <div
       className={cn(
@@ -227,7 +234,7 @@ export function SnapShotAttachmentDetails({
           />
         </div>
         <div className="truncate text-3xs leading-3.5 text-white/70">
-          {source.windowTitle || "Captured window"}
+          {source.windowTitle || t("Captured window")}
         </div>
       </div>
     </div>

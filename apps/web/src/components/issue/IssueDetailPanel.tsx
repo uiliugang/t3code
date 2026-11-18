@@ -40,6 +40,8 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useClientSettings } from "~/hooks/useSettings";
 import { issueEnvironment, refreshIssueLists } from "~/state/issues";
 import { useProjects, useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
@@ -90,6 +92,7 @@ function IssueThreadLinkButton({
   issue: Pick<IssueDetail, "url" | "displayKey" | "title">;
   threadRef: ScopedThreadRef;
 }) {
+  const t = useUiTranslation();
   const thread = useThreadShell(threadRef.environmentId === environmentId ? threadRef : null);
   const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const link = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
@@ -118,8 +121,8 @@ function IssueThreadLinkButton({
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: linked ? "Could not unlink the issue" : "Could not link the issue",
-        description: readableFailure(squashAtomCommandFailure(result), "The server refused it."),
+        title: linked ? t("Could not unlink the issue") : t("Could not link the issue"),
+        description: readableFailure(squashAtomCommandFailure(result), t("The server refused it.")),
       });
     }
   };
@@ -130,7 +133,7 @@ function IssueThreadLinkButton({
           <Button
             size="icon-xs"
             variant="ghost"
-            aria-label={linked ? "Unlink from thread" : "Link to thread"}
+            aria-label={linked ? t("Unlink from thread") : t("Link to thread")}
             aria-pressed={linked}
             disabled={pending || reference.host === undefined}
             onClick={() => void toggle()}
@@ -143,7 +146,9 @@ function IssueThreadLinkButton({
           <Link2Icon aria-hidden className="size-3.5" />
         )}
       </TooltipTrigger>
-      <TooltipPopup>{linked ? "Unlink from this thread" : "Link to this thread"}</TooltipPopup>
+      <TooltipPopup>
+        {linked ? t("Unlink from this thread") : t("Link to this thread")}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -195,6 +200,7 @@ function IssueLabelPicker({
   allowed: boolean;
   disabledReason: string;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueLabelCandidate>);
@@ -235,30 +241,33 @@ function IssueLabelPicker({
       setPicks((latest) => issuePicksAfterFailedWrite(latest, sent));
       toastManager.add({
         type: "error",
-        title: "Could not change labels",
-        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
+        title: t("Could not change labels"),
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          t("The tracker refused it."),
+        ),
       });
     });
   };
   return (
     <PullRequestCandidatePicker
       icon={<TagIcon className="size-3.5" />}
-      label="Change labels"
+      label={t("Change labels")}
       allowed={allowed}
       disabledReason={disabledReason}
       open={open}
       onOpenChange={onOpenChange}
       query={query}
       onQueryChange={setQuery}
-      searchLabel="Search labels"
+      searchLabel={t("Search labels")}
       isPending={candidatesQuery.isPending && candidatesQuery.data === null}
       error={candidatesQuery.data === null ? candidatesQuery.error : null}
       candidates={candidates}
-      emptyLabel="This tracker has no labels."
-      noMatchLabel="No label matches that."
-      errorLabel="The labels could not be read."
+      emptyLabel={t("This tracker has no labels.")}
+      noMatchLabel={t("No label matches that.")}
+      errorLabel={t("The labels could not be read.")}
       truncated={candidatesQuery.data?.truncated === true}
-      truncatedLabel="More labels exist than are listed here."
+      truncatedLabel={t("More labels exist than are listed here.")}
       candidateKey={(candidate) => candidate.name}
       onSelect={(candidate) =>
         setPicks({
@@ -283,7 +292,7 @@ function IssueLabelPicker({
               ) : null}
             </span>
             {isSelected(draft, candidate.name, applied.has(candidate.name)) ? (
-              <CheckIcon aria-label="Applied" className="size-3.5 shrink-0" />
+              <CheckIcon aria-label={t("Applied")} className="size-3.5 shrink-0" />
             ) : null}
           </>
         );
@@ -305,6 +314,7 @@ function IssueAssigneePicker({
   allowed: boolean;
   disabledReason: string;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueAssigneeCandidate>);
@@ -344,30 +354,33 @@ function IssueAssigneePicker({
       setPicks((latest) => issuePicksAfterFailedWrite(latest, sent));
       toastManager.add({
         type: "error",
-        title: "Could not change assignees",
-        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
+        title: t("Could not change assignees"),
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          t("The tracker refused it."),
+        ),
       });
     });
   };
   return (
     <PullRequestCandidatePicker
       icon={<UserPlusIcon className="size-3.5" />}
-      label="Change assignees"
+      label={t("Change assignees")}
       allowed={allowed}
       disabledReason={disabledReason}
       open={open}
       onOpenChange={onOpenChange}
       query={query}
       onQueryChange={setQuery}
-      searchLabel="Search people"
+      searchLabel={t("Search people")}
       isPending={candidatesQuery.isPending && candidatesQuery.data === null}
       error={candidatesQuery.data === null ? candidatesQuery.error : null}
       candidates={candidates}
-      emptyLabel="Nobody can be assigned here."
-      noMatchLabel="Nobody matches that."
-      errorLabel="The people could not be read."
+      emptyLabel={t("Nobody can be assigned here.")}
+      noMatchLabel={t("Nobody matches that.")}
+      errorLabel={t("The people could not be read.")}
       truncated={candidatesQuery.data?.truncated === true}
-      truncatedLabel="More people exist than are listed here."
+      truncatedLabel={t("More people exist than are listed here.")}
       candidateKey={(candidate) => candidate.id}
       onSelect={(candidate) =>
         setPicks({
@@ -385,7 +398,7 @@ function IssueAssigneePicker({
         <>
           <PullRequestActorLabel actor={candidate} tooltip={false} className="min-w-0 flex-1" />
           {isSelected(draft, candidate.id, issueAssigneeHeld(detail, candidate)) ? (
-            <CheckIcon aria-label="Assigned" className="size-3.5 shrink-0" />
+            <CheckIcon aria-label={t("Assigned")} className="size-3.5 shrink-0" />
           ) : null}
         </>
       )}
@@ -407,12 +420,13 @@ function LinkedPullRequestRow({
   scope: string;
   onSelect: (() => void) | null;
 }) {
+  const t = useUiTranslation();
   const body = (
     <>
       <PullRequestStateGlyph state={link.state} isDraft={link.isDraft} />
       <span className="min-w-0 flex-1 truncate text-sm">{link.title}</span>
       <PullRequestMetaLine className="shrink-0 text-xs text-muted-foreground">
-        {link.closesIssue ? <span>Closes this issue</span> : null}
+        {link.closesIssue ? <span>{t("Closes this issue")}</span> : null}
         <span className="tabular-nums">
           {link.repository.toLowerCase() === scope.toLowerCase() ? "" : link.repository}#
           {link.number}
@@ -448,6 +462,8 @@ export function IssueDetailPanel({
   /** Opens a linked change request beside this one; absent, the link goes to the host. */
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
 }) {
+  const t = useUiTranslation();
+  const uiLanguage = useClientSettings((settings) => settings.uiLanguage);
   const detailQuery = useEnvironmentQuery(
     issueEnvironment.detail({ environmentId, input: reference }),
   );
@@ -476,7 +492,7 @@ export function IssueDetailPanel({
     if (detailQuery.error !== null && !detailQuery.isPending) {
       return (
         <PullRequestsUnavailableState
-          title="Could not load this issue"
+          title={t("Could not load this issue")}
           error={detailQuery.error}
           onRetry={detailQuery.refresh}
         />
@@ -514,7 +530,7 @@ export function IssueDetailPanel({
     });
     setLoadingOlder(false);
     if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "Older comments could not be read" });
+      toastManager.add({ type: "error", title: t("Older comments could not be read") });
       return;
     }
     setOlder({
@@ -531,8 +547,11 @@ export function IssueDetailPanel({
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: "The issue could not be updated",
-        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
+        title: t("The issue could not be updated"),
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          t("The tracker refused it."),
+        ),
       });
       return;
     }
@@ -551,8 +570,11 @@ export function IssueDetailPanel({
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: "The state could not be changed",
-        description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
+        title: t("The state could not be changed"),
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          t("The tracker refused it."),
+        ),
       });
       return;
     }
@@ -573,7 +595,7 @@ export function IssueDetailPanel({
             <Button
               size="xs"
               variant="outline"
-              aria-label={`Issue state, ${currentState.label}`}
+              aria-label={t("Issue state, {state}", { state: currentState.label })}
               disabled={changingState}
             />
           }
@@ -621,7 +643,10 @@ export function IssueDetailPanel({
             </span>
             <InlineButton
               className={cn("shrink-0 font-medium", currentState.toneClassName)}
-              aria-label={`Open ${detail.displayKey} on ${tracker.providerName}`}
+              aria-label={t("Open {key} on {provider}", {
+                key: detail.displayKey,
+                provider: tracker.providerName,
+              })}
               render={<a href={detail.url} target="_blank" rel="noopener noreferrer" />}
             >
               {detail.displayKey}
@@ -640,7 +665,7 @@ export function IssueDetailPanel({
             <Button
               size="icon-xs"
               variant="ghost"
-              aria-label="Refresh issue"
+              aria-label={t("Refresh issue")}
               disabled={detailQuery.isPending}
               onClick={() => {
                 // Older pages are cached under the cursor, which a refresh can hand back unchanged.
@@ -664,7 +689,7 @@ export function IssueDetailPanel({
             >
               <Input
                 autoFocus
-                aria-label="Issue title"
+                aria-label={t("Issue title")}
                 value={titleDraft}
                 disabled={saving}
                 onChange={(event) => setTitleDraft(event.target.value)}
@@ -673,7 +698,7 @@ export function IssueDetailPanel({
                 }}
               />
               <Button type="submit" size="sm" disabled={saving}>
-                Save
+                {t("Save")}
               </Button>
               <Button
                 type="button"
@@ -682,7 +707,7 @@ export function IssueDetailPanel({
                 disabled={saving}
                 onClick={() => setEditing(null)}
               >
-                Cancel
+                {t("Cancel")}
               </Button>
             </form>
           ) : (
@@ -692,7 +717,7 @@ export function IssueDetailPanel({
               </h2>
               {canEdit ? (
                 <PullRequestEditButton
-                  aria-label="Edit title"
+                  aria-label={t("Edit title")}
                   onClick={() => {
                     setTitleDraft(detail.title);
                     setEditing("title");
@@ -704,18 +729,26 @@ export function IssueDetailPanel({
 
           <PullRequestMetaLine className="mt-2 min-h-5 text-xs text-muted-foreground">
             <PullRequestActorLabel actor={detail.author} />
-            <span>opened {formatRelativeTimeLabel(detail.createdAt)}</span>
+            <span>
+              {t("opened {time}", {
+                time: formatRelativeTimeLabel(detail.createdAt, undefined, uiLanguage),
+              })}
+            </span>
             {detail.closedAt ? (
-              <span>closed {formatRelativeTimeLabel(detail.closedAt)}</span>
+              <span>
+                {t("closed {time}", {
+                  time: formatRelativeTimeLabel(detail.closedAt, undefined, uiLanguage),
+                })}
+              </span>
             ) : null}
-            {detail.writable ? null : <span>Read-only</span>}
+            {detail.writable ? null : <span>{t("Read-only")}</span>}
           </PullRequestMetaLine>
 
           <div className="mt-4 space-y-2">
-            <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
+            <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label={t("Labels")}>
               <span className="flex min-w-0 flex-wrap items-center gap-1">
                 {detail.labels.length === 0 ? (
-                  <span className="text-muted-foreground">None</span>
+                  <span className="text-muted-foreground">{t("None")}</span>
                 ) : (
                   detail.labels.map((label) => (
                     <PullRequestLabelChip
@@ -733,16 +766,16 @@ export function IssueDetailPanel({
                     detail={detail}
                     allowed={canLabel}
                     disabledReason={
-                      blocked ?? "Changing labels needs triage access on this tracker."
+                      blocked ?? t("Changing labels needs triage access on this tracker.")
                     }
                   />
                 ) : null}
               </span>
             </PullRequestMetaRow>
-            <PullRequestMetaRow icon={<UsersIcon className="size-3.5" />} label="Assignees">
+            <PullRequestMetaRow icon={<UsersIcon className="size-3.5" />} label={t("Assignees")}>
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                 {detail.assignees.length === 0 ? (
-                  <span className="text-muted-foreground">None</span>
+                  <span className="text-muted-foreground">{t("None")}</span>
                 ) : (
                   detail.assignees.map((actor) => (
                     <PullRequestActorLabel key={actor.login} actor={actor} />
@@ -755,7 +788,7 @@ export function IssueDetailPanel({
                     detail={detail}
                     allowed={canAssign}
                     disabledReason={
-                      blocked ?? "Changing assignees needs triage access on this tracker."
+                      blocked ?? t("Changing assignees needs triage access on this tracker.")
                     }
                   />
                 ) : null}
@@ -766,12 +799,12 @@ export function IssueDetailPanel({
 
         <PullRequestSection
           key={`description:${detail.url}`}
-          title="Description"
+          title={t("Description")}
           keepMounted
           actions={
             canEdit && editing !== "body" ? (
               <PullRequestEditButton
-                aria-label="Edit description"
+                aria-label={t("Edit description")}
                 onClick={() => setEditing("body")}
               />
             ) : null
@@ -784,7 +817,7 @@ export function IssueDetailPanel({
                 cwd={cwd}
                 environmentId={environmentId}
                 threadRef={threadRef}
-                label="Description"
+                label={t("Description")}
                 completionScope={null}
                 saving={saving}
                 allowEmpty
@@ -793,7 +826,7 @@ export function IssueDetailPanel({
               />
             ) : (
               <PullRequestMarkdown
-                text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
+                text={detail.body.trim().length > 0 ? detail.body : t("_No description provided._")}
                 cwd={cwd}
                 environmentId={environmentId}
                 threadRef={threadRef}
@@ -811,7 +844,7 @@ export function IssueDetailPanel({
         </PullRequestSection>
 
         {detail.linkedPullRequests.length > 0 ? (
-          <PullRequestSection key={`linked:${detail.url}`} title="Linked pull requests">
+          <PullRequestSection key={`linked:${detail.url}`} title={t("Linked pull requests")}>
             <div className="flex flex-col gap-1">
               {detail.linkedPullRequests.map((link) => (
                 <LinkedPullRequestRow
@@ -837,7 +870,11 @@ export function IssueDetailPanel({
 
         <PullRequestSection
           key={`activity:${detail.url}`}
-          title={detail.commentCount > 0 ? `Activity (${detail.commentCount})` : "Activity"}
+          title={
+            detail.commentCount > 0
+              ? t("Activity ({count})", { count: detail.commentCount })
+              : t("Activity")
+          }
         >
           <div className="flex flex-col gap-3">
             {nextCursor !== null ? (
@@ -848,11 +885,11 @@ export function IssueDetailPanel({
                 disabled={loadingOlder}
                 onClick={() => void loadOlder()}
               >
-                {loadingOlder ? "Loading…" : "Load older comments"}
+                {loadingOlder ? t("Loading…") : t("Load older comments")}
               </Button>
             ) : null}
             {timeline.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nothing has happened here yet.</p>
+              <p className="text-sm text-muted-foreground">{t("Nothing has happened here yet.")}</p>
             ) : null}
             {timeline.map((item) =>
               item.kind === "comment" ? (
@@ -869,10 +906,12 @@ export function IssueDetailPanel({
                           <a href={item.comment.url} target="_blank" rel="noopener noreferrer" />
                         }
                       >
-                        {formatRelativeTimeLabel(item.comment.createdAt)}
+                        {formatRelativeTimeLabel(item.comment.createdAt, undefined, uiLanguage)}
                       </InlineButton>
                     ) : (
-                      <span>{formatRelativeTimeLabel(item.comment.createdAt)}</span>
+                      <span>
+                        {formatRelativeTimeLabel(item.comment.createdAt, undefined, uiLanguage)}
+                      </span>
                     )}
                   </PullRequestMetaLine>
                   <PullRequestCommentBody
@@ -897,8 +936,10 @@ export function IssueDetailPanel({
                   className="px-1 text-xs text-muted-foreground"
                 >
                   <PullRequestActorLabel actor={item.event.actor} />
-                  <span>{issueEventSentence(item.event)}</span>
-                  <span>{formatRelativeTimeLabel(item.event.createdAt)}</span>
+                  <span>{issueEventSentence(item.event, t)}</span>
+                  <span>
+                    {formatRelativeTimeLabel(item.event.createdAt, undefined, uiLanguage)}
+                  </span>
                 </PullRequestMetaLine>
               ),
             )}
@@ -910,7 +951,7 @@ export function IssueDetailPanel({
         <IssueCommentComposer
           environmentId={environmentId}
           reference={reference}
-          blocked={canComment ? null : (blocked ?? "You cannot comment here.")}
+          blocked={canComment ? null : (blocked ?? t("You cannot comment here."))}
         />
       ) : null}
     </div>

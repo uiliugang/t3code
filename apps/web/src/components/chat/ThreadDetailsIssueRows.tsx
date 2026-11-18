@@ -4,6 +4,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { cn } from "~/lib/utils";
 
 import { IssueGlyph } from "../issue/issuePresentation";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
@@ -22,6 +23,7 @@ export function ThreadDetailsIssueRows({
   links: ReadonlyArray<ThreadIssueLink>;
   onOpenLink: (event: ReactMouseEvent<HTMLElement>, link: ThreadIssueLink) => void;
 }) {
+  const t = useUiTranslation();
   if (links.length === 0) return null;
   return (
     <>
@@ -29,7 +31,10 @@ export function ThreadDetailsIssueRows({
         <ThreadDetailsControl
           key={threadIssueKeyOf(link)}
           part="row"
-          aria-label={`Issue ${link.displayKey}: ${link.title}`}
+          aria-label={t("Issue {key}: {title}", {
+            key: link.displayKey,
+            title: link.title,
+          })}
           onClick={(event) => onOpenLink(event, link)}
         >
           <IssueGlyph.issue aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />

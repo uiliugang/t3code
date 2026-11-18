@@ -7,6 +7,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { SelectionRow } from "../../components/ui/SelectionRow";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { PullRequestSearchSheet } from "../pull-requests/PullRequestSearchSheet";
 
@@ -33,13 +34,15 @@ export function IssueCandidatesSheet(props: {
   readonly truncated: boolean;
   readonly onToggle: (key: string) => void;
 }) {
+  const t = useUiTranslation();
+  const labels = props.noun === "labels";
   const searching = props.query.trim().length > 0;
   return (
     <PullRequestSearchSheet
       title={props.title}
-      placeholder={`Search ${props.noun}`}
-      closeAccessibilityLabel={`Close ${props.title.toLowerCase()}`}
-      clearAccessibilityLabel="Clear search"
+      placeholder={labels ? t("Search labels") : t("Search people")}
+      closeAccessibilityLabel={t("Close {title}", { title: props.title.toLowerCase() })}
+      clearAccessibilityLabel={t("Clear search")}
       query={props.query}
       onQueryChange={props.onQueryChange}
     >
@@ -63,7 +66,7 @@ export function IssueCandidatesSheet(props: {
               <View className="items-start gap-2 pb-3">
                 <Text className="text-xs text-foreground-muted">{props.notice}</Text>
                 {props.loadError && props.candidates.length > 0 ? (
-                  <Button label="Retry" size="compact" onPress={props.onRetry} />
+                  <Button label={t("Retry")} size="compact" onPress={props.onRetry} />
                 ) : null}
               </View>
             ) : undefined
@@ -89,27 +92,35 @@ export function IssueCandidatesSheet(props: {
                 <EmptyState
                   title={
                     props.loadError
-                      ? `Couldn't load ${props.noun}`
+                      ? labels
+                        ? t("Couldn't load labels")
+                        : t("Couldn't load people")
                       : searching
-                        ? `No matching ${props.noun}`
-                        : props.noun === "labels"
-                          ? "This tracker has no labels"
-                          : "Nobody can be assigned here"
+                        ? labels
+                          ? t("No matching labels")
+                          : t("No matching people")
+                        : labels
+                          ? t("This tracker has no labels")
+                          : t("Nobody can be assigned here")
                   }
                   detail={
                     props.loadError ??
-                    (searching ? "Try another name." : "Add them on the tracker to use them here.")
+                    (searching
+                      ? t("Try another name.")
+                      : t("Add them on the tracker to use them here."))
                   }
                   variant="plain"
                 />
-                {props.loadError ? <Button label="Retry" onPress={props.onRetry} /> : null}
+                {props.loadError ? <Button label={t("Retry")} onPress={props.onRetry} /> : null}
               </View>
             )
           }
           ListFooterComponent={
             props.truncated ? (
               <Text className="py-4 text-xs text-foreground-muted">
-                More {props.noun} exist than are listed here.
+                {labels
+                  ? t("More labels exist than are listed here.")
+                  : t("More people exist than are listed here.")}
               </Text>
             ) : undefined
           }

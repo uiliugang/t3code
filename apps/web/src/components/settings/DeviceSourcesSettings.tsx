@@ -29,7 +29,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
-import { incompleteListings } from "../device/DeviceSetup";
+import { incompleteListings } from "../device/deviceSetupStatus";
 import { DeviceHostEditor } from "./DeviceHostEditor";
 import { updateDeviceHosts, groupDeviceHosts } from "./deviceHostsSettings.logic";
 import { EasDeviceHostEditor } from "./EasDeviceHostEditor";

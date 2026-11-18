@@ -104,9 +104,9 @@ export function V2LifecycleRow(props: {
     const relatedThreadId = item.source.type === "run" ? item.source.threadId : item.targetThreadId;
     return (
       <TimelineSystemDivider
-        label={item.source.type === "run" ? "Forked from conversation" : "Conversation fork"}
+        label={item.source.type === "run" ? t("Forked from conversation") : t("Conversation fork")}
         icon={GitForkIcon}
-        actionLabel={item.source.type === "run" ? "Open source conversation" : "Open fork"}
+        actionLabel={item.source.type === "run" ? t("Open source conversation") : t("Open fork")}
         onAction={() => props.onOpenThread(relatedThreadId)}
       />
     );
@@ -122,15 +122,15 @@ export function V2LifecycleRow(props: {
             <MessageSquareIcon className="size-4 text-secondary-label" aria-hidden />
           </span>
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {item.title ?? "Created thread"}
+            {item.title ?? t("Created thread")}
           </span>
           <Button
             size="xs"
             variant="outline"
-            aria-label={`Open ${item.title ?? "created thread"}`}
+            aria-label={t("Open {title}", { title: item.title ?? t("created thread") })}
             onClick={() => props.onOpenThread(item.targetThreadId)}
           >
-            Open chat
+            {t("Open chat")}
           </Button>
         </div>
       );
@@ -139,13 +139,18 @@ export function V2LifecycleRow(props: {
       <WorkLogRow
         data-v2-item-type={item.type}
         icon={<T3Wordmark className="size-4 text-icon-muted" aria-hidden />}
-        label={<>Created thread{item.title ? ` · ${item.title}` : ""}</>}
+        label={
+          <>
+            {t("Created thread")}
+            {item.title ? ` · ${item.title}` : ""}
+          </>
+        }
         trailing={
           <InlineButton
-            aria-label={`Open ${item.title ?? "created thread"}`}
+            aria-label={t("Open {title}", { title: item.title ?? t("created thread") })}
             onClick={() => props.onOpenThread(item.targetThreadId)}
           >
-            Open chat
+            {t("Open chat")}
           </InlineButton>
         }
       />
@@ -417,6 +422,7 @@ function SubagentTimelineLink(props: {
     readonly timestamp: string;
   };
 }) {
+  const t = useUiTranslation();
   const agent = useAtomValue(
     environmentThreadDetails.threadAtom(props.parentRef),
     (thread) => thread?.projection.subagents.find((agent) => agent.id === props.subagentId) ?? null,
@@ -438,7 +444,7 @@ function SubagentTimelineLink(props: {
         : null;
   const liveStatus = agent?.status ?? props.status;
   const status = props.event ? props.event.status : liveStatus;
-  const statusLabel = props.event?.label ?? subagentStatusVisual(liveStatus).label;
+  const statusLabel = props.event?.label ?? t(subagentStatusVisual(liveStatus).label);
   const result = (agent?.result ?? props.result)?.trim();
   const progress = (agent?.progress ?? props.progress)?.trim();
   const settled = SETTLED_SUBAGENT_STATUSES.has(status ?? liveStatus);
@@ -516,7 +522,7 @@ function SubagentTimelineLink(props: {
             <button
               type="button"
               data-v2-item-type="subagent"
-              aria-label={`Open ${props.title}`}
+              aria-label={t("Open {title}", { title: props.title })}
               aria-description={statusLabel}
               onClick={open}
               className={cn(
@@ -600,7 +606,8 @@ function EnvironmentHandoffRow({
 
 /** Marks where `/clear` or an automation started a new provider session in this thread. */
 export function FreshSessionRow() {
-  return <TimelineSystemDivider label="New session" icon={EraserIcon} />;
+  const t = useUiTranslation();
+  return <TimelineSystemDivider label={t("New session")} icon={EraserIcon} />;
 }
 
 /** A same-harness model or effort change. Shows only what changed. */

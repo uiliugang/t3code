@@ -377,7 +377,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                   <SelectValue>
                     {mixedPermissions
                       ? t("Mixed")
-                      : runtimeModeConfig[settings.defaultRuntimeMode].label}
+                      : t(runtimeModeConfig[settings.defaultRuntimeMode].label)}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -400,10 +400,10 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                         <div className="grid gap-0.5">
                           <span className="inline-flex items-center gap-1.5 font-medium">
                             <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                            {option.label}
+                            {t(option.label)}
                           </span>
                           <span className="text-xs leading-4 text-muted-foreground">
-                            {managedReason ?? option.description}
+                            {managedReason ?? t(option.description)}
                           </span>
                         </div>
                       </SelectItem>

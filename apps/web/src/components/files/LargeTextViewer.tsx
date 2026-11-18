@@ -1,15 +1,24 @@
-import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { FileSurfaceFailure, FileSurfaceLoading, FileSurfaceNotice } from "./fileSurfaceChrome";
 import { PREVIEW_PAGE_ROWS, type TextPreviewResult } from "./largeTextProtocol";
 import VirtualTablePreview from "./VirtualTablePreview";
 
 const FIRST_SCREEN_BYTES = 16 * 1024;
 
-function countLabel(count: number, noun: string) {
-  return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
+function countLabel(t: UiTranslator, count: number, one: string, many: string) {
+  return t(count === 1 ? one : many, { count: count.toLocaleString() });
 }
 
 function firstScreen(text: string, delimiter: "," | "\t" | null, complete: boolean) {
@@ -43,6 +52,8 @@ export default function LargeTextViewer(props: {
   /** A preview's own wrap toggle; omitted follows the word wrap setting. */
   readonly wordWrap?: boolean;
 }) {
+  const t = useUiTranslation();
+  const translate = useEffectEvent(t);
   const [meta, setMeta] = useState<Extract<TextPreviewResult, { type: "meta" }> | null>(null);
   const [pages, setPages] = useState(new Map<number, string[][]>());
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +143,7 @@ export default function LargeTextViewer(props: {
       engine.addEventListener("error", () => {
         copyPending.current?.reject(new Error("The text viewer stopped."));
         copyPending.current = null;
-        setError("Could not load the text viewer. Close the file and try again.");
+        setError(translate("Could not load the text viewer. Close the file and try again."));
       });
       engine.postMessage(
         {
@@ -221,20 +232,20 @@ export default function LargeTextViewer(props: {
         role="status"
       >
         {props.delimiter
-          ? `${countLabel(Math.max(0, meta.count - 1), "row")} · ${countLabel(meta.count ? meta.columns : 0, "column")}`
-          : countLabel(meta.count, "line")}
+          ? `${countLabel(t, Math.max(0, meta.count - 1), "{count} row", "{count} rows")} · ${countLabel(t, meta.count ? meta.columns : 0, "{count} column", "{count} columns")}`
+          : countLabel(t, meta.count, "{count} line", "{count} lines")}
         {meta.complete && meta.sizeBytes !== undefined
-          ? ` · ${meta.sizeBytes === 0 ? "0 bytes" : formatAttachmentSize(meta.sizeBytes)}`
-          : " · Indexing…"}
+          ? ` · ${meta.sizeBytes === 0 ? t("0 bytes") : formatAttachmentSize(meta.sizeBytes)}`
+          : ` · ${t("Indexing…")}`}
       </div>
       {!meta.complete ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
-          <FileSurfaceNotice>Loading the rest of the file…</FileSurfaceNotice>
+          <FileSurfaceNotice>{t("Loading the rest of the file…")}</FileSurfaceNotice>
         </div>
       ) : null}
       {meta.columns === 1024 ? (
         <FileSurfaceNotice>
-          Showing the first 1,024 columns. Source and Save retain every column.
+          {t("Showing the first 1,024 columns. Source and Save retain every column.")}
         </FileSurfaceNotice>
       ) : null}
       {meta.count > 0 ? (
@@ -256,7 +267,7 @@ export default function LargeTextViewer(props: {
         />
       ) : (
         <div className="flex flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
-          This file is empty.
+          {t("This file is empty.")}
         </div>
       )}
     </div>

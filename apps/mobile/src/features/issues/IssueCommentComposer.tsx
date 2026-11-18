@@ -17,6 +17,7 @@ import {
 } from "../../components/ComposerSurface";
 import { ComposerActionButton, ComposerToolbarRow } from "../../components/ComposerToolbar";
 import { AppText as Text } from "../../components/ui/AppText";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useComposerTextRole } from "../settings/appearance/useScaledTextRole";
 import {
   ComposerDictationCancelAction,
@@ -50,6 +51,7 @@ export function IssueCommentComposer(props: {
   readonly onHeightChange: (height: number) => void;
   readonly onFocusChange: (focused: boolean) => void;
 }) {
+  const t = useUiTranslation();
   const editorRef = useRef<ComposerEditorHandle>(null);
   const [draft, setDraft] = useState("");
   // Read by dictation and by send after an await, when the render's `draft` may be stale.
@@ -100,7 +102,7 @@ export function IssueCommentComposer(props: {
   const sendButton = (
     <ComposerActionButton
       size={chrome.controlSize}
-      accessibilityLabel={props.posting ? "Posting comment" : "Post comment"}
+      accessibilityLabel={props.posting ? t("Posting comment") : t("Post comment")}
       icon="arrow.up"
       variant="primary"
       disabled={!canSend}
@@ -180,7 +182,7 @@ export function IssueCommentComposer(props: {
                         if (!locked) changeDraft(text);
                       }}
                       onSelectionChange={setSelection}
-                      placeholder="Leave a comment"
+                      placeholder={t("Leave a comment")}
                       onFocus={() => {
                         setFocused(true);
                         props.onFocusChange(true);
@@ -190,7 +192,7 @@ export function IssueCommentComposer(props: {
                         props.onFocusChange(false);
                       }}
                       onSubmit={() => void send()}
-                      submitTitle="Comment"
+                      submitTitle={t("Comment")}
                       {...compactEditor.editorProps}
                       textStyle={textStyle}
                     />

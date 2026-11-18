@@ -1,6 +1,7 @@
 import { InfoIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerBanner, type ComposerBannerVariant } from "./ComposerBanner";
@@ -70,6 +71,7 @@ export function NoticeText({
   readonly className: string;
   readonly detailsLabel: string;
 }) {
+  const t = useUiTranslation();
   const textRef = useRef<HTMLSpanElement>(null);
   const detailsRef = useRef<HTMLButtonElement>(null);
   const [detailsAtWidth, setDetailsAtWidth] = useState<number | null>(null);
@@ -150,7 +152,7 @@ export function NoticeText({
             <InfoIcon />
           </PopoverTrigger>
           <PopoverPopup
-            aria-label="Notice details"
+            aria-label={t("Notice details")}
             tooltipStyle
             side="top"
             className="max-w-[min(30rem,calc(100vw-2rem))] whitespace-normal wrap-anywhere [--inline-button-text-align:start] [--inline-button-white-space:normal] [&_[data-slot=inline-button]]:max-w-full"
