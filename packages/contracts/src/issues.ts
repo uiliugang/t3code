@@ -109,7 +109,7 @@ export const RequirementIssueSetStateInput = Schema.Struct({
 export class RequirementIssueError extends Schema.TaggedError<
   RequirementIssueError,
   { readonly brand: unique symbol }
->()("RequirementIssueError", {
+>()("IssueError", {
   operation: Schema.String,
   reason: Schema.Literals([
     "unavailable",

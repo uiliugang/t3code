@@ -45,6 +45,10 @@ import {
 } from "../threadRoutes";
 import { toastManager } from "./ui/toast";
 import { readIssueListPreferences } from "./issue/issueListPreferences";
+import {
+  patchRequirementsSearch,
+  requirementSelection,
+} from "./requirements/requirementPanelSearch";
 
 const PREVIEW_FORWARDED_COMMANDS = [
   "workspace.focusNext",
@@ -149,7 +153,14 @@ export function ReopenClosedViewShortcut() {
     } else if (globalIssues) {
       await navigate({ to: "/issues", search: readIssueListPreferences() });
     } else if (globalRequirements) {
-      await navigate({ to: "/requirements" });
+      const selected = selectSelectedRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        ref,
+      );
+      await navigate({
+        to: "/requirements",
+        search: (previous) => patchRequirementsSearch(previous, requirementSelection(selected)),
+      });
     } else {
       const draftId = thread === null ? drafts.getDraftIdByRef(ref) : null;
       if (draftId !== null)

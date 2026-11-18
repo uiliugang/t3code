@@ -136,7 +136,7 @@ export function IssueCreateDialog({
         failure &&
         typeof failure === "object" &&
         "_tag" in failure &&
-        failure._tag === "RequirementIssueError" &&
+        failure._tag === "IssueError" &&
         "fields" in failure &&
         Array.isArray(failure.fields)
       )

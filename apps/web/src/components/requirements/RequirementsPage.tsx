@@ -35,7 +35,7 @@ import {
   ListIcon,
   LayoutGridIcon,
 } from "lucide-react";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -67,7 +67,14 @@ import { RightPanelTabs } from "../RightPanelTabs";
 import { PanelLayoutControls } from "../chat/PanelLayoutControls";
 import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { isElectron } from "../../env";
-import { shortcutLabelForCommand } from "../../keybindings";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import {
+  patchRequirementsSearch,
+  requirementSelection,
+  type RequirementSearchPatch,
+} from "./requirementPanelSearch";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
 import { isTerminalFocused } from "../../lib/terminalFocus";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import {
@@ -76,7 +83,6 @@ import {
   selectSelectedRightPanelSurface,
   selectThreadRightPanelState,
   useRightPanelStore,
-  type PullRequestSurface,
   type RightPanelSurface,
 } from "../../rightPanelStore";
 import {
@@ -112,7 +118,6 @@ const permissionAtoms = createRequirementPermissionAtoms({
   discoverWorkItems: serverEnvironment.discoverWorkItems.permissionAtom,
 });
 const CollapsedGroups = Schema.Array(Schema.String);
-type SearchPatch = { [Key in keyof RequirementsSearch]?: RequirementsSearch[Key] | undefined };
 const EMPTY_SET: ReadonlySet<string> = new Set();
 const EMPTY_RECORD = {} as const;
 const EMPTY_MAP = new Map<string, string>();
@@ -150,12 +155,7 @@ export function RequirementsPage() {
         search={search}
         updateSearch={(patch) => {
           void navigate({
-            search: (previous) =>
-              Object.fromEntries(
-                Object.entries({ ...previous, ...patch }).filter(
-                  ([, value]) => value !== undefined,
-                ),
-              ) as RequirementsSearch,
+            search: (previous) => patchRequirementsSearch(previous, patch),
           });
         }}
       />
@@ -187,7 +187,7 @@ export function RequirementBoard({
   environmentId: NonNullable<ReturnType<typeof usePrimaryEnvironmentId>>;
   panelRef?: ScopedThreadRef;
   search: RequirementsSearch;
-  updateSearch: (patch: SearchPatch) => void;
+  updateSearch: (patch: RequirementSearchPatch) => void;
   compact?: boolean;
 }) {
   const t = useUiTranslation();
@@ -206,19 +206,8 @@ export function RequirementBoard({
     usesStandalonePanel && isRequirementPanelSurface(selectedRightPanelSurface)
       ? selectedRightPanelSurface
       : null;
+  const narrow = useMediaQuery("max-sm");
   const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
-  const presenceValue = {
-    activeSurface: panelSurface,
-    surfaces: rightPanelState.surfaces.filter(isRequirementPanelSurface),
-  };
-  const presence = usePanelPresence(
-    usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null,
-    presenceValue,
-    panelAnimationsActive,
-    rightPanelRef.threadId,
-    durationMs,
-  );
-  const renderedSurface = presence.value?.activeSurface ?? null;
   const { environments } = useEnvironments();
   const onlineEnvironments = environments.filter(
     (environment) => environment.connection.phase === "connected",
@@ -284,6 +273,32 @@ export function RequirementBoard({
     ),
   );
   const entries = data.entries;
+  const presenceValue = {
+    activeSurface: panelSurface,
+    surfaces: rightPanelState.surfaces.filter(isRequirementPanelSurface).map((surface) => {
+      if (surface.kind === "pull-request" || surface.title) return surface;
+      const entry = entries.find(
+        (entry) =>
+          entry.environmentId === surface.environmentId &&
+          (surface.kind === "work-item"
+            ? entry.kind === "local" && entry.item.id === surface.workItemId
+            : entry.kind === "issue" &&
+              entry.projectId === surface.projectId &&
+              entry.provider === surface.provider &&
+              entry.scope === surface.scope &&
+              entry.issue.id === surface.issueId),
+      );
+      return entry ? { ...surface, title: entry.title } : surface;
+    }),
+  };
+  const presence = usePanelPresence(
+    usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null,
+    presenceValue,
+    panelAnimationsActive,
+    rightPanelRef.threadId,
+    durationMs,
+  );
+  const renderedSurface = presence.value?.activeSurface ?? null;
   const errors = [
     ...data.errors.map((error) => `${environmentLabel(error.environmentId)}: ${error.message}`),
     ...data.failures.map(
@@ -310,126 +325,72 @@ export function RequirementBoard({
   const refresh = () => {
     for (const atom of data.atoms) registry.refresh(atom);
   };
-  const clearedSelection: SearchPatch = {
-    detailEnvironmentId: undefined,
-    issueId: undefined,
-    issueProjectId: undefined,
-    issueScope: undefined,
-    issueProvider: undefined,
-    workItemId: undefined,
-  };
-  const selectSurfaceInUrl = (surface: RightPanelSurface | null) => {
-    if (surface?.kind === "work-item") {
+  const selectSurfaceInUrl = (surface: RightPanelSurface | null) =>
+    updateSearch(requirementSelection(surface));
+  const selectOpened = (patch: RequirementSearchPatch = {}) => {
+    if (usesStandalonePanel)
       updateSearch({
-        detailEnvironmentId:
-          (surface.environmentId as EnvironmentId | undefined) ?? fallbackEnvironmentId,
-        issueId: undefined,
-        issueProjectId: undefined,
-        issueScope: undefined,
-        issueProvider: undefined,
-        workItemId: surface.workItemId as WorkItemId,
+        ...requirementSelection(
+          selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, rightPanelRef),
+        ),
+        ...patch,
       });
-      return;
-    }
-    if (surface?.kind === "requirement-issue") {
-      updateSearch({
-        detailEnvironmentId:
-          (surface.environmentId as EnvironmentId | undefined) ?? fallbackEnvironmentId,
-        workItemId: undefined,
-        issueId: surface.issueId,
-        issueProjectId: surface.projectId as ProjectId,
-        issueScope: surface.scope,
-        issueProvider: surface.provider,
-      });
-      return;
-    }
-    updateSearch(clearedSelection);
   };
   const open = (entry: EnvironmentRequirementEntry) => {
-    if (entry.kind === "local") {
-      useRightPanelStore.getState().openWorkItem(rightPanelRef, {
+    const panels = useRightPanelStore.getState();
+    if (entry.kind === "local")
+      panels.openWorkItem(rightPanelRef, {
         environmentId: entry.environmentId,
         workItemId: entry.item.id,
         title: entry.title,
       });
-      if (!compact) {
-        updateSearch({
-          detailEnvironmentId: entry.environmentId,
-          issueId: undefined,
-          issueProjectId: undefined,
-          issueScope: undefined,
-          workItemId: entry.item.id,
-        });
-      }
-      return;
-    }
-    useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
-      environmentId: entry.environmentId,
-      projectId: entry.projectId,
-      provider: entry.provider,
-      ...(entry.scope ? { scope: entry.scope } : {}),
-      issueId: entry.issue.id,
-      title: entry.title,
-    });
-    if (!compact) {
-      updateSearch({
-        detailEnvironmentId: entry.environmentId,
-        workItemId: undefined,
+    else
+      panels.openRequirementIssue(rightPanelRef, {
+        environmentId: entry.environmentId,
+        projectId: entry.projectId,
+        provider: entry.provider,
+        ...(entry.scope ? { scope: entry.scope } : {}),
         issueId: entry.issue.id,
-        issueProjectId: entry.projectId,
-        issueScope: entry.scope,
-        issueProvider: entry.provider,
+        title: entry.title,
       });
-    }
+    selectOpened();
   };
-  // Open URL-linked requirement items in the shared tabbed panel on initial entry or navigation.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs URL deep-linked work item or issue into the right panel store
+  const { workItemId, issueId, issueProjectId, issueScope, pullRequest } = search;
+  const issueProvider = search.issueProvider ?? search.provider ?? "meituan";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reflects browser history and deep links in the standalone panel
   useEffect(() => {
     if (!usesStandalonePanel) return;
-    if (search.workItemId) {
-      const title = entries.find(
-        (entry) =>
-          entry.kind === "local" &&
-          entry.environmentId === detailEnvironmentId &&
-          entry.item.id === search.workItemId,
-      )?.title;
-      useRightPanelStore.getState().openWorkItem(rightPanelRef, {
+    const panels = useRightPanelStore.getState();
+    if (workItemId)
+      panels.openWorkItem(rightPanelRef, { environmentId: detailEnvironmentId, workItemId });
+    else if (issueId && issueProjectId)
+      panels.openRequirementIssue(rightPanelRef, {
         environmentId: detailEnvironmentId,
-        workItemId: search.workItemId,
-        ...(title ? { title } : {}),
+        projectId: issueProjectId,
+        provider: issueProvider,
+        ...(issueScope ? { scope: issueScope } : {}),
+        issueId,
       });
-      return;
-    }
-    if (search.issueId && search.issueProjectId) {
-      const provider = search.issueProvider ?? search.provider ?? "meituan";
-      const title = entries.find(
-        (entry) =>
-          entry.kind === "issue" &&
-          entry.environmentId === detailEnvironmentId &&
-          entry.projectId === search.issueProjectId &&
-          entry.provider === provider &&
-          entry.issue.id === search.issueId,
-      )?.title;
-      useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
+    else if (pullRequest)
+      panels.openPullRequest(rightPanelRef, {
         environmentId: detailEnvironmentId,
-        projectId: search.issueProjectId,
-        provider,
-        ...(search.issueScope ? { scope: search.issueScope } : {}),
-        issueId: search.issueId,
-        ...(title ? { title } : {}),
+        projectId: pullRequest.projectId,
+        repository: pullRequest.repository,
+        number: pullRequest.number,
+        ...(pullRequest.host ? { host: pullRequest.host } : {}),
       });
-    }
+    else if (selectActiveRightPanelSurface(panels.byThreadKey, rightPanelRef))
+      panels.close(rightPanelRef);
   }, [
     usesStandalonePanel,
     rightPanelRef,
     detailEnvironmentId,
-    search.workItemId,
-    search.issueId,
-    search.issueProjectId,
-    search.issueProvider,
-    search.provider,
-    search.issueScope,
-    entries,
+    workItemId,
+    issueId,
+    issueProjectId,
+    issueScope,
+    issueProvider,
+    pullRequest,
   ]);
   const closeSurface = (surface: RightPanelSurface) => {
     useRightPanelStore.getState().closeSurface(rightPanelRef, surface.id);
@@ -440,7 +401,7 @@ export function RequirementBoard({
   const toggleRightPanel = () => {
     if (rightPanelState.isOpen) {
       useRightPanelStore.getState().close(rightPanelRef);
-      updateSearch(clearedSelection);
+      selectSurfaceInUrl(null);
       return;
     }
     if (panelSurface === null) return;
@@ -471,21 +432,60 @@ export function RequirementBoard({
       workItemId: result.value.item.id,
       title: result.value.item.title,
     });
-    if (!compact) {
-      updateSearch({
-        source: "all",
-        provider: undefined,
-        local: undefined,
-        archived: false,
-        q: undefined,
-        detailEnvironmentId: environmentId,
-        workItemId: result.value.item.id,
-        issueId: undefined,
-      });
-    }
+    selectOpened({
+      source: "all",
+      provider: undefined,
+      local: undefined,
+      archived: false,
+      q: undefined,
+    });
     return true;
   };
   const panelOpen = usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null;
+  const onPanelKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.isComposing || isCommandPaletteOpen() || !panelSurface)
+      return;
+    const command = resolveShortcutCommand(event, keybindings, {
+      context: { ...getShortcutContext(), rightPanelOpen: panelOpen },
+    });
+    if (command !== "rightPanel.toggle" && !(command === "rightPanel.close" && panelOpen)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat) return;
+    if (command === "rightPanel.close") closeSurface(panelSurface);
+    else toggleRightPanel();
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for panel commands on the standalone board; chat owns its own shortcuts
+  useEffect(() => {
+    if (!usesStandalonePanel) return;
+    const handleKey = (event: KeyboardEvent) => onPanelKeyDown(event);
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [usesStandalonePanel]);
+  const panelControls = usesStandalonePanel ? (
+    <div
+      className="flex items-center gap-1 [-webkit-app-region:no-drag]"
+      data-workspace-titlebar-controls
+    >
+      <PanelLayoutControls
+        showTerminalControl={false}
+        showThreadPanelControl={false}
+        terminalAvailable={false}
+        terminalOpen={false}
+        terminalShortcutLabel={null}
+        threadPanelOpen={false}
+        threadPanelPresentation="inline"
+        threadPanelShortcutLabel={null}
+        onToggleThreadPanel={() => undefined}
+        rightPanelAvailable={panelSurface !== null}
+        rightPanelOpen={panelOpen}
+        rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
+        rightPanelUnavailableLabel={t("Select a requirement first")}
+        onToggleTerminal={() => undefined}
+        onToggleRightPanel={toggleRightPanel}
+      />
+    </div>
+  ) : null;
   const panelEnvironmentId =
     (renderedSurface?.environmentId as EnvironmentId | undefined) ?? detailEnvironmentId;
   const renderedIssueProject =
@@ -604,33 +604,7 @@ export function RequirementBoard({
                   setCreatingLocal(projectId);
                 }}
               />
-              {usesStandalonePanel ? (
-                <div
-                  className="flex items-center gap-1 [-webkit-app-region:no-drag]"
-                  data-workspace-titlebar-controls
-                >
-                  <PanelLayoutControls
-                    showTerminalControl={false}
-                    showThreadPanelControl={false}
-                    terminalAvailable={false}
-                    terminalOpen={false}
-                    terminalShortcutLabel={null}
-                    threadPanelOpen={false}
-                    threadPanelPresentation="inline"
-                    threadPanelShortcutLabel={null}
-                    onToggleThreadPanel={() => undefined}
-                    rightPanelAvailable={panelSurface !== null}
-                    rightPanelOpen={panelOpen}
-                    rightPanelShortcutLabel={shortcutLabelForCommand(
-                      keybindings,
-                      "rightPanel.toggle",
-                    )}
-                    rightPanelUnavailableLabel={t("Select a requirement first")}
-                    onToggleTerminal={() => undefined}
-                    onToggleRightPanel={toggleRightPanel}
-                  />
-                </div>
-              ) : null}
+              {(!narrow || !panelOpen) && panelControls}
             </div>
           </WorkspacePageHeader>
           <div className="flex shrink-0 items-center gap-1.5 px-5 pt-3 pb-2">
@@ -661,12 +635,7 @@ export function RequirementBoard({
                         updateSearch({
                           environmentId: environment.environmentId,
                           projectId: undefined,
-                          detailEnvironmentId: undefined,
-                          issueId: undefined,
-                          issueProjectId: undefined,
-                          issueProvider: undefined,
-                          issueScope: undefined,
-                          workItemId: undefined,
+                          ...requirementSelection(null),
                         })
                       }
                     >
@@ -723,8 +692,7 @@ export function RequirementBoard({
                               provider: undefined,
                               local: undefined,
                               assignee: undefined,
-                              issueId: undefined,
-                              workItemId: undefined,
+                              ...requirementSelection(null),
                             })
                           }
                         >
@@ -1118,7 +1086,8 @@ export function RequirementBoard({
         </div>
         {presence.present && renderedSurface ? (
           <RightPanelTabs
-            mode="inline"
+            mode={narrow ? "sheet" : "inline"}
+            layoutControls={narrow ? panelControls : undefined}
             open={rightPanelState.isOpen}
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
@@ -1204,12 +1173,10 @@ export function RequirementBoard({
                 shortcutsEnabled={panelSurface?.id === renderedSurface.id}
                 environmentId={panelEnvironmentId}
                 reference={{
-                  projectId: (renderedSurface as PullRequestSurface).projectId as ProjectId,
-                  repository: (renderedSurface as PullRequestSurface).repository,
-                  number: (renderedSurface as PullRequestSurface).number,
-                  ...((renderedSurface as PullRequestSurface).host
-                    ? { host: (renderedSurface as PullRequestSurface).host }
-                    : {}),
+                  projectId: renderedSurface.projectId as ProjectId,
+                  repository: renderedSurface.repository,
+                  number: renderedSurface.number,
+                  ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
                 }}
               />
             )}
@@ -1238,21 +1205,13 @@ export function RequirementBoard({
                 issueId: issue.id,
                 title: issue.title,
               });
-              if (!compact) {
-                updateSearch({
-                  detailEnvironmentId: environmentId,
-                  workItemId: undefined,
-                  issueId: issue.id,
-                  issueProjectId: projectId,
-                  issueProvider: creatingIssue,
-                  issueScope,
-                  source: "all",
-                  provider: undefined,
-                  local: undefined,
-                  archived: false,
-                  q: undefined,
-                });
-              }
+              selectOpened({
+                source: "all",
+                provider: undefined,
+                local: undefined,
+                archived: false,
+                q: undefined,
+              });
             }}
           />
         ) : null}

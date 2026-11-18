@@ -5,6 +5,10 @@ import { userEvent } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
 
 const state = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock(import("~/hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => state.send }));
 vi.mock("~/state/pullRequests", () => ({ pullRequestEnvironment: { setReaction: {} } }));
 

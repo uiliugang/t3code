@@ -542,7 +542,7 @@ it("keeps an unsent reply when the appearance switches between light and dark", 
     },
   };
   const container = document.createElement("div");
-  container.className = "flex h-[700px] w-[900px]";
+  container.className = "h-[700px] w-[900px]";
   await using screen = await render(
     <PullRequestCodeTab
       scrollerRef={() => {}}

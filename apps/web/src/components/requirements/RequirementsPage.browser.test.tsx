@@ -1,11 +1,20 @@
 import "~/index.css";
 import { RegistryContext } from "@effect/atom-react";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 const mocks = vi.hoisted(() => ({ command: vi.fn() }));
+vi.mock(import("~/browser/useOpenLink"), () => ({ useOpenLink: () => vi.fn() }));
 vi.mock(import("~/hooks/useUiTranslation"), () => ({
   useUiTranslation: () => (message: string) => message,
 }));
@@ -24,7 +33,8 @@ vi.mock(import("~/state/environments"), () => ({
       })),
     }) as never,
 }));
-vi.mock(import("~/state/entities"), () => ({
+vi.mock(import("~/state/entities"), async (original) => ({
+  ...(await original()),
   useProjects: () =>
     ["local", "remote"].map((environmentId) => ({
       environmentId,
@@ -36,7 +46,18 @@ vi.mock(import("~/state/entities"), () => ({
   useQuietThreadShell: () => null,
   useThreadShells: () => [],
   useServerConfigs: () => new Map(),
-  readProjects: () => [],
+  readProjects: () =>
+    [
+      {
+        id: "project",
+        environmentId: "local",
+        repositoryIdentity: {
+          provider: "github",
+          canonicalKey: "github.com/acme/app",
+          locator: { remoteUrl: "https://github.com/acme/app.git" },
+        },
+      },
+    ] as never,
   readProject: () => null,
   readThreadShell: () => null,
 }));
@@ -65,8 +86,13 @@ vi.mock(import("~/state/server"), async () => {
     ),
   );
   return {
-    primaryServerKeybindingsAtom: Atom.make(compileResolvedKeybindingsConfig([])),
-    environmentServerConfigsAtom: Atom.make(new Map()),
+    primaryServerKeybindingsAtom: Atom.make(
+      compileResolvedKeybindingsConfig([
+        { key: "alt+b", command: "rightPanel.toggle" },
+        { key: "alt+w", command: "rightPanel.close" },
+      ]),
+    ),
+    environmentServerConfigsAtom: Atom.make(new Map([["local", {}]])),
     themeServerEnvironmentThemesAtom: Atom.make([]),
     themeServerSettingsAtom: Atom.make(null),
     primaryServerSettingsAtom: Atom.make(null),
@@ -99,9 +125,20 @@ vi.mock(
   () =>
     ({
       WorkItemEditor: () => null,
-      WorkItemDetailPanel: ({ id }: { id: string }) => (
-        <div data-testid={`work-item-detail:${id}`}>Work item {id}</div>
-      ),
+      WorkItemDetailPanel: ({ id }: { id: string }) => {
+        const open = useOpenChangeRequestLink(undefined, REQUIREMENTS_PANEL_REF);
+        const url = "https://github.com/acme/app/pull/7";
+        return (
+          <div data-testid={`work-item-detail:${id}`}>
+            <a
+              href={url}
+              onClick={(event) => open(event, url, undefined, EnvironmentId.make("local"))}
+            >
+              Linked PR
+            </a>
+          </div>
+        );
+      },
       ThreadWorkItemsPanel: () => null,
     }) as never,
 );
@@ -115,25 +152,31 @@ vi.mock(
   import("../pullRequest/PullRequestDetailPanel"),
   () =>
     ({
-      PullRequestDetailPanel: () => null,
+      PullRequestDetailPanel: () => <div>Linked PR detail</div>,
     }) as never,
 );
 vi.mock(
   import("../ui/sidebar"),
   () =>
     ({
-      SidebarInset: () => null,
+      SidebarInset: ({ children }: { children: ReactNode }) => (
+        <main className="flex h-dvh">{children}</main>
+      ),
       useMobileSidebarSheetMounted: () => false,
     }) as never,
 );
-vi.mock(import("../ui/toast"), () => ({ toastManager: { add: vi.fn() } }) as never);
+vi.mock(
+  import("../ui/toast"),
+  () => ({ stackedThreadToast: vi.fn(), toastManager: { add: vi.fn() } }) as never,
+);
 
 import { act, render } from "../../../test/render";
 import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "~/rightPanelStore";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
-import { RequirementBoard } from "./RequirementsPage";
-import type { RequirementsSearch } from "~/routes/_chat.requirements";
+import { RequirementBoard, RequirementsPage } from "./RequirementsPage";
+import { Route as requirementsRoute, type RequirementsSearch } from "~/routes/_chat.requirements";
+import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 
 function setup() {
   useRightPanelStore.getState().closeAllSurfaces(REQUIREMENTS_PANEL_REF);
@@ -345,11 +388,24 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
     input: { provider: "github", assignee: "me", query: "", page: 1 },
   } as never) as Atom.Writable<unknown>;
   await page.viewport(1280, 800);
-  const updateSearch = vi.fn();
+  const root = createRootRoute();
+  const chat = createRoute({ getParentRoute: () => root, id: "_chat" });
+  const requirements = createRoute({
+    getParentRoute: () => chat,
+    path: "requirements",
+    validateSearch: requirementsRoute.options.validateSearch,
+    component: RequirementsPage,
+  });
+  const history = createMemoryHistory({ initialEntries: ["/requirements?view=list"] });
+  const router = createRouter({
+    routeTree: root.addChildren([chat.addChildren([requirements])]),
+    history,
+  });
   await using screen = await render(
-    <div style={{ width: "1280px", height: "800px", display: "flex" }}>
-      {fixture.board({}, updateSearch)}
-    </div>,
+    <RegistryContext.Provider value={fixture.registry}>
+      <RouterProvider router={router} />
+    </RegistryContext.Provider>,
+    { router: false }, // The fixture uses the requirements route and its real search validation.
   );
   await act(async () => {
     fixture.registry.set(
@@ -421,9 +477,23 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
 
   await screen.getByRole("button", { name: /Alpha requirement/ }).click();
   await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
-  expect(updateSearch).toHaveBeenLastCalledWith(
-    expect.objectContaining({ workItemId: "item-alpha" }),
+  expect(router.state.location.search).toMatchObject({ workItemId: "item-alpha", view: "list" });
+  await act(() => history.back());
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).not.toBeInTheDocument();
+  await act(() => history.forward());
+  await screen.getByRole("link", { name: "Linked PR" }).click();
+  await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
+  expect(router.state.location.search).toMatchObject({ pullRequest: { number: 7 }, view: "list" });
+  const listed = fixture.registry.get(issuesAtom);
+  await act(() =>
+    fixture.registry.set(
+      issuesAtom,
+      AsyncResult.waiting(listed as AsyncResult.AsyncResult<unknown>),
+    ),
   );
+  await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
+  await act(() => history.back());
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
 
   await screen.getByRole("button", { name: /Beta requirement/ }).click();
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
@@ -443,5 +513,18 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
 
   // Close Alpha requirement tab and verify fallback tab stays open
   await page.getByRole("button", { name: "Close Alpha requirement" }).click();
+  await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
+  await userEvent.keyboard("{Alt>}w{/Alt}");
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
+  await page.viewport(600, 800);
+  await screen.getByRole("button", { name: "Toggle right panel" }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
+  await userEvent.keyboard("{Alt>}b{/Alt}");
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
+  expect(router.state.location.search).toMatchObject({ workItemId: "item-beta", view: "list" });
+  await page.viewport(1280, 800);
+  await screen.getByRole("button", { name: "Environment", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "remote", exact: true }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
+  expect(router.state.location.search).toMatchObject({ environmentId: "remote", view: "list" });
 });

@@ -7,8 +7,46 @@ import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
 import { clientRpcRequiredScopes } from "./clientRpcPermissions.ts";
 import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "./auth.ts";
+import { RequirementIssueError } from "./issues.ts";
+
+const decodeIssueError = Schema.decodeUnknownSync(RequirementIssueError);
+const encodeIssueError = Schema.encodeSync(RequirementIssueError);
 
 describe("WebSocket RPC contracts", () => {
+  it("keeps shipped requirement clients and servers on the same wire contract", () => {
+    const target = { provider: "github", projectId: "project" };
+    for (const [wire, current, payload] of [
+      [
+        "issues.list",
+        WS_METHODS.requirementIssuesList,
+        { ...target, assignee: "me", query: "", page: 1 },
+      ],
+      [
+        "issues.create",
+        WS_METHODS.requirementIssuesCreate,
+        {
+          ...target,
+          type: "REQUIREMENT",
+          subtype: "",
+          title: "Fix",
+          body: "",
+          fields: {},
+          assignees: [],
+        },
+      ],
+      [
+        "issues.setState",
+        WS_METHODS.requirementIssuesSetState,
+        { ...target, id: "42", state: "done" },
+      ],
+    ] as const) {
+      expect(current).toBe(wire);
+      const decodePayload = Schema.decodeUnknownSync(WsRpcGroup.requests.get(wire)!.payloadSchema);
+      expect(decodePayload(payload)).toEqual(payload);
+    }
+    const failure = { _tag: "IssueError", operation: "create", reason: "validation" };
+    expect(encodeIssueError(decodeIssueError(failure))).toEqual(failure);
+  });
   it("requires both permissions for delivery writes without blocking local task updates", () => {
     const both = [AuthSourceControlWriteScope, AuthOrchestrationOperateScope];
     expect(clientRpcRequiredScopes(WS_METHODS.workItemsCreateIssue, undefined)).toEqual(both);
