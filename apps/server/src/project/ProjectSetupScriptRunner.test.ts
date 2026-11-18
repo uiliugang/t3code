@@ -244,12 +244,40 @@ describe("ProjectSetupScriptRunner", () => {
     }),
   );
 
-  it.effect("types into a quiet shell that has no line editor", () =>
-    Effect.gen(function* () {
-      const { writes } = yield* setup();
-      yield* TestClock.adjust("3 seconds");
-      expect(yield* Queue.take(writes)).toContain("vp i");
-    }),
+  it.effect.each([false, true])(
+    "types into a quiet shell without letting metadata postpone readiness (initial output: %s)",
+    (initialOutput) =>
+      Effect.gen(function* () {
+        const { writes, emit } = yield* setup();
+        yield* TestClock.adjust("1 second");
+        if (initialOutput) yield* emit({ ...event, type: "output", data: "% " });
+        yield* emit({
+          ...event,
+          type: "activity",
+          hasRunningSubprocess: false,
+          label: "zsh",
+          cols: 80,
+          rows: 24,
+        });
+        yield* TestClock.adjust("1 second");
+        yield* emit({
+          ...event,
+          type: "activity",
+          hasRunningSubprocess: false,
+          label: "Setup",
+          cols: 120,
+          rows: 30,
+        });
+        yield* emit({ ...event, type: "cleared" });
+        yield* emit({ ...event, type: "output", data: "" });
+        yield* TestClock.adjust("1 second");
+        if (initialOutput) {
+          expect(yield* Queue.size(writes)).toBe(0);
+          yield* TestClock.adjust("1 second");
+        }
+        expect(yield* Queue.size(writes)).toBe(1);
+        expect(yield* Queue.take(writes)).toContain("vp i");
+      }),
   );
 
   it.effect("ignores line editor state restored from an earlier shell", () =>
@@ -268,8 +296,7 @@ describe("ProjectSetupScriptRunner", () => {
       yield* TestClock.adjust("1 minute");
       expect(yield* Queue.size(writes)).toBe(0);
       yield* emit({ ...event, type: "restarted", snapshot: openSnapshot("") });
-      // The restart lands inside a quiet window, so the next full window decides.
-      yield* TestClock.adjust("6 seconds");
+      yield* TestClock.adjust("3 seconds");
       expect(yield* Queue.take(writes)).toContain("vp i");
     }),
   );
