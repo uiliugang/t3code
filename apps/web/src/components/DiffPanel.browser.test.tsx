@@ -115,7 +115,7 @@ vi.mock("~/state/queries", () => ({
 }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => async () => {} }));
 vi.mock("~/editorPreferences", () => ({ useOpenInPreferredEditor: () => async () => {} }));
-vi.mock("~/fileContextMenu", () => ({ useFileContextMenuHandler: () => () => {} }));
+vi.mock("~/fileContextMenu", () => ({ useFileContextMenu: () => ({ show: () => {} }) }));
 vi.mock("~/browser/useOpenLink", () => ({ useOpenLink: () => async () => {} }));
 vi.mock("./diffs/DiffFileTree", () => ({
   DiffFileTree: ({

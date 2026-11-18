@@ -41,9 +41,6 @@ const pathSearch = {
 
 vi.mock("./useDirectoryEntries", () => ({ useDirectoryEntries: () => directory }));
 vi.mock("~/state/queries", () => ({ useProjectPathSearch: () => pathSearch }));
-vi.mock("~/fileContextMenu", () => ({
-  useFileContextMenu: () => ({ buildItems: () => [], activate: () => Promise.resolve() }),
-}));
 vi.mock("~/hooks/useWorkspaceMutationRefresh", () => ({ useWorkspaceMutationRefresh: () => {} }));
 
 function findTreeRow(path: string): HTMLElement | null {

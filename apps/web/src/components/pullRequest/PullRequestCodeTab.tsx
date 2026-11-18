@@ -15,6 +15,8 @@ import type { ReviewCommentContext } from "~/reviewCommentContext";
 import type { PendingReviewComment } from "./pullRequestReviewStore";
 import { useCodeTheme } from "~/hooks/useCodeTheme";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useStableCallback } from "~/hooks/useStableCallback";
+import { useFileContextMenu } from "~/fileContextMenu";
 import {
   isFileDiffCollapsed,
   withFileDiffFold,
@@ -420,6 +422,15 @@ function PullRequestCodeTab({
 }) {
   const t = useUiTranslation();
   const resolvedTheme = useRenderedAppearance();
+  const fileContextMenu = useFileContextMenu(environmentId);
+  const showFileContextMenu = useStableCallback(
+    (filePath: string, position: { x: number; y: number }) => {
+      void fileContextMenu.show(
+        { environmentId, filePath, workspaceRoot: detail.workspaceRoot },
+        position,
+      );
+    },
+  );
   const codeTheme = useCodeTheme();
   // Initialize the shared tokenizer and workers while the diff request is still pending.
   useDiffWorkerPool();
@@ -1917,6 +1928,7 @@ function PullRequestCodeTab({
               selectedPath={previewFilePath}
               revealRequestId={revealRequest?.nonce ?? 0}
               onSelectFile={revealFile}
+              onFileContextMenu={showFileContextMenu}
               footer={
                 nextCursor === null ? null : (
                   <div className="shrink-0 border-t border-border/60 p-2">

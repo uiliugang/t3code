@@ -33,7 +33,7 @@ import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useCodeViewScrollRestore } from "./diffs/useCodeViewScrollRestore";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { useOpenInPreferredEditor } from "../editorPreferences";
-import { useFileContextMenuHandler } from "../fileContextMenu";
+import { useFileContextMenu } from "../fileContextMenu";
 import { type DraftId } from "../composerDraftStore";
 import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { toolCallDiff } from "../lib/toolCallDiff";
@@ -307,7 +307,7 @@ export default function DiffPanel({
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );
-  const onFileContextMenu = useFileContextMenuHandler(activeThread?.environmentId ?? null);
+  const fileContextMenu = useFileContextMenu(activeThread?.environmentId ?? null);
   const openInPreferredEditor = useOpenInPreferredEditor(
     activeThread?.environmentId ?? null,
     serverConfig?.availableEditors ?? [],
@@ -844,6 +844,20 @@ export default function DiffPanel({
       },
     });
   };
+
+  const showDiffFileContextMenu = useStableCallback(
+    (filePath: string, position: { x: number; y: number }) => {
+      void fileContextMenu.show(
+        {
+          environmentId: activeThread?.environmentId ?? null,
+          filePath,
+          workspaceRoot: activeCwd,
+          repositoryRoot: diffPathRepositoryRoot,
+        },
+        position,
+      );
+    },
+  );
   const toggleDiffFileCollapsed = useStableCallback((fileKey: string) => {
     const file = renderableFileEntries.find((file) => file.fileKey === fileKey);
     if (lazySource && file) requestFile(resolveFileDiffPath(file.fileDiff));
@@ -1515,22 +1529,14 @@ export default function DiffPanel({
                   }}
                   onContextMenuCapture={(event) => {
                     const composedPath = event.nativeEvent.composedPath?.() ?? [];
-                    const title = composedPath.find(
+                    const header = composedPath.find(
                       (node): node is HTMLElement =>
-                        node instanceof HTMLElement && node.hasAttribute("data-title"),
+                        node instanceof HTMLElement && node.hasAttribute("data-diffs-header"),
                     );
-                    const filePath = title?.textContent?.trim();
+                    const filePath = header?.querySelector("[data-title]")?.textContent?.trim();
                     if (!filePath) return;
                     event.preventDefault();
-                    onFileContextMenu(
-                      {
-                        environmentId: activeThread?.environmentId ?? null,
-                        filePath,
-                        workspaceRoot: activeCwd,
-                        repositoryRoot: diffPathRepositoryRoot,
-                      },
-                      event,
-                    );
+                    showDiffFileContextMenu(filePath, { x: event.clientX, y: event.clientY });
                   }}
                 >
                   {shownFileEntries.length === 0 && renderableFileEntries.length > 0 ? (
@@ -1628,6 +1634,7 @@ export default function DiffPanel({
                       selectedPath={previewFilePath}
                       revealRequestId={selectedFileRevealRequestId}
                       onSelectFile={revealDiffFile}
+                      onFileContextMenu={showDiffFileContextMenu}
                     />
                   </FileExplorerPane>
                 ) : null}

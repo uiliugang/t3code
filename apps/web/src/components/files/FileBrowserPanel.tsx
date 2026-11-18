@@ -5,23 +5,16 @@ import type {
 } from "@pierre/trees";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import * as AsyncResult from "effect/reactivity/AsyncResult";
-import * as Cause from "effect/Cause";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { type Ref, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
-import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { useComposerHandleContext } from "~/composerHandleContext";
-import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
-import { useFileContextMenu, type FileContextMenuAction } from "~/fileContextMenu";
+import { useFileContextMenu } from "~/fileContextMenu";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
@@ -161,7 +154,6 @@ export default function FileBrowserPanel({
   const panelPath = (relativePath: string) =>
     hostFolder ? joinHostPath(cwd, relativePath) : relativePath;
   const { resolvedTheme } = useTheme();
-  const composerRef = useComposerHandleContext();
   const fileContextMenu = useFileContextMenu(environmentId);
   const {
     entries: directoryEntries,
@@ -197,68 +189,16 @@ export default function FileBrowserPanel({
         return;
       }
       const relativePath = item.path.replace(/\/$/, "");
-      const mention = serializeComposerFileLink(panelPath(relativePath));
       const pointer = contextMenuPointerRef.current;
       const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1000;
       const anchorRect = context.anchorElement.getBoundingClientRect();
       const position = pointerIsFresh
         ? { x: pointer.x, y: pointer.y }
         : { x: anchorRect.left, y: anchorRect.bottom };
-      const fileTarget = { environmentId, filePath: relativePath, workspaceRoot: cwd };
-      const fileMenuItems = fileContextMenu.buildItems(fileTarget);
+      const fileTarget = { environmentId, filePath: panelPath(relativePath), workspaceRoot: cwd };
       // The app menu owns focus; the tree's outside-click handler would dismiss it before click.
       context.close({ restoreFocus: !pointerIsFresh });
-      void settlePromise(async () => {
-        const clicked = await api.contextMenu.show(
-          [
-            ...fileMenuItems,
-            { id: "copy-mention", label: "Copy mention" },
-            { id: "add-to-chat", label: "Add to chat" },
-          ],
-          position,
-        );
-        if (clicked === null) return;
-        // Open-with submenu ids are absent from the top-level item list.
-        const isFileMenuAction =
-          fileMenuItems.some((entry) => entry.id === clicked) || clicked.startsWith("editor:");
-        if (isFileMenuAction) {
-          await fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
-          return;
-        }
-        if (clicked === "copy-mention") {
-          try {
-            await writeTextToClipboard(mention);
-          } catch (error) {
-            toastManager.add({
-              type: "error",
-              title: "Failed to copy mention",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            });
-          }
-          return;
-        }
-        if (clicked === "add-to-chat") {
-          const composer = composerRef?.current;
-          if (!composer) {
-            toastManager.add({
-              type: "error",
-              title: "Unable to add to chat",
-              description: "Open a chat for this project and try again.",
-            });
-            return;
-          }
-          const inserted = composer.insertTextAtEnd(`${mention} `, { ensureLeadingBoundary: true });
-          if (!inserted) {
-            toastManager.add({
-              type: "error",
-              title: "Unable to add to chat",
-              description: "The chat isn't ready to accept input right now.",
-            });
-          }
-        }
-      }).then((result) => {
-        if (!AsyncResult.isSuccess(result)) throw Cause.squash(result.cause);
-      });
+      void fileContextMenu.show(fileTarget, position);
     },
   );
 
