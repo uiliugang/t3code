@@ -28,7 +28,6 @@ import {
   AlertTriangleIcon,
   ServerIcon,
   RefreshCwIcon,
-  SettingsIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   SlidersHorizontalIcon,
@@ -191,7 +190,6 @@ export function RequirementBoard({
   compact?: boolean;
 }) {
   const t = useUiTranslation();
-  const navigate = useNavigate();
   const registry = useContext(RegistryContext);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const rightPanelRef = panelRef ?? REQUIREMENTS_PANEL_REF;
@@ -576,21 +574,6 @@ export function RequirementBoard({
                 {...(search.projectId ? { projectId: search.projectId } : {})}
                 refreshed={refresh}
               />
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={t("Requirement settings")}
-                      onClick={() => void navigate({ to: "/settings/requirements" })}
-                    >
-                      <SettingsIcon />
-                    </Button>
-                  }
-                />
-                <TooltipPopup>{t("Requirement settings")}</TooltipPopup>
-              </Tooltip>
               <RequirementCreateMenu
                 environments={visibleEnvironments}
                 {...(search.projectId ? { projectId: search.projectId } : {})}
