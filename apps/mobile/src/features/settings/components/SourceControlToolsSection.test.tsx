@@ -48,7 +48,11 @@ import { SourceControlToolsSection } from "./SourceControlToolsSection";
 it("allows rescanning after the tool subscription emits without waiting for it to end", async () => {
   mocks.command.mockReset().mockResolvedValue({ _tag: "Success" });
   mocks.refresh.mockReset();
-  const tools = { data: null as readonly [] | null, isPending: true, refresh: mocks.refresh };
+  const tools = {
+    data: null as { tools: readonly []; retrying: boolean } | null,
+    isPending: true,
+    refresh: mocks.refresh,
+  };
   mocks.query
     .mockReset()
     .mockImplementation((atom) =>
@@ -67,7 +71,7 @@ it("allows rescanning after the tool subscription emits without waiting for it t
   const rescan = container.querySelector("button")!;
   expect(rescan.disabled).toBe(true);
 
-  tools.data = [];
+  tools.data = { tools: [], retrying: false };
   act(() => root.render(<SourceControlToolsSection environment={{ ...environment }} />));
   expect(rescan.disabled).toBe(false);
   await act(async () => rescan.click());
@@ -91,7 +95,7 @@ it("shows a missing automatic-install tool as Not installed only once", () => {
     message: null,
   } as const;
   mocks.query.mockReset().mockImplementation((atom) => ({
-    data: atom === "tools" ? [tool] : null,
+    data: atom === "tools" ? { tools: [tool], retrying: false } : null,
     isPending: false,
     refresh: mocks.refresh,
   }));

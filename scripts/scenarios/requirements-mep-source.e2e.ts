@@ -112,14 +112,60 @@ test(
           ),
         );
       const tools = sourceControlEnvironment.meituanTools({ environmentId, input: {} });
-      appAtomRegistry
-        .ensureNode(tools)
-        .setInitialValue(result.fail(new Error("Tool subscription unavailable")));
+      const modules = [
+        "/src/connection/runtime.ts",
+        "/@id/@t3tools/client-runtime/connection",
+        "/@id/effect/Context",
+        "/@id/effect/Effect",
+        "/@id/effect/SubscriptionRef",
+        "/@id/effect/Stream",
+        "/@id/effect/rpc/RpcClientError",
+      ];
+      const [runtime, connection, Context, Effect, SubscriptionRef, Stream, RpcError] =
+        await Promise.all(modules.map((id) => import(id)));
+      const context = appAtomRegistry.get(runtime.connectionAtomRuntime).value;
+      const environments = Context.get(context, connection.EnvironmentRegistry.EnvironmentRegistry);
+      const supervisor = await Effect.runPromise(
+        environments.run(environmentId, connection.EnvironmentSupervisor.EnvironmentSupervisor),
+      );
+      const session = (await Effect.runPromise(SubscriptionRef.get(supervisor.session))).value;
+      const original = session.client;
+      session.client = new Proxy(original, {
+        get(target, key) {
+          if (key !== "meituan.toolsSubscribe") return Reflect.get(target, key);
+          return (input: object) =>
+            session.client === original
+              ? target[key](input)
+              : Stream.fail(
+                  new RpcError.RpcClientError({
+                    reason: new RpcError.RpcClientDefect({
+                      message: "Scenario transport unavailable",
+                      cause: "fixture",
+                    }),
+                  }),
+                );
+        },
+      });
+      Object.assign(window, {
+        recoverToolTransport: () => {
+          session.client = original;
+        },
+      });
+      appAtomRegistry.refresh(tools);
       return true;
     });
     await app.screenshot("meituan-discovery-errors");
-    await expect(screen.getByText(/Tool subscription unavailable/)).toBeVisible();
+    const retrying = screen.getByText(
+      /Tool status unavailable\. Retrying|暂时无法获取工具状态，正在重试/,
+    );
+    await expect(retrying).toBeVisible();
     await expect(screen.getByRole("button", /MEP ONES · MCM.*(Unknown|未知)/)).toBeVisible();
+    await browser.evaluate(() => {
+      (window as unknown as { recoverToolTransport(): void }).recoverToolTransport();
+      return true;
+    });
+    await expect(screen.getByText("ONES CLI", { exact: true })).toBeVisible();
+    await expect(retrying).not.toBeVisible();
 
     await app.open("/settings/meituan?section=daxiang");
     await expect(screen.getByText("ONES CLI", { exact: true })).not.toBeVisible();

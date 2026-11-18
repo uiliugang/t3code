@@ -333,14 +333,16 @@ function MeituanSkillSource({
   const mutate = useAtomCommand(serverEnvironment.mutateSkills);
   const allowed = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
   const [busy, setBusy] = useState(false);
-  const source: SkillSource = query.data?.sources.find((entry) => entry.kind === "mtskills") ?? {
-    id: "meituan",
-    label: "Meituan Skills",
-    kind: "mtskills",
-    enabled: false,
-    executable: "mtskills",
-    registry: "http://r.npm.sankuai.com",
-  };
+  const sources = query.data?.sources.filter((entry) => entry.kind === "mtskills");
+  const source: SkillSource = sources?.find((entry) => entry.enabled) ??
+    sources?.[0] ?? {
+      id: "meituan",
+      label: "Meituan Skills",
+      kind: "mtskills",
+      enabled: false,
+      executable: "mtskills",
+      registry: "http://r.npm.sankuai.com",
+    };
   const run = async (input: Parameters<typeof mutate>[0]["input"]) => {
     setBusy(true);
     await mutate({ environmentId, input });
@@ -469,7 +471,13 @@ function EnvironmentMeituanSettings({
     streams.meituan ? sourceControlEnvironment.meituanTools({ environmentId, input: {} }) : null,
   );
   const item = discovery.data?.sourceControlProviders.find((entry) => entry.kind === "meituan");
-  const availableTools = [...(tools.data ?? []), ...(meituanTools.data ?? [])];
+  const availableTools = [...(tools.data?.tools ?? []), ...(meituanTools.data?.tools ?? [])];
+  const toolErrors = [
+    tools.error,
+    meituanTools.error,
+    (tools.data?.retrying || meituanTools.data?.retrying) &&
+      t("Tool status unavailable. Retrying…"),
+  ].filter(Boolean);
   const visibleTools = availableTools.filter((tool) => activeToolIds.includes(tool.id));
   const saveEnabled = async (next: boolean) => {
     if (!canToggle || !allowed || busy) return;
@@ -487,7 +495,11 @@ function EnvironmentMeituanSettings({
     await update({ environmentId, input: { patch: { meituanIntegrationEnabled: next } } });
     setBusy(false);
     discovery.refresh();
-    if (next && capabilities.sourceControlToolMaintenance)
+    if (
+      next &&
+      capabilities.sourceControlToolMaintenance &&
+      !capabilities.toolStatusFollowsSettings
+    )
       void refreshTools({ environmentId, input: {} });
   };
   const saveService = async (service: "code" | "issues" | "skills", value: boolean) => {
@@ -535,7 +547,8 @@ function EnvironmentMeituanSettings({
       });
       discovery.refresh();
     }
-    if (capabilities.sourceControlToolMaintenance) void refreshTools({ environmentId, input: {} });
+    if (capabilities.sourceControlToolMaintenance && !capabilities.toolStatusFollowsSettings)
+      void refreshTools({ environmentId, input: {} });
     setBusy(false);
   };
   const toggles = {
@@ -713,9 +726,9 @@ function EnvironmentMeituanSettings({
           )}
         </fieldset>
       )}
-      {tools.error || meituanTools.error ? (
+      {toolErrors.length ? (
         <p role="alert" className="text-sm text-destructive">
-          {t("Command line tools")}: {[tools.error, meituanTools.error].filter(Boolean).join(" · ")}
+          {t("Command line tools")}: {toolErrors.join(" · ")}
         </p>
       ) : null}
       {visibleTools.length ? (

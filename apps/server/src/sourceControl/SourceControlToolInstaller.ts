@@ -11,7 +11,7 @@ import { npmGlobalPrefixFromCommandPath } from "@t3tools/provider-core/server/ma
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
-import { resolveCommandPaths } from "@t3tools/shared/shell";
+import { resolveCommandPath, resolveCommandPaths } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -69,7 +69,10 @@ export class SourceControlToolInstaller extends Context.Service<
     readonly inspect: (
       id: SourceControlToolId,
     ) => Effect.Effect<ToolInstallationPlan, SourceControlToolError>;
-    readonly inspectMeituan: (id: MeituanToolId) => Effect.Effect<MeituanTool, MeituanToolError>;
+    readonly inspectMeituan: (
+      id: MeituanToolId,
+      executable?: string,
+    ) => Effect.Effect<MeituanTool, MeituanToolError>;
     readonly install: (
       plan: ToolInstallationPlan,
     ) => Effect.Effect<"installed" | "current", SourceControlToolError>;
@@ -284,11 +287,14 @@ const make = Effect.gen(function* () {
   );
 
   const inspectMeituan = Effect.fn("SourceControlToolInstaller.inspectMeituan")(
-    function* (id: MeituanToolId) {
+    function* (id: MeituanToolId, executable?: string) {
       if (!isMeituanToolEnabled(id, yield* settings.getSettings))
         return yield* new MeituanToolError({ id, reason: "unsupported" });
       const definition = MEITUAN_DEFINITIONS[id];
-      const executablePath = yield* find(definition.executable);
+      const binary = executable || definition.executable;
+      const executablePath = yield* binary.includes("/") || binary.includes("\\")
+        ? resolveCommandPath(binary, { env })
+        : find(binary);
       const versionOutput = executablePath
         ? yield* probe(executablePath, ["--version"]).pipe(Effect.orElseSucceed(() => null))
         : null;
@@ -300,7 +306,10 @@ const make = Effect.gen(function* () {
         version,
         executablePath,
         command: null,
-        manualCommand: `npm install -g ${definition.packageName}@latest ${MCODE_REGISTRY}`,
+        manualCommand:
+          binary === definition.executable
+            ? `npm install -g ${definition.packageName}@latest ${MCODE_REGISTRY}`
+            : null,
         reason:
           executablePath && version === null
             ? "Could not read the installed version. Check the executable on the server."
@@ -312,6 +321,7 @@ const make = Effect.gen(function* () {
     (effect, id) =>
       effect.pipe(
         Effect.mapError((cause) => new MeituanToolError({ id, reason: "inspection", cause })),
+        Effect.provideService(HostProcess.Platform, platform),
         Effect.provideService(FileSystem.FileSystem, fs),
         Effect.provideService(Path.Path, path),
       ),

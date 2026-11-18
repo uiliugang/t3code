@@ -33,7 +33,7 @@ export function SourceControlToolsSection({
   const meituanTools = useEnvironmentQuery(
     streams.meituan ? sourceControlEnvironment.meituanTools({ environmentId, input: {} }) : null,
   );
-  const availableTools = [...(tools.data ?? []), ...(meituanTools.data ?? [])];
+  const availableTools = [...(tools.data?.tools ?? []), ...(meituanTools.data?.tools ?? [])];
   const discovery = useEnvironmentQuery(
     streams.sourceControl ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
   );
@@ -47,8 +47,8 @@ export function SourceControlToolsSection({
     pending ||
     availableTools.some((tool) => tool.phase === "running" || tool.phase === "verifying");
   const completedTools =
-    tools.data
-      ?.filter((tool) => ["succeeded", "unchanged", "failed"].includes(tool.phase))
+    tools.data?.tools
+      .filter((tool) => ["succeeded", "unchanged", "failed"].includes(tool.phase))
       .map((tool) => `${tool.id}:${tool.phase}:${tool.version}`)
       .join(",") ?? "";
   const refreshDiscovery = discovery.refresh;
@@ -149,7 +149,13 @@ export function SourceControlToolsSection({
       <SettingsRow
         icon="arrow.clockwise"
         label={t("Rescan server environment")}
-        value={tools.error ?? meituanTools.error ?? undefined}
+        value={
+          tools.error ??
+          meituanTools.error ??
+          (tools.data?.retrying || meituanTools.data?.retrying
+            ? t("Tool status unavailable. Retrying…")
+            : undefined)
+        }
         valuePosition="below"
         disabled={
           busy ||

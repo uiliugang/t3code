@@ -519,11 +519,6 @@ const layerReview = ReviewService.layer.pipe(
 );
 
 const layerVcs = Layer.empty.pipe(
-  Layer.provideMerge(
-    SourceControlToolMaintenance.layer.pipe(
-      Layer.provide(SourceControlToolInstaller.layer.pipe(Layer.provide(VcsProcess.layer))),
-    ),
-  ),
   Layer.provideMerge(VcsProjectConfig.layer),
   Layer.provideMerge(layerVcsDriverRegistry),
   Layer.provideMerge(VcsProvisioningService.layer.pipe(Layer.provide(layerVcsDriverRegistry))),
@@ -744,9 +739,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provide(RuntimeLayer.layerEventSink),
     Layer.provide(WechatClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
   ),
-  SkillManager.layer.pipe(
-    Layer.provide(SkillHost.layer.pipe(Layer.provide(SecretResolver.layer))),
-    Layer.provide(SkillPackages.layer),
+  SourceControlToolMaintenance.layer.pipe(
+    Layer.provide(SourceControlToolInstaller.layer.pipe(Layer.provide(VcsProcess.layer))),
+    Layer.provideMerge(
+      SkillManager.layer.pipe(
+        Layer.provide(SkillHost.layer.pipe(Layer.provide(SecretResolver.layer))),
+        Layer.provide(SkillPackages.layer),
+      ),
+    ),
   ),
   AgentAwarenessRelay.layer,
   HeldHooksWaker.layer,

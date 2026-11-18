@@ -138,6 +138,31 @@ it.effect.each(["ones2", "mcm", "mtskills"] as const)(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect.each([[], ["mtskills"]])(
+  "inspects the configured private installer with PATH binaries %j",
+  (binaries) =>
+    Effect.gen(function* () {
+      const { installer, root, calls } = yield* fixture({ binaries });
+      const fs = yield* FileSystem.FileSystem;
+      const executable = `${root}/private/mtskills`;
+      yield* fs.makeDirectory(`${root}/private`);
+      yield* fs.writeFileString(executable, "");
+      yield* fs.chmod(executable, 0o755);
+      const result = yield* installer.inspectMeituan("mtskills", executable);
+      assert.strictEqual(result.executablePath, executable);
+      assert.strictEqual(result.version, "2.43.0");
+      assert.deepStrictEqual(
+        calls.map((call) => call.command),
+        [executable],
+      );
+      assert.isNull(result.manualCommand);
+      yield* fs.remove(executable);
+      const missing = yield* installer.inspectMeituan("mtskills", executable);
+      assert.strictEqual(missing.status, "missing");
+      assert.isNull(missing.manualCommand);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect.each(["ones2", "mcm"] as const)(
   "does not probe %s while requirements are disabled",
   (id) =>

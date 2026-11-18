@@ -16,13 +16,14 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
+  createEnvironmentSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { vcsCommandConcurrency, vcsCommandScheduler } from "./vcsCommandScheduler.ts";
 import { invalidateCachedVcsRefs } from "./vcsRefInvalidation.ts";
 import { persistQuery } from "./queryPersistence.ts";
-import { request } from "../rpc/client.ts";
+import { request, subscribeMeituanTools, subscribeSourceControlTools } from "../rpc/client.ts";
 
 const unconfiguredSourceMessage = new RequirementIssueError({
   operation: "resolve",
@@ -115,13 +116,13 @@ export function createSourceControlEnvironmentAtoms<R, E>(
   });
   return {
     issueSources,
-    tools: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    tools: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:source-control:tools",
-      tag: WS_METHODS.sourceControlToolsSubscribe,
+      subscribe: subscribeSourceControlTools,
     }),
-    meituanTools: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    meituanTools: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:meituan:tools",
-      tag: WS_METHODS.meituanToolsSubscribe,
+      subscribe: subscribeMeituanTools,
     }),
     refreshTools: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:tools-refresh",

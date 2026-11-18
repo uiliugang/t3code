@@ -3,16 +3,22 @@ import {
   MeituanToolError,
   SourceControlToolError,
   type SourceControlTool,
+  type SkillSource,
   type SourceControlToolStartInput,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
+import * as Tracer from "effect/Tracer";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import * as Installer from "./SourceControlToolInstaller.ts";
 import * as Settings from "../serverSettings.ts";
+import { SkillManager } from "../skills/SkillManager.ts";
 import * as Maintenance from "./SourceControlToolMaintenance.ts";
 
 const plan = (patch: Partial<SourceControlTool> = {}): Installer.ToolInstallationPlan => ({
@@ -40,7 +46,18 @@ const confirmation = (tool = plan().tool): SourceControlToolStartInput => ({
 });
 type InstallerMock = Omit<Installer.SourceControlToolInstaller["Service"], "inspectMeituan"> &
   Partial<Pick<Installer.SourceControlToolInstaller["Service"], "inspectMeituan">>;
-const testLayer = (installer: InstallerMock) =>
+const defaultSkillSource = {
+  id: "meituan",
+  kind: "mtskills",
+  enabled: true,
+  label: "Skills",
+  executable: "mtskills",
+  registry: "",
+} as const;
+const testLayer = (
+  installer: InstallerMock,
+  meituanSource: SkillManager["Service"]["meituanSource"] = Stream.succeed(defaultSkillSource),
+) =>
   Maintenance.layer.pipe(
     Layer.provide(
       Layer.succeed(Installer.SourceControlToolInstaller, {
@@ -49,6 +66,7 @@ const testLayer = (installer: InstallerMock) =>
       }),
     ),
     Layer.provide(Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true })),
+    Layer.provide(Layer.mock(SkillManager)({ meituanSource })),
   );
 
 it.effect(
@@ -205,6 +223,111 @@ it.effect("retains installer failures and permits a retry", () => {
     ),
   );
 });
+
+it.effect("shares overlapping scans by group but reruns an explicit refresh after completion", () =>
+  Effect.gen(function* () {
+    const entered = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const calls: string[] = [];
+    const joined = yield* Deferred.make<void>();
+    let requests = 0;
+    const tracer = Tracer.make({
+      span(options) {
+        if (options.name.startsWith("SourceControlToolMaintenance.scan") && ++requests === 4)
+          queueMicrotask(() => Deferred.doneUnsafe(joined, Effect.void));
+        return new Tracer.NativeSpan(options);
+      },
+    });
+    const inspect = (id: string) =>
+      Effect.gen(function* () {
+        calls.push(id);
+        if (calls.length === 6) yield* Deferred.succeed(entered, undefined);
+        yield* Deferred.await(release);
+      });
+    yield* Effect.gen(function* () {
+      const service = yield* Maintenance.SourceControlToolMaintenance;
+      const refresh = yield* service.refresh.pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      const mounted = yield* Effect.all(
+        [Stream.runHead(service.changes), Stream.runHead(service.meituanChanges)],
+        { concurrency: 2 },
+      ).pipe(Effect.forkChild);
+      yield* Deferred.await(joined);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(refresh);
+      yield* Fiber.join(mounted);
+      const ids = ["git", "github", "mcm", "meituan", "mtskills", "ones2"];
+      assert.deepStrictEqual(calls.toSorted(), ids);
+      yield* service.refresh;
+      assert.deepStrictEqual(calls.toSorted(), [...ids, ...ids].toSorted());
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          inspect: (id) => inspect(id).pipe(Effect.as(plan({ id }))),
+          inspectMeituan: (id) =>
+            inspect(id).pipe(
+              Effect.andThen(Effect.fail(new MeituanToolError({ id, reason: "inspection" }))),
+            ),
+          install: () => Effect.die("Unexpected install"),
+        }),
+      ),
+      Effect.withTracer(tracer),
+    );
+  }),
+);
+
+it.effect("updates a mounted tool list when a private installer is prepared or disabled", () =>
+  Effect.gen(function* () {
+    const source = yield* SubscriptionRef.make<SkillSource | undefined>(defaultSkillSource);
+    const snapshots = yield* Queue.unbounded<ReadonlyArray<string>>();
+    yield* Effect.gen(function* () {
+      const service = yield* Maintenance.SourceControlToolMaintenance;
+      yield* service.meituanChanges.pipe(
+        Stream.runForEach((tools) =>
+          Queue.offer(
+            snapshots,
+            tools.flatMap((tool) =>
+              tool.id === "mtskills" && tool.executablePath ? [tool.executablePath] : [],
+            ),
+          ),
+        ),
+        Effect.forkChild,
+      );
+      assert.deepStrictEqual(yield* Queue.take(snapshots), ["mtskills"]);
+      yield* SubscriptionRef.set(source, {
+        ...defaultSkillSource,
+        executable: "/private/mtskills",
+      });
+      assert.deepStrictEqual(yield* Queue.take(snapshots), ["/private/mtskills"]);
+      yield* SubscriptionRef.set(source, {
+        ...defaultSkillSource,
+        executable: "/private/mtskills",
+      });
+      assert.deepStrictEqual(yield* Queue.take(snapshots), ["/private/mtskills"]);
+      yield* SubscriptionRef.set(source, undefined);
+      assert.deepStrictEqual(yield* Queue.take(snapshots), []);
+    }).pipe(
+      Effect.provide(
+        testLayer(
+          {
+            inspect: () => Effect.die("Unexpected scan"),
+            install: () => Effect.die("Unexpected install"),
+            inspectMeituan: (id, executable) =>
+              Effect.succeed({
+                ...plan().tool,
+                id,
+                command: null,
+                phase: "idle",
+                message: null,
+                executablePath: executable ?? null,
+              }),
+          },
+          SubscriptionRef.changes(source),
+        ),
+      ),
+    );
+  }),
+);
 
 it.effect("reports inspection failures as unknown rather than a missing executable", () => {
   const inspected: string[] = [];

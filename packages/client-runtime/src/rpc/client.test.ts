@@ -29,7 +29,13 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as RpcSession from "../rpc/session.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
-import { runStream, subscribe, subscribeDynamicWithSession, refreshVcsBranch } from "./client.ts";
+import {
+  runStream,
+  subscribe,
+  subscribeDynamicWithSession,
+  refreshVcsBranch,
+  subscribeMeituanTools,
+} from "./client.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -85,6 +91,97 @@ const makeHarness = Effect.fn("TestEnvironmentRpc.makeHarness")(function* () {
 });
 
 describe("environment RPC", () => {
+  it.effect("clears Meituan tools on a legacy session and resumes on a capable replacement", () =>
+    Effect.gen(function* () {
+      const { activeSession, supervisor } = yield* makeHarness();
+      const calls: string[] = [];
+      const snapshots = yield* Queue.unbounded<unknown>();
+      const connect = (name: string, supported: boolean) =>
+        SubscriptionRef.set(
+          activeSession,
+          Option.some({
+            ...session({
+              [WS_METHODS.meituanToolsSubscribe]: () => {
+                calls.push(name);
+                return Stream.succeed([{ id: "ones2", version: name }]);
+              },
+            } as unknown as WsRpcProtocolClient),
+            initialConfig: Effect.succeed({
+              environment: { capabilities: supported ? { meituanTools: true } : {} },
+            } as ServerConfig),
+          }),
+        );
+      yield* subscribeMeituanTools({}).pipe(
+        Stream.runForEach((value) => Queue.offer(snapshots, value)),
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.forkChild,
+      );
+      for (const [name, supported] of [
+        ["first", true],
+        ["legacy", false],
+        ["last", true],
+      ] as const) {
+        yield* connect(name, supported);
+        expect(yield* Queue.take(snapshots)).toEqual({
+          tools: supported ? [{ id: "ones2", version: name }] : [],
+          retrying: false,
+        });
+      }
+      expect(calls).toEqual(["first", "last"]);
+    }),
+  );
+
+  it.effect("reports retrying tool streams until a same-session retry succeeds", () =>
+    Effect.gen(function* () {
+      const { activeSession, supervisor } = yield* makeHarness();
+      const attempted = yield* Deferred.make<void>();
+      let attempts = 0;
+      const received: unknown[] = [];
+      const client = {
+        [WS_METHODS.meituanToolsSubscribe]: () => {
+          attempts++;
+          if (attempts === 1)
+            return Stream.fromEffect(Deferred.succeed(attempted, undefined)).pipe(
+              Stream.drain,
+              Stream.concat(
+                Stream.fail(
+                  new RpcClientError.RpcClientError({
+                    reason: new RpcClientError.RpcClientDefect({
+                      message: "unavailable",
+                      cause: "unavailable",
+                    }),
+                  }),
+                ),
+              ),
+            );
+          if (attempts === 2) return Stream.fromEffect(decodeNumber("invalid").pipe(Effect.orDie));
+          return Stream.succeed([]);
+        },
+      } as unknown as WsRpcProtocolClient;
+      yield* SubscriptionRef.set(
+        activeSession,
+        Option.some({
+          ...session(client),
+          initialConfig: Effect.succeed({
+            environment: { capabilities: { meituanTools: true } },
+          } as ServerConfig),
+        }),
+      );
+      yield* subscribeMeituanTools({}).pipe(
+        Stream.runForEach((value) => Effect.sync(() => received.push(value))),
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(attempted);
+      yield* TestClock.adjust("3 seconds");
+      expect(attempts).toBe(3);
+      expect(received).toEqual([
+        { tools: [], retrying: true },
+        { tools: [], retrying: true },
+        { tools: [], retrying: false },
+      ]);
+    }),
+  );
   it.effect("binds finite streaming commands to one active session", () =>
     Effect.gen(function* () {
       const firstEvents = yield* Queue.unbounded<RelayClientInstallProgressEvent>();

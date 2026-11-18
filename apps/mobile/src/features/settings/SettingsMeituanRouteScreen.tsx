@@ -175,8 +175,9 @@ function EnvironmentIntegration({
     return mergeProjectIssueSources(automatic, saved).length > 0;
   }).length;
   const canToggle = environment.serverConfig.environment.capabilities.meituanIntegration === true;
-  const canRescan =
-    environment.serverConfig.environment.capabilities.sourceControlToolMaintenance === true;
+  const needsLegacyRescan =
+    environment.serverConfig.environment.capabilities.sourceControlToolMaintenance === true &&
+    !environment.serverConfig.environment.capabilities.toolStatusFollowsSettings;
   const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const update = useAtomCommand(serverEnvironment.updateSettings);
   const [busy, setBusy] = useState(false);
@@ -210,7 +211,7 @@ function EnvironmentIntegration({
     await update({ environmentId, input: { patch: { meituanIntegrationEnabled: value } } });
     setBusy(false);
     discovery.refresh();
-    if (value && canRescan) void refreshTools({ environmentId, input: {} });
+    if (value && needsLegacyRescan) void refreshTools({ environmentId, input: {} });
   };
   const saveService = async (service: "code" | "issues" | "skills", value: boolean) => {
     if (
@@ -257,7 +258,7 @@ function EnvironmentIntegration({
       });
       discovery.refresh();
     }
-    if (canRescan) void refreshTools({ environmentId, input: {} });
+    if (needsLegacyRescan) void refreshTools({ environmentId, input: {} });
     associationsQuery.refresh();
     setBusy(false);
   };
@@ -436,14 +437,16 @@ function MeituanSkillSource({
   const mutate = useAtomCommand(serverEnvironment.mutateSkills);
   const allowed = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
   const [busy, setBusy] = useState(false);
-  const source: SkillSource = query.data?.sources.find((entry) => entry.kind === "mtskills") ?? {
-    id: "meituan",
-    label: "Meituan Skills",
-    kind: "mtskills",
-    enabled: false,
-    executable: "mtskills",
-    registry: "http://r.npm.sankuai.com",
-  };
+  const sources = query.data?.sources.filter((entry) => entry.kind === "mtskills");
+  const source: SkillSource = sources?.find((entry) => entry.enabled) ??
+    sources?.[0] ?? {
+      id: "meituan",
+      label: "Meituan Skills",
+      kind: "mtskills",
+      enabled: false,
+      executable: "mtskills",
+      registry: "http://r.npm.sankuai.com",
+    };
   const run = async (input: Parameters<typeof mutate>[0]["input"]) => {
     setBusy(true);
     await mutate({ environmentId, input });

@@ -158,6 +158,7 @@ it.layer(
           threadTerminalCleanup: true,
           meituanIntegration: true,
           meituanTools: true,
+          toolStatusFollowsSettings: true,
         });
       }
     }),

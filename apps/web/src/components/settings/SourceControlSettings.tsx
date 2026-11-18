@@ -421,7 +421,8 @@ export function SourceControlSettingsPanel({
   );
   const refreshTools = useAtomCommand(sourceControlEnvironment.refreshTools);
   const toolsBusy =
-    tools.data?.some((tool) => tool.phase === "running" || tool.phase === "verifying") ?? false;
+    tools.data?.tools.some((tool) => tool.phase === "running" || tool.phase === "verifying") ??
+    false;
   const discovery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -433,8 +434,8 @@ export function SourceControlSettingsPanel({
   const discovered = discovery.data ?? EMPTY_DISCOVERY_RESULT;
   const refreshDiscovery = discovery.refresh;
   const completedTools =
-    tools.data
-      ?.filter((tool) => ["succeeded", "unchanged", "failed"].includes(tool.phase))
+    tools.data?.tools
+      .filter((tool) => ["succeeded", "unchanged", "failed"].includes(tool.phase))
       .map((tool) => `${tool.id}:${tool.phase}:${tool.version}`)
       .join(",") ?? "";
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- installer events invalidate the server's separate tool and authentication discovery query
@@ -442,7 +443,7 @@ export function SourceControlSettingsPanel({
     if (completedTools) refreshDiscovery();
   }, [completedTools, refreshDiscovery]);
   const maintenanceProps = (kind: string) => {
-    const tool = tools.data?.find((entry) => entry.id === kind);
+    const tool = tools.data?.tools.find((entry) => entry.id === kind);
     return tool && environmentId !== null
       ? {
           tool,
@@ -585,9 +586,9 @@ export function SourceControlSettingsPanel({
   return (
     <SettingsPageContainer>
       {children}
-      {tools.error ? (
+      {tools.error || tools.data?.retrying ? (
         <p role="alert" className="text-sm text-destructive">
-          {t(tools.error)}
+          {tools.error ? t(tools.error) : t("Tool status unavailable. Retrying…")}
         </p>
       ) : null}
       {environmentId !== null ? (
