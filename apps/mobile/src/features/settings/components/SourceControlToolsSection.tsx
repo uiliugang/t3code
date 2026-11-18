@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { toolSubscriptionsFor } from "@t3tools/client-runtime/meituanSettings";
 import { sourceControlToolStatus } from "@t3tools/client-runtime/state/source-control";
 import type { MaintainableTool } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -23,23 +24,18 @@ export function SourceControlToolsSection({
 }) {
   const t = useUiTranslation();
   const environmentId = environment.environmentId;
-  const onlyIds: readonly MaintainableTool["id"][] | null =
-    only === undefined ? null : typeof only === "string" ? [only] : only;
-  const supported =
-    environment.serverConfig.environment.capabilities.sourceControlToolMaintenance === true;
+  const onlyIds: readonly MaintainableTool["id"][] =
+    only === undefined ? ["git", "github"] : typeof only === "string" ? [only] : only;
+  const streams = toolSubscriptionsFor(environment.serverConfig.environment.capabilities, onlyIds);
   const tools = useEnvironmentQuery(
-    supported ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
+    streams.sourceControl ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
   );
-  const needsMeituanTools =
-    onlyIds?.some((id) => id === "ones2" || id === "mcm" || id === "mtskills") ?? false;
   const meituanTools = useEnvironmentQuery(
-    supported && needsMeituanTools
-      ? sourceControlEnvironment.meituanTools({ environmentId, input: {} })
-      : null,
+    streams.meituan ? sourceControlEnvironment.meituanTools({ environmentId, input: {} }) : null,
   );
   const availableTools = [...(tools.data ?? []), ...(meituanTools.data ?? [])];
   const discovery = useEnvironmentQuery(
-    supported ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
+    streams.sourceControl ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
   );
   const start = useAtomCommand(sourceControlEnvironment.startTool, { reportFailure: false });
   const refresh = useAtomCommand(sourceControlEnvironment.refreshTools);
@@ -128,13 +124,11 @@ export function SourceControlToolsSection({
       ],
     );
   };
-  if (!supported) return null;
+  if (!streams.sourceControl && !streams.meituan) return null;
   return (
     <SettingsSection title={`${t("Source control tools")} · ${environment.label}`}>
       {availableTools
-        ?.filter((tool) =>
-          onlyIds ? onlyIds.includes(tool.id) : tool.id === "git" || tool.id === "github",
-        )
+        .filter((tool) => onlyIds.includes(tool.id))
         .map((tool) => (
           <SettingsRow
             key={tool.id}
@@ -157,7 +151,11 @@ export function SourceControlToolsSection({
         label={t("Rescan server environment")}
         value={tools.error ?? meituanTools.error ?? undefined}
         valuePosition="below"
-        disabled={busy || (tools.isPending && tools.data === null)}
+        disabled={
+          busy ||
+          (tools.isPending && tools.data === null) ||
+          (meituanTools.isPending && meituanTools.data === null)
+        }
         onPress={() => {
           void refresh({ environmentId, input: {} });
           discovery.refresh();

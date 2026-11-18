@@ -87,7 +87,17 @@ it.effect("keeps an environment busy through verification and publishes the veri
     const entered = yield* Deferred.make<void>();
     const release = yield* Deferred.make<void>();
     let installed = false;
+    let toolVersion = "1.0.0";
     const installer = {
+      inspectMeituan: (id: "ones2" | "mcm" | "mtskills") =>
+        Effect.succeed({
+          ...plan().tool,
+          id,
+          version: toolVersion,
+          command: null,
+          phase: "idle" as const,
+          message: null,
+        }),
       inspect: (id: SourceControlTool["id"]) =>
         Effect.succeed(plan({ id, version: installed ? "2.44.0" : "2.43.0" })),
       install: () =>
@@ -103,6 +113,9 @@ it.effect("keeps an environment busy through verification and publishes the veri
       yield* service.refresh;
       yield* Effect.scoped(service.start(confirmation()));
       yield* Deferred.await(entered);
+      toolVersion = "2.0.0";
+      const meituanTools = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
+      assert.strictEqual(meituanTools.find((tool) => tool.id === "ones2")?.version, toolVersion);
       yield* service.refresh;
       const running = yield* Stream.runHead(service.changes);
       assert.strictEqual(
@@ -193,11 +206,21 @@ it.effect("retains installer failures and permits a retry", () => {
   );
 });
 
-it.effect("reports inspection failures as unknown rather than a missing executable", () =>
-  Effect.gen(function* () {
+it.effect("reports inspection failures as unknown rather than a missing executable", () => {
+  const inspected: string[] = [];
+  return Effect.gen(function* () {
     const service = yield* Maintenance.SourceControlToolMaintenance;
     const result = Option.getOrThrow(yield* Stream.runHead(service.changes));
+    assert.deepStrictEqual(inspected.toSorted(), ["git", "github", "meituan"]);
     const meituanResult = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
+    assert.deepStrictEqual(inspected.toSorted(), [
+      "git",
+      "github",
+      "mcm",
+      "meituan",
+      "mtskills",
+      "ones2",
+    ]);
     assert.deepStrictEqual(
       result.map((tool) => tool.id).toSorted(),
       ["git", "github", "meituan"].toSorted(),
@@ -214,9 +237,16 @@ it.effect("reports inspection failures as unknown rather than a missing executab
   }).pipe(
     Effect.provide(
       testLayer({
-        inspect: (id) => Effect.fail(new SourceControlToolError({ id, reason: "inspection" })),
+        inspect: (id) => {
+          inspected.push(id);
+          return Effect.fail(new SourceControlToolError({ id, reason: "inspection" }));
+        },
+        inspectMeituan: (id) => {
+          inspected.push(id);
+          return Effect.fail(new MeituanToolError({ id, reason: "inspection" }));
+        },
         install: () => Effect.die("An uninspected tool must not be installed"),
       }),
     ),
-  ),
-);
+  );
+});

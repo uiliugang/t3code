@@ -33,6 +33,7 @@ const make = Effect.gen(function* () {
   const settings = yield* Settings.ServerSettingsService;
   const scope = yield* Effect.scope;
   const lock = yield* Semaphore.make(1);
+  const meituanLock = yield* Semaphore.make(1);
   const state = yield* SubscriptionRef.make<ReadonlyArray<SourceControlTool>>([]);
   const meituanState = yield* SubscriptionRef.make<ReadonlyArray<MeituanTool>>([]);
   const isActive = (tools: ReadonlyArray<SourceControlTool>) =>
@@ -41,13 +42,14 @@ const make = Effect.gen(function* () {
     SubscriptionRef.update(state, (tools) =>
       tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
     );
-  const refresh = lock.withPermits(1)(
+  const enabledSettings = settings.getSettings.pipe(
+    Effect.orElseSucceed(() => ({ meituanIntegrationEnabled: false })),
+  );
+  const refreshSourceControl = lock.withPermits(1)(
     Effect.gen(function* () {
       const previous = yield* SubscriptionRef.get(state);
       if (isActive(previous)) return;
-      const saved = yield* settings.getSettings.pipe(
-        Effect.orElseSucceed(() => ({ meituanIntegrationEnabled: false })),
-      );
+      const saved = yield* enabledSettings;
       const tools = yield* Effect.forEach(
         (["git", "github", "meituan"] as const).filter((id) =>
           SourceControlToolInstaller.isSourceControlToolEnabled(id, saved),
@@ -76,6 +78,11 @@ const make = Effect.gen(function* () {
         { concurrency: 3 },
       );
       yield* SubscriptionRef.set(state, tools);
+    }),
+  );
+  const refreshMeituan = meituanLock.withPermits(1)(
+    Effect.gen(function* () {
+      const saved = yield* enabledSettings;
       const meituanTools = yield* Effect.forEach(
         (["ones2", "mcm", "mtskills"] as const).filter((id) =>
           SourceControlToolInstaller.isMeituanToolEnabled(id, saved),
@@ -173,9 +180,11 @@ const make = Effect.gen(function* () {
     );
   });
   return SourceControlToolMaintenance.of({
-    refresh,
-    changes: Stream.unwrap(refresh.pipe(Effect.as(SubscriptionRef.changes(state)))),
-    meituanChanges: Stream.unwrap(refresh.pipe(Effect.as(SubscriptionRef.changes(meituanState)))),
+    refresh: Effect.all([refreshSourceControl, refreshMeituan], { concurrency: 2, discard: true }),
+    changes: Stream.unwrap(refreshSourceControl.pipe(Effect.as(SubscriptionRef.changes(state)))),
+    meituanChanges: Stream.unwrap(
+      refreshMeituan.pipe(Effect.as(SubscriptionRef.changes(meituanState))),
+    ),
     start,
   });
 });

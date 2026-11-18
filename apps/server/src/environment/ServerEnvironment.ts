@@ -283,6 +283,7 @@ export const make = Effect.gen(function* () {
       threadTerminalCleanup: true,
       meituanIntegration: true,
       sourceControlToolMaintenance: true,
+      meituanTools: true,
       ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
       environmentIcon: true,
       environmentName: true,

@@ -115,7 +115,7 @@ const make = Effect.gen(function* () {
 
   const inspect = Effect.fn("SourceControlToolInstaller.inspect")(
     function* (id: SourceControlToolId) {
-      if (!isSourceControlToolEnabled(id, yield* settings.getSettings))
+      if (id === "meituan" && !isSourceControlToolEnabled(id, yield* settings.getSettings))
         return yield* new SourceControlToolError({ id, reason: "unsupported" });
       const definition = DEFINITIONS[id];
       const executablePath = yield* find(definition.executable);

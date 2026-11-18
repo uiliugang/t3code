@@ -157,6 +157,7 @@ it.layer(
           threadAutoSettlementScope: true,
           threadTerminalCleanup: true,
           meituanIntegration: true,
+          meituanTools: true,
         });
       }
     }),

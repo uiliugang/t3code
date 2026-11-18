@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { ServerSettingsError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { processOutput } from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as Context from "effect/Context";
@@ -22,6 +23,7 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
   installExit?: number;
   meituanEnabled?: boolean;
   meituanRequirementsEnabled?: boolean;
+  settingsUnavailable?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -65,10 +67,20 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
   const context = yield* Layer.build(
     Installer.layer.pipe(
       Layer.provide(
-        Settings.ServerSettingsService.layerTest({
-          meituanIntegrationEnabled: options.meituanEnabled ?? true,
-          meituanRequirementsEnabled: options.meituanRequirementsEnabled ?? true,
-        }),
+        options.settingsUnavailable
+          ? Layer.mock(Settings.ServerSettingsService)({
+              getSettings: Effect.fail(
+                new ServerSettingsError({
+                  settingsPath: "<test>",
+                  operation: "read-file",
+                  cause: "unavailable",
+                }),
+              ),
+            })
+          : Settings.ServerSettingsService.layerTest({
+              meituanIntegrationEnabled: options.meituanEnabled ?? true,
+              meituanRequirementsEnabled: options.meituanRequirementsEnabled ?? true,
+            }),
       ),
       Layer.provide(Layer.succeed(VcsProcess.VcsProcess, { run })),
       Layer.provide(Layer.succeed(HostProcess.Environment, { PATH: bin })),
@@ -168,7 +180,11 @@ it.effect("does not replace a custom installation with a distribution package", 
 
 it.effect("installs missing GitHub CLI and upgrades Homebrew-owned Git", () =>
   Effect.gen(function* () {
-    const { installer, bin } = yield* fixture({ binaries: ["git", "brew"], platform: "darwin" });
+    const { installer, bin } = yield* fixture({
+      binaries: ["git", "brew"],
+      platform: "darwin",
+      settingsUnavailable: true,
+    });
     const git = yield* installer.inspect("git");
     assert.strictEqual(git.executable, `${bin}/brew`);
     assert.deepStrictEqual(git.args, ["upgrade", "git"]);

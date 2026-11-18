@@ -108,4 +108,10 @@ it("shows a missing automatic-install tool as Not installed only once", () => {
 
   expect(container.textContent).toContain("GitHub CLI Not installed");
   expect(container.textContent).not.toContain("Not installed · Not installed");
+  mocks.query.mockClear();
+  act(() =>
+    root.render(<SourceControlToolsSection environment={environment} only={["ones2", "mcm"]} />),
+  );
+  expect(mocks.query).not.toHaveBeenCalledWith("meituanTools");
+  expect(container.textContent).toBe("");
 });

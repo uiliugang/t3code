@@ -5,6 +5,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import { EnvironmentId, isMeituanServiceEnabled, type SkillSource } from "@t3tools/contracts";
 import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
+  meituanAssociationCountLabel,
   meituanToolIdsForSection,
   shouldDiscoverMeituanProjectSources,
 } from "@t3tools/client-runtime/meituanSettings";
@@ -174,6 +175,8 @@ function EnvironmentIntegration({
     return mergeProjectIssueSources(automatic, saved).length > 0;
   }).length;
   const canToggle = environment.serverConfig.environment.capabilities.meituanIntegration === true;
+  const canRescan =
+    environment.serverConfig.environment.capabilities.sourceControlToolMaintenance === true;
   const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const update = useAtomCommand(serverEnvironment.updateSettings);
   const [busy, setBusy] = useState(false);
@@ -207,7 +210,7 @@ function EnvironmentIntegration({
     await update({ environmentId, input: { patch: { meituanIntegrationEnabled: value } } });
     setBusy(false);
     discovery.refresh();
-    if (value) void refreshTools({ environmentId, input: {} });
+    if (value && canRescan) void refreshTools({ environmentId, input: {} });
   };
   const saveService = async (service: "code" | "issues" | "skills", value: boolean) => {
     if (
@@ -254,7 +257,7 @@ function EnvironmentIntegration({
       });
       discovery.refresh();
     }
-    void refreshTools({ environmentId, input: {} });
+    if (canRescan) void refreshTools({ environmentId, input: {} });
     associationsQuery.refresh();
     setBusy(false);
   };
@@ -363,7 +366,7 @@ function EnvironmentIntegration({
                 ? t("Paused")
                 : !issuesEnabled
                   ? t("Disabled")
-                  : t("{count} projects", {
+                  : t(meituanAssociationCountLabel(projects.length, associationsQuery), {
                       count: associatedProjectCount,
                     })
             }

@@ -1,13 +1,16 @@
 import { useAtomValue } from "@effect/atom-react";
 import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
+  meituanAssociationCountLabel,
   meituanToolIdsForSection,
   shouldDiscoverMeituanProjectSources,
+  toolSubscriptionsFor,
 } from "@t3tools/client-runtime/meituanSettings";
 import {
   ProjectId,
   isMeituanServiceEnabled,
   type EnvironmentId,
+  type ExecutionEnvironmentCapabilities,
   type ServerSettings,
   type SkillSource,
 } from "@t3tools/contracts";
@@ -393,7 +396,7 @@ export function MeituanSettings({
           key={environment.environmentId}
           environmentId={environment.environmentId}
           label={environment.label}
-          canToggle={environment.serverConfig.environment.capabilities.meituanIntegration === true}
+          capabilities={environment.serverConfig.environment.capabilities}
           section={section}
           onSectionChange={onSectionChange}
         />
@@ -405,13 +408,13 @@ export function MeituanSettings({
 function EnvironmentMeituanSettings({
   environmentId,
   label,
-  canToggle,
+  capabilities,
   section,
   onSectionChange,
 }: {
   environmentId: EnvironmentId;
   label: string;
-  canToggle: boolean;
+  capabilities: ExecutionEnvironmentCapabilities;
   section?: MeituanSection | undefined;
   onSectionChange: (next?: MeituanSection) => void;
 }) {
@@ -429,6 +432,7 @@ function EnvironmentMeituanSettings({
             : "code"
       : undefined;
   const active = section ?? searchSection;
+  const canToggle = capabilities.meituanIntegration === true;
   const settings = useEnvironmentSettings(environmentId, (value) => value);
   const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const update = useAtomCommand(serverEnvironment.updateSettings);
@@ -457,13 +461,12 @@ function EnvironmentMeituanSettings({
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
   );
+  const streams = toolSubscriptionsFor(capabilities, activeToolIds);
   const tools = useEnvironmentQuery(
-    codeEnabled ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
+    streams.sourceControl ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
   );
   const meituanTools = useEnvironmentQuery(
-    issuesEnabled || skillsEnabled
-      ? sourceControlEnvironment.meituanTools({ environmentId, input: {} })
-      : null,
+    streams.meituan ? sourceControlEnvironment.meituanTools({ environmentId, input: {} }) : null,
   );
   const item = discovery.data?.sourceControlProviders.find((entry) => entry.kind === "meituan");
   const availableTools = [...(tools.data ?? []), ...(meituanTools.data ?? [])];
@@ -484,7 +487,8 @@ function EnvironmentMeituanSettings({
     await update({ environmentId, input: { patch: { meituanIntegrationEnabled: next } } });
     setBusy(false);
     discovery.refresh();
-    if (next) void refreshTools({ environmentId, input: {} });
+    if (next && capabilities.sourceControlToolMaintenance)
+      void refreshTools({ environmentId, input: {} });
   };
   const saveService = async (service: "code" | "issues" | "skills", value: boolean) => {
     if (
@@ -519,7 +523,6 @@ function EnvironmentMeituanSettings({
         },
       });
       skillQuery.refresh();
-      void refreshTools({ environmentId, input: {} });
     } else {
       await update({
         environmentId,
@@ -531,8 +534,8 @@ function EnvironmentMeituanSettings({
         },
       });
       discovery.refresh();
-      void refreshTools({ environmentId, input: {} });
     }
+    if (capabilities.sourceControlToolMaintenance) void refreshTools({ environmentId, input: {} });
     setBusy(false);
   };
   const toggles = {
@@ -646,9 +649,15 @@ function EnvironmentMeituanSettings({
                 ? t("Paused")
                 : !issuesEnabled
                   ? t("Disabled")
-                  : t("{count} projects", {
-                      count: associations.entries.length,
-                    })
+                  : t(
+                      meituanAssociationCountLabel(
+                        associations.projects.length,
+                        associations.query,
+                      ),
+                      {
+                        count: associations.entries.length,
+                      },
+                    )
             }
             onClick={() => selected("issues")}
             {...(canToggle ? { toggle: toggles.issues } : {})}
@@ -704,6 +713,11 @@ function EnvironmentMeituanSettings({
           )}
         </fieldset>
       )}
+      {tools.error || meituanTools.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t("Command line tools")}: {[tools.error, meituanTools.error].filter(Boolean).join(" · ")}
+        </p>
+      ) : null}
       {visibleTools.length ? (
         <details>
           <summary className="cursor-pointer py-3 text-sm text-muted-foreground">
