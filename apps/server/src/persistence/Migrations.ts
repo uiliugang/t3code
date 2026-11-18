@@ -82,11 +82,11 @@ import Migration0071 from "./Migrations/071_PeerLinkFence.ts";
 import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
 import Migration0073 from "./Migrations/073_ProjectWorkspaceConfiguration.ts";
 import Migration0074 from "./Migrations/074_WorkspaceRevisions.ts";
+import Migration0075 from "./Migrations/075_WorkspacePreparation.ts";
+import Migration0076 from "./Migrations/076_WorkspaceRestoreJournal.ts";
 import Migration0077 from "./Migrations/077_WorkspaceCleanupJournal.ts";
 import Migration0078 from "./Migrations/078_ManagedWorktreeSnapshots.ts";
 import Migration0079 from "./Migrations/079_SkillCatalog.ts";
-import Migration0076 from "./Migrations/076_WorkspaceRestoreJournal.ts";
-import Migration0075 from "./Migrations/075_WorkspacePreparation.ts";
 import Migration0080 from "./Migrations/080_ActiveTurnItemIndexes.ts";
 import Migration0081 from "./Migrations/081_ExcludeAttachmentPlaceholdersFromSearch.ts";
 import Migration0082 from "./Migrations/082_SubagentDeliveryState.ts";
@@ -94,7 +94,6 @@ import Migration0083 from "./Migrations/083_ProjectionProjectsPinArchive.ts";
 import Migration0084 from "./Migrations/084_RepairBooleanSettledOverride.ts";
 import Migration0085 from "./Migrations/085_DropOrchestrationEventCorrelationIndex.ts";
 import Migration0086 from "./Migrations/086_DelegatedRecoveryIndexes.ts";
-
 import Migration0087 from "./Migrations/087_Wechat.ts";
 import Migration0088 from "./Migrations/088_ScheduledTaskThreadMode.ts";
 import Migration0089 from "./Migrations/089_WorkItems.ts";
@@ -112,17 +111,14 @@ import Migration0100 from "./Migrations/100_ShellThreadReadIndexes.ts";
 import Migration0101 from "./Migrations/101_WorkItemDeliveryActions.ts";
 import Migration0102 from "./Migrations/102_AuthConnectDevices.ts";
 import Migration0103 from "./Migrations/103_AuthConnectDeniedRequests.ts";
-
 import Migration0104 from "./Migrations/104_QueuedTurnInputIndexJsonValid.ts";
-
 import Migration0105 from "./Migrations/105_ProviderTurnAttemptIndex.ts";
-
 import Migration0106 from "./Migrations/106_TurnItemMessageOrdinalIndex.ts";
-
 import Migration0107 from "./Migrations/107_AuthSessionProofKeyIndex.ts";
-
 import Migration0108 from "./Migrations/108_TurnItemInlineWorkOutput.ts";
 import Migration0109 from "./Migrations/109_RepairStaleTitleRegeneration.ts";
+import Migration0110 from "./Migrations/110_IssueTrackerBindings.ts";
+import Migration0111 from "./Migrations/111_ActiveShellIndexIndexes.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -235,6 +231,8 @@ const migrationEntries = [
   [107, "AuthSessionProofKeyIndex", Migration0107],
   [108, "TurnItemInlineWorkOutput", Migration0108],
   [109, "RepairStaleTitleRegeneration", Migration0109],
+  [110, "IssueTrackerBindings", Migration0110],
+  [111, "ActiveShellIndexIndexes", Migration0111],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -34,7 +34,8 @@ import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilt
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { filterSettingsSections } from "./settings-search";
 import { usePaneRole } from "../../components/ui/Pane";
-import { I18nProvider, useGT } from "../../i18n/I18nProvider";
+import { useGT } from "gt-react-native";
+import { I18nProvider } from "../../i18n/I18nProvider";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function SettingsRouteScreen() {
@@ -317,8 +318,12 @@ function useSettingsIndexSections(): SettingsListSection[] {
           gt("Projects"),
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
-        serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
-        serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
+        serverPage(
+          "SettingsEnvironmentSourceControl",
+          "arrow.triangle.branch",
+          gt("Source control"),
+        ),
+        serverPage("SettingsWorktrees", "square.on.square", gt("Worktrees")),
       ],
     },
     {

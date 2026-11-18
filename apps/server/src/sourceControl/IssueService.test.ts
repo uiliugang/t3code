@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
-  IssueError,
+  RequirementIssueError,
   ProjectId,
   SourceControlProviderKind,
   SourceControlProviderError,
@@ -216,7 +216,9 @@ describe("IssueService", () => {
                 search: ({ source }) => {
                   searched.push(source.scope);
                   return source.scope === "123"
-                    ? Effect.fail(new IssueError({ operation: "search", reason: "unavailable" }))
+                    ? Effect.fail(
+                        new RequirementIssueError({ operation: "search", reason: "unavailable" }),
+                      )
                     : Effect.succeed({ issues: [], hasMore: false });
                 },
               },
@@ -268,7 +270,8 @@ describe("IssueService", () => {
             expect.arrayContaining([
               {
                 projectId: projects[2]!.id,
-                reason: new IssueError({ operation: "search", reason: "unavailable" }).message,
+                reason: new RequirementIssueError({ operation: "search", reason: "unavailable" })
+                  .message,
               },
               {
                 projectId: projects[6]!.id,

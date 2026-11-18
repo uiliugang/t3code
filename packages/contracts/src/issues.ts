@@ -49,15 +49,15 @@ export const Issue = Schema.Struct({
   updatedAt: Schema.String,
 });
 export type Issue = typeof Issue.Type;
-export const IssueListInput = Schema.Struct({
+export const RequirementIssueListInput = Schema.Struct({
   provider: IssueProvider,
   projectId: Schema.optional(ProjectId),
   assignee: Schema.String.check(Schema.isMaxLength(200)),
   query: Schema.String.check(Schema.isMaxLength(200)),
   page: PositiveInt.check(Schema.isLessThanOrEqualTo(1000)),
 });
-export type IssueListInput = typeof IssueListInput.Type;
-export const IssueListResult = Schema.Struct({
+export type RequirementIssueListInput = typeof RequirementIssueListInput.Type;
+export const RequirementIssueListResult = Schema.Struct({
   groups: Schema.Array(
     Schema.Struct({
       source: IssueSource,
@@ -69,13 +69,13 @@ export const IssueListResult = Schema.Struct({
   failures: Schema.Array(Schema.Struct({ projectId: ProjectId, reason: Schema.String })),
 });
 export const IssueReadInput = Schema.Struct({ ...IssueTarget.fields, id: TrimmedNonEmptyString });
-export const IssueDetail = Schema.Struct({
+export const RequirementIssueDetail = Schema.Struct({
   ...Issue.fields,
   body: Schema.String,
   bodyFormat: Schema.Literals(["markdown", "html"]),
   transitions: Schema.Array(IssueOption),
 });
-export type IssueDetail = typeof IssueDetail.Type;
+export type RequirementIssueDetail = typeof RequirementIssueDetail.Type;
 export const IssuePeopleInput = Schema.Struct({ ...IssueTarget.fields, query: Text });
 export const IssueMetadataInput = Schema.Struct({
   ...IssueTarget.fields,
@@ -95,30 +95,33 @@ export const IssueMetadata = Schema.Struct({
   subtypes: Schema.Array(IssueOption),
   fields: Schema.Array(IssueField),
 });
-export const IssueCreateInput = Schema.Struct({
+export const RequirementIssueCreateInput = Schema.Struct({
   ...IssueMetadataInput.fields,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
   body: Schema.String.check(Schema.isMaxLength(100_000)),
   assignees: Schema.Array(Text).check(Schema.isMaxLength(20)),
   fields: Schema.Record(Text, Schema.String.check(Schema.isMaxLength(4000))),
 });
-export const IssueSetStateInput = Schema.Struct({ ...IssueReadInput.fields, state: Text });
-export class IssueError extends Schema.TaggedError<IssueError, { readonly brand: unique symbol }>()(
-  "IssueError",
-  {
-    operation: Schema.String,
-    reason: Schema.Literals([
-      "unavailable",
-      "unsupported",
-      "invalid-target",
-      "invalid-state",
-      "validation",
-      "outcome-unknown",
-    ]),
-    fields: Schema.optional(Schema.Array(Schema.Struct({ variable: Text, message: Text }))),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
+export const RequirementIssueSetStateInput = Schema.Struct({
+  ...IssueReadInput.fields,
+  state: Text,
+});
+export class RequirementIssueError extends Schema.TaggedError<
+  RequirementIssueError,
+  { readonly brand: unique symbol }
+>()("IssueError", {
+  operation: Schema.String,
+  reason: Schema.Literals([
+    "unavailable",
+    "unsupported",
+    "invalid-target",
+    "invalid-state",
+    "validation",
+    "outcome-unknown",
+  ]),
+  fields: Schema.optional(Schema.Array(Schema.Struct({ variable: Text, message: Text }))),
+  cause: Schema.optional(Schema.Defect()),
+}) {
   override get message() {
     switch (this.reason) {
       case "unsupported":

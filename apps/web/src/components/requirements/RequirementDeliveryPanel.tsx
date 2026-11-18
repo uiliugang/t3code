@@ -9,10 +9,12 @@ import {
   type WorkItemCommandInput,
   type DeliverySummary,
   type IssueOption,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { DELIVERY_PROGRESS_LABELS, pullRequestLabel } from "@t3tools/client-runtime/work-item";
 import { useState } from "react";
 import { randomUUID } from "~/lib/utils";
+import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
@@ -28,13 +30,16 @@ export function RequirementDeliveryPanel({
   item,
   summary,
   transitions = [],
+  panelRef,
 }: {
   environmentId: EnvironmentId;
   item: WorkItem;
   summary?: DeliverySummary | undefined;
   transitions?: readonly IssueOption[];
+  panelRef?: ScopedThreadRef | undefined;
 }) {
   const t = useUiTranslation();
+  const openChangeRequest = useOpenChangeRequestLink(undefined, panelRef);
   const allowed = useAtomValue(
     serverEnvironment.refreshWorkItemDelivery.permissionAtom(environmentId),
   );
@@ -194,6 +199,9 @@ export function RequirementDeliveryPanel({
               href={url}
               target="_blank"
               rel="noreferrer"
+              onClick={(event) => {
+                openChangeRequest(event, url, undefined, environmentId);
+              }}
             >
               {pullRequestLabel(url)}
             </a>

@@ -16,7 +16,16 @@ import { canOpenLinksInApp } from "../browser/browserLinkTarget";
 import { useOpenLink } from "../browser/useOpenLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
+import {
+  REQUIREMENTS_PANEL_REF,
+  selectActiveRightPanel,
+  selectActiveRightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
+import {
+  patchRequirementsSearch,
+  requirementSelection,
+} from "../components/requirements/requirementPanelSearch";
 import {
   selectThreadBranchBaseRef,
   selectThreadDiffPanelSelection,
@@ -127,7 +136,16 @@ export function useOpenChangeRequestLink(
           ...(revealUrl === undefined ? {} : { revealUrl }),
           number,
         });
-        if (!resolvedThreadRef) {
+        if (scopedThreadKey(resolvedPanelRef) === scopedThreadKey(REQUIREMENTS_PANEL_REF)) {
+          const selected = selectActiveRightPanelSurface(
+            useRightPanelStore.getState().byThreadKey,
+            resolvedPanelRef,
+          );
+          void navigate({
+            to: "/requirements",
+            search: (previous) => patchRequirementsSearch(previous, requirementSelection(selected)),
+          });
+        } else if (!resolvedThreadRef && resolvedPanelRef.threadId === "pull-requests-panel") {
           void navigate({
             to: "/pull-requests",
             search: (previous) => ({

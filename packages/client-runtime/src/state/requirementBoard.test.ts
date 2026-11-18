@@ -2,7 +2,7 @@ import {
   EnvironmentId,
   ProjectId,
   WorkItemId,
-  type IssueListResult,
+  type RequirementIssueListResult,
   type WorkItemListResult,
   type WorkItemSummary,
 } from "@t3tools/contracts";
@@ -51,7 +51,7 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     ),
   );
   const empty = Atom.make(
-    AsyncResult.success<typeof IssueListResult.Type>({
+    AsyncResult.success<typeof RequirementIssueListResult.Type>({
       groups: [],
       failures: [
         { projectId: item.projectId, reason: "Configure an issue source for this project first." },
@@ -59,7 +59,9 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     }),
   );
   const failure = Atom.make(
-    AsyncResult.failure<typeof IssueListResult.Type>(Cause.die(new Error("Source unavailable"))),
+    AsyncResult.failure<typeof RequirementIssueListResult.Type>(
+      Cause.die(new Error("Source unavailable")),
+    ),
   );
   const board = createRequirementBoardAtoms({
     issues: ({ input }) => (input.provider === "github" ? empty : failure),
@@ -108,7 +110,7 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     const duplicateBoard = createRequirementBoardAtoms({
       issues: () =>
         Atom.make(
-          AsyncResult.success<typeof IssueListResult.Type>({
+          AsyncResult.success<typeof RequirementIssueListResult.Type>({
             groups: [],
             failures: [repeatedFailure],
           }),
@@ -173,10 +175,13 @@ it("keeps environment identities, failures and pagination separate in the combin
     issues: ({ environmentId, input }) =>
       Atom.make(
         environmentId === firstEnvironment
-          ? AsyncResult.failure<typeof IssueListResult.Type>(
+          ? AsyncResult.failure<typeof RequirementIssueListResult.Type>(
               Cause.die(new Error(`${input.provider} unavailable`)),
             )
-          : AsyncResult.success<typeof IssueListResult.Type>({ groups: [], failures: [] }),
+          : AsyncResult.success<typeof RequirementIssueListResult.Type>({
+              groups: [],
+              failures: [],
+            }),
       ),
     workItemsLive: ({ environmentId, input }) => {
       requested.push({ environmentId, cursor: input.cursor });

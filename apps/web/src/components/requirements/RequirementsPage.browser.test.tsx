@@ -1,47 +1,69 @@
 import "~/index.css";
 import { RegistryContext } from "@effect/atom-react";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 const mocks = vi.hoisted(() => ({ command: vi.fn() }));
+vi.mock(import("~/browser/useOpenLink"), () => ({ useOpenLink: () => vi.fn() }));
 vi.mock(import("~/hooks/useUiTranslation"), () => ({
   useUiTranslation: () => (message: string) => message,
 }));
 vi.mock(import("~/state/use-atom-command"), () => ({
   useAtomCommand: () => mocks.command,
 }));
-vi.mock(
-  import("~/state/environments"),
-  () =>
+vi.mock(import("~/state/environments"), () => ({
+  usePrimaryEnvironmentId: () => "local" as never,
+  usePrimaryEnvironment: () => null,
+  useEnvironments: () =>
     ({
-      usePrimaryEnvironmentId: () => "local",
-      useEnvironments: () => ({
-        environments: ["local", "remote"].map((environmentId) => ({
-          environmentId,
-          label: environmentId,
-          connection: { phase: "connected" },
-        })),
-      }),
+      environments: ["local", "remote"].map((environmentId) => ({
+        environmentId,
+        label: environmentId,
+        connection: { phase: "connected" },
+      })),
     }) as never,
-);
-vi.mock(
-  import("~/state/entities"),
-  () =>
-    ({
-      useProjects: () =>
-        ["local", "remote"].map((environmentId) => ({
-          environmentId,
-          id: "project",
-          title: `${environmentId} project`,
-          archivedAt: null,
-          isScratch: false,
-        })),
-    }) as never,
-);
+}));
+vi.mock(import("~/state/entities"), async (original) => ({
+  ...(await original()),
+  useProjects: () =>
+    ["local", "remote"].map((environmentId) => ({
+      environmentId,
+      id: "project",
+      title: `${environmentId} project`,
+      archivedAt: null,
+      isScratch: false,
+    })) as never,
+  useQuietThreadShell: () => null,
+  useThreadShells: () => [],
+  useServerConfigs: () => new Map(),
+  readProjects: () =>
+    [
+      {
+        id: "project",
+        environmentId: "local",
+        repositoryIdentity: {
+          provider: "github",
+          canonicalKey: "github.com/acme/app",
+          locator: { remoteUrl: "https://github.com/acme/app.git" },
+        },
+      },
+    ] as never,
+  readProject: () => null,
+  readThreadShell: () => null,
+}));
 vi.mock(import("~/state/server"), async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
+  const { compileResolvedKeybindingsConfig } = await import("@t3tools/shared/keybindings");
   const workItems = Atom.family((environmentId: string) =>
     Atom.make(
       AsyncResult.success({
@@ -64,8 +86,20 @@ vi.mock(import("~/state/server"), async () => {
     ),
   );
   return {
+    primaryServerKeybindingsAtom: Atom.make(
+      compileResolvedKeybindingsConfig([
+        { key: "alt+b", command: "rightPanel.toggle" },
+        { key: "alt+w", command: "rightPanel.close" },
+      ]),
+    ),
+    environmentServerConfigsAtom: Atom.make(new Map([["local", {}]])),
+    themeServerEnvironmentThemesAtom: Atom.make([]),
+    themeServerSettingsAtom: Atom.make(null),
+    primaryServerSettingsAtom: Atom.make(null),
+    primaryServerConfigAtom: Atom.make(null),
     serverEnvironment: {
       configValueAtom: Atom.family(() => Atom.make({ workItems: true, workItemDiscovery: true })),
+      settingsValueAtom: Atom.family(() => Atom.make(null)),
       mutateWorkItem: { permissionAtom: Atom.family(() => Atom.make(true)) },
       discoverWorkItems: { permissionAtom: Atom.family(() => Atom.make(true)) },
       workItemsLive: ({ environmentId }: { environmentId: string }) => workItems(environmentId),
@@ -91,21 +125,62 @@ vi.mock(
   () =>
     ({
       WorkItemEditor: () => null,
-      WorkItemDetailPanel: () => null,
+      WorkItemDetailPanel: ({ id }: { id: string }) => {
+        const open = useOpenChangeRequestLink(undefined, REQUIREMENTS_PANEL_REF);
+        const url = "https://github.com/acme/app/pull/7";
+        return (
+          <div data-testid={`work-item-detail:${id}`}>
+            <a
+              href={url}
+              onClick={(event) => open(event, url, undefined, EnvironmentId.make("local"))}
+            >
+              Linked PR
+            </a>
+          </div>
+        );
+      },
+      ThreadWorkItemsPanel: () => null,
     }) as never,
 );
 vi.mock(import("./IssueCreateDialog"), () => ({ IssueCreateDialog: () => <></> }));
-vi.mock(import("./IssueDetailPanel"), () => ({ IssueDetailPanel: () => <></> }));
-vi.mock(import("../ui/sidebar"), () => ({ SidebarInset: () => null }) as never);
-vi.mock(import("../ui/toast"), () => ({ toastManager: { add: vi.fn() } }) as never);
+vi.mock(import("./IssueDetailPanel"), () => ({
+  IssueDetailPanel: ({ id }: { id: string }) => (
+    <div data-testid={`issue-detail:${id}`}>Issue {id}</div>
+  ),
+}));
+vi.mock(
+  import("../pullRequest/PullRequestDetailPanel"),
+  () =>
+    ({
+      PullRequestDetailPanel: () => <div>Linked PR detail</div>,
+    }) as never,
+);
+vi.mock(
+  import("../ui/sidebar"),
+  () =>
+    ({
+      SidebarInset: ({ children }: { children: ReactNode }) => (
+        <main className="flex h-dvh">{children}</main>
+      ),
+      useMobileSidebarSheetMounted: () => false,
+    }) as never,
+);
+vi.mock(
+  import("../ui/toast"),
+  () => ({ stackedThreadToast: vi.fn(), toastManager: { add: vi.fn() } }) as never,
+);
 
 import { act, render } from "../../../test/render";
+import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "~/rightPanelStore";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
-import { RequirementBoard } from "./RequirementsPage";
-import type { RequirementsSearch } from "~/routes/_chat.requirements";
+import { RequirementBoard, RequirementsPage } from "./RequirementsPage";
+import { Route as requirementsRoute, type RequirementsSearch } from "~/routes/_chat.requirements";
+import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
+import { getWorkspaceFocusRequestVersion, startWorkspaceFocus } from "~/lib/workspaceFocus";
 
 function setup() {
+  useRightPanelStore.getState().closeAllSurfaces(REQUIREMENTS_PANEL_REF);
   mocks.command.mockReset().mockResolvedValue({ _tag: "Success", value: [] });
   const registry = AtomRegistry.make();
   return {
@@ -295,4 +370,184 @@ it("keeps the updating indicator inside the topbar on narrow viewports without v
   expect(statusRect.height).toBeLessThanOrEqual(headerRect.height);
   expect(statusRect.top).toBeGreaterThanOrEqual(headerRect.top);
   expect(statusRect.bottom).toBeLessThanOrEqual(headerRect.bottom);
+
+  fixture.registry.set(issuesAtom, AsyncResult.success({ groups: [], failures: [] }));
+  fixture.registry.set(
+    workItemsAtom,
+    AsyncResult.success({ items: [], nextCursor: null, candidates: [] }),
+  );
+});
+
+it("opens clicked requirement items as peer tabs in the right panel and switches or closes them", async () => {
+  using fixture = setup();
+  const workItemsAtom = serverEnvironment.workItemsLive({
+    environmentId: "local",
+    input: { archived: false, cursor: undefined },
+  } as never) as Atom.Writable<unknown>;
+  const issuesAtom = sourceControlEnvironment.issues({
+    environmentId: "local",
+    input: { provider: "github", assignee: "me", query: "", page: 1 },
+  } as never) as Atom.Writable<unknown>;
+  await page.viewport(1280, 800);
+  const root = createRootRoute();
+  const chat = createRoute({ getParentRoute: () => root, id: "_chat" });
+  const requirements = createRoute({
+    getParentRoute: () => chat,
+    path: "requirements",
+    validateSearch: requirementsRoute.options.validateSearch,
+    component: RequirementsPage,
+  });
+  const history = createMemoryHistory({ initialEntries: ["/requirements?view=list"] });
+  const router = createRouter({
+    routeTree: root.addChildren([chat.addChildren([requirements])]),
+    history,
+  });
+  await using screen = await render(
+    <RegistryContext.Provider value={fixture.registry}>
+      <RouterProvider router={router} />
+    </RegistryContext.Provider>,
+    { router: false }, // The fixture uses the requirements route and its real search validation.
+  );
+  using _focus = { [Symbol.dispose]: startWorkspaceFocus(router) };
+  await act(async () => {
+    fixture.registry.set(
+      workItemsAtom,
+      AsyncResult.success({
+        items: [
+          {
+            id: "item-alpha",
+            projectId: "project",
+            title: "Alpha requirement",
+            description: "",
+            priority: "P1",
+            status: "todo",
+            archived: false,
+            specRevision: 1,
+            version: 1,
+            executionCount: 0,
+            createdAt: "2026-11-16T00:00:00Z",
+            activeExecutionCount: 0,
+            updatedAt: "2026-11-16T00:00:00Z",
+          },
+          {
+            id: "item-beta",
+            projectId: "project",
+            title: "Beta requirement",
+            description: "",
+            priority: "P2",
+            status: "todo",
+            archived: false,
+            specRevision: 1,
+            version: 1,
+            executionCount: 0,
+            createdAt: "2026-11-16T00:00:00Z",
+            activeExecutionCount: 0,
+            updatedAt: "2026-11-16T00:00:00Z",
+          },
+        ],
+        nextCursor: null,
+        candidates: [],
+      }),
+    );
+    fixture.registry.set(
+      issuesAtom,
+      AsyncResult.success({
+        groups: [
+          {
+            source: { provider: "github", host: "github.com", scope: "acme/app" },
+            projectIds: ["project"],
+            issues: [
+              {
+                id: "42",
+                url: "https://github.com/acme/app/issues/42",
+                title: "GitHub bug report",
+                state: "open",
+                stateCategory: "todo",
+                type: "Issue",
+                assignees: [],
+                priority: "",
+                updatedAt: "2026-11-16T00:00:00Z",
+              },
+            ],
+            hasMore: false,
+          },
+        ],
+        failures: [],
+      }),
+    );
+  });
+
+  const alphaRow = screen.getByRole("button", { name: /Alpha requirement.*P1/ });
+  await alphaRow.click();
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
+  await expect.element(alphaRow).toHaveFocus();
+  expect(router.state.location.search).toMatchObject({ workItemId: "item-alpha", view: "list" });
+  await act(() => history.back());
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).not.toBeInTheDocument();
+  await act(() => history.forward());
+  await screen.getByRole("link", { name: "Linked PR" }).click();
+  await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
+  expect(router.state.location.search).toMatchObject({ pullRequest: { number: 7 }, view: "list" });
+  const listed = fixture.registry.get(issuesAtom);
+  await act(() =>
+    fixture.registry.set(
+      issuesAtom,
+      AsyncResult.waiting(listed as AsyncResult.AsyncResult<unknown>),
+    ),
+  );
+  await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
+  await act(() => history.back());
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
+
+  await screen.getByRole("button", { name: /Beta requirement/ }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
+
+  await screen.getByRole("button", { name: /GitHub bug report/ }).click();
+  await expect.element(screen.getByTestId("issue-detail:42")).toBeVisible();
+
+  const tabList = screen.container.querySelector("[data-right-panel-tab-list]")!;
+  expect(tabList).not.toBeNull();
+  expect(tabList.textContent).toContain("Alpha requirement");
+  expect(tabList.textContent).toContain("Beta requirement");
+  expect(tabList.textContent).toContain("#42");
+
+  // Switch back to Alpha requirement tab
+  await page.getByRole("button", { name: "Alpha requirement", exact: true }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-alpha")).toBeVisible();
+
+  // Close Alpha requirement tab and verify fallback tab stays open
+  await page.getByRole("button", { name: "Close Alpha requirement" }).click();
+  await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
+  await userEvent.keyboard("{Alt>}w{/Alt}");
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
+  const panelToggle = screen.getByRole("button", { name: "Toggle right panel" });
+  await act(() => panelToggle.element().focus());
+  await userEvent.keyboard("{Enter}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "false");
+  await expect.element(panelToggle).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "true");
+  await expect.element(panelToggle).toHaveFocus();
+
+  const environmentMenu = screen.getByRole("button", { name: "Environment", exact: true });
+  await act(() => environmentMenu.element().focus());
+  const focusVersion = getWorkspaceFocusRequestVersion();
+  await userEvent.keyboard("{Alt>}b{/Alt}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "false");
+  await userEvent.keyboard("{Alt>}b{/Alt}");
+  await expect.element(panelToggle).toHaveAttribute("aria-pressed", "true");
+  expect(getWorkspaceFocusRequestVersion()).toBe(focusVersion);
+  await expect.element(environmentMenu).toHaveFocus();
+
+  await page.viewport(600, 800);
+  await panelToggle.click();
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
+  await userEvent.keyboard("{Alt>}b{/Alt}");
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).toBeVisible();
+  expect(router.state.location.search).toMatchObject({ workItemId: "item-beta", view: "list" });
+  await page.viewport(1280, 800);
+  await environmentMenu.click();
+  await page.getByRole("menuitemcheckbox", { name: "remote", exact: true }).click();
+  await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
+  expect(router.state.location.search).toMatchObject({ environmentId: "remote", view: "list" });
 });

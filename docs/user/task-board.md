@@ -1,7 +1,8 @@
 # Manage requirements and local tasks
 
 Open **Requirements board** to see MEP ONES, GitHub Issues, and local tasks together.
-On mobile, open the **Requirements** navigation tab. Use **Requirement settings** on the board to configure issue sources.
+On web and desktop, configure issue sources in **Settings → Code → Issue management**.
+On mobile, open the **Requirements** tab and choose **Requirement settings** from the board menu.
 The board starts with all connected environments; each record shows its environment.
 Use the source, environment, and project filters to narrow the same board, and switch between
 list and board views. **New** lets you create an external issue or a local task in a project.

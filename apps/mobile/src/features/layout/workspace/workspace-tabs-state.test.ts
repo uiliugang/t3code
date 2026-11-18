@@ -142,6 +142,21 @@ describe("workspace root navigation", () => {
     expect(state.tabs.threads.query).toBe("diff");
   });
 
+  it("applying an empty-query view resets the position that search cancellation restores", () => {
+    let state = initialWorkspaceTabsState();
+    state = workspaceTabsReducer(state, { type: "scroll", tab: "pullRequests", offset: 640 });
+    state = workspaceTabsReducer(state, { type: "search", tab: "pullRequests" });
+    state = workspaceTabsReducer(state, { type: "query", tab: "pullRequests", query: "old query" });
+    state = workspaceTabsReducer(state, { type: "scroll", tab: "pullRequests", offset: 80 });
+    state = workspaceTabsReducer(state, { type: "cancel", tab: "pullRequests", scrollToTop: true });
+    expect(state.tabs.pullRequests).toEqual({
+      query: "",
+      searchMode: "resting",
+      scrollOffset: 0,
+      searchEntryOffset: 0,
+    });
+  });
+
   it("a late native blur cannot reopen a cancelled search", () => {
     let state = workspaceTabsReducer(initialWorkspaceTabsState(), { type: "search" });
     state = workspaceTabsReducer(state, { type: "cancel" });
@@ -261,7 +276,8 @@ vi.mock("../../pull-requests/PullRequestFilterMenuContext", () => ({
     createElement("div", null, children),
 }));
 vi.mock("../../pull-requests/PullRequestsScreen", () => ({ PullRequestsScreen: () => null }));
-vi.mock("./PullRequestToolbar.android", () => ({ PullRequestToolbar: () => null }));
+vi.mock("../../issues/IssuesScreen", () => ({ IssuesScreen: () => null }));
+vi.mock("./ListSearchToolbar.android", () => ({ ListSearchToolbar: () => null }));
 vi.mock("./AndroidWorkspaceNavigation", () => ({
   AndroidWorkspaceNavigation: () => null,
   FloatingWorkspaceTabs: () => null,

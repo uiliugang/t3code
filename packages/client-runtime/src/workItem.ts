@@ -7,7 +7,7 @@ import type {
   DeliverySummary,
   IssueProvider,
   Issue,
-  IssueListResult,
+  RequirementIssueListResult,
   ProjectId,
   WorkItemSummary,
 } from "@t3tools/contracts";
@@ -86,7 +86,7 @@ export type RequirementEntry = RequirementEntryBase &
   );
 
 export function mergeRequirementEntries(
-  issuePages: ReadonlyArray<typeof IssueListResult.Type>,
+  issuePages: ReadonlyArray<typeof RequirementIssueListResult.Type>,
   items: ReadonlyArray<WorkItemSummary>,
   tracked: ReadonlyMap<string, WorkItemSummary>,
   options: { source?: RequirementSource; query?: string; archived?: boolean } = {},

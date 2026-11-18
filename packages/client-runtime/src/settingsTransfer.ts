@@ -136,6 +136,7 @@ const applicationServerSettingsTransferPolicy = {
   usageLimitSources: "local",
   textGenerators: "local",
   secretProviders: "local",
+  usageHistoryRetentionDays: "local",
   usagePriceOverrides: "portable",
   usageModelAliases: "portable",
 } satisfies Record<keyof typeof ClientServerSettingsPatch.Type, "portable" | "local">;

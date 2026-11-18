@@ -263,10 +263,17 @@ function steps(
           ]
         : [t("Make sure {host} is awake and online.", { host }), checkHost];
     case "server":
-      return [
-        t("Make sure T3 Code is running on {host}.", { host }),
-        t("Retry. If it keeps failing, copy the diagnostics."),
-      ];
+      return failure?.reason === "authentication"
+        ? [
+            t(
+              "This device's sign-in to {host} expired or was revoked. Pair it again with a new pairing link from {host}.",
+              { host },
+            ),
+          ]
+        : [
+            t("Make sure T3 Code is running on {host}.", { host }),
+            t("Retry. If it keeps failing, copy the diagnostics."),
+          ];
   }
 }
 

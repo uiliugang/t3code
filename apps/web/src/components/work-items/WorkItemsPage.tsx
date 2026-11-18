@@ -116,6 +116,7 @@ export function ThreadWorkItemsPanel({ threadRef }: { threadRef: ScopedThreadRef
       <RequirementBoard
         key={`${threadRef.environmentId}:${thread.projectId}`}
         environmentId={threadRef.environmentId}
+        panelRef={threadRef}
         search={{ ...search, projectId: thread.projectId }}
         compact
         updateSearch={(patch) =>
@@ -137,10 +138,14 @@ export function WorkItemDetailPanel({
   environmentId,
   id,
   close,
+  embedded = false,
+  panelRef,
 }: {
   environmentId: EnvironmentId;
   id: WorkItem["id"];
-  close: () => void;
+  close?: () => void;
+  embedded?: boolean;
+  panelRef?: ScopedThreadRef | undefined;
 }) {
   const t = useUiTranslation();
   const query = useEnvironmentQuery(
@@ -200,12 +205,20 @@ export function WorkItemDetailPanel({
       });
   };
   return (
-    <aside className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border/60 md:max-w-[440px]">
-      <div className="flex justify-end border-b border-border/60 p-2">
-        <Button size="icon-sm" variant="ghost" aria-label={t("Close")} onClick={close}>
-          <XIcon />
-        </Button>
-      </div>
+    <aside
+      className={
+        embedded
+          ? "flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background"
+          : "flex min-h-0 min-w-0 flex-1 flex-col border-l border-border/60 md:max-w-[440px]"
+      }
+    >
+      {!embedded && close ? (
+        <div className="flex justify-end border-b border-border/60 p-2">
+          <Button size="icon-sm" variant="ghost" aria-label={t("Close")} onClick={close}>
+            <XIcon />
+          </Button>
+        </div>
+      ) : null}
       {query.error ? (
         <p role="alert" className="p-4 text-sm text-destructive">
           {query.error}
@@ -221,6 +234,7 @@ export function WorkItemDetailPanel({
           run={run}
           edit={() => setEditing(true)}
           continueTask={(newConversation) => void continueTask(newConversation)}
+          panelRef={panelRef}
         />
       ) : (
         <p className="p-4 text-sm text-muted-foreground">
@@ -405,6 +419,7 @@ function WorkItemDetails({
   run,
   edit,
   continueTask,
+  panelRef,
 }: {
   item: WorkItem;
   deliverySummary: WorkItemSummary["deliverySummary"];
@@ -414,6 +429,7 @@ function WorkItemDetails({
   run: (input: WorkItemCommandInput, intent?: string) => Promise<boolean>;
   edit: () => void;
   continueTask: (newConversation?: boolean) => void;
+  panelRef?: ScopedThreadRef | undefined;
 }) {
   const t = useUiTranslation();
   const navigate = useNavigate();
@@ -441,6 +457,7 @@ function WorkItemDetails({
           environmentId={environmentId}
           item={item}
           summary={deliverySummary}
+          panelRef={panelRef}
         />
       ) : null}
       <div className="flex flex-wrap items-center gap-2">

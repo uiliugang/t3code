@@ -44,6 +44,11 @@ import { PullRequestReviewersScreen } from "./features/pull-requests/PullRequest
 import { PullRequestLabelsScreen } from "./features/pull-requests/PullRequestLabelsScreen";
 import { PullRequestEditScreen } from "./features/pull-requests/PullRequestEditScreen";
 import { PullRequestFilterSearchScreen } from "./features/pull-requests/PullRequestFilterSearchScreen";
+import { IssueAssigneesScreen } from "./features/issues/IssueAssigneesScreen";
+import { IssueEditScreen } from "./features/issues/IssueEditScreen";
+import { IssueLabelsScreen } from "./features/issues/IssueLabelsScreen";
+import { IssueFilterSearchScreen } from "./features/issues/IssueFilterSearchScreen";
+import { IssueRouteScreen } from "./features/issues/IssueRouteScreen";
 import {
   RenderErrorBoundary,
   RenderFailureView,
@@ -111,6 +116,10 @@ import {
   SettingsMeituanSkillsRouteScreen,
   SettingsSharingAccessRouteScreen,
 } from "./features/settings/SettingsMeituanRouteScreen";
+import {
+  SettingsIssueTrackerRouteScreen,
+  SettingsSourceControlProviderRouteScreen,
+} from "./features/settings/SettingsSourceControlDetailRouteScreens";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsFollowUpRouteScreen } from "./features/settings/SettingsFollowUpRouteScreen";
 import { SettingsLanguageRouteScreen } from "./features/settings/SettingsLanguageRouteScreen";
@@ -257,6 +266,14 @@ const SETTINGS_SCREENS = {
     screen: SettingsEnvironmentSourceControlRouteScreen,
     linking: "settings/source-control",
     options: settingsPage("Source control"),
+  }),
+  SettingsSourceControlProvider: createNativeStackScreen({
+    screen: SettingsSourceControlProviderRouteScreen,
+    options: settingsPage("Provider"),
+  }),
+  SettingsIssueTracker: createNativeStackScreen({
+    screen: SettingsIssueTrackerRouteScreen,
+    options: settingsPage("Issue tracker"),
   }),
   SettingsEnvironmentAgentBehavior: createNativeStackScreen({
     screen: SettingsThreadsRouteScreen,
@@ -627,6 +644,27 @@ const RootStackConfig = createWorkspaceStackNavigator({
     PullRequestEdit: createNativeStackScreen({
       screen: PullRequestEditScreen,
       options: sheetRoute({ detent: 0.75, androidFit: true }),
+    }),
+    Issue: createNativeStackScreen({
+      screen: IssueRouteScreen,
+      linking: "issues/:environmentId/:projectId/:tracker/:scope/:issueKey",
+      options: pageRoute({ duoMinimize: "never" }),
+    }),
+    IssueEdit: createNativeStackScreen({
+      screen: IssueEditScreen,
+      options: sheetRoute({ detent: 0.75, androidFit: true }),
+    }),
+    IssueLabels: createNativeStackScreen({
+      screen: IssueLabelsScreen,
+      options: SEARCH_SHEET_ROUTE,
+    }),
+    IssueAssignees: createNativeStackScreen({
+      screen: IssueAssigneesScreen,
+      options: SEARCH_SHEET_ROUTE,
+    }),
+    IssueFilterSearch: createNativeStackScreen({
+      screen: IssueFilterSearchScreen,
+      options: SEARCH_SHEET_ROUTE,
     }),
     Thread: createNativeStackScreen({
       screen: ThreadRouteScreen,

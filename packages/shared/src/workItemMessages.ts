@@ -1,5 +1,6 @@
 export const workItemMessages: Readonly<Record<string, string>> = {
   "Local work items": "本地工作项",
+  "Select a requirement first": "请先选择一个需求项",
   "Delivery needs attention": "交付事项需要处理",
   "Open requirement": "查看需求",
   "Refresh delivery": "刷新交付进展",

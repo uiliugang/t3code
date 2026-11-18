@@ -6,6 +6,9 @@ also lists the command IDs and defaults available in your version.
 Use `mod+n` or `mod+t` to start a new thread when the terminal is not focused.
 With the right panel open, `mod+t` opens its new-tab menu instead.
 
+To free a default shortcut for another command, choose **Unassign** from its row's
+actions menu. **Reset to default** brings it back.
+
 ## Composer controls
 
 `mod+shift+d` starts dictation in the focused editor, or the composer, and finishes it on the next press;

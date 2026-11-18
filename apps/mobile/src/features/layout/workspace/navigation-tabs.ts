@@ -22,6 +22,7 @@ export const NAVIGATION_TAB_ICONS = {
   threads: "text.bubble",
   requirements: "ticket",
   pullRequests: PullRequestGlyph.pullRequest,
+  issues: "git.issue",
   usage: "chart.bar.xaxis",
 } as const satisfies Readonly<Record<NavigationTab, AppSymbolName>>;
 
@@ -35,10 +36,10 @@ export function useNavigationTabOrder() {
 
 export function useHiddenNavigationTabs() {
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const saved = AsyncResult.isSuccess(preferences)
-    ? preferences.value.hiddenNavigationTabs
-    : undefined;
-  return navigationCustomizationAvailable() ? resolveHiddenNavigationTabs(saved) : [];
+  const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
+  return navigationCustomizationAvailable()
+    ? resolveHiddenNavigationTabs(saved?.hiddenNavigationTabs)
+    : [];
 }
 
 export function useEnabledNavigationTabs() {

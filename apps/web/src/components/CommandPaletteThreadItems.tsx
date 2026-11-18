@@ -256,5 +256,6 @@ export function useCommandPaletteThreadItems(input: {
     threadMessageItems,
     now,
     isSearchPending: messageSearch.isPending,
+    isSearchFailed: messageSearch.failed,
   };
 }

@@ -15,7 +15,12 @@ import { OrchestrationV2ThreadLaunchWorkspaceStrategy } from "./orchestrationV2.
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
 import { WorkItemDelivery, DeliveryScope, DeliverySummary } from "./workItemDelivery.ts";
 import { BranchIssueRef } from "./branchIssues.ts";
-import { IssueSource, IssueCreateInput, IssueMetadataInput, IssueMetadata } from "./issues.ts";
+import {
+  IssueSource,
+  RequirementIssueCreateInput,
+  IssueMetadataInput,
+  IssueMetadata,
+} from "./issues.ts";
 
 export const WorkItemId = TrimmedNonEmptyString.pipe(Schema.brand("WorkItemId"));
 export type WorkItemId = typeof WorkItemId.Type;
@@ -199,7 +204,7 @@ export const WorkItemIssueInput = Schema.Struct({
     }),
     Schema.Struct({
       operation: Schema.Literal("create"),
-      ...IssueCreateInput.mapFields(
+      ...RequirementIssueCreateInput.mapFields(
         ({ projectId: _p, provider: _v, scope: _s, host: _h, ...fields }) => fields,
       ).fields,
     }),

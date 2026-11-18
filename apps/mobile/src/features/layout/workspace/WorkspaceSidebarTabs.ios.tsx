@@ -10,6 +10,7 @@ import {
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
+import { useAdaptiveWorkspaceLayout } from "../adaptive-workspace-context";
 
 const NativeSidebarTabBar = requireNativeView<
   ViewProps & {
@@ -32,6 +33,7 @@ export function WorkspaceSidebarTabs(props: {
 }) {
   const t = useUiTranslation();
   const workspace = useWorkspaceTabs()!;
+  const { layout } = useAdaptiveWorkspaceLayout();
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
   const tabs = [...visibleNavigationTabs(order, hidden), "settings" as const];
@@ -72,6 +74,7 @@ export function WorkspaceSidebarTabs(props: {
         position: "absolute",
         bottom: 0,
         left: props.compact ? 8 : 0,
+        maxWidth: layout.variant === "medium" ? 280 : undefined,
         // Keep the tab icons in place when Compose disappears on other destinations.
         right:
           (props.compact ? 12 : 0) +

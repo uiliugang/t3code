@@ -75,7 +75,11 @@ vi.mock(import("./ui/toast"), async (original) => {
 });
 
 import { useClosedViewStore } from "../closedViewStore";
-import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
+import {
+  REQUIREMENTS_PANEL_REF,
+  selectThreadRightPanelState,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { ReopenClosedViewShortcut } from "./ReopenClosedViewShortcut";
 
@@ -148,6 +152,37 @@ function press(target: Element = document.body) {
 }
 
 describe("root reopen shortcut", () => {
+  it("restores the requirement URL without dropping filters or keeping the previous item", async () => {
+    setup();
+    useClosedViewStore.getState().remember({
+      kind: "panel-tab",
+      threadRef: REQUIREMENTS_PANEL_REF,
+      surface: {
+        kind: "requirement-issue",
+        id: "requirement-issue:remote:project:github:repo:7",
+        projectId: "project",
+        environmentId: "remote",
+        provider: "github",
+        scope: "repo",
+        issueId: "7",
+      },
+    });
+    await using _view = await renderShortcut();
+    await act(() => {
+      press();
+    });
+    const [navigation] = state.navigate.mock.lastCall!;
+    expect(navigation.to).toBe("/requirements");
+    expect(navigation.search({ source: "github", q: "release", workItemId: "previous" })).toEqual({
+      source: "github",
+      q: "release",
+      detailEnvironmentId: "remote",
+      issueId: "7",
+      issueProjectId: "project",
+      issueProvider: "github",
+      issueScope: "repo",
+    });
+  });
   it("serializes deliberate presses while a browser restore waits for RPC", async () => {
     setup();
     useClosedViewStore
