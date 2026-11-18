@@ -1,12 +1,14 @@
 import type { ProjectWorkspaceConfig } from "@t3tools/contracts";
-import { formatProjectDisplayName } from "@t3tools/shared/projectPresentation";
+import { formatProjectDisplayName, projectDisplayKind } from "@t3tools/shared/projectPresentation";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { useClientSettings } from "../hooks/useSettings";
 import { cn } from "../lib/utils";
+import { Badge } from "./ui/badge";
 
 export function ProjectLabel({
   name,
   project,
+  showKind = false,
   className,
 }: {
   readonly name: string;
@@ -16,6 +18,7 @@ export function ProjectLabel({
         readonly isScratch?: boolean;
       }
     | undefined;
+  readonly showKind?: boolean;
   readonly className?: string;
 }) {
   const t = useUiTranslation();
@@ -25,6 +28,11 @@ export function ProjectLabel({
       <span className="min-w-0 truncate">
         {project?.isScratch ? t("No project") : formatProjectDisplayName(name, capitalize)}
       </span>
+      {showKind && project && !project.isScratch ? (
+        <Badge variant="secondary" size="sm">
+          {projectDisplayKind(project)}
+        </Badge>
+      ) : null}
     </span>
   );
 }
