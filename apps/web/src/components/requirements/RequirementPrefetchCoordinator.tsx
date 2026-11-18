@@ -5,6 +5,8 @@ import { useContext, useEffect, useSyncExternalStore } from "react";
 
 import { getDocumentActivity, subscribeDocumentActivity } from "../../lib/documentActivity";
 import { useConnectedEnvironmentIds } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
+import { issueEnvironment } from "../../state/issues";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 
@@ -33,6 +35,10 @@ function EnvironmentRequirementPrefetch({ environmentId }: { environmentId: Envi
         [environmentId],
         controller.signal,
         () => meituanEnabled,
+        (id) =>
+          registry.get(serverEnvironment.configValueAtom(id))?.requirementIssueTrackers
+            ? issueEnvironment.list
+            : undefined,
       );
     };
     const idle = typeof window.requestIdleCallback === "function";

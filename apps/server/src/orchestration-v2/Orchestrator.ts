@@ -14,7 +14,6 @@ import {
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import { threadIssueKeysEqual } from "@t3tools/contracts";
-import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
   normalizeThreadPullRequestKey,
@@ -917,7 +916,7 @@ function legacyPullRequestLink(
   return withPullRequestWatch(
     {
       ...key,
-      url: canonicalizeGitCafePullRequestUrl(linked.url),
+      url: linked.url,
       source: "manual",
       linkedAt: DateTime.formatIso(now),
       snapshot: null,
@@ -4949,14 +4948,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? {
                   ...existing,
                   source: command.source,
-                  url: canonicalizeGitCafePullRequestUrl(command.url),
+                  url: command.url,
                   ...(command.repositoryWebUrl !== undefined && {
                     repositoryWebUrl: command.repositoryWebUrl,
                   }),
                 }
               : {
                   ...key,
-                  url: canonicalizeGitCafePullRequestUrl(command.url),
+                  url: command.url,
                   ...(command.repositoryWebUrl !== undefined && {
                     repositoryWebUrl: command.repositoryWebUrl,
                   }),
@@ -4977,7 +4976,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 ? [
                     {
                       ...branchKey,
-                      url: canonicalizeGitCafePullRequestUrl(branch.url),
+                      url: branch.url,
                       source: "manual" as const,
                       linkedAt: DateTime.formatIso(now),
                       snapshot: null,
@@ -5093,7 +5092,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   ...linked.filter((link) => !threadPullRequestKeysEqual(link, key)),
                   {
                     ...key,
-                    url: canonicalizeGitCafePullRequestUrl(command.link.url),
+                    url: command.link.url,
                     ...((command.link.repositoryWebUrl ?? dismissed?.repositoryWebUrl) !==
                       undefined && {
                       repositoryWebUrl:

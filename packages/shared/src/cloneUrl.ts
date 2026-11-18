@@ -46,22 +46,8 @@ export function cloneUrlForProtocol(url: string, protocol: CloneProtocol): strin
   if (!parsed) return null;
   if (parsed.protocol === protocol) return url.trim();
   if (parsed.customPort) return null;
-  // Azure's transports use different hosts and put the repository marker in
-  // different positions; changing only the scheme produces an invalid clone URL.
-  if (parsed.protocol === "ssh" && parsed.host.toLowerCase() === "ssh.dev.azure.com") {
-    const azure = /^v3\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)$/.exec(parsed.path);
-    return azure ? `https://dev.azure.com/${azure[1]}/${azure[2]}/_git/${azure[3]}` : null;
-  }
-  if (parsed.protocol === "https" && parsed.host.toLowerCase() === "dev.azure.com") {
-    const azure = /^([^/?#]+)\/([^/?#]+)\/_git\/([^/?#]+)$/.exec(parsed.path);
-    return azure ? `git@ssh.dev.azure.com:v3/${azure[1]}/${azure[2]}/${azure[3]}` : null;
-  }
-  // Bitbucket Cloud serves SSH only from `ssh.bitbucket.org` and HTTPS only from `bitbucket.org`.
-  const host = /^(?:(?:alt)?ssh\.)?bitbucket\.org$/i.test(parsed.host)
-    ? protocol === "ssh"
-      ? "ssh.bitbucket.org"
-      : "bitbucket.org"
-    : parsed.host;
+  const host = parsed.host;
+  if (/(?:^|\.)(?:dev\.azure\.com|visualstudio\.com|bitbucket\.org)$/iu.test(host)) return null;
   // SCP paths are literal; URI paths use percent escapes.
   try {
     if (protocol === "ssh") return `git@${host}:${decodeURIComponent(parsed.path)}`;

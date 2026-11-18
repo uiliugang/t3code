@@ -128,7 +128,11 @@ function parseIdentifier(key: string): string | null {
 function toState(state: LinearApi.LinearWorkflowState): IssueState {
   return CLOSED_STATE_TYPES.includes(state.type)
     ? { category: "closed", name: state.name, closeReason: state.type }
-    : { category: "open", name: state.name };
+    : {
+        category: "open",
+        name: state.name,
+        ...(state.type === "started" ? { boardCategory: "doing" } : {}),
+      };
 }
 
 /**

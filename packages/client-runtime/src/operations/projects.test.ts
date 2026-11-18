@@ -157,7 +157,8 @@ describe("add project shared logic", () => {
       "https://gitlab.com/acme/tools/src/branch/worker.git",
       "https://scm.example.test/acme/tools/src/branch/worker.git",
       "https://scm.example.test/acme/tools/src/branch/worker",
-      "https://scm.example.test/team/repo/src/branch/main/-/README.md",
+      "https://git.cafe/pingdotgg/t3code/tree/main",
+      "https://bitbucket.org/workspace/repo/src/master/",
       "https://forgejo.example.test/a/b/src/branch/mount/team/repo.git",
     ]) {
       expect(normalizePastedCloneUrl(gitlabProject)).toBe(gitlabProject);
@@ -168,7 +169,7 @@ describe("add project shared logic", () => {
     for (const [pageUrl, pageRoute, repository] of [
       ["https://github.com/pingdotgg/t3code/tree/main", "/tree/", "t3code"],
       ["https://gitlab.com/gitlab-org/gitlab-runner/-/tree/main", "/-/", "gitlab-runner"],
-      ["https://git.cafe/pingdotgg/t3code/tree/main", "/tree/", "t3code"],
+      ["https://scm.example.test/team/repo/src/branch/main/-/README.md", "/-/", "main"],
       ["https://gitlab.example.test/g/p/-/blob/main/src/branch/x", "/-/", "p"],
       ["https://code.company.test/g/p/-/tree/main", "/-/", "p"],
       ["https://github.com/pingdotgg/t3code/tree/release.git", "/tree/", "t3code"],
@@ -178,11 +179,11 @@ describe("add project shared logic", () => {
       expect(getCloneDirectoryName(cloneUrl)).toBe(repository);
     }
     expect(
-      normalizePastedCloneUrl("https://alice:example@bitbucket.org/workspace/repo/src/master/"),
-    ).toBe("https://alice:example@bitbucket.org/workspace/repo");
+      normalizePastedCloneUrl("https://alice:example@gitlab.com/workspace/repo/-/tree/master/"),
+    ).toBe("https://alice:example@gitlab.com/workspace/repo");
   });
 
-  it("uses HTTPS for repositories selected through a provider", () => {
+  it("uses each provider's default clone transport", () => {
     expect(
       getDefaultCloneUrl({
         provider: SourceControlProviderKind.make("github"),
@@ -192,11 +193,11 @@ describe("add project shared logic", () => {
     ).toBe("https://github.com/imputnet/helium");
     expect(
       getDefaultCloneUrl({
-        provider: SourceControlProviderKind.make("forgejo"),
-        url: "https://forgejo.example.test:8443/owner/repo.git",
-        sshUrl: "ssh://git@forgejo.example.test:2222/owner/repo.git",
+        provider: SourceControlProviderKind.make("gitlab"),
+        url: "https://gitlab.example.test:8443/owner/repo.git",
+        sshUrl: "ssh://git@gitlab.example.test:2222/owner/repo.git",
       }),
-    ).toBe("https://forgejo.example.test:8443/owner/repo.git");
+    ).toBe("ssh://git@gitlab.example.test:2222/owner/repo.git");
   });
 
   it("derives the clone folder name from any pasted clone URL", () => {

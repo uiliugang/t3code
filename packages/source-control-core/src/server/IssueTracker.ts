@@ -82,6 +82,7 @@ export interface TrackerIssuePage {
 
 export interface TrackerIssueDetail extends TrackerIssueSummary {
   readonly body: string;
+  readonly bodyFormat?: "markdown" | "html";
   readonly viewer: string | null;
   readonly viewerPermissions: IssueViewerPermissions;
   /** Every state the issue can be in, in workflow order; `setState` is asked for one by name. */

@@ -6,6 +6,7 @@ import { useContext, useEffect } from "react";
 
 import { useAppActive } from "../../lib/appState";
 import { useEnvironments } from "../../state/environments";
+import { issueEnvironment } from "../../state/issues";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { serverEnvironment } from "../../state/server";
 
@@ -40,6 +41,10 @@ function EnvironmentRequirementPrefetch({ environmentId }: { environmentId: Envi
         [environmentId],
         controller.signal,
         () => meituanEnabled,
+        (id) =>
+          registry.get(serverEnvironment.configValueAtom(id))?.requirementIssueTrackers
+            ? issueEnvironment.list
+            : undefined,
       );
     };
     const handle = requestIdleCallback(prefetch, { timeout: 2_000 });

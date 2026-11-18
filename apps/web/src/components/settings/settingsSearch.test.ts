@@ -366,7 +366,7 @@ describe("source control host search items", () => {
       sourceControlHostSettingsSearchId("github"),
     );
     expect(searchSettings("codeberg")).toEqual([]);
-    expect(searchSettings("gitlab")).toEqual([]);
+    expect(searchSettings("gitlab").map((item) => item.id)).toContain("source-control");
   });
 });
 

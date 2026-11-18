@@ -1,4 +1,5 @@
 import { makeProviderSettingsSchema, SourceControlProviderKind } from "@t3tools/contracts";
+import { parseUrl } from "@t3tools/shared/url";
 import {
   buildCommitUrl,
   changeRequestUrlBelow,
@@ -31,6 +32,12 @@ const ISSUE_PATH = /^\/([^/]+\/[^/]+)\/issues\/(\d+)(?:\/|$)/u;
 const REPOSITORY_PAGE_PATH = /^\/([^/]+\/[^/]+)\/(?:tree|blob)\/[^/]/u;
 
 const KIND = SourceControlProviderKind.make("github");
+
+function isRetiredPublicHost(host: string): boolean {
+  return /(?:^|\.)(?:git\.cafe|cursor\.com|bitbucket\.org|codeberg\.org|dev\.azure\.com|visualstudio\.com)$/iu.test(
+    host,
+  );
+}
 
 function isGitHubHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
@@ -100,7 +107,8 @@ export const definition = defineSourceControl({
   // A known project's host can be any GitHub Enterprise Server name.
   parseCommitUrl: (url, known) =>
     known || isGitHubHost(url.hostname) ? parseCommitPath(url, COMMIT_PATH) : null,
-  parseChangeRequestUrl: (url) => parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
+  parseChangeRequestUrl: (url) =>
+    isRetiredPublicHost(url.hostname) ? null : parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
   // `/issues/` is too generic a path to believe from a host that is not GitHub's.
   parseIssueUrl: (url) => (isGitHubHost(url.hostname) ? parseIssuePath(url, ISSUE_PATH) : null),
   repositoryUrlFromPage: (url) =>
@@ -143,7 +151,11 @@ export const definition = defineSourceControl({
   hardLineBreaks: true,
   reviewSummaryRequired: () => false,
   checkoutCommandArgument: (input) => CHECKOUT_COMMAND.exec(input)?.[1]?.trim() ?? null,
-  isChangeRequestReference: (url) => CHANGE_REQUEST_REFERENCE.test(url),
+  isChangeRequestReference: (value) => {
+    if (!CHANGE_REQUEST_REFERENCE.test(value)) return false;
+    const url = parseUrl(value);
+    return url !== null && !url.username && !url.password && !isRetiredPublicHost(url.hostname);
+  },
   checkoutChangeRequestHost: (identity) => projectChangeRequestHost(identity, KIND),
   changeRequestHeadRef: (number) => `refs/pull/${number}/head`,
   // `*.ghe.com` is GitHub Enterprise Cloud with data residency, one subdomain per enterprise.

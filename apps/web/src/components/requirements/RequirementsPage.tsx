@@ -21,6 +21,7 @@ import {
   REQUIREMENT_GROUPS,
   DELIVERY_PROGRESS_LABELS,
   type RequirementSource,
+  type TrackerCreateTarget,
   prepareWorkItemCommandRetry,
 } from "@t3tools/client-runtime/work-item";
 import {
@@ -97,14 +98,38 @@ import {
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { WorkItemEditor, WorkItemDetailPanel } from "../work-items/WorkItemsPage";
 import { IssueDetailPanel } from "./IssueDetailPanel";
-import { IssueCreateDialog } from "./IssueCreateDialog";
+import { issueEnvironment } from "../../state/issues";
+import {
+  RequirementFilters,
+  requirementViewsMatch,
+  SavedViewIdentity,
+} from "@t3tools/client-runtime/saved-views";
+import { SavedViewsMenu, type SavedViewsKind } from "../SavedViewsMenu";
+import { LabelChoices } from "../issue/IssueListFilterPickers";
+import { requirementTrackerLabel } from "@t3tools/client-runtime/work-item";
+import { IssueCreateDialog, TrackerCreateDialog } from "./IssueCreateDialog";
 import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle } from "../ui/popover";
 import { RequirementCreateMenu, RequirementScanMenu } from "./RequirementBoardActions";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { ProjectTag } from "./ProjectTag";
 import type { RequirementsSearch } from "../../routes/_chat.requirements";
 
+const requirementViews = {
+  storageKey: "t3.requirements.savedViews",
+  empty: [],
+  noun: "requirement",
+  shortNoun: "requirement",
+  placeholder: "Assigned to me",
+  suggestedName: () => "",
+  schema: Schema.Array(
+    Schema.Struct({ ...SavedViewIdentity.fields, preferences: RequirementFilters }),
+  ),
+  normalize: (value) => value,
+  matches: (view, value) => requirementViewsMatch(view.preferences, value),
+} satisfies SavedViewsKind<RequirementFilters, RequirementFilters, unknown>;
+
 const boardAtoms = createRequirementOverviewAtoms({
+  trackers: issueEnvironment.list,
   issues: sourceControlEnvironment.issues,
   workItemsLive: serverEnvironment.workItemsLive,
   config: serverEnvironment.configValueAtom,
@@ -241,6 +266,9 @@ export function RequirementBoard({
   const assignee = search.assignee ?? "me";
   const view = search.view ?? "list";
   const archived = search.archived ?? false;
+  const unified = queryEnvironments.some((env) => env.serverConfig?.requirementIssueTrackers);
+  const labels =
+    !archived && source !== "local" && source !== "meituan" && unified ? (search.labels ?? []) : [];
   const [pagination, setPagination] = useState<{ key: string; pages: RequirementPagination }>({
     key: "",
     pages: {},
@@ -254,6 +282,7 @@ export function RequirementBoard({
     assignee,
     search.projectId,
     search.q,
+    labels,
     archived,
   ]);
   if (pagination.key !== filterKey) setPagination({ key: filterKey, pages: {} });
@@ -266,6 +295,7 @@ export function RequirementBoard({
         projectId: search.projectId ?? null,
         query: search.q ?? "",
         archived,
+        labels,
         pagination: pagination.key === filterKey ? pagination.pages : {},
       }),
     ),
@@ -310,6 +340,7 @@ export function RequirementBoard({
     CollapsedGroups,
   );
   const [creatingIssue, setCreatingIssue] = useState<IssueProvider | null>(null);
+  const [creatingTracker, setCreatingTracker] = useState<TrackerCreateTarget | null>(null);
   const [creatingLocal, setCreatingLocal] = useState<ProjectId | null>(null);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -347,6 +378,7 @@ export function RequirementBoard({
         environmentId: entry.environmentId,
         projectId: entry.projectId,
         provider: entry.provider,
+        host: entry.host,
         ...(entry.scope ? { scope: entry.scope } : {}),
         issueId: entry.issue.id,
         title: entry.title,
@@ -366,6 +398,7 @@ export function RequirementBoard({
         environmentId: detailEnvironmentId,
         projectId: issueProjectId,
         provider: issueProvider,
+        ...(search.issueHost ? { host: search.issueHost } : {}),
         ...(issueScope ? { scope: issueScope } : {}),
         issueId,
       });
@@ -387,6 +420,7 @@ export function RequirementBoard({
     issueId,
     issueProjectId,
     issueScope,
+    search.issueHost,
     issueProvider,
     pullRequest,
   ]);
@@ -589,6 +623,10 @@ export function RequirementBoard({
                 refreshed={refresh}
               />
               <RequirementCreateMenu
+                createTrackerIssue={(id, target) => {
+                  setCreatingEnvironmentId(id);
+                  setCreatingTracker(target);
+                }}
                 environments={visibleEnvironments}
                 {...(search.projectId ? { projectId: search.projectId } : {})}
                 createIssue={(id, provider) => {
@@ -658,6 +696,32 @@ export function RequirementBoard({
                 size="sm"
               />
             </form>
+            <SavedViewsMenu
+              kind={requirementViews}
+              preferences={{
+                source,
+                assignee,
+                archived,
+                labels,
+                environmentId: filterEnvironmentId ?? null,
+                projectId: search.projectId ?? null,
+                query: search.q ?? "",
+              }}
+              onApply={(saved) =>
+                updateSearch({
+                  ...requirementSelection(null),
+                  source: saved.source,
+                  assignee: saved.assignee,
+                  archived: saved.archived,
+                  labels: saved.labels,
+                  environmentId: saved.environmentId ?? undefined,
+                  projectId: saved.projectId ?? undefined,
+                  q: saved.query || undefined,
+                  local: undefined,
+                  provider: undefined,
+                })
+              }
+            />
             <Menu>
               <MenuTrigger
                 render={
@@ -675,10 +739,16 @@ export function RequirementBoard({
                         { value: "all", label: t("All sources") },
                         { value: "meituan", label: "MEP ONES" },
                         { value: "github", label: "GitHub Issues" },
+                        { value: "gitlab", label: "GitLab" },
+                        { value: "linear", label: "Linear" },
                         { value: "local", label: t("Local work items") },
                       ] as const
                     )
-                      .filter((option) => option.value !== "meituan" || meituanEnabled)
+                      .filter(
+                        (option) =>
+                          (option.value !== "meituan" || meituanEnabled) &&
+                          (unified || (option.value !== "gitlab" && option.value !== "linear")),
+                      )
                       .map((option) => (
                         <MenuCheckboxItem
                           key={option.value}
@@ -689,6 +759,7 @@ export function RequirementBoard({
                               provider: undefined,
                               local: undefined,
                               assignee: undefined,
+                              labels: undefined,
                               ...requirementSelection(null),
                             })
                           }
@@ -698,6 +769,23 @@ export function RequirementBoard({
                       ))}
                   </MenuSubPopup>
                 </MenuSub>
+                {labels.length || data.scopes.some((scope) => scope.labels) ? (
+                  <MenuSub>
+                    <MenuSubTrigger>
+                      {t("Labels")}
+                      {labels.length ? ` (${labels.length})` : ""}
+                    </MenuSubTrigger>
+                    <MenuSubPopup>
+                      <LabelChoices
+                        scopes={data.scopes.filter((scope) => scope.labels)}
+                        value={labels}
+                        onChange={(value) =>
+                          updateSearch({ labels: value.length ? value : undefined })
+                        }
+                      />
+                    </MenuSubPopup>
+                  </MenuSub>
+                ) : null}
                 {!compact ? (
                   <MenuSub>
                     <MenuSubTrigger>{t("Project")}</MenuSubTrigger>
@@ -795,11 +883,7 @@ export function RequirementBoard({
             <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2 text-xs text-muted-foreground">
               {source !== "all" ? (
                 <span>
-                  {source === "local"
-                    ? t("Local work items")
-                    : source === "github"
-                      ? "GitHub Issues"
-                      : "MEP ONES"}
+                  {source === "local" ? t("Local work items") : requirementTrackerLabel[source]}
                 </span>
               ) : null}
               {source !== "all" && search.projectId !== undefined ? <span>·</span> : null}
@@ -971,7 +1055,7 @@ export function RequirementBoard({
                               <span>
                                 {entry.kind === "local"
                                   ? t("Local work item")
-                                  : `${entry.provider === "github" ? "GitHub" : "ONES"} #${entry.issue.id}`}
+                                  : `${requirementTrackerLabel[entry.provider]} ${entry.provider === "linear" ? "" : "#"}${entry.issue.id}`}
                               </span>
                               {entry.kind === "local" ? (
                                 <span>
@@ -1156,6 +1240,7 @@ export function RequirementBoard({
                 target={{
                   projectId: renderedSurface.projectId as ProjectId,
                   provider: renderedSurface.provider,
+                  ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
                   ...(renderedSurface.scope ? { scope: renderedSurface.scope } : {}),
                 }}
                 id={renderedSurface.issueId}
@@ -1178,6 +1263,38 @@ export function RequirementBoard({
               />
             )}
           </RightPanelTabs>
+        ) : null}
+        {creatingTracker ? (
+          <TrackerCreateDialog
+            environmentId={environmentId}
+            target={creatingTracker}
+            close={() => {
+              setCreatingTracker(null);
+              setCreatingEnvironmentId(null);
+            }}
+            created={(issueId, title) => {
+              useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
+                environmentId,
+                projectId: creatingTracker.projectId,
+                provider: creatingTracker.provider,
+                scope: creatingTracker.scope,
+                ...(creatingTracker.host ? { host: creatingTracker.host } : {}),
+                issueId,
+                title,
+              });
+              setCreatingTracker(null);
+              setCreatingEnvironmentId(null);
+              refresh();
+              selectOpened({
+                source: "all",
+                local: undefined,
+                provider: undefined,
+                archived: false,
+                q: undefined,
+                labels: undefined,
+              });
+            }}
+          />
         ) : null}
         {creatingIssue ? (
           <IssueCreateDialog

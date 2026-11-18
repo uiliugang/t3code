@@ -1,3 +1,4 @@
+import * as ThreadIssueService from "./ThreadIssueService.ts";
 import * as WorkItems from "../work-items/WorkItemService.ts";
 import * as WorkspaceRecovery from "../workspace/WorkspaceRecovery.ts";
 import * as ManagedWorktrees from "../workspace/ManagedWorktrees.ts";
@@ -363,6 +364,7 @@ const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
   ),
 );
 const layerWorkItemsProvided = WorkItems.layer.pipe(
+  Layer.provide(ThreadIssueService.layer.pipe(Layer.provide(layerOrchestratorProvided))),
   Layer.provide(
     Layer.mergeAll(layerThreadLaunchProvided, layerThreadManagementProvided, ProjectStore.layer),
   ),

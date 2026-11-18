@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { SavedViewIdentity } from "@t3tools/client-runtime/saved-views";
+import { RequirementFilters, SavedViewIdentity } from "@t3tools/client-runtime/saved-views";
 import {
   EnvironmentId,
   IssueInvolvement,
@@ -64,6 +64,11 @@ export const IssueSavedView = Schema.Struct({
 });
 export type IssueSavedView = typeof IssueSavedView.Type;
 const isIssueSavedView = Schema.is(IssueSavedView);
+const RequirementSavedView = Schema.Struct({
+  ...SavedViewIdentity.fields,
+  ...RequirementFilters.fields,
+});
+type RequirementSavedView = typeof RequirementSavedView.Type;
 
 const ThreadListFilters = Schema.Struct({
   environmentId: Schema.NullOr(EnvironmentId),
@@ -194,6 +199,7 @@ export interface Preferences {
   readonly workspaceSelections?: WorkspaceSelections;
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
+  readonly requirementSavedViews?: ReadonlyArray<RequirementSavedView>;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<
@@ -292,6 +298,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     workspaceSelections?: WorkspaceSelections;
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
+    requirementSavedViews?: ReadonlyArray<RequirementSavedView>;
   } = {};
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
@@ -484,6 +491,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (Array.isArray(parsed.issueSavedViews)) {
     preferences.issueSavedViews = parsed.issueSavedViews.filter(isIssueSavedView);
   }
+  if (Array.isArray(parsed.requirementSavedViews))
+    preferences.requirementSavedViews = parsed.requirementSavedViews.filter(
+      Schema.is(RequirementSavedView),
+    );
   return preferences;
 }
 

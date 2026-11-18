@@ -142,7 +142,10 @@ vi.mock(
       ThreadWorkItemsPanel: () => null,
     }) as never,
 );
-vi.mock(import("./IssueCreateDialog"), () => ({ IssueCreateDialog: () => <></> }));
+vi.mock(import("./IssueCreateDialog"), () => ({
+  IssueCreateDialog: () => <></>,
+  TrackerCreateDialog: () => <></>,
+}));
 vi.mock(import("./IssueDetailPanel"), () => ({
   IssueDetailPanel: ({ id }: { id: string }) => (
     <div data-testid={`issue-detail:${id}`}>Issue {id}</div>

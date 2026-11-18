@@ -49,9 +49,8 @@ describe("native PR entry points", () => {
       ),
     ).toMatchObject({ projectId: "gitlab", repository: "group/sub/repo" });
     expect(
-      nativePullRequestDestination("http://forgejo.test:3000/org/repo/pulls/3", context, projects)
-        ?.host,
-    ).toBe("forgejo.test:3000");
+      nativePullRequestDestination("http://forgejo.test:3000/org/repo/pulls/3", context, projects),
+    ).toBeNull();
   });
 
   it("opens a repository nobody has checked out under a project on its host, as web does", () => {

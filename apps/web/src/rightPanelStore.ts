@@ -103,7 +103,8 @@ export type RightPanelSurface =
       kind: "requirement-issue";
       environmentId?: string;
       projectId: string;
-      provider: "github" | "meituan";
+      provider: "github" | "meituan" | "gitlab" | "linear";
+      host?: string;
       scope?: string;
       issueId: string;
       title?: string;
@@ -371,7 +372,8 @@ export type RequirementIssueSurface = Extract<RightPanelSurface, { kind: "requir
 export interface RequirementIssueSurfaceTarget {
   environmentId?: string;
   projectId: string;
-  provider: "github" | "meituan";
+  provider: RequirementIssueSurface["provider"];
+  host?: string;
   scope?: string;
   issueId: string;
   title?: string;
@@ -383,7 +385,8 @@ function requirementIssueSurfaceId(
   const environment =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
   const scope = target.scope === undefined ? "" : `${encodeURIComponent(target.scope)}:`;
-  return `requirement-issue:${environment}${encodeURIComponent(target.projectId)}:${target.provider}:${scope}${encodeURIComponent(target.issueId)}`;
+  const host = target.host ? `${encodeURIComponent(target.host)}:` : "";
+  return `requirement-issue:${environment}${encodeURIComponent(target.projectId)}:${target.provider}:${host}${scope}${encodeURIComponent(target.issueId)}`;
 }
 
 function requirementIssueSurface(target: RequirementIssueSurfaceTarget): RequirementIssueSurface {
@@ -393,6 +396,7 @@ function requirementIssueSurface(target: RequirementIssueSurfaceTarget): Require
     ...(target.environmentId === undefined ? {} : { environmentId: target.environmentId }),
     projectId: target.projectId,
     provider: target.provider,
+    ...(target.host ? { host: target.host } : {}),
     ...(typeof target.scope === "string" ? { scope: target.scope } : {}),
     issueId: target.issueId,
     ...(typeof target.title === "string" ? { title: target.title } : {}),

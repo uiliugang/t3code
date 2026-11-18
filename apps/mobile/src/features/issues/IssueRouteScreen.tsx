@@ -4,6 +4,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { prependIssueComments } from "@t3tools/client-runtime/state/issues";
 import type {
   IssueComment,
+  IssueDetail,
   IssueEvent,
   IssueLinkedPullRequest,
   IssueReaction,
@@ -11,7 +12,7 @@ import type {
   IssueSummary,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Linking, Platform, Pressable, Share, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 
@@ -158,20 +159,24 @@ function IssueIdentity(props: {
         {issue.title}
       </Text>
       <View className="flex-row items-center gap-2">
-        <PullRequestAvatar actor={issue.author} size={20} />
-        <Text className="min-w-0 flex-1 text-xs font-t3-medium" numberOfLines={1}>
-          {issue.author?.login ?? "Unknown author"}
-        </Text>
+        {issue.author ? (
+          <>
+            <PullRequestAvatar actor={issue.author} size={20} />
+            <Text className="min-w-0 flex-1 text-xs font-t3-medium" numberOfLines={1}>
+              {issue.author.login}
+            </Text>
+          </>
+        ) : null}
         <Text className="shrink text-right text-2xs text-foreground-muted" numberOfLines={1}>
           {issue.closedAt ? (
             <>
               Closed <RelativeTime timestamp={issue.closedAt} /> ago
             </>
-          ) : (
+          ) : issue.createdAt ? (
             <>
               Opened <RelativeTime timestamp={issue.createdAt} /> ago
             </>
-          )}
+          ) : null}
         </Text>
       </View>
       {issue.labels.length || canLabel ? (
@@ -331,7 +336,13 @@ export function IssueRouteScreen({ route }: StaticScreenProps<IssueParams>) {
   return <IssueRoute key={issueParamsKey(route.params)} params={route.params} />;
 }
 
-function IssueRoute({ params }: { readonly params: IssueParams }) {
+export function IssueRoute({
+  params,
+  renderSupplement,
+}: {
+  readonly params: IssueParams;
+  readonly renderSupplement?: (issue: IssueDetail) => ReactNode;
+}) {
   const identity = issueIdentity(params);
   const target = issueTarget(params);
   const navigation = useNavigation();
@@ -574,6 +585,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
                 )
               ) : (
                 <>
+                  {renderSupplement?.(detail)}
                   <PullRequestDescription
                     markdown={detail.body}
                     footer={
@@ -589,29 +601,34 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
                   {detail.linkedPullRequests.length > 0 ? (
                     <LinkedPullRequests params={params} links={detail.linkedPullRequests} />
                   ) : null}
-                  <View className="gap-3">
-                    <PullRequestSectionHeading>
-                      Activity
-                      {detail.commentCount > 0
-                        ? ` · ${detail.commentCount} ${detail.commentCount === 1 ? "comment" : "comments"}`
-                        : ""}
-                    </PullRequestSectionHeading>
-                    {nextCursor !== null ? (
-                      <Button
-                        label={busy === "older" ? "Loading…" : "Load older comments"}
-                        disabled={busy !== null}
-                        onPress={() => void loadOlder()}
-                      />
-                    ) : null}
-                    {timeline.length === 0 ? (
-                      <Text className="text-sm text-foreground-muted">
-                        Nothing has happened here yet.
-                      </Text>
-                    ) : null}
-                    {timeline.map((item) => (
-                      <View key={item.key}>{item.content}</View>
-                    ))}
-                  </View>
+                  {detail.capabilities.comment ||
+                  detail.capabilities.events ||
+                  timeline.length > 0 ||
+                  nextCursor !== null ? (
+                    <View className="gap-3">
+                      <PullRequestSectionHeading>
+                        Activity
+                        {detail.commentCount > 0
+                          ? ` · ${detail.commentCount} ${detail.commentCount === 1 ? "comment" : "comments"}`
+                          : ""}
+                      </PullRequestSectionHeading>
+                      {nextCursor !== null ? (
+                        <Button
+                          label={busy === "older" ? "Loading…" : "Load older comments"}
+                          disabled={busy !== null}
+                          onPress={() => void loadOlder()}
+                        />
+                      ) : null}
+                      {timeline.length === 0 ? (
+                        <Text className="text-sm text-foreground-muted">
+                          Nothing has happened here yet.
+                        </Text>
+                      ) : null}
+                      {timeline.map((item) => (
+                        <View key={item.key}>{item.content}</View>
+                      ))}
+                    </View>
+                  ) : null}
                 </>
               )}
             </View>

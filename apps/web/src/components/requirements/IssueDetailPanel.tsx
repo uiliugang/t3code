@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   BranchIssueError,
+  IssueTrackerKind,
+  type IssueOption,
   isMeituanServiceEnabled,
   type EnvironmentId,
   type IssueTarget,
@@ -22,19 +24,13 @@ import { serverEnvironment } from "../../state/server";
 import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 import { ProjectTag } from "./ProjectTag";
 
+import { IssueDetailPanel as TrackerDetailPanel } from "../issue/IssueDetailPanel";
+import type { RequirementTracker } from "@t3tools/client-runtime/work-item";
+import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "../../rightPanelStore";
+
 const isBranchIssueError = Schema.is(BranchIssueError);
 
-export function IssueDetailPanel({
-  environmentId,
-  target,
-  id,
-  cwd,
-  projectTitle,
-  close,
-  changed,
-  embedded = false,
-  panelRef,
-}: {
+type PanelProps = {
   environmentId: EnvironmentId;
   target: IssueTarget;
   id: string;
@@ -44,46 +40,82 @@ export function IssueDetailPanel({
   changed?: () => void;
   embedded?: boolean;
   panelRef?: ScopedThreadRef | undefined;
-}) {
+};
+export function IssueDetailPanel(
+  props: Omit<PanelProps, "target"> & {
+    target: Omit<IssueTarget, "provider"> & { provider: RequirementTracker };
+  },
+) {
+  const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
+  const { provider, scope, ...target } = props.target;
+  const legacy =
+    provider === "github" || provider === "meituan"
+      ? ({ ...target, ...(scope ? { scope } : {}), provider } satisfies IssueTarget)
+      : null;
+  if (scope && (config?.requirementIssueTrackers || !legacy))
+    return (
+      <TrackerDetailPanel
+        environmentId={props.environmentId}
+        reference={{ ...target, scope, key: props.id, tracker: IssueTrackerKind.make(provider) }}
+        threadRef={
+          props.panelRef?.threadId === REQUIREMENTS_PANEL_REF.threadId
+            ? null
+            : (props.panelRef ?? null)
+        }
+        onIssueChanged={props.changed}
+        onSelectPullRequest={(reference) =>
+          useRightPanelStore.getState().openPullRequest(props.panelRef ?? REQUIREMENTS_PANEL_REF, {
+            projectId: reference.projectId,
+            repository: reference.repository,
+            number: reference.number,
+            ...(reference.host ? { host: reference.host } : {}),
+            environmentId: props.environmentId,
+          })
+        }
+        renderSupplement={
+          legacy
+            ? (detail) => (
+                <RequirementExtras
+                  environmentId={props.environmentId}
+                  target={legacy}
+                  id={props.id}
+                  cwd={props.cwd}
+                  panelRef={props.panelRef}
+                  url={detail.url}
+                />
+              )
+            : undefined
+        }
+      />
+    );
+  return legacy ? <LegacyIssueDetailPanel {...props} target={legacy} /> : null;
+}
+function LegacyIssueDetailPanel({
+  environmentId,
+  target,
+  id,
+  cwd,
+  projectTitle,
+  close,
+  changed,
+  embedded = false,
+  panelRef,
+}: PanelProps) {
   const t = useUiTranslation();
   const settings = useEnvironmentSettings(environmentId, (settings) => settings);
   const enabled =
     target.provider !== "meituan" || isMeituanServiceEnabled(settings, "requirements");
-  const branchesEnabled =
-    enabled &&
-    (target.provider !== "meituan" || isMeituanServiceEnabled(settings, "sourceControl"));
   const query = useEnvironmentQuery(
     enabled
       ? sourceControlEnvironment.issueDetail({ environmentId, input: { ...target, id } })
       : null,
   );
   const detail = query.data;
-  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const deliveryQuery = useEnvironmentQuery(
-    detail && config?.workItemDelivery === true
-      ? serverEnvironment.workItemsLive({ environmentId, input: { issueUrl: detail.url } })
-      : null,
-  );
-  const branches = useEnvironmentQuery(
-    detail && branchesEnabled
-      ? sourceControlEnvironment.issueBranches({ environmentId, input: { cwd, url: detail.url } })
-      : null,
-  );
-  const branchError =
-    isBranchIssueError(branches.failure) && branches.failure.reason === "invalid-link"
-      ? t("Branch links require a repository on the same platform as the issue.")
-      : branches.error;
   const allowed = useAtomValue(
     sourceControlEnvironment.setIssueState.permissionAtom(environmentId),
   );
-  const linkAllowed = useAtomValue(
-    sourceControlEnvironment.updateBranchIssues.permissionAtom(environmentId),
-  );
-  const canLink = linkAllowed && branchesEnabled;
   const setState = useAtomCommand(sourceControlEnvironment.setIssueState);
-  const updateBranches = useAtomCommand(sourceControlEnvironment.updateBranchIssues);
   const [nextState, setNextState] = useState("");
-  const [branch, setBranch] = useState("");
   const [busy, setBusy] = useState(false);
   const update = async () => {
     if (!nextState) return;
@@ -95,16 +127,6 @@ export function IssueDetailPanel({
       setNextState("");
       changed?.();
     }
-  };
-  const associate = async (name: string, action: "associate" | "disassociate") => {
-    if (!detail || !name) return;
-    setBusy(true);
-    await updateBranches({
-      environmentId,
-      input: { cwd, branch: name, urls: [detail.url], action },
-    });
-    setBusy(false);
-    branches.refresh();
   };
   return (
     <aside
@@ -165,15 +187,15 @@ export function IssueDetailPanel({
                 {detail.assignees.map((person) => person.label).join(", ") || t("Unassigned")}
               </p>
             </div>
-            {deliveryQuery.data?.item ? (
-              <RequirementDeliveryPanel
-                environmentId={environmentId}
-                item={deliveryQuery.data.item}
-                summary={deliveryQuery.data.items[0]?.deliverySummary}
-                transitions={detail.transitions}
-                panelRef={panelRef}
-              />
-            ) : null}
+            <RequirementExtras
+              environmentId={environmentId}
+              target={target}
+              id={id}
+              cwd={cwd}
+              panelRef={panelRef}
+              url={detail.url}
+              transitions={detail.transitions}
+            />
             <details className="border-t border-border/60 pt-3">
               <summary className="cursor-pointer text-xs font-medium">{t("Issue details")}</summary>
               <div className="mt-3 space-y-3">
@@ -223,84 +245,7 @@ export function IssueDetailPanel({
                 )}
               </div>
             </details>
-            <details className="border-t border-border/60 pt-3">
-              <summary className="cursor-pointer text-xs font-medium">
-                {t("Linked branches")}
-              </summary>
-              <div className="space-y-3 pt-3">
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    target.provider === "meituan" ? "Synced with MEP" : "Only in this environment",
-                  )}
-                </p>
-                {branches.error ? (
-                  <p role="alert" className="text-xs text-destructive">
-                    {branchError}
-                  </p>
-                ) : null}
-                {branches.data
-                  ?.filter((item) => item.linked)
-                  .map((item) => (
-                    <div
-                      key={item.name}
-                      className="flex min-w-0 items-center justify-between gap-2"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <GitBranchIcon className="size-4 shrink-0" />
-                        <span className="truncate font-mono text-xs">{item.name}</span>
-                      </span>
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              disabled={!canLink || busy}
-                              onClick={() => void associate(item.name, "disassociate")}
-                              aria-label={t("Unlink issue")}
-                            />
-                          }
-                        >
-                          <UnlinkIcon />
-                        </TooltipTrigger>
-                        <TooltipPopup>{t("Unlink issue")}</TooltipPopup>
-                      </Tooltip>
-                    </div>
-                  ))}
-                <div className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <IssueSelect
-                      label={t("Choose branch")}
-                      value={branch}
-                      options={[
-                        { value: "", label: t("Choose branch") },
-                        ...(branches.data ?? [])
-                          .filter((item) => !item.linked)
-                          .map((item) => ({ value: item.name, label: item.name })),
-                      ]}
-                      onChange={setBranch}
-                      disabled={!canLink || busy}
-                    />
-                  </div>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          size="icon-sm"
-                          variant="outline"
-                          disabled={!canLink || busy || !branch}
-                          onClick={() => void associate(branch, "associate")}
-                          aria-label={t("Link branch")}
-                        />
-                      }
-                    >
-                      <LinkIcon />
-                    </TooltipTrigger>
-                    <TooltipPopup>{t("Link branch")}</TooltipPopup>
-                  </Tooltip>
-                </div>
-              </div>
-            </details>
+
             <div>
               <Button
                 variant="outline"
@@ -315,5 +260,147 @@ export function IssueDetailPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+function RequirementExtras({
+  environmentId,
+  target,
+  id,
+  cwd,
+  panelRef,
+  url,
+  transitions,
+}: Pick<PanelProps, "environmentId" | "target" | "id" | "cwd" | "panelRef"> & {
+  url: string;
+  transitions?: ReadonlyArray<IssueOption>;
+}) {
+  const t = useUiTranslation();
+  const settings = useEnvironmentSettings(environmentId, (settings) => settings);
+  const enabled =
+    target.provider !== "meituan" || isMeituanServiceEnabled(settings, "requirements");
+  const branchesEnabled =
+    enabled &&
+    (target.provider !== "meituan" || isMeituanServiceEnabled(settings, "sourceControl"));
+  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const deliveryQuery = useEnvironmentQuery(
+    config?.workItemDelivery === true
+      ? serverEnvironment.workItemsLive({ environmentId, input: { issueUrl: url } })
+      : null,
+  );
+  const branches = useEnvironmentQuery(
+    branchesEnabled
+      ? sourceControlEnvironment.issueBranches({ environmentId, input: { cwd, url: url } })
+      : null,
+  );
+  const branchError =
+    isBranchIssueError(branches.failure) && branches.failure.reason === "invalid-link"
+      ? t("Branch links require a repository on the same platform as the issue.")
+      : branches.error;
+  const linkAllowed = useAtomValue(
+    sourceControlEnvironment.updateBranchIssues.permissionAtom(environmentId),
+  );
+  const canLink = linkAllowed && branchesEnabled;
+  const transitionQuery = useEnvironmentQuery(
+    !transitions && deliveryQuery.data?.item
+      ? sourceControlEnvironment.issueDetail({ environmentId, input: { ...target, id } })
+      : null,
+  );
+  const updateBranches = useAtomCommand(sourceControlEnvironment.updateBranchIssues);
+  const [branch, setBranch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const associate = async (name: string, action: "associate" | "disassociate") => {
+    if (!name) return;
+    setBusy(true);
+    await updateBranches({
+      environmentId,
+      input: { cwd, branch: name, urls: [url], action },
+    });
+    setBusy(false);
+    branches.refresh();
+  };
+  return (
+    <>
+      {deliveryQuery.data?.item ? (
+        <RequirementDeliveryPanel
+          environmentId={environmentId}
+          item={deliveryQuery.data.item}
+          summary={deliveryQuery.data.items[0]?.deliverySummary}
+          transitions={transitions ?? transitionQuery.data?.transitions ?? []}
+          panelRef={panelRef}
+        />
+      ) : null}
+      <details className="border-t border-border/60 pt-3">
+        <summary className="cursor-pointer text-xs font-medium">{t("Linked branches")}</summary>
+        <div className="space-y-3 pt-3">
+          <p className="text-xs text-muted-foreground">
+            {t(target.provider === "meituan" ? "Synced with MEP" : "Only in this environment")}
+          </p>
+          {branches.error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {branchError}
+            </p>
+          ) : null}
+          {branches.data
+            ?.filter((item) => item.linked)
+            .map((item) => (
+              <div key={item.name} className="flex min-w-0 items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <GitBranchIcon className="size-4 shrink-0" />
+                  <span className="truncate font-mono text-xs">{item.name}</span>
+                </span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={!canLink || busy}
+                        onClick={() => void associate(item.name, "disassociate")}
+                        aria-label={t("Unlink issue")}
+                      />
+                    }
+                  >
+                    <UnlinkIcon />
+                  </TooltipTrigger>
+                  <TooltipPopup>{t("Unlink issue")}</TooltipPopup>
+                </Tooltip>
+              </div>
+            ))}
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <IssueSelect
+                label={t("Choose branch")}
+                value={branch}
+                options={[
+                  { value: "", label: t("Choose branch") },
+                  ...(branches.data ?? [])
+                    .filter((item) => !item.linked)
+                    .map((item) => ({ value: item.name, label: item.name })),
+                ]}
+                onChange={setBranch}
+                disabled={!canLink || busy}
+              />
+            </div>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-sm"
+                    variant="outline"
+                    disabled={!canLink || busy || !branch}
+                    onClick={() => void associate(branch, "associate")}
+                    aria-label={t("Link branch")}
+                  />
+                }
+              >
+                <LinkIcon />
+              </TooltipTrigger>
+              <TooltipPopup>{t("Link branch")}</TooltipPopup>
+            </Tooltip>
+          </div>
+        </div>
+      </details>
+    </>
   );
 }

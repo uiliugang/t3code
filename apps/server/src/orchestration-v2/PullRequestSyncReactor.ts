@@ -17,7 +17,7 @@ import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "../sourceControl/threadPullRequests.ts";
-import { knownSourceControlDefinitions as sourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
+import { builtInSourceControlDefinitions as sourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";

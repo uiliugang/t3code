@@ -279,7 +279,7 @@ it.effect("leaves a remote no integration claims unknown, with its server's addr
 it.effect.each([
   ["github.com:team/project.git", "github"],
   ["gitlab.com:team/project.git", "gitlab"],
-  ["bitbucket.org:team/project.git", "bitbucket"],
+  ["gitlab.com:team/project.git", "gitlab"],
   ["code.example.test:team/project.git", "unknown"],
 ] as const)(
   "reads the host of an SSH remote that leaves its user to ssh config: %s",
@@ -322,12 +322,12 @@ it.effect("refines the caller-selected remote instead of choosing another config
 it.effect("falls back to a non-origin remote when origin is not configured", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({
-      remotes: [{ name: "upstream", url: "https://dev.azure.com/acme/project/_git/repo" }],
+      remotes: [{ name: "upstream", url: "https://gitlab.com/acme/team/repo" }],
     });
 
     const provider = yield* registry.resolve({ cwd: "/repo" });
 
-    assert.strictEqual(provider.kind, "azure-devops");
+    assert.strictEqual(provider.kind, "gitlab");
   }),
 );
 

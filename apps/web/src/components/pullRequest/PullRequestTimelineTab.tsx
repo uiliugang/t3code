@@ -57,7 +57,6 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMoreReplies } from "./PullRequestMoreReplies";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
-import { canReactPullRequestComment } from "@t3tools/client-runtime/pull-request-reactions";
 import { PullRequestResolveThreadButton } from "./PullRequestResolveThreadButton";
 import {
   PullRequestActorAvatar,
@@ -796,8 +795,7 @@ export function PullRequestTimelineTab({
   const newestCommitAt = newestPullRequestCommitAt(detail.commits);
   const reactions: ReactionSurface = {
     revealAnchor: anchor,
-    canReact: (event) =>
-      event.comment !== undefined && canReactPullRequestComment(detail, event.comment),
+    canReact: (event) => event.comment !== undefined && detail.capabilities.reactions === true,
     onAddToChat: onAddToChat && ((comment) => onAddToChat({ kind: "comment", comment })),
     environmentId,
     threadRef,

@@ -24,6 +24,8 @@ import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as IssueService from "./IssueService.ts";
+import * as RequirementIssues from "../sourceControl/IssueService.ts";
+import { RequirementIssueError } from "@t3tools/contracts";
 import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 const GITHUB = IssueTrackerKind.make("github");
@@ -157,12 +159,28 @@ function makeService(input: {
   readonly trackers: ReadonlyArray<IssueTrackerApi>;
   readonly bindings?: Record<string, IssueTrackerProjectBinding>;
   readonly bindingsFailure?: PersistenceSqlError;
+  readonly spaces?: ReadonlyArray<string>;
+  readonly discoveryFailure?: RequirementIssueError;
 }) {
   return IssueService.IssueService.pipe(
     Effect.provide(
       IssueService.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
+            Layer.mock(RequirementIssues.IssueService)({
+              trackerSources: Effect.succeed({
+                scratchRoot: Option.none<string>(),
+                forProject: () =>
+                  Effect.succeed({
+                    ...(input.discoveryFailure ? { failure: input.discoveryFailure } : {}),
+                    sources: (input.spaces ?? []).map((scope) => ({
+                      provider: "meituan",
+                      host: "mep.sankuai.com",
+                      scope,
+                    })),
+                  }),
+              }),
+            }),
             Layer.mock(IssueTrackerBindings.IssueTrackerBindingsRepository)({
               list:
                 input.bindingsFailure !== undefined
@@ -200,24 +218,39 @@ function makeService(input: {
 describe("IssueService", () => {
   it.effect("places a project where its host keeps its issues", () =>
     Effect.gen(function* () {
-      const azure = IssueTrackerKind.make("azure-devops");
+      const ones = IssueTrackerKind.make("meituan");
       const service = yield* makeService({
         projects: [
           project({
             id: "p",
-            provider: "azure-devops",
-            host: "dev.azure.com",
-            repository: "acme/Web App/_git/web",
+            provider: "meituan",
+            host: "git.sankuai.com",
+            repository: "acme/web",
           }),
         ],
-        trackers: [fakeTracker({ kind: azure })],
+        trackers: [fakeTracker({ kind: ones })],
+        spaces: ["123", "456"],
       });
-      expect(yield* service.projectScope("p" as ProjectId)).toEqual({
-        projectId: "p",
-        tracker: "azure-devops",
-        host: "dev.azure.com",
-        scope: "acme/Web App",
+      expect((yield* Effect.flip(service.projectScope("p" as ProjectId))).message).toMatch(/URL/);
+      const listed = yield* service.list({ state: "all" });
+      expect(listed.trackers[0]?.projectCount).toBe(1);
+      expect(listed.scopes?.map((target) => target.scope)).toEqual(["123", "456"]);
+      const url = (scope: string) =>
+        `https://mep.sankuai.com/app/ones/space/${scope}/workItem/requirement/detail/7`;
+      const bound = yield* service.resolveUrl(url("456"));
+      expect(bound).toMatchObject({ tracker: ones, scope: "456", writable: true });
+      expect((yield* service.detail(bound)).writable).toBe(true);
+      yield* Effect.flip(service.resolveUrl(url("789")));
+      const failure = new RequirementIssueError({ operation: "discovery", reason: "unavailable" });
+      const isolated = yield* makeService({
+        projects: [project({ id: "p" })],
+        trackers: [fakeStandaloneTracker()],
+        bindings: { p: { tracker: LINEAR, scope: "ENG" } },
+        discoveryFailure: failure,
       });
+      const partial = yield* isolated.list({ state: "all" });
+      expect(partial.scopes?.[0]?.tracker).toBe(LINEAR);
+      expect(partial.errors.map((error) => error.message)).toEqual([failure.message]);
     }),
   );
 
@@ -251,29 +284,9 @@ describe("IssueService", () => {
       });
       expect(writes).toEqual(["acme/web#1"]);
 
-      // A link's port picks the server: the project bound with it, not a default-port namesake.
-      const ported = yield* makeService({
-        projects: [
-          project({ id: "plain", repository: "acme/web", provider: "forgejo", host: "gitea.test" }),
-          project({
-            id: "ported",
-            repository: "acme/web",
-            provider: "forgejo",
-            host: "gitea.test:8443",
-          }),
-        ],
-        trackers: [fakeTracker({ kind: IssueTrackerKind.make("forgejo") })],
-      });
-      expect(yield* ported.resolveUrl("https://gitea.test:8443/acme/web/issues/3")).toMatchObject({
-        projectId: "ported",
-        host: "gitea.test:8443",
-        key: "3",
-        writable: true,
-      });
-      expect(yield* ported.resolveUrl("https://gitea.test/acme/web/issues/3")).toMatchObject({
-        projectId: "plain",
-        host: "gitea.test",
-      });
+      expect(
+        yield* Effect.flip(service.resolveUrl("https://gitea.test:8443/acme/web/issues/3")),
+      ).toMatchObject({ reason: "not-found" });
 
       // Another host is not reachable through this project's credentials at all.
       const elsewhere = yield* Effect.flip(service.detail({ ...own, host: "ghe.example.test" }));
