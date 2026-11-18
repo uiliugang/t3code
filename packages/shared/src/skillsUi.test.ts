@@ -10,6 +10,7 @@ import {
   skillBatchBindingOperations,
   skillFailure,
   skillConfigurationJob,
+  skillConfigurationFeedback,
   skillStatus,
   skillSourceFailure,
 } from "./skillsUi.ts";
@@ -50,6 +51,80 @@ const snapshot: SkillSnapshot = {
 };
 
 describe("skill management views", () => {
+  it("exposes environment-level location feedback without hiding pending or failed work", () => {
+    const first = { ...skill, activeDigest: "current", status: "pending" as const };
+    const second = { ...first, id: "second", name: "second" };
+    const completed = {
+      id: "configure-review",
+      input: { type: "configure", id: first.id, policy: "automatic", targetIds: [] },
+      skillId: first.id,
+      origin: "user",
+      status: "completed",
+      reason: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:00.000Z",
+    } satisfies SkillJob;
+    const data = { skills: [first, second], jobs: [completed] };
+    expect(skillConfigurationFeedback({ ...data, jobs: [] })).toBeNull();
+    expect(skillConfigurationFeedback(data)?.status).toBe("completed");
+    for (const status of ["queued", "running", "waiting"] as const) {
+      expect(
+        skillConfigurationFeedback({
+          ...data,
+          jobs: [
+            completed,
+            {
+              ...completed,
+              id: "configure-second",
+              input: { ...completed.input, id: second.id },
+              skillId: second.id,
+              status,
+            },
+          ],
+        })?.status,
+      ).toBe("pending");
+    }
+    const failed = {
+      ...completed,
+      id: "retry",
+      status: "failed" as const,
+      reason: "conflict" as const,
+    };
+    expect(
+      skillConfigurationFeedback({
+        ...data,
+        skills: [{ ...first, failureReason: "conflict" }],
+        jobs: [completed, failed],
+      })?.status,
+    ).toBe("failed");
+    expect(
+      skillConfigurationFeedback({
+        skills: [{ ...first, failureReason: "conflict" }, second],
+        jobs: [
+          failed,
+          { ...completed, input: { ...completed.input, id: second.id }, status: "running" },
+        ],
+      })?.status,
+    ).toBe("failed");
+    expect(skillConfigurationFeedback({ ...data, jobs: [completed, failed] })).toBeNull();
+    expect(
+      skillConfigurationFeedback({ ...data, jobs: [{ ...completed, status: "cancelled" }] }),
+    ).toBeNull();
+    expect(
+      skillConfigurationFeedback({
+        skills: [
+          {
+            ...first,
+            bindings: [
+              { id: "fixture", label: "Fixture", directory: "/fixture", status: "missing" },
+            ],
+          },
+        ],
+        jobs: [completed],
+      }),
+    ).toBeNull();
+  });
+
   it("keeps configuration failures only while they match the current skill error", () => {
     const job: SkillJob = {
       id: "configure-review",

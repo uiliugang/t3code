@@ -1,13 +1,32 @@
 import { expect } from "e2e";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import type { AsyncResult } from "effect/reactivity";
 import type { SkillJob, SkillSnapshot } from "@t3tools/contracts";
 
 import { runPromise, test, WEB } from "./t3.ts";
+import { T3_HOME } from "../e2e.config.ts";
+
+const SettingsJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+const decodeSettings = Schema.decodeEffect(SettingsJson);
+const encodeSettings = Schema.encodeEffect(SettingsJson);
+
+const supervisedReplay = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const settingsPath = (yield* Path.Path).join(T3_HOME, "userdata/settings.json");
+  const original = yield* fs.readFileString(settingsPath);
+  const settings = yield* decodeSettings(original);
+  yield* fs.writeFileString(
+    settingsPath,
+    yield* encodeSettings({ ...settings, defaultRuntimeMode: "approval-required" }),
+  );
+  return fs.writeFileString(settingsPath, original);
+});
 
 test(
-  "Changing skill locations preserves unresolved local edits",
+  "Changing skill locations works while agents are active and preserves unresolved local edits",
   WEB,
   async ({ t3, app, browser, screen }) => {
     const project = await t3.project("skill-location-recovery", {
@@ -60,6 +79,17 @@ test(
     await screen.getByRole("button", /^(Details|详情)$/).tap();
     await screen.getByRole("button", /^(Check updates|检查更新)$/).tap();
     await expect(screen.getByRole("button", /^(Review update|查看更新)$/)).toBeVisible();
+    const restore = await runPromise(supervisedReplay);
+    try {
+      await t3.thread({
+        project,
+        title: "Active agent during skill configuration",
+        messages: ["Wait for approval"],
+        model: "approval",
+      });
+    } finally {
+      await runPromise(restore);
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       const previousIds = await browser.evaluate(async () => {
         const serverModule = "/src/state/server.ts";
@@ -80,7 +110,7 @@ test(
         .last()
         .getByRole("button", /^(Save|保存)$/)
         .tap();
-      await browser.evaluate(async (previousIds) => {
+      const status = await browser.evaluate(async (previousIds) => {
         const serverModule = "/src/state/server.ts";
         const registryModule = "/src/rpc/atomRegistry.ts";
         const environmentModule = "/src/state/primaryEnvironment.ts";
@@ -89,7 +119,7 @@ test(
         const { primaryEnvironmentIdAtom } = await import(environmentModule);
         const environmentId = appAtomRegistry.get(primaryEnvironmentIdAtom);
         const atom = serverEnvironment.skills({ environmentId, input: {} });
-        await new Promise<void>((resolve) => {
+        return await new Promise<SkillJob["status"]>((resolve) => {
           const check = (result: AsyncResult.AsyncResult<SkillSnapshot, unknown>) => {
             if (result._tag !== "Success") return;
             const job = result.value.jobs?.findLast(
@@ -97,13 +127,14 @@ test(
             );
             if (job?.status !== "completed" && job?.status !== "failed") return;
             unsubscribe();
-            resolve();
+            resolve(job.status);
           };
           const unsubscribe = appAtomRegistry.subscribe(atom, check);
           check(appAtomRegistry.get(atom));
         });
-        return null;
       }, previousIds);
+      await app.screenshot(`location-change-with-active-agent-${attempt}`);
+      expect(status).toBe("completed");
     }
     await app.screenshot("local-edits-after-location-changes");
     await expect(screen.getByRole("button", /^(Review update|查看更新)$/)).toBeVisible();

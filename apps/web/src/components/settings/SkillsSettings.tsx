@@ -27,6 +27,7 @@ import {
   skillBatchBindingOperations,
   skillStatus,
   skillFailure,
+  skillConfigurationFeedback,
   skillNextCheck,
   skillSourceName,
   skillSourceFailure,
@@ -185,7 +186,7 @@ function SourceSelect({
     </Select>
   );
 }
-function Targets({
+export function Targets({
   targets,
   selected,
   onChange,
@@ -201,16 +202,30 @@ function Targets({
   const t = useUiTranslation();
   const [paths, setPaths] = useState(false);
   const groups = skillTargetGroups(targets).filter((group) => group.enabled);
+  const selectedCount = groups.filter((group) =>
+    group.targets.some((target) => selected.includes(target.id)),
+  ).length;
+  const allSelected = groups.length > 0 && selectedCount === groups.length;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>
-          {t("{count} locations selected", {
-            count: groups.filter((group) =>
-              group.targets.some((target) => selected.includes(target.id)),
-            ).length,
-          })}
-        </span>
+        <label className="flex cursor-pointer items-center gap-3">
+          <Checkbox
+            aria-label={t("Select all locations")}
+            disabled={disabled || !groups.length}
+            checked={allSelected}
+            indeterminate={selectedCount > 0 && !allSelected}
+            onCheckedChange={(checked) => {
+              const ids = groups.flatMap((group) => group.targets.map((target) => target.id));
+              onChange(
+                checked
+                  ? [...new Set([...selected, ...ids])]
+                  : selected.filter((id) => !ids.includes(id)),
+              );
+            }}
+          />
+          <span>{t("{count} locations selected", { count: selectedCount })}</span>
+        </label>
         <Button variant="ghost" size="sm" onClick={() => setPaths(!paths)}>
           {t(paths ? "Hide paths" : "Show paths")}
         </Button>
@@ -1921,6 +1936,7 @@ function EnvironmentSkills({
     { value: "source:", label: `${t("Unknown source")} ${sourceCounts[""] ?? 0}` },
   ];
   const failedSource = skillSourceFailure(data);
+  const configurationFeedback = skillConfigurationFeedback(data);
   const selectableRows = rows.filter((row) => row.kind === "managed" || !row.skill.external);
   const selectedManaged = data.skills.filter((skill) => selected.includes(skill.id));
   const selectedSourceDisabled = selectedManaged.some(
@@ -1992,6 +2008,14 @@ function EnvironmentSkills({
           </Button>
         </div>
       </div>
+      {configurationFeedback && (
+        <Alert
+          role={configurationFeedback.status === "failed" ? "alert" : "status"}
+          variant={configurationFeedback.status === "failed" ? "error" : "info"}
+        >
+          <AlertDescription>{t(configurationFeedback.message)}</AlertDescription>
+        </Alert>
+      )}
       {!connected && (
         <p role="status" className="text-sm text-muted-foreground">
           {t("Environment disconnected. Showing cached skills from {time}.", {

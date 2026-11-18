@@ -2,14 +2,66 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   type SkillMutation,
   type SkillSnapshot,
+  type SkillTarget,
 } from "@t3tools/contracts";
+import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
-import { AddSource, InstallDialog } from "./SkillsSettings";
+import { AddSource, InstallDialog, Targets } from "./SkillsSettings";
 
 import "../../index.css";
+
+it("selects and clears all enabled physical locations and reflects partial selection", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
+  const targets: SkillTarget[] = [
+    { id: "claude", label: "Claude", directory: "/claude" },
+    { id: "claude-alias", label: "Claude alias", directory: "/claude" },
+    { id: "codex", label: "Codex", directory: "/codex" },
+    { id: "unavailable", label: "Unavailable", directory: "/disabled", enabled: false },
+  ];
+  function Locations({ disabled = false, items = targets }) {
+    const [selected, setSelected] = useState(["claude", "unavailable"]);
+    return (
+      <Targets targets={items} selected={selected} onChange={setSelected} disabled={disabled} />
+    );
+  }
+  await using screen = await render(<Locations />);
+  const all = screen.getByRole("checkbox", { name: "Select all locations" });
+  const claude = screen.getByRole("checkbox", { name: "Claude, Claude alias" });
+  const codex = screen.getByRole("checkbox", { name: "Codex", exact: true });
+  await expect.element(all).toHaveAttribute("aria-checked", "mixed");
+  await expect.element(screen.getByText("1 locations selected")).toBeVisible();
+  await expect
+    .element(screen.getByRole("checkbox", { name: "Unavailable" }))
+    .not.toBeInTheDocument();
+
+  await userEvent.click(all);
+  await expect.element(all).toBeChecked();
+  await expect.element(claude).toBeChecked();
+  await expect.element(codex).toBeChecked();
+  await expect.element(screen.getByText("2 locations selected")).toBeVisible();
+  await userEvent.click(codex);
+  await expect.element(all).toHaveAttribute("aria-checked", "mixed");
+  await userEvent.click(all);
+  await expect.element(all).toBeChecked();
+  await userEvent.click(all);
+  await expect.element(all).not.toBeChecked();
+  await expect.element(claude).not.toBeChecked();
+  await expect.element(codex).not.toBeChecked();
+  await expect.element(screen.getByText("0 locations selected")).toBeVisible();
+
+  await screen.rerender(<Locations disabled />);
+  await expect.element(all).toBeDisabled();
+  await screen.rerender(<Locations items={[]} />);
+  await expect.element(all).toBeDisabled();
+  await screen.rerender(
+    <Locations items={targets.map((target) => ({ ...target, enabled: true }))} />,
+  );
+  await expect.element(screen.getByRole("checkbox", { name: "Unavailable" })).toBeChecked();
+  await expect.element(all).toHaveAttribute("aria-checked", "mixed");
+});
 
 it("requires a new installer selection when Meituan is disabled during source editing", async () => {
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });

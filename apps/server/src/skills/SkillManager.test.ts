@@ -533,7 +533,7 @@ describe("SkillManager", () => {
   );
 
   it.effect(
-    "disables a physical location, detaches managed links and keeps original files through restart",
+    "disables a physical location and reconfigures bindings while busy without losing original files",
     () =>
       Effect.gen(function* () {
         const { fs, directory, source, target, manager, install, busy, reported, restart } =
@@ -595,6 +595,7 @@ describe("SkillManager", () => {
           "notes",
         );
         expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
+        yield* Ref.set(busy, true);
         yield* recovered.mutate({
           type: "configure",
           id: first.id,
@@ -622,6 +623,17 @@ describe("SkillManager", () => {
         expect((yield* recovered.snapshot).skills[0]?.status).toBe("ready");
         expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
         expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("completed");
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: [],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
+        expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("completed");
+        expect(yield* fs.exists(`${target}/review`)).toBe(false);
+        expect(yield* fs.readFileString(`${target}/notes/script.sh`)).toBe("first");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
@@ -1494,6 +1506,71 @@ describe("SkillManager", () => {
         });
         yield* manager.drain;
         expect((yield* manager.snapshot).lastFailureReason).toBe("external");
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect.each([false, true])(
+    "finishes location changes independently of pending version activation (link failure: %s)",
+    (linkFails) =>
+      Effect.gen(function* () {
+        const { fs, directory, source, target, manager, install, busy, restartWithFileSystem } =
+          yield* harness;
+        yield* install;
+        const skill = (yield* manager.snapshot).skills[0]!;
+        yield* manager.mutate({
+          type: "target.save",
+          target: { id: "second", label: "Second", directory: `${directory}/second` },
+        });
+        yield* manager.drain;
+        yield* Ref.set(busy, true);
+        yield* fs.writeFileString(`${source}/script.sh`, "pending update");
+        yield* manager.mutate({ type: "update", id: skill.id });
+        yield* manager.drain;
+        const configuring = linkFails
+          ? yield* restartWithFileSystem({
+              ...fs,
+              symlink: (from, to) =>
+                to === `${directory}/second/review`
+                  ? Effect.fail(
+                      PlatformError.systemError({
+                        _tag: "PermissionDenied",
+                        module: "FileSystem",
+                        method: "symlink",
+                      }),
+                    )
+                  : fs.symlink(from, to),
+            })
+          : manager;
+        yield* configuring.mutate({
+          type: "configure",
+          id: skill.id,
+          policy: skill.policy,
+          targetIds: ["fixture", "second"],
+        });
+        yield* configuring.drain;
+        const configured = yield* configuring.snapshot;
+        expect(configured.skills[0]?.status).toBe("pending");
+        expect(configured.skills[0]?.bindings.every((binding) => binding.status === "linked")).toBe(
+          !linkFails,
+        );
+        expect(configured.jobs?.findLast((job) => job.input.type === "configure")).toMatchObject({
+          status: linkFails ? "failed" : "completed",
+          reason: linkFails ? "conflict" : null,
+          beforeDigest: skill.activeDigest,
+          afterDigest: skill.activeDigest,
+        });
+        if (!linkFails)
+          expect(yield* fs.readFileString(`${directory}/second/review/script.sh`)).toBe("first");
+        yield* configuring.mutate({ type: "cancel", id: skill.id });
+        yield* configuring.drain;
+        yield* Ref.set(busy, false);
+        yield* configuring.tick;
+        yield* configuring.drain;
+        expect(
+          (yield* configuring.snapshot).jobs?.findLast((job) => job.input.type === "configure")
+            ?.status,
+        ).toBe(linkFails ? "failed" : "completed");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
