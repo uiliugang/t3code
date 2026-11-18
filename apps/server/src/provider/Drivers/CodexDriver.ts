@@ -161,7 +161,7 @@ export type CodexDriverEnv =
 export const CodexDriver: ProviderDriver<
   CodexSettings,
   CodexDriverEnv,
-  Path.Path | CodexUsageHistory.CodexUsageHistory
+  Path.Path | CodexUsageHistory.CodexUsageHistory | ServerConfig.ServerConfig
 > = {
   driverKind: DRIVER_KIND,
   metadata: {

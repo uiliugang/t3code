@@ -1791,15 +1791,19 @@ describe("UsageService", () => {
     }),
   );
 
-  it.effect("reads shared managed default and disabled extra account history once", () =>
+  it.effect("reads managed and BYOK history once, including disabled accounts", () =>
     Effect.gen(function* () {
       const { home, settings } = yield* setup;
+      const prefix = "usage-managed-accounts";
+      const byokSessions = (id: string) =>
+        NodePath.join(home, prefix, "userdata", "providers", "codex", id, "byok", "sessions");
       const summary = yield* Effect.gen(function* () {
-        for (const [id, output] of [
-          ["codex", 17],
-          ["codex-personal", 23],
+        for (const [id, output, sessions] of [
+          ["codex", 17, NodePath.join(home, "shared-codex", "sessions")],
+          ["codex-personal", 23, NodePath.join(home, "shared-codex", "sessions")],
+          ["codex-byok", 29, byokSessions("codex-byok")],
+          ["codex-byok-disabled", 31, byokSessions("codex-byok-disabled")],
         ] as const) {
-          const sessions = NodePath.join(home, "shared-codex", "sessions");
           yield* Effect.promise(async () => {
             await NodeFSP.mkdir(sessions, { recursive: true });
             await NodeFSP.writeFile(
@@ -1827,7 +1831,7 @@ describe("UsageService", () => {
         Effect.scoped,
         Effect.provide(
           layerService({
-            prefix: "usage-managed-accounts",
+            prefix,
             home,
             settings: {
               ...settings,
@@ -1856,17 +1860,38 @@ describe("UsageService", () => {
                     },
                   ],
                 },
+                ...Object.fromEntries(
+                  ["codex-byok", "codex-byok-disabled"].map((id) => [
+                    ProviderInstanceId.make(id),
+                    {
+                      driver: ProviderDriverKind.make("codex"),
+                      enabled: id === "codex-byok",
+                      config: {
+                        connectionMode: "byok",
+                        homePath: NodePath.join(home, "shared-codex"),
+                        shadowHomePath: NodePath.join(home, "ignored-byok-shadow"),
+                      },
+                      environment: [
+                        {
+                          name: "CODEX_HOME",
+                          value: NodePath.join(home, "ignored-byok-environment"),
+                          sensitive: false,
+                        },
+                      ],
+                    },
+                  ]),
+                ),
               },
             },
           }),
         ),
       );
-      assert.strictEqual(totalOutputTokens(summary), 40);
+      assert.strictEqual(totalOutputTokens(summary), 100);
       assert.strictEqual(
         summary.sources.filter(
           (source) => source.fingerprint.provider === "codex" && source.status === "ok",
         ).length,
-        1,
+        3,
       );
     }),
   );
