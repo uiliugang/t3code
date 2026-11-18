@@ -68,7 +68,9 @@ export function buildProjectSearchItems(input: ProjectItemsInput) {
       );
     },
     icon: projectFaviconIcon,
-    renderTitle: (project) => <ProjectLabel name={project.displayName} project={project} />,
+    renderTitle: (project) => (
+      <ProjectLabel name={project.displayName} project={project} showKind />
+    ),
     runProject: input.runProject,
     ...(input.pin ? { pin: input.pin } : {}),
   });
@@ -97,7 +99,9 @@ export function buildNewThreadInProjectItems(
       />
     ),
     icon: projectFaviconIcon,
-    renderTitle: (project) => <ProjectLabel name={project.displayName} project={project} />,
+    renderTitle: (project) => (
+      <ProjectLabel name={project.displayName} project={project} showKind />
+    ),
     runProject: input.runProject,
     ...(input.pin ? { pin: input.pin } : {}),
   });
