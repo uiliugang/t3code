@@ -24,16 +24,10 @@ the provider never got to look at. Absence below the boundary does not survive i
 
 What "never got to look at" is belongs to the host, and the contract cannot know any of them:
 
-- [Azure DevOps](../../packages/source-control-azure-devops/src/server/AzureDevOpsPullRequestProvider.ts) reads every
-  version off one iteration listing, so a change too long to follow to its end leaves the paths
-  past that point out.
-- [Bitbucket](../../packages/source-control-bitbucket/src/server/BitbucketPullRequestApi.ts) reads them off the
-  pull request's own patch, the only place it states a file's version, so a patch cut short at the
-  byte ceiling leaves the paths past the cut out.
 - [GitLab](../../packages/source-control-gitlab/src/server/GitLabPullRequestCli.ts) asks in batches, so a batch
   it could not read leaves that batch's paths out.
 
-Those three facts stay with their providers. The contract states only that absence means the read
+That constraint stays with its provider. The contract states only that absence means the read
 could not say, which is the half a provider must convert to.
 
 ## Three nulls, and the empty string is not one of them

@@ -24,6 +24,7 @@ const Row = Schema.Struct({
   type: Field,
   assigned: Schema.optional(Field),
   priority: Schema.optional(Field),
+  createdAt: Schema.optional(Field),
   updatedAt: Schema.optional(Field),
   description: Schema.optional(Field),
   projectId: Schema.optional(Field),
@@ -114,6 +115,7 @@ function fromRow(row: typeof Row.Type, scope: string): Issue {
         ]
       : [],
     priority: row.priority?.displayValue ?? "",
+    ...(row.createdAt?.value == null ? {} : { createdAt: String(row.createdAt.value) }),
     updatedAt: String(row.updatedAt?.value ?? ""),
   };
 }
@@ -247,15 +249,20 @@ export const make = Effect.gen(function* () {
         transitions,
       };
     });
-  return {
-    search: Effect.fn("MepIssueBoard.search")(function* (input) {
-      let assignee = input.assignee;
-      if (assignee === "me") {
-        const config = yield* run(input.cwd, ["config"]);
-        assignee = /MIS 账号[：:]\s+([\w.-]+)/u.exec(config)?.[1] ?? "";
-        if (!assignee)
-          return yield* new RequirementIssueError({ operation: "viewer", reason: "unavailable" });
-      }
+  const getViewer = Effect.fn("MepIssueBoard.getViewer")(function* (cwd: string) {
+    const config = yield* run(cwd, ["config"]);
+    const viewer = /MIS 账号[：:]\s+([\w.-]+)/u.exec(config)?.[1];
+    if (!viewer)
+      return yield* new RequirementIssueError({ operation: "viewer", reason: "unavailable" });
+    return viewer;
+  });
+  type Board = NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
+  const board = {
+    search: Effect.fn("MepIssueBoard.search")(function* (
+      input: Parameters<Board["search"]>[0] & { pageSize?: number },
+    ) {
+      const assignee = input.assignee === "me" ? yield* getViewer(input.cwd) : input.assignee;
+      const pageSize = input.pageSize ?? 20;
       const id = /^#?([1-9]\d*)$/u.exec(input.query)?.[1];
       if (id) {
         if (input.page !== 1) return { issues: [], hasMore: false };
@@ -276,7 +283,7 @@ export const make = Effect.gen(function* () {
         "--page",
         String(input.page),
         "--page-size",
-        "20",
+        String(pageSize),
         "--json",
       ];
       if (input.query) args.push("--name", input.query);
@@ -302,7 +309,7 @@ export const make = Effect.gen(function* () {
       );
       return {
         issues: rows.map((row) => fromRow(row, input.source.scope)),
-        hasMore: rows.length === 20,
+        hasMore: rows.length === pageSize,
       };
     }),
     read,
@@ -458,10 +465,16 @@ export const make = Effect.gen(function* () {
         ),
       );
     }),
-    setState: Effect.fn("MepIssueBoard.setState")(function* (input) {
+    setState: Effect.fn("MepIssueBoard.setState")(function* (
+      input: Parameters<Board["setState"]>[0] & { byName?: boolean },
+    ) {
       const current = yield* read(input);
-      if (!current.transitions.some((option) => option.value === input.state))
+      const matches = current.transitions.filter(
+        (option) => (input.byName ? option.label : option.value) === input.state,
+      );
+      if (matches.length !== 1)
         return yield* new RequirementIssueError({ operation: "setState", reason: "invalid-state" });
+      const next = matches[0]!.value;
       yield* run(
         input.cwd,
         [
@@ -471,17 +484,18 @@ export const make = Effect.gen(function* () {
           "--space",
           input.source.scope,
           "--set",
-          `state=${input.state}`,
+          `state=${next}`,
           "--yes",
         ],
         true,
       );
       const updated = yield* readRow(input);
-      if (String(updated.state.value) !== input.state)
+      if (String(updated.state.value) !== next)
         return yield* new RequirementIssueError({
           operation: "setState",
           reason: "outcome-unknown",
         });
     }),
-  } satisfies NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
+  } satisfies Board;
+  return { ...board, getViewer };
 });

@@ -30,7 +30,6 @@ import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.t
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import type { SourceControlProvider } from "@t3tools/source-control-core/server/SourceControlProvider";
-import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import { fakePullRequestProvider } from "@t3tools/source-control-testing/fakeSourceControlDriver";
 import {
@@ -297,31 +296,6 @@ const FULL_REVIEW: PullRequestReviewCapabilities = {
 
 const FULL_REVIEWERS: PullRequestReviewerCapabilities = { request: true, listCandidates: true };
 
-// Like Azure DevOps, whose repository names repeat across organizations and projects.
-const keyedByCanonicalKey = {
-  repositoryKey: ({ canonicalKey }: { readonly canonicalKey: string }) => canonicalKey,
-};
-
-/** A host whose SSH remotes name an alias, so discovery says which server serves them. */
-const sshAliasHost = {
-  resolveRemoteWebHost: ({ cwd, context, resolveContext }) =>
-    isSshRemoteUrl(context.remoteUrl)
-      ? resolveContext({
-          cwd,
-          context: {
-            ...context,
-            provider: { kind: SourceControlProviderKind.make("unknown"), name: "", baseUrl: "" },
-          },
-        }).pipe(
-          Effect.map((resolved) =>
-            resolved === null || resolved.provider.kind === "unknown"
-              ? null
-              : new URL(resolved.provider.baseUrl).host,
-          ),
-        )
-      : Effect.succeed(null),
-} as SourceControlProvider["Service"];
-
 function makeService(input: {
   readonly settings?: ServerSettings;
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
@@ -345,10 +319,7 @@ function makeService(input: {
           resolveLink: () => undefined,
           resolveHandle:
             input.resolveHandle ?? (() => Effect.die("Unexpected provider refinement")),
-          get: (kind) =>
-            Effect.succeed(
-              kind === "forgejo" ? sshAliasHost : ({} as SourceControlProvider["Service"]),
-            ),
+          get: () => Effect.succeed({} as SourceControlProvider["Service"]),
         }),
         Layer.mock(ProjectService.ProjectService)({
           listShells: (options) =>
@@ -556,20 +527,20 @@ it.effect("reads nothing from a host with no implementation, but reports it", ()
 it.effect("reads nothing from a host its provider does not serve, but reports it", () =>
   Effect.gen(function* () {
     const reached = new Set<string>();
-    const bitbucket = (id: string, host: string) =>
+    const gitlab = (id: string, host: string) =>
       project({
         id,
         title: host,
         workspaceRoot: `/${id}`,
         repository: "proj/repo",
-        provider: SourceControlProviderKind.make("bitbucket"),
+        provider: SourceControlProviderKind.make("gitlab"),
         host,
       });
     const service = yield* makeService({
-      projects: [bitbucket("p1", "bitbucket.org"), bitbucket("p2", "bitbucket.example.com")],
+      projects: [gitlab("p1", "gitlab.com"), gitlab("p2", "gitlab.example.com")],
       providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("bitbucket"), {
-          servesHost: (host) => host === "bitbucket.org",
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
+          servesHost: (host) => host === "gitlab.com",
           getViewer: ({ host }) => {
             reached.add(host ?? "");
             return Effect.succeed("bilal");
@@ -584,13 +555,13 @@ it.effect("reads nothing from a host its provider does not serve, but reports it
 
     const result = yield* service.list({ state: "open" });
 
-    assert.deepStrictEqual([...reached], ["bitbucket.org"]);
+    assert.deepStrictEqual([...reached], ["gitlab.com"]);
     assert.deepStrictEqual(
       result.providers.map(({ host, configured, detail }) => ({ host, configured, detail })),
       [
-        { host: "bitbucket.org", configured: true, detail: null },
+        { host: "gitlab.com", configured: true, detail: null },
         {
-          host: "bitbucket.example.com",
+          host: "gitlab.example.com",
           configured: false,
           detail: "This host cannot be browsed here yet.",
         },
@@ -635,13 +606,12 @@ it.effect("uses a provider's raw cursor advance when it consumed malformed rows"
           title: "web",
           workspaceRoot: "/a",
           repository: "acme/web",
-          provider: SourceControlProviderKind.make("azure-devops"),
-          host: "dev.azure.com",
+          provider: SourceControlProviderKind.make("gitlab"),
+          host: "gitlab.com",
         }),
       ],
       providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("azure-devops"), {
-          ...keyedByCanonicalKey,
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
           listChangeRequests: () =>
             Effect.succeed({
               items: [changeRequest(7, "2026-07-02T00:00:00Z")],
@@ -656,7 +626,7 @@ it.effect("uses a provider's raw cursor advance when it consumed malformed rows"
     const result = yield* service.list({ state: "open" });
 
     assert.deepStrictEqual(result.nextCursors, {
-      "dev.azure.com dev.azure.com/acme/web": "2026-07-02T00:00:00Z|4|7",
+      "gitlab.com acme/web": "2026-07-02T00:00:00Z|4|7",
     });
   }),
 );
@@ -677,13 +647,13 @@ it.effect(
             title: "web",
             workspaceRoot: "/w",
             repository: "acme/web",
-            provider: "bitbucket",
-            host: "bitbucket.org",
+            provider: "gitlab",
+            host: "gitlab.com",
           }),
         ],
         providers: [
-          // Pages the way Bitbucket does: inclusively by update time, excluding rows already sent.
-          fakePullRequestProvider(SourceControlProviderKind.make("bitbucket"), {
+          // Pages inclusively by update time, excluding rows already sent.
+          fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
             listChangeRequests: ({ cursor, limit }) =>
               Effect.sync(() => {
                 const seen = new Set(cursor?.seenAt ?? []);
@@ -957,13 +927,13 @@ it.effect("retains an unavailable host's summary when it is the only queried hos
   }),
 );
 
-it.effect("retains a Bitbucket host summary when the provider rejects saved credentials", () =>
+it.effect("retains a GitLab host summary when the provider rejects saved credentials", () =>
   Effect.gen(function* () {
-    const provider = fakePullRequestProvider(SourceControlProviderKind.make("bitbucket"), {
+    const provider = fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
       getViewer: () =>
         Effect.fail(
           new PullRequestProviderError({
-            provider: SourceControlProviderKind.make("bitbucket"),
+            provider: SourceControlProviderKind.make("gitlab"),
             operation: "getViewer",
             reason: "failed",
             detail: "HTTP 403",
@@ -973,17 +943,17 @@ it.effect("retains a Bitbucket host summary when the provider rejects saved cred
     const service = yield* makeService({
       projects: [
         project({
-          id: "bitbucket",
+          id: "gitlab",
           title: "Widget",
           workspaceRoot: "/widget",
           repository: "acme/widget",
-          provider: "bitbucket",
-          host: "bitbucket.org",
+          provider: "gitlab",
+          host: "gitlab.com",
         }),
       ],
       providers: [provider],
     });
-    for (const filter of [{}, { host: "bitbucket.org" }]) {
+    for (const filter of [{}, { host: "gitlab.com" }]) {
       const error = yield* service.list({ state: "open", ...filter }).pipe(Effect.flip);
       assert.strictEqual(error._tag, "PullRequestOperationError");
       assert.isDefined(error.listResult);
@@ -994,85 +964,15 @@ it.effect("retains a Bitbucket host summary when the provider rejects saved cred
           configured,
           projectIds: projectIds?.map(String),
         })),
-        [{ host: "bitbucket.org", configured: false, projectIds: undefined }],
+        [{ host: "gitlab.com", configured: false, projectIds: undefined }],
       );
       assert.deepStrictEqual(result.entries, []);
       assert.deepStrictEqual(
         result.errors.map(({ projectId }) => projectId),
-        ["bitbucket"],
+        ["gitlab"],
       );
     }
   }),
-);
-
-it.effect.each([
-  {
-    provider: "forgejo",
-    host: "ssh.forge.example",
-    remoteUrl: "ssh://git@ssh.forge.example:2222/team/repo.git",
-  },
-  {
-    provider: "unknown",
-    host: "forge.example",
-    remoteUrl: "http://forge.example:3000/team/repo.git",
-  },
-])(
-  "identifies every worktree behind an unavailable refined Forgejo authority",
-  ({ provider, host, remoteUrl }) =>
-    Effect.gen(function* () {
-      const service = yield* makeService({
-        projects: ["ssh", "ssh-worktree"].map((id) =>
-          project({
-            id,
-            title: id,
-            workspaceRoot: `/${id}`,
-            repository: "team/repo",
-            provider,
-            host,
-            remoteUrl,
-          }),
-        ),
-        providers: [
-          fakePullRequestProvider(SourceControlProviderKind.make("forgejo"), {
-            getViewer: ({ host }) => {
-              assert.strictEqual(host, "forge.example:3000");
-              return Effect.fail(
-                unusable(SourceControlProviderKind.make("forgejo"), "unauthenticated"),
-              );
-            },
-            listChangeRequests: () => Effect.die("An unauthenticated host must not be queried"),
-          }),
-        ],
-        resolveHandle: ({ context }) =>
-          Effect.succeed({
-            context: {
-              ...context!,
-              provider: {
-                kind: SourceControlProviderKind.make("forgejo"),
-                name: "Forgejo",
-                baseUrl: "http://forge.example:3000",
-              },
-            },
-            provider: undefined as never,
-          }),
-      });
-      const error = yield* service.list({ state: "open" }).pipe(Effect.flip);
-      assert.isDefined(error.listResult);
-      const result = error.listResult!;
-      assert.deepStrictEqual(
-        result.providers.map(({ host, configured, projectIds }) => ({
-          host,
-          configured,
-          projectIds: projectIds?.map(String),
-        })),
-        [{ host: "forge.example:3000", configured: false, projectIds: ["ssh", "ssh-worktree"] }],
-      );
-      assert.deepStrictEqual(result.entries, []);
-      assert.deepStrictEqual(
-        result.errors.map(({ projectId }) => projectId),
-        ["ssh"],
-      );
-    }),
 );
 
 it.effect("reads a repository once when several worktrees share it", () =>
@@ -2035,175 +1935,6 @@ it.effect("refuses a repository that does not belong to the requested project", 
   }),
 );
 
-it.effect("routes explicit Forgejo HTTP authorities through SSH checkouts after refinement", () =>
-  Effect.gen(function* () {
-    for (const provider of ["forgejo", "unknown"] as const) {
-      const seen: string[] = [];
-      const viewers: Array<string | undefined> = [];
-      const service = yield* makeService({
-        projects: [
-          project({
-            id: "ssh",
-            title: "ssh",
-            workspaceRoot: "/ssh",
-            repository: "team/repo",
-            provider,
-            host: "ssh.code.example",
-            remoteUrl: "git@ssh.code.example:team/repo.git",
-          }),
-        ],
-        providers: [
-          fakePullRequestProvider(SourceControlProviderKind.make("forgejo"), {
-            getViewer: (input) => {
-              viewers.push(input.host);
-              assert.strictEqual(input.host, "code.example:3000");
-              return Effect.succeed("bilal");
-            },
-            listChangeRequests: (input) => {
-              assert.strictEqual(input.host, "code.example:3000");
-              return Effect.succeed({ items: [], truncated: false, continues: true });
-            },
-            getChangeRequest: (input) => {
-              assert.strictEqual(input.host, "code.example:3000");
-              return Effect.succeed({ ...hostedChangeRequest("Forgejo detail"), number: 42 });
-            },
-            getChangeRequestSummary: (input) =>
-              Effect.sync(() => {
-                seen.push(input.host);
-                return changeRequest(42, "2026-07-02T00:00:00Z");
-              }),
-          }),
-        ],
-        resolveHandle: ({ context }) => {
-          if (context?.requestedHost === undefined) {
-            return Effect.succeed({ context: context!, provider: undefined as never });
-          }
-          assert.strictEqual(context.requestedHost, "code.example:3000");
-          return Effect.succeed({
-            context: {
-              ...context,
-              provider: {
-                kind: SourceControlProviderKind.make("forgejo"),
-                name: "Forgejo",
-                baseUrl: "http://code.example:3000",
-              },
-            },
-            provider: undefined as never,
-          });
-        },
-      });
-      yield* service.summary(
-        {
-          projectId: "ssh" as ProjectId,
-          host: "code.example:3000",
-          repository: "team/repo",
-          number: 42,
-        },
-        { recoverTransientFailure: false },
-      );
-      assert.deepStrictEqual(seen, ["code.example:3000"]);
-      const listed = yield* service.list({
-        projectId: "ssh" as ProjectId,
-        host: "code.example:3000",
-        state: "open",
-      });
-      assert.strictEqual(listed.viewers["code.example:3000"], "bilal");
-      const preview = yield* service.preview({
-        projectId: "ssh" as ProjectId,
-        host: "code.example:3000",
-        repository: "team/repo",
-        number: 42,
-      });
-      assert.strictEqual(preview.number, 42);
-      const detail = yield* service.detail({
-        projectId: "ssh" as ProjectId,
-        host: "code.example:3000",
-        repository: "team/repo",
-        number: 42,
-      });
-      assert.strictEqual(detail.body, "Forgejo detail");
-      assert.deepStrictEqual(viewers, ["code.example:3000"]);
-    }
-  }),
-);
-
-it.effect("names an SSH remote's web host from a later checkout when the first cannot", () =>
-  Effect.gen(function* () {
-    const hosts: Array<string> = [];
-    const service = yield* makeService({
-      projects: ["/first", "/second"].map((workspaceRoot, index) =>
-        project({
-          id: `p${index}`,
-          title: `checkout ${index}`,
-          workspaceRoot,
-          repository: "team/repo",
-          provider: SourceControlProviderKind.make("forgejo"),
-          host: "ssh.code.example",
-          remoteUrl: "git@ssh.code.example:team/repo.git",
-        }),
-      ),
-      providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("forgejo"), {
-          listChangeRequests: (input) => {
-            hosts.push(input.host);
-            return Effect.succeed({ items: [], truncated: false, continues: true });
-          },
-        }),
-      ],
-      resolveHandle: ({ cwd, context }) =>
-        Effect.succeed({
-          context:
-            cwd === "/first"
-              ? context!
-              : {
-                  ...context!,
-                  provider: {
-                    kind: SourceControlProviderKind.make("forgejo"),
-                    name: "Forgejo",
-                    baseUrl: "http://code.example:3000",
-                  },
-                },
-          provider: undefined as never,
-        }),
-    });
-
-    yield* service.list({ state: "open" });
-
-    assert.deepStrictEqual(hosts, ["code.example:3000"]);
-  }),
-);
-
-it.effect("rejects a different Forgejo HTTP port for an HTTP checkout", () =>
-  Effect.gen(function* () {
-    const service = yield* makeService({
-      projects: [
-        project({
-          id: "http",
-          title: "http",
-          workspaceRoot: "/http",
-          repository: "team/repo",
-          provider: SourceControlProviderKind.make("forgejo"),
-          host: "code.example",
-          remoteUrl: "http://code.example:4000/team/repo.git",
-        }),
-      ],
-      providers: [fakePullRequestProvider(SourceControlProviderKind.make("forgejo"))],
-    });
-    const failure = yield* service
-      .summary(
-        {
-          projectId: "http" as ProjectId,
-          host: "code.example:3000",
-          repository: "team/repo",
-          number: 42,
-        },
-        { recoverTransientFailure: false },
-      )
-      .pipe(Effect.flip);
-    assert.strictEqual(failure._tag, "PullRequestUnavailableError");
-  }),
-);
-
 it.effect("resolves a project's repository identity when its shell has none cached", () =>
   Effect.gen(function* () {
     const resolved = project({
@@ -2343,159 +2074,6 @@ it.effect("an uncached summary reaches the host despite a cached read in another
   }),
 );
 
-it.effect("routes Azure reads and writes through the requested organization's checkout", () =>
-  Effect.gen(function* () {
-    const seen: string[] = [];
-    const service = yield* makeService({
-      projects: ["org-a", "org-b"].map((organization) =>
-        project({
-          id: organization,
-          title: organization,
-          workspaceRoot: `/${organization}`,
-          repository: `${organization}/project/_git/web`,
-          provider: SourceControlProviderKind.make("azure-devops"),
-          host: "dev.azure.com",
-        }),
-      ),
-      providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("azure-devops"), {
-          ...keyedByCanonicalKey,
-          getChangeRequestSummary: (input) =>
-            Effect.sync(() => {
-              seen.push(`read ${input.cwd} ${input.repository}`);
-              return changeRequest(7, "2026-07-02T00:00:00Z");
-            }),
-          runAction: (input) =>
-            Effect.sync(() => {
-              seen.push(`write ${input.cwd} ${input.repository}`);
-            }),
-        }),
-      ],
-    });
-    const reference = {
-      projectId: "org-a" as ProjectId,
-      host: "dev.azure.com",
-      repository: "org-b/project/_git/web",
-      number: 7,
-    };
-    yield* service.summary(reference, { recoverTransientFailure: false });
-    yield* service.runAction({ ...reference, action: "merge" });
-    assert.deepStrictEqual(seen, ["read /org-b web", "write /org-b web", "read /org-b web"]);
-  }),
-);
-
-it.effect.each([
-  {
-    host: "ssh.dev.azure.com",
-    repository: "v3/org-b/project/web",
-    remoteUrl: "git@ssh.dev.azure.com:v3/org-b/project/web",
-  },
-  {
-    host: "vs-ssh.visualstudio.com",
-    repository: "v3/org-b/project/web",
-    remoteUrl: "git@vs-ssh.visualstudio.com:v3/org-b/project/web",
-  },
-  {
-    host: "org-b.visualstudio.com",
-    repository: "DefaultCollection/project/_git/web",
-    remoteUrl: "https://org-b.visualstudio.com/DefaultCollection/project/_git/web",
-  },
-])("routes Azure URL reads and writes through a $host checkout", (checkout) =>
-  Effect.gen(function* () {
-    const seen: string[] = [];
-    const target = project({
-      id: "target",
-      title: "target",
-      workspaceRoot: "/target",
-      provider: SourceControlProviderKind.make("azure-devops"),
-      ...checkout,
-    });
-    const service = yield* makeService({
-      projects: [
-        ...["org-a/project/_git/web", "org-b/other-project/_git/web"].map((repository) =>
-          project({
-            id: repository,
-            title: repository,
-            workspaceRoot: `/${repository}`,
-            provider: SourceControlProviderKind.make("azure-devops"),
-            host: "dev.azure.com",
-            repository,
-          }),
-        ),
-        target,
-      ],
-      providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("azure-devops"), {
-          ...keyedByCanonicalKey,
-          getChangeRequestSummary: (input) =>
-            Effect.sync(() => {
-              seen.push(`read ${input.cwd} ${input.repository}`);
-              return changeRequest(7, "2026-07-02T00:00:00Z");
-            }),
-          runAction: (input) =>
-            Effect.sync(() => {
-              seen.push(`write ${input.cwd} ${input.repository}`);
-            }),
-        }),
-      ],
-    });
-    const reference = {
-      projectId: "org-a/project/_git/web" as ProjectId,
-      host: "dev.azure.com",
-      repository: "org-b/project/_git/web",
-      number: 7,
-    };
-    yield* service.summary(reference, { recoverTransientFailure: false });
-    yield* service.runAction({ ...reference, action: "merge" });
-    assert.deepStrictEqual(seen, ["read /target web", "write /target web", "read /target web"]);
-  }),
-);
-
-it.effect.each([
-  { case: "another organization", repository: "org-b/project/_git/web" },
-  { case: "a sibling repository", repository: "org-a/project/_git/web-e2e" },
-])("refuses Azure reads and writes in $case without its checkout", ({ repository }) =>
-  Effect.gen(function* () {
-    const service = yield* makeService({
-      projects: [
-        project({
-          id: "org-a",
-          title: "org-a",
-          workspaceRoot: "/org-a",
-          repository: "org-a/project/_git/web",
-          provider: SourceControlProviderKind.make("azure-devops"),
-          host: "dev.azure.com",
-        }),
-      ],
-      providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("azure-devops"), {
-          ...keyedByCanonicalKey,
-          getChangeRequestSummary: () => Effect.die("must not read the wrong organization"),
-          runAction: () => Effect.die("must not modify the wrong organization"),
-        }),
-      ],
-    });
-    const reference = {
-      projectId: "org-a" as ProjectId,
-      host: "dev.azure.com",
-      repository,
-      number: 7,
-    };
-    const readError = yield* Effect.flip(
-      service.summary(reference, { recoverTransientFailure: false }),
-    );
-    const writeError = yield* Effect.flip(service.runAction({ ...reference, action: "close" }));
-    for (const error of [readError, writeError]) {
-      expect(error).toMatchObject({
-        _tag: "PullRequestUnavailableError",
-        reason: "repository-without-project",
-        message: `${repository} is not a project in T3 Code. Add it as a project to read its change requests.`,
-      });
-    }
-  }),
-);
-
-// regression: #37633 any checkout on the host routes the read, so name the host, not the repository
 it.effect("names the host when no project has a checkout on it for a host-routed read", () =>
   Effect.gen(function* () {
     const service = yield* makeService({
@@ -3788,12 +3366,12 @@ it.effect("deduplicates routed PR reports without dropping draft changes", () =>
   }),
 );
 
-it.effect.each(["github", "azure-devops"])(
-  "reuses fresh %s detail checks without extending their refresh interval on detail cache hits",
-  (provider) =>
+it.effect(
+  "reuses fresh GitHub detail checks without extending their refresh interval on detail cache hits",
+  () =>
     Effect.gen(function* () {
       let reads = 0;
-      const repository = provider === "azure-devops" ? "web" : "acme/web";
+      const repository = "acme/web";
       const reference = { projectId: "p1" as ProjectId, repository, number: 1 };
       const service = yield* makeService({
         projects: [
@@ -3802,12 +3380,10 @@ it.effect.each(["github", "azure-devops"])(
             title: "web",
             workspaceRoot: "/a",
             repository,
-            provider,
-            ...(provider === "azure-devops" ? { host: "dev.azure.com" } : {}),
           }),
         ],
         providers: [
-          fakePullRequestProvider(SourceControlProviderKind.make(provider), {
+          fakePullRequestProvider(SourceControlProviderKind.make("github"), {
             getChangeRequest: () =>
               Effect.succeed({
                 ...hostedChangeRequest("Description"),
@@ -3842,22 +3418,23 @@ it.effect.each(["github", "azure-devops"])(
     }),
 );
 
-it.effect("asks Azure for checks when its detail came back with none", () =>
+it.effect("asks GitLab for checks when its detail came back with none", () =>
   Effect.gen(function* () {
     let reads = 0;
-    const reference = { projectId: "p1" as ProjectId, repository: "web", number: 1 };
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
     const service = yield* makeService({
       projects: [
         project({
           id: "p1",
           title: "web",
           workspaceRoot: "/a",
-          repository: "web",
-          provider: "azure-devops",
+          repository: "acme/web",
+          provider: "gitlab",
+          host: "gitlab.com",
         }),
       ],
       providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("azure-devops"), {
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
           getChangeRequest: () => Effect.succeed(hostedChangeRequest("Description")),
           getChangeRequestChecks: () =>
             Effect.sync(() => {
@@ -4517,89 +4094,6 @@ it.effect("tracks environment viewed files by revision and refuses a baseline it
   }),
 );
 
-it.effect("keeps hosted Forgejo marks with their repository instead of the serving checkout", () =>
-  Effect.gen(function* () {
-    const projects = [
-      project({
-        id: "p1",
-        title: "first repository",
-        workspaceRoot: "/first",
-        repository: "reviewer/first",
-        provider: SourceControlProviderKind.make("forgejo"),
-        host: "forge.example",
-        remoteUrl: "https://forge.example:3000/reviewer/first.git",
-      }),
-    ];
-    const service = yield* makeService({
-      projects,
-      providers: [
-        {
-          ...environmentViewedProvider(new Map([["same.ts", "blob"]]), []),
-          kind: SourceControlProviderKind.make("forgejo"),
-        },
-      ],
-      resolveHandle: ({ context }) =>
-        Effect.succeed({
-          context: {
-            ...context!,
-            provider: {
-              kind: SourceControlProviderKind.make("forgejo"),
-              name: "Forgejo",
-              baseUrl: "https://forge.example:3000",
-            },
-          },
-          provider: undefined as never,
-        }),
-    });
-    const first = {
-      projectId: "p1" as ProjectId,
-      host: "forge.example:3000",
-      repository: "reviewer/first",
-      number: 1,
-    };
-    const second = { ...first, repository: "reviewer/second" };
-    const files = [{ path: "same.ts", viewed: true }];
-    yield* service.setFilesViewed({ ...first, files });
-    assert.deepStrictEqual((yield* service.filesViewed(second)).files, []);
-    yield* service.setFilesViewed({ ...second, files });
-    yield* service.setFilesViewed({ ...first, files: [{ path: "same.ts", viewed: false }] });
-    assert.deepStrictEqual((yield* service.filesViewed(second)).files, [
-      { path: "same.ts", state: "viewed" },
-    ]);
-
-    projects.push(
-      project({
-        id: "p2",
-        title: "second repository",
-        workspaceRoot: "/second",
-        repository: "reviewer/second",
-        provider: SourceControlProviderKind.make("forgejo"),
-        host: "forge.example",
-        remoteUrl: "https://forge.example:3000/reviewer/second.git",
-      }),
-    );
-    assert.deepStrictEqual(
-      (yield* service.filesViewed({ ...second, projectId: "p2" as ProjectId })).files,
-      [{ path: "same.ts", state: "viewed" }],
-    );
-    projects.push(
-      project({
-        id: "ssh",
-        title: "second repository over SSH",
-        workspaceRoot: "/ssh",
-        repository: "reviewer/second",
-        provider: SourceControlProviderKind.make("forgejo"),
-        host: "ssh.forge.example",
-        remoteUrl: "git@ssh.forge.example:reviewer/second.git",
-      }),
-    );
-    assert.deepStrictEqual(
-      (yield* service.filesViewed({ ...second, projectId: "ssh" as ProjectId })).files,
-      [{ path: "same.ts", state: "viewed" }],
-    );
-  }),
-);
-
 it.effect("keeps viewed files itself for a host that keeps none of its own", () =>
   Effect.gen(function* () {
     const asked: Array<ReadonlyArray<string>> = [];
@@ -4821,69 +4315,6 @@ it.effect("finishes two presses on one file in the order they were made", () =>
   }),
 );
 
-const azureViewedService = (projects: ReadonlyArray<OrchestrationProjectShell>) =>
-  makeService({
-    projects,
-    providers: [
-      fakePullRequestProvider(SourceControlProviderKind.make("azure-devops"), {
-        ...keyedByCanonicalKey,
-        capabilities: {
-          diff: true,
-          comment: true,
-          actions: ["merge"],
-          mergeMethods: ["merge"],
-          search: true,
-          reactions: true,
-          viewedFiles: "environment",
-          review: FULL_REVIEW,
-          reviewers: FULL_REVIEWERS,
-        },
-        getFilesViewed: () => Effect.die("the host keeps no marks of this environment's own"),
-        setFilesViewed: () => Effect.die("the host keeps no marks of this environment's own"),
-        getFileRevisions: (input) =>
-          Effect.succeed({ revisions: new Map(input.paths.map((path) => [path, "blob-a"])) }),
-      }),
-    ],
-  });
-
-const AZURE_PAIR = [
-  project({
-    id: "p1",
-    title: "platform web",
-    workspaceRoot: "/a",
-    repository: "acme/platform/_git/web",
-    provider: SourceControlProviderKind.make("azure-devops"),
-    host: "dev.azure.com",
-  }),
-  project({
-    id: "p2",
-    title: "other web",
-    workspaceRoot: "/b",
-    repository: "acme/other/_git/web",
-    provider: SourceControlProviderKind.make("azure-devops"),
-    host: "dev.azure.com",
-  }),
-];
-
-const AZURE_PLATFORM = { projectId: "p1" as ProjectId, repository: "web", number: 1 };
-const AZURE_OTHER = { projectId: "p2" as ProjectId, repository: "web", number: 1 };
-
-it.effect("keeps the marks of two Azure repositories of the same name apart", () =>
-  Effect.gen(function* () {
-    const service = yield* azureViewedService(AZURE_PAIR);
-
-    yield* service.setFilesViewed({
-      ...AZURE_PLATFORM,
-      files: [{ path: "src/a.ts", viewed: true }],
-    });
-
-    assert.deepStrictEqual((yield* service.filesViewed(AZURE_PLATFORM)).files, [
-      { path: "src/a.ts", state: "viewed" },
-    ]);
-    assert.deepStrictEqual((yield* service.filesViewed(AZURE_OTHER)).files, []);
-  }),
-);
-
 it.effect("keeps environment marks apart from another change request's", () =>
   Effect.gen(function* () {
     const service = yield* environmentViewedService(new Map([["src/a.ts", "blob-a"]]), []);
@@ -4956,7 +4387,7 @@ it.effect("carries a bounded number of its own marks and says it held more", () 
   }),
 );
 
-it.effect("keeps Azure continuation cursors separate for repositories with the same name", () =>
+it.effect("keeps continuation cursors separate for repositories with the same name", () =>
   Effect.gen(function* () {
     const seen: string[] = [];
     const service = yield* makeService({
@@ -4965,14 +4396,13 @@ it.effect("keeps Azure continuation cursors separate for repositories with the s
           id: organization,
           title: organization,
           workspaceRoot: `/${organization}`,
-          repository: `${organization}/project/_git/web`,
-          provider: SourceControlProviderKind.make("azure-devops"),
-          host: "dev.azure.com",
+          repository: `${organization}/web`,
+          provider: SourceControlProviderKind.make("gitlab"),
+          host: "gitlab.com",
         }),
       ),
       providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("azure-devops"), {
-          ...keyedByCanonicalKey,
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
           listChangeRequests: (input) =>
             Effect.sync(() => {
               seen.push(input.cwd);

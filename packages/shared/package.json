@@ -307,6 +307,10 @@
       "types": "./src/threadPullRequests.ts",
       "import": "./src/threadPullRequests.ts"
     },
+    "./legacyThreadPullRequestKey": {
+      "types": "./src/legacyThreadPullRequestKey.ts",
+      "import": "./src/legacyThreadPullRequestKey.ts"
+    },
     "./composerTrigger": {
       "types": "./src/composerTrigger.ts",
       "import": "./src/composerTrigger.ts"

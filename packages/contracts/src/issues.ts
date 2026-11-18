@@ -46,6 +46,7 @@ export const Issue = Schema.Struct({
   type: Schema.String,
   assignees: Schema.Array(IssueOption),
   priority: Schema.String,
+  createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.String,
 });
 export type Issue = typeof Issue.Type;

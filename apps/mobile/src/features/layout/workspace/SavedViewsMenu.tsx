@@ -12,6 +12,7 @@ import type { MenuProps } from "../../../components/ui/Menu.types";
 import { uuidv4 } from "../../../lib/uuid";
 import type { Preferences } from "../../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../../state/preferences";
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { ListFilterMenu } from "./ListFilterMenu";
 
 type SavedViewIdentity = typeof SavedViewIdentitySchema.Type;
@@ -37,6 +38,7 @@ export function SavedViewsMenu<Scope extends object>({
   matches: (view: Scope, scope: Scope) => boolean;
   onApply: (view: Scope & SavedViewIdentity) => Promise<void> | void;
 }) {
+  const t = useUiTranslation();
   type View = Scope & SavedViewIdentity;
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
@@ -59,8 +61,8 @@ export function SavedViewsMenu<Scope extends object>({
       setSelectedId(view.id);
     } catch {
       Alert.alert(
-        `Could not apply ${shortNoun} view`,
-        "The device could not save your filters. Try again.",
+        t("Could not apply {kind} view", { kind: t(shortNoun) }),
+        t("The device could not save your filters. Try again."),
       );
     }
     setBusy(false);
@@ -75,8 +77,8 @@ export function SavedViewsMenu<Scope extends object>({
       });
     } catch {
       Alert.alert(
-        `Could not save ${shortNoun} views`,
-        "The device could not save your views. Try again.",
+        t("Could not save {kind} views", { kind: t(shortNoun) }),
+        t("The device could not save your views. Try again."),
       );
       saved = false;
     }
@@ -86,13 +88,15 @@ export function SavedViewsMenu<Scope extends object>({
 
   function editName(view?: View) {
     showTextInputDialog({
-      title: view ? `Rename ${shortNoun} view` : `Save ${shortNoun} view`,
-      initialValue: view?.name ?? suggestedName,
-      confirmText: "Save",
+      title: view
+        ? t("Rename {kind} view", { kind: t(shortNoun) })
+        : t("Save {kind} view", { kind: t(shortNoun) }),
+      initialValue: view?.name ?? t(suggestedName),
+      confirmText: t("Save"),
       onConfirm: (value) => {
         const error = savedViewNameError(value, views, view?.id);
         if (error) {
-          Alert.alert("Could not save view", error);
+          Alert.alert(t("Could not save view"), t(error));
           return;
         }
         const id = view?.id ?? uuidv4();
@@ -114,21 +118,21 @@ export function SavedViewsMenu<Scope extends object>({
       title: view.name,
       state: selectedView?.id === view.id && !modified ? ("on" as const) : ("off" as const),
     })),
-    { id: "save", title: "Save current view…" },
+    { id: "save", title: t("Save current view…") },
     ...(selectedView
       ? [
-          ...(modified ? [{ id: "update", title: "Update saved view" }] : []),
-          { id: "rename", title: "Rename view…" },
-          { id: "delete", title: "Delete view", attributes: { destructive: true } },
+          ...(modified ? [{ id: "update", title: t("Update saved view") }] : []),
+          { id: "rename", title: t("Rename view…") },
+          { id: "delete", title: t("Delete view"), attributes: { destructive: true } },
         ]
       : []),
   ];
 
   return (
     <ListFilterMenu
-      label={selectedView ? `${selectedView.name}${modified ? " *" : ""}` : "Views"}
+      label={selectedView ? `${selectedView.name}${modified ? " *" : ""}` : t("Views")}
       active={selectedView !== undefined}
-      accessibilityLabel={`Saved ${noun} views`}
+      accessibilityLabel={t("Saved {kind} views", { kind: t(noun) })}
       actions={actions.map((action) => ({
         ...action,
         attributes: { ...action.attributes, disabled: !ready || busy },

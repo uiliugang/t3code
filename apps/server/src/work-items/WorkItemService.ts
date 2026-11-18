@@ -15,6 +15,7 @@ import {
   WorkItemExecutionId,
   WorkItemId,
   parseBranchIssueUrl,
+  IssueTrackerKind,
   type BranchIssueRef,
   type WorkItemDelivery,
   type WorkItemCommandInput,
@@ -47,6 +48,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
+import { ThreadIssueService } from "../orchestration-v2/ThreadIssueService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import {
@@ -141,6 +143,7 @@ const make = Effect.gen(function* () {
   const digest = yield* Digest.Digest;
   const launches = yield* ThreadLaunchService.ThreadLaunchService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
+  const threadIssues = yield* ThreadIssueService;
   const threadSearch = yield* ThreadSearch.ThreadSearch;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const textGeneration = yield* TextGeneration.TextGeneration;
@@ -1361,6 +1364,27 @@ const make = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(persistenceError));
     yield* notify;
+    const linked = result.delivery?.issue;
+    if (linked && result.sources.some((source) => source.threadId === input.threadId)) {
+      const ref = parseBranchIssueUrl(linked.url);
+      if (ref)
+        yield* threadIssues
+          .link({
+            threadId: input.threadId,
+            ref: {
+              projectId: input.projectId,
+              tracker: IssueTrackerKind.make(ref.provider),
+              host: new URL(ref.url).host,
+              scope: ref.repository,
+              key: ref.id,
+            },
+            url: ref.url,
+            displayKey: `#${ref.id}`,
+            title: input.title || result.title,
+            source: "agent",
+          })
+          .pipe(Effect.mapError(persistenceError));
+    }
     return result;
   });
 

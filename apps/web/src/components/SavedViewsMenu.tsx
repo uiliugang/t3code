@@ -1,11 +1,12 @@
 import { BookmarkIcon, CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { type ComponentProps, useId, useState } from "react";
 import type * as Schema from "effect/Schema";
 import {
   SAVED_VIEW_NAME_MAX_LENGTH,
   savedViewNameError,
 } from "@t3tools/client-runtime/saved-views";
 
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import { getLocalStorageItem, useLocalStorage } from "../hooks/useLocalStorage";
 import { randomUUID } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -52,11 +53,14 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
   kind,
   preferences,
   onApply,
+  size,
 }: {
   kind: SavedViewsKind<Preferences, Stored, Encoded>;
   preferences: Preferences;
   onApply: (preferences: Preferences) => void;
+  size?: ComponentProps<typeof Button>["size"];
 }) {
+  const t = useUiTranslation();
   const [views, setViews] = useLocalStorage(kind.storageKey, kind.empty, kind.schema);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ id?: string; name: string } | null>(null);
@@ -91,9 +95,10 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
     }
     toastManager.add({
       type: "error",
-      title: `Could not save ${kind.shortNoun} views`,
-      description:
+      title: t("Could not save {kind} views", { kind: t(kind.shortNoun) }),
+      description: t(
         "Local storage is unavailable or full. Try again after freeing space or allowing storage.",
+      ),
     });
     return false;
   }
@@ -117,8 +122,8 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
       setEditor((current) => (current ? { name: current.name } : null));
       toastManager.add({
         type: "error",
-        title: "This saved view was removed",
-        description: "Your name has been kept. Save it as a new view or cancel.",
+        title: t("This saved view was removed"),
+        description: t("Your name has been kept. Save it as a new view or cancel."),
       });
       return;
     }
@@ -134,17 +139,19 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
           <TooltipTrigger
             render={
               <MenuTrigger
-                render={<Button variant="outline" />}
-                aria-label={`Saved ${kind.noun} views`}
+                render={<Button variant="outline" {...(size ? { size } : {})} />}
+                aria-label={t("Saved {kind} views", { kind: t(kind.noun) })}
               />
             }
           >
             <BookmarkIcon aria-hidden className="size-4" />
-            <span className="max-w-40 truncate">{selectedView?.name ?? "Views"}</span>
-            {modified ? <span aria-label="Modified view">*</span> : null}
+            <span className="max-w-40 truncate">{selectedView?.name ?? t("Views")}</span>
+            {modified ? <span aria-label={t("Modified view")}>*</span> : null}
             <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
           </TooltipTrigger>
-          <TooltipPopup>{selectedView?.name ?? `Saved ${kind.noun} views`}</TooltipPopup>
+          <TooltipPopup>
+            {selectedView?.name ?? t("Saved {kind} views", { kind: t(kind.noun) })}
+          </TooltipPopup>
         </Tooltip>
         <MenuPopup align="start">
           {views.map((view) => (
@@ -170,9 +177,9 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
             </Tooltip>
           ))}
           {views.length > 0 ? <MenuSeparator /> : null}
-          <MenuItem onClick={() => setEditor({ name: kind.suggestedName(preferences) })}>
+          <MenuItem onClick={() => setEditor({ name: t(kind.suggestedName(preferences)) })}>
             <PlusIcon aria-hidden />
-            Save current view…
+            {t("Save current view…")}
           </MenuItem>
           {selectedView ? (
             <>
@@ -188,11 +195,11 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
                     )
                   }
                 >
-                  Update saved view
+                  {t("Update saved view")}
                 </MenuItem>
               ) : null}
               <MenuItem onClick={() => setEditor({ id: selectedView.id, name: selectedView.name })}>
-                Rename view…
+                {t("Rename view…")}
               </MenuItem>
               <MenuItem
                 variant="destructive"
@@ -201,7 +208,7 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
                     setSelectedId(null);
                 }}
               >
-                Delete view
+                {t("Delete view")}
               </MenuItem>
             </>
           ) : null}
@@ -223,21 +230,23 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
           >
             <DialogHeader>
               <DialogTitle>
-                {editor?.id ? `Rename ${kind.shortNoun} view` : `Save ${kind.shortNoun} view`}
+                {editor?.id
+                  ? t("Rename {kind} view", { kind: t(kind.shortNoun) })
+                  : t("Save {kind} view", { kind: t(kind.shortNoun) })}
               </DialogTitle>
               <DialogDescription>
-                Save your search, filters, and sort order on this device.
+                {t("Save your search, filters, and sort order on this device.")}
               </DialogDescription>
             </DialogHeader>
             <DialogPanel>
               <div className="flex flex-col gap-2">
-                <Label htmlFor={inputId}>View name</Label>
+                <Label htmlFor={inputId}>{t("View name")}</Label>
                 <Input
                   id={inputId}
                   autoFocus
                   value={editor?.name ?? ""}
                   maxLength={SAVED_VIEW_NAME_MAX_LENGTH}
-                  placeholder={kind.placeholder}
+                  placeholder={t(kind.placeholder)}
                   aria-invalid={Boolean(editor?.name && nameError)}
                   aria-describedby={nameError && editor?.name ? errorId : undefined}
                   onChange={(event) =>
@@ -248,17 +257,17 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
                 />
                 {nameError && editor?.name ? (
                   <p id={errorId} className="text-sm text-destructive-foreground">
-                    {nameError}
+                    {t(nameError)}
                   </p>
                 ) : null}
               </div>
             </DialogPanel>
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditor(null)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button type="submit" disabled={nameError !== null}>
-                Save
+                {t("Save")}
               </Button>
             </DialogFooter>
           </form>

@@ -49,9 +49,7 @@ export function rollupCheckStatuses(
   return statuses.includes("success") ? "passing" : null;
 }
 
-export function sortChecks(
-  checks: ReadonlyArray<PullRequestCheck>,
-): ReadonlyArray<PullRequestCheck> {
+function sortChecks(checks: ReadonlyArray<PullRequestCheck>): ReadonlyArray<PullRequestCheck> {
   return checks.toSorted(
     (a, b) =>
       Number(b.status === "failure" || b.status === "cancelled") -

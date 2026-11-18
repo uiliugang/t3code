@@ -44,6 +44,7 @@ import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import * as RequirementIssues from "../sourceControl/IssueService.ts";
 import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 const DEFAULT_LIST_LIMIT = 50;
@@ -180,54 +181,24 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const bindings = yield* IssueTrackerBindings.IssueTrackerBindingsRepository;
+  const requirementIssues = yield* RequirementIssues.IssueService;
 
   // Read per resolution so a binding saved in Settings applies without a restart.
-  const resolveStandaloneBinding = (
-    project: OrchestrationProjectShell,
-  ): Effect.Effect<ProjectTrackerBinding | null, IssueOperationError> =>
-    bindings.list.pipe(
-      Effect.map((bound) => {
-        const binding = bound.get(project.id);
-        const api = binding === undefined ? null : registry.get(binding.tracker);
-        if (binding === undefined || api === null || !isStandaloneIssueTracker(api)) return null;
-        return {
-          tracker: binding.tracker,
-          host: api.standalone.host,
-          scope: binding.scope,
-        };
-      }),
-      // A failed read is not an unbound project: that would list the git host's issues alone.
-      Effect.mapError(
-        (cause) =>
-          new IssueOperationError({
-            operation: "listProjects",
-            detail: "The project's issue tracker binding could not be read.",
-            cause,
-          }),
-      ),
-    );
-
-  /**
-   * Where a project's issues live: its bound standalone tracker, its git host's, or both. The
-   * tracker bound in Settings leads, as the one the user chose for the project.
-   */
-  const resolveProjectTracker = (
-    project: OrchestrationProjectShell,
-  ): Effect.Effect<ReadonlyArray<ProjectTrackerBinding>, IssueOperationError> =>
-    Effect.all([
-      resolveStandaloneBinding(project),
-      (project.repositoryIdentity != null
-        ? Effect.succeed(project.repositoryIdentity)
-        : repositoryIdentities.resolve(project.workspaceRoot)
-      ).pipe(
-        Effect.map((repositoryIdentity) =>
-          resolveGitHostBinding({ ...project, repositoryIdentity }),
-        ),
-      ),
-    ]).pipe(Effect.map((resolved) => resolved.filter((binding) => binding !== null)));
+  const standaloneBindings = bindings.list.pipe(
+    // A failed read is not an unbound project: that would list the git host's issues alone.
+    Effect.mapError(
+      (cause) =>
+        new IssueOperationError({
+          operation: "listProjects",
+          detail: "The project's issue tracker binding could not be read.",
+          cause,
+        }),
+    ),
+  );
 
   const listProjects = (filter: {
     readonly projectId?: IssueListInput["projectId"];
+    readonly activeOnly?: boolean;
     readonly host?: string | undefined;
     /** The link's `host:port`, for a host whose binding keeps its port. */
     readonly authority?: string | undefined;
@@ -244,38 +215,86 @@ const make = Effect.gen(function* () {
             cause,
           }),
       ),
-      Effect.flatMap((shells) =>
-        Effect.forEach(
-          shells,
-          (project) =>
-            resolveProjectTracker(project).pipe(
-              Effect.map((bindings) => bindings.map((binding) => ({ project, ...binding }))),
+      Effect.flatMap(
+        Effect.fnUntraced(function* (shells) {
+          const bound = yield* standaloneBindings;
+          const requirements = yield* requirementIssues.trackerSources.pipe(
+            Effect.mapError(
+              (cause) =>
+                new IssueOperationError({
+                  operation: "listProjects",
+                  detail: cause.message,
+                  cause,
+                }),
             ),
-          { concurrency: SCOPE_CONCURRENCY },
-        ),
-      ),
-      Effect.map((bound) => {
-        const host = filter.host?.trim().toLowerCase();
-        const supported: SupportedProject[] = [];
-        const unimplemented = new Map<
-          string,
-          { tracker: IssueTrackerKind; projectCount: number }
-        >();
-        for (const candidate of bound.flat()) {
-          if (host !== undefined && candidate.host !== host && candidate.host !== filter.authority)
-            continue;
-          const api = registry.get(candidate.tracker);
-          if (api === null) {
-            const counted = unimplemented.get(candidate.host);
-            if (counted === undefined)
-              unimplemented.set(candidate.host, { tracker: candidate.tracker, projectCount: 1 });
-            else counted.projectCount += 1;
-            continue;
+          );
+          const errors: IssueListProjectError[] = [];
+          const candidates = yield* Effect.forEach(
+            shells.filter(
+              (project) =>
+                !filter.activeOnly ||
+                (!project.archivedAt &&
+                  !Option.contains(requirements.scratchRoot, project.workspaceRoot)),
+            ),
+            (project) =>
+              Effect.gen(function* () {
+                const repositoryIdentity =
+                  project.repositoryIdentity ??
+                  (yield* repositoryIdentities.resolve(project.workspaceRoot));
+                const shell = { ...project, repositoryIdentity };
+                const git = resolveGitHostBinding(shell);
+                const binding = bound.get(project.id);
+                const api = binding && registry.get(binding.tracker);
+                const { sources, failure } = yield* requirements.forProject(shell);
+                if (failure)
+                  errors.push({
+                    projectId: project.id,
+                    projectTitle: project.title,
+                    message: failure.message,
+                  });
+                return [
+                  ...(binding && api && isStandaloneIssueTracker(api)
+                    ? [{ project, ...binding, host: api.standalone.host }]
+                    : []),
+                  ...(git && !sources.some((source) => source.provider === git.tracker)
+                    ? [{ project, ...git }]
+                    : []),
+                  ...sources.map(({ provider, host, scope }) => ({
+                    project,
+                    tracker: IssueTrackerKind.make(provider),
+                    host,
+                    scope,
+                  })),
+                ];
+              }),
+            { concurrency: SCOPE_CONCURRENCY },
+          );
+          const host = filter.host?.trim().toLowerCase();
+          const supported: SupportedProject[] = [];
+          const unimplemented = new Map<
+            string,
+            { tracker: IssueTrackerKind; projectCount: number }
+          >();
+          for (const candidate of candidates.flat()) {
+            if (
+              host !== undefined &&
+              candidate.host !== host &&
+              candidate.host !== filter.authority
+            )
+              continue;
+            const api = registry.get(candidate.tracker);
+            if (api === null) {
+              const counted = unimplemented.get(candidate.host);
+              if (counted === undefined)
+                unimplemented.set(candidate.host, { tracker: candidate.tracker, projectCount: 1 });
+              else counted.projectCount += 1;
+              continue;
+            }
+            supported.push({ ...candidate, api });
           }
-          supported.push({ ...candidate, api });
-        }
-        return { supported, unimplemented };
-      }),
+          return { supported, unimplemented, errors };
+        }),
+      ),
     );
 
   /**
@@ -289,17 +308,20 @@ const make = Effect.gen(function* () {
   ): Effect.Effect<SupportedProject & { readonly writable: boolean }, IssueError> =>
     listProjects({ projectId: ref.projectId }).pipe(
       Effect.flatMap(({ supported }) => {
-        const own = supported.find((candidate) => candidate.tracker === ref.tracker);
-        if (own === undefined) {
-          return Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" }));
-        }
-        const host = ref.host?.trim().toLowerCase() ?? own.host;
-        if (host !== own.host) {
-          return Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" }));
-        }
+        const host = ref.host?.trim().toLowerCase();
+        const candidates = supported.filter(
+          (candidate) =>
+            candidate.tracker === ref.tracker && (host === undefined || candidate.host === host),
+        );
         const scope = ref.scope.trim();
-        const writable = scope.toLowerCase() === own.scope.toLowerCase();
-        return Effect.succeed({ ...own, scope, writable });
+        const own = candidates.find(
+          (candidate) => candidate.scope.toLowerCase() === scope.toLowerCase(),
+        );
+        const lender = own ?? candidates[0];
+        if (lender === undefined || (!own && ref.tracker === "meituan")) {
+          return Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" }));
+        }
+        return Effect.succeed({ ...lender, scope, writable: own !== undefined });
       }),
     );
 
@@ -314,13 +336,15 @@ const make = Effect.gen(function* () {
   const list: IssueService["Service"]["list"] = Effect.fn("IssueService.list")(function* (input) {
     // Trackers name every host so a client narrowed to one can switch to another; only the
     // narrowed host's scopes are read.
-    const { supported, unimplemented } = yield* listProjects({ projectId: input.projectId });
+    const { supported, unimplemented, errors } = yield* listProjects({
+      projectId: input.projectId,
+      activeOnly: true,
+    });
     const host = input.host?.trim().toLowerCase();
     const limit = input.limit ?? DEFAULT_LIST_LIMIT;
-    // Worktrees of one repository are separate projects, and every repository of an Azure
-    // DevOps project shares its work items; read each scope once.
     const scopes = new Map<string, SupportedProject>();
     for (const project of supported) {
+      if (input.tracker !== undefined && project.tracker !== input.tracker) continue;
       if (host !== undefined && project.host !== host) continue;
       const key = listCursorKey(project.host, project.scope);
       if (!scopes.has(key)) scopes.set(key, project);
@@ -329,7 +353,6 @@ const make = Effect.gen(function* () {
     const viewers = new Map<string, string>();
     const trackers = new Map<string, IssueTrackerSummary>();
     const entries: IssueListEntry[] = [];
-    const errors: IssueListProjectError[] = [];
     const nextCursors: Record<string, string> = {};
 
     const viewerRequests = new Map<string, Effect.Effect<string, IssueTrackerError>>();
@@ -344,7 +367,11 @@ const make = Effect.gen(function* () {
     }
 
     // Every project counts, including worktrees of a scope read once below.
+    const countedProjects = new Set<string>();
     for (const project of supported) {
+      const identity = `${project.host}\0${project.project.id}`;
+      if (countedProjects.has(identity)) continue;
+      countedProjects.add(identity);
       const existing = trackers.get(project.host);
       trackers.set(
         project.host,
@@ -637,6 +664,17 @@ const make = Effect.gen(function* () {
     if (own === undefined) {
       return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
     }
+    if (
+      supported.some(
+        (other) =>
+          other.tracker === own.tracker && (other.scope !== own.scope || other.host !== own.host),
+      )
+    ) {
+      return yield* new IssueOperationError({
+        operation: "projectScope",
+        detail: "This project has multiple issue scopes. Use the issue URL instead of its key.",
+      });
+    }
     return { projectId, tracker: own.tracker, host: own.host, scope: own.scope };
   });
 
@@ -668,7 +706,7 @@ const make = Effect.gen(function* () {
         onTracker.filter((project) => project.scope.toLowerCase() === link.scope.toLowerCase()),
       );
       const lender = own ?? preferFirst(onTracker);
-      if (lender === undefined) {
+      if (lender === undefined || (!own && tracker === "meituan")) {
         return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
       }
       if (standalone !== null) {

@@ -271,6 +271,7 @@ export function RightPanelSurfaceContent(props: {
             target={{
               projectId: surface.projectId as ProjectId,
               provider: surface.provider,
+              ...(surface.host ? { host: surface.host } : {}),
               ...(surface.scope ? { scope: surface.scope } : {}),
             }}
             id={surface.issueId}

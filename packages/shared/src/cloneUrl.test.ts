@@ -8,20 +8,19 @@ describe("cloneUrlForProtocol", () => {
     ["an embedded at sign", "user:pa@rt"],
     ["multiple at signs", "user:pa@rt@word"],
     ["encoded", "us%40er:pa%40ss%3Aword"],
-  ])("separates Azure hosts from credentials (%s)", (_label, userinfo) => {
-    const https = `https://${userinfo}@dev.azure.com/org/Project%20One/_git/repo%40name`;
-    const ssh = `ssh://${userinfo}@ssh.dev.azure.com/v3/org/Project%20One/repo%40name`;
-    expect(cloneUrlProtocol(https)).toBe("https");
-    expect(cloneUrlProtocol(ssh)).toBe("ssh");
-    expect(cloneUrlForProtocol(https, "ssh")).toBe(
-      "git@ssh.dev.azure.com:v3/org/Project%20One/repo%40name",
-    );
-    expect(cloneUrlForProtocol(ssh, "https")).toBe(
-      "https://dev.azure.com/org/Project%20One/_git/repo%40name",
-    );
-    expect(cloneUrlForProtocol(https, "https")).toBe(https);
-    expect(cloneUrlForProtocol(ssh, "ssh")).toBe(ssh);
-  });
+  ])(
+    "does not rewrite an unsupported Azure transport with credentials (%s)",
+    (_label, userinfo) => {
+      const https = `https://${userinfo}@dev.azure.com/org/Project%20One/_git/repo%40name`;
+      const ssh = `ssh://${userinfo}@ssh.dev.azure.com/v3/org/Project%20One/repo%40name`;
+      expect(cloneUrlProtocol(https)).toBe("https");
+      expect(cloneUrlProtocol(ssh)).toBe("ssh");
+      expect(cloneUrlForProtocol(https, "ssh")).toBeNull();
+      expect(cloneUrlForProtocol(ssh, "https")).toBeNull();
+      expect(cloneUrlForProtocol(https, "https")).toBe(https);
+      expect(cloneUrlForProtocol(ssh, "ssh")).toBe(ssh);
+    },
+  );
 
   it.each([
     ["https", "ssh", "dev.azure.com", "org/project/_git/repo"],
@@ -59,41 +58,11 @@ describe("cloneUrlForProtocol", () => {
   );
 
   it.each([
-    "git@ssh.dev.azure.com:v3/Fabrikam/Project1/fab_repo",
-    "ssh://git@ssh.dev.azure.com/v3/Fabrikam/Project1/fab_repo",
-    "git@SSH.DEV.AZURE.COM:v3/Fabrikam/Project1/fab_repo",
-  ])("uses Azure's HTTPS host and repository path for %s", (url) => {
-    expect(cloneUrlForProtocol(url, "https")).toBe(
-      "https://dev.azure.com/Fabrikam/Project1/_git/fab_repo",
-    );
-  });
-
-  it.each([
-    "https://dev.azure.com/Fabrikam/Project1/_git/fab_repo",
-    "https://Fabrikam@dev.azure.com/Fabrikam/Project1/_git/fab_repo",
-    "https://DEV.AZURE.COM/Fabrikam/Project1/_git/fab_repo",
-  ])("uses Azure's SSH host and repository path for %s", (url) => {
-    expect(cloneUrlForProtocol(url, "ssh")).toBe(
-      "git@ssh.dev.azure.com:v3/Fabrikam/Project1/fab_repo",
-    );
-  });
-
-  it("switches Bitbucket Cloud between its SSH and HTTPS hosts", () => {
-    expect(cloneUrlForProtocol("https://bitbucket.org/workspace/repo.git", "ssh")).toBe(
-      "git@ssh.bitbucket.org:workspace/repo.git",
-    );
-    expect(cloneUrlForProtocol("git@ssh.bitbucket.org:workspace/repo.git", "https")).toBe(
-      "https://bitbucket.org/workspace/repo.git",
-    );
-  });
-
-  it("preserves encoded Azure repository components and same-protocol URLs", () => {
-    const ssh = "git@ssh.dev.azure.com:v3/Fabrikam/Project%20One/fab%20repo";
-    const https = "https://dev.azure.com/Fabrikam/Project%20One/_git/fab%20repo";
-    expect(cloneUrlForProtocol(ssh, "https")).toBe(https);
-    expect(cloneUrlForProtocol(https, "ssh")).toBe(ssh);
-    expect(cloneUrlForProtocol(ssh, "ssh")).toBe(ssh);
-    expect(cloneUrlForProtocol(https, "https")).toBe(https);
+    "git@ssh.dev.azure.com:v3/Fabrikam/Project1/repo",
+    "git@ssh.bitbucket.org:workspace/repo.git",
+  ])("preserves %s without guessing a different transport", (url) => {
+    expect(cloneUrlForProtocol(url, "ssh")).toBe(url);
+    expect(cloneUrlForProtocol(url, "https")).toBeNull();
   });
 
   it("refuses Azure rewrites when the project is missing or a custom port is set", () => {

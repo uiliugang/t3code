@@ -72,22 +72,26 @@ export function createIssueEnvironmentAtoms<R, E>(
     mode: "serial",
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   } as const;
-  const detail = createEnvironmentRpcQueryAtomFamily(runtime, {
+  const detailQuery = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:issues:detail",
     tag: WS_METHODS.issuesDetail,
     staleTimeMs: 30_000,
   });
-  const detailRef = ({ projectId, tracker, host, scope, key }: IssueRef): IssueRef => ({
-    projectId,
-    tracker,
-    ...(host === undefined ? {} : { host }),
-    scope,
-    key,
-  });
+  const detail = ({
+    environmentId,
+    input: { projectId, tracker, host, scope, key },
+  }: {
+    readonly environmentId: EnvironmentId;
+    readonly input: IssueRef;
+  }) =>
+    detailQuery({
+      environmentId,
+      input: { projectId, tracker, ...(host === undefined ? {} : { host }), scope, key },
+    });
   const refreshDetail = (
-    { environmentId, input }: { readonly environmentId: EnvironmentId; readonly input: IssueRef },
+    target: Parameters<typeof detail>[0],
     registry: AtomRegistry.AtomRegistry,
-  ) => Effect.sync(() => registry.refresh(detail({ environmentId, input: detailRef(input) })));
+  ) => Effect.sync(() => registry.refresh(detail(target)));
   return {
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:list",

@@ -1,13 +1,25 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
 import type { StaticScreenProps } from "@react-navigation/native";
-import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtom, useAtomValue } from "@effect/atom-react";
+import { requirementViewsMatch } from "@t3tools/client-runtime/saved-views";
+import { SavedViewsMenu } from "../layout/workspace/SavedViewsMenu";
+import { requirementLabelsAtom } from "../issues/issueListFilters";
+import { Chip } from "../../components/ui/Chip";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
+import {
+  trackerCreateTargets,
+  requirementTrackerLabel,
+  type TrackerCreateTarget,
+} from "@t3tools/client-runtime/work-item";
+import { IssueRoute } from "../issues/IssueRouteScreen";
+import { issueEnvironment } from "../../state/issues";
 import {
   EnvironmentId,
   ProjectId,
   RequirementIssueError,
   BranchIssueError,
   type IssueProvider,
+  type IssueOption,
   type IssueMetadataInput,
   CommandId,
   type WorkItemCommandInput,
@@ -83,11 +95,13 @@ type Target = {
   projectId: ProjectId;
   provider: IssueProvider;
   scope?: string;
+  host?: string;
 };
 const isBranchIssueError = Schema.is(BranchIssueError);
 const isIssueError = Schema.is(RequirementIssueError);
 
 const boardAtoms = createRequirementOverviewAtoms({
+  trackers: issueEnvironment.list,
   issues: sourceControlEnvironment.issues,
   workItemsLive: serverEnvironment.workItemsLive,
   config: serverEnvironment.configValueAtom,
@@ -210,9 +224,14 @@ function UnifiedRequirementBoard({
     isMeituanServiceEnabled(environment.serverConfig?.settings, "requirements"),
   );
   const source = selectedSource === "meituan" && !meituanEnabled ? "all" : selectedSource;
+  const unified = queryEnvironments.some((env) => env.serverConfig?.requirementIssueTrackers);
+  const [picked, setPicked] = useAtom(requirementLabelsAtom);
+  const labels =
+    unified && !archived && source !== "meituan" && source !== "local" ? picked.labels : [];
   const permissions = useAtomValue(permissionAtoms(environmentIds));
   const filterKey = JSON.stringify([
     queryEnvironmentIds,
+    labels,
     source,
     projectId,
     assignee,
@@ -225,6 +244,7 @@ function UnifiedRequirementBoard({
     boardAtoms(
       new RequirementOverviewKey({
         environmentIds: queryEnvironmentIds,
+        labels,
         source,
         projectId,
         assignee,
@@ -364,6 +384,15 @@ function UnifiedRequirementBoard({
     if (entry.kind === "local") {
       setActionEnvironmentId(entry.environmentId);
       showItem(entry.item.id);
+    } else if (entry.provider === "gitlab" || entry.provider === "linear") {
+      navigation.navigate("Issue", {
+        environmentId: entry.environmentId,
+        projectId: entry.projectId,
+        tracker: entry.provider,
+        scope: entry.scope,
+        host: entry.host,
+        issueKey: entry.issue.id,
+      });
     } else
       navigation.navigate("IssueDetail", {
         environmentId: entry.environmentId,
@@ -371,6 +400,7 @@ function UnifiedRequirementBoard({
         provider: entry.provider,
         id: entry.issue.id,
         scope: entry.scope,
+        host: entry.host,
       });
   };
   const people = [
@@ -422,7 +452,7 @@ function UnifiedRequirementBoard({
         <Text className="text-xs text-foreground-muted">
           {entry.kind === "local"
             ? t("Local work item")
-            : `${entry.provider === "github" ? "GitHub" : "ONES"} #${entry.issue.id}`}
+            : `${requirementTrackerLabel[entry.provider]} ${entry.provider === "linear" ? "" : "#"}${entry.issue.id}`}
         </Text>
         {entry.kind === "local" ? (
           <Text className="text-xs text-foreground-muted">
@@ -483,7 +513,7 @@ function UnifiedRequirementBoard({
     archived,
     queryText,
   };
-  const isFiltered = isRequirementFilterCustomized(filterState);
+  const isFiltered = isRequirementFilterCustomized(filterState) || labels.length > 0;
   const applyFilterState = (next: typeof filterState) => {
     onEnvironment(next.environmentId);
     setSource(next.source);
@@ -492,7 +522,10 @@ function UnifiedRequirementBoard({
     setArchived(next.archived);
     setQueryText(next.queryText);
   };
-  const resetFilters = () => applyFilterState(DEFAULT_REQUIREMENT_FILTER_STATE);
+  const resetFilters = () => {
+    setPicked({ labels: [], assignee: null });
+    applyFilterState(DEFAULT_REQUIREMENT_FILTER_STATE);
+  };
   const assigneeChoices = [
     { value: "me", label: t("Assigned to me") },
     { value: "all", label: t("All assignees") },
@@ -503,6 +536,12 @@ function UnifiedRequirementBoard({
     { value: "all" as const, label: t("All sources") },
     ...(meituanEnabled ? [{ value: "meituan" as const, label: "MEP ONES" }] : []),
     { value: "github" as const, label: "GitHub Issues" },
+    ...(unified
+      ? ([
+          { value: "gitlab", label: "GitLab" },
+          { value: "linear", label: "Linear" },
+        ] as const)
+      : []),
     { value: "local" as const, label: t("Local work items") },
   ];
   const selectedProject = findSelectedRequirementProject(allProjects, projectFilter);
@@ -717,6 +756,51 @@ function UnifiedRequirementBoard({
                 actions={environmentActions}
                 onSelect={applyFilterSelection}
               />
+              <SavedViewsMenu
+                read={(prefs) => prefs.requirementSavedViews}
+                write={(requirementSavedViews) => ({ requirementSavedViews })}
+                noun="requirement"
+                shortNoun="requirement"
+                suggestedName=""
+                scope={{
+                  environmentId: queryEnvironmentId,
+                  projectId,
+                  source,
+                  assignee,
+                  labels,
+                  archived,
+                  query: queryText,
+                }}
+                matches={requirementViewsMatch}
+                onApply={(saved) => {
+                  setPicked({ labels: saved.labels, assignee: null });
+                  applyFilterState({
+                    environmentId: saved.environmentId,
+                    project:
+                      saved.environmentId && saved.projectId
+                        ? { environmentId: saved.environmentId, projectId: saved.projectId }
+                        : null,
+                    source: saved.source,
+                    archived: saved.archived,
+                    assignee: saved.assignee,
+                    queryText: saved.query,
+                  });
+                }}
+              />
+              {labels.length || data.scopes.some((scope) => scope.labels) ? (
+                <Chip
+                  label={labels.length ? labels.join(", ") : t("Labels")}
+                  accessibilityLabel={t("Labels")}
+                  selected={labels.length > 0}
+                  onPress={() =>
+                    navigation.navigate("IssueFilterSearch", {
+                      kind: "labels",
+                      requirements: true,
+                      scopes: data.scopes.filter((scope) => scope.labels),
+                    })
+                  }
+                />
+              ) : null}
               <ListFilterMenu
                 label={
                   sourceChoices.find((option) => option.value === source)?.label ?? t("All sources")
@@ -871,6 +955,17 @@ function UnifiedRequirementBoard({
             setActionEnvironmentId(createdEnvId);
             showItem(item.id);
           }}
+          onTrackerCreated={(scope, id, environmentId) => {
+            setCreateSheetOpen(false);
+            navigation.navigate("Issue", {
+              environmentId,
+              projectId: scope.projectId,
+              scope: scope.scope,
+              tracker: scope.provider,
+              ...(scope.host ? { host: scope.host } : {}),
+              issueKey: id,
+            });
+          }}
           onCreatedIssue={(target, id) => {
             setCreateSheetOpen(false);
             navigation.navigate("IssueDetail", { ...target, id });
@@ -891,6 +986,7 @@ function RequirementCreateSheet({
   onClose,
   onCreatedLocal,
   onCreatedIssue,
+  onTrackerCreated,
 }: {
   projects: ReadonlyArray<{
     readonly id: ProjectId;
@@ -910,6 +1006,7 @@ function RequirementCreateSheet({
   onClose: () => void;
   onCreatedLocal: (environmentId: EnvironmentId, item: { readonly id: WorkItemId }) => void;
   onCreatedIssue: (target: Target, id: string) => void;
+  onTrackerCreated: (scope: TrackerCreateTarget, key: string, env: EnvironmentId) => void;
 }) {
   const t = useUiTranslation();
   const [selectedProjectKey, setSelectedProjectKey] = useState(
@@ -931,7 +1028,20 @@ function RequirementCreateSheet({
   );
   const localAllowed = Boolean(project && canCreateLocal && config?.workItems === true);
   const issueAllowed = Boolean(project && canCreateIssue);
-  const [kind, setKind] = useState<Exclude<RequirementSource, "all">>(() => {
+  const trackerList = useEnvironmentQuery(
+    project && config?.requirementIssueTrackers
+      ? issueEnvironment.list({
+          environmentId: project.environmentId,
+          input: { state: "all", projectId: project.id, limit: 1 },
+        })
+      : null,
+  );
+  const trackerAllowed = useAtomValue(
+    issueEnvironment.create.permissionAtom(project?.environmentId ?? EnvironmentId.make("")),
+  );
+  const trackable = trackerAllowed ? trackerCreateTargets(trackerList.data) : [];
+  const trackKey = (target: TrackerCreateTarget) => `${target.host}/${target.scope}`;
+  const [kind, setKind] = useState<string>(() => {
     if (defaultSource === "local" && !localAllowed && issueAllowed) return "github";
     if (defaultSource !== "local" && !issueAllowed && localAllowed) return "local";
     return defaultSource;
@@ -941,6 +1051,10 @@ function RequirementCreateSheet({
   if (!project) return null;
 
   const kindOptions = [
+    ...trackable.map((scope) => ({
+      value: trackKey(scope),
+      label: `${requirementTrackerLabel[scope.provider]} · ${scope.scope}`,
+    })),
     ...(localAllowed ? [{ value: "local", label: t("Local work item") }] : []),
     ...(issueAllowed
       ? [
@@ -953,7 +1067,10 @@ function RequirementCreateSheet({
   ];
   const activeKind = kindOptions.some((option) => option.value === kind)
     ? kind
-    : ((kindOptions[0]?.value as Exclude<RequirementSource, "all"> | undefined) ?? "local");
+    : trackable.find((scope) => scope.provider === kind)
+      ? trackKey(trackable.find((scope) => scope.provider === kind)!)
+      : (kindOptions[0]?.value ?? "local");
+  const trackerTarget = trackable.find((scope) => trackKey(scope) === activeKind);
 
   return (
     <Sheet
@@ -986,7 +1103,7 @@ function RequirementCreateSheet({
             value={activeKind}
             options={kindOptions}
             disabled={parentBusy || submitting}
-            onChange={(value) => setKind(value as Exclude<RequirementSource, "all">)}
+            onChange={setKind}
           />
         ) : null}
         {activeKind === "local" ? (
@@ -1006,12 +1123,21 @@ function RequirementCreateSheet({
             onCancel={onClose}
             onSaved={(item) => onCreatedLocal(project.environmentId, item)}
           />
+        ) : trackerTarget ? (
+          <TrackerCreateForm
+            key={trackKey(trackerTarget)}
+            target={trackerTarget}
+            environmentId={project.environmentId}
+            busy={submitting}
+            setBusy={setSubmitting}
+            created={(id) => onTrackerCreated(trackerTarget, id, project.environmentId)}
+          />
         ) : (
           <IssueCreateFormBody
             key={`${project.environmentId}/${project.id}/${activeKind}`}
             environmentId={project.environmentId}
             projectId={project.id}
-            provider={activeKind}
+            provider={activeKind === "meituan" ? "meituan" : "github"}
             allowProjectChange={false}
             onBusyChange={setSubmitting}
             onCreated={onCreatedIssue}
@@ -1022,23 +1148,88 @@ function RequirementCreateSheet({
   );
 }
 
-export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: string }>) {
+function TrackerCreateForm({
+  target,
+  environmentId,
+  busy,
+  setBusy,
+  created,
+}: {
+  target: TrackerCreateTarget;
+  environmentId: EnvironmentId;
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
+  created: (id: string) => void;
+}) {
   const t = useUiTranslation();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const create = useAtomCommand(issueEnvironment.create);
+  const submit = async () => {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    const { provider: _provider, ...scope } = target;
+    const result = await create({
+      environmentId,
+      input: { ...scope, title: title.trim(), body, labels: [], assignees: [] },
+    });
+    setBusy(false);
+    if (result._tag === "Success") created(result.value.key);
+  };
+  return (
+    <>
+      <AppTextInput
+        accessibilityLabel={t("Title")}
+        placeholder={t("Title")}
+        value={title}
+        onChangeText={setTitle}
+        maxLength={1024}
+        editable={!busy}
+      />
+      <AppTextInput
+        accessibilityLabel={t("Description")}
+        placeholder={t("Description")}
+        multiline
+        maxLength={65536}
+        editable={!busy}
+        value={body}
+        onChangeText={setBody}
+      />
+      <Button
+        label={t("Create issue")}
+        disabled={!title.trim() || busy}
+        onPress={() => void submit()}
+      />
+    </>
+  );
+}
+
+export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: string }>) {
   const target = route.params;
+  const config = useEnvironmentServerConfig(target.environmentId);
+  if (
+    config?.requirementIssueTrackers &&
+    target.scope &&
+    (target.provider !== "meituan" || isMeituanServiceEnabled(config.settings, "requirements"))
+  )
+    return (
+      <IssueRoute
+        key={`${target.environmentId}/${target.projectId}/${target.host}/${target.scope}/${target.id}`}
+        params={{ ...target, tracker: target.provider, scope: target.scope, issueKey: target.id }}
+        renderSupplement={(detail) => <RequirementIssueExtras target={target} url={detail.url} />}
+      />
+    );
+  return <LegacyIssueDetail target={target} />;
+}
+
+function LegacyIssueDetail({ target }: { target: Target & { id: string } }) {
+  const t = useUiTranslation();
   const { environmentId } = target;
   const config = useEnvironmentServerConfig(environmentId);
   const enabled =
     target.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "requirements");
-  const branchesEnabled =
-    enabled &&
-    (target.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "sourceControl"));
   const result = useEnvironmentQuery(
     enabled ? sourceControlEnvironment.issueDetail({ environmentId, input: target }) : null,
-  );
-  const tracking = useEnvironmentQuery(
-    result.data
-      ? serverEnvironment.workItemsLive({ environmentId, input: { issueUrl: result.data.url } })
-      : null,
   );
   const command = useAtomCommand(sourceControlEnvironment.setIssueState);
   const canWrite = useAtomValue(
@@ -1050,36 +1241,12 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
   const project = useProjects().find(
     (entry) => entry.environmentId === environmentId && entry.id === target.projectId,
   );
-  const branches = useEnvironmentQuery(
-    project && result.data && branchesEnabled
-      ? sourceControlEnvironment.issueBranches({
-          environmentId,
-          input: { cwd: project.workspaceRoot, url: result.data.url },
-        })
-      : null,
-  );
-  const link = useAtomCommand(sourceControlEnvironment.updateBranchIssues);
-  const linkAllowed = useAtomValue(
-    sourceControlEnvironment.updateBranchIssues.permissionAtom(environmentId),
-  );
-  const canLink = linkAllowed && branchesEnabled;
-  const [branch, setBranch] = useState("");
   const update = async () => {
     if (!state) return;
     setBusy(true);
     await command({ environmentId, input: { ...target, state } });
     setBusy(false);
     result.refresh();
-  };
-  const associate = async (name: string, action: "associate" | "disassociate") => {
-    if (!project || !result.data) return;
-    setBusy(true);
-    await link({
-      environmentId,
-      input: { cwd: project.workspaceRoot, branch: name, action, urls: [result.data.url] },
-    });
-    setBusy(false);
-    branches.refresh();
   };
   return (
     <SettingsScreen title={t("Issue details")}>
@@ -1095,14 +1262,11 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
                 {result.data.assignees.map((person) => person.label).join(", ") || t("Unassigned")}
               </Text>
             </View>
-            {tracking.data?.item ? (
-              <RequirementDeliveryPanel
-                environmentId={environmentId}
-                item={tracking.data.item}
-                summary={tracking.data.items[0]?.deliverySummary}
-                transitions={result.data.transitions}
-              />
-            ) : null}
+            <RequirementIssueExtras
+              target={target}
+              url={result.data.url}
+              transitions={result.data.transitions}
+            />
             <Disclosure title={t("Change status")}>
               <IssuePicker
                 label={t("Change status")}
@@ -1126,45 +1290,6 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
                 }}
               />
             </Disclosure>
-            <Disclosure title={t("Linked branches")}>
-              <Text className="text-xs text-foreground-muted">
-                {t(target.provider === "meituan" ? "Synced with MEP" : "Only in this environment")}
-              </Text>
-              {branches.error ? (
-                <Text className="text-danger">
-                  {isBranchIssueError(branches.failure) &&
-                  branches.failure.reason === "invalid-link"
-                    ? t("Branch links require a repository on the same platform as the issue.")
-                    : branches.error}
-                </Text>
-              ) : null}
-              {branches.data
-                ?.filter((entry) => entry.linked)
-                .map((entry) => (
-                  <View key={entry.name} className="gap-2">
-                    <Text>{entry.name}</Text>
-                    <Button
-                      label={t("Unlink issue")}
-                      disabled={!canLink || busy}
-                      onPress={() => void associate(entry.name, "disassociate")}
-                    />
-                  </View>
-                ))}
-              <IssuePicker
-                label={t("Choose branch")}
-                value={branch}
-                options={(branches.data ?? [])
-                  .filter((entry) => !entry.linked)
-                  .map((entry) => ({ value: entry.name, label: entry.name }))}
-                onChange={setBranch}
-                disabled={!canLink || busy}
-              />
-              <Button
-                label={t("Link branch")}
-                disabled={!canLink || busy || !branch}
-                onPress={() => void associate(branch, "associate")}
-              />
-            </Disclosure>
             <Button
               label={t("View original")}
               icon="arrow.up.right"
@@ -1178,6 +1303,113 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
         )}
       </ScreenScrollView>
     </SettingsScreen>
+  );
+}
+
+function RequirementIssueExtras({
+  target,
+  url,
+  transitions,
+}: {
+  target: Target & { id: string };
+  url: string;
+  transitions?: ReadonlyArray<IssueOption>;
+}) {
+  const t = useUiTranslation();
+  const { environmentId } = target;
+  const config = useEnvironmentServerConfig(environmentId);
+  const enabled =
+    target.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "requirements");
+  const branchesEnabled =
+    enabled &&
+    (target.provider !== "meituan" || isMeituanServiceEnabled(config?.settings, "sourceControl"));
+  const tracking = useEnvironmentQuery(
+    config?.workItemDelivery
+      ? serverEnvironment.workItemsLive({ environmentId, input: { issueUrl: url } })
+      : null,
+  );
+  const native = useEnvironmentQuery(
+    !transitions && tracking.data?.item
+      ? sourceControlEnvironment.issueDetail({ environmentId, input: target })
+      : null,
+  );
+  const [busy, setBusy] = useState(false);
+  const project = useProjects().find(
+    (entry) => entry.environmentId === environmentId && entry.id === target.projectId,
+  );
+  const branches = useEnvironmentQuery(
+    project && branchesEnabled
+      ? sourceControlEnvironment.issueBranches({
+          environmentId,
+          input: { cwd: project.workspaceRoot, url },
+        })
+      : null,
+  );
+  const link = useAtomCommand(sourceControlEnvironment.updateBranchIssues);
+  const linkAllowed = useAtomValue(
+    sourceControlEnvironment.updateBranchIssues.permissionAtom(environmentId),
+  );
+  const canLink = linkAllowed && branchesEnabled;
+  const [branch, setBranch] = useState("");
+  const associate = async (name: string, action: "associate" | "disassociate") => {
+    if (!project) return;
+    setBusy(true);
+    await link({
+      environmentId,
+      input: { cwd: project.workspaceRoot, branch: name, action, urls: [url] },
+    });
+    setBusy(false);
+    branches.refresh();
+  };
+  return (
+    <>
+      {tracking.data?.item ? (
+        <RequirementDeliveryPanel
+          environmentId={environmentId}
+          item={tracking.data.item}
+          summary={tracking.data.items[0]?.deliverySummary}
+          transitions={transitions ?? native.data?.transitions ?? []}
+        />
+      ) : null}
+      <Disclosure title={t("Linked branches")}>
+        <Text className="text-xs text-foreground-muted">
+          {t(target.provider === "meituan" ? "Synced with MEP" : "Only in this environment")}
+        </Text>
+        {branches.error ? (
+          <Text className="text-danger">
+            {isBranchIssueError(branches.failure) && branches.failure.reason === "invalid-link"
+              ? t("Branch links require a repository on the same platform as the issue.")
+              : branches.error}
+          </Text>
+        ) : null}
+        {branches.data
+          ?.filter((entry) => entry.linked)
+          .map((entry) => (
+            <View key={entry.name} className="gap-2">
+              <Text>{entry.name}</Text>
+              <Button
+                label={t("Unlink issue")}
+                disabled={!canLink || busy}
+                onPress={() => void associate(entry.name, "disassociate")}
+              />
+            </View>
+          ))}
+        <IssuePicker
+          label={t("Choose branch")}
+          value={branch}
+          options={(branches.data ?? [])
+            .filter((entry) => !entry.linked)
+            .map((entry) => ({ value: entry.name, label: entry.name }))}
+          onChange={setBranch}
+          disabled={!canLink || busy}
+        />
+        <Button
+          label={t("Link branch")}
+          disabled={!canLink || busy || !branch}
+          onPress={() => void associate(branch, "associate")}
+        />
+      </Disclosure>
+    </>
   );
 }
 

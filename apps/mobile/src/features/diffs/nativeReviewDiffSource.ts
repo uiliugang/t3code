@@ -15,7 +15,6 @@ function permanentSourceFailureReason(error: unknown): string | undefined {
     const reason = "reason" in error ? error.reason : undefined;
     const name = "name" in error ? error.name : undefined;
     // Defect serialization preserves error names and causes, but drops custom fields.
-    if (name === "GitCafeDiffSourceUnavailableError") return "gitcafe-source-unavailable";
     if (name === "GitHubDiffFileContentsUnavailableError") return "github-source-unavailable";
     for (const permanent of [
       "provider-unsupported",

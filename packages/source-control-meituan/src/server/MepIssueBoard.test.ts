@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import { ChildProcessSpawner } from "effect/process";
 import * as TestHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as Board from "./MepIssueBoard.ts";
+import * as Tracker from "./MepIssueTracker.ts";
 
 const source = { provider: "meituan" as const, scope: "1031008", host: "mep.sankuai.com" };
 const row = {
@@ -17,6 +18,50 @@ const requiredOutput =
   "本次创建的必填字段清单：\n────────\n  • 标题：未填\n  • 优先级：未填\n  • 技术主R：未填\n────────\n";
 
 describe("MEP issue board", () => {
+  it.effect("reads ONES issues by space and resolves a transition name to its native ID", () =>
+    Effect.gen(function* () {
+      const writes: ReadonlyArray<string>[] = [];
+      const tracker = yield* Tracker.make.pipe(
+        Effect.provide(
+          TestHost.layer({
+            process: {
+              run: ({ args }) => {
+                if (args[0] === "workitem-update") writes.push(args);
+                return Effect.succeed(
+                  TestHost.processOutput(
+                    JSON.stringify(
+                      args[0] === "field-opt"
+                        ? [{ value: 20, displayValue: "完成", extra: { category: "DONE" } }]
+                        : {
+                            ...row,
+                            ...(writes.length
+                              ? { state: { value: 20, displayValue: "完成" } }
+                              : {}),
+                            description: { value: null, displayValue: "<p>正文</p>" },
+                          },
+                    ),
+                  ),
+                );
+              },
+            },
+          }),
+        ),
+      );
+      const target = { cwd: "/repo", host: source.host, scope: source.scope, key: "1" };
+      const detail = yield* tracker.getIssue(target);
+      expect(detail).toMatchObject({
+        key: "1",
+        body: "<p>正文</p>",
+        bodyFormat: "html",
+        state: { category: "open", name: "开发中" },
+      });
+      yield* Effect.flip(tracker.setState({ ...target, state: "不存在" }));
+      expect(writes).toHaveLength(0);
+      yield* tracker.setState({ ...target, state: "完成" });
+      expect(writes).toHaveLength(1);
+      expect(writes[0]).toContain("state=20");
+    }),
+  );
   it("extracts structured payloads after CLI output and only accepts numbered subtype rows", () => {
     expect(Board.mepIssueJson('Progress\n[\n{"id":1}\n]\n')).toBe('[\n{"id":1}\n]');
     expect(Board.mepIssueJson("No payload")).toBe("");

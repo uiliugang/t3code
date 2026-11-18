@@ -85,16 +85,24 @@ const make = Effect.gen(function* () {
   });
 
   /** Where a key-only reference is read: the named project's tracker, or the caller's thread's. */
-  const requireProjectScope = Effect.fn("IssuesToolkit.requireProjectScope")(function* (
+  const requireProjectId = Effect.fn("IssuesToolkit.requireProjectId")(function* (
     requested: ProjectId | undefined,
   ) {
     // A named project skips the caller's thread, so the capability is checked here too.
     yield* McpInvocationContext.requireMcpCapability("issues");
     const projectId = requested ?? (yield* callerThread())?.projectId;
     if (projectId === undefined) return yield* new IssueProjectRequiredError();
-    return yield* issues
-      .projectScope(projectId)
-      .pipe(Effect.mapError(() => new IssueProjectNotFoundError({ projectId })));
+    return projectId;
+  });
+  const requireProjectScope = Effect.fn("IssuesToolkit.requireProjectScope")(function* (
+    requested: ProjectId | undefined,
+  ) {
+    const projectId = yield* requireProjectId(requested);
+    return yield* issues.projectScope(projectId).pipe(
+      Effect.catchTags({
+        IssueUnavailableError: () => Effect.fail(new IssueProjectNotFoundError({ projectId })),
+      }),
+    );
   });
 
   /**
@@ -153,7 +161,7 @@ const make = Effect.gen(function* () {
   return {
     list_issues: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
-        const { projectId } = yield* requireProjectScope(input.projectId);
+        const projectId = yield* requireProjectId(input.projectId);
         const result = yield* issues.list({
           projectId,
           state: input.state ?? "open",

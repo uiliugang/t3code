@@ -5,6 +5,8 @@ import {
   SourceControlProviderError,
   SourceControlProviderKind,
   type IssueTarget,
+  type OrchestrationProjectShell,
+  type ServerSettings,
   type RequirementIssueListInput,
   type RequirementIssueListResult,
   type RequirementIssueCreateInput,
@@ -60,6 +62,16 @@ class DiscoveryKey extends Persistable.Class<{
 export class IssueService extends Context.Service<
   IssueService,
   {
+    readonly trackerSources: Effect.Effect<
+      {
+        readonly scratchRoot: Option.Option<string>;
+        readonly forProject: (project: OrchestrationProjectShell) => Effect.Effect<{
+          readonly sources: ReadonlyArray<IssueSource>;
+          readonly failure?: RequirementIssueError;
+        }>;
+      },
+      RequirementIssueError
+    >;
     readonly sources: (
       input: typeof IssueSourcesInput.Type,
     ) => Effect.Effect<typeof IssueSourcesResult.Type, RequirementIssueError>;
@@ -98,27 +110,17 @@ export const make = Effect.gen(function* () {
       inMemoryCapacity: 256,
     },
   ).pipe(Effect.provide(Persistence.layerKvs));
-  const projectSources = Effect.fn("IssueService.projectSources")(function* (
-    projectId: IssueTarget["projectId"],
+  const savedSettings = settings.getSettings.pipe(
+    Effect.mapError(
+      (cause) => new RequirementIssueError({ operation: "settings", reason: "unavailable", cause }),
+    ),
+  );
+  const resolveSources = Effect.fn("IssueService.resolveSources")(function* (
+    project: OrchestrationProjectShell,
+    saved: ServerSettings,
     refresh = false,
   ) {
-    const project = yield* projects
-      .getShell(projectId)
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new RequirementIssueError({ operation: "project", reason: "invalid-target", cause }),
-        ),
-      );
-    if (Option.isNone(project))
-      return yield* new RequirementIssueError({ operation: "project", reason: "invalid-target" });
-    const cwd = project.value.workspaceRoot;
-    const saved = yield* settings.getSettings.pipe(
-      Effect.mapError(
-        (cause) =>
-          new RequirementIssueError({ operation: "settings", reason: "unavailable", cause }),
-      ),
-    );
+    const { id: projectId, workspaceRoot: cwd } = project;
     const manual = saved.issueProjectSources[projectId] ?? [];
     const automatic: IssueSource[] = [];
     const handle = yield* providers.resolveHandle({ cwd }).pipe(Effect.result);
@@ -182,6 +184,26 @@ export const make = Effect.gen(function* () {
       ...(failure ? { failure } : {}),
     };
   });
+  const projectSources = Effect.fn("IssueService.projectSources")(function* (
+    id: IssueTarget["projectId"],
+    refresh = false,
+  ) {
+    const project = yield* projects
+      .getShell(id)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new RequirementIssueError({ operation: "project", reason: "invalid-target", cause }),
+        ),
+      );
+    if (Option.isNone(project))
+      return yield* new RequirementIssueError({ operation: "project", reason: "invalid-target" });
+    return yield* resolveSources(project.value, yield* savedSettings, refresh);
+  });
+  const validSource = (source: IssueSource) =>
+    source.provider === "meituan"
+      ? /^[1-9]\d*$/u.test(source.scope) && source.host === "mep.sankuai.com"
+      : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) && /^[\w.-]+$/u.test(source.host);
   const resolveAll = Effect.fn("IssueService.resolveAll")(function* (input: IssueTarget) {
     const resolved = yield* projectSources(input.projectId);
     const sources = resolved.sources.filter(
@@ -191,11 +213,7 @@ export const make = Effect.gen(function* () {
         (!input.host || source.host === input.host),
     );
     for (const source of sources) {
-      if (
-        source.provider === "meituan"
-          ? !/^[1-9]\d*$/u.test(source.scope) || source.host !== "mep.sankuai.com"
-          : !/^[\w.-]+\/[\w.-]+$/u.test(source.scope) || !/^[\w.-]+$/u.test(source.host)
-      )
+      if (!validSource(source))
         return yield* new RequirementIssueError({ operation: "resolve", reason: "invalid-target" });
     }
     if (!sources.length)
@@ -222,6 +240,39 @@ export const make = Effect.gen(function* () {
     return targets[0]!;
   });
   return IssueService.of({
+    trackerSources: Effect.gen(function* () {
+      const saved = yield* savedSettings;
+      const scratchRoot = yield* managedFolders.scratchRoot;
+      return {
+        scratchRoot,
+        forProject: Effect.fn("IssueService.trackerSources")(function* (
+          project: OrchestrationProjectShell,
+        ) {
+          const enabled = isMeituanServiceEnabled(saved, "requirements");
+          const manual = (saved.issueProjectSources[project.id] ?? []).filter(
+            (source) => source.provider !== "meituan" || enabled,
+          );
+          const discover =
+            enabled &&
+            project.repositoryIdentity?.provider === "meituan" &&
+            !manual.some((source) => source.provider === "meituan");
+          const resolved = discover ? yield* resolveSources(project, saved) : { sources: manual };
+          const sources = resolved.sources.filter(validSource);
+          return {
+            ...resolved,
+            sources,
+            ...(sources.length !== resolved.sources.length
+              ? {
+                  failure: new RequirementIssueError({
+                    operation: "resolve",
+                    reason: "invalid-target",
+                  }),
+                }
+              : {}),
+          };
+        }),
+      };
+    }),
     sources: Effect.fn("IssueService.sources")(function* (input) {
       return yield* Effect.forEach(
         [...new Set(input.projectIds)],

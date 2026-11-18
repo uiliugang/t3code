@@ -64,7 +64,7 @@ import {
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 
 describe("pull request checkout commands", () => {
-  it("quotes shell metacharacters in Forgejo repository URLs", () => {
+  it("does not generate checkout commands for a retired forge", () => {
     expect(
       pullRequestCheckoutCommand(
         SourceControlProviderKind.make("forgejo"),
@@ -73,9 +73,7 @@ describe("pull request checkout commands", () => {
         null,
         "https://forgejo.local/maria/repo'$(echo nope)",
       ),
-    ).toBe(
-      "git fetch 'https://forgejo.local/maria/repo'\\''$(echo nope)' refs/pull/42/head && git checkout -B pulls/42 FETCH_HEAD",
-    );
+    ).toBeNull();
   });
 
   const reference = (host?: string): PullRequestRef => ({
@@ -1913,29 +1911,6 @@ describe("cached pull request detail", () => {
       readPullRequestDetailSnapshot(storage, "env-1", {
         ...reference,
         host: "github.example.com",
-      }),
-    ).toBeNull();
-  });
-
-  it("keeps Forgejo ports isolated when recovering legacy snapshots", () => {
-    const storage = makeStorage();
-    const cached = detail({
-      provider: SourceControlProviderKind.make("forgejo"),
-      url: "https://forge.example:8443/acme/web/pulls/7",
-    });
-    writePullRequestDetailSnapshot(storage, "env-1", reference, cached);
-    const resolved = { ...reference, host: "forge.example:8443" };
-    expect(readPullRequestDetailSnapshot(storage, "env-1", resolved)?.title).toBe(cached.title);
-    expect(
-      readPullRequestDetailSnapshot(storage, "env-1", {
-        ...reference,
-        host: "forge.example:9443",
-      }),
-    ).toBeNull();
-    expect(
-      readPullRequestDetailSnapshot(storage, "env-1", {
-        ...reference,
-        host: "forge.example",
       }),
     ).toBeNull();
   });

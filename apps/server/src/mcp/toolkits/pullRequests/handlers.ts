@@ -114,7 +114,6 @@ function projectForPullRequest(
   target: { readonly host: string; readonly repository: string },
   preferred: OrchestrationProjectShell | undefined,
 ): OrchestrationProjectShell | undefined {
-  // Match the guide service's host-level repository key, including Azure DevOps org/project/_git/repo.
   const matches = (project: OrchestrationProjectShell) => {
     const own = pullRequestSyncKey(
       { projectId: project.id, host: target.host, repository: target.repository, number: 1 },
@@ -499,7 +498,7 @@ const make = Effect.gen(function* () {
         if (entry !== undefined && entry.target === null) {
           return yield* new PullRequestGuideFailedError({ detail: entry.failure ?? "" });
         }
-        // Hosts readable without a checkout (GitHub, Bitbucket, Forgejo) are read through the
+        // Hosts readable without a checkout are read through the
         // caller's project; PullRequestService decides whether the host allows that.
         const project = entry?.project ?? entry?.callerProject;
         if (entry === undefined || entry.target === null || project === undefined) {

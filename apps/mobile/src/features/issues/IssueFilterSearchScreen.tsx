@@ -8,7 +8,11 @@ import { PullRequestLabelDot } from "../pull-requests/PullRequestLabelDot";
 import { PullRequestAvatar } from "../pull-requests/PullRequestPresentation";
 import { pullRequestLabelColor } from "../pull-requests/pullRequestList";
 import { IssueCandidatesSheet } from "./IssueCandidatesSheet";
-import { issueListFiltersAtom, unofferedIssueFilters } from "./issueListFilters";
+import {
+  issueListFiltersAtom,
+  requirementLabelsAtom,
+  unofferedIssueFilters,
+} from "./issueListFilters";
 
 const matches = (needle: string, ...fields: ReadonlyArray<string | null | undefined>) =>
   needle.length === 0 || fields.some((field) => field?.toLowerCase().includes(needle));
@@ -18,12 +22,15 @@ export function IssueFilterSearchScreen({
   route,
 }: StaticScreenProps<{
   readonly kind: "labels" | "assignee";
+  readonly requirements?: boolean;
   readonly scopes: ReadonlyArray<IssueCandidatesTarget>;
 }>) {
   const navigation = useNavigation();
   const { kind, scopes } = route.params;
   const known = useIssueFilterCandidates(scopes);
-  const [filters, setFilters] = useAtom(issueListFiltersAtom);
+  const [filters, setFilters] = useAtom(
+    route.params.requirements ? requirementLabelsAtom : issueListFiltersAtom,
+  );
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
   const labels = kind === "labels";

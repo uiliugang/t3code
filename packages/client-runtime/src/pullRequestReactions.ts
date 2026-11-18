@@ -1,20 +1,5 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
-import type {
-  PullRequestComment,
-  PullRequestDetail,
-  PullRequestReaction,
-  PullRequestReactionContent,
-} from "@t3tools/contracts";
-
-export function canReactPullRequestComment(
-  detail: Pick<PullRequestDetail, "provider" | "capabilities">,
-  comment: Pick<PullRequestComment, "kind">,
-): boolean {
-  return (
-    detail.capabilities.reactions === true &&
-    !(detail.provider === "gitcafe" && comment.kind === "review")
-  );
-}
+import type { PullRequestReaction, PullRequestReactionContent } from "@t3tools/contracts";
 
 export const PULL_REQUEST_REACTION_ORDER: ReadonlyArray<PullRequestReactionContent> = [
   "thumbs-up",

@@ -1,6 +1,10 @@
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
-import { makeProviderSettingsSchema, SourceControlProviderKind } from "@t3tools/contracts";
+import {
+  makeProviderSettingsSchema,
+  parseBranchIssueUrl,
+  SourceControlProviderKind,
+} from "@t3tools/contracts";
 import {
   defineSourceControl,
   isChangeRequestInProjectRepository,
@@ -91,6 +95,13 @@ export const definition = defineSourceControl({
   changeRequestUrl: ({ repository, number }) =>
     `https://${WEB_HOST}/code/repo-detail/${repository}/pr/${number}/overview`,
   parseChangeRequestUrl: (url) => parsePullRequestUrl(url.href),
+  issueScope: () => null,
+  parseIssueUrl: (url) => {
+    const issue = parseBranchIssueUrl(url.href);
+    return issue?.provider === "meituan"
+      ? { host: url.hostname, scope: issue.repository, key: issue.id }
+      : null;
+  },
   changeRequestUrlFromReferenceAutolink: () => null,
   changeRequestActions: new Set(["ready", "close", "reopen", "merge"] as const),
   checkoutCommand: () => null,

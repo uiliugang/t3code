@@ -1,6 +1,13 @@
-import { RequirementIssueError, isMeituanServiceEnabled } from "@t3tools/contracts";
+import {
+  IssueTrackerKind,
+  RequirementIssueError,
+  isMeituanServiceEnabled,
+} from "@t3tools/contracts";
 import type {
   EnvironmentId,
+  IssueListInput,
+  IssueListResult,
+  IssueScopeRef,
   ProjectId,
   RequirementIssueListInput,
   RequirementIssueListResult,
@@ -17,6 +24,8 @@ import {
   mergeRequirementEntries,
   mergeWorkItemPages,
   type RequirementEntry,
+  type RequirementBoardPage,
+  type RequirementTracker,
   type RequirementSource,
 } from "../workItem.ts";
 
@@ -25,25 +34,113 @@ const unconfiguredSourceMessage = new RequirementIssueError({
   reason: "invalid-target",
 }).message;
 
+type TrackerList = (target: {
+  environmentId: EnvironmentId;
+  input: IssueListInput;
+}) => Atom.Atom<AsyncResult.AsyncResult<IssueListResult, unknown>>;
+type TrackerFilters = Pick<
+  RequirementBoardKey,
+  "source" | "assignee" | "query" | "projectId" | "labels"
+>;
+function trackerInput(key: TrackerFilters): IssueListInput {
+  return {
+    state: "all",
+    ...(key.labels?.length ? { labels: key.labels } : {}),
+    ...(key.assignee === "me" ? { involvement: "assigned" as const } : {}),
+    ...(!["all", "me", "unassigned"].includes(key.assignee) ? { assignee: key.assignee } : {}),
+    ...(key.query.trim() ? { query: key.query.trim() } : {}),
+    ...(key.projectId ? { projectId: key.projectId } : {}),
+    ...(key.source !== "all" && key.source !== "local"
+      ? { tracker: IssueTrackerKind.make(key.source) }
+      : {}),
+  };
+}
+function trackerPage(result: IssueListResult, key: TrackerFilters): RequirementBoardPage {
+  type Group = RequirementBoardPage["groups"][number];
+  const groups = new Map<
+    string,
+    Omit<Group, "issues"> & { issues: Array<Group["issues"][number]> }
+  >();
+  for (const entry of result.entries) {
+    const provider = String(entry.tracker);
+    if (
+      provider !== "github" &&
+      provider !== "meituan" &&
+      provider !== "gitlab" &&
+      provider !== "linear"
+    )
+      continue;
+    if (
+      (key.source !== "all" && key.source !== provider) ||
+      (key.assignee === "unassigned" && entry.assignees.length)
+    )
+      continue;
+    const id = JSON.stringify([entry.projectId, entry.host, entry.scope]);
+    const group = groups.get(id) ?? {
+      source: {
+        provider: provider as RequirementTracker,
+        scope: entry.scope,
+        host: entry.host,
+      },
+      projectIds: [entry.projectId],
+      issues: [],
+      hasMore: false,
+    };
+    group.issues.push({
+      id: entry.key,
+      url: entry.url,
+      title: entry.title,
+      state: entry.state.name,
+      stateCategory:
+        entry.state.boardCategory ?? (entry.state.category === "closed" ? "done" : "todo"),
+      type: "issue",
+      priority: entry.priority ?? "",
+      updatedAt: entry.updatedAt,
+      assignees: entry.assignees.map((person) => ({
+        value: person.login,
+        label: person.name ?? person.login,
+      })),
+    });
+    groups.set(id, group);
+  }
+  return {
+    groups: [...groups.values()],
+    failures: result.errors.map((error) => ({ projectId: error.projectId, reason: error.message })),
+  };
+}
+
 export function prefetchRequirementIssues(
   registry: AtomRegistry.AtomRegistry,
   issues: Parameters<typeof createRequirementBoardAtoms>[0]["issues"],
   environmentIds: ReadonlyArray<EnvironmentId>,
   signal?: AbortSignal,
   meituanEnabled?: (environmentId: EnvironmentId) => boolean,
+  trackers?: (id: EnvironmentId) => TrackerList | undefined,
 ) {
   return Promise.all(
-    [...new Set(environmentIds)].flatMap((environmentId) =>
-      (["meituan", "github"] as const)
+    [...new Set(environmentIds)].flatMap((environmentId) => {
+      const list = trackers?.(environmentId);
+      if (list)
+        return [
+          executeAtomQuery(
+            registry,
+            list({
+              environmentId,
+              input: trackerInput({ source: "all", assignee: "me", projectId: null, query: "" }),
+            }),
+            { ...(signal ? { signal } : {}), reportFailure: false, reportDefect: false },
+          ).then(() => undefined),
+        ];
+      return (["meituan", "github"] as const)
         .filter((provider) => provider !== "meituan" || meituanEnabled?.(environmentId) !== false)
         .map((provider) =>
           executeAtomQuery(
             registry,
             issues({ environmentId, input: { provider, assignee: "me", query: "", page: 1 } }),
             { ...(signal ? { signal } : {}), reportFailure: false, reportDefect: false },
-          ),
-        ),
-    ),
+          ).then(() => undefined),
+        );
+    }),
   ).then(() => undefined);
 }
 
@@ -58,9 +155,12 @@ export class RequirementBoardKey extends Data.Class<{
   localSupported: boolean;
   archived: boolean;
   meituanEnabled?: boolean;
+  trackerSupported?: boolean;
+  labels?: ReadonlyArray<string>;
 }> {}
 
 export function createRequirementBoardAtoms(queries: {
+  trackers?: TrackerList;
   issues: (target: {
     environmentId: EnvironmentId;
     input: RequirementIssueListInput;
@@ -72,7 +172,13 @@ export function createRequirementBoardAtoms(queries: {
 }) {
   return Atom.family((key: RequirementBoardKey) =>
     Atom.make((get) => {
-      const issuePages: Array<typeof RequirementIssueListResult.Type> = [];
+      const issuePages: RequirementBoardPage[] = [];
+      const scopes: {
+        environmentId: EnvironmentId;
+        input: IssueScopeRef;
+        labels: boolean;
+        create: boolean;
+      }[] = [];
       const itemPages: WorkItemListResult[] = [];
       const atoms: Array<Atom.Atom<AsyncResult.AsyncResult<unknown, unknown>>> = [];
       const errors: string[] = [];
@@ -90,7 +196,35 @@ export function createRequirementBoardAtoms(queries: {
       };
       let moreIssues = false;
       let nextCursor: WorkItemListInput["cursor"] | null = null;
-      if (!key.archived && key.source !== "local") {
+      if (!key.archived && key.source !== "local" && key.trackerSupported && queries.trackers) {
+        let cursors: IssueListInput["cursors"];
+        for (let page = 1; page <= key.page; page++) {
+          const result: IssueListResult | null = read(
+            queries.trackers({
+              environmentId: key.environmentId,
+              input: { ...trackerInput(key), ...(cursors ? { cursors } : {}) },
+            }),
+          );
+          if (!result) break;
+          if (page === 1)
+            for (const input of result.scopes ?? []) {
+              const tracker = result.trackers.find(
+                (entry) => entry.host === input.host && entry.tracker === input.tracker,
+              );
+              if (tracker?.configured && tracker.capabilities)
+                scopes.push({
+                  environmentId: key.environmentId,
+                  input,
+                  labels: tracker.capabilities.labels,
+                  create: tracker.capabilities.create,
+                });
+            }
+          issuePages.push(trackerPage(result, key));
+          cursors = result.nextCursors;
+          if (!Object.keys(cursors).length) break;
+          moreIssues = page === key.page;
+        }
+      } else if (!key.archived && key.source !== "local" && !key.labels?.length) {
         for (const provider of ["meituan", "github"] as const) {
           if (provider === "meituan" && key.meituanEnabled === false) continue;
           if (key.source !== "all" && key.source !== provider) continue;
@@ -124,7 +258,7 @@ export function createRequirementBoardAtoms(queries: {
           }
         }
       }
-      if (key.localSupported) {
+      if (key.localSupported && !key.labels?.length) {
         for (const cursor of key.cursors) {
           const result = read(
             queries.workItemsLive({
@@ -142,6 +276,7 @@ export function createRequirementBoardAtoms(queries: {
       }
       return {
         issuePages,
+        scopes,
         failures: Array.dedupeWith(
           issuePages.flatMap((page) => page.failures),
           (left, right) => left.projectId === right.projectId && left.reason === right.reason,
@@ -176,6 +311,7 @@ export class RequirementOverviewKey extends Data.Class<{
   query: string;
   archived: boolean;
   pagination: RequirementPagination;
+  labels?: ReadonlyArray<string>;
 }> {}
 
 export type EnvironmentRequirementEntry = RequirementEntry & { environmentId: EnvironmentId };
@@ -205,7 +341,10 @@ export function createRequirementPermissionAtoms(
 
 export function createRequirementOverviewAtoms(
   queries: Parameters<typeof createRequirementBoardAtoms>[0] & {
-    config: (environmentId: EnvironmentId) => Atom.Atom<{ readonly workItems?: boolean } | null>;
+    config: (environmentId: EnvironmentId) => Atom.Atom<{
+      readonly workItems?: boolean;
+      readonly requirementIssueTrackers?: boolean;
+    } | null>;
     settings?: (
       environmentId: EnvironmentId,
     ) => Atom.Atom<Parameters<typeof isMeituanServiceEnabled>[0]>;
@@ -228,9 +367,12 @@ export function createRequirementOverviewAtoms(
               assignee: key.assignee,
               query: key.query,
               archived: key.archived,
+              ...(key.labels?.length ? { labels: key.labels } : {}),
               ...pagination,
               environmentId,
               localSupported: get(queries.config(environmentId))?.workItems === true,
+              trackerSupported:
+                get(queries.config(environmentId))?.requirementIssueTrackers === true,
               meituanEnabled: queries.settings
                 ? isMeituanServiceEnabled(get(queries.settings(environmentId)), "requirements")
                 : true,
@@ -263,6 +405,7 @@ export function createRequirementOverviewAtoms(
           .flatMap((environment) => environment.entries)
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.key.localeCompare(b.key)),
         issuePages: environments.flatMap((environment) => environment.issuePages),
+        scopes: environments.flatMap((environment) => environment.scopes),
         errors: environments.flatMap(({ environmentId, errors }) =>
           [...new Set(errors)].map((message) => ({ environmentId, message })),
         ),

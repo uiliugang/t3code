@@ -3328,11 +3328,8 @@ export const make = Effect.gen(function* () {
       return detailUncached(refOfCacheKey(key)).pipe(
         Effect.tap(
           Effect.fn("PullRequestService.recordDetailStats")(function* (value: PullRequestDetail) {
-            // GitHub and Azure detail include the same checks; the checks TTL counts from their observation.
-            // Azure detail answers a failed policy read with no checks, which must not be cached.
             if (
-              (value.provider === "github" ||
-                (value.provider === "azure-devops" && value.checks.length > 0)) &&
+              value.provider === "github" &&
               value.observedAt !== undefined &&
               !(yield* Cache.has(checksCache, key))
             ) {

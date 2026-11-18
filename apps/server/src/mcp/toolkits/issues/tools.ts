@@ -240,7 +240,7 @@ export type ListThreadIssuesResult = typeof ListThreadIssuesResult.Type;
 
 const ListIssuesTool = Tool.make("list_issues", {
   description:
-    "List issues in a project's tracker, newest updated first. Pass the returned nextCursors as cursors for the next page.",
+    "List GitHub, GitLab, Linear or MEP ONES issues by project. Pass nextCursors as cursors to continue.",
   parameters: Schema.Struct({
     projectId: Schema.optional(
       ProjectId.annotate({ description: "Defaults to this thread's project." }),
@@ -279,7 +279,7 @@ const ReadIssueTool = Tool.make("read_issue", {
   .annotate(Tool.OpenWorld, true);
 
 const CreateIssueTool = Tool.make("create_issue", {
-  description: "File an issue in a project's tracker.",
+  description: "File a GitHub, GitLab or Linear issue.",
   parameters: Schema.Struct({
     projectId: Schema.optional(
       ProjectId.annotate({ description: "Defaults to this thread's project." }),
