@@ -4,6 +4,8 @@ import { expect, it, vi } from "vite-plus/test";
 import { act, render } from "../../../test/render";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { removeLocalStorageItem } from "../../hooks/useLocalStorage";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { isMacPlatform } from "../../lib/utils";
 import {
   PROMPT_STASH_STORAGE_KEY,
@@ -25,6 +27,7 @@ function Harness({ input }: { input: StashInput }) {
 }
 
 it("keeps the draft when stashing while a pasted image is still compressing", async () => {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   const target = DraftId.make("stash-preparing-image");
   using _draft = {
     [Symbol.dispose]: () => useComposerDraftStore.getState().clearComposerContent(target),

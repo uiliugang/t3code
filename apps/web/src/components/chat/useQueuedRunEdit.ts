@@ -1,7 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { translateUi } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { getClientSettings } from "../../hooks/useSettings";
 import {
   makeQueuedRunEditStore,
   makeQueuedRunsAtom,
@@ -114,9 +112,9 @@ async function submitQueuedRunEdit(input: {
   readonly content: QueuedRunEditContent;
   readonly editQueuedRun: ReturnType<typeof useEditQueuedRunCommand>;
   readonly draftChanged: () => boolean;
+  readonly t: (message: string) => string;
 }): Promise<string | null> {
-  const t = (message: string) => translateUi(getClientSettings().uiLanguage, message);
-  const { environmentId, draftTarget, editing, content } = input;
+  const { environmentId, draftTarget, editing, content, t } = input;
   const editText = content.prompt.trim();
   const newAttachments = [...content.images, ...content.files];
   const uploadFiles = async (files: ReadonlyArray<ComposerFileAttachment>) => {
@@ -422,6 +420,7 @@ export function useQueuedRunEdit(input: {
       content,
       editQueuedRun: editQueuedRunCommand,
       draftChanged,
+      t,
     });
     const changedAfterSave = error === null && draftChanged();
     setThreadError(

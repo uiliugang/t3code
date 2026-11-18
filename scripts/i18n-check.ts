@@ -7,8 +7,6 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { hasUiTranslation } from "../packages/shared/src/uiLocale.ts";
-
 const APPS = ["apps/web", "apps/mobile"];
 const TRANSLATED_SOURCES = ["apps/web/src", "apps/mobile/src"];
 
@@ -18,6 +16,11 @@ const missingFrom = (from: Catalog, catalog: Catalog) =>
   Object.keys(from).filter((key) => !Object.hasOwn(catalog, key));
 
 const root = NodePath.resolve(import.meta.dirname, "..");
+// Computed so the scripts project does not need to list the shared sources in its composite.
+const uiLocaleModule = (await import(
+  new URL("../packages/shared/src/uiLocale.ts", import.meta.url).href
+)) as { readonly hasUiTranslation: (message: string) => boolean };
+const { hasUiTranslation } = uiLocaleModule;
 const problems: string[] = [];
 
 for (const app of APPS) {

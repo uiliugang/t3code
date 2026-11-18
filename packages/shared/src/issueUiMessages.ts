@@ -117,6 +117,7 @@ export const issueUiMessages: Readonly<Record<string, string>> = {
   "The device could not save your filters. Try again.": "设备无法保存筛选条件，请重试。",
   "The device could not save your views. Try again.": "设备无法保存视图，请重试。",
   "The issue could not be updated": "无法更新需求",
+  "Still open": "未关闭",
   "The labels could not be read": "无法读取标签",
   "The people could not be read": "无法读取人员",
   "The people could not be read.": "无法读取人员。",

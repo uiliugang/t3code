@@ -93,6 +93,7 @@ function IssueThreadLinkButton({
   issue: Pick<IssueDetail, "url" | "displayKey" | "title">;
   threadRef: ScopedThreadRef;
 }) {
+  const t = useUiTranslation();
   const thread = useThreadShell(threadRef.environmentId === environmentId ? threadRef : null);
   const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const link = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
@@ -146,7 +147,9 @@ function IssueThreadLinkButton({
           <Link2Icon aria-hidden className="size-3.5" />
         )}
       </TooltipTrigger>
-      <TooltipPopup>{linked ? t("Unlink from this thread") : t("Link to this thread")}</TooltipPopup>
+      <TooltipPopup>
+        {linked ? t("Unlink from this thread") : t("Link to this thread")}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -198,6 +201,7 @@ function IssueLabelPicker({
   allowed: boolean;
   disabledReason: string;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueLabelCandidate>);
@@ -308,6 +312,7 @@ function IssueAssigneePicker({
   allowed: boolean;
   disabledReason: string;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueAssigneeCandidate>);
@@ -410,6 +415,7 @@ function LinkedPullRequestRow({
   scope: string;
   onSelect: (() => void) | null;
 }) {
+  const t = useUiTranslation();
   const body = (
     <>
       <PullRequestStateGlyph state={link.state} isDraft={link.isDraft} />

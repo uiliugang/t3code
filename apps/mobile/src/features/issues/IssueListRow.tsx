@@ -6,6 +6,7 @@ import { RelativeTime } from "../../components/RelativeTime";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ListRowLabel } from "../pull-requests/PullRequestListRow";
 import { PullRequestAvatar } from "../pull-requests/PullRequestPresentation";
 import {
@@ -32,7 +33,7 @@ export const IssueListRow = memo(function IssueListRow(props: {
     : props.sidebar
       ? "text-drawer-foreground-muted"
       : "text-foreground-muted";
-  const status = issueStatus(item.state);
+  const status = issueStatus(item.state, useUiTranslation());
   return (
     <View style={props.sidebar ? THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE : undefined}>
       <Pressable

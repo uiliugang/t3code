@@ -53,9 +53,10 @@ vi.mock(import("../../state/use-orchestration-command"), () => ({
   useOrchestrationCommand: (() => state.update) as never,
 }));
 
-vi.mock(import("../../hooks/useUiTranslation"), () => ({
-  useUiTranslation: () => (message: string) => message,
-}));
+vi.mock(import("../../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 
 vi.mock(import("../ui/toast"), async (original) => {
   const actual = await original();

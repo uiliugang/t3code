@@ -9,9 +9,10 @@ vi.mock(import("~/state/use-atom-command"), () => ({
   },
 }));
 vi.mock(import("~/state/server"), () => ({ serverEnvironment: { updateSettings: {} } as never }));
-vi.mock(import("~/hooks/useUiTranslation"), () => ({
-  useUiTranslation: () => (message: string) => message,
-}));
+vi.mock(import("~/hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 
 import { render } from "../../../test/render";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";

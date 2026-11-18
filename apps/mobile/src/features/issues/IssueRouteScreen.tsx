@@ -103,7 +103,7 @@ function IssueStateControl(props: {
   readonly onMove: (state: string) => void;
 }) {
   const t = useUiTranslation();
-  const status = issueStatus(props.state);
+  const status = issueStatus(props.state, t);
   const moves = props.states;
   const trigger = (
     <Pressable
@@ -126,7 +126,7 @@ function IssueStateControl(props: {
       <Menu
         title={t("Issue state")}
         // The name is the id: unique within a workflow, and a NUL separator would end the native string.
-        actions={moves.map((move) => ({ id: move.name, title: move.name }))}
+        actions={moves.map((move) => ({ id: move.name, title: issueStatus(move, t).label }))}
         onPressAction={({ nativeEvent }) => {
           if (moves.some((move) => move.name === nativeEvent.event))
             props.onMove(nativeEvent.event);

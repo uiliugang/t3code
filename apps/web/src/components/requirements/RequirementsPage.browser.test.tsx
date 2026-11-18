@@ -15,9 +15,10 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 const mocks = vi.hoisted(() => ({ command: vi.fn() }));
 vi.mock(import("~/browser/useOpenLink"), () => ({ useOpenLink: () => vi.fn() }));
-vi.mock(import("~/hooks/useUiTranslation"), () => ({
-  useUiTranslation: () => (message: string) => message,
-}));
+vi.mock(import("~/hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 vi.mock(import("~/state/use-atom-command"), () => ({
   useAtomCommand: () => mocks.command,
 }));
