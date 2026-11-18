@@ -455,26 +455,30 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
     fixture.registry.set(
       issuesAtom,
       AsyncResult.success({
-        groups: [
-          {
-            source: { provider: "github", host: "github.com", scope: "acme/app" },
-            projectIds: ["project"],
-            issues: [
-              {
-                id: "42",
-                url: "https://github.com/acme/app/issues/42",
-                title: "GitHub bug report",
-                state: "open",
-                stateCategory: "todo",
-                type: "Issue",
-                assignees: [],
-                priority: "",
-                updatedAt: "2026-11-16T00:00:00Z",
-              },
-            ],
-            hasMore: false,
-          },
-        ],
+        groups: (
+          [
+            ["github.com", "acme/app", "GitHub bug report"],
+            ["github.com", "acme/other", "Other repository issue"],
+            ["github.example.com", "acme/app", "Other host issue"],
+          ] as const
+        ).map(([host, scope, title]) => ({
+          source: { provider: "github", host, scope },
+          projectIds: ["project"],
+          issues: [
+            {
+              id: "42",
+              url: `https://${host}/${scope}/issues/42`,
+              title,
+              state: "open",
+              stateCategory: "todo",
+              type: "Issue",
+              assignees: [],
+              priority: "",
+              updatedAt: "2026-11-16T00:00:00Z",
+            },
+          ],
+          hasMore: false,
+        })),
         failures: [],
       }),
     );
@@ -507,6 +511,10 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
 
   await screen.getByRole("button", { name: /GitHub bug report/ }).click();
   await expect.element(screen.getByTestId("issue-detail:42")).toBeVisible();
+  expect(screen.container.querySelectorAll('button[aria-current="true"]')).toHaveLength(1);
+  await expect
+    .element(screen.getByRole("button", { name: /GitHub bug report/ }))
+    .toHaveAttribute("aria-current", "true");
 
   const tabList = screen.container.querySelector("[data-right-panel-tab-list]")!;
   expect(tabList).not.toBeNull();

@@ -229,6 +229,7 @@ export function RequirementBoard({
     usesStandalonePanel && isRequirementPanelSurface(selectedRightPanelSurface)
       ? selectedRightPanelSurface
       : null;
+  const panelOpen = rightPanelState.isOpen && panelSurface !== null;
   const narrow = useMediaQuery("max-sm");
   const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
   const { environments } = useEnvironments();
@@ -301,26 +302,41 @@ export function RequirementBoard({
     ),
   );
   const entries = data.entries;
+  const entryForSurface = (surface: RightPanelSurface | null) => {
+    if (!surface || (surface.kind !== "work-item" && surface.kind !== "requirement-issue"))
+      return undefined;
+    const environment = surface.environmentId ?? fallbackEnvironmentId;
+    let match: EnvironmentRequirementEntry | undefined;
+    for (const entry of entries) {
+      if (entry.environmentId !== environment) continue;
+      if (surface.kind === "work-item") {
+        if (entry.kind === "local" && entry.item.id === surface.workItemId) return entry;
+      } else if (
+        entry.kind === "issue" &&
+        entry.projectId === surface.projectId &&
+        entry.provider === surface.provider &&
+        entry.issue.id === surface.issueId &&
+        (surface.host === undefined || entry.host === surface.host) &&
+        (surface.scope === undefined || entry.scope === surface.scope)
+      ) {
+        if (surface.host && surface.scope) return entry;
+        if (match) return undefined;
+        match = entry;
+      }
+    }
+    return match;
+  };
+  const activeEntry = panelOpen ? entryForSurface(panelSurface) : undefined;
   const presenceValue = {
     activeSurface: panelSurface,
     surfaces: rightPanelState.surfaces.filter(isRequirementPanelSurface).map((surface) => {
       if (surface.kind === "pull-request" || surface.title) return surface;
-      const entry = entries.find(
-        (entry) =>
-          entry.environmentId === surface.environmentId &&
-          (surface.kind === "work-item"
-            ? entry.kind === "local" && entry.item.id === surface.workItemId
-            : entry.kind === "issue" &&
-              entry.projectId === surface.projectId &&
-              entry.provider === surface.provider &&
-              entry.scope === surface.scope &&
-              entry.issue.id === surface.issueId),
-      );
+      const entry = entryForSurface(surface);
       return entry ? { ...surface, title: entry.title } : surface;
     }),
   };
   const presence = usePanelPresence(
-    usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null,
+    panelOpen,
     presenceValue,
     panelAnimationsActive,
     rightPanelRef.threadId,
@@ -478,7 +494,6 @@ export function RequirementBoard({
     });
     return true;
   };
-  const panelOpen = usesStandalonePanel && rightPanelState.isOpen && panelSurface !== null;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restore DOM focus after the toggle moves between the list and detail headers
   useLayoutEffect(() => {
     if (refocusToggleWhenOpen.current !== panelOpen) return;
@@ -996,23 +1011,7 @@ export function RequirementBoard({
                           <button
                             type="button"
                             key={entry.key}
-                            aria-current={
-                              panelOpen &&
-                              ((entry.kind === "local" &&
-                                panelSurface?.kind === "work-item" &&
-                                (panelSurface.environmentId ?? fallbackEnvironmentId) ===
-                                  entry.environmentId &&
-                                panelSurface.workItemId === entry.item.id) ||
-                                (entry.kind === "issue" &&
-                                  panelSurface?.kind === "requirement-issue" &&
-                                  (panelSurface.environmentId ?? fallbackEnvironmentId) ===
-                                    entry.environmentId &&
-                                  panelSurface.projectId === entry.projectId &&
-                                  panelSurface.provider === entry.provider &&
-                                  panelSurface.issueId === entry.issue.id))
-                                ? "true"
-                                : undefined
-                            }
+                            aria-current={entry === activeEntry ? "true" : undefined}
                             onClick={() => open(entry)}
                             className={
                               "flex w-full min-w-0 flex-col gap-2 rounded-md px-3 py-3 text-left outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring " +

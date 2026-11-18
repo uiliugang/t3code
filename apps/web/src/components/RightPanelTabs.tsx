@@ -602,10 +602,10 @@ function surfaceTitle(
     case "pull-requests":
       return "Pull requests";
     case "issue":
-      // A git host numbers its issues; a tracker with keys of its own, such as Linear, names them.
-      return /^\d+$/.test(surface.key) ? `#${surface.key}` : surface.key;
-    case "requirement-issue":
-      return `#${surface.issueId}`;
+    case "requirement-issue": {
+      const key = surface.kind === "issue" ? surface.key : surface.issueId;
+      return /^\d+$/.test(key) ? `#${key}` : key;
+    }
     case "work-item":
       return surface.title?.trim() || requirementsTitle;
     case "device":

@@ -4,6 +4,10 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  requirementTrackerLabel,
+  type RequirementTracker,
+} from "@t3tools/client-runtime/work-item";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -103,7 +107,7 @@ export type RightPanelSurface =
       kind: "requirement-issue";
       environmentId?: string;
       projectId: string;
-      provider: "github" | "meituan" | "gitlab" | "linear";
+      provider: RequirementTracker;
       host?: string;
       scope?: string;
       issueId: string;
@@ -746,7 +750,8 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     if (surface.kind === "requirement-issue") {
                       if (
                         typeof surface.projectId !== "string" ||
-                        (surface.provider !== "github" && surface.provider !== "meituan") ||
+                        typeof surface.provider !== "string" ||
+                        !Object.hasOwn(requirementTrackerLabel, surface.provider) ||
                         typeof surface.issueId !== "string"
                       ) {
                         return [];
