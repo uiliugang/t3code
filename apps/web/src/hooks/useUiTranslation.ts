@@ -1,4 +1,5 @@
 import { translateUi } from "@t3tools/shared/uiLocale";
+
 import { useClientSettings } from "./useSettings";
 
 export function useUiTranslation() {

@@ -72,6 +72,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "~/c
 import { SidebarInset } from "~/components/ui/sidebar";
 import { isElectron } from "~/env";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
@@ -137,7 +138,11 @@ function getShortcutContext() {
   };
 }
 
-function hostOptionsFor(trackers: ReadonlyArray<IssueTrackerSummary>, chosen: string | undefined) {
+function hostOptionsFor(
+  trackers: ReadonlyArray<IssueTrackerSummary>,
+  chosen: string | undefined,
+  t: ReturnType<typeof useUiTranslation>,
+) {
   const hosts = new Map<string, IssueTrackerSummary>();
   const ordered = [...trackers].sort((a, b) =>
     issueTrackerKey(a).localeCompare(issueTrackerKey(b)),
@@ -148,7 +153,7 @@ function hostOptionsFor(trackers: ReadonlyArray<IssueTrackerSummary>, chosen: st
       hosts.set(tracker.host, tracker);
   }
   return [
-    { value: "", label: "All", Icon: Plug2Icon },
+    { value: "", label: t("All"), Icon: Plug2Icon },
     // A remembered host no project is on any more stays listed, so the filter can be taken off.
     ...(chosen !== undefined && !hosts.has(chosen)
       ? [{ value: chosen, label: chosen, Icon: Plug2Icon }]
@@ -160,12 +165,13 @@ function hostOptionsFor(trackers: ReadonlyArray<IssueTrackerSummary>, chosen: st
           ? tracker.host
           : `${issueTrackerPresentation(tracker.tracker).providerName} (${tracker.host})`,
       Icon: issueTrackerPresentation(tracker.tracker).Icon,
-      ...(tracker.configured ? {} : { unavailable: tracker.detail ?? "Unavailable" }),
+      ...(tracker.configured ? {} : { unavailable: tracker.detail ?? t("Unavailable") }),
     })),
   ];
 }
 
 export function IssuesPage() {
+  const t = useUiTranslation();
   const navigate = useNavigate({ from: "/issues" });
   const search = useSearch({ from: "/_chat/issues" });
   const { environments } = useEnvironments();
@@ -251,6 +257,7 @@ export function IssuesPage() {
   const hostOptions = hostOptionsFor(
     [...held.values()].flatMap((page) => page.answer.trackers),
     search.host,
+    t,
   );
 
   const updateSearch = (patch: { [Key in keyof IssuesSearch]?: IssuesSearch[Key] | undefined }) => {
@@ -411,8 +418,8 @@ export function IssuesPage() {
 
   const listBody: ReactNode = !issuesSupported ? (
     <PullRequestsUnavailableState
-      title="Issues unavailable"
-      error="Update this environment's T3 Code server to browse issues."
+      title={t("Issues unavailable")}
+      error={t("Update this environment's T3 Code server to browse issues.")}
     />
   ) : noneAnswered && list.isPending ? (
     <PullRequestListGhost />
@@ -428,17 +435,21 @@ export function IssuesPage() {
         <IssueGlyph.issue />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle>No trackers to read</EmptyTitle>
-        <EmptyDescription>Add a project whose remote is on a supported tracker.</EmptyDescription>
+        <EmptyTitle>{t("No trackers to read")}</EmptyTitle>
+        <EmptyDescription>
+          {t("Add a project whose remote is on a supported tracker.")}
+        </EmptyDescription>
       </EmptyHeader>
     </Empty>
   ) : (
     <div className="flex flex-col gap-6">
       {list.error ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-surface px-3 py-2 text-xs">
-          <span>{list.error} Showing the issues that loaded.</span>
+          <span>
+            {list.error} {t("Showing the issues that loaded.")}
+          </span>
           <Button size="xs" variant="outline" onClick={list.refresh}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       ) : null}
@@ -454,13 +465,12 @@ export function IssuesPage() {
                 <span className="font-normal">· {group.tracker.host}</span>
               ) : null}
               <span className="font-normal">
-                · {group.tracker.projectCount}{" "}
-                {group.tracker.projectCount === 1 ? "project" : "projects"}
+                · {t("{count} projects", { count: group.tracker.projectCount })}
               </span>
             </h2>
             {!group.tracker.configured ? (
               <p className="px-3 text-sm text-muted-foreground">
-                {group.tracker.detail ?? "This tracker cannot be read right now."}
+                {group.tracker.detail ?? t("This tracker cannot be read right now.")}
               </p>
             ) : null}
             {group.errors.map((error) => (
@@ -473,7 +483,7 @@ export function IssuesPage() {
             ))}
             {group.tracker.configured && group.rows.length === 0 && group.errors.length === 0 ? (
               <p className="px-3 text-sm text-muted-foreground">
-                {debouncedQuery ? "Nothing matches that." : "No issues under these filters."}
+                {debouncedQuery ? t("Nothing matches that.") : t("No issues under these filters.")}
               </p>
             ) : null}
             {group.rows.map((row) => {
@@ -515,10 +525,10 @@ export function IssuesPage() {
                     onClick={() => void loadMore(environmentId, group.tracker.host)}
                   >
                     {loadingMore === `${environmentId} ${group.tracker.host}`
-                      ? "Loading…"
+                      ? t("Loading…")
                       : moreFailure === null
-                        ? "Load more"
-                        : "Retry"}
+                        ? t("Load more")
+                        : t("Retry")}
                   </Button>
                 </Fragment>
               );
@@ -538,9 +548,9 @@ export function IssuesPage() {
             reserveNativeControls={!rightPanelState.isOpen}
             className="relative bg-background"
           >
-            <WorkspaceBreadcrumb ariaLabel="Issues breadcrumb">
+            <WorkspaceBreadcrumb ariaLabel={t("Issues breadcrumb")}>
               <WorkspaceBreadcrumbItem current>
-                <h1 className="truncate">Issues</h1>
+                <h1 className="truncate">{t("Issues")}</h1>
               </WorkspaceBreadcrumbItem>
             </WorkspaceBreadcrumb>
             <div className="min-w-0 flex-1" />
@@ -561,7 +571,7 @@ export function IssuesPage() {
                 rightPanelAvailable={panelSurface !== null}
                 rightPanelOpen={rightPanelState.isOpen}
                 rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-                rightPanelUnavailableLabel="Select an issue first"
+                rightPanelUnavailableLabel={t("Select an issue first")}
                 onToggleTerminal={() => undefined}
                 onToggleRightPanel={toggleRightPanel}
               />
@@ -574,8 +584,8 @@ export function IssuesPage() {
                 <div className="min-w-0 basis-full @lg/issue-list:min-w-48 @lg/issue-list:basis-0 @lg/issue-list:flex-1">
                   <PullRequestSearchInput
                     value={search.q ?? ""}
-                    label="Search issues"
-                    placeholder="Search issues"
+                    label={t("Search issues")}
+                    placeholder={t("Search issues")}
                     busy={
                       (search.q ?? "") !== debouncedQuery ||
                       (debouncedQuery.length > 0 && list.isPending)
@@ -585,12 +595,15 @@ export function IssuesPage() {
                   />
                 </div>
                 <PullRequestCompactFilterMenu
-                  label="Sort issues"
+                  label={t("Sort issues")}
                   triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
-                  triggerLabel="Sort"
+                  triggerLabel={t("Sort")}
                   outlined
                   value={search.order ?? "updated"}
-                  options={SORT_OPTIONS}
+                  options={SORT_OPTIONS.map((option) => ({
+                    ...option,
+                    label: t(option.label),
+                  }))}
                   onChange={(order) =>
                     updateSearch({ order: order === "created" ? "created" : undefined })
                   }
@@ -626,7 +639,7 @@ export function IssuesPage() {
                 />
                 {hostOptions.length > 1 ? (
                   <FilterMenu
-                    label="Filter by tracker"
+                    label={t("Filter by tracker")}
                     value={search.host ?? ""}
                     options={hostOptions}
                     onChange={(host) => updateSearch({ host: host || undefined })}
@@ -635,7 +648,7 @@ export function IssuesPage() {
                 <Button
                   size="icon"
                   variant="outline"
-                  aria-label="Refresh issues"
+                  aria-label={t("Refresh issues")}
                   onClick={list.refresh}
                   disabled={list.isPending}
                 >
@@ -763,13 +776,17 @@ function FilterMenu<Value extends string>({
   options: ReadonlyArray<PullRequestFilterOption<Value>>;
   onChange: (value: Value) => void;
 }) {
+  const t = useUiTranslation();
   const current = options.find((option) => option.value === value) ?? options[0];
   if (!current) return null;
   return (
     <Menu>
-      <MenuTrigger aria-label={`${label}: ${current.label}`} render={<Button variant="outline" />}>
+      <MenuTrigger
+        aria-label={t("{label}: {value}", { label, value: current.label })}
+        render={<Button variant="outline" />}
+      >
         <PullRequestFilterOptionIcon option={current} />
-        <span className="truncate">{current.label}</span>
+        <span className="truncate">{t(current.label)}</span>
       </MenuTrigger>
       <MenuPopup align="start">
         <MenuRadioGroup value={value} onValueChange={(next) => onChange(next as Value)}>
@@ -781,7 +798,7 @@ function FilterMenu<Value extends string>({
             >
               <span className="flex min-w-0 items-center gap-2">
                 <PullRequestFilterOptionIcon option={option} />
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <span className="min-w-0 flex-1 truncate">{t(option.label)}</span>
               </span>
             </MenuRadioItem>
           ))}

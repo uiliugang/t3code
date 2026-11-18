@@ -1,6 +1,9 @@
 import type { ProviderDriverKind, ProviderOptionDescriptor } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { ZapIcon } from "lucide-react";
+import { getClientSettings } from "../../hooks/useSettings";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { UltrafastIcon } from "../Icons";
 import { cn } from "~/lib/utils";
 import { ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
@@ -8,9 +11,11 @@ import { ComposerControlIcon, type ComposerControlSize } from "./ComposerControl
 export function getTraitsSpeedDisplay(
   descriptor: ProviderOptionDescriptor,
 ): { label: string; speedIcon: "fast" | "ultrafast" | null } | null {
+  const language = getClientSettings().uiLanguage;
+  const t = translateUi.bind(null, language);
   if (descriptor.id === "fastMode" && descriptor.type === "boolean") {
     return {
-      label: descriptor.currentValue === true ? "Fast" : "Normal",
+      label: descriptor.currentValue === true ? t("Fast") : t("Normal"),
       speedIcon: descriptor.currentValue === true ? "fast" : null,
     };
   }
@@ -26,7 +31,7 @@ export function getTraitsSpeedDisplay(
     (ultrafastTier && currentValue === ultrafastTier.id)
   ) {
     return {
-      label: descriptor.options.find(({ id }) => id === currentValue)?.label ?? "Normal",
+      label: descriptor.options.find(({ id }) => id === currentValue)?.label ?? t("Normal"),
       speedIcon:
         ultrafastTier && currentValue === ultrafastTier.id
           ? "ultrafast"
@@ -47,6 +52,7 @@ export function TraitsSpeedIcon({
   speedIcon: "fast" | "ultrafast";
   size?: ComposerControlSize;
 }) {
+  const t = useUiTranslation();
   return (
     <>
       <ComposerControlIcon
@@ -62,7 +68,7 @@ export function TraitsSpeedIcon({
         )}
       />
       <span className="sr-only">
-        {speedIcon === "ultrafast" ? "Ultrafast mode on" : "Fast mode on"}
+        {t(speedIcon === "ultrafast" ? "Ultrafast mode on" : "Fast mode on")}
       </span>
     </>
   );

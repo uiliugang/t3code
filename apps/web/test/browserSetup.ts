@@ -1,3 +1,4 @@
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { beforeEach } from "vite-plus/test";
 import { commands } from "vite-plus/test/browser";
 
@@ -17,6 +18,9 @@ declare module "vite-plus/test/browser" {
 beforeEach(async () => {
   await commands.resetPointer();
 });
+
+// Browser tests assert the English source text; production defaults to zh-CN.
+Object.assign(DEFAULT_CLIENT_SETTINGS, { uiLanguage: "en" });
 
 // The app initializes GT at startup; components using its hooks need the same here.
 initializeI18n(() => {});

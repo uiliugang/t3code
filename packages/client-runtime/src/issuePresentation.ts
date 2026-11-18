@@ -1,33 +1,56 @@
 import type { IssueDetail, IssueEvent } from "@t3tools/contracts";
 
+type Translate = (message: string, values?: Readonly<Record<string, string | number>>) => string;
+
+const identityTranslate: Translate = (message, values) =>
+  values
+    ? message.replace(/\{(\w+)\}/g, (placeholder, key: string) =>
+        Object.hasOwn(values, key) ? String(values[key]) : placeholder,
+      )
+    : message;
+
 /** "completed" → "Completed"; a reason the tracker spells with a dash reads as words. */
 function issueCloseReasonLabel(reason: string): string {
   const words = reason.replace(/[-_]+/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export function issueEventSentence(event: IssueEvent): string {
+export function issueEventSentence(event: IssueEvent, t: Translate = identityTranslate): string {
   switch (event.kind) {
     case "closed":
       return event.detail
-        ? `closed this as ${issueCloseReasonLabel(event.detail).toLowerCase()}`
-        : "closed this";
+        ? t("closed this as {reason}", {
+            reason: t(issueCloseReasonLabel(event.detail)),
+          })
+        : t("closed this");
     case "reopened":
-      return "reopened this";
+      return t("reopened this");
     case "labeled":
-      return event.detail ? `added the ${event.detail} label` : "added a label";
+      return event.detail
+        ? t("added the {label} label", { label: event.detail })
+        : t("added a label");
     case "unlabeled":
-      return event.detail ? `removed the ${event.detail} label` : "removed a label";
+      return event.detail
+        ? t("removed the {label} label", { label: event.detail })
+        : t("removed a label");
     case "assigned":
-      return event.detail ? `assigned ${event.detail}` : "assigned someone";
+      return event.detail ? t("assigned {name}", { name: event.detail }) : t("assigned someone");
     case "unassigned":
-      return event.detail ? `unassigned ${event.detail}` : "unassigned someone";
+      return event.detail
+        ? t("unassigned {name}", { name: event.detail })
+        : t("unassigned someone");
     case "renamed":
-      return event.detail ? `renamed this to “${event.detail}”` : "renamed this";
+      return event.detail
+        ? t("renamed this to “{title}”", { title: event.detail })
+        : t("renamed this");
     case "referenced":
-      return event.detail ? `referenced this from ${event.detail}` : "referenced this";
+      return event.detail
+        ? t("referenced this from {source}", { source: event.detail })
+        : t("referenced this");
     case "state-changed":
-      return event.detail ? `moved this to ${event.detail}` : "changed the state";
+      return event.detail
+        ? t("moved this to {state}", { state: event.detail })
+        : t("changed the state");
   }
 }
 

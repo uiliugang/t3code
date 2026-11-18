@@ -2,7 +2,9 @@ import { useAtomValue } from "@effect/atom-react";
 import { type AtomCommandSuccess, runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { sentMessageFromToolItem } from "@t3tools/shared/toolOutput";
 import { Atom, type AtomRegistry } from "effect/reactivity";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import type { TimelineEntry } from "../../session-logic";
+import { getClientSettings } from "../../hooks/useSettings";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { toastManager } from "../ui/toast";
 import type { AssistantCitationRequest } from "./AssistantCitationSource";
@@ -220,10 +222,11 @@ const citedHistoryAtom = Atom.family(
       }).then((outcome) => {
         if (outcome._tag === "aborted") return;
         if (outcome._tag === "failed") {
+          const uiLanguage = getClientSettings().uiLanguage;
           toastManager.add({
             type: "warning",
-            title: outcome.title,
-            description: outcome.description,
+            title: translateUi(uiLanguage, outcome.title),
+            description: translateUi(uiLanguage, outcome.description),
           });
         }
         get.setSelf({ _tag: outcome._tag });

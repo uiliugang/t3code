@@ -2,6 +2,7 @@ import { useLoadBalancedEnvironment } from "../../hooks/useLoadBalancedEnvironme
 import { useLogicalProjectEnvironments } from "../../hooks/useLogicalProjectEnvironments";
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   type EnvironmentId,
   type ProviderDriverKind,
@@ -80,6 +81,7 @@ function carryFanoutSelections(
  * target machine prepares one, and the playbook link follows.
  */
 export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) {
+  const t = useUiTranslation();
   const {
     draftId,
     draftThread,
@@ -180,11 +182,14 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
       if (!target?.projectId) {
         toastManager.add({
           type: "warning",
-          ...loadBalancingSendWarning({
-            pending: false,
-            threadContexts: referencedThreadContexts,
-            candidateEnvironmentIds: loadBalancingCandidates,
-          }),
+          ...loadBalancingSendWarning(
+            {
+              pending: false,
+              threadContexts: referencedThreadContexts,
+              candidateEnvironmentIds: loadBalancingCandidates,
+            },
+            t,
+          ),
         });
         return false;
       }
@@ -232,9 +237,10 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
       toastManager.add({
         type: "warning",
         id: "load-balancing-attachments",
-        title: "Keep attachments on this machine",
-        description:
+        title: t("Keep attachments on this machine"),
+        description: t(
           "Remove attachments before choosing automatic routing, then attach them on the selected machine.",
+        ),
       });
       return;
     }
@@ -366,8 +372,8 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not switch machine",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            title: t("Could not switch machine"),
+            description: error instanceof Error ? error.message : t("An error occurred."),
           }),
         );
       }

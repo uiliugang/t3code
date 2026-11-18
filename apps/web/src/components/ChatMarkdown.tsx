@@ -1,3 +1,4 @@
+// oxlint-disable t3code/require-ui-translation -- callout labels live in a module table and render through t(alert.label)
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { clientHostEnvironmentAtom } from "../state/clientHostEnvironment";
 import { buildFileLinkParentSuffixByPath, fileLinkLabel } from "@t3tools/shared/fileLinks";
@@ -11,6 +12,7 @@ import {
 import { taskListMarkerOffset } from "@t3tools/shared/markdownTaskList";
 import { isHostPath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import {
   AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
@@ -297,12 +299,13 @@ function CodexArtifactTemplateCard(props: {
   readonly onUse?: ((template: CodexArtifactTemplate) => void) | undefined;
 }) {
   const Icon = ARTIFACT_TEMPLATE_ICON_BY_KIND[props.template.artifactKind];
+  const t = useUiTranslation();
   const presentationLabel = codexArtifactTemplatePresentationLabel(props.template.artifactKind);
 
   return (
     <div
       role="group"
-      aria-label={`${props.template.displayName} template`}
+      aria-label={t("{name} template", { name: props.template.displayName })}
       dir={textDirection(props.template.displayName)}
       data-chat-markdown-artifact-template
       className="my-[0.65rem] flex w-full min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-card/60 px-3 py-2.5 text-foreground shadow-xs"
@@ -330,7 +333,7 @@ function CodexArtifactTemplateCard(props: {
           className="shrink-0"
           onClick={() => props.onUse?.(props.template)}
         >
-          Use template
+          {t("Use template")}
         </Button>
       ) : null}
     </div>
@@ -529,6 +532,7 @@ function useChatMarkdownState({
   sourceControlMedia = false,
   sourceControlMediaRepository,
 }: ChatMarkdownProps) {
+  const t = useUiTranslation();
   const resolvedTheme = useRenderedAppearance();
   const markdownRef = useRef<HTMLElement>(null);
   const mediaRequestId = useRef(0);
@@ -645,7 +649,7 @@ function useChatMarkdownState({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Media unavailable",
+            title: t("Media unavailable"),
             description,
           }),
         );
@@ -753,7 +757,7 @@ function useChatMarkdownState({
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Unable to open link in browser",
+              title: t("Unable to open link in browser"),
               description: error.message,
             }),
           );
@@ -1079,6 +1083,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   blockquote: function MarkdownBlockquote({ node: _node, children, ...props }) {
+    const t = useUiTranslation();
     const alertKind = String((props as Record<string, unknown>)["data-alert"] ?? "");
     const alert = GITHUB_ALERT_PRESENTATIONS[alertKind];
     if (!alert) {
@@ -1097,7 +1102,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           className={cn("flex items-center gap-1.5 font-medium", alert.titleClassName)}
         >
           <alert.Icon aria-hidden className="size-3.5 shrink-0" />
-          {alert.label}
+          {t(alert.label)}
         </p>
         {children}
       </div>
@@ -1124,6 +1129,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   input: function MarkdownInput({ node: _node, type, checked, disabled: _disabled, ...props }) {
+    const t = useUiTranslation();
     const { onTaskListChange } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
     if (type !== "checkbox" || !onTaskListChange) {
@@ -1142,7 +1148,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         {...props}
         type="checkbox"
         name="markdown-task"
-        aria-label="Toggle task"
+        aria-label={t("Toggle task")}
         checked={checked === true}
         onChange={(event) => {
           const listItemStart = Number(event.currentTarget.closest("li")?.dataset.listItemOffset);
@@ -1155,6 +1161,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   a: function MarkdownAnchor({ node, href, children, title: _title, ...props }) {
+    const t = useUiTranslation();
     const {
       canOperateHost,
       canOperatePreview,
@@ -1337,6 +1344,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
                   ? undefined
                   : "link-to-thread";
             void showExternalLinkContextMenu({
+              t,
               href,
               canOpenInPreview,
               threadLinkAction,
@@ -1365,9 +1373,10 @@ const CHAT_MARKDOWN_COMPONENTS = {
                       type: "error",
                       title:
                         operation === "link-pull-request-to-thread"
-                          ? "Unable to link pull request"
-                          : "Unable to unlink pull request",
-                      description: cause instanceof Error ? cause.message : "The request failed.",
+                          ? t("Unable to link pull request")
+                          : t("Unable to unlink pull request"),
+                      description:
+                        cause instanceof Error ? cause.message : t("The request failed."),
                     }),
                   );
                 }

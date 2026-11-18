@@ -10,6 +10,7 @@ import { getProviderOptionCurrentLabel } from "@t3tools/shared/model";
 import { CheckIcon, ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, use, useRef, useState } from "react";
 
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { cn } from "~/lib/utils";
 import {
   Menu,
@@ -191,6 +192,7 @@ function ColumnRow(props: {
   disabled?: boolean;
   onPick: () => void;
 }) {
+  const t = useUiTranslation();
   const rowProps = {
     type: "button",
     role: "radio",
@@ -209,11 +211,11 @@ function ColumnRow(props: {
       <span className="min-w-0 flex-1 truncate">{props.label}</span>
       {props.selected ? (
         <>
-          {props.isDefault ? <span className="sr-only">Default</span> : null}
+          {props.isDefault ? <span className="sr-only">{t("Default")}</span> : null}
           <CheckIcon aria-hidden="true" className="size-3.5" />
         </>
       ) : props.isDefault ? (
-        <span className="text-muted-foreground/70 text-xs">Default</span>
+        <span className="text-muted-foreground/70 text-xs">{t("Default")}</span>
       ) : null}
     </>
   );
@@ -300,6 +302,7 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
 type TraitsSelection = ReturnType<typeof useTraitsSelection>;
 
 function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; locked: boolean }) {
+  const t = useUiTranslation();
   const { control, traits } = props;
   const { descriptor } = control;
   if (control.kind === "boolean") {
@@ -308,7 +311,7 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
         {([true, false] as const).map((value) => (
           <ColumnRow
             key={String(value)}
-            label={value ? "On" : "Off"}
+            label={t(value ? "On" : "Off")}
             selected={(control.descriptor.currentValue === true) === value}
             tabStop={(control.descriptor.currentValue === true) === value}
             onPick={() => traits.changeBoolean(descriptor.id, value)}
@@ -367,6 +370,7 @@ function OptionMenuRow(props: {
   /** Holds the column's tab stop when the model has no levels. */
   tabStop: boolean;
 }) {
+  const t = useUiTranslation();
   const { descriptor, traits } = props;
   const [open, setOpen] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -448,7 +452,7 @@ function OptionMenuRow(props: {
                   ) : null}
                 </span>
                 {choice.isDefault ? (
-                  <span className="text-muted-foreground/70 text-xs">Default</span>
+                  <span className="text-muted-foreground/70 text-xs">{t("Default")}</span>
                 ) : null}
                 <MenuRadioItemIndicator />
               </span>
@@ -484,8 +488,11 @@ function OptionSwitchRow(props: {
 }
 
 function NoEffortRow() {
+  const t = useUiTranslation();
   return (
-    <div className="flex h-8 items-center px-2 text-muted-foreground text-sm">No effort levels</div>
+    <div className="flex h-8 items-center px-2 text-muted-foreground text-sm">
+      {t("No effort levels")}
+    </div>
   );
 }
 
@@ -557,6 +564,7 @@ function SpeedSegment(props: {
 }
 
 function SpeedControl(props: { traits: TraitsSelectionInput }) {
+  const t = useUiTranslation();
   const traits = useTraitsSelection(props.traits);
   const { speedSelect, fastToggle } = splitSpeed(
     traits.selectDescriptors,
@@ -584,7 +592,7 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
               <SpeedSegment
                 key={String(value)}
                 checked={(fastToggle.currentValue === true) === value}
-                label={value ? "Fast" : "Standard"}
+                label={t(value ? "Fast" : "Standard")}
                 onPick={() => traits.changeBoolean(fastToggle.id, value)}
               />
             ))
@@ -620,6 +628,7 @@ function PermissionsMenu(props: {
   options: ReadonlyArray<RuntimeModeOption>;
   onChange: (mode: RuntimeMode) => void;
 }) {
+  const t = useUiTranslation();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const current = props.options.find((option) => option.mode === props.runtimeMode);
   if (!current) return null;
@@ -636,13 +645,13 @@ function PermissionsMenu(props: {
             ref={triggerRef}
             type="button"
             data-composer-permissions-trigger
-            aria-label={`Permissions: ${current.label}`}
+            aria-label={t("Permissions: {name}", { name: t(current.label) })}
             className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted-foreground text-xs outline-none hover:bg-foreground/[0.09] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/[0.09] data-popup-open:text-foreground"
           />
         }
       >
         <CurrentIcon aria-hidden="true" className="size-3.5" />
-        {current.label}
+        {t(current.label)}
         <ChevronUpIcon aria-hidden="true" className="size-3" />
       </MenuTrigger>
       <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>

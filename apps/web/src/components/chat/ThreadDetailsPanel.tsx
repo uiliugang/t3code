@@ -259,7 +259,7 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
               {show.environment || show.openIn || show.scripts ? (
                 <ThreadDetailsSection
                   headingId="thread-details-workspace-heading"
-                  title="Workspace"
+                  title={t("Workspace")}
                   separated={false}
                   showHeading={false}
                 >
@@ -379,7 +379,7 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
               ) : props.gitCwd && (show.branch || show.pullRequests || show.git) ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
-                  title="Version Control"
+                  title={t("Version Control")}
                   showHeading={false}
                   separated={density === "full"}
                 >

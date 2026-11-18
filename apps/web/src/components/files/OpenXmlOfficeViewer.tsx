@@ -1,12 +1,13 @@
 import { useStableCallback } from "~/hooks/useStableCallback";
 import type { OfficePreviewKind } from "@t3tools/shared/filePreview";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useState } from "react";
 import {
   FileSurfaceLoading,
   FileSurfaceNotice,
   FILE_SURFACE_SUBHEADER_CLASS,
 } from "./fileSurfaceChrome";
 import { OFFICE_PREVIEW_MAX_BYTES, type OfficeWorkerResult } from "./officePreviewProtocol";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 const WordDocument = lazy(() => import("./office/WordDocument"));
 const Spreadsheet = lazy(() => import("./office/Spreadsheet"));
 const Presentation = lazy(() => import("./office/Presentation"));
@@ -39,18 +40,20 @@ export default function OfficeViewer(props: {
   readonly kind: Extract<OfficePreviewKind, "docx" | "xlsx" | "pptx">;
   readonly sizeBytes?: number;
 }) {
+  const t = useUiTranslation();
+  const translate = useEffectEvent(t);
   const [error, setError] = useState<string | null>(null);
   const [prepared, setPrepared] = useState<Extract<OfficeWorkerResult, { bytes: ArrayBuffer }>>();
   const [details, setDetails] = useState("");
   const fail = useStableCallback((cause: unknown) =>
-    setError(cause instanceof Error ? cause.message : "Could not render this Office document."),
+    setError(cause instanceof Error ? cause.message : t("Could not render this Office document.")),
   );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the Open XML fetch, preparation worker, and timeout for this source and release them on cleanup.
   useEffect(() => {
     if ((props.sizeBytes ?? 0) > OFFICE_PREVIEW_MAX_BYTES) {
       // Metadata bounds are checked before fetching or starting an engine.
       // oxlint-disable-next-line react/set-state-in-effect
-      setError("Preview limited to files under 50 MB.");
+      setError(translate("Preview limited to files under 50 MB."));
       return;
     }
     const controller = new AbortController();
@@ -63,12 +66,17 @@ export default function OfficeViewer(props: {
       worker.terminate();
     };
     const timer = setTimeout(
-      () => failure(new Error("This document took too long to preview. Open it in another app.")),
+      () =>
+        failure(
+          new Error(translate("This document took too long to preview. Open it in another app.")),
+        ),
       30000,
     );
-    worker.addEventListener("error", () => failure(new Error("Could not load the Office viewer.")));
+    worker.addEventListener("error", () =>
+      failure(new Error(translate("Could not load the Office viewer."))),
+    );
     worker.addEventListener("messageerror", () =>
-      failure(new Error("Could not read the Office viewer response.")),
+      failure(new Error(translate("Could not read the Office viewer response."))),
     );
     worker.addEventListener("message", (event: MessageEvent<OfficeWorkerResult>) => {
       if (controller.signal.aborted) return;
@@ -97,9 +105,9 @@ export default function OfficeViewer(props: {
         role="alert"
         className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center"
       >
-        <p className="text-sm font-medium">No preview for this file</p>
+        <p className="text-sm font-medium">{t("No preview for this file")}</p>
         <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-          {error} Save it or open it in another app.
+          {error} {t("Save it or open it in another app.")}
         </p>
       </div>
     );
@@ -111,13 +119,13 @@ export default function OfficeViewer(props: {
         <div className={FILE_SURFACE_SUBHEADER_CLASS}>
           <span className="text-xs text-muted-foreground" aria-live="polite">
             {details}
-            {props.kind !== "xlsx" ? " · Fit to width" : ""}
+            {props.kind !== "xlsx" ? ` · ${t("Fit to width")}` : ""}
           </span>
         </div>
       ) : null}
       {prepared.truncated ? (
         <FileSurfaceNotice>
-          Preview limited. Save it or open it in another app to read the full document.
+          {t("Preview limited. Save it or open it in another app to read the full document.")}
         </FileSurfaceNotice>
       ) : null}
       <Suspense fallback={<FileSurfaceLoading />}>

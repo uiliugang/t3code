@@ -227,7 +227,9 @@ function ModelPickerProviderNotices({
                   onOpenProviderSetup?.(entry.instanceId);
                 }}
               >
-                {setupEntries.length > 1 ? `Set up ${entry.displayName}` : t("Open provider setup")}
+                {setupEntries.length > 1
+                  ? t("Set up {name}", { name: entry.displayName })
+                  : t("Open provider setup")}
               </InlineButton>
             </div>
           ))}

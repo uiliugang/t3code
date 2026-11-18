@@ -3,7 +3,12 @@ import { expect, it, vi } from "vite-plus/test";
 import { act, render } from "../../../test/render";
 import "../../index.css";
 
-import { ensureClientSettingsHydrated, persistClientSettingsPatch } from "../../hooks/useSettings";
+import {
+  ensureClientSettingsHydrated,
+  getClientSettings,
+  persistClientSettingsPatch,
+  __setClientSettingsForTests,
+} from "../../hooks/useSettings";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 
 const setWordWrap = (wordWrap: boolean) =>
@@ -11,6 +16,7 @@ const setWordWrap = (wordWrap: boolean) =>
 
 it("follows a changed word wrap default while mounted", async () => {
   await ensureClientSettingsHydrated();
+  __setClientSettingsForTests({ ...getClientSettings(), uiLanguage: "en" });
   await setWordWrap(false);
   await using screen = await render(
     <MarkdownCodeBlock
@@ -36,6 +42,7 @@ it("follows a changed word wrap default while mounted", async () => {
 
 it("copies a fenced command without the fence's closing newline", async () => {
   await ensureClientSettingsHydrated();
+  __setClientSettingsForTests({ ...getClientSettings(), uiLanguage: "en" });
   await using screen = await render(
     <MarkdownCodeBlock
       code={"sudo pacman -S patchelf\n"}

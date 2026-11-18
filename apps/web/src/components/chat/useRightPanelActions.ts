@@ -5,6 +5,7 @@ import type { ThreadPreviewState } from "../../previewStateStore";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { type ScopedThreadRef, type RunId } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useEffect } from "react";
@@ -93,6 +94,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     activeProjectCwd,
     onDiffPanelOpen,
   } = input;
+  const t = useUiTranslation();
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const onToggleDiff = () => {
@@ -120,7 +122,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Unable to open browser",
+            title: t("Unable to open browser"),
             description: error.message,
           }),
         );
@@ -270,8 +272,8 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy path",
-          description: "Clipboard API unavailable.",
+          title: t("Failed to copy path"),
+          description: t("Clipboard API unavailable."),
         }),
       );
       return;
@@ -285,8 +287,8 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy path",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: t("Failed to copy path"),
+          description: error instanceof Error ? error.message : t("An error occurred."),
         }),
       );
     });

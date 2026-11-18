@@ -232,7 +232,7 @@ export function SourceControlAppSignInSettings({
             <Button
               size="icon-xs"
               variant="ghost"
-              aria-label={t("Copy code")}
+              aria-label={t("Copy verification code")}
               onClick={() => copyToClipboard(waiting.userCode, undefined)}
             >
               {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}

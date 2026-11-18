@@ -17,6 +17,7 @@ import { memo, type ReactNode, Suspense, use } from "react";
 import { cn } from "../../lib/utils";
 import { getSyntaxHighlighterPromise } from "../../lib/syntaxHighlighting";
 import { useTurnItemDetail } from "../../state/queries";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { Button } from "../ui/button";
 import ChatMarkdown from "../ChatMarkdown";
@@ -155,14 +156,17 @@ function ToolOutputImages(props: ToolOutputState) {
 }
 
 function ToolOutput(props: ToolOutputState) {
+  const t = useUiTranslation();
   return props.output ? (
     <StructuredValue value={props.output} highlightJson />
   ) : props.pending ? (
-    <div className="text-muted-foreground italic">Loading output…</div>
+    <div className="text-muted-foreground italic">{t("Loading output…")}</div>
   ) : props.error ? (
-    <div className="text-destructive">Couldn&apos;t load output: {props.error}</div>
+    <div className="text-destructive">
+      {t("Couldn't load output: {error}", { error: props.error })}
+    </div>
   ) : props.empty && props.images.length === 0 ? (
-    <div className="text-muted-foreground italic">No output.</div>
+    <div className="text-muted-foreground italic">{t("No output.")}</div>
   ) : null;
 }
 
@@ -193,6 +197,7 @@ function ToolCallBody(
     readonly outputSlot?: ReactNode;
   },
 ) {
+  const t = useUiTranslation();
   const call = toolCallLines({ command: props.command, args: props.args });
   return (
     <div className={cn("space-y-1.5", monoClassName)}>
@@ -219,13 +224,14 @@ function ToolCallBody(
       {call.argsText ? <StructuredValue value={call.argsText} highlightJson /> : null}
       {props.outputSlot ?? <ToolOutput {...props} />}
       {props.exitCode !== undefined && props.exitCode !== 0 ? (
-        <div className="text-destructive">exit {props.exitCode}</div>
+        <div className="text-destructive">{t("exit {code}", { code: props.exitCode })}</div>
       ) : null}
     </div>
   );
 }
 
 export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspectorProps) {
+  const t = useUiTranslation();
   // Command rows stream their output, including the final output, from the server.
   const environmentStreamsOutput = useCommandOutputStreaming(props.environmentId);
   const streamsOutput =
@@ -300,7 +306,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
                   })
                 }
               >
-                Open diff
+                {t("Open diff")}
               </Button>
             ) : null}
           </div>

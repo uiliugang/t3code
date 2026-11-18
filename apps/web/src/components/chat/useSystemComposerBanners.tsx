@@ -33,6 +33,7 @@ import {
   resolveServerSelfUpdateCapability,
   supportsDesktopAppUpdate,
 } from "../../versionSkew";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
@@ -66,6 +67,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     automaticEnvironment,
     autoUpdateEnvironments,
   } = input;
+  const t = useUiTranslation();
   const navigate = useNavigate();
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
@@ -94,8 +96,8 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not reconnect environment",
-          description: error instanceof Error ? error.message : "Failed to reconnect.",
+          title: t("Could not reconnect environment"),
+          description: error instanceof Error ? error.message : t("Failed to reconnect."),
         }),
       );
     }
@@ -122,8 +124,8 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not disconnect server",
-            description: error instanceof Error ? error.message : "Failed to disconnect.",
+            title: t("Could not disconnect server"),
+            description: error instanceof Error ? error.message : t("Failed to disconnect."),
           }),
         );
       }
@@ -163,14 +165,14 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
           size="xs"
           variant="ghost"
           disabled={disconnectingEnvironment}
-          title="Hide this server's threads. Switch it on again in Environments."
+          title={t("Hide this server's threads. Switch it on again in Environments.")}
           onClick={() =>
             void handleDisconnectActiveEnvironmentStable(
               activeEnvironmentUnavailableState.environmentId,
             )
           }
         >
-          Disconnect server
+          {t("Disconnect server")}
         </Button>
       ) : undefined;
     const environmentReconnecting =
@@ -193,8 +195,12 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         group: "environment",
         icon: <WifiOffIcon />,
         title: awaitingApproval
-          ? `${activeEnvironmentUnavailableState.label} is waiting to approve this device`
-          : `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
+          ? t("{name} is waiting to approve this device", {
+              name: activeEnvironmentUnavailableState.label,
+            })
+          : environmentReconnecting
+            ? t("{name} is reconnecting", { name: activeEnvironmentUnavailableState.label })
+            : t("{name} is offline", { name: activeEnvironmentUnavailableState.label }),
         description: awaitingApproval ? (
           (unavailableConnection.error ?? undefined)
         ) : activeEnvironment ? (
@@ -212,7 +218,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
                   )
                 }
               >
-                {environmentReconnecting ? "Retry now" : "Reconnect"}
+                {t(environmentReconnecting ? "Retry now" : "Reconnect")}
               </Button>
             ) : null}
             {disconnectAction}
@@ -234,7 +240,9 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         variant: updateFailed ? "error" : "default",
         group: "environment",
         icon: <ComposerServerUpdateIcon status={serverUpdateState.status} />,
-        title: `${updateFailed ? "Could not update" : "Updating"} ${versionMismatchServerLabel}`,
+        title: updateFailed
+          ? t("Could not update {name}", { name: versionMismatchServerLabel })
+          : t("Updating {name}", { name: versionMismatchServerLabel }),
         description:
           serverUpdateState.status === "failed"
             ? serverUpdateState.message
@@ -251,13 +259,13 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
             installation={versionMismatchInstallation}
             desktopAppUpdate={versionMismatchDesktopAppUpdate}
             targetVersion={versionMismatch.clientVersion}
-            label="Retry"
+            label={t("Retry")}
             variant="ghost"
           />
         ),
         ...(updateFailed
           ? {
-              dismissLabel: "Dismiss update notice",
+              dismissLabel: t("Dismiss update notice"),
               onDismiss: () => {
                 dismissServerUpdateFailure(serverUpdateState);
                 setDismissedServerUpdateState(serverUpdateState);

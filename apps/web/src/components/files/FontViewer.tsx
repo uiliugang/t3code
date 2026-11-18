@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import { useTheme } from "~/hooks/useTheme";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 import { FileSurfaceLoading } from "./fileSurfaceChrome";
 
@@ -39,6 +40,8 @@ async function readFont(src: string, signal: AbortSignal) {
 }
 
 export default function FontViewer(props: { readonly src: string; readonly name: string }) {
+  const t = useUiTranslation();
+  const translate = useEffectEvent(t);
   const { resolvedTheme } = useTheme();
   const [data, setData] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +49,7 @@ export default function FontViewer(props: { readonly src: string; readonly name:
   useEffect(() => {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
-      setError("The font took too long to load.");
+      setError(translate("The font took too long to load."));
       controller.abort();
     }, 30_000);
     void readFont(props.src, controller.signal)
@@ -55,7 +58,11 @@ export default function FontViewer(props: { readonly src: string; readonly name:
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "The font is damaged or unsupported.");
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : translate("The font is damaged or unsupported."),
+          );
       })
       .finally(() => clearTimeout(timeout));
     return () => {
@@ -69,9 +76,9 @@ export default function FontViewer(props: { readonly src: string; readonly name:
         role="alert"
         className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center"
       >
-        <p className="text-sm font-medium">No preview for this file</p>
+        <p className="text-sm font-medium">{t("No preview for this file")}</p>
         <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-          {error} Save it to open in another app.
+          {error} {t("Save it to open in another app.")}
         </p>
       </div>
     );

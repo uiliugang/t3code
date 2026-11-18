@@ -14,6 +14,7 @@ import type { SkillMeta } from "~/composer-rich-text-doc";
 import type { ComposerChangeKind } from "~/composer-undo-grouping";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useNativeFileDrag } from "../useNativeFileDrag";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { useAtomValue } from "@effect/atom-react";
 import { documentChipKindForFileName } from "~/pierre-icons";
@@ -292,6 +293,7 @@ const ComposerMentionExtension = Node.create({
 });
 
 function ComposerMentionNodeView({ node }: NodeViewProps) {
+  const t = useUiTranslation();
   const actions = use(ComposerContextActionsContext);
   const path = (node.attrs.path as string) ?? "";
   const nativeDrag = useNativeFileDrag(actions.environmentId, () =>
@@ -304,7 +306,7 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
       dir="ltr"
       render={<button type="button" />}
       onClick={() => actions.openMention(path)}
-      aria-label={`Preview ${path}`}
+      aria-label={t("Preview {path}", { path })}
       contentEditable={false}
       spellCheck={false}
       data-composer-mention-chip="true"

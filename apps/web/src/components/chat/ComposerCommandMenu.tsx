@@ -27,6 +27,7 @@ import {
 import { memo, useLayoutEffect, useRef, useState } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
@@ -116,6 +117,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   onHighlightedItemChange: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
+  const t = useUiTranslation();
   const listRef = useRef<HTMLDivElement>(null);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the highlighted menu item's DOM node into view
@@ -167,17 +169,19 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
           <div className="px-5 pt-3.5 pb-7">
             <p className="text-secondary-label text-xs">
               {props.isLoading
-                ? props.triggerKind === "skill" || props.triggerKind === "slash-command"
-                  ? "Searching workspace skills..."
-                  : props.triggerKind === "pull-request"
-                    ? "Finding pull request..."
-                    : "Searching workspace files..."
+                ? t(
+                    props.triggerKind === "skill" || props.triggerKind === "slash-command"
+                      ? "Searching workspace skills..."
+                      : props.triggerKind === "pull-request"
+                        ? "Finding pull request..."
+                        : "Searching workspace files...",
+                  )
                 : (props.emptyStateText ??
                   (props.triggerKind === "skill"
-                    ? "No skills found. Try / to browse provider commands."
+                    ? t("No skills found. Try / to browse provider commands.")
                     : props.triggerKind === "path"
-                      ? "No matching files or folders."
-                      : "No matching command."))}
+                      ? t("No matching files or folders.")
+                      : t("No matching command.")))}
             </p>
           </div>
         )}
@@ -329,12 +333,13 @@ const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
 };
 
 function SkillSourceBadge(props: { kind: ProviderSkillSourceKind; showSkillSuffix: boolean }) {
+  const t = useUiTranslation();
   const Icon = SKILL_SOURCE_ICON_BY_KIND[props.kind];
   return (
     <Badge className="ms-auto" variant="secondary">
       <Icon aria-hidden="true" className="text-current" />
       {SKILL_SOURCE_LABEL_BY_KIND[props.kind]}
-      {props.showSkillSuffix ? " Skill" : null}
+      {props.showSkillSuffix ? ` ${t("Skill")}` : null}
     </Badge>
   );
 }

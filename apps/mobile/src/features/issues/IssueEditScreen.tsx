@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { issueEnvironment, refreshIssueLists } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -13,6 +14,7 @@ import { issueCommandError, useIssueAccess } from "./issuePresentation";
 type IssueEditParams = IssueParams & { readonly field: "title" | "body" };
 
 export function IssueEditScreen({ route }: StaticScreenProps<IssueEditParams>) {
+  const t = useUiTranslation();
   const params = route.params;
   const navigation = useNavigation();
   const target = issueTarget(params);
@@ -53,13 +55,13 @@ export function IssueEditScreen({ route }: StaticScreenProps<IssueEditParams>) {
   return (
     <PullRequestSheetContent
       busy={busy}
-      title={isTitle ? "Edit title" : "Edit description"}
+      title={isTitle ? t("Edit title") : t("Edit description")}
       subtitle={`${detail?.displayKey ?? params.issueKey} · ${params.scope}`}
       footer={
         <Button
           fullWidth
           tone="contrast"
-          label={busy ? "Saving…" : "Save"}
+          label={busy ? t("Saving…") : t("Save")}
           loading={busy}
           disabled={!allowed || unchanged || invalid || original === null}
           onPress={() => void save()}
@@ -70,8 +72,8 @@ export function IssueEditScreen({ route }: StaticScreenProps<IssueEditParams>) {
         multiline={!isTitle}
         editable={!busy && original !== null}
         autoFocus
-        accessibilityLabel={isTitle ? "Issue title" : "Issue description"}
-        placeholder={isTitle ? "Title" : "Write in Markdown…"}
+        accessibilityLabel={isTitle ? t("Issue title") : t("Issue description")}
+        placeholder={isTitle ? t("Title") : t("Write in Markdown…")}
         placeholderTextColorClassName="accent-foreground-muted"
         maxLength={isTitle ? 1024 : 65536}
         value={value}
@@ -87,7 +89,7 @@ export function IssueEditScreen({ route }: StaticScreenProps<IssueEditParams>) {
       />
       {detail && !allowed ? (
         <Text className="text-xs text-foreground-muted">
-          {access?.blocked ?? "You can't edit this issue."}
+          {access?.blocked ?? t("You can't edit this issue.")}
         </Text>
       ) : null}
       {error || detailQuery.error ? (

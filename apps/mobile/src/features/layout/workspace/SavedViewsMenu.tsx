@@ -10,9 +10,9 @@ import { Alert } from "react-native";
 import { prompt as showTextInputDialog } from "../../../components/ui/Dialog";
 import type { MenuProps } from "../../../components/ui/Menu.types";
 import { uuidv4 } from "../../../lib/uuid";
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import type { Preferences } from "../../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../../state/preferences";
-import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { ListFilterMenu } from "./ListFilterMenu";
 
 type SavedViewIdentity = typeof SavedViewIdentitySchema.Type;

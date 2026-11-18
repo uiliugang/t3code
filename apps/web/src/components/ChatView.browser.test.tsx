@@ -115,6 +115,7 @@ it("a machine chip stashed in one thread restores with its machine in another", 
   using _environment = installFakeEnvironment([other, asking]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const draftId = DraftId.make("draft-stash-machine");
@@ -175,6 +176,7 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
   using _environment = installFakeEnvironment([thread]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   usePromptStashStore.getState().stashEntry({
@@ -226,6 +228,7 @@ it("a new draft does not load its reserved thread before the server lists it", a
   using fetchSpy = vi.spyOn(globalThis, "fetch");
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const draftId = DraftId.make("draft-27443");
@@ -255,6 +258,7 @@ it("an interrupted image-only first send of a new thread says it may not have be
   using _environment = installFakeEnvironment([]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const draftId = DraftId.make("draft-image-only-interrupted");
@@ -391,6 +395,7 @@ it("a stashed prompt ending in a file chip restores with the chip", async () => 
   using _environment = installFakeEnvironment([]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const draftId = DraftId.make("draft-28338");
@@ -429,6 +434,7 @@ it("a rejected send leaves the timeline when a new draft was typed meanwhile", a
   });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const router = getRouter(
@@ -499,6 +505,7 @@ it("opening a thread or returning to the window on a touch tablet does not focus
   await page.viewport(1194, 834);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const router = getRouter(
@@ -541,6 +548,7 @@ it("a mounted thread view lets go of the thread structures it has replaced", asy
   using _environment = installFakeEnvironment([updated, other]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
@@ -597,6 +605,7 @@ it("a shortcut conditioned on rightPanelOpen sees the thread's open right panel"
   });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const router = getRouter(
@@ -690,6 +699,7 @@ it("selecting a side-chat tab focuses that side chat's composer", async () => {
   using _environment = installFakeEnvironment([parent, side, otherSide]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const parentRef = scopeThreadRef(ENVIRONMENT_ID, parent.id);

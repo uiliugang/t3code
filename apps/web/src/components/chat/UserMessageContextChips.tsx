@@ -3,6 +3,8 @@ import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { documentChipKindForFileName } from "~/pierre-icons";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import { useCodeTheme } from "../../hooks/useCodeTheme";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -65,6 +67,7 @@ function UserMessageMentionChip(props: {
   record: Extract<KnownComposerContextRecord, { kind: "mention" }>;
   copyMarkdown: string;
 }) {
+  const t = useUiTranslation();
   const ctx = use(TimelineRowCtx);
   const nativeDrag = useNativeFileDrag(ctx.activeThreadEnvironmentId, () =>
     resolvePathLinkTarget(props.record.path, ctx.workspaceRoot ?? ""),
@@ -77,7 +80,7 @@ function UserMessageMentionChip(props: {
             {...nativeDrag}
             kind={documentChipKindForFileName(props.record.path) ?? "mention"}
             render={<button type="button" />}
-            aria-label={`Preview ${props.record.path}`}
+            aria-label={t("Preview {name}", { name: props.record.path })}
             data-markdown-copy={props.copyMarkdown}
             onClick={() => {
               if (ctx.threadRef)
@@ -146,6 +149,7 @@ function UserMessagePreviewAnnotationDetails(props: {
   record: Extract<KnownComposerContextRecord, { kind: "preview-annotation" }>;
   image: ChatImageAttachment | null;
 }) {
+  const t = useUiTranslation();
   const ctx = use(TimelineRowCtx);
   const visibleElements = props.record.elements ?? [];
   return (
@@ -154,7 +158,7 @@ function UserMessagePreviewAnnotationDetails(props: {
         <button
           type="button"
           className="block max-h-64 w-full cursor-zoom-in overflow-hidden border-b border-border/70 bg-muted"
-          aria-label={`Preview ${props.image.name}`}
+          aria-label={t("Preview {name}", { name: props.image.name })}
           onClick={() => {
             if (!props.image) return;
             const preview = buildExpandedImagePreview([props.image], props.image.id);
@@ -163,18 +167,18 @@ function UserMessagePreviewAnnotationDetails(props: {
         >
           <img
             src={props.image.previewUrl}
-            alt="Annotated preview crop"
+            alt={t("Annotated preview crop")}
             className="max-h-64 w-full object-contain"
           />
         </button>
       ) : (
         <div className="border-b border-border/70 bg-muted/40 px-3 py-2 text-secondary-label text-xs">
-          Screenshot unavailable
+          {t("Screenshot unavailable")}
         </div>
       )}
       <div className="min-w-0 px-3 py-2.5">
         <div className="text-message-foreground text-xs font-medium">
-          {props.record.pageTitle?.trim() || props.record.pageUrl || "Preview annotation"}
+          {props.record.pageTitle?.trim() || props.record.pageUrl || t("Preview annotation")}
         </div>
         {props.record.comment ? (
           <div className="mt-1 whitespace-pre-wrap wrap-break-word text-sm">
@@ -277,14 +281,16 @@ interface UserMessageContextRenderContext {
   onExpandImage: (image: ChatImageAttachment) => void;
   onExpandVideo: (file: ChatFileAttachment) => void;
   onOpenFile: (file: ChatFileAttachment) => void;
+  t: UiTranslator;
 }
 
 function UnavailableUserMessageContextChip(props: UserMessageContextRenderContext) {
+  const t = useUiTranslation();
   return (
     <UnresolvedChip
       label={props.reference.label}
       copyMarkdown={props.copyMarkdown}
-      tooltip="This context is no longer available."
+      tooltip={t("This context is no longer available.")}
     />
   );
 }
@@ -395,7 +401,9 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         const disabled =
           attachment.downloadable === false && (!isVideo || attachment.previewUrl === undefined);
         const size =
-          attachment.downloadable === false ? "Sending…" : formatAttachmentSize(record.sizeBytes);
+          attachment.downloadable === false
+            ? context.t("Sending…")
+            : formatAttachmentSize(record.sizeBytes);
         return (
           <FileChip
             name={label}
@@ -408,7 +416,11 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
             isVideo={isVideo}
             theme={context.resolvedTheme}
             disabled={disabled}
-            accessibleLabel={`${isVideo ? "Video" : "File"} attachment, ${label}, ${size}`}
+            accessibleLabel={context.t("{type} attachment, {name}, {size}", {
+              type: isVideo ? context.t("Video") : context.t("File"),
+              name: label,
+              size,
+            })}
             copyMarkdown={context.copyMarkdown}
             onOpen={() =>
               isVideo ? context.onExpandVideo(attachment) : context.onOpenFile(attachment)
@@ -444,7 +456,7 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         record.kind === "element" ? (
           <UserMessageContextPopover
             copyMarkdown={context.copyMarkdown}
-            accessibleLabel={`Browser element, ${record.label}`}
+            accessibleLabel={context.t("Browser element, {label}", { label: record.label })}
             kind="element"
             icon={<MousePointerClickIcon />}
             label={record.label}
@@ -464,7 +476,9 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         }
         const isPullRequest = isPullRequestSummaryContext(record);
         const label = reviewCommentContextLabel(record);
-        const kindLabel = isPullRequest ? pullRequestContextKindLabel(record) : "Review comment";
+        const kindLabel = isPullRequest
+          ? pullRequestContextKindLabel(record)
+          : context.t("Review comment");
         const pullRequestState = pullRequestContextDisplayState(record) ?? "unknown";
         if (isPullRequest && record.pullRequest !== undefined) {
           return (
@@ -478,7 +492,15 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         return (
           <UserMessageContextPopover
             copyMarkdown={context.copyMarkdown}
-            accessibleLabel={`${kindLabel}, ${label}${record.pullRequest ? `, ${record.pullRequest.title}` : ""}`}
+            accessibleLabel={
+              record.pullRequest
+                ? context.t("{kind}, {label}, {title}", {
+                    kind: kindLabel,
+                    label,
+                    title: record.pullRequest.title,
+                  })
+                : context.t("{kind}, {label}", { kind: kindLabel, label })
+            }
             kind={isPullRequest ? PULL_REQUEST_CHIP_KINDS[pullRequestState] : "review-comment"}
             icon={isPullRequest ? <PullRequestGlyph.pullRequest /> : <MessageCircleIcon />}
             label={label}
@@ -511,7 +533,7 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         record.kind === "preview-annotation" ? (
           <UserMessageContextPopover
             copyMarkdown={context.copyMarkdown}
-            accessibleLabel={`Preview annotation, ${record.label}`}
+            accessibleLabel={context.t("Preview annotation, {label}", { label: record.label })}
             kind="preview-annotation"
             icon={<MousePointerClickIcon />}
             label={record.label}
@@ -535,6 +557,7 @@ export function UserMessageContextReferenceChip(props: {
   onExpandVideo: (file: ChatFileAttachment) => void;
   onOpenFile: (file: ChatFileAttachment) => void;
 }) {
+  const t = useUiTranslation();
   const { resolvedTheme, activeThreadEnvironmentId } = use(TimelineRowCtx);
   const copyMarkdown = formatComposerContextReference({
     kind: props.reference.kind,
@@ -551,6 +574,7 @@ export function UserMessageContextReferenceChip(props: {
     onExpandImage: props.onExpandImage,
     onExpandVideo: props.onExpandVideo,
     onOpenFile: props.onOpenFile,
+    t,
   });
 }
 

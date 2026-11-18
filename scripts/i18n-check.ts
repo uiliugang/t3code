@@ -8,6 +8,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 const APPS = ["apps/web", "apps/mobile"];
+const TRANSLATED_SOURCES = ["apps/web/src", "apps/mobile/src"];
 
 type Catalog = Record<string, string>;
 const readJson = (file: string) => JSON.parse(NodeFS.readFileSync(file, "utf8"));
@@ -15,6 +16,11 @@ const missingFrom = (from: Catalog, catalog: Catalog) =>
   Object.keys(from).filter((key) => !Object.hasOwn(catalog, key));
 
 const root = NodePath.resolve(import.meta.dirname, "..");
+// Computed so the scripts project does not need to list the shared sources in its composite.
+const uiLocaleModule = (await import(
+  new URL("../packages/shared/src/uiLocale.ts", import.meta.url).href
+)) as { readonly hasUiTranslation: (message: string) => boolean };
+const { hasUiTranslation } = uiLocaleModule;
 const problems: string[] = [];
 
 for (const app of APPS) {
@@ -68,12 +74,53 @@ for (const app of APPS) {
   }
 }
 
+// The shared dictionary backs `useUiTranslation()` / `translateUi()`. A key that is not in it
+// renders English at runtime and never shows up in the GT catalogs, so scan its call sites here.
+const sourceFiles = (dir: string): string[] => {
+  const absolute = NodePath.join(root, dir);
+  return NodeFS.readdirSync(absolute, { recursive: true, encoding: "utf8" })
+    .filter((file) => /\.(ts|tsx)$/.test(file))
+    .filter((file) => !/\.(test|spec)\.(ts|tsx)$/.test(file) && !/\.browser\.test\./.test(file))
+    .filter((file) => !file.includes(`${NodePath.sep}node_modules${NodePath.sep}`))
+    .map((file) => NodePath.join(absolute, file));
+};
+const lineAt = (text: string, index: number) => text.slice(0, index).split("\n").length;
+const literalKey = (source: string): string | null => {
+  try {
+    return JSON.parse(source);
+  } catch {
+    return null;
+  }
+};
+const dictionaryProblems = new Map<string, string>();
+for (const dir of TRANSLATED_SOURCES) {
+  for (const file of sourceFiles(dir)) {
+    const text = NodeFS.readFileSync(file, "utf8");
+    const scans: RegExp[] = [];
+    if (text.includes("const t = useUiTranslation()")) scans.push(/\bt\(\s*("(?:[^"\\]|\\.)*")/g);
+    if (text.includes("translateUi(")) scans.push(/\btranslateUi\([^,\n]+,\s*("(?:[^"\\]|\\.)*")/g);
+    for (const pattern of scans) {
+      for (const match of text.matchAll(pattern)) {
+        const key = literalKey(match[1]!);
+        if (key === null || hasUiTranslation(key)) continue;
+        const line = lineAt(text, match.index ?? 0);
+        const relative = NodePath.relative(root, file);
+        dictionaryProblems.set(
+          `${relative}:${line}:${key}`,
+          `${relative}:${line}: ${JSON.stringify(key)} has no Simplified Chinese entry in packages/shared/src/uiLocale.ts`,
+        );
+      }
+    }
+  }
+}
+problems.push(...dictionaryProblems.values());
+
 if (problems.length > 0) {
   console.error(problems.join("\n"));
   console.error(
-    "\nRun `vp run i18n:generate` in the app, then translate any new keys in every locale catalog.",
+    "\nRun `vp run i18n:generate` in the app, translate any new keys in every locale catalog, and add shared-dictionary keys to packages/shared/src/uiLocale.ts.",
   );
   process.exitCode = 1;
 } else {
-  console.log(`i18n catalogs match the source in ${APPS.join(", ")}.`);
+  console.log(`i18n catalogs and the shared dictionary match the source in ${APPS.join(", ")}.`);
 }

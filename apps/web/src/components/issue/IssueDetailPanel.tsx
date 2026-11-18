@@ -93,6 +93,7 @@ function IssueThreadLinkButton({
   issue: Pick<IssueDetail, "url" | "displayKey" | "title">;
   threadRef: ScopedThreadRef;
 }) {
+  const t = useUiTranslation();
   const thread = useThreadShell(threadRef.environmentId === environmentId ? threadRef : null);
   const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const link = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
@@ -121,7 +122,7 @@ function IssueThreadLinkButton({
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: linked ? "Could not unlink the issue" : "Could not link the issue",
+        title: linked ? t("Could not unlink the issue") : t("Could not link the issue"),
         description: readableFailure(squashAtomCommandFailure(result), "The server refused it."),
       });
     }
@@ -133,7 +134,7 @@ function IssueThreadLinkButton({
           <Button
             size="icon-xs"
             variant="ghost"
-            aria-label={linked ? "Unlink from thread" : "Link to thread"}
+            aria-label={linked ? t("Unlink from thread") : t("Link to thread")}
             aria-pressed={linked}
             disabled={pending || reference.host === undefined}
             onClick={() => void toggle()}
@@ -146,7 +147,9 @@ function IssueThreadLinkButton({
           <Link2Icon aria-hidden className="size-3.5" />
         )}
       </TooltipTrigger>
-      <TooltipPopup>{linked ? "Unlink from this thread" : "Link to this thread"}</TooltipPopup>
+      <TooltipPopup>
+        {linked ? t("Unlink from this thread") : t("Link to this thread")}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -198,6 +201,7 @@ function IssueLabelPicker({
   allowed: boolean;
   disabledReason: string;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueLabelCandidate>);
@@ -238,7 +242,7 @@ function IssueLabelPicker({
       setPicks((latest) => issuePicksAfterFailedWrite(latest, sent));
       toastManager.add({
         type: "error",
-        title: "Could not change labels",
+        title: t("Could not change labels"),
         description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
     });
@@ -246,7 +250,7 @@ function IssueLabelPicker({
   return (
     <PullRequestCandidatePicker
       icon={<TagIcon className="size-3.5" />}
-      label="Change labels"
+      label={t("Change labels")}
       allowed={allowed}
       disabledReason={disabledReason}
       open={open}
@@ -286,7 +290,7 @@ function IssueLabelPicker({
               ) : null}
             </span>
             {isSelected(draft, candidate.name, applied.has(candidate.name)) ? (
-              <CheckIcon aria-label="Applied" className="size-3.5 shrink-0" />
+              <CheckIcon aria-label={t("Applied")} className="size-3.5 shrink-0" />
             ) : null}
           </>
         );
@@ -308,6 +312,7 @@ function IssueAssigneePicker({
   allowed: boolean;
   disabledReason: string;
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picks, setPicks] = useState(noIssuePicks<IssueAssigneeCandidate>);
@@ -347,7 +352,7 @@ function IssueAssigneePicker({
       setPicks((latest) => issuePicksAfterFailedWrite(latest, sent));
       toastManager.add({
         type: "error",
-        title: "Could not change assignees",
+        title: t("Could not change assignees"),
         description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
     });
@@ -355,7 +360,7 @@ function IssueAssigneePicker({
   return (
     <PullRequestCandidatePicker
       icon={<UserPlusIcon className="size-3.5" />}
-      label="Change assignees"
+      label={t("Change assignees")}
       allowed={allowed}
       disabledReason={disabledReason}
       open={open}
@@ -388,7 +393,7 @@ function IssueAssigneePicker({
         <>
           <PullRequestActorLabel actor={candidate} tooltip={false} className="min-w-0 flex-1" />
           {isSelected(draft, candidate.id, issueAssigneeHeld(detail, candidate)) ? (
-            <CheckIcon aria-label="Assigned" className="size-3.5 shrink-0" />
+            <CheckIcon aria-label={t("Assigned")} className="size-3.5 shrink-0" />
           ) : null}
         </>
       )}
@@ -410,12 +415,13 @@ function LinkedPullRequestRow({
   scope: string;
   onSelect: (() => void) | null;
 }) {
+  const t = useUiTranslation();
   const body = (
     <>
       <PullRequestStateGlyph state={link.state} isDraft={link.isDraft} />
       <span className="min-w-0 flex-1 truncate text-sm">{link.title}</span>
       <PullRequestMetaLine className="shrink-0 text-xs text-muted-foreground">
-        {link.closesIssue ? <span>Closes this issue</span> : null}
+        {link.closesIssue ? <span>{t("Closes this issue")}</span> : null}
         <span className="tabular-nums">
           {link.repository.toLowerCase() === scope.toLowerCase() ? "" : link.repository}#
           {link.number}
@@ -485,7 +491,7 @@ export function IssueDetailPanel({
     if (detailQuery.error !== null && !detailQuery.isPending) {
       return (
         <PullRequestsUnavailableState
-          title="Could not load this issue"
+          title={t("Could not load this issue")}
           error={detailQuery.error}
           onRetry={detailQuery.refresh}
         />
@@ -523,7 +529,7 @@ export function IssueDetailPanel({
     });
     setLoadingOlder(false);
     if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "Older comments could not be read" });
+      toastManager.add({ type: "error", title: t("Older comments could not be read") });
       return;
     }
     setOlder({
@@ -540,7 +546,7 @@ export function IssueDetailPanel({
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: "The issue could not be updated",
+        title: t("The issue could not be updated"),
         description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
       return;
@@ -561,7 +567,7 @@ export function IssueDetailPanel({
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: "The state could not be changed",
+        title: t("The state could not be changed"),
         description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
       return;
@@ -758,7 +764,7 @@ export function IssueDetailPanel({
                       detail={detail}
                       allowed={canLabel}
                       disabledReason={
-                        blocked ?? "Changing labels needs triage access on this tracker."
+                        blocked ?? t("Changing labels needs triage access on this tracker.")
                       }
                     />
                   ) : null}
@@ -782,7 +788,7 @@ export function IssueDetailPanel({
                       detail={detail}
                       allowed={canAssign}
                       disabledReason={
-                        blocked ?? "Changing assignees needs triage access on this tracker."
+                        blocked ?? t("Changing assignees needs triage access on this tracker.")
                       }
                     />
                   ) : null}
@@ -910,10 +916,12 @@ export function IssueDetailPanel({
                             <a href={item.comment.url} target="_blank" rel="noopener noreferrer" />
                           }
                         >
-                          {formatRelativeTimeLabel(item.comment.createdAt)}
+                          {formatRelativeTimeLabel(item.comment.createdAt, undefined, language)}
                         </InlineButton>
                       ) : (
-                        <span>{formatRelativeTimeLabel(item.comment.createdAt)}</span>
+                        <span>
+                          {formatRelativeTimeLabel(item.comment.createdAt, undefined, language)}
+                        </span>
                       )}
                     </PullRequestMetaLine>
                     <PullRequestCommentBody
@@ -938,8 +946,10 @@ export function IssueDetailPanel({
                     className="px-1 text-xs text-muted-foreground"
                   >
                     <PullRequestActorLabel actor={item.event.actor} />
-                    <span>{issueEventSentence(item.event)}</span>
-                    <span>{formatRelativeTimeLabel(item.event.createdAt)}</span>
+                    <span>{issueEventSentence(item.event, t)}</span>
+                    <span>
+                      {formatRelativeTimeLabel(item.event.createdAt, undefined, language)}
+                    </span>
                   </PullRequestMetaLine>
                 ),
               )}

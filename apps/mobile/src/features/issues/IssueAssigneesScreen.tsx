@@ -13,6 +13,7 @@ import type { IssueAssigneeCandidate } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { issueEnvironment, refreshIssueLists } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -23,6 +24,7 @@ import { issueAssigneePicksFamily } from "./issuePicks";
 import { issueCommandError, useIssueAccess } from "./issuePresentation";
 
 export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) {
+  const t = useUiTranslation();
   const navigation = useNavigation();
   const target = issueTarget(route.params);
   const detail = useEnvironmentQuery(issueEnvironment.detail(target)).data;
@@ -66,14 +68,14 @@ export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) 
           if (failure === null) return refreshIssueLists(target.environmentId);
           // Picks made after this write was sent are kept.
           setStored((latest) => issuePicksAfterFailedWrite(latest, sent));
-          Dialog.alert("Couldn't change assignees", failure);
+          Dialog.alert(t("Couldn't change assignees"), failure);
         });
       }),
-    [navigation, detail, draft, current, setStored, update, target],
+    [navigation, detail, draft, current, setStored, update, target, t],
   );
   return (
     <IssueCandidatesSheet
-      title="Assignees"
+      title={t("Assignees")}
       noun="people"
       query={query}
       onQueryChange={setQuery}
@@ -88,7 +90,7 @@ export function IssueAssigneesScreen({ route }: StaticScreenProps<IssueParams>) 
       allowed={allowed}
       notice={
         detail && !allowed
-          ? (access?.blocked ?? "Changing assignees needs triage access on this tracker.")
+          ? (access?.blocked ?? t("Changing assignees needs triage access on this tracker."))
           : null
       }
       pending={result.isPending && !result.data}

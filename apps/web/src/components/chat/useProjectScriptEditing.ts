@@ -35,6 +35,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useProjects } from "../../state/entities";
 import { type NewProjectScriptInput } from "../ProjectScriptsControl";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 /** Write script settings before reconciling shortcuts in environment keybindings. */
 export function useProjectScriptEditing(input: {
@@ -44,6 +45,7 @@ export function useProjectScriptEditing(input: {
   readonly settings: UnifiedSettings;
 }) {
   const { environmentId, project, scripts, settings } = input;
+  const t = useUiTranslation();
   const allProjects = useProjects();
   const updateProjectScriptSettings = useAtomCommand(serverEnvironment.updateSettings, {
     reportFailure: false,
@@ -251,15 +253,15 @@ export function useProjectScriptEditing(input: {
     if (result._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: `Deleted action "${deletedName ?? "Unknown"}"`,
+        title: t('Deleted action "{name}"', { name: deletedName ?? t("Unknown") }),
       });
     } else if (!isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not delete action",
-          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          title: t("Could not delete action"),
+          description: error instanceof Error ? error.message : t("An unexpected error occurred."),
         }),
       );
     }

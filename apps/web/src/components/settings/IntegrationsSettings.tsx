@@ -56,11 +56,8 @@ import { formatEnvironmentQueryError } from "~/state/query";
 import { previewEnvironment } from "~/state/preview";
 import { useServerConfigs } from "~/state/entities";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import {
-  AgentDeviceSetupStatus,
-  DeviceHubSetupStatus,
-  deviceHubReadiness,
-} from "~/components/device/DeviceSetup";
+import { AgentDeviceSetupStatus, DeviceHubSetupStatus } from "~/components/device/DeviceSetup";
+import { deviceHubReadiness } from "~/components/device/deviceSetupStatus";
 import { isElectron } from "../../env";
 
 import { Badge } from "../ui/badge";

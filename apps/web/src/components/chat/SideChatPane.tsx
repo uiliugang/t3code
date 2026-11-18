@@ -97,14 +97,14 @@ export default function SideChatPane(props: {
     if (result._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: "Brought back",
-        description: "The main thread gets this side chat with your next message there.",
+        title: t("Brought back"),
+        description: t("The main thread gets this side chat with your next message there."),
       });
     } else if (!isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Could not bring back the side chat",
+        title: t("Could not bring back the side chat"),
         ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
@@ -140,7 +140,7 @@ export default function SideChatPane(props: {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Could not start an isolated task",
+        title: t("Could not start an isolated task"),
         ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
@@ -176,7 +176,7 @@ export default function SideChatPane(props: {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Could not delete the side chat",
+        title: t("Could not delete the side chat"),
         ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
@@ -239,19 +239,24 @@ export default function SideChatPane(props: {
         <Button
           variant="ghost"
           size="icon-xs"
-          aria-label="Delete side chat"
+          aria-label={t("Delete side chat")}
           disabled={!canOperate || shell === null || deleting}
           onClick={() => void deleteSideChat()}
         >
           <Trash2Icon />
         </Button>
-        <Button variant="ghost" size="icon-xs" aria-label="Close side chat" onClick={props.onClose}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t("Close side chat")}
+          onClick={props.onClose}
+        >
           <XIcon />
         </Button>
       </div>
       {shell === null ? (
         snapshotLoaded ? (
-          <p className="p-3 text-xs text-muted-foreground">This side chat was deleted.</p>
+          <p className="p-3 text-xs text-muted-foreground">{t("This side chat was deleted.")}</p>
         ) : null
       ) : (
         <BackgroundThreadContext value>

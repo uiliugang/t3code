@@ -5,12 +5,14 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { IssueDetail, IssueLabel, IssueState } from "@t3tools/contracts";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { AsyncResult } from "effect/reactivity";
 import { View } from "react-native";
 
 import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { issueEnvironment } from "../../state/issues";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ENVIRONMENT_REQUEST_INTERRUPTED } from "../../state/query";
 import { pullRequestLabelColor } from "../pull-requests/pullRequestList";
 import { usePullRequestConnected } from "../pull-requests/usePullRequestConnected";
@@ -18,13 +20,17 @@ import { issueTarget, type IssueParams } from "./issueParams";
 
 // Open and completed wear the pull request colors for open and merged; closed any other way
 // than completed is grey, because work that stopped must not look like work that finished.
-export function issueStatus(state: IssueState): {
+export function issueStatus(
+  state: IssueState,
+  t: UiTranslator,
+): {
   readonly label: string;
   readonly icon: AppSymbolName;
   readonly tint: string;
   readonly text: string;
 } {
-  const label = state.name;
+  const label =
+    state.name === "Open" ? t("Still open") : state.name === "Closed" ? t("Closed") : state.name;
   if (state.category === "open")
     return {
       label,
@@ -49,6 +55,7 @@ export function issueStatus(state: IssueState): {
 
 /** What this device may do to the issue, and the first thing in the way when it may not. */
 export function useIssueAccess(params: IssueParams, detail: IssueDetail | null | undefined) {
+  const t = useUiTranslation();
   const connected = usePullRequestConnected(params.environmentId);
   const canWrite = useAtomValue(
     issueEnvironment.update.permissionAtom(issueTarget(params).environmentId),
@@ -59,9 +66,9 @@ export function useIssueAccess(params: IssueParams, detail: IssueDetail | null |
     ...access,
     blocked: connected
       ? canWrite
-        ? access.blocked
-        : "This device isn't allowed to change source control on this environment."
-      : "Reconnect to make changes.",
+        ? access.blocked && t(access.blocked)
+        : t("This device isn't allowed to change source control on this environment.")
+      : t("Reconnect to make changes."),
   };
 }
 

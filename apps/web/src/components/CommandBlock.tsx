@@ -1,6 +1,7 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import { cn } from "~/lib/utils";
 
 import { Button } from "./ui/button";
@@ -14,6 +15,7 @@ export function CommandBlock({
   readonly className?: string;
   readonly prominent?: boolean;
 }) {
+  const t = useUiTranslation();
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     timeout: 1500,
     target: "command",
@@ -33,7 +35,7 @@ export function CommandBlock({
       <Button
         size="icon-xs"
         variant="ghost"
-        aria-label="Copy command"
+        aria-label={t("Copy command")}
         onClick={() => copyToClipboard(command, undefined)}
       >
         {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}

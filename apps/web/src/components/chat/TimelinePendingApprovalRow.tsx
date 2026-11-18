@@ -44,7 +44,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   return (
     <WorkLogRow
       role="group"
-      aria-label={presentation.label}
+      aria-label={t(presentation.label)}
       data-v2-item-type="approval_request"
       wrapLabel
       icon={
@@ -57,12 +57,12 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
       }
       label={
         <code
-          aria-label={presentation.detailLabel}
+          aria-label={t(presentation.detailLabel)}
           className="block max-h-40 min-w-0 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
           data-approval-detail="complete"
           tabIndex={0}
         >
-          {approval.detail || presentation.label}
+          {approval.detail || t(presentation.label)}
         </code>
       }
     >
