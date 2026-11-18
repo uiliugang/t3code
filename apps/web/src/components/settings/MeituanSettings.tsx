@@ -1,12 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
 import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
+  meituanToolIdsForSection,
+  shouldDiscoverMeituanProjectSources,
+} from "@t3tools/client-runtime/meituanSettings";
+import {
   ProjectId,
   isMeituanServiceEnabled,
   type EnvironmentId,
   type ServerSettings,
   type SkillSource,
-  type SourceControlTool,
 } from "@t3tools/contracts";
 import { useState, type ComponentType } from "react";
 import {
@@ -129,7 +132,8 @@ function useMeituanProjectAssociations(
       };
     })
     .filter((entry) => entry.sources.length > 0);
-  return { projects, query, entries };
+  const error = query.error ?? query.data?.find((result) => result.error)?.error ?? null;
+  return { projects, query, entries, error };
 }
 
 function MeituanProjectSources({
@@ -142,7 +146,7 @@ function MeituanProjectSources({
   associations: ReturnType<typeof useMeituanProjectAssociations>;
 }) {
   const t = useUiTranslation();
-  const { projects, query, entries } = associations;
+  const { projects, query, entries, error } = associations;
   const [editing, setEditing] = useState(false);
   const [projectId, setProjectId] = useState<ProjectId | undefined>();
   const [spaces, setSpaces] = useState("");
@@ -231,7 +235,12 @@ function MeituanProjectSources({
       {query.isPending && !entries.length ? (
         <p className="text-sm text-muted-foreground">{t("Loading...")}</p>
       ) : null}
-      {!query.isPending && !entries.length ? (
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t(error)}
+        </p>
+      ) : null}
+      {!query.isPending && !entries.length && !error ? (
         <p className="text-sm text-muted-foreground">{t("No project associations")}</p>
       ) : null}
       {editing ? (
@@ -287,16 +296,21 @@ function MeituanProjectSources({
             <Button type="button" variant="outline" onClick={() => setEditing(false)}>
               {t("Cancel")}
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label={t("Remove association")}
-              title={t("Remove association")}
-              disabled={busy || !projectId}
-              onClick={() => void save(true)}
-            >
-              <Trash2Icon />
-            </Button>
+            {projectId &&
+            settings.issueProjectSources[projectId]?.some(
+              (source) => source.provider === "meituan",
+            ) ? (
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={t("Remove association")}
+                title={t("Remove association")}
+                disabled={busy}
+                onClick={() => void save(true)}
+              >
+                <Trash2Icon />
+              </Button>
+            ) : null}
           </div>
         </form>
       ) : null}
@@ -423,7 +437,11 @@ function EnvironmentMeituanSettings({
   const enabled = settings.meituanIntegrationEnabled;
   const codeEnabled = isMeituanServiceEnabled(settings, "sourceControl");
   const issuesEnabled = isMeituanServiceEnabled(settings, "requirements");
-  const associations = useMeituanProjectAssociations(environmentId, settings, issuesEnabled);
+  const associations = useMeituanProjectAssociations(
+    environmentId,
+    settings,
+    issuesEnabled && shouldDiscoverMeituanProjectSources(active),
+  );
   const skillQuery = useEnvironmentQuery(serverEnvironment.skills({ environmentId, input: {} }));
   const mutateSkills = useAtomCommand(serverEnvironment.mutateSkills);
   const skillsAllowed = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
@@ -431,27 +449,25 @@ function EnvironmentMeituanSettings({
     skillQuery.data?.sources.filter((source) => source.kind === "mtskills") ?? [];
   const skillSourceEnabled = skillSources.some((source) => source.enabled);
   const skillsEnabled = enabled && skillSourceEnabled;
-  const enabledToolIds: SourceControlTool["id"][] = [
-    ...(codeEnabled ? (["meituan"] as const) : []),
-    ...(issuesEnabled ? (["ones2", "mcm"] as const) : []),
-    ...(skillsEnabled ? (["mtskills"] as const) : []),
-  ];
+  const activeToolIds = meituanToolIdsForSection(active, {
+    code: codeEnabled,
+    issues: issuesEnabled,
+    skills: skillsEnabled,
+  });
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
   );
   const tools = useEnvironmentQuery(
-    enabledToolIds.length ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
+    codeEnabled ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
+  );
+  const meituanTools = useEnvironmentQuery(
+    issuesEnabled || skillsEnabled
+      ? sourceControlEnvironment.meituanTools({ environmentId, input: {} })
+      : null,
   );
   const item = discovery.data?.sourceControlProviders.find((entry) => entry.kind === "meituan");
-  const activeToolIds: SourceControlTool["id"][] =
-    active === "code"
-      ? ["meituan"]
-      : active === "issues"
-        ? ["ones2", "mcm"]
-        : active === "skills"
-          ? ["mtskills"]
-          : enabledToolIds;
-  const visibleTools = tools.data?.filter((tool) => activeToolIds.includes(tool.id)) ?? [];
+  const availableTools = [...(tools.data ?? []), ...(meituanTools.data ?? [])];
+  const visibleTools = availableTools.filter((tool) => activeToolIds.includes(tool.id));
   const saveEnabled = async (next: boolean) => {
     if (!canToggle || !allowed || busy) return;
     if (
@@ -712,11 +728,9 @@ function EnvironmentMeituanSettings({
                 tool={tool}
                 environmentId={environmentId}
                 environmentLabel={label}
-                busy={
-                  tools.data?.some(
-                    (entry) => entry.phase === "running" || entry.phase === "verifying",
-                  ) ?? false
-                }
+                busy={availableTools.some(
+                  (entry) => entry.phase === "running" || entry.phase === "verifying",
+                )}
               />
             </div>
           ))}

@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  MeituanToolError,
   SourceControlToolError,
   type SourceControlTool,
   type SourceControlToolStartInput,
@@ -37,9 +38,16 @@ const confirmation = (tool = plan().tool): SourceControlToolStartInput => ({
   expectedPath: tool.executablePath,
   expectedCommand: tool.command ?? "unsupported",
 });
-const testLayer = (installer: Installer.SourceControlToolInstaller["Service"]) =>
+type InstallerMock = Omit<Installer.SourceControlToolInstaller["Service"], "inspectMeituan"> &
+  Partial<Pick<Installer.SourceControlToolInstaller["Service"], "inspectMeituan">>;
+const testLayer = (installer: InstallerMock) =>
   Maintenance.layer.pipe(
-    Layer.provide(Layer.succeed(Installer.SourceControlToolInstaller, installer)),
+    Layer.provide(
+      Layer.succeed(Installer.SourceControlToolInstaller, {
+        inspectMeituan: (id) => Effect.fail(new MeituanToolError({ id, reason: "inspection" })),
+        ...installer,
+      }),
+    ),
     Layer.provide(Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true })),
   );
 
@@ -189,12 +197,17 @@ it.effect("reports inspection failures as unknown rather than a missing executab
   Effect.gen(function* () {
     const service = yield* Maintenance.SourceControlToolMaintenance;
     const result = Option.getOrThrow(yield* Stream.runHead(service.changes));
+    const meituanResult = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
     assert.deepStrictEqual(
       result.map((tool) => tool.id).toSorted(),
-      ["git", "github", "mcm", "meituan", "mtskills", "ones2"].toSorted(),
+      ["git", "github", "meituan"].toSorted(),
+    );
+    assert.deepStrictEqual(
+      meituanResult.map((tool) => tool.id).toSorted(),
+      ["mcm", "mtskills", "ones2"].toSorted(),
     );
     assert.ok(
-      result.every(
+      [...result, ...meituanResult].every(
         (tool) => tool.status === "unknown" && tool.command === null && tool.reason !== null,
       ),
     );

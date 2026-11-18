@@ -3,8 +3,9 @@ import {
   RequirementIssueListResult,
   WS_METHODS,
   type EnvironmentId,
-  type SourceControlTool,
+  type MaintainableTool,
 } from "@t3tools/contracts";
+import { issueSourceProjectIdBatches } from "../issueSources.ts";
 import { Atom } from "effect/reactivity";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -72,7 +73,7 @@ const retainFailedIssueGroups = Effect.fn("sourceControl.retainFailedIssueGroups
   return saved.length ? { ...result, groups: [...result.groups, ...saved] } : result;
 });
 
-export function sourceControlToolStatus(tool: SourceControlTool): string {
+export function sourceControlToolStatus(tool: MaintainableTool): string {
   switch (tool.phase) {
     case "running":
       return tool.version ? "Updating tool..." : "Installing tool...";
@@ -87,11 +88,13 @@ export function sourceControlToolStatus(tool: SourceControlTool): string {
     case "idle":
       return tool.status === "unknown"
         ? "Inspection failed."
-        : tool.reason
-          ? "Manual maintenance"
-          : tool.status === "installed"
-            ? "Installed"
-            : "Not installed";
+        : tool.status === "missing"
+          ? "Not installed"
+          : tool.version === null
+            ? "Unknown"
+            : tool.reason
+              ? "Manual maintenance"
+              : "Installed";
   }
 }
 
@@ -103,12 +106,22 @@ export function createSourceControlEnvironmentAtoms<R, E>(
   const issueSources = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:issues:sources",
     tag: WS_METHODS.issuesSources,
+    execute: (input) =>
+      Effect.forEach(
+        issueSourceProjectIdBatches(input.projectIds),
+        (projectIds) => request(WS_METHODS.issuesSources, { ...input, projectIds }),
+        { concurrency: 2 },
+      ).pipe(Effect.map(Array.flatten)),
   });
   return {
     issueSources,
     tools: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:source-control:tools",
       tag: WS_METHODS.sourceControlToolsSubscribe,
+    }),
+    meituanTools: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:meituan:tools",
+      tag: WS_METHODS.meituanToolsSubscribe,
     }),
     refreshTools: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:tools-refresh",
@@ -121,6 +134,12 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     refreshIssueSources: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:refresh-sources",
       tag: WS_METHODS.issuesSources,
+      execute: (input) =>
+        Effect.forEach(
+          issueSourceProjectIdBatches(input.projectIds),
+          (projectIds) => request(WS_METHODS.issuesSources, { ...input, projectIds }),
+          { concurrency: 2 },
+        ).pipe(Effect.map(Array.flatten)),
       onSuccess: ({ environmentId, input }, registry) =>
         Effect.sync(() => {
           registry.update(issueRefresh(environmentId), (value) => value + 1);

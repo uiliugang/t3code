@@ -76,5 +76,9 @@ test(
     await expect(screen.getByText("MCM CLI", { exact: true })).toBeVisible();
     await expect(screen.getByText("Meituan Skills CLI", { exact: true })).toBeVisible();
     await app.screenshot("meituan-service-tools");
+
+    await app.open("/settings/meituan?section=daxiang");
+    await expect(screen.getByText("ONES CLI", { exact: true })).not.toBeVisible();
+    await expect(screen.getByText(/^(Command line tools|命令行工具)$/)).not.toBeVisible();
   },
 );

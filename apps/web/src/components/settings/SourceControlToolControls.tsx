@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, SourceControlTool } from "@t3tools/contracts";
+import type { EnvironmentId, MaintainableTool } from "@t3tools/contracts";
 import { sourceControlToolStatus } from "@t3tools/client-runtime/state/source-control";
 import {
   ArrowUpToLineIcon,
@@ -29,7 +29,7 @@ import {
 } from "../ui/dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-export function SourceControlToolStatus({ tool }: { readonly tool: SourceControlTool }) {
+export function SourceControlToolStatus({ tool }: { readonly tool: MaintainableTool }) {
   const t = useUiTranslation();
   if (tool.phase === "idle") return null;
   return (
@@ -55,7 +55,7 @@ export function SourceControlToolControls({
   environmentLabel,
   busy,
 }: {
-  readonly tool: SourceControlTool;
+  readonly tool: MaintainableTool;
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
   readonly busy: boolean;
@@ -65,7 +65,7 @@ export function SourceControlToolControls({
     sourceControlEnvironment.startTool.permissionAtom(environmentId),
   );
   const start = useAtomCommand(sourceControlEnvironment.startTool, { reportFailure: false });
-  const [selected, setSelected] = useState<SourceControlTool | null>(null);
+  const [selected, setSelected] = useState<MaintainableTool | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard({
@@ -93,7 +93,14 @@ export function SourceControlToolControls({
           : DownloadIcon;
   const command = selected?.command ?? selected?.manualCommand;
   const confirm = async () => {
-    if (!selected?.command || pending) return;
+    if (
+      !selected?.command ||
+      pending ||
+      selected.id === "ones2" ||
+      selected.id === "mcm" ||
+      selected.id === "mtskills"
+    )
+      return;
     setPending(true);
     setError(null);
     const result = await start({

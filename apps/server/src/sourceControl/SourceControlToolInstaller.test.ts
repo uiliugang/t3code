@@ -103,16 +103,27 @@ it.effect.each([
 ] as const)("exposes %s status and its npm maintenance command", ([id, packageName]) =>
   Effect.gen(function* () {
     const { installer, bin } = yield* fixture({ binaries: [id] });
-    const result = yield* installer.inspect(id);
-    assert.strictEqual(result.tool.status, "installed");
-    assert.strictEqual(result.tool.version, "2.43.0");
-    assert.strictEqual(result.tool.executablePath, `${bin}/${id}`);
-    assert.strictEqual(result.tool.command, null);
+    const result = yield* installer.inspectMeituan(id);
+    assert.strictEqual(result.status, "installed");
+    assert.strictEqual(result.version, "2.43.0");
+    assert.strictEqual(result.executablePath, `${bin}/${id}`);
+    assert.strictEqual(result.command, null);
     assert.strictEqual(
-      result.tool.manualCommand,
+      result.manualCommand,
       `npm install -g ${packageName}@latest --registry=http://r.npm.sankuai.com`,
     );
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each(["ones2", "mcm", "mtskills"] as const)(
+  "offers the npm maintenance command for %s on Windows",
+  (id) =>
+    Effect.gen(function* () {
+      const { installer } = yield* fixture({ binaries: [], platform: "win32" });
+      const result = yield* installer.inspectMeituan(id);
+      assert.strictEqual(result.status, "missing");
+      assert.ok(result.manualCommand?.startsWith("npm install -g "));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect.each(["ones2", "mcm"] as const)(
@@ -123,7 +134,7 @@ it.effect.each(["ones2", "mcm"] as const)(
         binaries: [id],
         meituanRequirementsEnabled: false,
       });
-      const result = yield* Effect.flip(installer.inspect(id));
+      const result = yield* Effect.flip(installer.inspectMeituan(id));
       assert.strictEqual(result.reason, "inspection");
       assert.isEmpty(calls);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

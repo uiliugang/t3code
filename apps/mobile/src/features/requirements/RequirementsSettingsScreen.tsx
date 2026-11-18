@@ -139,8 +139,15 @@ export function ProjectSources({
     provider === "meituan"
       ? scope.split(/[,，]/u).every((value) => /^[1-9]\d*$/u.test(value.trim()))
       : /^[\w.-]+\/[\w.-]+$/u.test(scope);
+  const automaticError =
+    automaticQuery.error ?? automaticQuery.data?.find((result) => result.error)?.error ?? null;
   return (
     <View className="gap-4">
+      {automaticError ? (
+        <Text accessibilityRole="alert" className="text-sm text-destructive">
+          {t(automaticError)}
+        </Text>
+      ) : null}
       {projects.flatMap((project) => {
         const savedSources = (saved[project.id] ?? []).filter(
           (source) => source.provider === providerOnly,

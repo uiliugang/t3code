@@ -2969,6 +2969,7 @@ export const layerWsRpc = (
           sourceControlRepositories.cloneRepository(input),
         [WS_METHODS.sourceControlSignInStart]: (input) => sourceControlSignIn.start(input),
         [WS_METHODS.sourceControlToolsSubscribe]: () => sourceControlTools.changes,
+        [WS_METHODS.meituanToolsSubscribe]: () => sourceControlTools.meituanChanges,
         [WS_METHODS.sourceControlToolsRefresh]: () => sourceControlTools.refresh,
         [WS_METHODS.sourceControlToolStart]: (input) => sourceControlTools.start(input),
         [WS_METHODS.sourceControlSignInWait]: (input) => sourceControlSignIn.wait(input),

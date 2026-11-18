@@ -2,13 +2,12 @@ import { useState, type ComponentProps } from "react";
 import { View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import {
-  EnvironmentId,
-  isMeituanServiceEnabled,
-  type SkillSource,
-  type SourceControlTool,
-} from "@t3tools/contracts";
+import { EnvironmentId, isMeituanServiceEnabled, type SkillSource } from "@t3tools/contracts";
 import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
+import {
+  meituanToolIdsForSection,
+  shouldDiscoverMeituanProjectSources,
+} from "@t3tools/client-runtime/meituanSettings";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -157,7 +156,7 @@ function EnvironmentIntegration({
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
   const associationsQuery = useEnvironmentQuery(
-    issuesEnabled && projects.length
+    issuesEnabled && shouldDiscoverMeituanProjectSources(section) && projects.length
       ? sourceControlEnvironment.issueSources({
           environmentId,
           input: { projectIds: projects.map((project) => project.id) },
@@ -183,19 +182,11 @@ function EnvironmentIntegration({
   const skillsAllowed = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
   const sources = skillQuery.data?.sources.filter((source) => source.kind === "mtskills") ?? [];
   const skillsEnabled = enabled && sources.some((source) => source.enabled);
-  const enabledToolIds: SourceControlTool["id"][] = [
-    ...(codeEnabled ? (["meituan"] as const) : []),
-    ...(issuesEnabled ? (["ones2", "mcm"] as const) : []),
-    ...(skillsEnabled ? (["mtskills"] as const) : []),
-  ];
-  const activeToolIds: SourceControlTool["id"][] =
-    section === "code"
-      ? ["meituan"]
-      : section === "issues"
-        ? ["ones2", "mcm"]
-        : section === "skills"
-          ? ["mtskills"]
-          : enabledToolIds;
+  const activeToolIds = meituanToolIdsForSection(section, {
+    code: codeEnabled,
+    issues: issuesEnabled,
+    skills: skillsEnabled,
+  });
   const refreshTools = useAtomCommand(sourceControlEnvironment.refreshTools);
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
@@ -423,7 +414,7 @@ function EnvironmentIntegration({
       ) : (
         <MeituanSkillSource environmentId={environmentId} disabled={disabled} />
       )}
-      {activeToolIds.length ? (
+      {activeEnabled && activeToolIds.length ? (
         <SourceControlToolsSection environment={current} only={activeToolIds} />
       ) : null}
     </>

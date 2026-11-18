@@ -1,4 +1,8 @@
-import type { IssueSource } from "@t3tools/contracts";
+import type { IssueSource, ProjectId } from "@t3tools/contracts";
+import * as Array from "effect/Array";
+
+export const issueSourceProjectIdBatches = (projectIds: readonly ProjectId[]) =>
+  Array.chunksOf(projectIds, 500);
 
 export function mergeProjectIssueSources(
   automatic: readonly IssueSource[],

@@ -15,6 +15,7 @@ vi.mock("../../../state/query", () => ({ useEnvironmentQuery: mocks.query }));
 vi.mock("../../../state/sourceControl", () => ({
   sourceControlEnvironment: {
     tools: () => "tools",
+    meituanTools: () => "meituanTools",
     discovery: () => "discovery",
     startTool: { permissionAtom: () => null },
     refreshTools: {},
@@ -27,15 +28,17 @@ vi.mock("./SettingsSection", () => ({
 vi.mock("./SettingsRow", () => ({
   SettingsRow: ({
     label,
+    value,
     disabled,
     onPress,
   }: {
     label: string;
+    value?: string;
     disabled?: boolean;
     onPress?: () => void;
   }) => (
     <button disabled={disabled} onClick={onPress}>
-      {label}
+      {label} {value}
     </button>
   ),
 }));
@@ -72,4 +75,37 @@ it("allows rescanning after the tool subscription emits without waiting for it t
     environmentId: environment.environmentId,
     input: {},
   });
+});
+
+it("shows a missing automatic-install tool as Not installed only once", () => {
+  const tool = {
+    id: "github",
+    label: "GitHub CLI",
+    status: "missing",
+    version: null,
+    executablePath: null,
+    command: "brew install gh",
+    manualCommand: null,
+    reason: null,
+    phase: "idle",
+    message: null,
+  } as const;
+  mocks.query.mockReset().mockImplementation((atom) => ({
+    data: atom === "tools" ? [tool] : null,
+    isPending: false,
+    refresh: mocks.refresh,
+  }));
+  const environment = {
+    environmentId: EnvironmentId.make("tools-test"),
+    label: "Tools test",
+    serverConfig: { environment: { capabilities: { sourceControlToolMaintenance: true } } },
+  } as SettingsTarget;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  using _mounted = { [Symbol.dispose]: () => act(() => root.unmount()) };
+
+  act(() => root.render(<SourceControlToolsSection environment={environment} />));
+
+  expect(container.textContent).toContain("GitHub CLI Not installed");
+  expect(container.textContent).not.toContain("Not installed · Not installed");
 });

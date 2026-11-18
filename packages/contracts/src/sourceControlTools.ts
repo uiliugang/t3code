@@ -1,14 +1,7 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const SourceControlToolId = Schema.Literals([
-  "git",
-  "github",
-  "meituan",
-  "ones2",
-  "mcm",
-  "mtskills",
-]);
+export const SourceControlToolId = Schema.Literals(["git", "github", "meituan"]);
 export type SourceControlToolId = typeof SourceControlToolId.Type;
 
 export const SourceControlToolPhase = Schema.Literals([
@@ -33,6 +26,30 @@ export const SourceControlTool = Schema.Struct({
   message: Schema.NullOr(Schema.String),
 });
 export type SourceControlTool = typeof SourceControlTool.Type;
+
+export const MeituanToolId = Schema.Literals(["ones2", "mcm", "mtskills"]);
+export type MeituanToolId = typeof MeituanToolId.Type;
+export const MeituanTool = Schema.Struct({
+  ...SourceControlTool.fields,
+  id: MeituanToolId,
+});
+export type MeituanTool = typeof MeituanTool.Type;
+export type MaintainableTool = SourceControlTool | MeituanTool;
+
+export class MeituanToolError extends Schema.TaggedError<
+  MeituanToolError,
+  { readonly brand: unique symbol }
+>()("MeituanToolError", {
+  id: MeituanToolId,
+  reason: Schema.Literals(["unsupported", "inspection"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
+  override get message(): string {
+    return this.reason === "unsupported"
+      ? "This installation must be managed on the server."
+      : "Could not inspect this tool on the server. Refresh and try again.";
+  }
+}
 
 export const SourceControlToolStartInput = Schema.Struct({
   id: SourceControlToolId,
