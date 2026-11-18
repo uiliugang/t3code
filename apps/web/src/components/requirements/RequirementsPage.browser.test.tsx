@@ -304,6 +304,19 @@ it("keeps the scan action locked after its menu closes until the request settles
   await expect.element(trigger).toBeEnabled();
 });
 
+it("switches between list and board views with one click, without opening a menu", async () => {
+  using fixture = setup();
+  const updateSearch = vi.fn();
+  await using screen = await render(fixture.board({ view: "list" }, updateSearch));
+  await screen.getByRole("button", { name: "Switch to board view" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ view: "board" });
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await screen.rerender(fixture.board({ view: "board" }, updateSearch));
+  await screen.getByRole("button", { name: "Switch to list view" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ view: "list" });
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
 it("keeps compact panel horizontal padding when the main sidebar is collapsed", async () => {
   using fixture = setup();
   document.documentElement.setAttribute("data-sidebar-state", "collapsed");

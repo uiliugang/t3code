@@ -6428,6 +6428,20 @@ const zhCN: Readonly<Record<string, string>> = {
   "Switch to list view": "切换为列表视图",
   "New requirement": "新建需求",
   "Requirement source": "需求类型",
+  Assignees: "负责人",
+  Activity: "动态",
+  "Activity ({count})": "动态（{count}）",
+  "Linked pull requests": "关联的合并请求",
+  "Load older comments": "加载更早的评论",
+  "Nothing has happened here yet.": "暂无动态。",
+  "opened {time}": "{time}创建",
+  "closed {time}": "{time}关闭",
+  "Read-only": "只读",
+  "Refresh issue": "刷新需求",
+  "Issue title": "需求标题",
+  "Issue state, {state}": "需求状态：{state}",
+  "Open {key} on {tracker}": "在 {tracker} 打开 {key}",
+  "You cannot comment here.": "无法在此评论。",
 };
 
 export function hasUiTranslation(message: string): boolean {

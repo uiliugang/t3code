@@ -25,6 +25,7 @@ import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 import { ProjectTag } from "./ProjectTag";
 
 import { IssueDetailPanel as TrackerDetailPanel } from "../issue/IssueDetailPanel";
+import { PullRequestSection } from "../pullRequest/PullRequestSummaryTab";
 import type { RequirementTracker } from "@t3tools/client-runtime/work-item";
 import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "../../rightPanelStore";
 
@@ -322,17 +323,18 @@ function RequirementExtras({
   return (
     <>
       {deliveryQuery.data?.item ? (
-        <RequirementDeliveryPanel
-          environmentId={environmentId}
-          item={deliveryQuery.data.item}
-          summary={deliveryQuery.data.items[0]?.deliverySummary}
-          transitions={transitions ?? transitionQuery.data?.transitions ?? []}
-          panelRef={panelRef}
-        />
+        <div className="px-4 pb-4">
+          <RequirementDeliveryPanel
+            environmentId={environmentId}
+            item={deliveryQuery.data.item}
+            summary={deliveryQuery.data.items[0]?.deliverySummary}
+            transitions={transitions ?? transitionQuery.data?.transitions ?? []}
+            panelRef={panelRef}
+          />
+        </div>
       ) : null}
-      <details className="border-t border-border/60 pt-3">
-        <summary className="cursor-pointer text-xs font-medium">{t("Linked branches")}</summary>
-        <div className="space-y-3 pt-3">
+      <PullRequestSection title={t("Linked branches")}>
+        <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
             {t(target.provider === "meituan" ? "Synced with MEP" : "Only in this environment")}
           </p>
@@ -400,7 +402,7 @@ function RequirementExtras({
             </Tooltip>
           </div>
         </div>
-      </details>
+      </PullRequestSection>
     </>
   );
 }

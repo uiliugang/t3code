@@ -89,7 +89,6 @@ import {
   Menu,
   MenuTrigger,
   MenuPopup,
-  MenuItem,
   MenuSub,
   MenuSubTrigger,
   MenuSubPopup,
@@ -712,6 +711,7 @@ export function RequirementBoard({
               />
             </form>
             <SavedViewsMenu
+              size="sm"
               kind={requirementViews}
               preferences={{
                 source,
@@ -864,25 +864,25 @@ export function RequirementBoard({
                 </MenuCheckboxItem>
               </MenuPopup>
             </Menu>
-            <Menu>
-              <MenuTrigger
+            <Tooltip>
+              <TooltipTrigger
                 render={
-                  <Button size="icon-sm" variant="ghost" aria-label={t("View")}>
-                    {view === "list" ? <ListIcon /> : <LayoutGridIcon />}
-                  </Button>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={
+                      view === "list" ? t("Switch to board view") : t("Switch to list view")
+                    }
+                    onClick={() => updateSearch({ view: view === "list" ? "board" : "list" })}
+                  />
                 }
-              />
-              <MenuPopup align="end">
-                <MenuItem onClick={() => updateSearch({ view: "list" })}>
-                  <ListIcon />
-                  {t("List view")}
-                </MenuItem>
-                <MenuItem onClick={() => updateSearch({ view: "board" })}>
-                  <LayoutGridIcon />
-                  {t("Board view")}
-                </MenuItem>
-              </MenuPopup>
-            </Menu>
+              >
+                {view === "list" ? <ListIcon /> : <LayoutGridIcon />}
+              </TooltipTrigger>
+              <TooltipPopup>
+                {view === "list" ? t("Switch to board view") : t("Switch to list view")}
+              </TooltipPopup>
+            </Tooltip>
             <Button
               size="icon-sm"
               variant="ghost"
@@ -1014,8 +1014,14 @@ export function RequirementBoard({
                             aria-current={entry === activeEntry ? "true" : undefined}
                             onClick={() => open(entry)}
                             className={
-                              "flex w-full min-w-0 flex-col gap-2 rounded-md px-3 py-3 text-left outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring " +
-                              (view === "board" ? "border border-border/70 bg-card" : "")
+                              "flex w-full min-w-0 flex-col gap-2 rounded-md px-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring " +
+                              (entry === activeEntry
+                                ? view === "board"
+                                  ? "border border-ring/60 bg-accent"
+                                  : "bg-accent"
+                                : view === "board"
+                                  ? "border border-border/70 bg-card hover:bg-accent/60"
+                                  : "hover:bg-accent/60")
                             }
                           >
                             <span className="flex w-full items-start gap-3">

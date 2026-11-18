@@ -47,6 +47,8 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useClientSettings } from "~/hooks/useSettings";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button, InlineButton } from "../ui/button";
@@ -453,6 +455,8 @@ export function IssueDetailPanel({
   /** Opens a linked change request beside this one; absent, the link goes to the host. */
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
 }) {
+  const t = useUiTranslation();
+  const language = useClientSettings((settings) => settings.uiLanguage);
   const detailQuery = useEnvironmentQuery(
     issueEnvironment.detail({ environmentId, input: reference }),
   );
@@ -580,7 +584,7 @@ export function IssueDetailPanel({
             <Button
               size="xs"
               variant="outline"
-              aria-label={`Issue state, ${currentState.label}`}
+              aria-label={t("Issue state, {state}", { state: currentState.label })}
               disabled={changingState}
             />
           }
@@ -621,14 +625,17 @@ export function IssueDetailPanel({
         )}
         data-pull-request-summary-scroll
       >
-        <div className="px-4 pb-1">
+        <div className="px-4 pt-2.5 pb-1">
           <PullRequestDetailTitleRow className="h-7 gap-1 text-sm sm:text-xs">
             <span className="min-w-0 truncate font-medium text-muted-foreground">
               {detail.scope}
             </span>
             <InlineButton
               className={cn("shrink-0 font-medium", currentState.toneClassName)}
-              aria-label={`Open ${detail.displayKey} on ${tracker.providerName}`}
+              aria-label={t("Open {key} on {tracker}", {
+                key: detail.displayKey,
+                tracker: tracker.providerName,
+              })}
               render={<a href={detail.url} target="_blank" rel="noopener noreferrer" />}
             >
               {detail.displayKey}
@@ -647,7 +654,7 @@ export function IssueDetailPanel({
             <Button
               size="icon-xs"
               variant="ghost"
-              aria-label="Refresh issue"
+              aria-label={t("Refresh issue")}
               disabled={detailQuery.isPending}
               onClick={() => {
                 // Older pages are cached under the cursor, which a refresh can hand back unchanged.
@@ -671,7 +678,7 @@ export function IssueDetailPanel({
             >
               <Input
                 autoFocus
-                aria-label="Issue title"
+                aria-label={t("Issue title")}
                 value={titleDraft}
                 disabled={saving}
                 onChange={(event) => setTitleDraft(event.target.value)}
@@ -680,7 +687,7 @@ export function IssueDetailPanel({
                 }}
               />
               <Button type="submit" size="sm" disabled={saving}>
-                Save
+                {t("Save")}
               </Button>
               <Button
                 type="button"
@@ -689,7 +696,7 @@ export function IssueDetailPanel({
                 disabled={saving}
                 onClick={() => setEditing(null)}
               >
-                Cancel
+                {t("Cancel")}
               </Button>
             </form>
           ) : (
@@ -699,7 +706,7 @@ export function IssueDetailPanel({
               </h2>
               {canEdit ? (
                 <PullRequestEditButton
-                  aria-label="Edit title"
+                  aria-label={t("Edit title")}
                   onClick={() => {
                     setTitleDraft(detail.title);
                     setEditing("title");
@@ -712,20 +719,28 @@ export function IssueDetailPanel({
           <PullRequestMetaLine className="mt-2 min-h-5 text-xs text-muted-foreground">
             {detail.author ? <PullRequestActorLabel actor={detail.author} /> : null}
             {detail.createdAt ? (
-              <span>opened {formatRelativeTimeLabel(detail.createdAt)}</span>
+              <span>
+                {t("opened {time}", {
+                  time: formatRelativeTimeLabel(detail.createdAt, undefined, language),
+                })}
+              </span>
             ) : null}
             {detail.closedAt ? (
-              <span>closed {formatRelativeTimeLabel(detail.closedAt)}</span>
+              <span>
+                {t("closed {time}", {
+                  time: formatRelativeTimeLabel(detail.closedAt, undefined, language),
+                })}
+              </span>
             ) : null}
-            {detail.writable ? null : <span>Read-only</span>}
+            {detail.writable ? null : <span>{t("Read-only")}</span>}
           </PullRequestMetaLine>
 
           <div className="mt-4 space-y-2">
             {detail.capabilities.labels || detail.labels.length > 0 ? (
-              <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
+              <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label={t("Labels")}>
                 <span className="flex min-w-0 flex-wrap items-center gap-1">
                   {detail.labels.length === 0 ? (
-                    <span className="text-muted-foreground">None</span>
+                    <span className="text-muted-foreground">{t("None")}</span>
                   ) : (
                     detail.labels.map((label) => (
                       <PullRequestLabelChip
@@ -751,10 +766,10 @@ export function IssueDetailPanel({
               </PullRequestMetaRow>
             ) : null}
             {detail.capabilities.assignees || detail.assignees.length > 0 ? (
-              <PullRequestMetaRow icon={<UsersIcon className="size-3.5" />} label="Assignees">
+              <PullRequestMetaRow icon={<UsersIcon className="size-3.5" />} label={t("Assignees")}>
                 <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                   {detail.assignees.length === 0 ? (
-                    <span className="text-muted-foreground">None</span>
+                    <span className="text-muted-foreground">{t("None")}</span>
                   ) : (
                     detail.assignees.map((actor) => (
                       <PullRequestActorLabel key={actor.login} actor={actor} />
@@ -779,12 +794,12 @@ export function IssueDetailPanel({
 
         <PullRequestSection
           key={`description:${detail.url}`}
-          title="Description"
+          title={t("Description")}
           keepMounted
           actions={
             canEdit && editing !== "body" ? (
               <PullRequestEditButton
-                aria-label="Edit description"
+                aria-label={t("Edit description")}
                 onClick={() => setEditing("body")}
               />
             ) : null
@@ -797,7 +812,7 @@ export function IssueDetailPanel({
                 cwd={cwd}
                 environmentId={environmentId}
                 threadRef={threadRef}
-                label="Description"
+                label={t("Description")}
                 completionScope={null}
                 saving={saving}
                 allowEmpty
@@ -805,10 +820,10 @@ export function IssueDetailPanel({
                 onCancel={() => setEditing(null)}
               />
             ) : detail.bodyFormat === "html" ? (
-              <DocumentPages html={detail.body} name={detail.title} output />
+              <DocumentPages html={detail.body} name={detail.title} output flush />
             ) : (
               <PullRequestMarkdown
-                text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
+                text={detail.body.trim().length > 0 ? detail.body : t("_No description provided._")}
                 cwd={cwd}
                 environmentId={environmentId}
                 threadRef={threadRef}
@@ -827,7 +842,7 @@ export function IssueDetailPanel({
 
         {renderSupplement?.(detail)}
         {detail.linkedPullRequests.length > 0 ? (
-          <PullRequestSection key={`linked:${detail.url}`} title="Linked pull requests">
+          <PullRequestSection key={`linked:${detail.url}`} title={t("Linked pull requests")}>
             <div className="flex flex-col gap-1">
               {detail.linkedPullRequests.map((link) => (
                 <LinkedPullRequestRow
@@ -857,7 +872,11 @@ export function IssueDetailPanel({
         nextCursor !== null ? (
           <PullRequestSection
             key={`activity:${detail.url}`}
-            title={detail.commentCount > 0 ? `Activity (${detail.commentCount})` : "Activity"}
+            title={
+              detail.commentCount > 0
+                ? t("Activity ({count})", { count: detail.commentCount })
+                : t("Activity")
+            }
           >
             <div className="flex flex-col gap-3">
               {nextCursor !== null ? (
@@ -868,11 +887,13 @@ export function IssueDetailPanel({
                   disabled={loadingOlder}
                   onClick={() => void loadOlder()}
                 >
-                  {loadingOlder ? "Loading…" : "Load older comments"}
+                  {loadingOlder ? t("Loading…") : t("Load older comments")}
                 </Button>
               ) : null}
               {timeline.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nothing has happened here yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  {t("Nothing has happened here yet.")}
+                </p>
               ) : null}
               {timeline.map((item) =>
                 item.kind === "comment" ? (
@@ -931,7 +952,7 @@ export function IssueDetailPanel({
         <IssueCommentComposer
           environmentId={environmentId}
           reference={reference}
-          blocked={canComment ? null : (blocked ?? "You cannot comment here.")}
+          blocked={canComment ? null : (blocked ?? t("You cannot comment here."))}
         />
       ) : null}
     </div>

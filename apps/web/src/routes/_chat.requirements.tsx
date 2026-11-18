@@ -41,7 +41,17 @@ const Search = Schema.Struct({
 });
 export type RequirementsSearch = typeof Search.Type;
 const decodeSearch = Schema.decodeSync(Search);
+
+// The router parses a bare `issueId=17` as a number; identifiers stay strings.
+const STRING_KEYS = ["issueId", "issueScope", "issueHost", "q", "assignee"] as const;
+
 export const Route = createFileRoute("/_chat/requirements")({
-  validateSearch: (raw: Record<string, unknown>): RequirementsSearch => decodeSearch(raw),
+  validateSearch: (raw: Record<string, unknown>): RequirementsSearch => {
+    const normalized = { ...raw };
+    for (const key of STRING_KEYS) {
+      if (typeof normalized[key] === "number") normalized[key] = String(normalized[key]);
+    }
+    return decodeSearch(normalized);
+  },
   component: RequirementsPage,
 });
