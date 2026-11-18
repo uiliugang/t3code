@@ -21,7 +21,7 @@ import * as Schema from "effect/Schema";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as Settings from "../serverSettings.ts";
-import { skillInstallerNode } from "../skills/skillInstallerNode.ts";
+import { makeSkillInstallerNode } from "../skills/skillInstallerNode.ts";
 
 const MCODE_PACKAGE = "@ee/code-cli";
 const MCODE_REGISTRY = "--registry=http://r.npm.sankuai.com";
@@ -94,6 +94,7 @@ const make = Effect.gen(function* () {
   const home = yield* HostProcess.HomeDirectory;
   const env = yield* HostProcess.Environment;
   const settings = yield* Settings.ServerSettingsService;
+  const skillInstallerNode = yield* makeSkillInstallerNode;
   // Bypass command-result caching: verification must see a binary installed moments ago.
   const find = Effect.fn("SourceControlToolInstaller.find")(function* (name: string) {
     const matches = yield* resolveCommandPaths(name, { env, until: () => true });

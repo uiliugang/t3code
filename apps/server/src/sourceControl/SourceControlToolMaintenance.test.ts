@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
   MeituanToolError,
+  ServerSettingsError,
   SourceControlToolError,
   type SourceControlTool,
   type SkillSource,
@@ -169,6 +170,18 @@ it.effect.each(["unchanged", "failed"] as const)(
       const release = yield* Deferred.make<void>();
       const snapshots = yield* Queue.unbounded<ReadonlyArray<SourceControlTool>>();
       const inspected: string[] = [];
+      const inspecting = yield* Deferred.make<void>();
+      const releaseScan = yield* Deferred.make<void>();
+      const subscribing = yield* Deferred.make<void>();
+      let failRead = false;
+      let overlapping = false;
+      const tracer = Tracer.make({
+        span(options) {
+          if (overlapping && options.name === "SourceControlToolMaintenance.scanSourceControl")
+            queueMicrotask(() => Deferred.doneUnsafe(subscribing, Effect.void));
+          return new Tracer.NativeSpan(options);
+        },
+      });
       yield* Effect.gen(function* () {
         const service = yield* Maintenance.SourceControlToolMaintenance;
         yield* service.changes.pipe(
@@ -192,7 +205,18 @@ it.effect.each(["unchanged", "failed"] as const)(
           assert.strictEqual(active.find((tool) => tool.id === "git")?.phase, "running");
         }
         assert.isEmpty(inspected);
+        failRead = phase === "failed";
         yield* Deferred.succeed(release, undefined);
+        if (phase === "unchanged") {
+          yield* Deferred.await(inspecting);
+          overlapping = true;
+          const other = yield* Stream.runHead(service.changes).pipe(Effect.forkChild);
+          yield* Deferred.await(subscribing);
+          yield* Deferred.succeed(releaseScan, undefined);
+          assert.ok(
+            Option.getOrThrow(yield* Fiber.join(other)).some((tool) => tool.phase === phase),
+          );
+        }
         const settled = Option.getOrThrow(
           yield* Stream.fromQueue(snapshots).pipe(
             Stream.filter((tools) => tools.some((tool) => tool.phase === phase)),
@@ -210,8 +234,12 @@ it.effect.each(["unchanged", "failed"] as const)(
           testLayer(
             {
               inspect: (id) =>
-                Effect.sync(() => {
+                Effect.gen(function* () {
                   inspected.push(id);
+                  if (phase === "unchanged" && id === "meituan") {
+                    yield* Deferred.succeed(inspecting, undefined);
+                    yield* Deferred.await(releaseScan);
+                  }
                   return plan({ id });
                 }),
               install: () =>
@@ -227,11 +255,22 @@ it.effect.each(["unchanged", "failed"] as const)(
             },
             Stream.succeed(defaultSkillSource),
             Layer.mock(Settings.ServerSettingsService)({
-              getSettings: SubscriptionRef.get(saved),
+              getSettings: Effect.suspend(() =>
+                failRead
+                  ? Effect.fail(
+                      new ServerSettingsError({
+                        settingsPath: "fixture",
+                        operation: "read-file",
+                        cause: "unavailable",
+                      }),
+                    )
+                  : SubscriptionRef.get(saved),
+              ),
               subscribeChanges: Effect.succeed(SubscriptionRef.changes(saved)),
             }),
           ),
         ),
+        Effect.withTracer(tracer),
       );
     }),
 );

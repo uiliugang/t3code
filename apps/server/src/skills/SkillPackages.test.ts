@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { setWindowsPath } from "@t3tools/shared/shell";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -78,11 +79,12 @@ it.live(
       // mtskills 9.6 accepts --sync-agents, but does not define the negated option.
       yield* fs.writeFileString(
         script,
-        `#!/usr/bin/env node
+        `#!/usr/bin/env -S node --conditions=private-installer
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
+if (!process.execArgv.includes("--conditions=private-installer")) process.exit(4);
 if (spawnSync("node", ["--version"]).status !== 0) process.exit(3);
 const { values, positionals } = parseArgs({ allowPositionals: true, options: { "target-dir": { type: "string" }, yes: { type: "boolean", short: "y" }, id: { type: "string" } } });
 if (positionals[0] !== "i" || !values.yes || !values["target-dir"] || realpathSync(dirname(values["target-dir"])) !== realpathSync(process.cwd())) process.exit(2);
@@ -97,11 +99,17 @@ writeFileSync(join(target, "resource.txt"), "bundled");
       yield* fs.makeDirectory(staleBin);
       yield* fs.writeFileString(`${staleBin}/node`, "#!/bin/sh\nexit 42\n");
       yield* fs.chmod(`${staleBin}/node`, 0o755);
-      const runtime = platform === "win32" ? process.execPath : `${directory}/Electron`;
-      if (platform !== "win32") yield* fs.symlink(process.execPath, runtime);
+      const runtime = `${directory}/${platform === "win32" ? "Electron.exe" : "Electron"}`;
+      if (platform === "win32") yield* fs.copyFile(process.execPath, runtime);
+      else yield* fs.symlink(process.execPath, runtime);
       const executable = platform === "win32" ? `${directory}/installer.cmd` : script;
       if (platform === "win32")
-        yield* fs.writeFileString(executable, '@node "%~dp0installer.mjs" %*\r\n');
+        yield* fs.writeFileString(
+          executable,
+          '@node --conditions=private-installer "%~dp0installer.mjs" %*\r\n',
+        );
+      const isolatedEnv = { ...environment, PATH: staleBin };
+      if (platform === "win32") setWindowsPath(isolatedEnv, staleBin);
       const result = yield* Effect.gen(function* () {
         const packages = yield* SkillPackages.SkillPackages;
         return yield* packages.fetch({
@@ -121,10 +129,7 @@ writeFileSync(join(target, "resource.txt"), "bundled");
         Effect.provide(
           SkillPackages.layer.pipe(Layer.provide(ServerConfig.layerTest(directory, directory))),
         ),
-        Effect.provideService(HostProcess.Environment, {
-          ...environment,
-          PATH: `${staleBin}${platform === "win32" ? ";" : ":"}${environment.PATH ?? ""}`,
-        }),
+        Effect.provideService(HostProcess.Environment, isolatedEnv),
         Effect.provideService(HostProcess.ExecutablePath, runtime),
       );
       expect(result.name).toBe("custom-skill");

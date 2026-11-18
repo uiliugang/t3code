@@ -1,6 +1,7 @@
 import {
   SourceControlToolError,
   type MeituanTool,
+  type ServerSettings,
   type SourceControlTool,
   type SourceControlToolId,
   type SourceControlToolStartInput,
@@ -52,12 +53,32 @@ const make = Effect.gen(function* () {
     SubscriptionRef.update(state, (tools) =>
       tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
     );
+  let lastSettings = {
+    meituanIntegrationEnabled: false,
+    meituanRequirementsEnabled: false,
+    meituanSourceControlEnabled: false,
+  };
+  const rememberSettings = ({
+    meituanIntegrationEnabled,
+    meituanRequirementsEnabled,
+    meituanSourceControlEnabled,
+  }: ServerSettings) =>
+    (lastSettings = {
+      meituanIntegrationEnabled,
+      meituanRequirementsEnabled,
+      meituanSourceControlEnabled,
+    });
   const enabledSettings = settings.getSettings.pipe(
-    Effect.orElseSucceed(() => ({ meituanIntegrationEnabled: false })),
+    Effect.map(rememberSettings),
+    Effect.orElseSucceed(() => lastSettings),
   );
   const settingChanges = Stream.unwrap(
     settings.subscribeChanges.pipe(
-      Effect.map((updates) => Stream.fromEffect(enabledSettings).pipe(Stream.concat(updates))),
+      Effect.map((updates) =>
+        Stream.fromEffect(enabledSettings).pipe(
+          Stream.concat(updates.pipe(Stream.map(rememberSettings))),
+        ),
+      ),
     ),
   );
   const codeEnabled = settingChanges.pipe(
@@ -113,21 +134,33 @@ const make = Effect.gen(function* () {
       ),
   );
   let sourceScanPending = false;
+  let lastSourceScan: { enabled: boolean } | undefined;
+  const publishSourceScan = Effect.fn("SourceControlToolMaintenance.publishSourceScan")(function* (
+    enabled: boolean,
+    previous: ReadonlyArray<SourceControlTool>,
+    settledId?: SourceControlToolId,
+  ) {
+    const tools = yield* inspectSourceTools(enabled, previous, settledId);
+    yield* SubscriptionRef.set(state, tools);
+    lastSourceScan = { enabled };
+  });
   const sourceScans = yield* Cache.make({
     capacity: 2,
     timeToLive: 0,
-    lookup: (enabled: boolean) =>
-      lock.withPermits(1)(
+    lookup: (enabled: boolean) => {
+      const observed = lastSourceScan;
+      return lock.withPermits(1)(
         Effect.gen(function* () {
           const previous = yield* SubscriptionRef.get(state);
           if (isActive(previous)) {
             sourceScanPending = true;
             return;
           }
-          const tools = yield* inspectSourceTools(enabled, previous);
-          yield* SubscriptionRef.set(state, tools);
+          if (observed !== lastSourceScan && lastSourceScan?.enabled === enabled) return;
+          yield* publishSourceScan(enabled, previous);
         }),
-      ),
+      );
+    },
   });
 
   const finish = Effect.fn("SourceControlToolMaintenance.finish")(function* (
@@ -142,8 +175,7 @@ const make = Effect.gen(function* () {
       "meituan",
       yield* enabledSettings,
     );
-    const tools = yield* inspectSourceTools(enabled, previous, id);
-    yield* SubscriptionRef.set(state, tools);
+    yield* publishSourceScan(enabled, previous, id);
     sourceScanPending = false;
   }, lock.withPermits(1));
   const meituanScans = yield* Cache.make({

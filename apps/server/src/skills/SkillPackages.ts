@@ -18,7 +18,7 @@ import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import { sanitizeFailureText } from "@t3tools/provider-core/server/failure";
 import * as NodeUtil from "node:util";
 import * as ServerConfig from "../config.ts";
-import { skillInstallerNode } from "./skillInstallerNode.ts";
+import { makeSkillInstallerNode } from "./skillInstallerNode.ts";
 
 const metadataSchema = Schema.Struct({
   name: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)),
@@ -72,6 +72,7 @@ const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig.ServerConfig;
   const platform = yield* HostProcess.Platform;
+  const skillInstallerNode = yield* makeSkillInstallerNode;
   const inside = (root: string, file: string) => file === root || file.startsWith(root + path.sep);
 
   const readMetadata = Effect.fn("SkillPackages.readMetadata")(function* (directory: string) {
@@ -98,25 +99,29 @@ const make = Effect.gen(function* () {
         CI: "1",
         ...(registry ? { npm_config_registry: registry } : {}),
       };
-      const resolved = yield* resolveSpawnCommand(binary, args, { env });
-      const executable = yield* resolveCommandPath(resolved.command, { env }).pipe(
+      const executable = yield* resolveCommandPath(binary, { env }).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
         Effect.provideService(Path.Path, path),
       );
-      const invocation =
-        executable && !resolved.shell
-          ? yield* skillInstallerNode(executable, resolved.args, env).pipe(
-              Effect.provideService(FileSystem.FileSystem, fs),
-              Effect.provideService(Path.Path, path),
-            )
-          : undefined;
+      const invocation = executable
+        ? yield* skillInstallerNode(executable, args, env).pipe(
+            Effect.provideService(FileSystem.FileSystem, fs),
+            Effect.provideService(Path.Path, path),
+          )
+        : undefined;
+      const spawnEnv = invocation?.env ?? env;
+      const resolved = yield* resolveSpawnCommand(
+        invocation?.command ?? binary,
+        invocation?.args ?? args,
+        { env: spawnEnv },
+      );
       const result = yield* spawnAndCollect(
         binary,
-        ChildProcess.make(
-          invocation?.command ?? resolved.command,
-          invocation?.args ?? resolved.args,
-          { cwd, env: invocation?.env ?? env, shell: resolved.shell },
-        ),
+        ChildProcess.make(resolved.command, resolved.args, {
+          cwd,
+          env: spawnEnv,
+          shell: resolved.shell,
+        }),
       ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
       if (result.code !== 0) {
         const diagnostic = `${result.stderr} ${result.stdout}`;
