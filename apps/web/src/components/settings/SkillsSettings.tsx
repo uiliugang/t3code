@@ -27,7 +27,7 @@ import {
   skillBatchBindingOperations,
   skillStatus,
   skillFailure,
-  skillConfigurationJob,
+  skillConfigurationFeedback,
   skillNextCheck,
   skillSourceName,
   skillSourceFailure,
@@ -1015,7 +1015,6 @@ function SkillRow({
   const busy = skill.status === "fetching" || skill.status === "removing";
   const disabled = !canManage || busy;
   const failure = skillFailure(skill);
-  const configuration = skillConfigurationJob(skill, data.jobs);
   const source = data.sources.find((entry) => entry.id === skill.sourceId);
   const viewDiff = async () => {
     setInspecting(true);
@@ -1170,14 +1169,6 @@ function SkillRow({
               </Button>
             )}
           </div>
-          {configuration?.status === "completed" &&
-            skill.bindings.every((binding) => binding.status === "linked") && (
-              <p role="status" className="mt-2 text-xs text-muted-foreground">
-                {t(
-                  "Usage locations updated. Running agents may need a new session or reload to use the changes.",
-                )}
-              </p>
-            )}
           {failure && (
             <div role="alert" className="mt-2 min-w-0 text-xs leading-relaxed text-destructive">
               <p>{t(failure)}</p>
@@ -1945,6 +1936,7 @@ function EnvironmentSkills({
     { value: "source:", label: `${t("Unknown source")} ${sourceCounts[""] ?? 0}` },
   ];
   const failedSource = skillSourceFailure(data);
+  const configurationFeedback = skillConfigurationFeedback(data);
   const selectableRows = rows.filter((row) => row.kind === "managed" || !row.skill.external);
   const selectedManaged = data.skills.filter((skill) => selected.includes(skill.id));
   const selectedSourceDisabled = selectedManaged.some(
@@ -2016,6 +2008,14 @@ function EnvironmentSkills({
           </Button>
         </div>
       </div>
+      {configurationFeedback && (
+        <Alert
+          role={configurationFeedback.status === "failed" ? "alert" : "status"}
+          variant={configurationFeedback.status === "failed" ? "error" : "info"}
+        >
+          <AlertDescription>{t(configurationFeedback.message)}</AlertDescription>
+        </Alert>
+      )}
       {!connected && (
         <p role="status" className="text-sm text-muted-foreground">
           {t("Environment disconnected. Showing cached skills from {time}.", {

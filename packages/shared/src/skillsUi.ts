@@ -69,6 +69,37 @@ export function skillConfigurationJob(skill: ManagedSkill, jobs: ReadonlyArray<S
     ? undefined
     : job;
 }
+export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | "jobs">) {
+  const configurations = data.skills.map((skill) => ({
+    skill,
+    job: skillConfigurationJob(skill, data.jobs),
+  }));
+  if (configurations.some(({ job }) => job?.status === "failed"))
+    return {
+      status: "failed" as const,
+      message: "Some usage locations could not be updated. Review recent operations.",
+    };
+  if (
+    configurations.some(
+      ({ job }) =>
+        job?.status === "queued" || job?.status === "running" || job?.status === "waiting",
+    )
+  )
+    return { status: "pending" as const, message: "Updating usage locations..." };
+  if (
+    configurations.some(
+      ({ skill, job }) =>
+        job?.status === "completed" &&
+        skill.bindings.every((binding) => binding.status === "linked"),
+    )
+  )
+    return {
+      status: "completed" as const,
+      message:
+        "Usage locations updated. Running agents may need a new session or reload to use the changes.",
+    };
+  return null;
+}
 export function skillRows(
   data: SkillSnapshot,
   search = "",

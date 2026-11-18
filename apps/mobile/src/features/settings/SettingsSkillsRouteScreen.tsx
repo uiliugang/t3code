@@ -29,6 +29,7 @@ import {
   skillStatus,
   skillFailure,
   skillConfigurationJob,
+  skillConfigurationFeedback,
   skillNextCheck,
   skillSourceName,
   skillSourceFailure,
@@ -39,6 +40,7 @@ import { mobilePreferencesAtom } from "../../state/preferences";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { ErrorBanner } from "../../components/ui/ErrorBanner";
+import { Notice } from "../../components/ui/Notice";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Menu } from "../../components/ui/Menu";
 import * as Dialog from "../../components/ui/Dialog";
@@ -989,6 +991,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       ? selectedSourceFilter
       : null;
   const failedSource = skillSourceFailure(data);
+  const configurationFeedback = skillConfigurationFeedback(data);
   const { rows, counts, sourceCounts } = skillRows(
     data,
     search,
@@ -1152,6 +1155,14 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             )}
           </ScreenScrollView>
         </Sheet>
+      )}
+      {configurationFeedback && (
+        <View className="px-5 pt-3">
+          <Notice
+            tone={configurationFeedback.status === "failed" ? "danger" : "default"}
+            message={t(configurationFeedback.message)}
+          />
+        </View>
       )}
       <ScreenScrollView
         className="flex-1"

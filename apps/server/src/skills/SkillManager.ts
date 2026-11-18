@@ -1464,9 +1464,14 @@ const make = Effect.gen(function* () {
             ? completed.skills.find((skill) => skill.id === resultingId)
             : undefined;
           const failed =
-            resultingSkill?.status === "failed" &&
-            (input.type !== "configure" || resultingSkill.failureReason === "conflict");
-          const after = resultingSkill?.availableDigest ?? resultingSkill?.activeDigest;
+            input.type === "configure"
+              ? resultingSkill?.failureReason === "conflict"
+              : resultingSkill?.status === "failed";
+          const waiting = input.type !== "configure" && resultingSkill?.status === "pending";
+          const after =
+            input.type === "configure"
+              ? resultingSkill?.activeDigest
+              : (resultingSkill?.availableDigest ?? resultingSkill?.activeDigest);
           const finishedAt = yield* now;
           yield* saveJobs((jobs) =>
             jobs.map((entry) =>
@@ -1476,12 +1481,12 @@ const make = Effect.gen(function* () {
                     status:
                       entry.status === "cancelled"
                         ? "cancelled"
-                        : resultingSkill?.status === "pending"
-                          ? "waiting"
-                          : failed
-                            ? "failed"
+                        : failed
+                          ? "failed"
+                          : waiting
+                            ? "waiting"
                             : "completed",
-                    reason: failed ? (resultingSkill.failureReason ?? "io") : entry.reason,
+                    reason: failed ? (resultingSkill?.failureReason ?? "io") : entry.reason,
                     finishedAt,
                     afterDigest: after ?? null,
                   }
