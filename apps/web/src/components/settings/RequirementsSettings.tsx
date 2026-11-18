@@ -16,6 +16,7 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { IssueSelect } from "../requirements/IssueSelect";
+import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer } from "./settingsLayout";
 
@@ -59,12 +60,9 @@ function ProjectSourceRow({
     }),
   );
   const result = query.data?.[0];
-  const overridden = new Set(saved.map((entry) => entry.provider));
-  const sources = [
-    ...(result?.sources ?? []).filter((entry) => !overridden.has(entry.provider)),
-    ...saved,
-  ].filter((source) => source.provider === "github");
+  const sources = mergeProjectIssueSources(result?.sources ?? [], saved);
   const github = sources.find((entry) => entry.provider === "github");
+  const mep = sources.filter((entry) => entry.provider === "meituan");
   return (
     <tr className="border-b border-border text-sm">
       <td className="py-4 pr-3 align-top">
@@ -101,7 +99,12 @@ function ProjectSourceRow({
       <td className="py-4 pr-4 align-top">
         <div className="flex items-center gap-3 overflow-hidden">
           {github ? <span className="shrink-0">GitHub Issues</span> : null}
-          {!github ? <SourceValue value={undefined} /> : null}
+          {mep.length ? (
+            <SourceValue
+              value={`MEP ${[...new Set(mep.map((entry) => entry.scope))].join(", ")}`}
+            />
+          ) : null}
+          {!github && !mep.length ? <SourceValue value={undefined} /> : null}
         </div>
       </td>
       <td className="py-4 text-right align-top text-xs text-muted-foreground">

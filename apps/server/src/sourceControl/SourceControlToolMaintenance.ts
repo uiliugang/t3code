@@ -1,12 +1,16 @@
 import {
   SourceControlToolError,
-  isMeituanServiceEnabled,
+  type MeituanTool,
+  type ServerSettings,
   type SourceControlTool,
   type SourceControlToolId,
   type SourceControlToolStartInput,
+  type SkillSource,
 } from "@t3tools/contracts";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Context from "effect/Context";
+import * as Cache from "effect/Cache";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
@@ -15,51 +19,105 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as SourceControlToolInstaller from "./SourceControlToolInstaller.ts";
 import * as Settings from "../serverSettings.ts";
+import { SkillManager } from "../skills/SkillManager.ts";
 
 export class SourceControlToolMaintenance extends Context.Service<
   SourceControlToolMaintenance,
   {
     readonly refresh: Effect.Effect<void>;
     readonly changes: Stream.Stream<ReadonlyArray<SourceControlTool>>;
+    readonly meituanChanges: Stream.Stream<ReadonlyArray<MeituanTool>>;
     readonly start: (
       input: SourceControlToolStartInput,
     ) => Effect.Effect<void, SourceControlToolError>;
   }
 >()("t3/sourceControl/SourceControlToolMaintenance") {}
 
+class MeituanScanConfig extends Data.Class<{
+  readonly requirements: boolean;
+  readonly source: SkillSource | undefined;
+}> {}
+
 const make = Effect.gen(function* () {
   const installer = yield* SourceControlToolInstaller.SourceControlToolInstaller;
   const settings = yield* Settings.ServerSettingsService;
+  const skills = yield* SkillManager;
   const scope = yield* Effect.scope;
   const lock = yield* Semaphore.make(1);
+  const meituanLock = yield* Semaphore.make(1);
   const state = yield* SubscriptionRef.make<ReadonlyArray<SourceControlTool>>([]);
+  const meituanState = yield* SubscriptionRef.make<ReadonlyArray<MeituanTool>>([]);
   const isActive = (tools: ReadonlyArray<SourceControlTool>) =>
     tools.some((tool) => tool.phase === "running" || tool.phase === "verifying");
   const update = (id: SourceControlToolId, patch: Partial<SourceControlTool>) =>
     SubscriptionRef.update(state, (tools) =>
       tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
     );
-  const refresh = lock.withPermits(1)(
-    Effect.gen(function* () {
-      const previous = yield* SubscriptionRef.get(state);
-      if (isActive(previous)) return;
-      const saved = yield* settings.getSettings.pipe(
-        Effect.orElseSucceed(() => ({ meituanIntegrationEnabled: false })),
-      );
-      const tools = yield* Effect.forEach(
-        (["git", "github", "meituan"] as const).filter(
-          (id) => id !== "meituan" || isMeituanServiceEnabled(saved, "sourceControl"),
+  let lastSettings = {
+    meituanIntegrationEnabled: false,
+    meituanRequirementsEnabled: false,
+    meituanSourceControlEnabled: false,
+  };
+  const rememberSettings = ({
+    meituanIntegrationEnabled,
+    meituanRequirementsEnabled,
+    meituanSourceControlEnabled,
+  }: ServerSettings) =>
+    (lastSettings = {
+      meituanIntegrationEnabled,
+      meituanRequirementsEnabled,
+      meituanSourceControlEnabled,
+    });
+  const enabledSettings = settings.getSettings.pipe(
+    Effect.map(rememberSettings),
+    Effect.orElseSucceed(() => lastSettings),
+  );
+  const settingChanges = Stream.unwrap(
+    settings.subscribeChanges.pipe(
+      Effect.map((updates) =>
+        Stream.fromEffect(enabledSettings).pipe(
+          Stream.concat(updates.pipe(Stream.map(rememberSettings))),
         ),
-        (id) =>
-          installer.inspect(id).pipe(
-            Effect.map(({ tool }) => {
-              const old = previous.find((entry) => entry.id === id);
-              return old ? { ...tool, phase: old.phase, message: old.message } : tool;
-            }),
+      ),
+    ),
+  );
+  const codeEnabled = settingChanges.pipe(
+    Stream.map((saved) => SourceControlToolInstaller.isSourceControlToolEnabled("meituan", saved)),
+    Stream.changes,
+  );
+  const meituanConfig = Stream.zipLatestWith(
+    settingChanges,
+    skills.meituanSource,
+    (saved, source) =>
+      new MeituanScanConfig({
+        requirements: SourceControlToolInstaller.isMeituanToolEnabled("ones2", saved),
+        source: saved.meituanIntegrationEnabled ? source : undefined,
+      }),
+  ).pipe(
+    Stream.changesWith(
+      (previous, next) =>
+        previous.requirements === next.requirements && previous.source === next.source,
+    ),
+  );
+  const inspectSourceTools = Effect.fn("SourceControlToolMaintenance.inspectSourceTools")(
+    (
+      enabled: boolean,
+      previous: ReadonlyArray<SourceControlTool>,
+      settledId?: SourceControlToolId,
+    ) =>
+      Effect.forEach(
+        (["git", "github", "meituan"] as const).filter((id) => id !== "meituan" || enabled),
+        (id) => {
+          const old = previous.find((entry) => entry.id === id);
+          if (id === settledId && old) return Effect.succeed(old);
+          return installer.inspect(id).pipe(
+            Effect.map(({ tool }) =>
+              old ? { ...tool, phase: old.phase, message: old.message } : tool,
+            ),
             Effect.catch((error) =>
               Effect.succeed({
                 id,
-                label: id === "git" ? "Git" : id === "github" ? "GitHub CLI" : "Meituan Code",
+                label: SourceControlToolInstaller.sourceControlToolLabel(id),
                 status: "unknown" as const,
                 version: null,
                 executablePath: null,
@@ -70,12 +128,89 @@ const make = Effect.gen(function* () {
                 message: null,
               }),
             ),
-          ),
+          );
+        },
         { concurrency: 3 },
-      );
-      yield* SubscriptionRef.set(state, tools);
-    }),
+      ),
   );
+  let sourceScanPending = false;
+  let lastSourceScan: { enabled: boolean } | undefined;
+  const publishSourceScan = Effect.fn("SourceControlToolMaintenance.publishSourceScan")(function* (
+    enabled: boolean,
+    previous: ReadonlyArray<SourceControlTool>,
+    settledId?: SourceControlToolId,
+  ) {
+    const tools = yield* inspectSourceTools(enabled, previous, settledId);
+    yield* SubscriptionRef.set(state, tools);
+    lastSourceScan = { enabled };
+  });
+  const sourceScans = yield* Cache.make({
+    capacity: 2,
+    timeToLive: 0,
+    lookup: (enabled: boolean) => {
+      const observed = lastSourceScan;
+      return lock.withPermits(1)(
+        Effect.gen(function* () {
+          const previous = yield* SubscriptionRef.get(state);
+          if (isActive(previous)) {
+            sourceScanPending = true;
+            return;
+          }
+          if (observed !== lastSourceScan && lastSourceScan?.enabled === enabled) return;
+          yield* publishSourceScan(enabled, previous);
+        }),
+      );
+    },
+  });
+
+  const finish = Effect.fn("SourceControlToolMaintenance.finish")(function* (
+    id: SourceControlToolId,
+    patch: Partial<SourceControlTool>,
+  ) {
+    if (!sourceScanPending) return yield* update(id, patch);
+    const previous = (yield* SubscriptionRef.get(state)).map((tool) =>
+      tool.id === id ? { ...tool, ...patch } : tool,
+    );
+    const enabled = SourceControlToolInstaller.isSourceControlToolEnabled(
+      "meituan",
+      yield* enabledSettings,
+    );
+    yield* publishSourceScan(enabled, previous, id);
+    sourceScanPending = false;
+  }, lock.withPermits(1));
+  const meituanScans = yield* Cache.make({
+    capacity: 8,
+    timeToLive: 0,
+    lookup: ({ requirements, source }: MeituanScanConfig) =>
+      meituanLock.withPermits(1)(
+        Effect.gen(function* () {
+          const meituanTools = yield* Effect.forEach(
+            (["ones2", "mcm", "mtskills"] as const).filter((id) =>
+              id === "mtskills" ? source !== undefined : requirements,
+            ),
+            (id) =>
+              installer.inspectMeituan(id, id === "mtskills" ? source?.executable : undefined).pipe(
+                Effect.catch((error) =>
+                  Effect.succeed({
+                    id,
+                    label: SourceControlToolInstaller.meituanToolLabel(id),
+                    status: "unknown" as const,
+                    version: null,
+                    executablePath: null,
+                    command: null,
+                    manualCommand: null,
+                    reason: error.message,
+                    phase: "idle" as const,
+                    message: null,
+                  }),
+                ),
+              ),
+            { concurrency: 3 },
+          );
+          yield* SubscriptionRef.set(meituanState, meituanTools);
+        }),
+      ),
+  });
 
   const start = Effect.fn("SourceControlToolMaintenance.start")(function* (
     input: SourceControlToolStartInput,
@@ -107,7 +242,7 @@ const make = Effect.gen(function* () {
           )
             return yield* new SourceControlToolError({ id: input.id, reason: "verification" });
           const unchanged = plan.tool.version === verified.tool.version;
-          yield* update(input.id, {
+          yield* finish(input.id, {
             ...verified.tool,
             phase: unchanged ? "unchanged" : "succeeded",
             message:
@@ -118,7 +253,7 @@ const make = Effect.gen(function* () {
                   : "Installation verified.",
           });
         }).pipe(
-          Effect.catch((error) => update(input.id, { phase: "failed", message: error.message })),
+          Effect.catch((error) => finish(input.id, { phase: "failed", message: error.message })),
           Effect.onInterrupt(() =>
             update(input.id, {
               phase: "failed",
@@ -127,7 +262,7 @@ const make = Effect.gen(function* () {
             }),
           ),
           Effect.catchCause(() =>
-            update(input.id, {
+            finish(input.id, {
               phase: "failed",
               message: new SourceControlToolError({ id: input.id, reason: "installation" }).message,
             }),
@@ -146,9 +281,29 @@ const make = Effect.gen(function* () {
       }),
     );
   });
+  const scanSourceControl = Effect.fn("SourceControlToolMaintenance.scanSourceControl")(
+    (enabled: boolean) => Cache.get(sourceScans, enabled),
+  );
+  const scanMeituan = Effect.fn("SourceControlToolMaintenance.scanMeituan")(
+    (config: MeituanScanConfig) => Cache.get(meituanScans, config),
+  );
+  const changes = codeEnabled.pipe(
+    Stream.switchMap((enabled) =>
+      Stream.unwrap(scanSourceControl(enabled).pipe(Effect.as(SubscriptionRef.changes(state)))),
+    ),
+  );
+  const meituanChanges = meituanConfig.pipe(
+    Stream.switchMap((config) =>
+      Stream.unwrap(scanMeituan(config).pipe(Effect.as(SubscriptionRef.changes(meituanState)))),
+    ),
+  );
   return SourceControlToolMaintenance.of({
-    refresh,
-    changes: Stream.unwrap(refresh.pipe(Effect.as(SubscriptionRef.changes(state)))),
+    refresh: Effect.all([Stream.runHead(changes), Stream.runHead(meituanChanges)], {
+      concurrency: 2,
+      discard: true,
+    }),
+    changes,
+    meituanChanges,
     start,
   });
 });

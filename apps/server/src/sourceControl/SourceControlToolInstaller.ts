@@ -1,6 +1,9 @@
 import {
+  MeituanToolError,
   SourceControlToolError,
   isMeituanServiceEnabled,
+  type MeituanToolId,
+  type MeituanTool,
   type SourceControlTool,
   type SourceControlToolId,
 } from "@t3tools/contracts";
@@ -8,7 +11,7 @@ import { npmGlobalPrefixFromCommandPath } from "@t3tools/provider-core/server/ma
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
-import { resolveCommandPaths } from "@t3tools/shared/shell";
+import { resolveCommandPath, resolveCommandPaths } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -18,6 +21,7 @@ import * as Schema from "effect/Schema";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as Settings from "../serverSettings.ts";
+import { makeSkillInstallerNode } from "../skills/skillInstallerNode.ts";
 
 const MCODE_PACKAGE = "@ee/code-cli";
 const MCODE_REGISTRY = "--registry=http://r.npm.sankuai.com";
@@ -27,6 +31,30 @@ const DEFINITIONS = {
   github: { label: "GitHub CLI", executable: "gh" },
   meituan: { label: "Meituan Code", executable: "code-cli" },
 } as const;
+const MEITUAN_DEFINITIONS = {
+  ones2: { label: "ONES CLI", executable: "ones2", packageName: "@ee/mep-ones-cli" },
+  mcm: { label: "MCM CLI", executable: "mcm", packageName: "@dp/mcm-cli" },
+  mtskills: { label: "Meituan Skills CLI", executable: "mtskills", packageName: "@mtfe/mtskills" },
+} as const;
+
+export const sourceControlToolLabel = (id: SourceControlToolId) => DEFINITIONS[id].label;
+export const meituanToolLabel = (id: MeituanToolId) => MEITUAN_DEFINITIONS[id].label;
+
+export function isSourceControlToolEnabled(
+  id: SourceControlToolId,
+  settings: Parameters<typeof isMeituanServiceEnabled>[0],
+) {
+  return id !== "meituan" || isMeituanServiceEnabled(settings, "sourceControl");
+}
+
+export function isMeituanToolEnabled(
+  id: MeituanToolId,
+  settings: Parameters<typeof isMeituanServiceEnabled>[0],
+) {
+  return id === "mtskills"
+    ? settings?.meituanIntegrationEnabled === true
+    : isMeituanServiceEnabled(settings, "requirements");
+}
 
 export interface ToolInstallationPlan {
   readonly tool: SourceControlTool;
@@ -42,6 +70,10 @@ export class SourceControlToolInstaller extends Context.Service<
     readonly inspect: (
       id: SourceControlToolId,
     ) => Effect.Effect<ToolInstallationPlan, SourceControlToolError>;
+    readonly inspectMeituan: (
+      id: MeituanToolId,
+      executable?: string,
+    ) => Effect.Effect<MeituanTool, MeituanToolError>;
     readonly install: (
       plan: ToolInstallationPlan,
     ) => Effect.Effect<"installed" | "current", SourceControlToolError>;
@@ -62,6 +94,7 @@ const make = Effect.gen(function* () {
   const home = yield* HostProcess.HomeDirectory;
   const env = yield* HostProcess.Environment;
   const settings = yield* Settings.ServerSettingsService;
+  const skillInstallerNode = yield* makeSkillInstallerNode;
   // Bypass command-result caching: verification must see a binary installed moments ago.
   const find = Effect.fn("SourceControlToolInstaller.find")(function* (name: string) {
     const matches = yield* resolveCommandPaths(name, { env, until: () => true });
@@ -87,10 +120,7 @@ const make = Effect.gen(function* () {
 
   const inspect = Effect.fn("SourceControlToolInstaller.inspect")(
     function* (id: SourceControlToolId) {
-      if (
-        id === "meituan" &&
-        !isMeituanServiceEnabled(yield* settings.getSettings, "sourceControl")
-      )
+      if (id === "meituan" && !isSourceControlToolEnabled(id, yield* settings.getSettings))
         return yield* new SourceControlToolError({ id, reason: "unsupported" });
       const definition = DEFINITIONS[id];
       const executablePath = yield* find(definition.executable);
@@ -258,15 +288,67 @@ const make = Effect.gen(function* () {
       ),
   );
 
+  const inspectMeituan = Effect.fn("SourceControlToolInstaller.inspectMeituan")(
+    function* (id: MeituanToolId, executable?: string) {
+      if (!isMeituanToolEnabled(id, yield* settings.getSettings))
+        return yield* new MeituanToolError({ id, reason: "unsupported" });
+      const definition = MEITUAN_DEFINITIONS[id];
+      const binary = executable || definition.executable;
+      const executablePath = yield* binary.includes("/") || binary.includes("\\")
+        ? resolveCommandPath(binary, { env })
+        : find(binary);
+      const versionOutput = executablePath
+        ? yield* Effect.gen(function* () {
+            const args = ["--version"];
+            const invocation =
+              id === "mtskills" ? yield* skillInstallerNode(executablePath, args, env) : undefined;
+            return yield* probe(
+              invocation?.command ?? executablePath,
+              invocation?.args ?? args,
+              invocation?.env,
+            );
+          }).pipe(
+            Effect.scoped,
+            Effect.orElseSucceed(() => null),
+          )
+        : null;
+      const version = versionOutput?.match(/\b\d+\.\d+\.\d+(?:-[\w.-]+)?/u)?.[0] ?? null;
+      return {
+        id,
+        label: definition.label,
+        status: executablePath ? ("installed" as const) : ("missing" as const),
+        version,
+        executablePath,
+        command: null,
+        manualCommand:
+          binary === definition.executable
+            ? `npm install -g ${definition.packageName}@latest ${MCODE_REGISTRY}`
+            : null,
+        reason:
+          executablePath && version === null
+            ? "Could not read the installed version. Check the executable on the server."
+            : null,
+        phase: "idle" as const,
+        message: null,
+      };
+    },
+    (effect, id) =>
+      effect.pipe(
+        Effect.mapError((cause) => new MeituanToolError({ id, reason: "inspection", cause })),
+        Effect.provideService(HostProcess.Platform, platform),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+      ),
+  );
+
   const install = Effect.fn("SourceControlToolInstaller.install")(function* (
     plan: ToolInstallationPlan,
   ) {
     const id = plan.tool.id;
     if (
-      id === "meituan" &&
-      !isMeituanServiceEnabled(
+      !isSourceControlToolEnabled(
+        id,
         yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null)),
-        "sourceControl",
       )
     )
       return yield* new SourceControlToolError({ id, reason: "unsupported" });
@@ -328,7 +410,7 @@ const make = Effect.gen(function* () {
       });
     return "installed" as const;
   });
-  return SourceControlToolInstaller.of({ inspect, install });
+  return SourceControlToolInstaller.of({ inspect, inspectMeituan, install });
 });
 
 export const layer = Layer.effect(SourceControlToolInstaller, make);

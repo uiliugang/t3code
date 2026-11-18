@@ -15,6 +15,7 @@ import {
   type ManagedSkill,
   type SkillMutation,
   type SkillSnapshot,
+  type SkillSource,
   type SkillTarget,
   type SkillOrigin,
   type SkillCopySource,
@@ -95,6 +96,7 @@ export class SkillManager extends Context.Service<
     readonly tick: Effect.Effect<void>;
     readonly snapshot: Effect.Effect<SkillSnapshot, SkillManagerError>;
     readonly changes: Stream.Stream<SkillSnapshot, SkillManagerError>;
+    readonly meituanSource: Stream.Stream<SkillSource | undefined>;
     readonly drain: Effect.Effect<void>;
   }
 >()("t3/skills/SkillManager") {}
@@ -1904,6 +1906,13 @@ const make = Effect.gen(function* () {
     inspect,
     tick,
     snapshot,
+    meituanSource: SubscriptionRef.changes(revision).pipe(
+      Stream.mapEffect(() => Ref.get(state)),
+      Stream.map((catalog) =>
+        catalog.sources.find((source) => source.enabled && source.kind === "mtskills"),
+      ),
+      Stream.changesWith(Object.is),
+    ),
     changes: SubscriptionRef.changes(revision).pipe(Stream.mapEffect(() => snapshot)),
     drain: worker.drain,
   });

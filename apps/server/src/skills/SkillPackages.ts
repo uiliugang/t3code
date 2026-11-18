@@ -12,13 +12,13 @@ import * as YAML from "yaml";
 import { SkillManagerError, type SkillSource } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
-import { resolveCommandPath, resolveSpawnCommand, setWindowsPath } from "@t3tools/shared/shell";
-import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
+import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import { sanitizeFailureText } from "@t3tools/provider-core/server/failure";
 import * as NodeUtil from "node:util";
 import * as ServerConfig from "../config.ts";
+import { makeSkillInstallerNode } from "./skillInstallerNode.ts";
 
 const metadataSchema = Schema.Struct({
   name: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)),
@@ -72,6 +72,7 @@ const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig.ServerConfig;
   const platform = yield* HostProcess.Platform;
+  const skillInstallerNode = yield* makeSkillInstallerNode;
   const inside = (root: string, file: string) => file === root || file.startsWith(root + path.sep);
 
   const readMetadata = Effect.fn("SkillPackages.readMetadata")(function* (directory: string) {
@@ -98,43 +99,29 @@ const make = Effect.gen(function* () {
         CI: "1",
         ...(registry ? { npm_config_registry: registry } : {}),
       };
-      let resolved = yield* resolveSpawnCommand(binary, args, { env });
-      const executable = yield* resolveCommandPath(resolved.command, { env }).pipe(
+      const executable = yield* resolveCommandPath(binary, { env }).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
         Effect.provideService(Path.Path, path),
       );
-      if (executable && !resolved.shell) {
-        const script = yield* fs.realPath(executable);
-        const contents = yield* fs.readFileString(script).pipe(Effect.orElseSucceed(() => ""));
-        // npm shebangs can select an older shell Node than the server runtime.
-        if (/^#![^\r\n]*\bnode(?:\s|$)/u.test(contents)) {
-          const node = yield* resolveNodeExecutable("Skill installation", env).pipe(
+      const invocation = executable
+        ? yield* skillInstallerNode(executable, args, env).pipe(
             Effect.provideService(FileSystem.FileSystem, fs),
             Effect.provideService(Path.Path, path),
-          );
-          resolved = { command: node, args: [script, ...resolved.args], shell: false };
-          let nodeBin = path.dirname(node);
-          if (!/^node(?:\.exe)?$/iu.test(path.basename(node))) {
-            // npm's descendants must also use Electron's Node, not an older shell Node.
-            nodeBin = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skill-node-" });
-            const shim = path.join(nodeBin, platform === "win32" ? "node.cmd" : "node");
-            yield* fs.writeFileString(
-              shim,
-              platform === "win32"
-                ? `@echo off\r\n"${node.replaceAll("%", "%%")}" %*\r\n`
-                : `#!/bin/sh\nexec '${node.replaceAll("'", "'\"'\"'")}' "$@"\n`,
-            );
-            yield* fs.chmod(shim, 0o755);
-          }
-          const searchPath = `${nodeBin}${platform === "win32" ? ";" : ":"}${environment.PATH ?? environment.Path ?? environment.path ?? ""}`;
-          if (platform === "win32") setWindowsPath(env, searchPath);
-          else Object.assign(env, { PATH: searchPath });
-          Object.assign(env, { ELECTRON_RUN_AS_NODE: "1" });
-        }
-      }
+          )
+        : undefined;
+      const spawnEnv = invocation?.env ?? env;
+      const resolved = yield* resolveSpawnCommand(
+        invocation?.command ?? binary,
+        invocation?.args ?? args,
+        { env: spawnEnv },
+      );
       const result = yield* spawnAndCollect(
         binary,
-        ChildProcess.make(resolved.command, resolved.args, { cwd, env, shell: resolved.shell }),
+        ChildProcess.make(resolved.command, resolved.args, {
+          cwd,
+          env: spawnEnv,
+          shell: resolved.shell,
+        }),
       ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
       if (result.code !== 0) {
         const diagnostic = `${result.stderr} ${result.stdout}`;

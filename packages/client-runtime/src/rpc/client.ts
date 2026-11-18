@@ -50,6 +50,7 @@ type RpcMethod<TTag extends EnvironmentRpcTag> = WsRpcProtocolClient[TTag];
 
 export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.sourceControlToolsSubscribe
+  | typeof WS_METHODS.meituanToolsSubscribe
   | typeof WS_METHODS.wechatSubscribe
   | typeof WS_METHODS.skillsSubscribe
   | typeof WS_METHODS.providerAuthSubscribe
@@ -288,7 +289,7 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
     session: RpcSession,
     stream: Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>,
   ) => Stream.Stream<A, EnvironmentRpcStreamFailure<TTag>>,
-  options?: SubscriptionOptions<TTag>,
+  options?: SubscriptionOptions<TTag> & { readonly retryValue?: A },
 ): Stream.Stream<
   A,
   EnvironmentRpcStreamFailure<TTag>,
@@ -418,6 +419,11 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
                         ).pipe(
                           Stream.drain,
                           Stream.concat(
+                            options?.retryValue === undefined
+                              ? Stream.empty
+                              : Stream.succeed(options.retryValue),
+                          ),
+                          Stream.concat(
                             retryAfter(
                               options?.retryExpectedFailureAfter ?? STREAM_FAILURE_RETRY_DELAY,
                               streamFailureRetries++,
@@ -505,6 +511,50 @@ export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
   return subscribeDynamic(tag, () => Effect.succeed(input), options);
 }
 
+const sessionCapabilities = (session: RpcSession) =>
+  session.initialConfig.pipe(
+    Effect.map((config) => config.environment.capabilities),
+    Effect.mapError(
+      (error) =>
+        new RpcClientError.RpcClientError({
+          reason: new RpcClientError.RpcClientDefect({ message: error.message, cause: error }),
+        }),
+    ),
+  );
+
+const toolStreamFor =
+  (capability: "meituanTools" | "sourceControlToolMaintenance") =>
+  <Tool, E>(session: RpcSession, stream: Stream.Stream<readonly Tool[], E>) =>
+    Stream.unwrap(
+      sessionCapabilities(session).pipe(
+        Effect.map((capabilities) =>
+          (capabilities[capability] === true ? stream : Stream.succeed<readonly Tool[]>([])).pipe(
+            Stream.map((tools) => ({ tools, retrying: false })),
+          ),
+        ),
+      ),
+    );
+
+const retryingTools = { retryValue: { tools: [] as const, retrying: true } };
+export const subscribeMeituanTools = (
+  input: EnvironmentRpcInput<typeof WS_METHODS.meituanToolsSubscribe>,
+) =>
+  subscribeDynamicMapped(
+    WS_METHODS.meituanToolsSubscribe,
+    () => Effect.succeed(input),
+    toolStreamFor("meituanTools"),
+    retryingTools,
+  );
+export const subscribeSourceControlTools = (
+  input: EnvironmentRpcInput<typeof WS_METHODS.sourceControlToolsSubscribe>,
+) =>
+  subscribeDynamicMapped(
+    WS_METHODS.sourceControlToolsSubscribe,
+    () => Effect.succeed(input),
+    toolStreamFor("sourceControlToolMaintenance"),
+    retryingTools,
+  );
+
 export const subscribeVcsBranch = (
   input: EnvironmentRpcInput<typeof WS_METHODS.subscribeVcsBranch>,
 ) =>
@@ -513,18 +563,9 @@ export const subscribeVcsBranch = (
     () => Effect.succeed(input),
     (session, stream) =>
       Stream.unwrap(
-        session.initialConfig.pipe(
-          Effect.mapError(
-            (error) =>
-              new RpcClientError.RpcClientError({
-                reason: new RpcClientError.RpcClientDefect({
-                  message: error.message,
-                  cause: error,
-                }),
-              }),
-          ),
-          Effect.map((config) =>
-            config.environment.capabilities.vcsBranchStatus === true
+        sessionCapabilities(session).pipe(
+          Effect.map((capabilities) =>
+            capabilities.vcsBranchStatus === true
               ? stream
               : session.client[WS_METHODS.subscribeVcsStatus]({
                   ...input,

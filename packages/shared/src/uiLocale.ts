@@ -23,6 +23,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Installation failed.": "安装失败。",
   "Manual maintenance": "手动维护",
   "Inspection failed.": "检查失败。",
+  "Tool status unavailable. Retrying…": "暂时无法获取工具状态，正在重试…",
   "Retry {name}": "重试 {name}",
   "Update {name}": "更新 {name}",
   "Install {name}": "安装 {name}",

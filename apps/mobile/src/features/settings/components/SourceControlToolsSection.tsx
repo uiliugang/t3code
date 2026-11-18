@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
+import { toolSubscriptionsFor } from "@t3tools/client-runtime/meituanSettings";
 import { sourceControlToolStatus } from "@t3tools/client-runtime/state/source-control";
-import type { SourceControlTool } from "@t3tools/contracts";
+import type { MaintainableTool } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
@@ -19,17 +20,22 @@ export function SourceControlToolsSection({
   only,
 }: {
   readonly environment: SettingsTarget;
-  readonly only?: SourceControlTool["id"];
+  readonly only?: MaintainableTool["id"] | readonly MaintainableTool["id"][];
 }) {
   const t = useUiTranslation();
   const environmentId = environment.environmentId;
-  const supported =
-    environment.serverConfig.environment.capabilities.sourceControlToolMaintenance === true;
+  const onlyIds: readonly MaintainableTool["id"][] =
+    only === undefined ? ["git", "github"] : typeof only === "string" ? [only] : only;
+  const streams = toolSubscriptionsFor(environment.serverConfig.environment.capabilities, onlyIds);
   const tools = useEnvironmentQuery(
-    supported ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
+    streams.sourceControl ? sourceControlEnvironment.tools({ environmentId, input: {} }) : null,
   );
+  const meituanTools = useEnvironmentQuery(
+    streams.meituan ? sourceControlEnvironment.meituanTools({ environmentId, input: {} }) : null,
+  );
+  const availableTools = [...(tools.data?.tools ?? []), ...(meituanTools.data?.tools ?? [])];
   const discovery = useEnvironmentQuery(
-    supported ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
+    streams.sourceControl ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
   );
   const start = useAtomCommand(sourceControlEnvironment.startTool, { reportFailure: false });
   const refresh = useAtomCommand(sourceControlEnvironment.refreshTools);
@@ -39,10 +45,10 @@ export function SourceControlToolsSection({
   const [pending, setPending] = useState(false);
   const busy =
     pending ||
-    (tools.data?.some((tool) => tool.phase === "running" || tool.phase === "verifying") ?? false);
+    availableTools.some((tool) => tool.phase === "running" || tool.phase === "verifying");
   const completedTools =
-    tools.data
-      ?.filter((tool) => ["succeeded", "unchanged", "failed"].includes(tool.phase))
+    tools.data?.tools
+      .filter((tool) => ["succeeded", "unchanged", "failed"].includes(tool.phase))
       .map((tool) => `${tool.id}:${tool.phase}:${tool.version}`)
       .join(",") ?? "";
   const refreshDiscovery = discovery.refresh;
@@ -51,8 +57,15 @@ export function SourceControlToolsSection({
     if (completedTools) refreshDiscovery();
   }, [completedTools, refreshDiscovery]);
 
-  const install = async (tool: SourceControlTool) => {
-    if (!tool.command || pending) return;
+  const install = async (tool: MaintainableTool) => {
+    if (
+      !tool.command ||
+      pending ||
+      tool.id === "ones2" ||
+      tool.id === "mcm" ||
+      tool.id === "mtskills"
+    )
+      return;
     setPending(true);
     const result = await start({
       environmentId,
@@ -72,7 +85,7 @@ export function SourceControlToolsSection({
       );
     }
   };
-  const confirm = (tool: SourceControlTool) => {
+  const confirm = (tool: MaintainableTool) => {
     const command = tool.command ?? tool.manualCommand;
     Dialog.alert(
       t(
@@ -111,11 +124,11 @@ export function SourceControlToolsSection({
       ],
     );
   };
-  if (!supported) return null;
+  if (!streams.sourceControl && !streams.meituan) return null;
   return (
     <SettingsSection title={`${t("Source control tools")} · ${environment.label}`}>
-      {tools.data
-        ?.filter((tool) => (only ? tool.id === only : tool.id !== "meituan"))
+      {availableTools
+        .filter((tool) => onlyIds.includes(tool.id))
         .map((tool) => (
           <SettingsRow
             key={tool.id}
@@ -136,9 +149,19 @@ export function SourceControlToolsSection({
       <SettingsRow
         icon="arrow.clockwise"
         label={t("Rescan server environment")}
-        value={tools.error ?? undefined}
+        value={
+          tools.error ??
+          meituanTools.error ??
+          (tools.data?.retrying || meituanTools.data?.retrying
+            ? t("Tool status unavailable. Retrying…")
+            : undefined)
+        }
         valuePosition="below"
-        disabled={busy || (tools.isPending && tools.data === null)}
+        disabled={
+          busy ||
+          (tools.isPending && tools.data === null) ||
+          (meituanTools.isPending && meituanTools.data === null)
+        }
         onPress={() => {
           void refresh({ environmentId, input: {} });
           discovery.refresh();

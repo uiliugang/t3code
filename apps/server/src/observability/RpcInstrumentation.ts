@@ -191,6 +191,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.sourceControlPublishRepository]: "source-control",
   [WS_METHODS.sourceControlSignInStart]: "source-control",
   [WS_METHODS.sourceControlToolsSubscribe]: "source-control",
+  [WS_METHODS.meituanToolsSubscribe]: "source-control",
   [WS_METHODS.sourceControlToolsRefresh]: "source-control",
   [WS_METHODS.sourceControlToolStart]: "source-control",
   [WS_METHODS.sourceControlSignInWait]: "source-control",

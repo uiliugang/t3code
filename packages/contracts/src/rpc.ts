@@ -518,6 +518,7 @@ import {
   SourceControlSignInResult,
 } from "./sourceControl.ts";
 import {
+  MeituanTool,
   SourceControlTool,
   SourceControlToolError,
   SourceControlToolStartInput,
@@ -791,6 +792,7 @@ export const WS_METHODS = {
   sourceControlPublishRepository: "sourceControl.publishRepository",
   sourceControlSignInStart: "sourceControl.signInStart",
   sourceControlToolsSubscribe: "sourceControl.toolsSubscribe",
+  meituanToolsSubscribe: "meituan.toolsSubscribe",
   sourceControlToolsRefresh: "sourceControl.toolsRefresh",
   sourceControlToolStart: "sourceControl.toolStart",
   sourceControlSignInWait: "sourceControl.signInWait",
@@ -1702,6 +1704,12 @@ const WsSourceControlCloneRepositoryRpc = Rpc.make(WS_METHODS.sourceControlClone
 const WsSourceControlToolsSubscribeRpc = Rpc.make(WS_METHODS.sourceControlToolsSubscribe, {
   payload: Schema.Struct({}),
   success: Schema.Array(SourceControlTool),
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+const WsMeituanToolsSubscribeRpc = Rpc.make(WS_METHODS.meituanToolsSubscribe, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(MeituanTool),
   error: EnvironmentAuthorizationError,
   stream: true,
 });
@@ -2794,6 +2802,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlPublishRepositoryRpc,
   WsSourceControlSignInStartRpc,
   WsSourceControlToolsSubscribeRpc,
+  WsMeituanToolsSubscribeRpc,
   WsSourceControlToolsRefreshRpc,
   WsSourceControlToolStartRpc,
   WsSourceControlSignInWaitRpc,
