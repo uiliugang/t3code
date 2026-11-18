@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  DEFAULT_SERVER_SETTINGS,
   MeituanToolError,
   SourceControlToolError,
   type SourceControlTool,
@@ -57,6 +58,7 @@ const defaultSkillSource = {
 const testLayer = (
   installer: InstallerMock,
   meituanSource: SkillManager["Service"]["meituanSource"] = Stream.succeed(defaultSkillSource),
+  settingsLayer = Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true }),
 ) =>
   Maintenance.layer.pipe(
     Layer.provide(
@@ -65,7 +67,7 @@ const testLayer = (
         ...installer,
       }),
     ),
-    Layer.provide(Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true })),
+    Layer.provide(settingsLayer),
     Layer.provide(Layer.mock(SkillManager)({ meituanSource })),
   );
 
@@ -153,6 +155,85 @@ it.effect("keeps an environment busy through verification and publishes the veri
       );
     }).pipe(Effect.provide(testLayer(installer)));
   }),
+);
+
+it.effect.each(["unchanged", "failed"] as const)(
+  "applies the latest settings once when an active installation ends as %s",
+  (phase) =>
+    Effect.gen(function* () {
+      const saved = yield* SubscriptionRef.make({
+        ...DEFAULT_SERVER_SETTINGS,
+        meituanIntegrationEnabled: false,
+        meituanSourceControlEnabled: true,
+      });
+      const release = yield* Deferred.make<void>();
+      const snapshots = yield* Queue.unbounded<ReadonlyArray<SourceControlTool>>();
+      const inspected: string[] = [];
+      yield* Effect.gen(function* () {
+        const service = yield* Maintenance.SourceControlToolMaintenance;
+        yield* service.changes.pipe(
+          Stream.runForEach((tools) => Queue.offer(snapshots, tools)),
+          Effect.forkChild,
+        );
+        const initial = yield* Queue.take(snapshots);
+        assert.deepStrictEqual(
+          initial.map((tool) => tool.id),
+          ["git", "github"],
+        );
+        yield* service.start(confirmation());
+        yield* Queue.take(snapshots);
+        inspected.length = 0;
+        for (const enabled of [true, false, true]) {
+          yield* SubscriptionRef.update(saved, (previous) => ({
+            ...previous,
+            meituanIntegrationEnabled: enabled,
+          }));
+          const active = yield* Queue.take(snapshots);
+          assert.strictEqual(active.find((tool) => tool.id === "git")?.phase, "running");
+        }
+        assert.isEmpty(inspected);
+        yield* Deferred.succeed(release, undefined);
+        const settled = Option.getOrThrow(
+          yield* Stream.fromQueue(snapshots).pipe(
+            Stream.filter((tools) => tools.some((tool) => tool.phase === phase)),
+            Stream.runHead,
+          ),
+        );
+        assert.deepStrictEqual(settled.map((tool) => tool.id).toSorted(), [
+          "git",
+          "github",
+          "meituan",
+        ]);
+        assert.strictEqual(inspected.filter((id) => id === "meituan").length, 1);
+      }).pipe(
+        Effect.provide(
+          testLayer(
+            {
+              inspect: (id) =>
+                Effect.sync(() => {
+                  inspected.push(id);
+                  return plan({ id });
+                }),
+              install: () =>
+                Deferred.await(release).pipe(
+                  Effect.andThen(
+                    phase === "failed"
+                      ? Effect.fail(
+                          new SourceControlToolError({ id: "git", reason: "installation" }),
+                        )
+                      : Effect.succeed("current" as const),
+                  ),
+                ),
+            },
+            Stream.succeed(defaultSkillSource),
+            Layer.mock(Settings.ServerSettingsService)({
+              getSettings: SubscriptionRef.get(saved),
+              subscribeChanges: Effect.succeed(SubscriptionRef.changes(saved)),
+            }),
+          ),
+        ),
+      );
+    }),
 );
 
 it.effect.each([

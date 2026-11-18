@@ -21,6 +21,7 @@ import * as Schema from "effect/Schema";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as Settings from "../serverSettings.ts";
+import { skillInstallerNode } from "../skills/skillInstallerNode.ts";
 
 const MCODE_PACKAGE = "@ee/code-cli";
 const MCODE_REGISTRY = "--registry=http://r.npm.sankuai.com";
@@ -296,7 +297,19 @@ const make = Effect.gen(function* () {
         ? resolveCommandPath(binary, { env })
         : find(binary);
       const versionOutput = executablePath
-        ? yield* probe(executablePath, ["--version"]).pipe(Effect.orElseSucceed(() => null))
+        ? yield* Effect.gen(function* () {
+            const args = ["--version"];
+            const invocation =
+              id === "mtskills" ? yield* skillInstallerNode(executablePath, args, env) : undefined;
+            return yield* probe(
+              invocation?.command ?? executablePath,
+              invocation?.args ?? args,
+              invocation?.env,
+            );
+          }).pipe(
+            Effect.scoped,
+            Effect.orElseSucceed(() => null),
+          )
         : null;
       const version = versionOutput?.match(/\b\d+\.\d+\.\d+(?:-[\w.-]+)?/u)?.[0] ?? null;
       return {

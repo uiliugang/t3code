@@ -78,6 +78,41 @@ const make = Effect.gen(function* () {
         previous.requirements === next.requirements && previous.source === next.source,
     ),
   );
+  const inspectSourceTools = Effect.fn("SourceControlToolMaintenance.inspectSourceTools")(
+    (
+      enabled: boolean,
+      previous: ReadonlyArray<SourceControlTool>,
+      settledId?: SourceControlToolId,
+    ) =>
+      Effect.forEach(
+        (["git", "github", "meituan"] as const).filter((id) => id !== "meituan" || enabled),
+        (id) => {
+          const old = previous.find((entry) => entry.id === id);
+          if (id === settledId && old) return Effect.succeed(old);
+          return installer.inspect(id).pipe(
+            Effect.map(({ tool }) =>
+              old ? { ...tool, phase: old.phase, message: old.message } : tool,
+            ),
+            Effect.catch((error) =>
+              Effect.succeed({
+                id,
+                label: SourceControlToolInstaller.sourceControlToolLabel(id),
+                status: "unknown" as const,
+                version: null,
+                executablePath: null,
+                command: null,
+                manualCommand: null,
+                reason: error.message,
+                phase: "idle" as const,
+                message: null,
+              }),
+            ),
+          );
+        },
+        { concurrency: 3 },
+      ),
+  );
+  let sourceScanPending = false;
   const sourceScans = yield* Cache.make({
     capacity: 2,
     timeToLive: 0,
@@ -85,36 +120,32 @@ const make = Effect.gen(function* () {
       lock.withPermits(1)(
         Effect.gen(function* () {
           const previous = yield* SubscriptionRef.get(state);
-          if (isActive(previous)) return;
-          const tools = yield* Effect.forEach(
-            (["git", "github", "meituan"] as const).filter((id) => id !== "meituan" || enabled),
-            (id) =>
-              installer.inspect(id).pipe(
-                Effect.map(({ tool }) => {
-                  const old = previous.find((entry) => entry.id === id);
-                  return old ? { ...tool, phase: old.phase, message: old.message } : tool;
-                }),
-                Effect.catch((error) =>
-                  Effect.succeed({
-                    id,
-                    label: SourceControlToolInstaller.sourceControlToolLabel(id),
-                    status: "unknown" as const,
-                    version: null,
-                    executablePath: null,
-                    command: null,
-                    manualCommand: null,
-                    reason: error.message,
-                    phase: "idle" as const,
-                    message: null,
-                  }),
-                ),
-              ),
-            { concurrency: 3 },
-          );
+          if (isActive(previous)) {
+            sourceScanPending = true;
+            return;
+          }
+          const tools = yield* inspectSourceTools(enabled, previous);
           yield* SubscriptionRef.set(state, tools);
         }),
       ),
   });
+
+  const finish = Effect.fn("SourceControlToolMaintenance.finish")(function* (
+    id: SourceControlToolId,
+    patch: Partial<SourceControlTool>,
+  ) {
+    if (!sourceScanPending) return yield* update(id, patch);
+    const previous = (yield* SubscriptionRef.get(state)).map((tool) =>
+      tool.id === id ? { ...tool, ...patch } : tool,
+    );
+    const enabled = SourceControlToolInstaller.isSourceControlToolEnabled(
+      "meituan",
+      yield* enabledSettings,
+    );
+    const tools = yield* inspectSourceTools(enabled, previous, id);
+    yield* SubscriptionRef.set(state, tools);
+    sourceScanPending = false;
+  }, lock.withPermits(1));
   const meituanScans = yield* Cache.make({
     capacity: 8,
     timeToLive: 0,
@@ -179,7 +210,7 @@ const make = Effect.gen(function* () {
           )
             return yield* new SourceControlToolError({ id: input.id, reason: "verification" });
           const unchanged = plan.tool.version === verified.tool.version;
-          yield* update(input.id, {
+          yield* finish(input.id, {
             ...verified.tool,
             phase: unchanged ? "unchanged" : "succeeded",
             message:
@@ -190,7 +221,7 @@ const make = Effect.gen(function* () {
                   : "Installation verified.",
           });
         }).pipe(
-          Effect.catch((error) => update(input.id, { phase: "failed", message: error.message })),
+          Effect.catch((error) => finish(input.id, { phase: "failed", message: error.message })),
           Effect.onInterrupt(() =>
             update(input.id, {
               phase: "failed",
@@ -199,7 +230,7 @@ const make = Effect.gen(function* () {
             }),
           ),
           Effect.catchCause(() =>
-            update(input.id, {
+            finish(input.id, {
               phase: "failed",
               message: new SourceControlToolError({ id: input.id, reason: "installation" }).message,
             }),

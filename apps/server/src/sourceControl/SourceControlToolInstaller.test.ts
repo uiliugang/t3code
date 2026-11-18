@@ -24,6 +24,7 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
   meituanEnabled?: boolean;
   meituanRequirementsEnabled?: boolean;
   settingsUnavailable?: boolean;
+  realProcess?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -82,7 +83,9 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
               meituanRequirementsEnabled: options.meituanRequirementsEnabled ?? true,
             }),
       ),
-      Layer.provide(Layer.succeed(VcsProcess.VcsProcess, { run })),
+      Layer.provide(
+        options.realProcess ? VcsProcess.layer : Layer.succeed(VcsProcess.VcsProcess, { run }),
+      ),
       Layer.provide(Layer.succeed(HostProcess.Environment, { PATH: bin })),
       Layer.provide(Layer.succeed(HostProcess.Platform, options.platform ?? "linux")),
       Layer.provide(Layer.succeed(HostProcess.UserId, options.uid ?? 0)),
@@ -138,23 +141,25 @@ it.effect.each(["ones2", "mcm", "mtskills"] as const)(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect.each([[], ["mtskills"]])(
+it.live.each([[], ["mtskills"]])(
   "inspects the configured private installer with PATH binaries %j",
   (binaries) =>
     Effect.gen(function* () {
-      const { installer, root, calls } = yield* fixture({ binaries });
+      const platform = yield* HostProcess.Platform;
+      const { installer, root } = yield* fixture({ binaries, platform, realProcess: true });
       const fs = yield* FileSystem.FileSystem;
-      const executable = `${root}/private/mtskills`;
+      const executable = `${root}/private/mtskills${platform === "win32" ? ".cmd" : ""}`;
       yield* fs.makeDirectory(`${root}/private`);
-      yield* fs.writeFileString(executable, "");
+      yield* fs.writeFileString(
+        executable,
+        platform === "win32"
+          ? "@echo 9.6.0\r\n"
+          : '#!/usr/bin/env node\nconst child = require("node:child_process").spawnSync("node", ["--version"]);\nif (child.status !== 0) process.exit(1);\nconsole.log("9.6.0");\n',
+      );
       yield* fs.chmod(executable, 0o755);
       const result = yield* installer.inspectMeituan("mtskills", executable);
       assert.strictEqual(result.executablePath, executable);
-      assert.strictEqual(result.version, "2.43.0");
-      assert.deepStrictEqual(
-        calls.map((call) => call.command),
-        [executable],
-      );
+      assert.strictEqual(result.version, "9.6.0");
       assert.isNull(result.manualCommand);
       yield* fs.remove(executable);
       const missing = yield* installer.inspectMeituan("mtskills", executable);
