@@ -6,6 +6,10 @@ import {
 } from "@t3tools/contracts";
 
 import { resolveDiffPathForWorkspace } from "./diffFileActions";
+import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { isAbsolutePath } from "@t3tools/shared/path";
+import { useComposerHandleContext } from "./composerHandleContext";
+import { writeTextToClipboard } from "./hooks/useCopyToClipboard";
 import {
   revealInFileExplorerLabelForKind,
   revealInFileExplorerLabelForOs,
@@ -23,6 +27,8 @@ export type FileContextMenuAction =
   | "open"
   /** Submenu parent; never the activated id. */
   | "open-with"
+  | "copy-mention"
+  | "add-to-chat"
   | `editor:${EditorId}`;
 
 export interface FileContextMenuTarget {
@@ -83,10 +89,15 @@ function buildFileContextMenuItems(input: {
       })),
     });
   }
+  items.push(
+    { id: "copy-mention", label: "Copy mention" },
+    { id: "add-to-chat", label: "Add to chat" },
+  );
   return items;
 }
 
 export function useFileContextMenu(environmentId: EnvironmentId | null) {
+  const composerRef = useComposerHandleContext();
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
 
@@ -111,6 +122,47 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
   ): Promise<void> => {
     const absolutePath = resolveFileContextMenuAbsolutePath(target);
     if (absolutePath === null || environmentId === null) return;
+
+    if (action === "copy-mention" || action === "add-to-chat") {
+      const workspaceFilePath = resolveDiffPathForWorkspace({
+        filePath: target.filePath,
+        workspaceRoot: target.workspaceRoot,
+        repositoryRoot: target.repositoryRoot,
+      });
+      if (workspaceFilePath === null) return;
+      const mention = serializeComposerFileLink(
+        isAbsolutePath(target.filePath) ? target.filePath : workspaceFilePath,
+      );
+      if (action === "copy-mention") {
+        try {
+          await writeTextToClipboard(mention);
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to copy mention",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        }
+        return;
+      }
+      const composer = composerRef?.current;
+      if (!composer) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to add to chat",
+          description: "Open a chat for this project and try again.",
+        });
+        return;
+      }
+      if (!composer.insertTextAtEnd(`${mention} `, { ensureLeadingBoundary: true })) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to add to chat",
+          description: "The chat isn't ready to accept input right now.",
+        });
+      }
+      return;
+    }
 
     const reveal = action === "reveal-in-folder";
     const editor =

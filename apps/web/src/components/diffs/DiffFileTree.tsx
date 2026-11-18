@@ -1,4 +1,9 @@
-import type { GitStatusEntry, FileTreeRowDecorationRenderer } from "@pierre/trees";
+import type {
+  ContextMenuItem,
+  ContextMenuOpenContext,
+  GitStatusEntry,
+  FileTreeRowDecorationRenderer,
+} from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -30,6 +35,7 @@ export type { DiffFileTreeEntry } from "./diffFileTree.logic";
 interface DiffFileTreeProps {
   readonly entries: ReadonlyArray<DiffFileTreeEntry>;
   readonly onSelectFile: (path: string) => void;
+  readonly onFileContextMenu?: (path: string, position: { x: number; y: number }) => void;
   readonly selectedPath?: string | null;
   readonly revealRequestId?: number;
   readonly ariaLabel: string;
@@ -41,6 +47,7 @@ interface DiffFileTreeProps {
 export function DiffFileTree({
   entries,
   onSelectFile,
+  onFileContextMenu,
   selectedPath = null,
   revealRequestId = 0,
   ariaLabel,
@@ -75,6 +82,22 @@ export function DiffFileTree({
     revealRequestId: number;
   } | null>(null);
   const mountedPresentationRef = useRef<ReturnType<typeof diffFileTreeModel> | null>(null);
+  const contextMenuPointerRef = useRef<{ x: number; y: number } | null>(null);
+
+  const showFileContextMenu = useStableCallback(
+    (item: ContextMenuItem, context: ContextMenuOpenContext) => {
+      const pointer = contextMenuPointerRef.current;
+      contextMenuPointerRef.current = null;
+      const anchorRect = context.anchorElement.getBoundingClientRect();
+      // The app menu owns focus and outside clicks once the tree menu closes.
+      context.close({ restoreFocus: pointer === null });
+      if (item.kind !== "file") return;
+      onFileContextMenu?.(
+        presented.selectionPath(item.path),
+        pointer ?? { x: anchorRect.left, y: anchorRect.bottom },
+      );
+    },
+  );
 
   // The tree model keeps the first selection handler it was given.
   const handleSelectionChange = useStableCallback((selectedPaths: ReadonlyArray<string>) => {
@@ -101,6 +124,13 @@ export function DiffFileTree({
   );
 
   const { model } = useFileTree({
+    composition: {
+      contextMenu: {
+        enabled: onFileContextMenu !== undefined,
+        triggerMode: "right-click",
+        onOpen: showFileContextMenu,
+      },
+    },
     density: "compact",
     flattenEmptyDirectories: true,
     initialExpansion: "open",
@@ -250,6 +280,12 @@ export function DiffFileTree({
       <FileTree
         model={model}
         aria-label={ariaLabel}
+        onContextMenuCapture={(event) => {
+          contextMenuPointerRef.current = { x: event.clientX, y: event.clientY };
+        }}
+        onKeyDownCapture={() => {
+          contextMenuPointerRef.current = null;
+        }}
         onClickCapture={(event) => {
           if (
             event.defaultPrevented ||
