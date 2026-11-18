@@ -1,7 +1,14 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const SourceControlToolId = Schema.Literals(["git", "github", "meituan"]);
+export const SourceControlToolId = Schema.Literals([
+  "git",
+  "github",
+  "meituan",
+  "ones2",
+  "mcm",
+  "mtskills",
+]);
 export type SourceControlToolId = typeof SourceControlToolId.Type;
 
 export const SourceControlToolPhase = Schema.Literals([

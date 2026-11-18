@@ -19,10 +19,12 @@ export function SourceControlToolsSection({
   only,
 }: {
   readonly environment: SettingsTarget;
-  readonly only?: SourceControlTool["id"];
+  readonly only?: SourceControlTool["id"] | readonly SourceControlTool["id"][];
 }) {
   const t = useUiTranslation();
   const environmentId = environment.environmentId;
+  const onlyIds: readonly SourceControlTool["id"][] | null =
+    only === undefined ? null : typeof only === "string" ? [only] : only;
   const supported =
     environment.serverConfig.environment.capabilities.sourceControlToolMaintenance === true;
   const tools = useEnvironmentQuery(
@@ -115,7 +117,9 @@ export function SourceControlToolsSection({
   return (
     <SettingsSection title={`${t("Source control tools")} · ${environment.label}`}>
       {tools.data
-        ?.filter((tool) => (only ? tool.id === only : tool.id !== "meituan"))
+        ?.filter((tool) =>
+          onlyIds ? onlyIds.includes(tool.id) : tool.id === "git" || tool.id === "github",
+        )
         .map((tool) => (
           <SettingsRow
             key={tool.id}
@@ -127,7 +131,12 @@ export function SourceControlToolsSection({
                   : "arrow.down.circle"
             }
             label={tool.label}
-            value={[tool.version, t(sourceControlToolStatus(tool))].filter(Boolean).join(" · ")}
+            value={[
+              tool.version ?? t(tool.status === "missing" ? "Not installed" : "Unknown"),
+              t(sourceControlToolStatus(tool)),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
             valuePosition="below"
             disabled={busy || (tool.command !== null && !canMaintain)}
             onPress={() => confirm(tool)}

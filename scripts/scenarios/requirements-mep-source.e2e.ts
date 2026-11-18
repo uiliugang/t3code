@@ -38,11 +38,43 @@ test(
         },
       });
       if (saved._tag !== "Success") throw new Error(`Source fixture failed: ${saved.cause}`);
+      const skills = await serverEnvironment.mutateSkills.run(appAtomRegistry, {
+        environmentId,
+        input: {
+          type: "batch",
+          operations: [
+            {
+              type: "source.save",
+              source: {
+                id: "meituan",
+                label: "Meituan Skills",
+                kind: "mtskills",
+                enabled: true,
+                executable: "mtskills",
+                registry: "http://r.npm.sankuai.com",
+              },
+            },
+          ],
+        },
+      });
+      if (skills._tag !== "Success") throw new Error(`Skills fixture failed: ${skills.cause}`);
       return true;
     }, project);
     await app.open(await browser.evaluate<string>("location.href"));
 
     await expect(screen.getByText("MEP 6259", { exact: true })).toBeVisible();
     await app.screenshot("mep-source-visible");
+
+    await app.open("/settings/meituan?section=issues");
+    await expect(screen.getByText("mep-source", { exact: true })).toBeVisible();
+    await expect(screen.getByText("MEP · 6259", { exact: true })).toBeVisible();
+    await app.screenshot("meituan-project-source");
+
+    await app.open("/settings/meituan");
+    await screen.getByText(/^(Command line tools|命令行工具)$/).tap();
+    await expect(screen.getByText("ONES CLI", { exact: true })).toBeVisible();
+    await expect(screen.getByText("MCM CLI", { exact: true })).toBeVisible();
+    await expect(screen.getByText("Meituan Skills CLI", { exact: true })).toBeVisible();
+    await app.screenshot("meituan-service-tools");
   },
 );

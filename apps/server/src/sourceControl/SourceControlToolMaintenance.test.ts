@@ -189,7 +189,10 @@ it.effect("reports inspection failures as unknown rather than a missing executab
   Effect.gen(function* () {
     const service = yield* Maintenance.SourceControlToolMaintenance;
     const result = Option.getOrThrow(yield* Stream.runHead(service.changes));
-    assert.strictEqual(result.length, 3);
+    assert.deepStrictEqual(
+      result.map((tool) => tool.id).toSorted(),
+      ["git", "github", "mcm", "meituan", "mtskills", "ones2"].toSorted(),
+    );
     assert.ok(
       result.every(
         (tool) => tool.status === "unknown" && tool.command === null && tool.reason !== null,

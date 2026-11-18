@@ -16,7 +16,7 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { IssueSelect } from "../requirements/IssueSelect";
-import { mergeProjectIssueSources } from "./requirementsSettings.logic";
+import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer } from "./settingsLayout";
 

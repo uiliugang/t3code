@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import { EnvironmentId, ProjectId, type IssueProvider } from "@t3tools/contracts";
 import { useState } from "react";
 import { View } from "react-native";
@@ -7,6 +8,7 @@ import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useProjects } from "../../state/entities";
+import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -66,6 +68,14 @@ export function ProjectSources({
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
+  const automaticQuery = useEnvironmentQuery(
+    providerOnly === "meituan" && projects.length
+      ? sourceControlEnvironment.issueSources({
+          environmentId,
+          input: { projectIds: projects.map((project) => project.id) },
+        })
+      : null,
+  );
   const settings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
   const saved = settings?.issueProjectSources ?? {};
   const allowed =
@@ -106,6 +116,7 @@ export function ProjectSources({
     if (result._tag === "Success") {
       setScope("");
       await refresh({ environmentId, input: { projectIds: [selected] } });
+      automaticQuery.refresh();
     }
   };
   const remove = async (id: ProjectId, kind: IssueProvider) => {
@@ -121,6 +132,7 @@ export function ProjectSources({
       },
     });
     await refresh({ environmentId, input: { projectIds: [id] } });
+    automaticQuery.refresh();
     setBusy(false);
   };
   const valid =
@@ -129,10 +141,17 @@ export function ProjectSources({
       : /^[\w.-]+\/[\w.-]+$/u.test(scope);
   return (
     <View className="gap-4">
-      {projects.flatMap((project) =>
-        (saved[project.id] ?? [])
-          .filter((source) => source.provider === providerOnly)
-          .map((source) => (
+      {projects.flatMap((project) => {
+        const savedSources = (saved[project.id] ?? []).filter(
+          (source) => source.provider === providerOnly,
+        );
+        const automaticSources =
+          automaticQuery.data
+            ?.find((result) => result.projectId === project.id)
+            ?.sources.filter((source) => source.provider === providerOnly) ?? [];
+        return mergeProjectIssueSources(automaticSources, savedSources).map((source) => {
+          const manual = savedSources.length > 0;
+          return (
             <View
               key={`${project.id}/${source.provider}/${source.scope}`}
               className="gap-2 border-b border-border-subtle py-3"
@@ -140,16 +159,21 @@ export function ProjectSources({
               <Text>
                 {project.title} · {source.provider === "meituan" ? "MEP ONES" : "GitHub Issues"}
               </Text>
-              <Text className="text-foreground-muted">{source.scope}</Text>
-              <Button
-                label={t("Remove issue source")}
-                tone="text"
-                disabled={!allowed || busy}
-                onPress={() => void remove(project.id, source.provider)}
-              />
+              <Text className="text-foreground-muted">
+                {source.scope} · {t(manual ? "Manual override" : "Automatic")}
+              </Text>
+              {manual ? (
+                <Button
+                  label={t("Remove issue source")}
+                  tone="text"
+                  disabled={!allowed || busy}
+                  onPress={() => void remove(project.id, source.provider)}
+                />
+              ) : null}
             </View>
-          )),
-      )}
+          );
+        });
+      })}
       <IssuePicker
         label={t("Project")}
         value={selected ?? ""}

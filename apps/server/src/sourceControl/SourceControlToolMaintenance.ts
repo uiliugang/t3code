@@ -1,6 +1,5 @@
 import {
   SourceControlToolError,
-  isMeituanServiceEnabled,
   type SourceControlTool,
   type SourceControlToolId,
   type SourceControlToolStartInput,
@@ -47,8 +46,8 @@ const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => ({ meituanIntegrationEnabled: false })),
       );
       const tools = yield* Effect.forEach(
-        (["git", "github", "meituan"] as const).filter(
-          (id) => id !== "meituan" || isMeituanServiceEnabled(saved, "sourceControl"),
+        (["git", "github", "meituan", "ones2", "mcm", "mtskills"] as const).filter((id) =>
+          SourceControlToolInstaller.isSourceControlToolEnabled(id, saved),
         ),
         (id) =>
           installer.inspect(id).pipe(
@@ -59,7 +58,7 @@ const make = Effect.gen(function* () {
             Effect.catch((error) =>
               Effect.succeed({
                 id,
-                label: id === "git" ? "Git" : id === "github" ? "GitHub CLI" : "Meituan Code",
+                label: SourceControlToolInstaller.sourceControlToolLabel(id),
                 status: "unknown" as const,
                 version: null,
                 executablePath: null,

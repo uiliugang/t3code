@@ -26,7 +26,22 @@ const DEFINITIONS = {
   git: { label: "Git", executable: "git" },
   github: { label: "GitHub CLI", executable: "gh" },
   meituan: { label: "Meituan Code", executable: "code-cli" },
+  ones2: { label: "ONES CLI", executable: "ones2", packageName: "@ee/mep-ones-cli" },
+  mcm: { label: "MCM CLI", executable: "mcm", packageName: "@dp/mcm-cli" },
+  mtskills: { label: "Meituan Skills CLI", executable: "mtskills", packageName: "@mtfe/mtskills" },
 } as const;
+
+export const sourceControlToolLabel = (id: SourceControlToolId) => DEFINITIONS[id].label;
+
+export function isSourceControlToolEnabled(
+  id: SourceControlToolId,
+  settings: Parameters<typeof isMeituanServiceEnabled>[0],
+) {
+  if (id === "meituan") return isMeituanServiceEnabled(settings, "sourceControl");
+  if (id === "ones2" || id === "mcm") return isMeituanServiceEnabled(settings, "requirements");
+  if (id === "mtskills") return settings?.meituanIntegrationEnabled === true;
+  return true;
+}
 
 export interface ToolInstallationPlan {
   readonly tool: SourceControlTool;
@@ -87,10 +102,7 @@ const make = Effect.gen(function* () {
 
   const inspect = Effect.fn("SourceControlToolInstaller.inspect")(
     function* (id: SourceControlToolId) {
-      if (
-        id === "meituan" &&
-        !isMeituanServiceEnabled(yield* settings.getSettings, "sourceControl")
-      )
+      if (!isSourceControlToolEnabled(id, yield* settings.getSettings))
         return yield* new SourceControlToolError({ id, reason: "unsupported" });
       const definition = DEFINITIONS[id];
       const executablePath = yield* find(definition.executable);
@@ -141,6 +153,14 @@ const make = Effect.gen(function* () {
         return manual("Could not read the installed version. Check the executable on the server.");
       if (platform !== "darwin" && platform !== "linux")
         return manual("Automatic installation is not supported on this server platform.");
+
+      if (id === "ones2" || id === "mcm" || id === "mtskills") {
+        const manualCommand = `npm install -g ${DEFINITIONS[id].packageName}@latest ${MCODE_REGISTRY}`;
+        return manual(
+          "This installation must be updated with the tool that installed it.",
+          manualCommand,
+        );
+      }
 
       if (id === "meituan") {
         const manualCommand = `npm install -g ${MCODE_PACKAGE}@latest ${MCODE_REGISTRY}`;
@@ -263,10 +283,9 @@ const make = Effect.gen(function* () {
   ) {
     const id = plan.tool.id;
     if (
-      id === "meituan" &&
-      !isMeituanServiceEnabled(
+      !isSourceControlToolEnabled(
+        id,
         yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null)),
-        "sourceControl",
       )
     )
       return yield* new SourceControlToolError({ id, reason: "unsupported" });

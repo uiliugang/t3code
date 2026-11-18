@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeProjectIssueSources } from "./requirementsSettings.logic";
+import { mergeProjectIssueSources } from "./issueSources.ts";
 
 describe("mergeProjectIssueSources", () => {
   it("keeps discovered MEP spaces alongside GitHub Issues", () => {

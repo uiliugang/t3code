@@ -2,7 +2,13 @@ import { useState, type ComponentProps } from "react";
 import { View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId, isMeituanServiceEnabled, type SkillSource } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  isMeituanServiceEnabled,
+  type SkillSource,
+  type SourceControlTool,
+} from "@t3tools/contracts";
+import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -10,6 +16,7 @@ import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import * as Dialog from "../../components/ui/Dialog";
 import { useEnvironmentQuery } from "../../state/query";
+import { useProjects } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -146,6 +153,27 @@ function EnvironmentIntegration({
   const enabled = settings.meituanIntegrationEnabled;
   const codeEnabled = isMeituanServiceEnabled(settings, "sourceControl");
   const issuesEnabled = isMeituanServiceEnabled(settings, "requirements");
+  const projects = useProjects().filter(
+    (project) => project.environmentId === environmentId && !project.isScratch,
+  );
+  const associationsQuery = useEnvironmentQuery(
+    issuesEnabled && projects.length
+      ? sourceControlEnvironment.issueSources({
+          environmentId,
+          input: { projectIds: projects.map((project) => project.id) },
+        })
+      : null,
+  );
+  const associatedProjectCount = projects.filter((project) => {
+    const saved = (settings.issueProjectSources[project.id] ?? []).filter(
+      (source) => source.provider === "meituan",
+    );
+    const automatic =
+      associationsQuery.data
+        ?.find((result) => result.projectId === project.id)
+        ?.sources.filter((source) => source.provider === "meituan") ?? [];
+    return mergeProjectIssueSources(automatic, saved).length > 0;
+  }).length;
   const canToggle = environment.serverConfig.environment.capabilities.meituanIntegration === true;
   const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const update = useAtomCommand(serverEnvironment.updateSettings);
@@ -155,6 +183,20 @@ function EnvironmentIntegration({
   const skillsAllowed = useAtomValue(serverEnvironment.mutateSkills.permissionAtom(environmentId));
   const sources = skillQuery.data?.sources.filter((source) => source.kind === "mtskills") ?? [];
   const skillsEnabled = enabled && sources.some((source) => source.enabled);
+  const enabledToolIds: SourceControlTool["id"][] = [
+    ...(codeEnabled ? (["meituan"] as const) : []),
+    ...(issuesEnabled ? (["ones2", "mcm"] as const) : []),
+    ...(skillsEnabled ? (["mtskills"] as const) : []),
+  ];
+  const activeToolIds: SourceControlTool["id"][] =
+    section === "code"
+      ? ["meituan"]
+      : section === "issues"
+        ? ["ones2", "mcm"]
+        : section === "skills"
+          ? ["mtskills"]
+          : enabledToolIds;
+  const refreshTools = useAtomCommand(sourceControlEnvironment.refreshTools);
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
   );
@@ -174,6 +216,7 @@ function EnvironmentIntegration({
     await update({ environmentId, input: { patch: { meituanIntegrationEnabled: value } } });
     setBusy(false);
     discovery.refresh();
+    if (value) void refreshTools({ environmentId, input: {} });
   };
   const saveService = async (service: "code" | "issues" | "skills", value: boolean) => {
     if (
@@ -220,6 +263,8 @@ function EnvironmentIntegration({
       });
       discovery.refresh();
     }
+    void refreshTools({ environmentId, input: {} });
+    associationsQuery.refresh();
     setBusy(false);
   };
   const toggles = {
@@ -328,9 +373,7 @@ function EnvironmentIntegration({
                 : !issuesEnabled
                   ? t("Disabled")
                   : t("{count} projects", {
-                      count: Object.values(settings.issueProjectSources).filter((sources) =>
-                        sources.some((source) => source.provider === "meituan"),
-                      ).length,
+                      count: associatedProjectCount,
                     })
             }
             onPress={() => navigation.navigate("SettingsMeituanIssues", { environmentId })}
@@ -364,7 +407,6 @@ function EnvironmentIntegration({
             multiple={false}
             initialExpanded
           />
-          {codeEnabled ? <SourceControlToolsSection environment={current} only="meituan" /> : null}
         </>
       ) : section === "issues" ? (
         <SettingsSection title="Project associations">
@@ -381,6 +423,9 @@ function EnvironmentIntegration({
       ) : (
         <MeituanSkillSource environmentId={environmentId} disabled={disabled} />
       )}
+      {activeToolIds.length ? (
+        <SourceControlToolsSection environment={current} only={activeToolIds} />
+      ) : null}
     </>
   );
 }

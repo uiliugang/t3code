@@ -21,6 +21,7 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
   npmVersion?: string;
   installExit?: number;
   meituanEnabled?: boolean;
+  meituanRequirementsEnabled?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -66,6 +67,7 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
       Layer.provide(
         Settings.ServerSettingsService.layerTest({
           meituanIntegrationEnabled: options.meituanEnabled ?? true,
+          meituanRequirementsEnabled: options.meituanRequirementsEnabled ?? true,
         }),
       ),
       Layer.provide(Layer.succeed(VcsProcess.VcsProcess, { run })),
@@ -92,6 +94,39 @@ it.effect("does not probe Meituan tools while the environment integration is dis
     assert.strictEqual(result.reason, "inspection");
     assert.isEmpty(calls);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each([
+  ["ones2", "@ee/mep-ones-cli"],
+  ["mcm", "@dp/mcm-cli"],
+  ["mtskills", "@mtfe/mtskills"],
+] as const)("exposes %s status and its npm maintenance command", ([id, packageName]) =>
+  Effect.gen(function* () {
+    const { installer, bin } = yield* fixture({ binaries: [id] });
+    const result = yield* installer.inspect(id);
+    assert.strictEqual(result.tool.status, "installed");
+    assert.strictEqual(result.tool.version, "2.43.0");
+    assert.strictEqual(result.tool.executablePath, `${bin}/${id}`);
+    assert.strictEqual(result.tool.command, null);
+    assert.strictEqual(
+      result.tool.manualCommand,
+      `npm install -g ${packageName}@latest --registry=http://r.npm.sankuai.com`,
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each(["ones2", "mcm"] as const)(
+  "does not probe %s while requirements are disabled",
+  (id) =>
+    Effect.gen(function* () {
+      const { installer, calls } = yield* fixture({
+        binaries: [id],
+        meituanRequirementsEnabled: false,
+      });
+      const result = yield* Effect.flip(installer.inspect(id));
+      assert.strictEqual(result.reason, "inspection");
+      assert.isEmpty(calls);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect.each(["apt-get", "yum", "dnf"] as const)(
