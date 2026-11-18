@@ -1,4 +1,5 @@
 import type { CodexSettings } from "@t3tools/contracts";
+import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -13,6 +14,7 @@ import {
 import type { UsageTokenTotals } from "@t3tools/contracts";
 
 import * as CodexUsageHistory from "../../usage/CodexUsageHistory.ts";
+import * as ServerConfig from "../../config.ts";
 import { resolveCodexHomeLayout } from "./CodexHomeLayout.ts";
 
 const TokenCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -516,7 +518,7 @@ export const codexUsageFormat: TranscriptUsageFormat<CodexScanState> = {
 
 export const codexUsageReader: ProviderUsageReader<
   CodexSettings,
-  Path.Path | CodexUsageHistory.CodexUsageHistory
+  Path.Path | CodexUsageHistory.CodexUsageHistory | ServerConfig.ServerConfig
 > = {
   kind: "transcripts",
   provider: "codex",
@@ -548,9 +550,17 @@ export const codexUsageReader: ProviderUsageReader<
     }
     return speeds;
   }),
-  directories: Effect.fn("codexUsageReader.directories")(function* ({ config, environment }) {
+  directories: Effect.fn("codexUsageReader.directories")(function* ({
+    instanceId,
+    config,
+    environment,
+  }) {
     if (config === undefined) return [];
     const path = yield* Path.Path;
+    if (codexConnectionMode(config) === "byok") {
+      const { stateDir } = yield* ServerConfig.ServerConfig;
+      return [{ dir: path.join(stateDir, "providers", "codex", instanceId, "byok", "sessions") }];
+    }
     const environmentHome = environment.CODEX_HOME?.trim();
     const layout = yield* resolveCodexHomeLayout(
       config.setupMode !== "managed" && !config.homePath.trim() && environmentHome
