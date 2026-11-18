@@ -587,7 +587,7 @@ export function RequirementBoard({
                   setCreatingLocal(projectId);
                 }}
               />
-              {(!narrow || !panelOpen) && panelControls}
+              {!panelOpen && panelControls}
             </div>
           </WorkspacePageHeader>
           <div className="flex shrink-0 items-center gap-1.5 px-5 pt-3 pb-2">
@@ -1070,7 +1070,7 @@ export function RequirementBoard({
         {presence.present && renderedSurface ? (
           <RightPanelTabs
             mode={narrow ? "sheet" : "inline"}
-            layoutControls={narrow ? panelControls : undefined}
+            layoutControls={panelOpen && panelControls}
             open={rightPanelState.isOpen}
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
