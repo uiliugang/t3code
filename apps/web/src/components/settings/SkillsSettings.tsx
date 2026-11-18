@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   skillFailureMessage,
@@ -24,6 +24,7 @@ import {
   skillTargetGroups,
   skillDefaultTargetIds,
   skillBindingTargetIds,
+  skillBatchBindingOperations,
   skillStatus,
   skillFailure,
   skillNextCheck,
@@ -64,6 +65,7 @@ import { Checkbox } from "../ui/checkbox";
 import { Badge } from "../ui/badge";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Switch } from "../ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
   Dialog,
@@ -187,10 +189,14 @@ function Targets({
   targets,
   selected,
   onChange,
+  disabled = false,
+  removing = false,
 }: {
   targets: ReadonlyArray<SkillTarget>;
   selected: ReadonlyArray<string>;
   onChange: (ids: string[]) => void;
+  disabled?: boolean;
+  removing?: boolean;
 }) {
   const t = useUiTranslation();
   const [paths, setPaths] = useState(false);
@@ -216,6 +222,7 @@ function Targets({
             className="flex cursor-pointer items-start gap-3 py-2.5 text-sm"
           >
             <Checkbox
+              disabled={disabled}
               aria-label={group.targets.map((target) => target.label).join(", ")}
               checked={group.targets.some((target) => selected.includes(target.id))}
               onCheckedChange={(checked) =>
@@ -243,9 +250,11 @@ function Targets({
           </label>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {t("Existing files at selected locations are backed up and replaced with managed links.")}
-      </p>
+      {!removing && (
+        <p className="text-xs text-muted-foreground">
+          {t("Existing files at selected locations are backed up and replaced with managed links.")}
+        </p>
+      )}
     </div>
   );
 }
@@ -439,6 +448,94 @@ function BindingDialog({
     </Dialog>
   );
 }
+function BatchBindingDialog({
+  skills,
+  data,
+  mutate,
+  disabled,
+  onClose,
+}: {
+  skills: ReadonlyArray<ManagedSkill>;
+  data: SkillSnapshot;
+  mutate: Mutate;
+  disabled: boolean;
+  onClose: () => void;
+}) {
+  const t = useUiTranslation();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [mode, setMode] = useState<"add" | "remove">("add");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const operations = skillBatchBindingOperations(skills, data.targets, selected, mode);
+  const unavailable =
+    disabled ||
+    saving ||
+    skills.some((skill) => skill.status === "fetching" || skill.status === "removing");
+  return (
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>{t("Usage locations")}</DialogTitle>
+        </DialogHeader>
+        <DialogPanel>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {t("Changes apply to {count} skills", { count: skills.length })}
+            </p>
+            <ToggleGroup
+              aria-label={t("Usage locations")}
+              value={[mode]}
+              disabled={unavailable}
+              onValueChange={(values) => {
+                if (values[0] === "add" || values[0] === "remove") setMode(values[0]);
+              }}
+            >
+              <ToggleGroupItem value="add">{t("Add locations")}</ToggleGroupItem>
+              <ToggleGroupItem value="remove">{t("Remove locations")}</ToggleGroupItem>
+            </ToggleGroup>
+            <Targets
+              targets={data.targets}
+              selected={selected}
+              onChange={setSelected}
+              disabled={unavailable}
+              removing={mode === "remove"}
+            />
+            {operations === null && (
+              <p role="alert" className="text-sm text-destructive">
+                {t("Some usage locations are unavailable. Refresh skills and try again.")}
+              </p>
+            )}
+            {skills.length > 200 && (
+              <p role="alert" className="text-sm text-destructive">
+                {t("Select up to 200 skills.")}
+              </p>
+            )}
+          </div>
+        </DialogPanel>
+        <DialogFooter>
+          <Button variant="outline" disabled={saving} onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            disabled={unavailable || skills.length > 200 || !operations?.length}
+            onClick={async () => {
+              if (unavailable || savingRef.current || !operations?.length) return;
+              savingRef.current = true;
+              setSaving(true);
+              const ok = await mutate({ type: "batch", operations });
+              savingRef.current = false;
+              setSaving(false);
+              if (ok) onClose();
+            }}
+          >
+            {t(saving ? "Saving..." : "Apply")}
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
 function OriginDialog({
   skill,
   data,
@@ -1751,6 +1848,7 @@ function EnvironmentSkills({
   const [selected, setSelected] = useState<string[]>([]);
   const [install, setInstall] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [batchBindings, setBatchBindings] = useState(false);
   const [previews, setPreviews] = useState<AdoptionPreview[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState(false);
@@ -1840,6 +1938,15 @@ function EnvironmentSkills({
   };
   return (
     <div className="min-w-0 space-y-4">
+      {batchBindings && (
+        <BatchBindingDialog
+          skills={selectedManaged}
+          data={data}
+          mutate={mutate}
+          disabled={!canManage}
+          onClose={() => setBatchBindings(false)}
+        />
+      )}
       {copying && (
         <SkillCopyDialog
           environmentId={environmentId}
@@ -2046,6 +2153,15 @@ function EnvironmentSkills({
                 )}
                 {selectedManaged.length > 0 && (
                   <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canManage}
+                      onClick={() => setBatchBindings(true)}
+                    >
+                      <FolderIcon />
+                      {t("Usage locations")}
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"

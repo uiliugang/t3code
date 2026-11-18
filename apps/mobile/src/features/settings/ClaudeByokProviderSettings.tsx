@@ -6,7 +6,7 @@ import {
   CODEX_BYOK_LABEL,
 } from "@t3tools/shared/codexByok";
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { TextInput, View } from "react-native";
 import {
   ProviderDriverKind,
@@ -37,24 +37,39 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { SettingsTarget } from "./settings-environment-filter";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
+import type { ProviderRowRenderer } from "./ProviderSwipeRow";
 
 export function ClaudeByokProviderSettings({
   environment,
   driver = "claudeAgent",
   allowCreate = true,
   providers = [],
+  createOnly = false,
+  showDisabled = false,
+  renderInstance,
 }: {
   readonly allowCreate?: boolean;
   readonly providers?: ReadonlyArray<ServerProvider>;
+  readonly createOnly?: boolean;
+  readonly showDisabled?: boolean;
   readonly driver?: "claudeAgent" | "codex";
   readonly environment: SettingsTarget;
+  readonly renderInstance?: (
+    provider: Pick<ServerProvider, "instanceId" | "displayName" | "driver" | "enabled">,
+    editor: ReactNode,
+    onEdit?: () => void,
+  ) => ReactNode;
 }) {
   const t = useUiTranslation();
   const label = driver === "codex" ? CODEX_BYOK_LABEL : CLAUDE_BYOK_LABEL;
   const [adding, setAdding] = useState(false);
   const instances = Object.entries(environment.serverConfig.settings.providerInstances).filter(
-    ([, instance]) =>
+    ([instanceId, instance]) =>
+      !createOnly &&
       instance.driver === driver &&
+      (providers.find((provider) => provider.instanceId === instanceId)?.enabled ??
+        instance.enabled ??
+        true) !== showDisabled &&
       (driver === "codex"
         ? codexConnectionMode(instance.config) === "byok"
         : isClaudeByok(instance.config)),
@@ -64,16 +79,34 @@ export function ClaudeByokProviderSettings({
   for (let suffix = 2; existing.has(id); suffix++) id = `${driver}_byok_${suffix}`;
   return (
     <View>
-      {instances.map(([instanceId, instance]) => (
-        <ClaudeByokEditor
-          driver={driver}
-          key={`${instanceId}:${JSON.stringify(instance.environment)}`}
-          environment={environment}
-          instanceId={ProviderInstanceId.make(instanceId)}
-          instance={instance}
-          provider={providers.find((provider) => provider.instanceId === instanceId)}
-        />
-      ))}
+      {instances.map(([instanceId, instance]) => {
+        const id = ProviderInstanceId.make(instanceId);
+        return (
+          <ClaudeByokEditor
+            key={`${instanceId}:${JSON.stringify(instance.environment)}`}
+            driver={driver}
+            environment={environment}
+            instanceId={id}
+            instance={instance}
+            provider={providers.find((provider) => provider.instanceId === instanceId)}
+            renderRow={
+              renderInstance
+                ? (content, onEdit) =>
+                    renderInstance(
+                      {
+                        instanceId: id,
+                        displayName: instance.displayName ?? label,
+                        driver: instance.driver,
+                        enabled: !showDisabled,
+                      },
+                      content,
+                      onEdit,
+                    )
+                : undefined
+            }
+          />
+        );
+      })}
       {adding ? (
         <ClaudeByokEditor
           driver={driver}
@@ -83,7 +116,7 @@ export function ClaudeByokProviderSettings({
         />
       ) : allowCreate ? (
         <ListActionRow
-          icon="plus"
+          trailingIcon="plus"
           label={t("Add {name}", { name: label })}
           onPress={() => setAdding(true)}
         />
@@ -99,6 +132,7 @@ function ClaudeByokEditor({
   instance,
   provider,
   onClose,
+  renderRow,
 }: {
   readonly environment: SettingsTarget;
   readonly driver: "claudeAgent" | "codex";
@@ -106,6 +140,7 @@ function ClaudeByokEditor({
   readonly instance?: ProviderInstanceConfig;
   readonly provider?: ServerProvider | undefined;
   readonly onClose?: () => void;
+  readonly renderRow?: ProviderRowRenderer;
 }) {
   const t = useUiTranslation();
   const codex = driver === "codex";
@@ -223,13 +258,13 @@ function ClaudeByokEditor({
             : t("Check failed.")),
     });
   };
-  return (
+  const content = (
     <View className="border-b border-border-subtle">
       {instance ? (
         <ListRow
           label={instance.displayName ?? label}
           description={label}
-          detail={t(expanded ? "Done" : "Edit")}
+          detail={expanded ? t("Done") : undefined}
           disabled={pending}
           onPress={() => setExpanded(!expanded)}
         />
@@ -470,4 +505,5 @@ function ClaudeByokEditor({
       ) : null}
     </View>
   );
+  return renderRow ? renderRow(content, () => setExpanded(true)) : content;
 }

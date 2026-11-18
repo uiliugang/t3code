@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -25,6 +25,7 @@ import {
   skillTargetGroups,
   skillDefaultTargetIds,
   skillBindingTargetIds,
+  skillBatchBindingOperations,
   skillStatus,
   skillFailure,
   skillConfigurationJob,
@@ -46,6 +47,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Sheet } from "../../components/ui/Sheet";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SkillCopySheet } from "./SkillCopySheet";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
@@ -150,18 +152,22 @@ function TargetSelection({
   selected,
   disabled,
   onChange,
+  removing = false,
 }: {
   data: SkillSnapshot;
   selected: ReadonlyArray<string>;
   disabled: boolean;
   onChange: (ids: string[]) => void;
+  removing?: boolean;
 }) {
   const t = useUiTranslation();
   return (
     <View className="gap-3">
-      <Text className="text-xs text-foreground-muted">
-        {t("Existing files at selected locations are backed up and replaced with managed links.")}
-      </Text>
+      {!removing && (
+        <Text className="text-xs text-foreground-muted">
+          {t("Existing files at selected locations are backed up and replaced with managed links.")}
+        </Text>
+      )}
       {skillTargetGroups(data.targets)
         .filter((group) => group.enabled)
         .map((group) => (
@@ -195,6 +201,88 @@ function TargetSelection({
     </View>
   );
 }
+function BatchBindings({
+  skills,
+  data,
+  mutate,
+  disabled,
+  onClose,
+}: {
+  skills: ReadonlyArray<ManagedSkill>;
+  data: SkillSnapshot;
+  mutate: Mutate;
+  disabled: boolean;
+  onClose: () => void;
+}) {
+  const t = useUiTranslation();
+  const insets = useSafeAreaInsets();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [mode, setMode] = useState<"add" | "remove">("add");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const operations = skillBatchBindingOperations(skills, data.targets, selected, mode);
+  const unavailable =
+    disabled ||
+    saving ||
+    skills.some((skill) => skill.status === "fetching" || skill.status === "removing");
+  return (
+    <Sheet title={t("Usage locations")} onClose={onClose} dismissDisabled={saving}>
+      <ScreenScrollView
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerClassName="gap-4 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(20, insets.bottom) }}
+      >
+        <Text className="text-sm text-foreground-muted">
+          {t("Changes apply to {count} skills", { count: skills.length })}
+        </Text>
+        <SegmentedControl
+          selected={mode}
+          onSelect={(value) => {
+            if (!unavailable) setMode(value);
+          }}
+          options={[
+            { value: "add", label: t("Add locations") },
+            { value: "remove", label: t("Remove locations") },
+          ]}
+        />
+        <TargetSelection
+          data={data}
+          selected={selected}
+          onChange={setSelected}
+          disabled={unavailable}
+          removing={mode === "remove"}
+        />
+        {operations === null && (
+          <Text accessibilityRole="alert" className="text-danger-foreground">
+            {t("Some usage locations are unavailable. Refresh skills and try again.")}
+          </Text>
+        )}
+        {skills.length > 200 && (
+          <Text accessibilityRole="alert" className="text-danger-foreground">
+            {t("Select up to 200 skills.")}
+          </Text>
+        )}
+        <ControlPill
+          label={t(saving ? "Saving..." : "Apply")}
+          variant="primary"
+          disabled={unavailable || skills.length > 200 || !operations?.length}
+          onPress={() => {
+            if (unavailable || savingRef.current || !operations?.length) return;
+            savingRef.current = true;
+            setSaving(true);
+            void mutate({ type: "batch", operations }).then((ok) => {
+              savingRef.current = false;
+              setSaving(false);
+              if (ok) onClose();
+            });
+          }}
+        />
+      </ScreenScrollView>
+    </Sheet>
+  );
+}
+
 function Install({
   data,
   disabled,
@@ -789,6 +877,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [detailKey, setDetailKey] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [batchBindings, setBatchBindings] = useState(false);
   const [previews, setPreviews] = useState<
     Array<{ skill: DiscoveredSkill; preview: SkillInspection }>
   >([]);
@@ -897,11 +986,18 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
         {showCopy && (
           <ControlPill
             icon="square.on.square"
-            label={t("Copy")}
             accessibilityLabel={t("Copy to environment...")}
             variant="primary"
             disabled={disabled || chosen.length + discovered.length === 0}
             onPress={() => setCopying(true)}
+          />
+        )}
+        {chosen.length > 0 && (
+          <ControlPill
+            icon="folder"
+            accessibilityLabel={t("Usage locations")}
+            disabled={disabled}
+            onPress={() => setBatchBindings(true)}
           />
         )}
         <Menu
@@ -989,6 +1085,15 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   );
   return (
     <View className="flex-1">
+      {batchBindings && (
+        <BatchBindings
+          skills={chosen}
+          data={data}
+          mutate={mutate}
+          disabled={disabled}
+          onClose={() => setBatchBindings(false)}
+        />
+      )}
       {detail && (
         <Sheet title={detail.name} onClose={() => setDetailKey(null)}>
           <ScreenScrollView

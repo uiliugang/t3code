@@ -1,4 +1,9 @@
 export const skillMessages: Readonly<Record<string, string>> = {
+  "Add locations": "添加位置",
+  "Remove locations": "移除位置",
+  "Select up to 200 skills.": "一次最多选择 200 个技能。",
+  "Some usage locations are unavailable. Refresh skills and try again.":
+    "部分使用位置已不可用，请刷新技能后重试。",
   "Copy skill": "复制技能",
   "Duplicate names selected: {names}. Close this dialog and select only one source for each name.":
     "所选技能存在同名来源：{names}。请关闭此窗口，每个名称只选择一个来源。",

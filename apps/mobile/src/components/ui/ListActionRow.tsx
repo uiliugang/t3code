@@ -1,7 +1,8 @@
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
 import { AppActivityIndicator } from "./AppActivityIndicator";
+import { SymbolView, type AppSymbolName } from "./AppSymbol";
 import { ListRowLayout, type ListRowContentProps } from "./ListRowLayout";
 import { RowPressable } from "./RowPressable";
 
@@ -9,6 +10,7 @@ export function ListActionRow(
   props: ListRowContentProps & {
     readonly tone?: "default" | "danger";
     readonly loading?: boolean;
+    readonly trailingIcon?: AppSymbolName;
     readonly onPress: () => void;
   },
 ) {
@@ -34,6 +36,18 @@ export function ListActionRow(
             <AppActivityIndicator
               colorClassName={props.tone === "danger" ? "accent-danger-foreground" : "accent-icon"}
             />
+          ) : props.trailingIcon ? (
+            <View className="size-6 items-center justify-center">
+              <SymbolView
+                name={props.trailingIcon}
+                size={Platform.OS === "android" ? 24 : 22}
+                tintColorClassName={
+                  props.tone === "danger" ? "accent-danger-foreground" : "accent-icon"
+                }
+                type="monochrome"
+                weight="regular"
+              />
+            </View>
           ) : undefined
         }
       />

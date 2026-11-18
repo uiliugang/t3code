@@ -14,17 +14,20 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Linking, Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { MenuAction } from "@react-native-menu/menu";
+import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
+import { ListRow } from "../../components/ui/ListRow";
 import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -35,13 +38,13 @@ import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilt
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { AddProviderConnection } from "./AddProviderConnection";
-import { AddClaudeAccount, ClaudeAccount } from "./ClaudeAccounts";
+import { ClaudeAccount } from "./ClaudeAccounts";
 import { CLAUDE_DRIVER } from "./claude-accounts";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 import { ClaudeByokProviderSettings } from "./ClaudeByokProviderSettings";
 import { isClaudeByok } from "@t3tools/shared/claudeByok";
 import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
-import { RemoveProvider } from "./RemoveProvider";
+import { ProviderSwipeRow, type ProviderRowRenderer } from "./ProviderSwipeRow";
 
 import {
   canManageProvider,
@@ -67,9 +70,9 @@ export function SettingsProviderAccountsRouteScreen() {
         {selectedTargets.length === 0 ? (
           <Text className="text-foreground-muted">{t("Select a connected environment.")}</Text>
         ) : (
-          selectedTargets.map((environment) => (
-            <SettingsSection key={environment.environmentId} title={environment.label}>
-              {!permittedEnvironments.has(environment.environmentId) ? (
+          selectedTargets.map((environment) =>
+            !permittedEnvironments.has(environment.environmentId) ? (
+              <SettingsSection key={environment.environmentId} title={environment.label}>
                 <View className="gap-1 p-4">
                   <Text className="text-base text-foreground">{t("Limited permissions")}</Text>
                   <Text className="text-sm text-foreground-muted">
@@ -79,14 +82,15 @@ export function SettingsProviderAccountsRouteScreen() {
                     )}
                   </Text>
                 </View>
-              ) : (
-                <EnvironmentProviders
-                  environment={environment}
-                  providers={managedProviders(environment, providersByEnvironment)}
-                />
-              )}
-            </SettingsSection>
-          ))
+              </SettingsSection>
+            ) : (
+              <EnvironmentProviders
+                key={environment.environmentId}
+                environment={environment}
+                providers={managedProviders(environment, providersByEnvironment)}
+              />
+            ),
+          )
         )}
       </ScreenScrollView>
     </SettingsScreen>
@@ -101,6 +105,33 @@ function EnvironmentProviders({
   readonly providers: ReadonlyArray<ServerProvider>;
 }) {
   const t = useUiTranslation();
+  const [removalError, setRemovalError] = useState<string | null>(null);
+  const [providerState, setProviderState] = useState<"enabled" | "disabled">("enabled");
+  const showDisabled = providerState === "disabled";
+  const openSwipeable = useRef<SwipeableMethods | null>(null);
+  const renderProvider = (
+    provider: Pick<ServerProvider, "instanceId" | "displayName" | "driver" | "enabled">,
+    content: ReactNode,
+    onEdit?: () => void,
+  ) => (
+    <ProviderSwipeRow
+      key={provider.instanceId}
+      environment={environment}
+      provider={provider}
+      onError={setRemovalError}
+      onEdit={onEdit}
+      onSwipeableClose={(methods) => {
+        if (openSwipeable.current === methods) openSwipeable.current = null;
+      }}
+      onSwipeableWillOpen={(methods) => {
+        if (openSwipeable.current !== methods) openSwipeable.current?.close();
+        openSwipeable.current = methods;
+      }}
+    >
+      {content}
+    </ProviderSwipeRow>
+  );
+  const visibleProviders = providers.filter((provider) => provider.enabled !== showDisabled);
   const isByok = (provider: ServerProvider) =>
     provider.driver === "codex"
       ? codexConnectionMode(
@@ -109,11 +140,11 @@ function EnvironmentProviders({
       : isClaudeByok(
           environment.serverConfig.settings.providerInstances[provider.instanceId]?.config,
         );
-  const unified =
-    environment.serverConfig.environment.capabilities?.providerConnectionProfiles === true;
-  const accounts = providers.filter((provider) => canManageProvider(provider) && !isByok(provider));
+  const accounts = visibleProviders.filter(
+    (provider) => canManageProvider(provider) && !isByok(provider),
+  );
   // Claude has no in-app sign-in; each account is its own instance on a signed-in config folder.
-  const claudeAccounts = providers.filter(
+  const claudeAccounts = visibleProviders.filter(
     (provider) =>
       provider.driver === CLAUDE_DRIVER && !canManageProvider(provider) && !isByok(provider),
   );
@@ -122,12 +153,42 @@ function EnvironmentProviders({
     CLAUDE_DRIVER,
   );
   return (
-    <>
+    <SettingsSection
+      title={environment.label}
+      trailing={
+        <AddProviderConnection
+          environment={environment}
+          providers={providers}
+          onCreated={() => setProviderState("enabled")}
+        />
+      }
+    >
+      <View className="px-3 pb-2 pt-3">
+        <SegmentedControl
+          options={[
+            { value: "enabled", label: t("Enabled") },
+            { value: "disabled", label: t("Disabled providers") },
+          ]}
+          selected={providerState}
+          onSelect={(value) => {
+            openSwipeable.current?.close();
+            setProviderState(value);
+            setRemovalError(null);
+          }}
+          size="compact"
+          role="tab"
+        />
+      </View>
+      {removalError ? (
+        <Text className="p-4 text-sm text-danger-foreground">{removalError}</Text>
+      ) : null}
       {canAddClaude ? (
         <ClaudeByokProviderSettings
           environment={environment}
-          allowCreate={!unified}
+          allowCreate={false}
           providers={providers}
+          showDisabled={showDisabled}
+          renderInstance={renderProvider}
         />
       ) : null}
       {environment.serverConfig.environment.capabilities?.codexByok &&
@@ -138,8 +199,10 @@ function EnvironmentProviders({
         <ClaudeByokProviderSettings
           environment={environment}
           driver="codex"
-          allowCreate={!unified}
+          allowCreate={false}
           providers={providers}
+          showDisabled={showDisabled}
+          renderInstance={renderProvider}
         />
       ) : null}
       {accounts.map((provider, index) => (
@@ -147,47 +210,83 @@ function EnvironmentProviders({
           key={provider.instanceId}
           className={index > 0 ? "border-t border-border-subtle" : undefined}
         >
-          <ProviderAccount environment={environment} provider={provider} />
-          {provider.driver === CLAUDE_DRIVER ||
-          (provider.driver === "codex" &&
-            environment.serverConfig.environment.capabilities?.codexByok) ? (
-            <ClaudeInstallationControls environment={environment} provider={provider} />
-          ) : null}
+          <ProviderAccount
+            environment={environment}
+            provider={provider}
+            renderRow={(content, onEdit) => renderProvider(provider, content, onEdit)}
+          />
         </View>
       ))}
-      {providers
+      {visibleProviders
         .filter((provider) => !isByok(provider) && needsProviderSummary(provider))
         .map((provider) => (
-          <View key={provider.instanceId} className="border-t border-border-subtle p-4">
-            <ProviderAccountSummary
-              name={provider.displayName ?? provider.driver}
-              status={t(providerSummaryStatus(provider))}
-              email={
-                provider.enabled && provider.auth.status === "authenticated"
-                  ? provider.auth.email?.trim()
-                  : undefined
-              }
-            />
-            {provider.driver === "codex" &&
-            environment.serverConfig.environment.capabilities?.codexByok ? (
-              <ClaudeInstallationControls environment={environment} provider={provider} />
-            ) : null}
-          </View>
+          <ProviderSummary
+            key={provider.instanceId}
+            environment={environment}
+            provider={provider}
+            renderRow={(content, onEdit) => renderProvider(provider, content, onEdit)}
+          />
         ))}
-      {providers.length === 0 ? (
-        <Text className="p-4 text-foreground-muted">{t("No providers available.")}</Text>
+      {visibleProviders.length === 0 ? (
+        <Text className="p-4 text-foreground-muted">
+          {showDisabled ? t("No disabled providers.") : t("No providers available.")}
+        </Text>
       ) : null}
       {claudeAccounts.map((provider) => (
-        <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider} />
+        <ClaudeAccount
+          key={provider.instanceId}
+          environment={environment}
+          provider={provider}
+          renderRow={(content, onEdit) => renderProvider(provider, content, onEdit)}
+        />
       ))}
-      {unified ? (
-        <AddProviderConnection environment={environment} />
-      ) : canAddClaude ? (
-        <AddClaudeAccount environment={environment} />
-      ) : null}
-      <RemoveProvider environment={environment} providers={providers} />
-    </>
+    </SettingsSection>
   );
+}
+
+function ProviderSummary({
+  environment,
+  provider,
+  renderRow,
+}: {
+  readonly environment: SettingsTarget;
+  readonly provider: ServerProvider;
+  readonly renderRow: ProviderRowRenderer;
+}) {
+  const t = useUiTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const hasSettings =
+    provider.driver === "codex" && environment.serverConfig.environment.capabilities?.codexByok;
+  const email = provider.auth.status === "authenticated" ? provider.auth.email?.trim() : undefined;
+  const content = (
+    <View className="border-t border-border-subtle">
+      {hasSettings && !expanded ? (
+        <ListRow
+          label={provider.displayName ?? provider.driver}
+          description={t(providerSummaryStatus(provider))}
+          onPress={() => setExpanded(true)}
+        />
+      ) : (
+        <View className="min-h-16 flex-row items-center gap-3 px-4 py-3">
+          <ProviderAccountSummary
+            key={email}
+            name={provider.displayName ?? provider.driver}
+            status={t(providerSummaryStatus(provider))}
+            email={email}
+          />
+          {hasSettings ? (
+            <ControlPill label={t("Done")} onPress={() => setExpanded(false)} />
+          ) : null}
+        </View>
+      )}
+      {hasSettings ? (
+        <View className={expanded ? undefined : "hidden"}>
+          <ClaudeInstallationControls environment={environment} provider={provider} />
+        </View>
+      ) : null}
+    </View>
+  );
+  return renderRow(content, hasSettings ? () => setExpanded(true) : undefined);
 }
 
 /** Providers the environment's managed policy allows; the rest cannot run or sign in. */
@@ -203,9 +302,11 @@ function managedProviders(
 function ProviderAccount({
   environment,
   provider,
+  renderRow,
 }: {
   readonly environment: SettingsTarget;
   readonly provider: ServerProvider;
+  readonly renderRow: ProviderRowRenderer;
 }) {
   const t = useUiTranslation();
   const environmentId = environment.environmentId;
@@ -225,6 +326,7 @@ function ProviderAccount({
   // Matches ListRowLayout: large text stacks the action below instead of squeezing the status.
   const stacked = useWindowDimensions().fontScale >= 1.5;
   const [pending, setPending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ id: "", values: {} as Record<string, string> });
@@ -471,122 +573,147 @@ function ProviderAccount({
       onPress={() => startSignIn()}
     />
   ) : null;
-  return (
+  const showDetails = expanded || active || pending || Boolean(error || auth.error);
+  const content = (
     <View>
-      <View
-        className={
-          stacked
-            ? "min-h-16 items-start gap-3 px-4 py-3"
-            : "min-h-16 flex-row items-center gap-3 px-4 py-3"
-        }
-      >
-        <ProviderAccountSummary
-          key={email}
-          name={name}
-          status={status ? t(status) : status}
-          email={email}
+      {!showDetails ? (
+        <ListRow
+          label={name}
+          description={status ? t(status) : undefined}
+          onPress={() => setExpanded(true)}
         />
-        {trailing}
-      </View>
-      {interaction?.type === "deviceCode" ||
-      interaction?.type === "terminal" ||
-      interaction?.type === "credentials" ||
-      showCallback ||
-      error ||
-      auth.error ? (
-        <View className="gap-2 px-4 pb-3">
-          {interaction?.type === "deviceCode" ? (
-            <Text selectable className="text-foreground">
-              {t("Enter code")}
-              {interaction.userCode}
-              {t("on the sign-in page.")}
-            </Text>
-          ) : null}
-          {interaction?.type === "terminal" ? (
-            <>
-              <ScrollView className="max-h-64" nestedScrollEnabled>
-                <Text selectable className="font-mono text-sm text-foreground">
-                  {interaction.output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")}
-                </Text>
-              </ScrollView>
-              {field("input", t("Terminal response"), true)}
-              <SettingsActionRow
-                icon="arrow.up"
-                label={t("Send response")}
-                disabled={disabled}
-                onPress={() => {
-                  void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
-            </>
-          ) : null}
-          {interaction?.type === "credentials" ? (
-            <>
-              {interaction.fields.map((entry) => (
-                <View key={entry.name}>{field(entry.name, entry.label, entry.secret)}</View>
-              ))}
-              <SettingsActionRow
-                icon="person.crop.circle"
-                label={t("Connect")}
-                disabled={disabled}
-                onPress={() => {
-                  void send({ type: "credentials", values }).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
-            </>
-          ) : null}
-          {showCallback ? (
-            <>
-              {field("callback", t("Final localhost URL"), false)}
-              <SettingsActionRow
-                icon="arrow.right"
-                label={t("Continue")}
-                disabled={disabled || !values.callback?.trim()}
-                onPress={() => {
-                  if (!state?.flowId) return;
-                  void run(() =>
-                    complete({
-                      environmentId,
-                      input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
-                    }),
-                  ).then((sent) => {
-                    if (sent) setDraft({ id: "", values: {} });
-                  });
-                }}
-              />
-            </>
-          ) : null}
-          {error || auth.error ? (
-            <Text accessibilityRole="alert" className="text-danger-foreground">
-              {t(error ?? auth.error ?? "")}
-            </Text>
-          ) : null}
+      ) : null}
+      <View className={showDetails ? undefined : "hidden"}>
+        <View
+          className={
+            stacked
+              ? "min-h-16 items-start gap-3 px-4 py-3"
+              : "min-h-16 flex-row items-center gap-3 px-4 py-3"
+          }
+        >
+          <ProviderAccountSummary
+            key={email}
+            name={name}
+            status={status ? t(status) : status}
+            email={email}
+          />
+          <View className="flex-row flex-wrap items-center gap-2">
+            {trailing}
+            <ControlPill
+              label={t("Done")}
+              disabled={active || pending}
+              onPress={() => setExpanded(false)}
+            />
+          </View>
         </View>
-      ) : null}
-      {url ? (
-        <SettingsActionRow
-          icon="globe"
-          label={t("Open sign-in page")}
-          disabled={disabled}
-          onPress={() => {
-            void (async () => {
-              if (
-                interaction?.type === "browser" &&
-                interaction.requiresConsent &&
-                !(await send({ type: "browser", action: "accept" }))
-              )
-                return;
-              await Linking.openURL(url);
-            })().catch(() => setError("Could not open the sign-in page."));
-          }}
-        />
-      ) : null}
+        {interaction?.type === "deviceCode" ||
+        interaction?.type === "terminal" ||
+        interaction?.type === "credentials" ||
+        showCallback ||
+        error ||
+        auth.error ? (
+          <View className="gap-2 px-4 pb-3">
+            {interaction?.type === "deviceCode" ? (
+              <Text selectable className="text-foreground">
+                {t("Enter code")}
+                {interaction.userCode}
+                {t("on the sign-in page.")}
+              </Text>
+            ) : null}
+            {interaction?.type === "terminal" ? (
+              <>
+                <ScrollView className="max-h-64" nestedScrollEnabled>
+                  <Text selectable className="font-mono text-sm text-foreground">
+                    {interaction.output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")}
+                  </Text>
+                </ScrollView>
+                {field("input", t("Terminal response"), true)}
+                <SettingsActionRow
+                  icon="arrow.up"
+                  label={t("Send response")}
+                  disabled={disabled}
+                  onPress={() => {
+                    void send({ type: "terminal", data: `${values.input ?? ""}\r` }).then(
+                      (sent) => {
+                        if (sent) setDraft({ id: "", values: {} });
+                      },
+                    );
+                  }}
+                />
+              </>
+            ) : null}
+            {interaction?.type === "credentials" ? (
+              <>
+                {interaction.fields.map((entry) => (
+                  <View key={entry.name}>{field(entry.name, entry.label, entry.secret)}</View>
+                ))}
+                <SettingsActionRow
+                  icon="person.crop.circle"
+                  label={t("Connect")}
+                  disabled={disabled}
+                  onPress={() => {
+                    void send({ type: "credentials", values }).then((sent) => {
+                      if (sent) setDraft({ id: "", values: {} });
+                    });
+                  }}
+                />
+              </>
+            ) : null}
+            {showCallback ? (
+              <>
+                {field("callback", t("Final localhost URL"), false)}
+                <SettingsActionRow
+                  icon="arrow.right"
+                  label={t("Continue")}
+                  disabled={disabled || !values.callback?.trim()}
+                  onPress={() => {
+                    if (!state?.flowId) return;
+                    void run(() =>
+                      complete({
+                        environmentId,
+                        input: { instanceId, flowId: state.flowId!, callbackUrl: values.callback! },
+                      }),
+                    ).then((sent) => {
+                      if (sent) setDraft({ id: "", values: {} });
+                    });
+                  }}
+                />
+              </>
+            ) : null}
+            {error || auth.error ? (
+              <Text accessibilityRole="alert" className="text-danger-foreground">
+                {t(error ?? auth.error ?? "")}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+        {url ? (
+          <SettingsActionRow
+            icon="globe"
+            label={t("Open sign-in page")}
+            disabled={disabled}
+            onPress={() => {
+              void (async () => {
+                if (
+                  interaction?.type === "browser" &&
+                  interaction.requiresConsent &&
+                  !(await send({ type: "browser", action: "accept" }))
+                )
+                  return;
+                await Linking.openURL(url);
+              })().catch(() => setError("Could not open the sign-in page."));
+            }}
+          />
+        ) : null}
+        {provider.driver === CLAUDE_DRIVER ||
+        (provider.driver === "codex" &&
+          environment.serverConfig.environment.capabilities?.codexByok) ? (
+          <ClaudeInstallationControls environment={environment} provider={provider} />
+        ) : null}
+      </View>
     </View>
   );
+  return renderRow(content, () => setExpanded(true));
 }
 
 function ProviderAccountSummary({

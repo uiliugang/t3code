@@ -5731,6 +5731,13 @@ const zhCN: Readonly<Record<string, string>> = {
   Configured: "已配置",
   " · Required": " · 必填",
   Disable: "停用",
+  Enable: "启用",
+  "Disabled providers": "已停用",
+  "No disabled providers.": "没有已停用的提供商。",
+  "Disable {name}?": "停用 {name}？",
+  "Disabling may interrupt active sessions. Saved settings and credentials will be kept.":
+    "停用可能中断正在运行的会话。已保存的配置和凭据会保留。",
+  "Could not update provider": "无法更新提供商",
   'Write-only headers JSON, e.g. {"Authorization":"Bearer …"}':
     '仅可写入的请求头 JSON，例如 {"Authorization":"Bearer …"}',
   "Add ChatGPT account": "添加 ChatGPT 账号",

@@ -11,6 +11,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 import { CLAUDE_DRIVER, DEFAULT_CLAUDE_INSTANCE_ID } from "./claude-accounts";
+import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import type { SettingsTarget } from "./settings-environment-filter";
 
 const { mutate, Children } = vi.hoisted(() => ({
@@ -19,6 +20,21 @@ const { mutate, Children } = vi.hoisted(() => ({
 }));
 vi.mock("react-native", () => ({
   View: Children,
+  Pressable: ({
+    children,
+    accessibilityLabel,
+    disabled,
+    onPress,
+  }: {
+    children: ReactNode;
+    accessibilityLabel?: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>
+      {children}
+    </button>
+  ),
   TextInput: ({
     value,
     onChangeText,
@@ -38,18 +54,41 @@ vi.mock("react-native", () => ({
   Switch: () => null,
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
+vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ProviderIcon", () => ({ ProviderIcon: () => null }));
+vi.mock("../../components/ui/KeyboardSheetBody", () => ({ KeyboardSheetBody: Children }));
+vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
+vi.mock("../../components/ui/Sheet", () => ({
+  Sheet: ({
+    children,
+    onClose,
+    dismissDisabled,
+  }: {
+    children: ReactNode;
+    onClose: () => void;
+    dismissDisabled?: boolean;
+  }) => (
+    <section role="dialog">
+      <button aria-label="Close" disabled={dismissDisabled} onClick={onClose} />
+      {children}
+    </section>
+  ),
+}));
 vi.mock("../../components/ui/ControlPill", () => ({
   ControlPill: ({
     label,
+    accessibilityLabel,
     disabled,
     onPress,
   }: {
-    label: string;
+    label?: string;
+    accessibilityLabel?: string;
     disabled?: boolean;
     onPress?: () => void;
   }) => (
-    <button disabled={disabled} onClick={onPress}>
+    <button aria-label={accessibilityLabel ?? label} disabled={disabled} onClick={onPress}>
       {label}
     </button>
   ),
@@ -59,8 +98,43 @@ vi.mock("../../components/ui/ListRow", () => ({
     <button onClick={onPress}>{label}</button>
   ),
 }));
-vi.mock("../../components/ui/ListActionRow", () => ({ ListActionRow: Children }));
-vi.mock("../../components/ui/ListToggleRow", () => ({ ListToggleRow: () => null }));
+vi.mock("../../components/ui/ListActionRow", () => ({
+  ListActionRow: ({
+    label,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
+vi.mock("../../components/ui/ListToggleRow", () => ({
+  ListToggleRow: ({
+    label,
+    value,
+    disabled,
+    onValueChange,
+  }: {
+    label: string;
+    value: boolean;
+    disabled?: boolean;
+    onValueChange: (value: boolean) => void;
+  }) => (
+    <button
+      role="switch"
+      aria-label={label}
+      aria-checked={value}
+      disabled={disabled}
+      onClick={() => onValueChange(!value)}
+    />
+  ),
+}));
+vi.mock("../../components/ui/ListSection", () => ({ ListSection: Children }));
 vi.mock("../../components/ui/Menu", () => ({
   Menu: ({
     children,
@@ -162,9 +236,11 @@ it("keeps API edits until they are reverted before switching the Claude connecti
   }
 });
 
-it.each(["codex", "claudeAgent"])(
-  "adds %s without replacing its implicit default",
-  async (driver) => {
+it.each(
+  providerClients.definitions.filter((definition) => definition.hasDefaultInstance !== false),
+)(
+  "adds $driverKind without replacing its implicit default",
+  async ({ driverKind: driver, label }) => {
     mutate.mockReset().mockResolvedValue({ _tag: "Success" });
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
@@ -172,17 +248,25 @@ it.each(["codex", "claudeAgent"])(
     try {
       const environment = {
         environmentId: EnvironmentId.make("local"),
-        serverConfig: { settings: DEFAULT_SERVER_SETTINGS },
+        serverConfig: {
+          environment: { capabilities: { providerConnectionProfiles: true } },
+          settings: DEFAULT_SERVER_SETTINGS,
+        },
       } as SettingsTarget;
-      act(() => root.render(<AddProviderConnection environment={environment} />));
-      act(() =>
+      act(() => root.render(<AddProviderConnection environment={environment} providers={[]} />));
+      act(() => container.querySelector("button")!.click());
+      const selectDriver = () =>
         [...container.querySelectorAll("button")]
           .find(
-            (button) =>
-              button.textContent === (driver === "codex" ? "Add Codex" : "Add Claude Code"),
+            (button) => button.textContent === (driver === "claudeAgent" ? "Claude Code" : label),
           )!
-          .click(),
-      );
+          .click();
+      act(selectDriver);
+      act(() => container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+      expect(mutate).not.toHaveBeenCalled();
+      act(() => container.querySelector("button")!.click());
+      expect(container.querySelector("input")).toBeNull();
+      act(selectDriver);
       await act(async () =>
         [...container.querySelectorAll("button")]
           .find((button) => button.textContent === "Add")!
@@ -191,11 +275,92 @@ it.each(["codex", "claudeAgent"])(
       expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation.instanceId).toBe(
         `${driver}_2`,
       );
+      expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation).toMatchObject({
+        operation: "create",
+        instance: { driver, enabled: true },
+      });
     } finally {
       act(() => root.unmount());
     }
   },
 );
+
+it("adds another connection without toggling existing providers and allows retry after failure", async () => {
+  mutate.mockReset();
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const instanceId = ProviderInstanceId.make("cursor_2");
+  const instance: ProviderInstanceConfig = {
+    driver: ProviderDriverKind.make("cursor"),
+    enabled: true,
+    config: { binaryPath: "/work/cursor" },
+    environment: [{ name: "API_KEY", value: "", sensitive: true, valueRedacted: true }],
+  };
+  const environment = {
+    environmentId: EnvironmentId.make("local"),
+    serverConfig: {
+      environment: { capabilities: { providerConnectionProfiles: true } },
+      settings: { ...DEFAULT_SERVER_SETTINGS, providerInstances: { [instanceId]: instance } },
+    },
+  } as SettingsTarget;
+  const provider = {
+    instanceId,
+    driver: instance.driver,
+    displayName: "Work Cursor",
+    enabled: true,
+  } as ServerProvider;
+  let finish!: (result: { _tag: "Success" | "Failure" }) => void;
+  mutate.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const renderProvider = () =>
+    root.render(<AddProviderConnection environment={environment} providers={[provider]} />);
+  try {
+    act(renderProvider);
+    act(() => container.querySelector("button")!.click());
+    expect(container.querySelector('[role="switch"]')).toBeNull();
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Cursor")!
+        .click(),
+    );
+    const add = () => container.querySelector<HTMLButtonElement>('[aria-label="Add"]')!;
+    act(() => {
+      add().click();
+      add().click();
+    });
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0]?.[0].input.providerInstanceMutation).toEqual({
+      operation: "create",
+      instanceId: "cursor_3",
+      instance: { driver: "cursor", displayName: "Cursor", enabled: true, config: {} },
+    });
+    expect(add().disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.disabled).toBe(true);
+    await act(async () => finish({ _tag: "Failure" }));
+    expect(add().disabled).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.disabled).toBe(
+      false,
+    );
+    act(() => add().click());
+    expect(mutate).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finish({ _tag: "Success" });
+    });
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Add provider"]')!.click());
+    expect(
+      [...container.querySelectorAll("button")].filter((button) => button.textContent === "Cursor"),
+    ).toHaveLength(1);
+    expect(environment.serverConfig.settings.providerInstances[instanceId]).toEqual(instance);
+  } finally {
+    act(() => root.unmount());
+  }
+});
 
 it.each([
   { name: "implicit default", instance: undefined },

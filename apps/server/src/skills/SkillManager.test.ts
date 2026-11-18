@@ -86,6 +86,27 @@ const harness = Effect.gen(function* () {
 const encodeCatalog = Schema.encodeEffect(Schema.fromJsonString(SkillCatalog));
 
 describe("SkillManager", () => {
+  it.effect("resolves stored binding directories after the first install creates them", () =>
+    Effect.gen(function* () {
+      const { fs, directory, target, manager, install, restart } = yield* harness;
+      yield* fs.makeDirectory(`${directory}/physical`);
+      yield* fs.symlink(`${directory}/physical`, `${directory}/agent`);
+      expect(yield* fs.exists(target)).toBe(false);
+      yield* install;
+      const canonical = yield* fs.realPath(target);
+      const snapshot = yield* manager.snapshot;
+      expect(snapshot.targets[0]?.directory).toBe(canonical);
+      expect(snapshot.skills[0]?.bindings[0]).toMatchObject({
+        id: "fixture",
+        directory: canonical,
+        status: "linked",
+      });
+      const recovered = yield* restart;
+      expect((yield* recovered.snapshot).skills[0]?.bindings[0]?.directory).toBe(canonical);
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect(
     "copies complete skill packages, replaces directories and links, and records durable results",
     () =>
