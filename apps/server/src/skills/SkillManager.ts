@@ -1305,8 +1305,6 @@ const make = Effect.gen(function* () {
             break;
           case "configure": {
             const targets = yield* selectedTargets(input.targetIds);
-            if (yield* host.busy)
-              return yield* new SkillManagerError({ operation: "configure", reason: "busy" });
             const previousBindings = yield* Effect.forEach(skill.bindings, (binding) =>
               canonicalDirectory(binding.directory).pipe(
                 Effect.map((directory) => ({ ...binding, directory })),

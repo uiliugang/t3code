@@ -27,6 +27,7 @@ import {
   skillBatchBindingOperations,
   skillStatus,
   skillFailure,
+  skillConfigurationJob,
   skillNextCheck,
   skillSourceName,
   skillSourceFailure,
@@ -185,7 +186,7 @@ function SourceSelect({
     </Select>
   );
 }
-function Targets({
+export function Targets({
   targets,
   selected,
   onChange,
@@ -201,16 +202,30 @@ function Targets({
   const t = useUiTranslation();
   const [paths, setPaths] = useState(false);
   const groups = skillTargetGroups(targets).filter((group) => group.enabled);
+  const selectedCount = groups.filter((group) =>
+    group.targets.some((target) => selected.includes(target.id)),
+  ).length;
+  const allSelected = groups.length > 0 && selectedCount === groups.length;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>
-          {t("{count} locations selected", {
-            count: groups.filter((group) =>
-              group.targets.some((target) => selected.includes(target.id)),
-            ).length,
-          })}
-        </span>
+        <label className="flex cursor-pointer items-center gap-3">
+          <Checkbox
+            aria-label={t("Select all locations")}
+            disabled={disabled || !groups.length}
+            checked={allSelected}
+            indeterminate={selectedCount > 0 && !allSelected}
+            onCheckedChange={(checked) => {
+              const ids = groups.flatMap((group) => group.targets.map((target) => target.id));
+              onChange(
+                checked
+                  ? [...new Set([...selected, ...ids])]
+                  : selected.filter((id) => !ids.includes(id)),
+              );
+            }}
+          />
+          <span>{t("{count} locations selected", { count: selectedCount })}</span>
+        </label>
         <Button variant="ghost" size="sm" onClick={() => setPaths(!paths)}>
           {t(paths ? "Hide paths" : "Show paths")}
         </Button>
@@ -1000,6 +1015,7 @@ function SkillRow({
   const busy = skill.status === "fetching" || skill.status === "removing";
   const disabled = !canManage || busy;
   const failure = skillFailure(skill);
+  const configuration = skillConfigurationJob(skill, data.jobs);
   const source = data.sources.find((entry) => entry.id === skill.sourceId);
   const viewDiff = async () => {
     setInspecting(true);
@@ -1154,6 +1170,14 @@ function SkillRow({
               </Button>
             )}
           </div>
+          {configuration?.status === "completed" &&
+            skill.bindings.every((binding) => binding.status === "linked") && (
+              <p role="status" className="mt-2 text-xs text-muted-foreground">
+                {t(
+                  "Usage locations updated. Running agents may need a new session or reload to use the changes.",
+                )}
+              </p>
+            )}
           {failure && (
             <div role="alert" className="mt-2 min-w-0 text-xs leading-relaxed text-destructive">
               <p>{t(failure)}</p>

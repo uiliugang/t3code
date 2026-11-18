@@ -533,7 +533,7 @@ describe("SkillManager", () => {
   );
 
   it.effect(
-    "disables a physical location, detaches managed links and keeps original files through restart",
+    "disables a physical location and reconfigures bindings while busy without losing original files",
     () =>
       Effect.gen(function* () {
         const { fs, directory, source, target, manager, install, busy, reported, restart } =
@@ -595,6 +595,7 @@ describe("SkillManager", () => {
           "notes",
         );
         expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
+        yield* Ref.set(busy, true);
         yield* recovered.mutate({
           type: "configure",
           id: first.id,
@@ -622,6 +623,17 @@ describe("SkillManager", () => {
         expect((yield* recovered.snapshot).skills[0]?.status).toBe("ready");
         expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
         expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("completed");
+        yield* recovered.mutate({
+          type: "configure",
+          id: first.id,
+          policy: "pinned",
+          targetIds: [],
+        });
+        yield* recovered.drain;
+        expect((yield* recovered.snapshot).skills[0]?.bindings).toEqual([]);
+        expect((yield* recovered.snapshot).jobs?.at(-1)?.status).toBe("completed");
+        expect(yield* fs.exists(`${target}/review`)).toBe(false);
+        expect(yield* fs.readFileString(`${target}/notes/script.sh`)).toBe("first");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
