@@ -330,10 +330,16 @@ export function createThreadEnvironmentAtoms<R, E>(
     }),
     startTurn: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:start-turn",
-      execute: (input: StartThreadTurnInput, registry) => {
+      execute: (input: StartThreadTurnInput, registry, environmentId) => {
         const language = getLanguage?.(registry);
+        const sideChat =
+          language !== undefined &&
+          input.bootstrap === undefined &&
+          registry
+            .get(snapshotAtom(environmentId))
+            ?.threads.some((thread) => thread.id === input.threadId && thread.lineage.sideChat);
         return startThreadTurn(
-          language === undefined
+          language === undefined || sideChat
             ? input
             : {
                 ...input,

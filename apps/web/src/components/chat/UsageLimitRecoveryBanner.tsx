@@ -1,7 +1,7 @@
 import { getClientSettings } from "../../hooks/useSettings";
 import { translateUi } from "@t3tools/shared/uiLocale";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
-import { m, type MessageResolver } from "~/i18n/messages";
+import { m } from "~/i18n/messages";
 import {
   type OrchestrationV2LimitRecovery,
   type OrchestrationV2LimitRecoveryUpdate,
@@ -39,11 +39,9 @@ type RecoveryProps = {
   onChange: (recovery: OrchestrationV2LimitRecoveryUpdate) => Promise<void>;
 };
 
-export function usageLimitRecoveryBannerItem(
-  props: RecoveryProps,
-  resolve: MessageResolver = m,
-): ComposerBannerStackItem {
-  const t = translateUi.bind(null, getClientSettings().uiLanguage);
+export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBannerStackItem {
+  const language = getClientSettings().uiLanguage;
+  const t = translateUi.bind(null, language);
   const {
     runId,
     errorCode,
@@ -71,7 +69,7 @@ export function usageLimitRecoveryBannerItem(
       : resetAt;
   const resetDescription = displayAt
     ? t(resumes ? "Resumes {time}" : "Resets {time}", {
-        time: formatUpcomingTimestamp(displayAt, timestampFormat, undefined, undefined, resolve),
+        time: formatUpcomingTimestamp(displayAt, timestampFormat, undefined, undefined, language),
       })
     : t("Reset time unavailable; retry manually");
   if (!chatGptLimit) {

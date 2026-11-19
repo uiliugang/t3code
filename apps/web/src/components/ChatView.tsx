@@ -2643,27 +2643,24 @@ export default function ChatView(props: ChatViewProps) {
   });
   const limitRecoveryBanner =
     limitRecoveryRun !== null && activeThreadShell !== null
-      ? usageLimitRecoveryBannerItem(
-          {
-            runId: limitRecoveryRun.runId,
-            errorCode: serverRuntime?.lastErrorCode ?? null,
-            resetAt: serverRuntime?.usageLimitResetAt ?? null,
-            stoppedAt: limitRecoveryRun.completedAt ?? activeThreadShell.updatedAt,
-            settled: activeThreadShell.settledOverride === "settled",
-            requestPending: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
-            recovery: activeThreadShell.limitRecovery ?? null,
-            snoozedUntil: activeThreadShell.snoozedUntil,
-            timestampFormat,
-            onChange: async (limitRecovery) => {
-              const result = await updateThreadMetadata({
-                environmentId,
-                input: { threadId: activeThreadShell.id, limitRecovery },
-              });
-              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            },
+      ? usageLimitRecoveryBannerItem({
+          runId: limitRecoveryRun.runId,
+          errorCode: serverRuntime?.lastErrorCode ?? null,
+          resetAt: serverRuntime?.usageLimitResetAt ?? null,
+          stoppedAt: limitRecoveryRun.completedAt ?? activeThreadShell.updatedAt,
+          settled: activeThreadShell.settledOverride === "settled",
+          requestPending: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+          recovery: activeThreadShell.limitRecovery ?? null,
+          snoozedUntil: activeThreadShell.snoozedUntil,
+          timestampFormat,
+          onChange: async (limitRecovery) => {
+            const result = await updateThreadMetadata({
+              environmentId,
+              input: { threadId: activeThreadShell.id, limitRecovery },
+            });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
           },
-          messages,
-        )
+        })
       : null;
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;

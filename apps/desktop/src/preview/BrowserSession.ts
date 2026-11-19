@@ -657,7 +657,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
               if (permission === "openExternal") {
                 confirmOpenExternal(
                   webContents,
-                  "externalURL" in details ? details.externalURL : undefined,
+                  details && "externalURL" in details ? details.externalURL : undefined,
                   callback,
                 );
                 return;
@@ -666,7 +666,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
                 confirmOriginPermission(
                   webContents,
                   permission,
-                  "requestingUrl" in details ? details.requestingUrl : undefined,
+                  details && "requestingUrl" in details ? details.requestingUrl : undefined,
                   callback,
                 );
                 return;
