@@ -367,9 +367,12 @@ function EnvironmentIntegration({
                 ? t("Paused")
                 : !issuesEnabled
                   ? t("Disabled")
-                  : t(meituanAssociationCountLabel(projects.length, associationsQuery), {
-                      count: associatedProjectCount,
-                    })
+                  : meituanAssociationCountLabel(
+                      projects.length,
+                      associationsQuery,
+                      associatedProjectCount,
+                      t,
+                    )
             }
             onPress={() => navigation.navigate("SettingsMeituanIssues", { environmentId })}
             {...(canToggle ? { toggle: toggles.issues } : {})}

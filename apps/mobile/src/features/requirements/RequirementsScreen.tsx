@@ -72,7 +72,7 @@ import {
 import { SymbolView } from "../../components/ui/AppSymbol";
 import {
   DELIVERY_PROGRESS_LABELS,
-  REQUIREMENT_GROUPS,
+  requirementGroups,
   prepareWorkItemCommandRetry,
   type RequirementSource,
 } from "@t3tools/client-runtime/work-item";
@@ -491,13 +491,13 @@ function UnifiedRequirementBoard({
       </View>
     </Pressable>
   );
-  const renderGroup = (group: (typeof REQUIREMENT_GROUPS)[number]) => {
+  const renderGroup = (group: ReturnType<typeof requirementGroups>[number]) => {
     const rows = entries.filter((entry) => entry.group === group.key);
     if (!rows.length) return null;
     return (
       <View key={group.key} style={view === "board" ? { width: 280 } : undefined}>
         <Disclosure
-          title={t(group.label)}
+          title={group.label}
           count={rows.length}
           open={!collapsed.includes(group.key)}
           onToggle={() => toggle(group.key)}
@@ -892,14 +892,14 @@ function UnifiedRequirementBoard({
               </Text>
             ) : null}
             {view === "list" ? (
-              REQUIREMENT_GROUPS.map(renderGroup)
+              requirementGroups(t).map(renderGroup)
             ) : (
               <ScrollView
                 horizontal
                 contentContainerStyle={{ gap: 20 }}
                 showsHorizontalScrollIndicator
               >
-                {REQUIREMENT_GROUPS.map(renderGroup)}
+                {requirementGroups(t).map(renderGroup)}
               </ScrollView>
             )}
             {data.hasMore ? (

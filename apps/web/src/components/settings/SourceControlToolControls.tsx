@@ -44,7 +44,7 @@ export function SourceControlToolStatus({ tool }: { readonly tool: MaintainableT
             : "text-muted-foreground",
       )}
     >
-      {t(sourceControlToolStatus(tool))}
+      {sourceControlToolStatus(tool, t)}
     </p>
   );
 }
@@ -78,7 +78,7 @@ export function SourceControlToolControls({
     { name: tool.label },
   );
   const label = running
-    ? t(sourceControlToolStatus(tool))
+    ? sourceControlToolStatus(tool, t)
     : manual
       ? t("Manage {name} on the server", { name: tool.label })
       : action;

@@ -670,14 +670,11 @@ function EnvironmentMeituanSettings({
                 ? t("Paused")
                 : !issuesEnabled
                   ? t("Disabled")
-                  : t(
-                      meituanAssociationCountLabel(
-                        associations.projects.length,
-                        associations.query,
-                      ),
-                      {
-                        count: associations.entries.length,
-                      },
+                  : meituanAssociationCountLabel(
+                      associations.projects.length,
+                      associations.query,
+                      associations.entries.length,
+                      t,
                     )
             }
             onClick={() => selected("issues")}

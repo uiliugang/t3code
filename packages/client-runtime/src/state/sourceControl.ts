@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type MaintainableTool,
 } from "@t3tools/contracts";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { issueSourceProjectIdBatches } from "../issueSources.ts";
 import { Atom } from "effect/reactivity";
 import * as Array from "effect/Array";
@@ -74,28 +75,28 @@ const retainFailedIssueGroups = Effect.fn("sourceControl.retainFailedIssueGroups
   return saved.length ? { ...result, groups: [...result.groups, ...saved] } : result;
 });
 
-export function sourceControlToolStatus(tool: MaintainableTool): string {
+export function sourceControlToolStatus(tool: MaintainableTool, t: UiTranslator): string {
   switch (tool.phase) {
     case "running":
-      return tool.version ? "Updating tool..." : "Installing tool...";
+      return tool.version ? t("Updating tool...") : t("Installing tool...");
     case "verifying":
-      return "Verifying active executable...";
+      return t("Verifying active executable...");
     case "succeeded":
-      return "Installation verified.";
+      return t("Installation verified.");
     case "unchanged":
-      return tool.message ?? "The version is unchanged.";
+      return t(tool.message ?? "The version is unchanged.");
     case "failed":
-      return tool.message ?? "Installation failed.";
+      return t(tool.message ?? "Installation failed.");
     case "idle":
       return tool.status === "unknown"
-        ? "Inspection failed."
+        ? t("Inspection failed.")
         : tool.status === "missing"
-          ? "Not installed"
+          ? t("Not installed")
           : tool.version === null
-            ? "Unknown"
+            ? t("Unknown")
             : tool.reason
-              ? "Manual maintenance"
-              : "Installed";
+              ? t("Manual maintenance")
+              : t("Installed");
   }
 }
 

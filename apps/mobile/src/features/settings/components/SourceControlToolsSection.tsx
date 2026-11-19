@@ -140,7 +140,7 @@ export function SourceControlToolsSection({
                   : "arrow.down.circle"
             }
             label={tool.label}
-            value={[tool.version, t(sourceControlToolStatus(tool))].filter(Boolean).join(" · ")}
+            value={[tool.version, sourceControlToolStatus(tool, t)].filter(Boolean).join(" · ")}
             valuePosition="below"
             disabled={busy || (tool.command !== null && !canMaintain)}
             onPress={() => confirm(tool)}

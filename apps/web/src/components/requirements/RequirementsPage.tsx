@@ -19,7 +19,7 @@ import {
   type EnvironmentRequirementEntry,
 } from "@t3tools/client-runtime/state/requirement-board";
 import {
-  REQUIREMENT_GROUPS,
+  requirementGroups,
   DELIVERY_PROGRESS_LABELS,
   type RequirementSource,
   type TrackerCreateTarget,
@@ -974,7 +974,7 @@ export function RequirementBoard({
                     : "space-y-4"
                 }
               >
-                {REQUIREMENT_GROUPS.map((group) => {
+                {requirementGroups(t).map((group) => {
                   const rows = entries.filter((entry) => entry.group === group.key);
                   if (!rows.length) return null;
                   const folded = collapsed.includes(group.key);
@@ -998,7 +998,7 @@ export function RequirementBoard({
                           <ChevronDownIcon className="size-3.5 text-muted-foreground" />
                         )}
                         <span className={group.key === "attention" ? "text-destructive" : ""}>
-                          {t(group.label)}
+                          {group.label}
                         </span>
                         <span className="font-normal text-muted-foreground tabular-nums">
                           {rows.length}

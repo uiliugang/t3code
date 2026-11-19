@@ -13,8 +13,13 @@ import type {
   ProjectId,
   WorkItemSummary,
 } from "@t3tools/contracts";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
-export function deliveryStages(provider: IssueProvider, summary?: DeliverySummary) {
+export function deliveryStages(
+  provider: IssueProvider,
+  summary?: DeliverySummary,
+  t: UiTranslator = translateUi.bind(null, "en"),
+) {
   const confirmed = summary !== undefined && summary.progress !== "needs_confirmation";
   const merged =
     confirmed &&
@@ -26,30 +31,36 @@ export function deliveryStages(provider: IssueProvider, summary?: DeliverySummar
   return [
     {
       key: "development",
-      label: "Development stage",
+      label: t("Development stage"),
       state: merged ? "complete" : "active",
     },
     // Merge evidence does not establish that tests passed.
-    { key: "testing", label: "Testing", state: "unknown" },
-    { key: "merge", label: "Merge", state: merged ? "complete" : confirmed ? "active" : "pending" },
+    { key: "testing", label: t("Testing"), state: "unknown" },
+    {
+      key: "merge",
+      label: t("Merge"),
+      state: merged ? "complete" : confirmed ? "active" : "pending",
+    },
     {
       key: "release",
-      label: "Release",
+      label: t("Release"),
       state:
         provider === "github" ? "skipped" : released ? "complete" : merged ? "active" : "pending",
     },
-    { key: "complete", label: "Complete", state: complete ? "complete" : "pending" },
+    { key: "complete", label: t("Complete"), state: complete ? "complete" : "pending" },
   ] as const;
 }
 
-export const REQUIREMENT_GROUPS = [
-  { key: "attention", label: "Needs attention" },
-  { key: "active", label: "In progress" },
-  { key: "release", label: "Awaiting release" },
-  { key: "todo", label: "To do" },
-  { key: "done", label: "Completed" },
-] as const;
-export type RequirementGroup = (typeof REQUIREMENT_GROUPS)[number]["key"];
+export function requirementGroups(t: UiTranslator) {
+  return [
+    { key: "attention", label: t("Needs attention") },
+    { key: "active", label: t("In progress") },
+    { key: "release", label: t("Awaiting release") },
+    { key: "todo", label: t("To do") },
+    { key: "done", label: t("Completed") },
+  ] as const;
+}
+export type RequirementGroup = ReturnType<typeof requirementGroups>[number]["key"];
 
 export function requirementGroup(status: string, summary?: DeliverySummary): RequirementGroup {
   if (
