@@ -54,7 +54,6 @@ import {
 import {
   mergeGitStatusParts,
   resolveAutoFeatureBranchName,
-  isMainOrMasterBranch,
   sanitizeBranchFragment,
   sanitizeFeatureBranchName,
 } from "@t3tools/shared/git";
@@ -97,7 +96,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
-  isPinnedMainBranchTip,
+  isMainWorktreeBase,
   worktreeMainBranchError,
   worktreeMainBranchOnly,
 } from "./worktreeBranchPolicy.ts";
@@ -143,6 +142,7 @@ interface SourceControlTextGenerationSettings {
 export interface GitCreateWorktreeOptions extends GitVcsDriver.CreateWorktreeOptions {
   readonly carryChangesFromCwd?: string;
   readonly childWorktree?: boolean;
+  readonly projectId?: ProjectId;
 }
 
 export class GitManager extends Context.Service<
@@ -869,7 +869,10 @@ export const make = Effect.gen(function* () {
     "GitManager.createWorktree",
   )(
     function* (input, options) {
-      const { settings } = yield* projectSettingsFor(input).pipe(
+      const { settings } = yield* projectSettingsFor({
+        cwd: input.cwd,
+        projectId: options?.projectId,
+      }).pipe(
         Effect.mapError(
           (cause) =>
             new GitCommandError({
@@ -887,27 +890,11 @@ export const make = Effect.gen(function* () {
         options?.carryChangesFromCwd === undefined
       ) {
         const base = input.baseRefName ?? input.refName;
-        const resolved = yield* gitCore.execute({
-          operation: "GitManager.createWorktree.validateBase",
-          cwd: input.cwd,
-          args: ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base],
-        });
-        const ref = resolved.stdout.trim();
-        const remote = ref.startsWith("refs/remotes/")
-          ? yield* gitCore.resolveWorktreeBaseRemote({
-              cwd: input.cwd,
-              refName: ref.slice("refs/remotes/".length),
-            })
-          : null;
         const [start, baseCommit] = yield* Effect.all([
           gitCore.resolveCommit({ cwd: input.cwd, revision: input.refName }),
           gitCore.resolveCommit({ cwd: input.cwd, revision: base }),
         ]);
-        const allowed =
-          isMainOrMasterBranch(ref, remote?.remoteName) ||
-          (options?.childWorktree === true &&
-            ref === "" &&
-            (yield* isPinnedMainBranchTip(gitCore, input.cwd, base)));
+        const allowed = yield* isMainWorktreeBase(gitCore, input.cwd, base, options?.childWorktree);
         if (!allowed || start.commitSha !== baseCommit.commitSha) {
           return yield* new GitCommandError({
             operation: "GitManager.createWorktree",

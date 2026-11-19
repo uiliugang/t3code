@@ -308,6 +308,7 @@ const layerRestoreLeaseTest = layerThreadWorktreeRestore.pipe(
         realPath: (target: string) => Effect.succeed(normalize(target)),
       } as never),
       layerWorktreeLocation(),
+      Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       Layer.mock(GitWorkflow.GitWorkflowService)({
         pruneWorktrees: () => Effect.void,
         createWorktree: restoreLeaseCreateWorktree,
@@ -381,6 +382,7 @@ effectIt.effect("restores into a leftover worktree folder that cannot itself be 
               remove,
             } as never),
             layerWorktreeLocation(),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
             Layer.mock(GitWorkflow.GitWorkflowService)({
               pruneWorktrees: () => Effect.void,
               createWorktree,
@@ -432,6 +434,7 @@ it.each([
               worktreesDir: managedWorktreesDir,
             } as ServerConfig.ServerConfig["Service"]),
             ServerSettings.layerTest(),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
             Layer.mock(GitWorkflow.GitWorkflowService)({}),
             Layer.mock(ProjectService.ProjectService)({
               getById: () =>
@@ -450,6 +453,7 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly newWorktreesMainBranchOnly?: boolean;
+  readonly delegatedWorktree?: boolean;
   readonly text: string;
   readonly manualContinuation?: boolean;
   readonly nativeResumeUnsupported?: boolean;
@@ -574,7 +578,13 @@ function makeLocalCommandHarness(input: {
       projectId: ProjectId.make("project-native-account-command"),
       branch: input.worktreePath === undefined ? null : "feature/restore",
       worktreePath: input.worktreePath ?? null,
-      lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+      lineage: input.delegatedWorktree
+        ? {
+            parentThreadId: ThreadId.make("parent"),
+            relationshipToParent: "subagent",
+            rootThreadId: ThreadId.make("parent"),
+          }
+        : { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
     } as OrchestrationV2ThreadProjection["thread"],
     runs: [
       ...(input.previousNativeSession
@@ -2166,7 +2176,8 @@ effectIt.effect(
         }
         const harness = makeLocalCommandHarness({
           text: "Continue",
-          newWorktreesMainBranchOnly: false,
+          newWorktreesMainBranchOnly: scenario === "pushed",
+          delegatedWorktree: scenario === "pushed",
           workspaceRoot,
           worktreePath,
           worktreesDir,

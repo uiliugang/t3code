@@ -75,6 +75,7 @@ import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -285,6 +286,7 @@ function makeHarness(options: HarnessOptions = {}) {
       Layer.mergeAll(
         layerExternalServices,
         layerThreadManagement,
+        ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
         layerReceipts,
         layerOrchestrator,
         IdAllocator.layer,

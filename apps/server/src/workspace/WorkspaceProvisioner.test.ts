@@ -212,6 +212,8 @@ it.live(
       const temp = yield* fs.makeTempDirectoryScoped({ prefix: "workspace-group-test-" });
       const fail = yield* Ref.make(true);
       const failFetch = yield* Ref.make(false);
+      const strictChild = yield* Ref.make(false);
+      const failCheckout = yield* Ref.make(false);
       const setupBranches = yield* Ref.make<string[]>([]);
       const checkoutModes = yield* Ref.make<Array<boolean | undefined>>([]);
       const generatedBranch = "lg/fix-group-branches";
@@ -312,16 +314,32 @@ it.live(
               ),
             createWorktree: (input, options) =>
               Ref.update(checkoutModes, (modes) => [...modes, options?.fastCheckout]).pipe(
+                Effect.andThen(Ref.getAndSet(failCheckout, false)),
+                Effect.flatMap((fail) =>
+                  fail
+                    ? Effect.fail(
+                        new GitCommandError({
+                          operation: "test.checkout",
+                          command: "git worktree add",
+                          cwd: input.cwd,
+                          detail: "checkout unavailable",
+                        }),
+                      )
+                    : Effect.void,
+                ),
                 Effect.andThen(git.createWorktree(input, options)),
               ),
           }),
         ),
         Layer.provide(
           Layer.mock(ServerSettings.ServerSettingsService)({
-            getSettings: Effect.succeed({
-              ...DEFAULT_SERVER_SETTINGS,
-              fastWorktreeCheckout: true,
-            }),
+            getSettings: Ref.get(strictChild).pipe(
+              Effect.map((childWorktreesMainBranchOnly) => ({
+                ...DEFAULT_SERVER_SETTINGS,
+                fastWorktreeCheckout: true,
+                childWorktreesMainBranchOnly,
+              })),
+            ),
           }),
         ),
         Layer.provide(
@@ -801,12 +819,20 @@ it.live(
           ],
         });
         const { commitSha } = yield* git.resolveCommit({ cwd: delegateCwd, revision: "HEAD" });
-        const delegated = yield* provisioner.prepare({
+        const delegatedInput = {
           ...input,
           threadId: ThreadId.make("delegated-group"),
-          strategy: { type: "worktree", baseRef: commitSha, startFromOrigin: false },
+          strategy: { type: "worktree" as const, baseRef: commitSha, startFromOrigin: false },
           childWorktree: true,
-        });
+        };
+        yield* Ref.set(failCheckout, true);
+        const failedCheckout = yield* provisioner.prepare(delegatedInput).pipe(Effect.flip);
+        assert.include(failedCheckout.message, "checkout unavailable");
+        yield* Ref.set(strictChild, true);
+        const blocked = yield* provisioner.prepare(delegatedInput).pipe(Effect.flip);
+        assert.include(blocked.message, "must start from main or master");
+        yield* Ref.set(strictChild, false);
+        const delegated = yield* provisioner.prepare(delegatedInput);
         yield* delegated.completion;
         const checkout = delegated.workspace.resources[0]!.checkoutRoot;
         assert.equal(

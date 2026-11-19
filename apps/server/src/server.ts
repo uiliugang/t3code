@@ -926,7 +926,7 @@ const layerMakeRoutes = Layer.mergeAll(
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
-    Ws.layer,
+    Ws.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
     speechStreamRouteLayer,
   ),
   McpHttpServer.layer.pipe(
