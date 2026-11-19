@@ -162,10 +162,6 @@ describe("ExpandedImageDialog", () => {
       await userEvent.keyboard("{/Control}");
     };
 
-    await userEvent.wheel(viewportLocator, { delta: { y: 120 } });
-    expect(wheels.at(-1)).toEqual({ ctrlKey: false, canceled: false });
-    expect(image.getBoundingClientRect().width).toBe(fitWidth);
-
     await ctrlWheel(-100);
     expect(wheels.at(-1)).toEqual({ ctrlKey: true, canceled: true });
     const zoomedWidth = image.getBoundingClientRect().width;
@@ -190,5 +186,12 @@ describe("ExpandedImageDialog", () => {
     expect(image.getBoundingClientRect().width).toBeGreaterThan(zoomedWidth);
     expect(pointerFraction().x).toBeCloseTo(anchor.x, 2);
     expect(pointerFraction().y).toBeCloseTo(anchor.y, 2);
+
+    viewport.focus();
+    await userEvent.keyboard("0");
+    expect(image.getBoundingClientRect().width).toBe(fitWidth);
+    await userEvent.wheel(viewportLocator, { delta: { y: 120 } });
+    expect(wheels.at(-1)).toEqual({ ctrlKey: false, canceled: false });
+    expect(image.getBoundingClientRect().width).toBe(fitWidth);
   });
 });
