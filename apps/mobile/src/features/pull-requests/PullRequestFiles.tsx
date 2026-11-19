@@ -4,6 +4,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import type { PullRequestChangeBreakdown } from "@t3tools/contracts";
+import { msg, T, useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import Animated from "react-native-reanimated";
@@ -32,13 +33,14 @@ import {
 import { usePullRequestFileFilter } from "./usePullRequestFileFilter";
 import { usePullRequestFilesViewed } from "./usePullRequestFilesViewed";
 import { pullRequestFileJumpScope, requestPullRequestFileJump } from "./pullRequestFileJump";
+import type { MessageResolver } from "../../i18n/messages";
 
 const BREAKDOWN_LABELS = {
-  code: "Code",
-  tests: "Tests",
-  mocks: "Mocks",
-  generated: "Generated",
-  docs: "Docs",
+  code: msg("Code", { $context: "kind of changed file" }),
+  tests: msg("Tests", { $context: "kind of changed file" }),
+  mocks: msg("Mocks", { $context: "kind of changed file" }),
+  generated: msg("Generated", { $context: "kind of changed file" }),
+  docs: msg("Docs", { $context: "kind of changed file" }),
 } satisfies Record<keyof NonNullable<PullRequestChangeBreakdown>, string>;
 
 function fileDirectory(path: string) {
@@ -77,16 +79,35 @@ function loadingRowCount(files: ChangedFiles) {
 function describeFiles(
   parsed: Extract<ReviewParsedDiff, { readonly kind: "files" }>,
   { filter, viewed }: ChangedFiles,
+  resolve: MessageResolver,
 ) {
-  const noun = (count: number) => (count === 1 ? "file" : "files");
+  const count = parsed.fileCount;
   return [
-    `${parsed.fileCount} ${filter.hiddenCount ? "visible" : "changed"} ${noun(parsed.fileCount)}`,
+    filter.hiddenCount
+      ? resolve(
+          msg("{count, plural, one {{count} visible file} other {{count} visible files}}", {
+            count,
+          }),
+        )
+      : resolve(
+          msg("{count, plural, one {{count} changed file} other {{count} changed files}}", {
+            count,
+          }),
+        ),
     viewed.supported
-      ? `${parsed.files.filter((file) => viewed.isViewed(file.path)).length} viewed`
+      ? resolve(
+          msg("{count, plural, one {{count} viewed} other {{count} viewed}}", {
+            count: parsed.files.filter((file) => viewed.isViewed(file.path)).length,
+          }),
+        )
       : null,
     filter.hideTestFiles
-      ? `${filter.hiddenCount} test ${noun(filter.hiddenCount)} hidden`
-      : "Test files included",
+      ? resolve(
+          msg("{count, plural, one {{count} test file hidden} other {{count} test files hidden}}", {
+            count: filter.hiddenCount,
+          }),
+        )
+      : resolve(msg("Test files included")),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -101,18 +122,16 @@ function FileRow(props: {
 }) {
   const t = useUiTranslation();
   const { file } = props;
+  const gt = useGT();
+  const values = { path: file.path, additions: file.additions, deletions: file.deletions };
   return (
     <RowPressable
       accessibilityRole="button"
-      accessibilityLabel={t(
-        "View diff for {path}, {additions} additions, {deletions} deletions{status}",
-        {
-          path: file.path,
-          additions: file.additions,
-          deletions: file.deletions,
-          status: props.viewed ? t(", viewed") : "",
-        },
-      )}
+      accessibilityLabel={
+        props.viewed
+          ? gt("View diff for {path}, {additions} additions, {deletions} deletions, viewed", values)
+          : gt("View diff for {path}, {additions} additions, {deletions} deletions", values)
+      }
       onPress={props.onPress}
       className="min-h-14 flex-row items-center gap-3 border-b border-border-subtle py-3 active:opacity-70"
     >
@@ -242,13 +261,14 @@ function FilesFooter({ files }: { readonly files: ChangedFiles }) {
 function ChangeBreakdownLine(props: {
   readonly breakdown: NonNullable<PullRequestChangeBreakdown>;
 }) {
+  const m = useMessages();
   const parts = (Object.keys(BREAKDOWN_LABELS) as Array<keyof typeof BREAKDOWN_LABELS>).flatMap(
     (kind) => {
       const { additions, deletions } = props.breakdown[kind];
       return additions === 0 && deletions === 0
         ? []
         : [
-            `${BREAKDOWN_LABELS[kind]} +${additions.toLocaleString()} −${deletions.toLocaleString()}`,
+            `${m(BREAKDOWN_LABELS[kind])} +${additions.toLocaleString()} −${deletions.toLocaleString()}`,
           ];
     },
   );
@@ -266,6 +286,8 @@ function ChangeBreakdownLine(props: {
 export function usePullRequestFilesSection(params: PullRequestParams) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
+  const m = useMessages();
   const files = useChangedFiles(params);
   const { diff, filter, viewed, pr, parsed, loading } = files;
   const breakdown = useEnvironmentQuery(
@@ -284,10 +306,14 @@ export function usePullRequestFilesSection(params: PullRequestParams) {
             className="min-h-17 flex-row items-center gap-2 py-3"
           >
             <View className="min-w-0 flex-1 gap-1">
-              <PullRequestSectionHeading>{t("Changed files")}</PullRequestSectionHeading>
+              <PullRequestSectionHeading>
+                <T>Changed files</T>
+              </PullRequestSectionHeading>
               {pr ? (
                 <Text textRole="caption" className="text-foreground-muted">
-                  {pr.changedFiles} {pr.changedFiles === 1 ? t("file") : t("files")}
+                  {gt("{count, plural, one {{count} file} other {{count} files}}", {
+                    count: pr.changedFiles,
+                  })}
                 </Text>
               ) : (
                 <View className="h-2.5 w-28 rounded bg-subtle-strong" />
@@ -313,7 +339,7 @@ export function usePullRequestFilesSection(params: PullRequestParams) {
             <View className="min-w-0 flex-1 gap-1">
               <PullRequestSectionHeading>{t("Changed files")}</PullRequestSectionHeading>
               <Text textRole="caption" className="text-foreground-muted">
-                {describeFiles(parsed, files)}
+                {describeFiles(parsed, files, m)}
               </Text>
               {breakdown ? <ChangeBreakdownLine breakdown={breakdown} /> : null}
             </View>
@@ -386,7 +412,8 @@ function DirectoryRow(props: {
   readonly collapsed: boolean;
   readonly onPress: () => void;
 }) {
-  const label = props.directory || "Repository root";
+  const gt = useGT();
+  const label = props.directory || gt("Repository root");
   return (
     <RowPressable
       accessibilityRole="button"
@@ -413,6 +440,7 @@ export function PullRequestFilesSheet({ route }: StaticScreenProps<PullRequestDi
   const t = useUiTranslation();
   const params = route.params;
   const navigation = useNavigation();
+  const m = useMessages();
   const jumpScope = pullRequestFileJumpScope(params);
   const files = useChangedFiles(params);
   const { diff, filter, viewed, parsed, loading } = files;
@@ -497,7 +525,7 @@ export function PullRequestFilesSheet({ route }: StaticScreenProps<PullRequestDi
               {parsed.kind === "files" ? (
                 <View className="flex-row items-center gap-2 py-2">
                   <Text textRole="caption" className="min-w-0 flex-1 text-foreground-muted">
-                    {describeFiles(parsed, files)}
+                    {describeFiles(parsed, files, m)}
                   </Text>
                   <PullRequestDiffStats
                     additions={parsed.additions}

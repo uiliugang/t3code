@@ -10,7 +10,7 @@ import {
   NumberFieldInput,
 } from "../ui/number-field";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -25,7 +25,7 @@ export function RemoteBranchDisplayDaysRow() {
   const mixed = useScopedSettingsMixed([key]);
   const writable = useScopedSettingsWriteAllowed();
   const update = useUpdateScopedSettings();
-  const setting = searchableSetting("remote-branch-display-days");
+  const setting = useSearchableSetting()("remote-branch-display-days");
   return (
     <SettingsRow
       serverScoped
@@ -82,7 +82,7 @@ export function HideMergedRemoteBranchesRow() {
   const settings = useScopedSettings();
   const mixed = useScopedSettingsMixed([key]);
   const update = useUpdateScopedSettings();
-  const setting = searchableSetting("hide-merged-remote-branches");
+  const setting = useSearchableSetting()("hide-merged-remote-branches");
   return (
     <SettingsRow
       serverScoped
@@ -116,7 +116,7 @@ export function MainBranchOnlyRow() {
   const t = useUiTranslation();
   const settings = useScopedSettings();
   const update = useUpdateScopedSettings();
-  const setting = searchableSetting("worktree-main-branch-only");
+  const setting = useSearchableSetting()("worktree-main-branch-only");
   return (
     <SettingsRow
       serverScoped

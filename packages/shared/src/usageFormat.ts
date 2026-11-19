@@ -6,7 +6,6 @@ import {
   type UsageSummaryInput,
 } from "@t3tools/contracts";
 
-import type { UsageContractMismatch } from "./usageMerge.ts";
 import { translateUi, type UiLocale } from "./uiLocale.ts";
 
 const CURRENCY = new Intl.NumberFormat("en-US", {
@@ -18,11 +17,39 @@ const CURRENCY = new Intl.NumberFormat("en-US", {
 
 const INTEGER = new Intl.NumberFormat("en-US");
 
+// Clients pass their UI locale; English (and the server, which passes none) keeps en-US.
+function formatLocale(locale: string | undefined): string {
+  return locale === undefined || locale === "en" ? "en-US" : locale;
+}
+
+const numberFormatters = new Map<string, Intl.NumberFormat>();
+
+function numberFormatter(locale: string, currency: boolean): Intl.NumberFormat {
+  if (locale === "en-US") return currency ? CURRENCY : INTEGER;
+  const key = `${locale}:${currency}`;
+  let formatter = numberFormatters.get(key);
+  if (formatter === undefined) {
+    formatter = currency
+      ? new Intl.NumberFormat(locale, {
+          style: "currency",
+          currency: "USD",
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
+      : new Intl.NumberFormat(locale);
+    numberFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 export function formatMalformedUsageWarning(count: number): string {
   return `${count} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.`;
 }
 
-export function usageSourceMessages(sources: readonly UsageSource[]): readonly string[] {
+export function usageSourceMessages(
+  sources: readonly UsageSource[],
+  malformedWarning: (count: number) => string = formatMalformedUsageWarning,
+): readonly string[] {
   const messages = new Set<string>();
   const malformedBySource = new Map<string, number>();
   for (const source of sources) {
@@ -52,16 +79,16 @@ export function usageSourceMessages(sources: readonly UsageSource[]): readonly s
     (total, count) => total + count,
     0,
   );
-  if (malformedRecords > 0) messages.add(formatMalformedUsageWarning(malformedRecords));
+  if (malformedRecords > 0) messages.add(malformedWarning(malformedRecords));
   return [...messages];
 }
 
-export function formatUsd(value: number): string {
-  return CURRENCY.format(value);
+export function formatUsd(value: number, locale?: string): string {
+  return numberFormatter(formatLocale(locale), true).format(value);
 }
 
-export function formatCount(value: number): string {
-  return INTEGER.format(Math.round(value));
+export function formatCount(value: number, locale?: string): string {
+  return numberFormatter(formatLocale(locale), false).format(Math.round(value));
 }
 
 const TOKEN_SUFFIXES = ["K", "M", "B", "T"] as const;
@@ -91,22 +118,17 @@ export function formatPercent(share: number, digits = 1): string {
   return `${percent.toFixed(digits)}%`;
 }
 
-export function formatUsageContractMismatch(
-  environmentLabel: string,
-  mismatch: Pick<UsageContractMismatch, "direction">,
-): string {
-  return mismatch.direction === "serverBehind"
-    ? `${environmentLabel} runs an older server version and is excluded from totals.`
-    : `This client is older than the server on ${environmentLabel}; its usage is excluded from totals.`;
-}
-
-export function formatDayShort(day: string, language: UiLocale = "en"): string {
+export function formatDayShort(day: string, locale?: string): string {
   const [year, month, dayOfMonth] = day.split("-").map((part) => Number(part));
   if (year === undefined || month === undefined || dayOfMonth === undefined) return day;
-  if (language !== "en") {
-    return dateTimeFormatter(language, { month: "short", day: "numeric", timeZone: "UTC" }).format(
-      new Date(Date.UTC(year, month - 1, dayOfMonth)),
-    );
+  const intlLocale = formatLocale(locale);
+  if (intlLocale !== "en-US") {
+    const date = new Date(Date.UTC(year, month - 1, dayOfMonth));
+    return Number.isNaN(date.getTime())
+      ? day
+      : dateTimeFormatter(intlLocale, { timeZone: "UTC", month: "short", day: "numeric" }).format(
+          date,
+        );
   }
   const MONTHS = [
     "Jan",
@@ -191,12 +213,13 @@ export function formatHourShort(
   hourStart: string,
   timeZone?: string,
   hour12 = true,
-  language: UiLocale = "en",
+  locale?: string,
 ): string {
   const instant = new Date(hourStart);
   if (Number.isNaN(instant.getTime())) return hourStart;
   const options = timeZone === undefined ? {} : { timeZone };
-  const hourFormat = dateTimeFormatter(language === "en" ? "en-US" : language, {
+  const intlLocale = formatLocale(locale);
+  const hourFormat = dateTimeFormatter(intlLocale, {
     ...options,
     ...hourOptions(hour12),
   });
@@ -214,7 +237,7 @@ export function formatHourShort(
   );
 
   if (!isRepeatedHour) return formatHour(hourFormat, instant, hour12);
-  const zonedHourFormat = dateTimeFormatter(language === "en" ? "en-US" : language, {
+  const zonedHourFormat = dateTimeFormatter(intlLocale, {
     ...options,
     ...hourOptions(hour12),
     timeZoneName: "short",
@@ -226,11 +249,11 @@ export function formatDateTimeShort(
   instant: string,
   timeZone?: string,
   hour12 = true,
-  language: UiLocale = "en",
+  locale?: string,
 ): string {
   const date = new Date(instant);
   if (Number.isNaN(date.getTime())) return instant;
-  const dateHourFormat = dateTimeFormatter(language === "en" ? "en-US" : language, {
+  const dateHourFormat = dateTimeFormatter(formatLocale(locale), {
     ...(timeZone === undefined ? {} : { timeZone }),
     month: "short",
     day: "numeric",
@@ -244,12 +267,13 @@ export function formatRelativeHourShort(
   relativeTo: string,
   timeZone?: string,
   hour12 = true,
-  language: UiLocale = "en",
+  relativeDay: UiLocale | ((hour: string, daysAgo: 0 | 1) => string) = "en",
+  locale: string = typeof relativeDay === "string" ? relativeDay : "en",
 ): string {
   const instant = new Date(hourStart);
   const reference = new Date(relativeTo);
   if (Number.isNaN(instant.getTime()) || Number.isNaN(reference.getTime())) {
-    return formatDateTimeShort(hourStart, timeZone, hour12, language);
+    return formatDateTimeShort(hourStart, timeZone, hour12, locale);
   }
 
   const dayFormat = dateTimeFormatter("en-CA", {
@@ -261,11 +285,15 @@ export function formatRelativeHourShort(
   const instantDay = Date.parse(`${dayFormat.format(instant)}T00:00:00Z`);
   const referenceDay = Date.parse(`${dayFormat.format(reference)}T00:00:00Z`);
   const calendarDaysAgo = Math.round((referenceDay - instantDay) / (24 * HOUR_MS));
-  const hour = formatHourShort(hourStart, timeZone, hour12, language);
-
-  if (calendarDaysAgo === 0) return translateUi(language, "{time} today", { time: hour });
-  if (calendarDaysAgo === 1) return translateUi(language, "{time} yesterday", { time: hour });
-  return formatDateTimeShort(hourStart, timeZone, hour12, language);
+  const hour = formatHourShort(hourStart, timeZone, hour12, locale);
+  if (calendarDaysAgo === 0 || calendarDaysAgo === 1) {
+    return typeof relativeDay === "function"
+      ? relativeDay(hour, calendarDaysAgo)
+      : translateUi(relativeDay, calendarDaysAgo === 0 ? "{time} today" : "{time} yesterday", {
+          time: hour,
+        });
+  }
+  return formatDateTimeShort(hourStart, timeZone, hour12, locale);
 }
 
 export function makeWindow(

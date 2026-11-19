@@ -103,11 +103,9 @@ Automatic group cleanup follows each project's cleanup rules, including merged b
 unchanged worktrees, and retention after a task settles or becomes inactive. Every repository
 and linked task must qualify before the group is removed. Active work, local changes, open
 terminals, and unfinished recovery retain the group; idle provider sessions are released when
-cleanup is ready. **Delete worktrees with deleted threads** permanently removes unused managed
-working directories, including uncommitted changes, untracked files and ignored files. This also
-removes their leftover files if the Git worktree metadata is missing. Shared or borrowed checkouts,
-project roots, locked worktrees and active resources remain protected. Other automatic cleanup
-rules keep their configured local-file protection. Branches and commits are retained.
+cleanup is ready. **Delete worktrees with deleted threads** removes an unused managed group only
+when all repositories pass the [deletion cleanup](#storage-cleanup) checks. Shared or
+borrowed checkouts, project roots and locked worktrees are retained. Branches and commits are kept.
 Failed preparations remain available for inspection.
 
 To free disk space manually, open **Settings > Worktrees > Local worktrees**. Select individual
@@ -433,7 +431,9 @@ branch. A squash or rebase merge on GitHub also counts when the pull request tar
 branch and the worktree is still at the pull request's last commit.
 
 Enable **Delete worktrees with deleted threads** to remove safe worktrees after their last
-thread is deleted, including archived threads and worktrees left by earlier deletions. The
+thread is deleted, including archived threads and worktrees left by earlier deletions. This rule
+keeps uncommitted changes, local files other than `node_modules`, and folders with missing Git
+worktree metadata. The
 server waits for sessions and terminals to stop and retries skipped worktrees after restart. A finished turn can leave a provider session open until its idle timeout, so merging does not guarantee immediate removal.
 Existing prompts for deleting a worktree manually remain available when this policy is off.
 

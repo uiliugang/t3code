@@ -1,3 +1,5 @@
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { useGT } from "gt-react-native";
 import { ListRow } from "../../components/ui/ListRow";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -32,6 +34,7 @@ import { splitEnvironmentSections } from "./environmentSections";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { m } from "../../i18n/messages";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -64,6 +67,7 @@ function PairingForm({
   readonly routeFor: EnvironmentId | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { connectionPairingUrl, onChangeConnectionPairingUrl, onConnectPress } =
     useRemoteConnections();
   const navigation = useNavigation();
@@ -148,8 +152,10 @@ function PairingForm({
     } catch (error) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Dialog.alert(
-        t("Invalid QR code"),
-        t(error instanceof Error ? error.message : "Scanned QR code was not recognized."),
+        gt("Invalid QR code"),
+        error instanceof Error
+          ? (errorDisplayMessage(error, m) ?? error.message)
+          : gt("Scanned QR code was not recognized."),
       );
       setTimeout(() => {
         setScannerLocked(false);
@@ -256,10 +262,10 @@ function PairingForm({
                 pairingConnectionError ? "text-danger-foreground" : "text-foreground-muted",
               )}
             >
-              {t(
-                pairingConnectionError ??
+              {pairingConnectionError ??
+                gt(
                   "For machines on your local network or tailnet. The machine keeps its own provider credentials.",
-              )}
+                )}
             </Text>
           </View>
 
@@ -281,6 +287,7 @@ function PairingScanCard(props: {
   readonly onScanPress: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const light = useAppearancePreferences().themeAppearance === "light";
   return (
     <Pressable
@@ -356,7 +363,9 @@ function PairingScanCard(props: {
           )}
         </View>
         <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
-          {t("Scan the code from t3 pair or desktop Connections settings")}
+          {gt("Scan the code from {command} or desktop Connections settings", {
+            command: "t3 pair",
+          })}
         </Text>
       </View>
     </Pressable>
@@ -365,6 +374,7 @@ function PairingScanCard(props: {
 
 function T3ConnectSection() {
   const t = useUiTranslation();
+  const gt = useGT();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const navigation = useNavigation();
   const { connectedEnvironments, onSetEnvironmentEnabled, onRemoveEnvironmentPress } =
@@ -388,8 +398,8 @@ function T3ConnectSection() {
         />
       ) : (
         <ListRow
-          label={t("Sign in to T3 Connect")}
-          description={t("Reach your machines from anywhere, no network setup.")}
+          label={gt("Sign in to {product}", { product: "T3 Connect" })}
+          description={gt("Reach your machines from anywhere, no network setup.")}
           disabled={!isLoaded}
           onPress={() => navigation.navigate("SettingsAuth")}
         />

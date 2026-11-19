@@ -1,7 +1,10 @@
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { errorDisplayMessage, errorI18nMessage } from "@t3tools/client-runtime/errors";
 import * as Dialog from "../components/ui/Dialog";
 import type { MediaActionsSource } from "../lib/mediaActionsSource";
 import { useNavigation } from "@react-navigation/native";
+import { msg, useGT } from "gt-react-native";
+import { m } from "../i18n/messages";
 import {
   formatFilePathForClipboard,
   type MediaActionId,
@@ -44,6 +47,7 @@ function canReadHostMedia(environmentId: EnvironmentId | null): boolean {
 export function useMediaActions(source: MediaActionsSource | undefined, onOpenFile?: () => void) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   const hostEnvironmentId =
     source &&
     "resource" in source &&
@@ -76,9 +80,14 @@ export function useMediaActions(source: MediaActionsSource | undefined, onOpenFi
     return task(source, request.signal)
       .catch((error: unknown) => {
         if (!request.signal.aborted) {
+          const message = errorDisplayMessage(error, m);
           Dialog.alert(
-            t(kind === "share" ? "Could not share file" : "Could not save image"),
-            t(error instanceof Error ? error.message : "Try again."),
+            kind === "share" ? m(msg("Could not share file")) : m(msg("Could not save image")),
+            message === null
+              ? m(msg("Try again."))
+              : errorI18nMessage(error) === undefined
+                ? t(message)
+                : message,
           );
         }
       })
@@ -93,7 +102,9 @@ export function useMediaActions(source: MediaActionsSource | undefined, onOpenFi
   const hostUri = async (source: MediaActionsSource, signal: AbortSignal) => {
     const uri = "uri" in source ? normalizeNativeMarkdownUrl(source.uri) : await refresh();
     if (signal.aborted || !canReadHostMedia(hostEnvironmentId)) return null;
-    if (uri === null) throw new Error("The file could not be loaded. Reconnect and try again.");
+    if (uri === null) {
+      throw new Error(m(msg("The file could not be loaded. Reconnect and try again.")));
+    }
     return uri;
   };
 
@@ -199,7 +210,7 @@ export function useMediaActions(source: MediaActionsSource | undefined, onOpenFi
             ? [
                 {
                   id: "save-image" as const,
-                  title: t(busy === "save-image" ? "Saving image…" : "Save image"),
+                  title: busy === "save-image" ? gt("Saving image…") : gt("Save image"),
                   run: saveImage,
                   disabled: busy !== null || !canReadMedia,
                 },
@@ -207,13 +218,12 @@ export function useMediaActions(source: MediaActionsSource | undefined, onOpenFi
             : []),
           {
             id: "save" as const,
-            title: t(
+            title:
               busy === "share"
-                ? "Opening share sheet…"
+                ? gt("Opening share sheet…")
                 : canSaveImageToLibrary(source.mimeType)
-                  ? "Share"
-                  : "Save or share",
-            ),
+                  ? gt("Share", { $context: "verb, opens the system share sheet" })
+                  : gt("Save or share"),
             run: share,
             disabled: busy !== null || !canReadMedia,
           },

@@ -8,6 +8,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { Atom, type AtomRegistry } from "effect/reactivity";
+import { msg } from "gt-react";
+import { m, type MessageResolver } from "../i18n/messages";
 
 import { environmentSummaries } from "./presentation";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
@@ -17,21 +19,25 @@ const isServerNpmReleaseError = Schema.is(ServerNpmReleaseError);
 
 function unsupportedLookup(config: ServerConfig | null): ServerNpmReleaseError | null {
   if (config === null) {
-    return new ServerNpmReleaseError({ reason: "Connect to this server to check releases." });
+    return new ServerNpmReleaseError({ reason: msg("Connect to this server to check releases.") });
   }
   return config.environment.capabilities.githubReleaseLookup === true
     ? null
     : new ServerNpmReleaseError({
-        reason:
+        reason: msg(
           "This server does not support GitHub release lookups. Update it before checking releases.",
+        ),
       });
 }
 
-export function npmReleaseFailureMessage(cause: Cause.Cause<unknown>): string {
+export function npmReleaseFailureMessage(
+  cause: Cause.Cause<unknown>,
+  resolve: MessageResolver = m,
+): string {
   const error = Option.getOrUndefined(Cause.findErrorOption(cause));
   return isServerNpmReleaseError(error)
-    ? error.message
-    : "Could not check this environment's releases. Check the connection.";
+    ? resolve(msg("Could not check releases: {reason}", { reason: resolve(error.reason) }))
+    : resolve(msg("Could not check this environment's releases. Check the connection."));
 }
 
 const releaseEnvironmentIdAtom = Atom.make((get) => {
@@ -46,7 +52,7 @@ const releaseEnvironmentIdAtom = Atom.make((get) => {
   if (environmentId === undefined) {
     return {
       _tag: "Unavailable" as const,
-      error: new ServerNpmReleaseError({ reason: "Connect to a server to check releases." }),
+      error: new ServerNpmReleaseError({ reason: msg("Connect to a server to check releases.") }),
     };
   }
   const unsupported = unsupportedLookup(get(serverEnvironment.configValueAtom(environmentId)));

@@ -11,14 +11,17 @@ import { translateUi } from "@t3tools/shared/uiLocale";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { getClientSettings } from "../../hooks/useSettings";
 import {
+  thrownErrorMessage,
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
 } from "@t3tools/client-runtime/errors";
 import { Atom } from "effect/reactivity";
+import { msg } from "gt-react";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { m } from "../../i18n/messages";
 import { readLocalApi } from "../../localApi";
 import {
   getUploadedAttachments,
@@ -94,7 +97,11 @@ export async function startFanoutThread(input: {
   try {
     if (uncertainThreadId) {
       throw new Error(
-        "The previous request may have started. Open its thread to check before sending again.",
+        m(
+          msg(
+            "The previous request may have started. Open its thread to check before sending again.",
+          ),
+        ),
       );
     }
     requestMayHaveStarted = true;
@@ -119,9 +126,8 @@ export async function startFanoutThread(input: {
           model: input.model,
         }),
         description:
-          error instanceof Error
-            ? error.message
-            : translateUi(getClientSettings().uiLanguage, "Failed to send message."),
+          thrownErrorMessage(error, m) ??
+          translateUi(getClientSettings().uiLanguage, "Failed to send message."),
         ...(retainedThreadId
           ? {
               timeout: 0,
@@ -131,7 +137,11 @@ export async function startFanoutThread(input: {
                   onClick: () => {
                     void readLocalApi()
                       ?.dialogs.confirm(
-                        "The previous request may already be running. Check its thread first. Allow another send that could create a duplicate thread?",
+                        m(
+                          msg(
+                            "The previous request may already be running. Check its thread first. Allow another send that could create a duplicate thread?",
+                          ),
+                        ),
                       )
                       .then(
                         (confirmed) => {
@@ -149,7 +159,7 @@ export async function startFanoutThread(input: {
                 },
               },
               actionProps: {
-                children: "Open thread",
+                children: m(msg("Open thread")),
                 onClick: () => input.openThread(retainedThreadId),
               },
             }
@@ -192,10 +202,10 @@ export async function rewindToMessage(input: {
   const { message, environmentId, draftTarget } = input;
   try {
     if (input.composerHasPendingAttachments) {
-      throw new Error("Wait for attachments to finish preparing before rewinding.");
+      throw new Error(m(msg("Wait for attachments to finish preparing before rewinding.")));
     }
     const connection = readPreparedConnection(environmentId);
-    if (!connection) throw new Error("The environment is not connected.");
+    if (!connection) throw new Error(m(msg("The environment is not connected.")));
     const store = useComposerDraftStore.getState();
     const rewindKey = typeof draftTarget === "string" ? draftTarget : scopedThreadKey(draftTarget);
     const recalled = recalledRewinds.get(rewindKey);
@@ -207,7 +217,9 @@ export async function rewindToMessage(input: {
         (isRetry && recalled.attachmentsRestored ? 0 : (message.attachments?.length ?? 0)) >
       PROVIDER_SEND_TURN_MAX_ATTACHMENTS
     ) {
-      throw new Error("Make room for this message's attachments in the composer before rewinding.");
+      throw new Error(
+        m(msg("Make room for this message's attachments in the composer before rewinding.")),
+      );
     }
     if (!isRetry) {
       const currentPrompt = draft?.prompt ?? "";
@@ -280,30 +292,64 @@ export async function rewindToMessage(input: {
     recalledRewinds.delete(rewindKey);
     return { error: null };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to revert thread state." };
+    return {
+      error: error instanceof Error ? error.message : m(msg("Failed to revert thread state.")),
+    };
   }
 }
 
+function withRestored<T>(
+  existing: ReadonlyArray<T> | undefined,
+  restored: ReadonlyArray<T>,
+  key: (item: T) => string,
+): T[] {
+  const kept = existing ?? [];
+  return [...kept, ...restored.filter((item) => !kept.some((other) => key(other) === key(item)))];
+}
+
 /**
- * Writes a failed send's composer contents back into its draft. Returns the
- * restored images, which are fresh copies so their preview URLs outlive the
- * optimistic row that held the originals.
+ * Writes a failed send's composer contents back into its draft, after anything
+ * typed since. Returns the restored images, which are fresh copies so their
+ * preview URLs outlive the optimistic row that held the originals.
  */
 export function restoreComposerDraft(
   draftTarget: ScopedThreadRef | DraftId,
   snapshot: ComposerSendSnapshot,
 ): ComposerImageAttachment[] {
   const store = useComposerDraftStore.getState();
+  const current = store.getComposerDraft(draftTarget);
   const images = snapshot.images.map(cloneComposerImageForRetry);
-  store.setPrompt(draftTarget, snapshot.draftText);
-  store.setReplyTo(draftTarget, snapshot.replyTo);
+  store.setPrompt(
+    draftTarget,
+    current?.prompt.trim() ? `${current.prompt}\n\n${snapshot.draftText}` : snapshot.draftText,
+  );
+  store.setReplyTo(draftTarget, current?.replyTo ?? snapshot.replyTo);
   store.addImages(draftTarget, images);
   store.addFiles(draftTarget, snapshot.files);
-  store.setTerminalContexts(draftTarget, snapshot.terminalContexts);
-  store.setPreviewAnnotations(draftTarget, snapshot.previewAnnotations);
-  store.setReviewComments(draftTarget, snapshot.reviewComments);
-  store.setThreadContexts(draftTarget, snapshot.threadContexts);
-  store.setEnvironmentContexts(draftTarget, snapshot.environmentContexts);
+  store.setTerminalContexts(
+    draftTarget,
+    withRestored(current?.terminalContexts, snapshot.terminalContexts, (context) => context.id),
+  );
+  store.setPreviewAnnotations(
+    draftTarget,
+    withRestored(current?.previewAnnotations, snapshot.previewAnnotations, (entry) => entry.id),
+  );
+  store.setReviewComments(
+    draftTarget,
+    withRestored(current?.reviewComments, snapshot.reviewComments, (comment) => comment.id),
+  );
+  store.setThreadContexts(
+    draftTarget,
+    withRestored(current?.threadContexts, snapshot.threadContexts, (record) => record.contextId),
+  );
+  store.setEnvironmentContexts(
+    draftTarget,
+    withRestored(
+      current?.environmentContexts,
+      snapshot.environmentContexts,
+      (record) => record.contextId,
+    ),
+  );
   return images;
 }
 
@@ -327,7 +373,7 @@ export function resolveMultipleModelTargets(input: {
       (entry) => entry.instanceId === selection.instanceId,
     );
     if (!provider?.enabled || !provider.isAvailable || provider.status !== "ready") {
-      return { error: `Provider for ${selection.model} is unavailable.` };
+      return { error: m(msg("Provider for {model} is unavailable.", { model: selection.model })) };
     }
     const providerBlockReason = getAntigravitySendBlockReason(provider.snapshot, selection.model);
     if (providerBlockReason) return { error: providerBlockReason };
@@ -376,12 +422,14 @@ export function prepareTurnAttachments(input: {
         });
         const uploaded = getUploadedAttachments({ environmentId, images: [attachment] })?.[0];
         if (!uploaded) {
-          throw new Error(`Attachment '${attachment.name}' failed to upload.`);
+          throw new Error(
+            m(msg("Attachment ''{name}'' failed to upload.", { name: attachment.name })),
+          );
         }
         return uploaded;
       }
       if (attachment.type !== "image") {
-        throw new Error("This server does not support file attachments.");
+        throw new Error(m(msg("This server does not support file attachments.")));
       }
       return {
         type: "image" as const,

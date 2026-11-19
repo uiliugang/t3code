@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { mFallback } from "gt-react-native";
 import type { PullRequestDiffResult } from "@t3tools/contracts";
 import type { ReviewParsedDiff } from "../review/reviewModel";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -171,7 +172,7 @@ describe("paged mobile pull request diffs", () => {
         new Map(load === undefined ? [] : [["large.ts", load]]),
         canLoad,
         "pr",
-        (message) => message,
+        mFallback,
       );
       return merged.kind === "files" ? merged.files[0] : undefined;
     };

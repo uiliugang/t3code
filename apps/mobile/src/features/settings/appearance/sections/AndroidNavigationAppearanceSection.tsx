@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import { View } from "react-native";
 
 import { ListChoiceRow as SettingsChoiceRow } from "../../../../components/ui/ListChoiceRow";
@@ -7,9 +8,10 @@ import { useUiTranslation } from "../../../../lib/useUiTranslation";
 
 export function AndroidNavigationAppearanceSection() {
   const t = useUiTranslation();
+  const gt = useGT();
   const { isReady, androidNavigationStyle, setAndroidNavigationStyle } = useAppearancePreferences();
   return (
-    <SettingsSection title="Navigation">
+    <SettingsSection title={gt("Navigation", { $context: "navigation bar style" })}>
       <View accessibilityRole="radiogroup">
         <SettingsChoiceRow
           label="One UI"

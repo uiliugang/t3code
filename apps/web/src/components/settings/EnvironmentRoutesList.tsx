@@ -21,12 +21,13 @@ import {
   type ConnectionRoute,
   connectionRouteAddress,
   connectionRouteId,
-  connectionRouteLabel,
+  connectionRouteLabelText,
   connectionRoutes,
   isLearned,
   pendingRouteOrder,
 } from "@t3tools/client-runtime/connection";
 import { GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
+import { T, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -56,6 +57,8 @@ export function EnvironmentRoutesList({
   const byId = new Map(saved.map((route) => [connectionRouteId(route.target), route]));
   const routes = order.flatMap((id) => byId.get(id) ?? []);
 
+  const gt = useGT();
+  const messages = useMessages();
   const prepared = usePreparedConnection(environment.environmentId);
   const activeRouteId =
     prepared._tag === "Some" && environment.connection.phase === "connected"
@@ -71,7 +74,12 @@ export function EnvironmentRoutesList({
   const confirmRemove = async (route: ConnectionRoute) => {
     const address = connectionRouteAddress(route);
     const confirmed = await requestConfirmDialog(
-      `${t("Remove {route} route?", { route: t(connectionRouteLabel(route)) })}${address === null ? "" : `\n${address}`}`,
+      address === null
+        ? gt("Remove {route} route?", { route: connectionRouteLabelText(route, messages) })
+        : gt("Remove {route} route?\n{address}", {
+            route: connectionRouteLabelText(route, messages),
+            address,
+          }),
       { variant: "destructive" },
     );
     if (confirmed !== true) return;
@@ -148,8 +156,9 @@ function SortableRouteRow({
   readonly onRemove: () => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const id = connectionRouteId(route.target);
-  const label = connectionRouteLabel(route);
+  const label = connectionRouteLabelText(route, messages);
   const address = connectionRouteAddress(route);
   const {
     attributes,
@@ -180,7 +189,7 @@ function SortableRouteRow({
           ) : null}
           {refused ? (
             <span className="rounded-sm bg-destructive/8 px-1 text-2xs font-normal text-destructive-foreground">
-              Sign-in refused
+              <T>Sign-in refused</T>
             </span>
           ) : null}
         </p>
@@ -192,7 +201,7 @@ function SortableRouteRow({
         ) : null}
         {refused && address !== null ? (
           <p className="text-2xs text-muted-foreground">
-            The host refused this device's sign-in. Pair this address again with Add route.
+            <T>The host refused this device's sign-in. Pair this address again with Add route.</T>
           </p>
         ) : null}
       </div>

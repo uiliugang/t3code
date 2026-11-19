@@ -1,4 +1,6 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { msg } from "gt-react";
 import { useState } from "react";
 
 import {
@@ -8,19 +10,19 @@ import {
 } from "~/state/desktopCliCommand";
 import { useEnvironmentQuery } from "~/state/query";
 import { Button } from "../ui/button";
+import { m } from "../../i18n/messages";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const FAILURE_TITLES = {
-  install: "Could not install t3",
-  uninstall: "Could not remove t3",
-  addToPath: "Could not add t3 to PATH",
+  install: msg("Could not install t3"),
+  uninstall: msg("Could not remove t3"),
+  addToPath: msg("Could not add t3 to PATH"),
 } as const;
 
 /** The desktop `t3` command's state, and its actions with a toast on failure. */
 export function useDesktopCliCommand() {
-  const t = useUiTranslation();
   const bridge = getDesktopCliCommandBridge();
   const query = useEnvironmentQuery(bridge ? desktopCliCommandStateAtom : null);
   const [pending, setPending] = useState(false);
@@ -34,8 +36,11 @@ export function useDesktopCliCommand() {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: t(FAILURE_TITLES[action]),
-            description: error instanceof Error ? error.message : t("Something went wrong."),
+            title: m(FAILURE_TITLES[action]),
+            description:
+              error instanceof Error
+                ? (thrownErrorMessage(error, m) ?? error.message)
+                : m(msg("Something went wrong.")),
           }),
         );
       })
@@ -51,6 +56,7 @@ export function useDesktopCliCommand() {
 
 export function CliCommandSettingsRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const { state, busy, run } = useDesktopCliCommand();
 
   if (!state?.supported) return null;

@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AppActivityIndicator } from "./AppActivityIndicator";
 import { Column, Text as NativeText, RNHostView } from "@expo/ui/jetpack-compose";
+
 import { use, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
@@ -48,6 +49,7 @@ export function AndroidScreenHeader(props: {
   readonly hideBottomBorder?: boolean;
 }) {
   const t = useUiTranslation();
+
   const { colors } = useControlTheme();
   const titleTypography = useScaledTextRole("title");
   const subtitleTypography = useScaledTextRole("label");

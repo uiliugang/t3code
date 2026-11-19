@@ -1,4 +1,6 @@
 import type { ProjectWorkspaceConfigInput } from "@t3tools/contracts";
+import { mFallback, msg } from "gt-i18n";
+import { translatableMessage } from "../errors/translatable.ts";
 import { remapComposerContextAttachments } from "@t3tools/shared/composerContextReferences";
 import {
   type ThreadLinkedPullRequest,
@@ -335,7 +337,11 @@ const dispatchMessage = Effect.fn("EnvironmentCommands.dispatchMessage")(functio
         Effect.fail(
           new EnvironmentRpcUnavailableError({
             environmentId: supervisor.target.environmentId,
-            message: `${supervisor.target.label} did not confirm the message within 60 seconds.`,
+            ...translatableMessage(
+              msg("{host} did not confirm the message within 60 seconds.", {
+                host: supervisor.target.label,
+              }),
+            ),
           }),
         ),
     }),
@@ -1135,7 +1141,7 @@ export const continueSideChat = Effect.fn("EnvironmentCommands.continueSideChat"
     creationSource: input.creationSource ?? "web",
     threadId: input.targetThreadId,
     projectId: input.projectId,
-    title: input.title ?? "Side chat task",
+    title: input.title ?? mFallback(msg("Side chat task")),
     forkFrom: { threadId: input.sourceThreadId, runId: input.runId },
     modelSelection: input.modelSelection,
     runtimeMode: input.runtimeMode,
@@ -1151,7 +1157,7 @@ export const forkThreadToWorktree = Effect.fn("EnvironmentCommands.forkThreadToW
       creationSource: input.creationSource ?? "web",
       threadId: input.targetThreadId,
       projectId: input.projectId,
-      title: input.title ?? "Forked task",
+      title: input.title ?? mFallback(msg("Forked task")),
       forkFrom: {
         threadId: input.sourceThreadId,
         runId: input.runId,

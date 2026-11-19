@@ -1,4 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   pullRequestLinkProject,
@@ -6,7 +7,9 @@ import {
 } from "@t3tools/client-runtime/pull-request-link-input";
 import { useAtomValue } from "@effect/atom-react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { msg, useMessages } from "gt-react";
 import { useRef, useState } from "react";
+import { m } from "~/i18n/messages";
 
 import { useProjects, useThreadShell } from "~/state/entities";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
@@ -65,6 +68,7 @@ function LinkPullRequestDialog({
   onOpenChange,
 }: LinkPullRequestDialogProps) {
   const t = useUiTranslation();
+  const resolve = useMessages();
   const inputRef = useRef<HTMLInputElement>(null);
   const [reference, setReference] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -88,11 +92,14 @@ function LinkPullRequestDialog({
     }
   }
 
-  const resolved = resolveLinkPullRequestInput({
-    reference,
-    project: ownProject,
-    hasProject: (reference) => linking.canLink(reference.url),
-  });
+  const resolved = resolveLinkPullRequestInput(
+    {
+      reference,
+      project: ownProject,
+      hasProject: (reference) => linking.canLink(reference.url),
+    },
+    resolve,
+  );
 
   const submit = async () => {
     setDirty(true);
@@ -105,9 +112,7 @@ function LinkPullRequestDialog({
     setPending(false);
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
-      setSubmitError(
-        error instanceof Error ? error.message : t("Could not link the pull request."),
-      );
+      setSubmitError(thrownErrorMessage(error, m) ?? m(msg("Could not link the pull request.")));
       return;
     }
     onOpenChange(false);

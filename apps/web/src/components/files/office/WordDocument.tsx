@@ -1,12 +1,13 @@
 /* oxlint-disable react/no-array-index-key -- Text spans retain their order within an immutable page. */
 /* oxlint-disable react/no-unstable-nested-components -- These callbacks return overlays, and are invoked as render functions. */
 import { Tooltip, TooltipTrigger, TooltipPopup } from "~/components/ui/tooltip";
-import { Fragment, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import { FileSurfaceLoading } from "../fileSurfaceChrome";
 import { OfficePages, type PaintPage } from "./OfficePages";
 import { rasterize } from "./vector-pictures";
 import { createWorkerClient } from "./worker-rpc";
-import { useUiTranslation } from "../../../hooks/useUiTranslation";
 import {
   layerFont,
   lineHeight,
@@ -27,8 +28,6 @@ export default function WordDocument(props: {
   onDetails: (text: string) => void;
   onError: (cause: unknown) => void;
 }) {
-  const t = useUiTranslation();
-  const translate = useEffectEvent(t);
   const { onError, bytes, onDetails } = props;
   const [opened, setOpened] = useState<Opened>();
   const scroll = useRef<((index: number, y?: number) => void) | null>(null);
@@ -84,26 +83,28 @@ export default function WordDocument(props: {
       .then(async (first) => {
         if (controller.signal.aborted) return;
         setOpened({ pages: first.pages, paint, engine });
-        {
-          const pageCount = `${first.pages.length}${first.loading ? "+" : ""}`;
-          onDetails(
-            first.pages.length === 1 && !first.loading
-              ? translate("{count} page", { count: pageCount })
-              : translate("{count} pages", { count: pageCount }),
-          );
-        }
+        onDetails(
+          first.loading
+            ? m(msg("{count}+ pages", { count: String(first.pages.length) }))
+            : m(
+                msg("{count, plural, one {{count} page} other {{count} pages}}", {
+                  count: first.pages.length,
+                }),
+              ),
+        );
         if (!first.loading) return;
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         while (!controller.signal.aborted) {
           const step = await engine.call("layout", undefined, { signal: controller.signal });
           if (!step.done) continue;
-          if (step.pages.length > 1000)
-            throw new Error(translate("Preview limited to 1,000 pages."));
+          if (step.pages.length > 1000) throw new Error(m(msg("Preview limited to 1,000 pages.")));
           setOpened({ pages: step.pages, paint, engine });
           onDetails(
-            step.pages.length === 1
-              ? translate("{count} page", { count: step.pages.length })
-              : translate("{count} pages", { count: step.pages.length }),
+            m(
+              msg("{count, plural, one {{count} page} other {{count} pages}}", {
+                count: step.pages.length,
+              }),
+            ),
           );
           break;
         }
@@ -131,7 +132,7 @@ export default function WordDocument(props: {
     <OfficePages
       pages={opened.pages}
       paint={opened.paint}
-      label={t("Page")}
+      kind="page"
       scrollRef={scroll}
       onError={onError}
       overlay={(index) => (

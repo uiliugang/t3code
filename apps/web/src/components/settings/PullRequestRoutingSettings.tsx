@@ -6,36 +6,46 @@ import {
   pullRequestRoutingPermissionFor,
   type PullRequestRoutingPermission,
 } from "@t3tools/client-runtime/connection";
+import { msg, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { environmentCatalog } from "~/connection/catalog";
+import type { MessageResolver } from "~/i18n/messages";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { toastManager } from "../ui/toast";
 import { EnvironmentRow, EnvironmentTransportLabel } from "./EnvironmentRow";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const options: ReadonlyArray<{ value: PullRequestRoutingPermission; label: string }> = [
-  { value: "off", label: "Off" },
-  { value: "read", label: "Read PRs" },
-  { value: "read-write", label: "Read and act" },
+  { value: "off", label: msg("Off", { $context: "pull request routing permission" }) },
+  { value: "read", label: msg("Read PRs") },
+  { value: "read-write", label: msg("Read and act") },
 ];
 
-const summaryLabels = { "read-write": "read and act", read: "read PRs" } as const;
+const summaryLabels = {
+  "read-write": msg("{machines} read and act"),
+  read: msg("{machines} read PRs"),
+} as const;
 
 function summarizePullRequestRouting(
   entries: ReadonlyArray<{
     readonly label: string;
     readonly permission: PullRequestRoutingPermission;
   }>,
+  resolve: MessageResolver,
 ): string | null {
   const groups = (["read-write", "read"] as const).flatMap((permission) => {
     const labels = entries.filter((entry) => entry.permission === permission);
     return labels.length === 0
       ? []
-      : [`${labels.map((entry) => entry.label).join(", ")} ${summaryLabels[permission]}`];
+      : [
+          resolve(summaryLabels[permission], {
+            machines: labels.map((entry) => entry.label).join(", "),
+          }),
+        ];
   });
   return groups.length === 0 ? null : groups.join(" · ");
 }
@@ -46,10 +56,14 @@ export function PullRequestRoutingSettings({
   readonly environments: ReadonlyArray<EnvironmentPresentation>;
 }) {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const permissions = useAtomValue(environmentCatalog.pullRequestRoutingPermissionsValueAtom);
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const update = useAtomCommand(environmentCatalog.setPullRequestRoutingPermission);
   const [saving, setSaving] = useState(false);
+  const gt = useGT();
+  const m = useMessages();
+  const items = options.map((option) => ({ ...option, label: m(option.label) }));
 
   if (environments.length < 2) return null;
 
@@ -64,7 +78,8 @@ export function PullRequestRoutingSettings({
             label: environment.label,
             permission: pullRequestRoutingPermissionFor(environment.entry, permissions),
           })),
-        ) ?? "Off"
+          m,
+        ) ?? gt("Off", { $context: "pull request routing permission" })
       }
     >
       <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
@@ -80,7 +95,7 @@ export function PullRequestRoutingSettings({
           subtitle={<EnvironmentTransportLabel environment={environment} />}
         >
           <Select
-            items={options}
+            items={items}
             value={pullRequestRoutingPermissionFor(environment.entry, permissions)}
             disabled={
               !catalog.isReady ||
@@ -105,12 +120,14 @@ export function PullRequestRoutingSettings({
             <SelectTrigger
               size="xs"
               className="w-32"
-              aria-label={`${environment.label} pull request routing`}
+              aria-label={gt("{environment} pull request routing", {
+                environment: environment.label,
+              })}
             >
               <SelectValue />
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              {options.map(({ value, label }) => (
+              {items.map(({ value, label }) => (
                 <SelectItem key={value} value={value}>
                   {label}
                 </SelectItem>

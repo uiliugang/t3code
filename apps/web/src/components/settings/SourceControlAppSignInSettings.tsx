@@ -1,4 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import type { EnvironmentId, SourceControlSignInPrompt } from "@t3tools/contracts";
 import {
   readHostCredentialSettings,
@@ -7,6 +9,7 @@ import {
 } from "@t3tools/client-runtime/source-control-clients";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
+import { msg, useGT } from "gt-react";
 import { CheckIcon, ExternalLinkIcon, CopyIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -29,7 +32,7 @@ type SignInState =
 
 const failureMessage = (cause: Cause.Cause<unknown>) => {
   const error = Cause.squash(cause);
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? (thrownErrorMessage(error, m) ?? error.message) : String(error);
 };
 
 const expiryTime = (expiresAt: number) =>
@@ -96,6 +99,7 @@ export function SourceControlAppSignInSettings({
   readonly onChanged: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const host = appSignIn.hosts[0] ?? "";
   const { signIns, tokens } = useEnvironmentSettings(environmentId, (settings) =>
     readHostCredentialSettings(settings, definition.kind),
@@ -115,7 +119,11 @@ export function SourceControlAppSignInSettings({
   });
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     timeout: 1500,
-    target: "sign-in code",
+    target: {
+      target: "sign-in code",
+      unavailableMessage: msg("Clipboard API is unavailable while copying sign-in code."),
+      failureMessage: msg("Failed to copy sign-in code to the clipboard."),
+    },
   });
   const [state, setState] = useState<SignInState>({ status: "idle" });
 
@@ -166,15 +174,15 @@ export function SourceControlAppSignInSettings({
           {t("Signed in as")}
           <RedactedSensitiveText
             value={account}
-            ariaLabel="Signed-in GitHub account"
+            ariaLabel={gt("Signed-in GitHub account")}
             revealTooltip={t("Show account")}
             hideTooltip={t("Hide account")}
           />
         </span>
       ) : tokenOverrides ? (
-        "Signed in, but the token saved below is used while it can be read."
+        gt("Signed in, but the token saved below is used while it can be read.")
       ) : (
-        "Signed in"
+        gt("Signed in")
       );
     action = (
       <Button size="xs" variant="outline" disabled={!canSignIn} onClick={() => void signOut()}>
@@ -182,7 +190,7 @@ export function SourceControlAppSignInSettings({
       </Button>
     );
   } else if (waiting !== null) {
-    subtitle = "Approve the app on GitHub to finish signing in.";
+    subtitle = gt("Approve the app on GitHub to finish signing in.");
     action = (
       <Button
         size="xs"
@@ -196,7 +204,7 @@ export function SourceControlAppSignInSettings({
       </Button>
     );
   } else {
-    subtitle = "A far higher GitHub API rate limit than a personal token or gh login.";
+    subtitle = gt("A far higher GitHub API rate limit than a personal token or gh login.");
     action = (
       <Button
         size="xs"
@@ -204,7 +212,7 @@ export function SourceControlAppSignInSettings({
         onClick={() => void signIn()}
       >
         {state.status === "starting" ? <Spinner /> : null}
-        {state.status === "failed" ? "Try again" : "Sign in with GitHub"}
+        {state.status === "failed" ? gt("Try again") : gt("Sign in with GitHub")}
       </Button>
     );
   }

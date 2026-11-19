@@ -98,7 +98,7 @@ function ProjectSourceRow({
       </td>
       <td className="py-4 pr-4 align-top">
         <div className="flex items-center gap-3 overflow-hidden">
-          {github ? <span className="shrink-0">GitHub Issues</span> : null}
+          {github ? <span className="shrink-0">{t("GitHub Issues")}</span> : null}
           {mep.length ? (
             <SourceValue
               value={`MEP ${[...new Set(mep.map((entry) => entry.scope))].join(", ")}`}
@@ -275,7 +275,7 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
             <IssueSelect
               label={t("Issue source")}
               value={provider}
-              options={[{ value: "github", label: "GitHub Issues" }]}
+              options={[{ value: "github", label: t("GitHub Issues") }]}
               onChange={(value) => {
                 setProvider(value === "github" ? "github" : "meituan");
                 setScope("");

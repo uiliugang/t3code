@@ -20,6 +20,27 @@ describe("t3code/require-ui-translation", () => {
     const node = <input className="text-muted-foreground" value="user data" placeholder={t("Search")} />;
   `,
   );
+  rule.valid(
+    "accepts the official translation component including rich text and translation context",
+    `
+    import { T as Localized } from "gt-react";
+    const node = <Localized context="a setting">Update <b>available</b>.</Localized>;
+  `,
+  );
+  rule.invalid(
+    "rejects an untranslated attribute on markup inside an official translation",
+    `
+    import { T } from "gt-react-native";
+    const node = <T><Text aria-label="More options">Options</Text></T>;
+  `,
+  );
+  rule.invalid(
+    "rejects untranslated copy in an unrelated component named T",
+    `
+    import { T } from "./Table";
+    const node = <T>Settings</T>;
+  `,
+  );
   rule.invalid(
     "rejects the device approval copy omitted in d392444",
     `

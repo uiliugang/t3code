@@ -1,5 +1,5 @@
 import { formatPercent } from "@t3tools/shared/usageFormat";
-import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useMessages } from "gt-react";
 import type { ReactNode } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -21,20 +21,15 @@ export function UsageShareBar({
   readonly format: (value: number) => string;
   readonly aside?: ReactNode;
 }) {
-  const t = useUiTranslation();
-  const visible = segments
-    .filter((segment) => segment.value > 0)
-    .map((segment) => ({
-      ...segment,
-      label: t(segment.label === "Input" ? "Uncached input" : segment.label),
-    }));
+  const m = useMessages();
+  const visible = segments.filter((segment) => segment.value > 0);
   const total = visible.reduce((sum, segment) => sum + segment.value, 0);
   if (total <= 0) return null;
 
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-medium text-foreground">{t(label)}</h3>
+        <h3 className="text-sm font-medium text-foreground">{label}</h3>
         {aside}
       </div>
       {/* The legend below carries every figure; the bar's tooltips are pointer-only. */}
@@ -50,7 +45,7 @@ export function UsageShareBar({
               }
             />
             <TooltipPopup>
-              {t(segment.label)} · {format(segment.value)} · {formatPercent(segment.value / total)}
+              {m(segment.label)} · {format(segment.value)} · {formatPercent(segment.value / total)}
             </TooltipPopup>
           </Tooltip>
         ))}
@@ -63,7 +58,7 @@ export function UsageShareBar({
               className="size-2 rounded-xs"
               style={{ backgroundColor: segment.color }}
             />
-            <span className="text-muted-foreground">{t(segment.label)}</span>{" "}
+            <span className="text-muted-foreground">{m(segment.label)}</span>{" "}
             <span className="text-foreground tabular-nums">{format(segment.value)}</span>
             <span className="sr-only">, {formatPercent(segment.value / total)}</span>
           </li>

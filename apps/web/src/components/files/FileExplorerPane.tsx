@@ -32,6 +32,7 @@ export function FileExplorerPane({
   resizeLabel?: string;
 }) {
   const t = useUiTranslation();
+
   const [maxWidth, setMaxWidth] = useState(MAX_WIDTH);
   const [responsiveDefaultWidth, setResponsiveDefaultWidth] = useState(defaultWidth);
   const { width, setWidth, handlers } = useResizableWidth({

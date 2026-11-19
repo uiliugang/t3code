@@ -5,6 +5,8 @@ import {
   UNKNOWN_SOURCE_CONTROL_CLIENT,
 } from "@t3tools/client-runtime/source-control-clients";
 
+import { msg } from "gt-react";
+
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { readLocalApi } from "~/localApi";
 
@@ -50,7 +52,12 @@ export async function showPullRequestLinkContextMenu({
     return;
   }
   try {
-    if (action === "copy-link") await writeTextToClipboard(url, "link");
+    if (action === "copy-link")
+      await writeTextToClipboard(url, {
+        target: "link",
+        unavailableMessage: msg("Clipboard API is unavailable while copying link."),
+        failureMessage: msg("Failed to copy link to the clipboard."),
+      });
     else if (action === "open-external") await api.shell.openExternal(url);
   } catch {
     toastManager.add({

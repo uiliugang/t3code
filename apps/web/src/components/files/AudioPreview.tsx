@@ -1,4 +1,5 @@
 import { LoaderCircleIcon, PauseIcon, PlayIcon, TriangleAlertIcon } from "lucide-react";
+import { useGT } from "gt-react";
 import { createContext, useContext, useRef, useState } from "react";
 
 import { useStableCallback } from "~/hooks/useStableCallback";
@@ -75,6 +76,7 @@ function audioTime(seconds: number) {
 
 function AudioChip(props: AudioPreviewProps) {
   const t = useUiTranslation();
+  const gt = useGT();
   const audio = useRef<HTMLAudioElement | null>(null);
   const onUnmount = useContext(AudioPreviewUnmountContext);
   const [loadedSource, setLoadedSource] = useState<string | null>(null);
@@ -94,16 +96,15 @@ function AudioChip(props: AudioPreviewProps) {
   });
   const loading = !props.failed && !ready;
   const open = props.onOpen ?? (props.failed ? props.onRetry : undefined);
-  const action = props.failed
+  const actionLabel = props.failed
     ? props.onOpen
-      ? t("Open")
-      : t("Retry")
+      ? gt("Audio unavailable. Open {name}", { name: props.name })
+      : gt("Audio unavailable. Retry {name}", { name: props.name })
     : loading
-      ? t("Loading")
+      ? gt("Loading {name}", { name: props.name })
       : playing
-        ? t("Pause")
-        : t("Play");
-  const failedActionLabel = props.failed && !props.onOpen ? t("Retry") : t("Preview");
+        ? gt("Pause {name}", { name: props.name })
+        : gt("Play {name}", { name: props.name });
   const Icon = props.failed
     ? TriangleAlertIcon
     : loading
@@ -127,11 +128,7 @@ function AudioChip(props: AudioPreviewProps) {
       />
       <ContextChipAction
         className="ml-0 [&_svg]:size-[1em]"
-        aria-label={
-          props.failed
-            ? t("Audio unavailable. {action} {name}", { action, name: props.name })
-            : t("{action} {name}", { action, name: props.name })
-        }
+        aria-label={actionLabel}
         disabled={loading}
         onClick={() => {
           if (props.failed) {
@@ -156,10 +153,11 @@ function AudioChip(props: AudioPreviewProps) {
             type="button"
             className="block max-w-full cursor-pointer truncate rounded-sm text-left focus-visible:outline-2 focus-visible:outline-foreground"
             onClick={open}
-            aria-label={t("{action} {name}", {
-              action: failedActionLabel,
-              name: props.name,
-            })}
+            aria-label={
+              props.failed && !props.onOpen
+                ? gt("Retry {name}", { name: props.name })
+                : gt("Preview {name}", { name: props.name })
+            }
           >
             {middleTruncateAttachmentName(props.name)}
           </button>

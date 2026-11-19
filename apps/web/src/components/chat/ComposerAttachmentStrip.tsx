@@ -6,6 +6,7 @@ import type {
   SnapShotSource,
 } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { useGT, useMessages } from "gt-react";
 import { CircleAlertIcon, ImageIcon, PaperclipIcon, PlayIcon, XIcon } from "lucide-react";
 import { type ComponentProps, useLayoutEffect, useRef } from "react";
 
@@ -16,7 +17,10 @@ import {
   composerFileNeedsReattach,
 } from "../../composerDraftStore";
 import { retryAttachmentUpload, useAttachmentUploadStore } from "../../lib/attachmentUploadQueue";
-import type { AttachmentUploadState } from "../../lib/attachmentUploadState";
+import {
+  attachmentUploadFailureText,
+  type AttachmentUploadState,
+} from "../../lib/attachmentUploadState";
 import { useAttachmentUploadProgress } from "../../hooks/useAttachmentUploadProgress";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { isHeicImageFile } from "../../lib/imageCompression";
@@ -177,6 +181,7 @@ export function ComposerAttachmentMediaRow({
   readonly onRemoveFile: (fileId: string) => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const pendingSnapShotIdSet = new Set(pendingSnapShotIds);
   const nonPersistedImageIdSet = new Set(nonPersistedImageIds);
@@ -317,7 +322,9 @@ export function ComposerAttachmentMediaRow({
                   >
                     <RefreshIcon />
                   </TooltipTrigger>
-                  <TooltipPopup side="top">{upload.reason}</TooltipPopup>
+                  <TooltipPopup side="top">
+                    {attachmentUploadFailureText(upload, messages)}
+                  </TooltipPopup>
                 </Tooltip>
               )}
               <span
@@ -415,7 +422,9 @@ export function ComposerAttachmentMediaRow({
                 >
                   <RefreshIcon />
                 </TooltipTrigger>
-                <TooltipPopup side="top">{upload.reason}</TooltipPopup>
+                <TooltipPopup side="top">
+                  {attachmentUploadFailureText(upload, messages)}
+                </TooltipPopup>
               </Tooltip>
             )}
             <Button
@@ -459,6 +468,7 @@ export function ComposerAttachmentFileList({
   readonly onRemoveFile: (fileId: string) => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   return (
     <div className="mb-3 flex flex-col gap-1">
@@ -495,10 +505,10 @@ export function ComposerAttachmentFileList({
                 <ComposerAttachmentUploadProgress
                   id={file.id}
                   upload={upload}
-                  fallback={formatAttachmentSize(file.sizeBytes)}
+                  fallback={formatAttachmentSize(file.sizeBytes, messages)}
                 />
               ) : (
-                formatAttachmentSize(file.sizeBytes)
+                formatAttachmentSize(file.sizeBytes, messages)
               )}
             </span>
             {!needsReattach && upload?.status === "failed" ? (
@@ -522,7 +532,9 @@ export function ComposerAttachmentFileList({
                 >
                   <RefreshIcon />
                 </TooltipTrigger>
-                <TooltipPopup side="top">{upload.reason}</TooltipPopup>
+                <TooltipPopup side="top">
+                  {attachmentUploadFailureText(upload, messages)}
+                </TooltipPopup>
               </Tooltip>
             ) : null}
             <Button
@@ -549,6 +561,7 @@ export function ComposerFilePreviewDialog({
   readonly onRemove: (fileId: string) => void;
   readonly onPreviewFileIdChange: (fileId: string | null) => void;
 }) {
+  const gt = useGT();
   const onClose = () => onPreviewFileIdChange(null);
   return (
     <Dialog
@@ -569,7 +582,7 @@ export function ComposerFilePreviewDialog({
           mimeType={file.mimeType}
           sizeBytes={file.sizeBytes}
           file={file.file}
-          origin="Draft"
+          origin={gt("Draft", { $context: "where an attachment comes from: the unsent message" })}
           {...(file.uploadedAttachmentId && file.uploadEnvironmentId
             ? {
                 asset: {

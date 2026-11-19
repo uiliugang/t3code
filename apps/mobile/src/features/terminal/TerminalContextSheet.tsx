@@ -45,6 +45,7 @@ export function TerminalContextSheet(props: {
         value2: String(range.end + 1),
       }),
       terminalId: props.terminalId,
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- context label sent to the agent with the terminal text
       terminalLabel: `${props.terminalLabel} (visible output)`,
       lineStart: range.start + 1,
       lineEnd: range.end + 1,

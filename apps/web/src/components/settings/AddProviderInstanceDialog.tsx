@@ -7,12 +7,15 @@ import { CodexByokFields } from "./CodexByokFields";
 import { useAtomValue } from "@effect/atom-react";
 import { serverEnvironment } from "../../state/server";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-import type { UiTranslator } from "@t3tools/shared/uiLocale";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m as resolveMessage } from "~/i18n/messages";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
+import { msg, T, useGT, useMessages, Var } from "gt-react";
+import type { MessageResolver } from "../../i18n/messages";
 import {
   deriveAvailableInstanceId,
   deriveInstanceId,
@@ -88,14 +91,16 @@ const EMPTY_CONFIG_DRAFT: Record<string, unknown> = {};
 function validateInstanceId(
   id: string,
   existing: ReadonlySet<string>,
-  t: UiTranslator,
+  resolve: MessageResolver,
 ): string | null {
-  if (id.length === 0) return t("Instance ID is required.");
-  if (id.length > 64) return t("Instance ID must be 64 characters or fewer.");
+  if (id.length === 0) return resolve(msg("Instance ID is required."));
+  if (id.length > 64) return resolve(msg("Instance ID must be 64 characters or fewer."));
   if (!INSTANCE_ID_PATTERN.test(id)) {
-    return t("Instance ID must start with a letter and use only letters, digits, '-', or '_'.");
+    return resolve(
+      msg("Instance ID must start with a letter and use only letters, digits, '-', or '_'."),
+    );
   }
-  if (existing.has(id)) return t("An instance named '{id}' already exists.", { id });
+  if (existing.has(id)) return resolve(msg("An instance named ''{id}'' already exists.", { id }));
   return null;
 }
 
@@ -171,6 +176,8 @@ export function AddProviderInstanceDialog({
   showMoreProviders: initialShowMoreProviders = false,
 }: AddProviderInstanceDialogProps) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const settings = useEnvironmentSettings(environmentId);
   const supportsCodexByok =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.environment.capabilities
@@ -250,11 +257,11 @@ export function AddProviderInstanceDialog({
     );
   const unified = supportsConnectionProfiles && (driver === "codex" || driver === "claudeAgent");
   const steps = unified ? ADD_PROVIDER_WIZARD_STEPS.slice(0, 2) : ADD_PROVIDER_WIZARD_STEPS;
-  const driverSettingsFields = deriveProviderSettingsFields(driverOption);
-  const instanceIdError = validateInstanceId(instanceId, existingIds, t);
+  const driverSettingsFields = deriveProviderSettingsFields(driverOption, undefined, m);
+  const instanceIdError = validateInstanceId(instanceId, existingIds, m);
   const showInstanceIdError = hasAttemptedSubmit && instanceIdError !== null;
   const identityStep = 1;
-  const previewLabel = label.trim() || `${driverOption.label} Workspace`;
+  const previewLabel = label.trim() || gt("{provider} Workspace", { provider: driverOption.label });
 
   const configDraft = configByDriver[driver] ?? EMPTY_CONFIG_DRAFT;
   const isByok =
@@ -265,7 +272,7 @@ export function AddProviderInstanceDialog({
   const byokError = isByok
     ? ((driver === "codex"
         ? codexByokFormError(localEnvironment)
-        : claudeByokFormError(localEnvironment)) ??
+        : claudeByokFormError(localEnvironment, t)) ??
       (Array.isArray(configDraft.customModels) && configDraft.customModels.length > 0
         ? null
         : "Enter at least one model ID."))
@@ -398,7 +405,7 @@ export function AddProviderInstanceDialog({
     }));
     setIdentityByDriver((existing) =>
       updateProviderIdentityDraft(existing, ACP_REGISTRY_DRIVER_KIND, {
-        label: "Local ACP",
+        label: gt("Local ACP"),
         instanceIdOverride: null,
       }),
     );
@@ -407,7 +414,7 @@ export function AddProviderInstanceDialog({
   };
 
   // A policy that owns this driver's launch settings also rules out ChatGPT's own runtime.
-  const driverLocks = managedInstanceLocks(managedPolicy, driver);
+  const driverLocks = managedInstanceLocks(managedPolicy, driver, m);
 
   const handleSave = async () => {
     if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
@@ -454,8 +461,11 @@ export function AddProviderInstanceDialog({
       setIsSaving(false);
       toastManager.add({
         type: "error",
-        title: t("Could not add provider instance"),
-        description: error instanceof Error ? error.message : t("The settings update failed."),
+        title: gt("Could not add provider instance"),
+        description:
+          error instanceof Error
+            ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+            : gt("The settings update failed."),
       });
       return;
     }
@@ -468,10 +478,10 @@ export function AddProviderInstanceDialog({
     }
     toastManager.add({
       type: "success",
-      title: t("Provider instance added"),
-      description: t("{provider} instance '{id}' was added.", {
+      title: gt("Provider instance added"),
+      description: gt("{provider} instance ''{instanceId}'' was added.", {
         provider: driverOption.label,
-        id: instanceId,
+        instanceId,
       }),
     });
     onOpenChange(false);
@@ -491,10 +501,12 @@ export function AddProviderInstanceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <WizardPopup size="wide">
         <WizardHeader
-          title={t("Add provider")}
-          description={t("Add an account or configure a provider on {environment}.", {
-            environment: environmentLabel,
-          })}
+          title={gt("Add provider")}
+          description={
+            <T>
+              Add an account or configure a provider on <Var>{environmentLabel}</Var>.
+            </T>
+          }
         >
           {isAcpRegistry ? (
             <AddProviderInstanceWizardSteps
@@ -621,14 +633,14 @@ export function AddProviderInstanceDialog({
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <h3 className="text-sm font-medium text-foreground">
-                                {t(isLocalAcp ? "Local ACP command" : "Enter manually")}
+                                {isLocalAcp ? gt("Local ACP command") : gt("Enter manually")}
                               </h3>
                               <p className="mt-0.5 text-xs text-muted-foreground">
                                 {isLocalAcp
-                                  ? t("Run an installed ACP executable on {environment}.", {
+                                  ? gt("Run an installed ACP executable on {environment}.", {
                                       environment: environmentLabel,
                                     })
-                                  : t(
+                                  : gt(
                                       "Enter an official registry ID and any local executable or auth override.",
                                     )}
                               </p>
@@ -812,7 +824,7 @@ export function AddProviderInstanceDialog({
                     disabled={isSaving}
                   />
                   <SettingsRow
-                    title="Model IDs"
+                    title={gt("Model IDs")}
                     status={
                       hasAttemptedSubmit && byokError ? (
                         <span role="alert" className="text-destructive">
@@ -908,13 +920,11 @@ export function AddProviderInstanceDialog({
                   disabled={isSaving || !canManageProviders}
                   onClick={() => void handleSave()}
                 >
-                  {t(
-                    isSaving
-                      ? "Adding..."
-                      : isAcpRegistry && !isLocalAcp
-                        ? "Continue to sign-in"
-                        : "Add instance",
-                  )}
+                  {isSaving
+                    ? gt("Adding...")
+                    : isAcpRegistry && !isLocalAcp
+                      ? gt("Continue to sign-in")
+                      : gt("Add instance")}
                 </Button>
               )}
             </WizardFooter>

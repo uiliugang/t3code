@@ -109,8 +109,12 @@ export const definition = defineSourceControl({
     known || isGitHubHost(url.hostname) ? parseCommitPath(url, COMMIT_PATH) : null,
   parseChangeRequestUrl: (url) =>
     isRetiredPublicHost(url.hostname) ? null : parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
-  // `/issues/` is too generic a path to believe from a host that is not GitHub's.
-  parseIssueUrl: (url) => (isGitHubHost(url.hostname) ? parseIssuePath(url, ISSUE_PATH) : null),
+  // `/issues/` is too generic a path to believe from a host that is not GitHub's, unless a known
+  // project's host vouches for it as a GitHub Enterprise Server.
+  parseIssueUrl: (url, known) =>
+    !isRetiredPublicHost(url.hostname) && (known || isGitHubHost(url.hostname))
+      ? parseIssuePath(url, ISSUE_PATH)
+      : null,
   repositoryUrlFromPage: (url) =>
     isGitHubHost(url.hostname) ? repositoryUrlFromPagePath(url, REPOSITORY_PAGE_PATH) : null,
   // GitHub writes every bare reference through `/issues/`, including pull requests.

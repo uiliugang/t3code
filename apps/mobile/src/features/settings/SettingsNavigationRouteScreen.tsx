@@ -1,3 +1,4 @@
+import { useGT, useMessages } from "gt-react-native";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
@@ -28,6 +29,8 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function SettingsNavigationRouteScreen() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const insets = useSafeAreaInsets();
   const order = useNavigationTabOrder();
   const { layout } = useAdaptiveWorkspaceLayout();
@@ -52,7 +55,7 @@ export function SettingsNavigationRouteScreen() {
               : "Tab customization becomes available when there are six sections, including Settings.",
           )}
         </Text>
-        <SettingsSection title="Tab order">
+        <SettingsSection title={gt("Tab order")}>
           {order.map((tab, index) => (
             <View key={tab} className="flex-row items-center gap-3 px-4 py-3">
               <SymbolView
@@ -61,20 +64,22 @@ export function SettingsNavigationRouteScreen() {
                 tintColorClassName="accent-icon"
               />
               <View className="flex-1">
-                <Text>{t(WORKSPACE_TAB_LABELS[tab])}</Text>
+                <Text>{m(WORKSPACE_TAB_LABELS[tab])}</Text>
                 <Text className="text-xs text-foreground-muted">
                   {hidden.includes(tab)
-                    ? t("Hidden")
+                    ? gt("Hidden", { $context: "navigation tab visibility status" })
                     : enabled.indexOf(tab) < capacity
-                      ? t("Tab {number}", { number: enabled.indexOf(tab) + 1 })
-                      : t("In Settings")}
+                      ? gt("Tab {position}", { position: enabled.indexOf(tab) + 1 })
+                      : gt("In Settings")}
                 </Text>
               </View>
               <IconButton
                 icon={hidden.includes(tab) ? "eye.slash" : "eye"}
-                accessibilityLabel={t(hidden.includes(tab) ? "Show {name}" : "Hide {name}", {
-                  name: t(WORKSPACE_TAB_LABELS[tab]),
-                })}
+                accessibilityLabel={
+                  hidden.includes(tab)
+                    ? gt("Show {tab}", { tab: m(WORKSPACE_TAB_LABELS[tab]) })
+                    : gt("Hide {tab}", { tab: m(WORKSPACE_TAB_LABELS[tab]) })
+                }
                 disabled={!ready}
                 onPress={() =>
                   save({
@@ -89,7 +94,7 @@ export function SettingsNavigationRouteScreen() {
               />
               <IconButton
                 icon="arrow.up"
-                accessibilityLabel={t("Move {name} up", { name: t(WORKSPACE_TAB_LABELS[tab]) })}
+                accessibilityLabel={gt("Move {tab} up", { tab: m(WORKSPACE_TAB_LABELS[tab]) })}
                 disabled={!ready || index === 0}
                 onPress={() =>
                   save({
@@ -105,7 +110,7 @@ export function SettingsNavigationRouteScreen() {
               />
               <IconButton
                 icon="arrow.down"
-                accessibilityLabel={t("Move {name} down", { name: t(WORKSPACE_TAB_LABELS[tab]) })}
+                accessibilityLabel={gt("Move {tab} down", { tab: m(WORKSPACE_TAB_LABELS[tab]) })}
                 disabled={!ready || index === order.length - 1}
                 onPress={() =>
                   save({

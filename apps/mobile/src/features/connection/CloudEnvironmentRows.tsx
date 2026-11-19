@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react-native";
 import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
@@ -22,6 +23,7 @@ import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSym
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import type { MarkedText } from "@t3tools/client-runtime/errors";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
 import { environmentPresentations } from "../../state/presentation";
@@ -185,6 +187,7 @@ function ConnectedCloudEnvironmentRow(props: {
   readonly onOpen?: (() => void) | undefined;
   readonly onToggleError: () => void;
 }) {
+  const t = useUiTranslation();
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
@@ -205,6 +208,9 @@ function ConnectedCloudEnvironmentRow(props: {
       onOpen={props.onOpen}
       onRemove={props.onRemove}
       connectionError={enabled || unsupported ? props.environment.connectionError : null}
+      {...((enabled || unsupported) && props.environment.i18nConnectionError !== undefined
+        ? { i18nConnectionError: props.environment.i18nConnectionError }
+        : {})}
       connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
       connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
       awaitingApproval={enabled && presentation?.connection.awaitingApproval === true}
@@ -221,7 +227,7 @@ function ConnectedCloudEnvironmentRow(props: {
         ? diagnosis
           ? { statusText: diagnosis.headline }
           : {}
-        : { statusText: "Off" })}
+        : { statusText: t("Off") })}
       value={enabled}
     />
   );
@@ -234,12 +240,16 @@ function CloudEnvironmentRow(props: {
   readonly onConnect: () => void;
   readonly onToggleError: () => void;
 }) {
-  const presentation = availableCloudEnvironmentPresentation({
-    isStatusPending: props.environment.availability === "checking",
-    status: props.environment.status,
-    statusError: props.environment.error,
-    statusErrorTraceId: props.environment.traceId,
-  });
+  const m = useMessages();
+  const presentation = availableCloudEnvironmentPresentation(
+    {
+      isStatusPending: props.environment.availability === "checking",
+      status: props.environment.status,
+      statusError: props.environment.error,
+      statusErrorTraceId: props.environment.traceId,
+    },
+    m,
+  );
 
   return (
     <CloudEnvironmentRowShell
@@ -273,6 +283,7 @@ function CloudEnvironmentRowShell(props: {
   readonly onOpen?: (() => void) | undefined;
   readonly onRemove?: (() => void) | undefined;
   readonly connectionError: string | null;
+  readonly i18nConnectionError?: MarkedText;
   readonly connectionErrorTraceId: string | null;
   readonly connectionState: EnvironmentConnectionPhase;
   /** Waiting on the host to approve this device: say so plainly, not as a failure. */
@@ -288,16 +299,20 @@ function CloudEnvironmentRowShell(props: {
   readonly value: boolean;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const isRetrying =
     props.connectionState === "connecting" || props.connectionState === "reconnecting";
   const shouldPulse = isRetrying;
   const statusText =
     props.statusText !== undefined && !props.awaitingApproval
-      ? t(props.statusText)
+      ? props.statusText
       : environmentStatusText(
           {
             phase: props.connectionState,
             error: props.connectionError,
+            ...(props.i18nConnectionError === undefined
+              ? {}
+              : { i18nError: props.i18nConnectionError }),
             traceId: props.connectionErrorTraceId,
             ...(props.awaitingApproval ? { awaitingApproval: true as const } : {}),
             ...(props.verificationCode !== undefined
@@ -305,6 +320,7 @@ function CloudEnvironmentRowShell(props: {
               : {}),
           },
           t,
+          m,
         );
   const statusClassName =
     props.connectionError && props.connectionState !== "unsupported" && !props.awaitingApproval

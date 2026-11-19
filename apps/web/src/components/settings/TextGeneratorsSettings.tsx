@@ -14,6 +14,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { CheckIcon, MoreVertical, PlusIcon, ServerIcon } from "lucide-react";
 import { useState } from "react";
+import { msg, T, useGT, useMessages, Var } from "gt-react";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import {
@@ -60,7 +61,7 @@ import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { WizardFooter, WizardHeader, WizardPanel, WizardPopup, WizardSteps } from "../ui/wizard";
 import { SecretSourceInput, useSecretSources } from "./SecretSourceInput";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow, SettingsSection } from "./settingsLayout";
 
 const decodeTextGenerator = Schema.decodeUnknownOption(TextGeneratorConfig);
@@ -81,6 +82,8 @@ export function TextGeneratorsSettings({
   readonly readOnly: boolean;
 }) {
   const t = useUiTranslation();
+  const setting = useSearchableSetting();
+  const messages = useMessages();
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -94,8 +97,7 @@ export function TextGeneratorsSettings({
   return (
     <>
       <SettingsSection
-        {...searchableSetting("text-generators")}
-        title={t("Text generators")}
+        {...setting("text-generators")}
         headerAction={
           !readOnly ? (
             <Button size="xs" variant="outline" onClick={() => setEditing("new")}>
@@ -114,7 +116,7 @@ export function TextGeneratorsSettings({
           />
         ) : null}
         {generators.map(([id, config]) => {
-          const name = textGeneratorDisplayName(config);
+          const name = textGeneratorDisplayName(config, messages);
           return (
             <SettingsRow
               key={id}
@@ -208,19 +210,25 @@ export function TextGeneratorsSettings({
         <AlertDialogPopup>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t("Remove {name}?", {
-                name: removingConfig ? textGeneratorDisplayName(removingConfig) : "",
-              })}
+              <T>
+                Remove{" "}
+                <Var>
+                  {removingConfig ? textGeneratorDisplayName(removingConfig, messages) : ""}
+                </Var>
+                ?
+              </T>
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t(
-                "This deletes the API key stored on {environment}. Anything set to use this generator falls back to the text generation model.",
-                { environment: environmentLabel },
-              )}
+              <T>
+                This deletes the API key stored on <Var>{environmentLabel}</Var>. Anything set to
+                use this generator falls back to the text generation model.
+              </T>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>{t("Cancel")}</AlertDialogClose>
+            <AlertDialogClose render={<Button variant="outline" />}>
+              <T>Cancel</T>
+            </AlertDialogClose>
             <Button
               variant="destructive"
               onClick={() => {
@@ -237,16 +245,16 @@ export function TextGeneratorsSettings({
   );
 }
 
-const STEPS = ["Connect", "Use it"] as const;
+const STEPS = [msg("Connect", { $context: "wizard step" }), msg("Use it")] as const;
 
 /** Text tasks a generator can write, in the order the settings pages show them. */
 const TASKS = [
-  { key: "textGenerationModelSelection", label: "Thread titles and other generated text" },
+  { key: "textGenerationModelSelection", label: msg("Thread titles and other generated text") },
   {
     key: "sourceControlWriterModelSelection",
-    label: "Commit messages, pull requests, and branch names",
+    label: msg("Commit messages, pull requests, and branch names"),
   },
-  { key: "speechPostProcessingModelSelection", label: "Voice transcript cleanup" },
+  { key: "speechPostProcessingModelSelection", label: msg("Voice transcript cleanup") },
 ] as const;
 
 /**
@@ -270,6 +278,8 @@ function TextGeneratorWizard({
   readonly newId: (preset: TextGeneratorPreset) => ProviderInstanceId;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
+  const gt = useGT();
   const existing = editing === "new" ? null : editing.config;
   const [step, setStep] = useState(0);
   const [preset, setPreset] = useState(TEXT_GENERATOR_PRESETS[0]!);
@@ -308,7 +318,9 @@ function TextGeneratorWizard({
       ? preset.id === "custom"
       : !["openai", "anthropic", "openrouter"].includes(textGeneratorBrand(existing));
   const canConnect = keyValid && Option.isSome(config) && (!keyRequired || apiKey !== "");
-  const name = Option.isSome(config) ? textGeneratorDisplayName(config.value) : preset.label;
+  const name = Option.isSome(config)
+    ? textGeneratorDisplayName(config.value, messages)
+    : messages(preset.label);
 
   const connect = async () => {
     if (!canConnect || checking) return;
@@ -339,15 +351,15 @@ function TextGeneratorWizard({
         <WizardHeader
           title={
             existing
-              ? t("Edit {name}", { name: textGeneratorDisplayName(existing) })
-              : t("Add a text generator")
+              ? gt("Edit {name}", { name: textGeneratorDisplayName(existing, messages) })
+              : gt("Add a text generator")
           }
-          description={t(
+          description={gt(
             "Writes thread titles, commit messages, and other short text without starting a coding agent. Your API key is stored on this environment.",
           )}
         >
           <WizardSteps
-            steps={STEPS.map((item) => t(item))}
+            steps={STEPS.map((step) => messages(step))}
             currentStep={step}
             isStepDisabled={(index) => index > step}
             onStepChange={setStep}
@@ -460,10 +472,10 @@ function TextGeneratorWizard({
                     id="text-generator-label"
                     placeholder={
                       existing !== null
-                        ? textGeneratorDisplayName(existing)
+                        ? textGeneratorDisplayName(existing, messages)
                         : preset.id === "custom"
-                          ? t("e.g. My local model")
-                          : preset.label
+                          ? gt("e.g. My local model")
+                          : messages(preset.label)
                     }
                     value={label}
                     onChange={(event) => setLabel(event.target.value)}
@@ -492,7 +504,7 @@ function TextGeneratorWizard({
                     environmentId={environmentId}
                     providers={providers}
                     settingKey={task.key}
-                    label={t(task.label)}
+                    label={messages(task.label)}
                   />
                 ))}
               </div>
@@ -725,7 +737,8 @@ function TextGeneratorModelsDialog({
   readonly onClose: () => void;
 }) {
   const t = useUiTranslation();
-  const name = textGeneratorDisplayName(saved.config);
+  const messages = useMessages();
+  const name = textGeneratorDisplayName(saved.config, messages);
   const result = useTextGeneratorModels(environmentId, saved.id, saved.config);
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => {

@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 /* oxlint-disable react/no-array-index-key -- Captured table cells have stable positions and may contain identical values. */
+
 import { ScrollView, View } from "react-native";
 import type { parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -9,6 +10,7 @@ export function DelimitedFilePreview(props: {
   readonly table: ReturnType<typeof parseDelimitedPreview>;
 }) {
   const t = useUiTranslation();
+
   return (
     <ScrollView className="flex-1">
       {props.table.truncated ? (

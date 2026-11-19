@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
 import { useNavigation } from "@react-navigation/native";
@@ -15,6 +16,7 @@ import { LinkedEnvironmentsSection } from "./LinkedEnvironmentsSection";
 
 export function ConnectionsRouteScreen() {
   const t = useUiTranslation();
+  const gt = useGT();
   const {
     connectedEnvironments,
     onReconnectEnvironment,
@@ -34,7 +36,7 @@ export function ConnectionsRouteScreen() {
       <AppBar
         title={t("Environments")}
         onClose={() => navigation.goBack()}
-        closeAccessibilityLabel="Close environments"
+        closeAccessibilityLabel={gt("Close environments")}
         actions={[
           {
             accessibilityLabel: t("Add environment"),

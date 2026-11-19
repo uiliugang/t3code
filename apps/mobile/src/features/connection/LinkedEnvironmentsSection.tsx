@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import { RegistryContext } from "@effect/atom-react";
 import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
@@ -20,6 +21,7 @@ export function LinkedEnvironmentsSection(props: {
   readonly environmentLabel: string;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const config = useEnvironmentServerConfig(props.environmentId);
   const canRead = useEnvironmentScope(props.environmentId, AuthAccessReadScope);
   const supported = canRead && offersLinkedEnvironments(config);
@@ -71,19 +73,17 @@ export function LinkedEnvironmentsSection(props: {
           const health = peerLinkHealth(link, now);
           const status =
             health.kind === "expired"
-              ? t("Expired. Link it again with a new pairing code.")
+              ? gt("Expired. Link it again with a new pairing code.")
               : health.kind === "unreachable"
-                ? t(health.detail ?? "Not answering right now.")
+                ? (health.detail ?? gt("Not answering right now."))
                 : health.kind === "failing"
                   ? t(health.detail)
                   : health.expiresInDays !== null
-                    ? t(
-                        health.expiresInDays === 1
-                          ? "Expires in {days} day"
-                          : "Expires in {days} days",
-                        { days: health.expiresInDays },
+                    ? gt(
+                        "{count, plural, one {Expires in {count} day} other {Expires in {count} days}}",
+                        { count: health.expiresInDays },
                       )
-                    : t("Reachable");
+                    : gt("Reachable");
           return (
             <View key={link.environmentId} className="gap-0.5 p-4">
               <Text className="text-base font-t3-bold text-foreground">{link.label}</Text>

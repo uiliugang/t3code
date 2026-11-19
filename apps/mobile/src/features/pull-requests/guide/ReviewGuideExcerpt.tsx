@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../../lib/useUiTranslation";
+import { useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import type { FileDiffMetadata } from "@pierre/diffs";
@@ -28,12 +29,14 @@ export function ReviewGuideExcerpt({
   readonly onOpen: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const messages = useMessages();
   const { nativeReviewDiffStyle, codeWordBreak } = useAppearanceCodeSurface();
   const { themeAppearance } = useAppearancePreferences();
   const slice = excerptPatch(file, excerpt);
   const data = (() => {
     const parsed = buildNativeReviewDiffData(
-      buildReviewParsedDiff(slice, `guide:${excerpt.path}:${excerpt.start}`),
+      buildReviewParsedDiff(slice, `guide:${excerpt.path}:${excerpt.start}`, messages),
     );
     return {
       ...parsed,
@@ -120,11 +123,9 @@ export function ReviewGuideExcerpt({
         ) : (
           <Text className="p-3 text-xs text-foreground-muted">
             {loading
-              ? t("Loading {path}…", { path: String(excerpt.path) })
-              : t("{path}:{start}–{end} is not in the loaded diff.", {
-                  path: String(excerpt.path),
-                  start: String(excerpt.start),
-                  end: String(excerpt.end),
+              ? gt("Loading {path}…", { path: excerpt.path })
+              : gt("{location} is not in the loaded diff.", {
+                  location: `${excerpt.path}:${excerpt.start}–${excerpt.end}`,
                 })}
           </Text>
         )}

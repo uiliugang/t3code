@@ -14,6 +14,36 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "App updates": "应用更新",
+  "Browser artifacts": "浏览器产物",
+  "Client ID": "客户端 ID",
+  "Client Secret": "客户端密钥",
+  "Could not confirm fork": "无法确认是否已派生会话",
+  "Could not start task": "无法启动任务",
+  "Could not update the app.": "无法更新应用。",
+  "Delivery could not be confirmed. Check DaXiang and the application's credentials before resending.":
+    "无法确认是否已送达。重新发送前，请检查大象和应用凭据。",
+  "Git: {repository}": "Git：{repository}",
+  "GitHub Issue": "GitHub 议题",
+  "GitHub Issues": "GitHub 议题",
+  Linear: "Linear",
+  "Local branch": "本地分支",
+  "MCM #{id}": "MCM #{id}",
+  "MEP · {spaces}": "MEP · {spaces}",
+  "MEP ONES": "MEP ONES",
+  "MEP ONES · MCM": "MEP ONES · MCM",
+  "Meituan Code": "美团 Code",
+  "Meituan Code · {account}": "美团 Code · {account}",
+  "Open folder {title}": "打开文件夹 {title}",
+  "Reconnect and check the thread list before trying again.": "重新连接并检查会话列表后再重试。",
+  "Remove source {name}": "移除来源 {name}",
+  "Remove {title}": "移除 {title}",
+  "Rotated logs": "轮转日志",
+  "Select folder {title}": "选择文件夹 {title}",
+  PRs: "拉取请求",
+  "Update T3 Code on {server} over SSH? The server will stop and restart, interrupting any running agent tasks.":
+    "要通过 SSH 更新 {server} 上的 T3 Code 吗？服务器将停止并重启，正在运行的代理任务会中断。",
+  "{language} ({unavailable})": "{language}（{unavailable}）",
   "Source control tools": "版本控制工具",
   "Updating tool...": "正在更新工具…",
   "Installing tool...": "正在安装工具…",
@@ -1050,6 +1080,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Open-source notices are unavailable": "开源声明暂不可用",
   "Setup progress": "配置进度",
   "{step}, step {number}": "{step}，第 {number} 步",
+  "{step}, step {number}, {summary}": "{step}，第 {number} 步，{summary}",
   "Setting up...": "正在设置…",
   "Reconnect account": "重新连接账号",
   Identity: "标识",
@@ -2105,10 +2136,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Use these rules for this project.": "对此项目使用以下规则。",
   "Use each machine's worktree cleanup settings.": "使用各设备的工作树清理设置。",
   "Delete worktrees with deleted threads": "删除会话时清理工作树",
-  "When worktree cleanup on deletion is enabled, unused managed worktrees and all their local files are also permanently deleted.":
-    "启用删除会话时清理工作树后，不再使用的托管工作树及其中所有本地文件也会永久删除。",
-  "Remove unused managed worktrees when active or archived threads are deleted, including all local changes, untracked files and ignored files.":
-    "删除活跃或已归档的会话时，彻底移除不再使用的托管工作树，包括未提交改动、未跟踪文件和已忽略文件。",
+  "When cleanup on deletion is enabled, unused managed worktrees may also be removed. Local changes and files are kept.":
+    "启用删除时清理后，不再使用的托管工作树也可能被移除。有本地改动或文件的工作树会保留。",
+  "Remove unused managed worktrees when active or archived threads are deleted. Keep worktrees with local changes or files.":
+    "删除活跃或已归档的会话时，清理不再使用的托管工作树。有本地改动或文件的工作树会保留。",
   "Delete merged worktrees": "清理拉取请求已合并的工作树",
   "Remove worktrees whose pull request is merged and whose commits are included in the default branch.":
     "清理拉取请求已合并且提交已包含在默认分支中的工作树。",
@@ -4204,6 +4235,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "{actors} reacted with {reaction} emoji": "{actors} 使用{reaction}表情回应",
   "An error occurred.": "发生错误。",
   "just now": "刚刚",
+  "<1m": "刚刚",
   ago: "前",
   "{count}m": "{count}分钟",
   "{count}h": "{count}小时",

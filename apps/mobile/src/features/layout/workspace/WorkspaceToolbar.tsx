@@ -1,3 +1,4 @@
+import { msg, useGT, useMessages } from "gt-react-native";
 import { useActiveNewTask } from "../../../state/active-new-task";
 import { Toolbar } from "../../../components/ui/Toolbar";
 import { useFocusEffect, useIsFocused, useNavigationState } from "@react-navigation/native";
@@ -24,10 +25,10 @@ import { WorkspaceTabToolbarButtons } from "./WorkspaceSectionToolbar";
 import { useWorkspaceCompose } from "./useWorkspaceCompose";
 
 const SEARCH_LABELS = {
-  threads: "Search threads",
-  pullRequests: "Search pull requests",
-  issues: "Search issues",
-  settings: "Search settings",
+  threads: msg("Search threads"),
+  pullRequests: msg("Search pull requests"),
+  issues: msg("Search issues"),
+  settings: msg("Search settings"),
 } as const;
 
 export function WorkspaceToolbar(props: {
@@ -35,6 +36,8 @@ export function WorkspaceToolbar(props: {
   readonly sidebar?: boolean;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const workspace = useWorkspaceTabs()!;
   const activeNewTask = useActiveNewTask();
   const deviceType = useDeviceType();
@@ -55,7 +58,7 @@ export function WorkspaceToolbar(props: {
   // The Settings list takes the selected tab's place, so search follows it.
   const selectedTab = workspace.settingsOpen ? "settings" : workspace.state.selectedTab;
   const tab = workspace.state.tabs[selectedTab];
-  const searchLabel = t(
+  const searchLabel = m(
     SEARCH_LABELS[
       selectedTab === "usage" || selectedTab === "requirements" ? "threads" : selectedTab
     ],
@@ -141,7 +144,7 @@ export function WorkspaceToolbar(props: {
   const searchButton = foldedSearch ? (
     <Toolbar.Button
       identifier="workspace-search"
-      accessibilityLabel={searchVisible ? t("Close search") : searchLabel}
+      accessibilityLabel={searchVisible ? gt("Close search") : searchLabel}
       icon={searchVisible ? "xmark" : "magnifyingglass"}
       onPress={searchVisible ? () => searchRef.current?.cancelSearch() : focusSearch}
       separateBackground

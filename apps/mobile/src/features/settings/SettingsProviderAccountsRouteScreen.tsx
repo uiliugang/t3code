@@ -1,5 +1,7 @@
 import { codexConnectionMode } from "@t3tools/shared/codexByok";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { T, useGT } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import {
   isAtomCommandInterrupted,
@@ -17,6 +19,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState, type ReactNode } from "react";
 import { Linking, Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { m } from "../../i18n/messages";
 
 import type { MenuAction } from "@react-native-menu/menu";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -54,6 +57,7 @@ import {
 
 export function SettingsProviderAccountsRouteScreen() {
   const t = useUiTranslation();
+  const gt = useGT();
   const environmentMenu = useSettingsEnvironmentMenu();
   const { selectedTargets } = useSettingsEnvironmentFilter();
   const permittedEnvironments = useEnvironmentsWithScope(selectedTargets, AuthProvidersManageScope);
@@ -74,11 +78,13 @@ export function SettingsProviderAccountsRouteScreen() {
             !permittedEnvironments.has(environment.environmentId) ? (
               <SettingsSection key={environment.environmentId} title={environment.label}>
                 <View className="gap-1 p-4">
-                  <Text className="text-base text-foreground">{t("Limited permissions")}</Text>
+                  <Text className="text-base text-foreground">
+                    <T>Limited permissions</T>
+                  </Text>
                   <Text className="text-sm text-foreground-muted">
-                    {t(
-                      "This session can view {name}'s providers but can't change their settings.",
-                      { name: environment.label },
+                    {gt(
+                      "This session can view {environment}''s providers but can't change their settings.",
+                      { environment: environment.label },
                     )}
                   </Text>
                 </View>
@@ -263,7 +269,7 @@ function ProviderSummary({
       {hasSettings && !expanded ? (
         <ListRow
           label={provider.displayName ?? provider.driver}
-          description={t(providerSummaryStatus(provider))}
+          description={providerSummaryStatus(provider, t)}
           onPress={() => setExpanded(true)}
         />
       ) : (
@@ -271,7 +277,7 @@ function ProviderSummary({
           <ProviderAccountSummary
             key={email}
             name={provider.displayName ?? provider.driver}
-            status={t(providerSummaryStatus(provider))}
+            status={providerSummaryStatus(provider, t)}
             email={email}
           />
           {hasSettings ? (
@@ -309,6 +315,7 @@ function ProviderAccount({
   readonly renderRow: ProviderRowRenderer;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const environmentId = environment.environmentId;
   const instanceId = provider.instanceId;
   const target = { environmentId, input: { instanceId } };
@@ -366,7 +373,11 @@ function ProviderAccount({
     if (result._tag === "Success") return true;
     if (!isAtomCommandInterrupted(result)) {
       const failure = squashAtomCommandFailure(result);
-      setError(failure instanceof Error ? failure.message : "Could not update provider sign-in.");
+      setError(
+        failure instanceof Error
+          ? (errorDisplayMessage(failure, m) ?? failure.message)
+          : gt("Could not update provider sign-in."),
+      );
     }
     return false;
   }
@@ -418,18 +429,18 @@ function ProviderAccount({
     active || state?.phase === "failed" || state?.phase === "cancelled"
       ? state.message
       : !provider.enabled
-        ? "Turned off"
+        ? gt("Turned off")
         : signedIn
-          ? "Signed in"
+          ? gt("Signed in")
           : isDiscovering
-            ? "Discovering sign-in methods…"
+            ? gt("Discovering sign-in methods…")
             : needsExternalSetup
-              ? "No in-app sign-in advertised. Follow the provider's docs to finish setup."
+              ? gt("No in-app sign-in advertised. Follow the provider's docs to finish setup.")
               : !provider.installed
-                ? "Not installed"
+                ? gt("Not installed")
                 : usesCredentials
-                  ? "Connect to load models"
-                  : "Not signed in";
+                  ? gt("Connect to load models")
+                  : gt("Not signed in");
   // A provider with several sign-in methods picks one from a menu on the same control.
   const methodActions: MenuAction[] = methods.map((method) => ({
     id: `method:${method.id}`,
@@ -440,7 +451,7 @@ function ProviderAccount({
     ? [
         {
           id: "remove",
-          title: "Remove incomplete connection",
+          title: gt("Remove incomplete connection"),
           attributes: { disabled: disabled || active || !canRemoveMethod },
           subactions: removableMethods.map((method) => ({
             id: `remove:${method.id}`,
@@ -524,7 +535,7 @@ function ProviderAccount({
       label={t("Docs")}
       onPress={() => {
         void Linking.openURL(provider.setup!.documentationUrl!).catch(() =>
-          setError("Could not open the provider docs."),
+          setError(gt("Could not open the provider docs.")),
         );
       }}
     />
@@ -567,8 +578,12 @@ function ProviderAccount({
   ) : canSignIn && !signedIn ? (
     <ControlPill
       variant="primary"
-      label={t(usesCredentials ? "Connect" : "Sign in")}
-      accessibilityLabel={t(usesCredentials ? "Connect to {name}" : "Sign in to {name}", { name })}
+      label={usesCredentials ? gt("Connect") : gt("Sign in")}
+      accessibilityLabel={
+        usesCredentials
+          ? gt("Connect to {provider}", { provider: name })
+          : gt("Sign in to {provider}", { provider: name })
+      }
       disabled={signInDisabled}
       onPress={() => startSignIn()}
     />
@@ -701,7 +716,7 @@ function ProviderAccount({
                 )
                   return;
                 await Linking.openURL(url);
-              })().catch(() => setError("Could not open the sign-in page."));
+              })().catch(() => setError(t("Could not open the sign-in page.")));
             }}
           />
         ) : null}

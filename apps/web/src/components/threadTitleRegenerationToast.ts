@@ -1,23 +1,26 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import type { ThreadTitleRegenerationOutcome } from "@t3tools/contracts";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { msg } from "gt-react";
 
+import { m } from "../i18n/messages";
 import { stackedThreadToast } from "./ui/toast";
 
 type TitleRegenerationResult = AtomCommandResult<ThreadTitleRegenerationOutcome | null, unknown>;
 
-function failureMessage(result: TitleRegenerationResult, t: UiTranslator): string | null {
+function failureMessage(result: TitleRegenerationResult): string | null {
   if (result._tag === "Failure") {
     if (isAtomCommandInterrupted(result)) return null;
     const error = squashAtomCommandFailure(result);
-    return error instanceof Error ? error.message : t("An error occurred.");
+    return thrownErrorMessage(error, m) ?? m(msg("An error occurred."));
   }
   return result.value?.status === "failed"
-    ? (result.value.message ?? t("Title generation failed."))
+    ? (result.value.message ?? m(msg("Title generation failed.")))
     : null;
 }
 
@@ -30,7 +33,7 @@ export function titleRegenerationToast(
   t: UiTranslator = translateUi.bind(null, "en"),
 ) {
   const failures = results.flatMap((result) => {
-    const message = failureMessage(result, t);
+    const message = failureMessage(result);
     return message === null ? [] : [message];
   });
   if (failures.length > 0) {
@@ -38,11 +41,16 @@ export function titleRegenerationToast(
       type: "error",
       title:
         results.length === 1
-          ? t("Failed to regenerate thread title")
-          : t("Failed to regenerate {failed} of {total} thread titles", {
-              failed: failures.length,
-              total: results.length,
-            }),
+          ? m(msg("Failed to regenerate thread title"))
+          : m(
+              msg(
+                "{total, plural, one {Failed to regenerate {failed} of {total} thread titles} other {Failed to regenerate {failed} of {total} thread titles}}",
+                {
+                  failed: failures.length,
+                  total: results.length,
+                },
+              ),
+            ),
       description: failures[0],
     });
   }

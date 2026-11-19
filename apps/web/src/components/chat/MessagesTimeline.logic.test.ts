@@ -12,6 +12,7 @@ import {
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import {
   deriveTimelineEntriesFromVisibleTurnItems,
   deriveTimelineEntriesFromVisibleTurnItemsWithState,
@@ -29,6 +30,7 @@ import { MessageId, RunId } from "@t3tools/contracts";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
+  formatTurnFoldLabel,
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
   deriveMessagesTimelineRowsWithState,
@@ -1218,7 +1220,7 @@ describe("deriveMessagesTimelineRows", () => {
     );
     expect(foldRow?.runId).toBe("turn-1");
     expect(foldRow?.expanded).toBe(false);
-    expect(foldRow?.label).toEqual({ message: "Worked for {duration}", duration: "22s" });
+    expect(foldRow?.label).toEqual({ status: "worked", duration: "22s" });
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
       "turn-fold:turn-1",
@@ -1447,7 +1449,7 @@ describe("deriveMessagesTimelineRows", () => {
         row.kind === "turn-fold",
     );
     expect(foldRow?.runId).toBe("turn-1");
-    expect(foldRow?.label).toEqual({ message: "Worked for {duration}", duration: "12s" });
+    expect(foldRow?.label).toEqual({ status: "worked", duration: "12s" });
   });
 
   it("uses latest-turn timings and the stopped label for an interrupted latest turn", () => {
@@ -1482,7 +1484,7 @@ describe("deriveMessagesTimelineRows", () => {
       expect.objectContaining({
         kind: "turn-fold",
         runId: "turn-1",
-        label: { message: "You stopped after {duration}", duration: "47s" },
+        label: { status: "stopped", duration: "47s" },
         expanded: false,
       }),
     ]);
@@ -1559,7 +1561,7 @@ describe("deriveMessagesTimelineRows", () => {
           expect(rows[1]?.createdAt).toBe(time(0));
           if (!isWorking)
             expect(rows[1]).toMatchObject({
-              label: { message: "Worked for {duration}", duration: "20s" },
+              label: { status: "worked", duration: "20s" },
               expanded,
             });
           expect(rows.some((row) => row.id === "final")).toBe(true);
@@ -1624,10 +1626,10 @@ describe("deriveMessagesTimelineRows", () => {
       "final",
     ]);
     expect(collapsed[1]).toMatchObject({
-      label: { message: "Worked for {duration}", duration: "30s" },
+      label: { status: "worked", duration: "30s" },
     });
     expect(collapsed[3]).toMatchObject({
-      label: { message: "Continued for {duration}", duration: "20s" },
+      label: { status: "continued", duration: "20s" },
       createdAt: time(10),
     });
 
@@ -2153,7 +2155,7 @@ describe("deriveMessagesTimelineRows", () => {
     const shape = (timeline: ReadonlyArray<MessagesTimelineRow>) =>
       timeline.map((row) =>
         row.kind === "turn-fold"
-          ? `fold:${row.label.message.replace("{duration}", row.label.duration ?? "")}`
+          ? `fold:${formatTurnFoldLabel(row.label, translateUi.bind(null, "en"))}`
           : row.kind === "message"
             ? `${row.message.role}:${row.message.id}`
             : row.kind,
@@ -3000,7 +3002,7 @@ describe("v2 run and attempt history", () => {
     );
     expect(foldRow?.runId).toBe("turn-1");
     expect(foldRow?.expanded).toBe(false);
-    expect(foldRow?.label).toEqual({ message: "Worked for {duration}", duration: "22s" });
+    expect(foldRow?.label).toEqual({ status: "worked", duration: "22s" });
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
       "turn-fold:turn-1",
@@ -3646,7 +3648,7 @@ it.each([
     id: "fold",
     runId: RunId.make("run"),
     createdAt: "2026-01-01T00:00:00Z",
-    label: { message: "Worked for {duration}", duration: "1m" },
+    label: { status: "worked", duration: "1m" },
     expanded: true,
     ...(before === undefined ? {} : { deferredWorkItemIds: before }),
   };

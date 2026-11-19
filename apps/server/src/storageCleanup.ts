@@ -67,6 +67,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "./worktreesDirectory.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { isNonRepositoryGitStderr } from "./vcs/GitVcsDriverCore.ts";
+import { makeWorktreeFileInspection } from "./vcs/worktreeFileInspection.ts";
 import { isLinkedWorktree, removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -115,8 +116,6 @@ const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const REPORT_ENTRY_LIMIT = 200;
 const isGitCommandError = Schema.is(GitCommandError);
 const isManagedWorktreeError = Schema.is(ManagedWorktreeError);
-const errorCode = (error: PlatformError) =>
-  error.cause instanceof Error && "code" in error.cause ? error.cause.code : undefined;
 
 function cleanupFailureReason(error: { readonly message: string }) {
   return isGitCommandError(error)
@@ -772,99 +771,6 @@ const make = Effect.gen(function* () {
       ),
   );
 
-  // Git status and non-forced worktree removal both skip assume-unchanged and skip-worktree files.
-  const hiddenTrackedChange = Effect.fn("StorageCleanup.hiddenTrackedChange")(function* (
-    cwd: string,
-  ) {
-    const inspect = (args: string[], stdin?: string) =>
-      git.execute({
-        operation: "StorageCleanup.hiddenTrackedChanges",
-        cwd,
-        args,
-        ...(stdin === undefined ? {} : { stdin }),
-        maxOutputBytes: 1024 * 1024,
-      });
-    const sparse = yield* inspect([
-      "config",
-      "--type=bool",
-      "--default=false",
-      "core.sparseCheckout",
-    ]);
-    // Sparse checkouts flag every file outside the cone; Git 2.37+ unflags those it finds on disk.
-    const hiddenTag = sparse.stdout.trim() === "true" ? /^[a-z]$/ : /^(?:S|[a-z])$/;
-    const flagged: Array<{ readonly mode: string; readonly id: string; readonly file: string }> =
-      [];
-    let overflow = false;
-    yield* git.execute({
-      operation: "StorageCleanup.hiddenTrackedChanges",
-      cwd,
-      args: ["-c", "core.quotePath=false", "ls-files", "-s", "-v"],
-      maxOutputBytes: 64 * 1024,
-      appendTruncationMarker: true,
-      keepLineCallbacksAfterTruncation: true,
-      progress: {
-        onStdoutLine: (line) =>
-          Effect.sync(() => {
-            const match = /^(\S) (\d+) ([0-9a-f]+) \d\t(.*)$/s.exec(line);
-            if (match === null || !hiddenTag.test(match[1]!) || match[2] === "160000") return;
-            if (flagged.length < 10_000)
-              flagged.push({ mode: match[2]!, id: match[3]!, file: match[4]! });
-            else overflow = true;
-          }),
-      },
-    });
-    if (overflow) return "hidden tracked files exceed the inspection limit";
-    const reason = (file: string) => `has uncommitted changes hidden from git status (${file})`;
-    // Quoted names (control characters, quotes, backslashes) and names that are not valid UTF-8
-    // decode to text that is not the path on disk.
-    const unreadable = flagged.find(({ file }) => file.startsWith('"') || file.includes("\uFFFD"));
-    if (unreadable !== undefined) return reason(unreadable.file);
-    const onDisk = yield* Effect.forEach(
-      flagged,
-      (entry) => {
-        const file = path.join(cwd, entry.file);
-        return fs.readLink(file).pipe(
-          Effect.map((target) => ({ ...entry, type: "SymbolicLink", target })),
-          Effect.catchIf(
-            (error) => errorCode(error) === "EINVAL",
-            () => fs.stat(file).pipe(Effect.map((info) => ({ ...entry, type: info.type }))),
-          ),
-          Effect.catchIf(
-            (error) => errorCode(error) === "ENOENT" || errorCode(error) === "ENOTDIR",
-            () => Effect.succeed(null),
-          ),
-        );
-      },
-      { concurrency: 16 },
-    );
-    const files: Array<{ readonly id: string; readonly file: string }> = [];
-    // Without core.symlinks a tracked link is a regular file holding its target, compared unfiltered.
-    const linkFiles: typeof files = [];
-    for (const entry of onDisk) {
-      if (entry === null) continue;
-      if (entry.type === "File") (entry.mode === "120000" ? linkFiles : files).push(entry);
-      else if (!("target" in entry) || entry.mode !== "120000") return reason(entry.file);
-      // Hashing a link's path would hash the file it points to.
-      else if (
-        (yield* inspect(["hash-object", "--stdin"], entry.target)).stdout.trim() !== entry.id
-      )
-        return reason(entry.file);
-    }
-    const hashPaths = (entries: ReadonlyArray<{ readonly file: string }>, flags: string[]) =>
-      entries.length === 0
-        ? Effect.succeed([])
-        : inspect(
-            ["hash-object", ...flags, "--stdin-paths"],
-            entries.map(({ file }) => `${file}\n`).join(""),
-          ).pipe(Effect.map((result) => result.stdout.split("\n")));
-    const worktreeIds = yield* hashPaths(files, []);
-    const linkIds = yield* hashPaths(linkFiles, ["--no-filters"]);
-    const changed =
-      files.find(({ id }, i) => worktreeIds[i] !== id) ??
-      linkFiles.find(({ id }, i) => linkIds[i] !== id);
-    return changed === undefined ? null : reason(changed.file);
-  });
-
   // A worktree can outlive its project moving to another clone. Git removes a
   // worktree through the repository that registered it, not through the
   // project's current checkout, so resolve the owning repository first.
@@ -880,49 +786,7 @@ const make = Effect.gen(function* () {
     return path.basename(resolved) === ".git" ? path.dirname(resolved) : resolved;
   });
 
-  const localChangesReason = Effect.fn("StorageCleanup.localChangesReason")(function* (
-    cwd: string,
-    rules: WorktreeCleanupRules,
-  ) {
-    const status = yield* git.execute({
-      operation: "StorageCleanup.localChanges",
-      cwd,
-      args: [
-        "status",
-        "--porcelain=v1",
-        "-z",
-        "--ignore-submodules=none",
-        rules.worktreeKeepWhen === "tracked-changes"
-          ? "--untracked-files=no"
-          : "--untracked-files=all",
-      ],
-      maxOutputBytes: 64 * 1024,
-      appendTruncationMarker: true,
-    });
-    if (status.stdoutTruncated) return "local changes exceed the inspection limit";
-    const records = status.stdout.split("\0").filter(Boolean);
-    let count = 0;
-    for (let i = 0; i < records.length; i++) {
-      count++;
-      if (/^[RC]|^.[RC]/.test(records[i]!)) i++;
-    }
-    if (count > 0) return `has uncommitted changes (${count} ${count === 1 ? "file" : "files"})`;
-    const hidden = yield* hiddenTrackedChange(cwd);
-    if (hidden !== null) return hidden;
-    if (rules.worktreeKeepWhen !== "any-local-files") return null;
-    const ignored = yield* git.execute({
-      operation: "StorageCleanup.ignoredFiles",
-      cwd,
-      args: ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
-      maxOutputBytes: 64 * 1024,
-      appendTruncationMarker: true,
-    });
-    if (ignored.stdoutTruncated) return "ignored files exceed the inspection limit";
-    const file = ignored.stdout
-      .split("\0")
-      .find((entry) => entry !== "" && !/(^|\/)node_modules\/$/.test(entry));
-    return file === undefined ? null : `has ignored files (${file})`;
-  });
+  const { localChangesReason } = yield* makeWorktreeFileInspection;
 
   const submoduleRemoval = Effect.fn("StorageCleanup.submoduleRemoval")(
     function* (cwd: string, rules: WorktreeCleanupRules) {
@@ -1119,7 +983,6 @@ const make = Effect.gen(function* () {
     });
     const worktreePathReason = Effect.fn("StorageCleanup.worktreePathReason")(function* (
       worktreePath: string,
-      allowMissingMetadata = false,
     ) {
       // Allow symlinked parents, never a symlinked worktree directory.
       const realPath = yield* fs.realPath(worktreePath);
@@ -1135,35 +998,12 @@ const make = Effect.gen(function* () {
         ),
       );
       const linked = metadata !== null && (yield* isLinkedWorktree(worktreePath));
-      if (!linked && !(allowMissingMetadata && metadata === null))
-        return "worktree metadata is missing; files were retained";
+      if (!linked) return "worktree metadata is missing; files were retained";
       return null;
     });
     const worktreeLockReason = Effect.fn("StorageCleanup.worktreeLockReason")(function* (
       worktreePath: string,
-      repositoryCwd?: string,
     ) {
-      if (repositoryCwd !== undefined && !(yield* fs.exists(path.join(worktreePath, ".git")))) {
-        const registrations = yield* git.execute({
-          operation: "StorageCleanup.worktreeLock",
-          cwd: repositoryCwd,
-          args: ["worktree", "list", "--porcelain", "-z"],
-        });
-        if (registrations.stdoutTruncated) return "worktree registrations could not be inspected";
-        const record = registrations.stdout
-          .split("\0\0")
-          .find((entry) =>
-            entry
-              .split("\0")
-              .some(
-                (line) =>
-                  line.startsWith("worktree ") && pathKey(line.slice(9)) === pathKey(worktreePath),
-              ),
-          );
-        return record?.split("\0").some((line) => line === "locked" || line.startsWith("locked "))
-          ? "worktree is locked"
-          : null;
-      }
       const gitDirectory = (yield* git.execute({
         operation: "StorageCleanup.worktreeLock",
         cwd: worktreePath,
@@ -1589,6 +1429,26 @@ const make = Effect.gen(function* () {
             threadId: thread.id,
             workspace: thread.workspace,
             managedRoots: roots,
+            beforeRemove: settingsService.getSettings.pipe(
+              Effect.mapError(
+                (cause) =>
+                  new WorkspaceCleanup.WorkspaceCleanupError({
+                    revisionId: thread.workspace!.id,
+                    detail: "Cannot recheck workspace cleanup settings.",
+                    cause,
+                  }),
+              ),
+              Effect.flatMap((current) =>
+                Equal.equals(resolveWorktreeCleanup(current, thread.projectId), settings)
+                  ? Effect.void
+                  : Effect.fail(
+                      new WorkspaceCleanup.WorkspaceCleanupError({
+                        revisionId: thread.workspace!.id,
+                        detail: "Workspace cleanup settings changed since inspection.",
+                      }),
+                    ),
+              ),
+            ),
             isOccupied: Effect.fn("StorageCleanup.workspaceOccupied")(
               function* (cwd) {
                 if (yield* hasTerminal([path.resolve(cwd), yield* canonical(cwd)])) return true;
@@ -1644,6 +1504,9 @@ const make = Effect.gen(function* () {
         pathKey(path.dirname(worktreeKey)) === pathKey(scratchRoot);
       const activityAt = Math.max(...group.map(storageCleanupActivityAt));
       const deleted = "workspaceRoot" in thread;
+      const retention = deleted
+        ? { ...settings, worktreeKeepWhen: "any-local-files" as const }
+        : settings;
       const settlementChain = deleted
         ? []
         : worktreeSettlementChain(thread, threadsById, now, serverSettings);
@@ -1861,62 +1724,10 @@ const make = Effect.gen(function* () {
             )
           );
         });
-        if (deleted) {
-          const deletionPathReason = Effect.fnUntraced(function* () {
-            if (!scratch) return yield* worktreePathReason(worktreePath, true);
-            const parent = yield* fs.realPath(path.dirname(worktreePath));
-            return (yield* fs.realPath(worktreePath)) ===
-              path.join(parent, path.basename(worktreePath))
-              ? null
-              : "folder is a symbolic link";
-          });
-          const pathReason = yield* deletionPathReason();
-          if (pathReason !== null) return keep(pathReason);
-          const inspection = yield* measureWorktree(worktreePath);
-          return yield* withWorkspaceLease(
-            worktreePath,
-            Effect.gen(function* () {
-              const pathReason = yield* deletionPathReason();
-              if (pathReason !== null) return keep(pathReason);
-              const blocked = yield* blockedSinceCheck();
-              if (blocked !== null) return keep(blocked);
-              if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
-              if (!scratch) {
-                const lockReason = yield* worktreeLockReason(
-                  worktreePath,
-                  thread.projectWorkspaceRoot ?? project.workspaceRoot,
-                );
-                if (lockReason !== null) return keep(lockReason);
-              }
-              if (!scratch && (yield* fs.exists(path.join(worktreePath, ".git")))) {
-                if (yield* branchChanged(worktreePath, thread.branch))
-                  return keep("repository or branch changed");
-                const repository = yield* worktreeRepository(worktreePath);
-                yield* removeLinkedWorktree({
-                  operation: "StorageCleanup.cleanupGit",
-                  cwd: repository,
-                  worktreePath,
-                  force: true,
-                  execute: git.execute,
-                  run: (args) => cleanupGit(repository, [...args], "git worktree remove"),
-                });
-              } else {
-                yield* fs.remove(worktreePath, { recursive: true });
-              }
-              entries.push({
-                ...entry,
-                outcome: "removed",
-                reason: sentence(removalReason),
-                bytes: inspection.bytes,
-              });
-              yield* gitManager.invalidateStatus(project.workspaceRoot);
-            }),
-          );
-        }
         if (scratch) {
-          const threadIds = group.map((member) => member.id);
+          const threadIds = members.map((member) => member.id);
           const blocked =
-            (yield* scratchKeepReason(worktreePath, threadIds, settings)) ??
+            (yield* scratchKeepReason(worktreePath, threadIds, retention)) ??
             (yield* blockedSinceCheck());
           if (blocked !== null) return keep(blocked);
           const inspection = yield* measureWorktree(worktreePath, "plain-folder");
@@ -1929,7 +1740,7 @@ const make = Effect.gen(function* () {
               if (finalInspection.reason !== null) return keep(finalInspection.reason);
               // The walk takes time, so the cheap checks run last, right before removal.
               const blockedWhileMeasuring =
-                (yield* scratchKeepReason(worktreePath, threadIds, settings)) ??
+                (yield* scratchKeepReason(worktreePath, threadIds, retention)) ??
                 (yield* blockedSinceCheck());
               if (blockedWhileMeasuring !== null) return keep(blockedWhileMeasuring);
               if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
@@ -1958,7 +1769,7 @@ const make = Effect.gen(function* () {
         }
         const lockReason = yield* worktreeLockReason(worktreePath);
         if (lockReason !== null) return keep(lockReason);
-        const changes = yield* localChangesReason(worktreePath, settings);
+        const changes = yield* localChangesReason(worktreePath, retention);
         if (changes !== null) return keep(changes);
         const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
         if (!eligible && thread.branch !== null) {
@@ -1999,18 +1810,18 @@ const make = Effect.gen(function* () {
               head.commitSha
             )
               return keep("commit changed since check");
-            const finalChanges = yield* localChangesReason(worktreePath, settings);
+            const finalChanges = yield* localChangesReason(worktreePath, retention);
             if (finalChanges !== null) return keep(finalChanges);
             if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
-            const submodules = yield* submoduleRemoval(worktreePath, settings);
+            const submodules = yield* submoduleRemoval(worktreePath, retention);
             if (submodules.reason !== null) return keep(submodules.reason);
             if (submodules.force) {
-              const changes = yield* localChangesReason(worktreePath, settings);
+              const changes = yield* localChangesReason(worktreePath, retention);
               if (changes !== null) return keep(changes);
             }
             const repository = yield* worktreeRepository(worktreePath);
             // Forced removal already discards local files; do not widen its final-check window.
-            if (settings.worktreeKeepWhen === "tracked-changes" && !submodules.force)
+            if (retention.worktreeKeepWhen === "tracked-changes" && !submodules.force)
               yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
             yield* removeLinkedWorktree({
               operation: "StorageCleanup.cleanupGit",

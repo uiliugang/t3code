@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { PullRequestInvolvement, PullRequestListState } from "@t3tools/contracts";
+import { useGT, useMessages } from "gt-react";
 import { Plug2Icon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
@@ -17,7 +18,7 @@ import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
 import type { PullRequestFilterOption } from "./PullRequestListFilters";
-import { INVOLVEMENT_TABS, STATE_TABS } from "./pullRequestListOptions";
+import { INVOLVEMENT_TABS, resolveFilterOptions, STATE_TABS } from "./pullRequestListOptions";
 
 function ExpandableSearch({
   searchInput,
@@ -114,7 +115,9 @@ export function PullRequestsColumn({
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
   const t = useUiTranslation();
-  const contentArea = workspaceAreaProps("pull-requests", 1, "Pull requests");
+  const gt = useGT();
+  const resolve = useMessages();
+  const contentArea = workspaceAreaProps("pull-requests", 1, gt("Pull requests"));
   const markerRef = useRef<HTMLDivElement | null>(null);
   const [condensed, setCondensed] = useState(false);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- IntersectionObserver on the scroll marker condenses the topbar
@@ -186,16 +189,16 @@ export function PullRequestsColumn({
             {searchExpanded ? null : <WorkspaceBreadcrumbSeparator />}
             <WorkspaceBreadcrumbItem className="shrink gap-1.5">
               <PullRequestCompactFilterMenu
-                label={t("Filter by state")}
+                label={gt("Filter by state")}
                 value={state}
-                options={STATE_TABS.map((option) => ({ ...option, label: t(option.label) }))}
+                options={resolveFilterOptions(STATE_TABS, resolve)}
                 onChange={onState}
                 className="shrink-0"
               />
               <PullRequestCompactFilterMenu
-                label={t("Filter by involvement")}
+                label={gt("Filter by involvement")}
                 value={involvement}
-                options={INVOLVEMENT_TABS.map((option) => ({ ...option, label: t(option.label) }))}
+                options={resolveFilterOptions(INVOLVEMENT_TABS, resolve)}
                 onChange={onInvolvement}
               />
               {hostMenuOptions.length > 2 ? (

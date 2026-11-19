@@ -1,9 +1,11 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import type { PullRequestAction, PullRequestSummary } from "@t3tools/contracts";
+import { msg, useMessages } from "gt-react";
 import { createContext, use, type ReactNode } from "react";
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
 
+import { m } from "~/i18n/messages";
 import { useShortcutModifierState } from "~/shortcutModifierState";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useUiStateStore } from "~/uiStateStore";
@@ -47,6 +49,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
   onCloseSweepStart?: (entry: Entry, event: PointerEvent) => void;
 }) {
   const t = useUiTranslation();
+  const resolve = useMessages();
   const canWrite = useAtomValue(
     pullRequestEnvironment.runAction.permissionAtom(entry.environmentId),
   );
@@ -70,7 +73,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
         (method) => detail.mergeCapabilities[method],
       );
       if (allowed.length === 0)
-        throw new Error("No merge method is available for this repository.");
+        throw new Error(m(msg("No merge method is available for this repository.")));
       return resolvePullRequestMergeMethod(
         allowed,
         null,
@@ -92,7 +95,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
       })}
     >
       {actions.map((action) => {
-        const label = t(ACTIONS[action].label);
+        const label = resolve(ACTIONS[action].label);
         const Icon = ACTIONS[action].Icon;
         return (
           <Tooltip key={action}>
@@ -102,7 +105,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
                   variant={action === "close" ? "destructive-outline" : "outline"}
                   size="xs"
                   disabled={!canWrite || busy || (action === "merge" && entry.stack !== undefined)}
-                  aria-label={`${label} #${entry.number}`}
+                  aria-label={resolve(ACTIONS[action].numbered, { number: entry.number })}
                   onClick={() => void perform(action)}
                   onPointerDown={(event) => {
                     if (action !== "close" || !event.isPrimary || event.button !== 0) return;
@@ -169,8 +172,28 @@ function SpeedModeGroup({
 }
 
 const ACTIONS = {
-  close: { label: "Close", Icon: PullRequestGlyph.closed },
-  merge: { label: "Merge", Icon: PullRequestGlyph.merged },
-  ready: { label: "Ready for review", Icon: PullRequestGlyph.pullRequest },
-  reopen: { label: "Reopen", Icon: PullRequestGlyph.reopen },
+  close: {
+    label: msg("Close", { $context: "verb, close a pull request" }),
+    numbered: msg("Close #{number}"),
+    immediate: msg("Close immediately"),
+    Icon: PullRequestGlyph.closed,
+  },
+  merge: {
+    label: msg("Merge", { $context: "verb, merge a pull request" }),
+    numbered: msg("Merge #{number}"),
+    immediate: msg("Merge immediately"),
+    Icon: PullRequestGlyph.merged,
+  },
+  ready: {
+    label: msg("Ready for review"),
+    numbered: msg("Ready for review #{number}"),
+    immediate: msg("Ready for review immediately"),
+    Icon: PullRequestGlyph.pullRequest,
+  },
+  reopen: {
+    label: msg("Reopen"),
+    numbered: msg("Reopen #{number}"),
+    immediate: msg("Reopen immediately"),
+    Icon: PullRequestGlyph.reopen,
+  },
 } as const;

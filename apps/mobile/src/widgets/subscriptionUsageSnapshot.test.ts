@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   buildSubscriptionUsageSnapshot,
   createWidgetRefresher,
+  subscriptionUsageTimeline,
   WIDGET_REFRESH_INTERVAL,
 } from "./subscriptionUsageSnapshot";
 
@@ -67,6 +68,11 @@ describe("subscription widget snapshots", () => {
     expect(chinese.language).toBe("zh-CN");
     expect(chinese.providers[0]?.detail).toBe("订阅剩余额度");
     expect(chinese.providers[0]?.windows[0]?.reset).toMatch(/^下次重置/);
+    expect(chinese.text).toMatchObject({
+      refresh: "打开 T3 以刷新",
+      asOf: "更新于 {time}",
+      percentLeft: "剩余 {remaining}%",
+    });
   });
   it("splits a pooled window by account without exposing emails", () => {
     const claude = (id: string, overrides: Partial<ServerProvider>) =>
@@ -191,6 +197,19 @@ describe("subscription widget snapshots", () => {
 
 describe("subscription widget expiry", () => {
   const maxAgeDeadline = now + 15 * 60_000;
+  it("preserves the language of a widget snapshot saved before text was persisted", () => {
+    const { text: _text, ...previous } = buildSubscriptionUsageSnapshot(
+      presentations(),
+      deepLink,
+      6,
+      "zh-CN",
+    );
+    expect(subscriptionUsageTimeline(previous, now)[1]?.props.providers[0]).toMatchObject({
+      detail: "打开 T3 以刷新",
+      windows: [],
+    });
+  });
+
   function single(resetsAt: string) {
     return buildSubscriptionUsageSnapshot(
       presentations([provider({ usageLimits: { checkedAt, windows: [{ ...window, resetsAt }] } })]),

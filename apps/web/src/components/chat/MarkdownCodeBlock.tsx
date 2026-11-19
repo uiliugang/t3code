@@ -101,6 +101,7 @@ function MarkdownCodeBlockTitleContent({
   theme: "light" | "dark";
 }) {
   const t = useUiTranslation();
+
   if (fenceTitle) {
     return (
       <>
@@ -155,6 +156,7 @@ export function MarkdownCodeBlock({
   children: ReactNode;
 }) {
   const t = useUiTranslation();
+
   const { copyToClipboard, isCopied: copied } = useCopyToClipboard({
     timeout: 1200,
     onError: (cause) =>

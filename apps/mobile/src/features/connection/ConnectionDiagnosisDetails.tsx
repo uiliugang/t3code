@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react-native";
 import { useAtomValue } from "@effect/atom-react";
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -21,7 +22,6 @@ import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 
 const HOP_MARK = { ok: "✓", failed: "✕", unchecked: "–" } as const;
-const HOP_NOTE = { ok: "", failed: " · Failed", unchecked: " · Not checked" } as const;
 
 /** Same model as the web Settings row; null while connected, off, or not failed. */
 export function useConnectionDiagnosis(
@@ -29,6 +29,7 @@ export function useConnectionDiagnosis(
   presentation: EnvironmentPresentation | null,
 ) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const state = AsyncResult.getOrElse(
     useAtomValue(environmentCatalog.stateAtom(environmentId)),
     () => AVAILABLE_CONNECTION_STATE,
@@ -47,6 +48,7 @@ export function useConnectionDiagnosis(
       serverVersion: presentation.serverConfig?.environment.serverVersion,
     },
     t,
+    messages,
   );
   return { diagnosis, state };
 }
@@ -69,7 +71,12 @@ export function ConnectionDiagnosisDetails(props: {
               hop.result === "failed" ? "text-danger-foreground" : "text-foreground-muted",
             )}
           >
-            {`${HOP_MARK[hop.result]}  ${t(hop.label)}${t(HOP_NOTE[hop.result])}`}
+            {`${HOP_MARK[hop.result]}  ${hop.label}`}
+            {hop.result === "failed"
+              ? t(" · Failed")
+              : hop.result === "unchecked"
+                ? t(" · Not checked")
+                : ""}
           </Text>
         ))}
       </View>
@@ -77,12 +84,12 @@ export function ConnectionDiagnosisDetails(props: {
         <Text className="text-sm font-t3-bold text-foreground">{t("What to try")}</Text>
         {diagnosis.steps.map((step, index) => (
           <Text key={step} className="text-sm text-foreground-muted">
-            {`${index + 1}. ${t(step)}`}
+            {`${index + 1}. ${step}`}
           </Text>
         ))}
       </View>
       <Text selectable className="font-mono text-xs text-foreground-muted">
-        {diagnosis.facts.map(([label, value]) => `${t(label)}: ${value}`).join("\n")}
+        {diagnosis.facts.map(([label, value]) => `${label}: ${value}`).join("\n")}
       </Text>
       <Button
         label={t("Copy diagnostics")}

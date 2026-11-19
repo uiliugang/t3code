@@ -7,9 +7,11 @@ import {
   type SecretProviderKind,
 } from "@t3tools/contracts";
 import { builtInSecretProviderDefinitions } from "@t3tools/secret-provider-definitions/registry";
+import { invalidSecretReferenceText } from "@t3tools/client-runtime/secret-request";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { useGT, useMessages } from "gt-react";
 import { AlertTriangleIcon, CheckIcon, KeyRoundIcon, RefreshCwIcon, TypeIcon } from "lucide-react";
 import { useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 
@@ -130,6 +132,7 @@ function SecretCheckButton(props: {
   readonly disabled?: boolean | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { environmentId, secret } = props;
   const supported = useAtomValue(
     serverEnvironment.configValueAtom(environmentId),
@@ -149,7 +152,7 @@ function SecretCheckButton(props: {
     const response = await checkSecretSource({ environmentId, input: { source: secret } });
     const next: SecretCheck =
       response._tag !== "Success"
-        ? { status: "failed", detail: "Could not reach the server" }
+        ? { status: "failed", detail: gt("Could not reach the server") }
         : response.value._tag === "Resolved"
           ? { status: "resolved" }
           : { status: "failed", detail: response.value.detail };
@@ -160,13 +163,13 @@ function SecretCheckButton(props: {
 
   if (!supported) return null;
   const description = !canCheck
-    ? "You cannot check secrets on this environment"
+    ? gt("You cannot check secrets on this environment")
     : state === undefined
-      ? "Check that the secret resolves"
+      ? gt("Check that the secret resolves")
       : state.status === "checking"
-        ? "Checking the secret"
+        ? gt("Checking the secret")
         : state.status === "resolved"
-          ? "Secret resolved"
+          ? gt("Secret resolved")
           : state.detail;
   return (
     <Tooltip>
@@ -231,6 +234,7 @@ export function SecretSourceInput({
   ...rest
 }: SecretSourceInputProps) {
   const t = useUiTranslation();
+  const messages = useMessages();
   // A provider picked here applies once a reference for it is committed.
   const [pendingProvider, setPendingProvider] = useState<SecretProviderId | null>(null);
   const [rejectedReference, setRejectedReference] = useState<string | null>(null);
@@ -314,7 +318,9 @@ export function SecretSourceInput({
         </div>
         {rejectedReference !== null ? (
           <p className="text-2xs text-destructive">
-            {t(definition?.invalidReferenceMessage ?? "Enter a valid secret reference.")}
+            {definition
+              ? invalidSecretReferenceText(definition.invalidReferenceMessage, messages)
+              : t("Enter a valid secret reference.")}
           </p>
         ) : null}
       </div>

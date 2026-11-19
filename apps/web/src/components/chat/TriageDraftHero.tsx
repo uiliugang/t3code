@@ -1,3 +1,4 @@
+import { msg } from "gt-react";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { TRIAGE_CLI_COMMAND } from "~/hooks/useStartTriage";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -14,7 +15,14 @@ export function TriageDraftHero(props: {
   readonly serverVersion: string | null;
 }) {
   const t = useUiTranslation();
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ timeout: 1500, target: "command" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    timeout: 1500,
+    target: {
+      target: "command",
+      unavailableMessage: msg("Clipboard API is unavailable while copying command."),
+      failureMessage: msg("Failed to copy command to the clipboard."),
+    },
+  });
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       <h1 className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">

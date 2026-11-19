@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react";
 import type {
   EnvironmentId,
   ProviderInstanceId,
@@ -31,6 +32,7 @@ export function useUsageLimitsPanel(input: {
     sources,
   } = input;
   const t = useUiTranslation();
+  const messages = useMessages();
   const [panel, setPanel] = useState<{
     readonly key: string;
     readonly threadKey: string;
@@ -46,8 +48,12 @@ export function useUsageLimitsPanel(input: {
   const banner =
     report !== null && panel !== null
       ? // A fresh id per opening: the stack keeps the last dismissed id as "exiting".
-        usageLimitsBannerItem(`usage-limits:${panel.key}:${panel.now}`, report, environmentId, () =>
-          setPanel(null),
+        usageLimitsBannerItem(
+          `usage-limits:${panel.key}:${panel.now}`,
+          report,
+          environmentId,
+          () => setPanel(null),
+          messages,
         )
       : null;
   // Intercept /usage-limits only when Limits has selected-provider data.

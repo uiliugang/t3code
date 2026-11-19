@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../lib/useUiTranslation";
 import Constants from "expo-constants";
 import { Image } from "expo-image";
+import { msg, useMessages } from "gt-react-native";
 import { View } from "react-native";
 
 import { AppText as Text } from "./ui/AppText";
@@ -8,14 +9,19 @@ import { T3_CODE_BRAND_MARK_SOURCE } from "./brandAssets";
 
 const appVariant = Constants.expoConfig?.extra?.appVariant;
 const DEFAULT_STAGE_LABEL =
-  appVariant === "development" ? "Dev" : appVariant === "preview" ? "Preview" : "Beta";
+  appVariant === "development"
+    ? msg("Dev", { $context: "app release stage badge" })
+    : appVariant === "preview"
+      ? msg("Preview", { $context: "app release stage badge" })
+      : msg("Beta", { $context: "app release stage badge" });
 
 export function BrandMark(props: { readonly compact?: boolean; readonly stageLabel?: string }) {
   const t = useUiTranslation();
 
+  const m = useMessages();
   const compact = props.compact ?? false;
   const iconSize = compact ? 32 : 44;
-  const stageLabel = props.stageLabel ?? DEFAULT_STAGE_LABEL;
+  const stageLabel = props.stageLabel ?? m(DEFAULT_STAGE_LABEL);
 
   return (
     <View className="flex-row items-center gap-3">

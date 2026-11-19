@@ -353,9 +353,10 @@ export function ManagedWorktreesSection(props: {
   label: string;
   projectIds?: readonly ProjectId[];
 }) {
+  const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   return (
-    <SettingsSection title="Local worktrees">
+    <SettingsSection title={t("Local worktrees")}>
       <SettingsRow icon="internaldrive" label={props.label} onPress={() => setOpen(!open)} />
       {open ? <WorktreeList {...props} /> : null}
     </SettingsSection>

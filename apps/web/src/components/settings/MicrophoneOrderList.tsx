@@ -10,6 +10,7 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+
 import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon, XIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
@@ -29,6 +30,7 @@ export function MicrophoneOrderList(props: {
   readonly devices: ReadonlyArray<BrowserMicrophone>;
 }) {
   const t = useUiTranslation();
+
   const { order, devices } = props;
   const keys = order.map(microphoneEntryKey);
   const inUse = microphoneEntryKey(preferredMicrophone(order, devices));
@@ -101,6 +103,7 @@ function MicrophoneRow(props: {
   readonly onForget: (() => void) | undefined;
 }) {
   const t = useUiTranslation();
+
   const { name } = props;
   const { listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.id });

@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { parseKeybindingShortcut } from "@t3tools/shared/keybindings";
 import { FileDiff } from "@pierre/diffs/react";
+import { useGT } from "gt-react";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
@@ -36,6 +37,7 @@ export function CaptureShortcutConfig({
   onComplete?: () => Promise<void>;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const bridge = getDesktopSnapShotBridge();
   const codeTheme = useCodeTheme();
   const { copyToClipboard, isCopied } = useCopyToClipboard();
@@ -230,7 +232,7 @@ export function CaptureShortcutConfig({
             aria-busy={working === "reading"}
             onClick={() => void read()}
           >
-            {working === "reading" ? t("Preparing changes…") : "Review changes"}
+            {working === "reading" ? gt("Preparing changes…") : gt("Review changes")}
           </Button>
         </>
       )}

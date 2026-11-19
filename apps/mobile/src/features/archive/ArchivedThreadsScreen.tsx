@@ -16,6 +16,7 @@ import { useNavigation } from "@react-navigation/native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { T, useGT } from "gt-react-native";
 import { useMemo, useRef, type ComponentProps } from "react";
 import { useWindowDimensions, View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -278,15 +279,15 @@ function ArchivedThreadRow(props: {
 
 function ArchiveError(props: { readonly message: string; readonly onRetry: () => void }) {
   const t = useUiTranslation();
-
+  const gt = useGT();
   return (
     <View className="rounded-[20px] border border-danger-border bg-danger p-4">
       <Text className="text-base font-t3-bold text-danger-foreground">
-        {t("Could not load every archive")}
+        <T>Could not load every archive</T>
       </Text>
       <Text className="mt-1 text-sm text-foreground-muted">{t(props.message)}</Text>
       <View className="mt-3">
-        <Button label={t("Try again")} tone="secondary" onPress={props.onRetry} />
+        <Button label={gt("Try again")} tone="secondary" onPress={props.onRetry} />
       </View>
     </View>
   );
@@ -310,6 +311,7 @@ export function ArchivedThreadsScreen(props: {
   const t = useUiTranslation();
 
   const { onDeleteThread, onUnarchiveThread } = props;
+  const gt = useGT();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const archiveScrollGesture = useNativeGesture();
   const environmentLabelsById = useMemo(
@@ -401,13 +403,13 @@ export function ArchivedThreadsScreen(props: {
       <EmptyState
         detail={
           isFiltered
-            ? t("Try another search or environment.")
-            : t("Threads you archive will appear here.")
+            ? gt("Try another search or environment.")
+            : gt("Threads you archive will appear here.")
         }
-        title={isFiltered ? t("No matching threads") : t("No archived threads")}
+        title={isFiltered ? gt("No matching threads") : gt("No archived threads")}
       />
     );
-  }, [isFiltered, isInitialLoad, t]);
+  }, [gt, isFiltered, isInitialLoad, t]);
 
   return (
     // Without this native container, formSheet resizing mistakes the background for a header and collapses the list.

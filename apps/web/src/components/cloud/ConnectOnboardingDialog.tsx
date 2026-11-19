@@ -1,14 +1,15 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
+import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import {
   AuthAccessWriteScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
   type AuthSessionState,
-  managedCapabilityDenial,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import {
@@ -56,6 +57,8 @@ function ConfiguredConnectOnboardingDialog() {
   const t = useUiTranslation();
   // Pending Clerk sessions must not look signed out or activation would look like a new sign-in.
   const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const gt = useGT();
+  const m = useMessages();
   const [optOutState, setOptOutState] = useLocalStorage(
     CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY,
     EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
@@ -237,18 +240,17 @@ function ConfiguredConnectOnboardingDialog() {
     >
       <WizardPopup>
         <WizardHeader
-          title={t("Set up T3 Connect")}
+          title={gt("Set up T3 Connect")}
           description={
-            <>
-              {t(
-                "Mesh your devices together. Publish this environment and connect the rest, all in one place.",
-              )}
-            </>
+            <T>
+              Mesh your devices together. Publish this environment and connect the rest, all in one
+              place.
+            </T>
           }
         >
           {steps.length > 1 ? (
             <WizardSteps
-              steps={steps.map((id) => t(STEP_LABELS[id]))}
+              steps={steps.map((id) => m(STEP_LABELS[id]))}
               currentStep={steps.indexOf(step)}
               isStepDisabled={() => isApplying}
               onStepChange={(index) => {
@@ -337,8 +339,8 @@ function ConfiguredConnectOnboardingDialog() {
 }
 
 const STEP_LABELS: Record<OnboardingStep, string> = {
-  publish: "Publish",
-  devices: "Connect devices",
+  publish: msg("Publish"),
+  devices: msg("Connect devices"),
 };
 
 function PublishStep({

@@ -244,7 +244,7 @@ export function WechatSettingsSection({ environmentId }: { environmentId: Enviro
         </View>
       </SettingsSection>
       {state?.botId && state.deliveries.length > 0 && (
-        <SettingsSection title="Recent deliveries">
+        <SettingsSection title={t("Recent deliveries")}>
           {state.deliveries.slice(0, 5).map((delivery) => (
             <View key={delivery.id} className="gap-2 border-b border-border-subtle p-4">
               <Text className="text-sm" numberOfLines={3}>

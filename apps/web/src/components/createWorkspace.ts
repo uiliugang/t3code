@@ -1,26 +1,30 @@
 import type { ProjectId, ProjectWorkspaceRoot, WorkspaceRootId } from "@t3tools/contracts";
 import type { CreateProjectInput } from "@t3tools/client-runtime/state/projects";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
-export function workspaceCreationError(input: {
-  title: string;
-  roots: readonly ProjectWorkspaceRoot[];
-  primaryRootId: WorkspaceRootId;
-}): string | null {
-  if (!input.title.trim()) return "Enter a group name.";
+export function workspaceCreationError(
+  input: {
+    title: string;
+    roots: readonly ProjectWorkspaceRoot[];
+    primaryRootId: WorkspaceRootId;
+  },
+  t: UiTranslator = translateUi.bind(null, "en"),
+): string | null {
+  if (!input.title.trim()) return t("Enter a group name.");
   if (input.roots.length < 1 || input.roots.length > 16)
-    return "Choose between 1 and 16 repositories.";
+    return t("Choose between 1 and 16 repositories.");
   if (input.roots.some((root) => !root.alias.trim() || !root.sourcePath.trim()))
-    return "Enter a name and directory for every repository.";
+    return t("Enter a name and directory for every repository.");
   if (new Set(input.roots.map((root) => root.alias.trim())).size !== input.roots.length)
-    return "Repository names must be unique.";
+    return t("Repository names must be unique.");
   if (
     new Set(input.roots.map((root) => normalizeProjectPathForComparison(root.sourcePath))).size !==
     input.roots.length
   )
-    return "Choose each repository directory only once.";
+    return t("Choose each repository directory only once.");
   if (!input.roots.some((root) => root.id === input.primaryRootId))
-    return "Choose a primary repository.";
+    return t("Choose a primary repository.");
   return null;
 }
 

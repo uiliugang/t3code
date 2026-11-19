@@ -4,6 +4,7 @@ import { FitSheet } from "../../../components/ui/FitSheet";
 import { SheetHeader } from "../../../components/ui/SheetHeader";
 import { Button } from "../../../components/ui/Button";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useGT } from "gt-react-native";
 import { useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
@@ -25,6 +26,7 @@ type GitCommitSheetProps = StaticScreenProps<{
 
 export function GitCommitSheet(_props: GitCommitSheetProps) {
   const t = useUiTranslation();
+  const gt = useGT();
   const navigation = useNavigation();
   const { selectedThread } = useThreadSelection();
   const liveRepository = useThreadRepository();
@@ -74,7 +76,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
         <SheetHeader
           presentation={Platform.OS === "android" ? "inline" : "native"}
           title={t("Commit changes")}
-          subtitle={gitStatus.data?.refName ?? "(detached HEAD)"}
+          subtitle={gitStatus.data?.refName ?? gt("(detached HEAD)")}
           onCancel={() => navigation.goBack()}
           accessibilityLabel={t("Cancel commit")}
         />

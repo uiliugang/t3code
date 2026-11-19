@@ -1,12 +1,14 @@
 import type { MenuAction } from "@react-native-menu/menu";
-import type { ComponentProps } from "react";
-import type { ReactNode } from "react";
-import type { ColorValue } from "react-native";
-import type { NativeScrollEvent } from "react-native";
-import type { NativeSyntheticEvent } from "react-native";
-import type { StyleProp } from "react-native";
-import type { ViewStyle } from "react-native";
+import type { ComponentProps, ReactNode } from "react";
+import type {
+  ColorValue,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  StyleProp,
+  ViewStyle,
+} from "react-native";
 import type { SwipeRowActivation } from "./swipe-row-activation";
+import { msg, useMessages } from "gt-react-native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Menu } from "../../components/ui/Menu";
 
@@ -43,6 +45,7 @@ import Animated, {
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import type { MessageResolver } from "../../i18n/messages";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { SwipeRowActivationContext } from "./swipe-row-activation";
 import { registerThreadDismissal } from "./thread-dismissal";
@@ -106,14 +109,15 @@ function resolveSecondaryAction(input: {
   readonly onDelete: () => void;
   readonly secondaryAction: ThreadSwipeAction | null | undefined;
   readonly threadTitle: string;
+  readonly resolve: MessageResolver;
 }): ThreadSwipeSecondaryAction | null {
   if (input.secondaryAction === null) return null;
   if (input.secondaryAction === undefined) {
     return {
-      accessibilityLabel: `Delete ${input.threadTitle}`,
+      accessibilityLabel: input.resolve(msg("Delete {title}", { title: input.threadTitle })),
       tone: "danger",
       icon: "trash",
-      label: "Delete",
+      label: input.resolve(msg("Delete", { $context: "verb, swipe action that deletes a thread" })),
       onPress: () => {
         input.close();
         input.onDelete();
@@ -264,6 +268,7 @@ interface ThreadSwipeableProps {
 const COLLAPSED_ROW_STYLE = { height: 0, overflow: "hidden" } as const;
 
 export function ThreadSwipeable(props: ThreadSwipeableProps) {
+  const m = useMessages();
   const swipeableRef = useRef<SwipeableMethods | null>(null);
   const hasSecondaryAction = props.secondaryAction !== null;
   const actionsWidth = swipeActionsWidth(hasSecondaryAction, props.middleAction !== undefined);
@@ -539,6 +544,7 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
             onDelete,
             secondaryAction,
             threadTitle,
+            resolve: m,
           })}
           translation={translation}
         />

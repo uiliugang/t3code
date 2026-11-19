@@ -77,7 +77,8 @@ export interface SelectableMarkdownTextProps {
   readonly models?: ReadonlyArray<SelectableMarkdownModel>;
   readonly preserveSoftBreaks?: boolean;
   readonly onLinkPress?: (href: string) => void;
-  readonly onCite?: ((text: string) => void) | undefined;
+  readonly onCiteText?: ((text: string) => void) | undefined;
+  readonly onCiteFormula?: ((text: string) => void) | undefined;
   readonly fileContextMenu?: (href: string) => MarkdownFileContextMenu | undefined;
   readonly onFileContextMenuAction?: (href: string, actionId: string) => void;
   readonly linkCustomization?: (href: string) => MarkdownLinkCustomization | undefined;

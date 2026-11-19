@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Platform, Pressable, View } from "react-native";
 
@@ -16,6 +17,7 @@ export function WorkspaceEmptyDetail(props: {
 }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const pullRequests = props.tab === "pullRequests";
   const issues = props.tab === "issues";
   const settings = props.tab === "settings";
@@ -32,12 +34,12 @@ export function WorkspaceEmptyDetail(props: {
         {props.onAddConnection ? (
           <View className="w-full max-w-[430px]">
             <EmptyState
-              title={t("No environments connected")}
-              detail="Add an environment to load projects and start coding sessions."
+              title={gt("No environments connected")}
+              detail={gt("Add an environment to load projects and start coding sessions.")}
               variant="plain"
               action={
                 <FloatingActionButton
-                  label={t("Add environment")}
+                  label={gt("Add environment")}
                   icon="plus"
                   variant="extended"
                   tone="primary"
@@ -58,21 +60,21 @@ export function WorkspaceEmptyDetail(props: {
               {settings
                 ? t("Select a setting")
                 : pullRequests
-                  ? "Select a pull request"
+                  ? gt("Select a pull request")
                   : issues
-                    ? "Select an issue"
-                    : "Select a thread"}
+                    ? gt("Select an issue")
+                    : gt("Select a thread")}
             </Text>
             <Text className="text-center text-base text-foreground-muted">
               {settings
-                ? "Choose a page from the sidebar."
+                ? gt("Choose a page from the sidebar.")
                 : pullRequests
-                  ? "Choose a pull request from the sidebar to review it."
+                  ? gt("Choose a pull request from the sidebar to review it.")
                   : issues
-                    ? "Choose an issue from the sidebar to read it."
+                    ? gt("Choose an issue from the sidebar to read it.")
                     : Platform.OS === "android"
-                      ? "Choose a thread from the sidebar or start a new thread."
-                      : "Choose a thread from the sidebar or start a new task."}
+                      ? gt("Choose a thread from the sidebar or start a new thread.")
+                      : gt("Choose a thread from the sidebar or start a new task.")}
             </Text>
             {props.onStartNewTask && !pullRequests && !issues && !settings ? (
               Platform.OS === "android" ? (

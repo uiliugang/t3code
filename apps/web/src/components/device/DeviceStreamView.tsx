@@ -1,6 +1,7 @@
 import type { DevicePlatform, EnvironmentId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { useGT } from "gt-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
@@ -100,6 +101,7 @@ export function DeviceStreamView(props: {
   const t = useUiTranslation();
   const model = deviceModel(props.platform, props.deviceName ?? "");
   const isDuo = model?.id === "iphone-duo";
+  const gt = useGT();
   const [presentation, setPresentation] = useState<"phone" | "flat">("phone");
   const [keyboardAttached, setKeyboardAttached] = useState(false);
   const cancelPhoneInputRef = useRef<(() => void) | null>(null);
@@ -228,13 +230,13 @@ export function DeviceStreamView(props: {
 
   const phoneUnavailableReason =
     isDuo && !screen?.supportsHingeAngle
-      ? t("iPhone Duo 3D requires Device Hub 0.11.0 or newer")
+      ? gt("iPhone Duo 3D requires Device Hub {version} or newer", { version: "0.11.0" })
       : phoneUnavailable
-        ? t("3D is unavailable on this browser")
+        ? gt("3D is unavailable on this browser")
         : mjpegUrl
-          ? t("3D requires the H.264 stream")
+          ? gt("3D requires the H.264 stream")
           : props.axOverlay
-            ? t("Turn off accessibility frames to use 3D")
+            ? gt("Turn off accessibility frames to use 3D")
             : null;
 
   const keyboardSource = deviceKeyboard(props.platform, props.deviceName ?? "");

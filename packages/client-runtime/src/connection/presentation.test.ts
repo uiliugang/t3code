@@ -205,6 +205,19 @@ describe("connection presentation", () => {
       expect(connectionStatusTitle(connection, t)).toBe(chinese);
     }
     const error = "SSH: /tmp/{host}";
+    const localizedFailure = presentConnectionState(
+      supervisorState({
+        phase: "backoff",
+        lastFailure: new ConnectionTransientError({
+          reason: "transport",
+          detail: "Socket closed.",
+          i18nMessage: ["Socket closed."],
+        }),
+      }),
+    );
+    expect(connectionStatusText(localizedFailure, t, () => "套接字已关闭。")).toBe(
+      "连接失败，正在重新连接… 原因：套接字已关闭。",
+    );
     expect(connectionStatusText({ phase: "reconnecting", error, traceId: null }, t)).toBe(
       `连接失败，正在重新连接… 原因：${error}`,
     );

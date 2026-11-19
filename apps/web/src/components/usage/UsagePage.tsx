@@ -11,6 +11,7 @@ import {
   type UsageSummaryInput,
 } from "@t3tools/contracts";
 import { CircleAlertIcon, ChevronDownIcon, InfoIcon, SlidersHorizontalIcon } from "lucide-react";
+import { T, useGT, useLocale, useMessages } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -31,7 +32,7 @@ import {
 } from "@t3tools/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
-import { useClientSettings, usePrimarySettings } from "../../hooks/useSettings";
+import { usePrimarySettings } from "../../hooks/useSettings";
 import { resolveHour12 } from "../../timestampFormat";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentPresentations } from "../../state/presentation";
@@ -52,8 +53,8 @@ import {
   formatTokens,
   formatUsd,
   makeWindow,
-  usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
+import { formatUsageContractMismatch, usageSourceMessages } from "@t3tools/shared/usageFormatCopy";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
@@ -175,18 +176,22 @@ function UsageModelDialogHost({
 }
 
 export function UsagePage() {
-  const language = useClientSettings((settings) => settings.uiLanguage);
   const t = useUiTranslation();
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hour12 = usePrimarySettings((settings) => resolveHour12(settings.timestampFormat));
+  const gt = useGT();
+  const locale = useLocale();
+  const m = useMessages();
   const shortcutTitle = (
     option: (typeof METRIC_OPTIONS)[number] | (typeof WINDOW_OPTIONS)[number],
   ) => {
     const shortcut = shortcutLabelForCommand(keybindings, option.command, {
       context: { usagePageOpen: true },
     });
-    return shortcut ? `${t(option.label)} (${shortcut})` : t(option.label);
+    return shortcut
+      ? gt("{label} ({shortcut})", { label: m(option.label), shortcut })
+      : m(option.label);
   };
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: preferences.windowDays,
@@ -356,19 +361,23 @@ export function UsagePage() {
 
   const windowLabel =
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
-      ? t("{start} to {end}", {
-          start: formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone, hour12, language),
-          end: formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone, hour12, language),
+      ? gt("{start} to {end}", {
+          start: formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone, hour12, locale),
+          end: formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone, hour12, locale),
         })
-      : t("{start} to {end}", {
-          start: formatDayShort(shownWindow.sinceDay, language),
-          end: formatDayShort(shownWindow.untilDay, language),
+      : gt("{start} to {end}", {
+          start: formatDayShort(shownWindow.sinceDay, locale),
+          end: formatDayShort(shownWindow.untilDay, locale),
         });
+  const windowOptionLabel = WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label;
+  const metricOptionLabel = METRIC_OPTIONS.find((option) => option.value === metric)?.label;
   const topbarContent = (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 @4xl/usage-header:flex">
-      <WorkspaceBreadcrumb ariaLabel={t("Usage breadcrumb")} className="min-w-0">
+      <WorkspaceBreadcrumb ariaLabel={gt("Usage breadcrumb")} className="min-w-0">
         <WorkspaceBreadcrumbItem>
-          <h1>{t("Usage")}</h1>
+          <h1>
+            <T>Usage</T>
+          </h1>
         </WorkspaceBreadcrumbItem>
         <WorkspaceBreadcrumbSeparator />
         <WorkspaceBreadcrumbItem className="min-w-10 shrink">
@@ -413,7 +422,7 @@ export function UsagePage() {
           >
             {WINDOW_OPTIONS.map((option) => (
               <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
-                {t(option.label)}
+                {m(option.label)}
               </Toggle>
             ))}
           </ToggleGroup>
@@ -429,7 +438,7 @@ export function UsagePage() {
         >
           {METRIC_OPTIONS.map((option) => (
             <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
-              {t(option.label)}
+              {m(option.label)}
             </Toggle>
           ))}
         </ToggleGroup>
@@ -453,9 +462,7 @@ export function UsagePage() {
               variant="ghost"
               className="w-auto min-w-0"
             >
-              <SelectValue>
-                {WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label}
-              </SelectValue>
+              <SelectValue>{windowOptionLabel && m(windowOptionLabel)}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {WINDOW_OPTIONS.map((option) => (
@@ -464,7 +471,7 @@ export function UsagePage() {
                   value={String(option.days)}
                   title={shortcutTitle(option)}
                 >
-                  {t(option.label)}
+                  {m(option.label)}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -482,14 +489,12 @@ export function UsagePage() {
             variant="ghost"
             className="w-auto min-w-0"
           >
-            <SelectValue>
-              {METRIC_OPTIONS.find((option) => option.value === metric)?.label}
-            </SelectValue>
+            <SelectValue>{metricOptionLabel && m(metricOptionLabel)}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {METRIC_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value} title={shortcutTitle(option)}>
-                {t(option.label)}
+                {m(option.label)}
               </SelectItem>
             ))}
           </SelectPopup>
@@ -521,8 +526,12 @@ export function UsagePage() {
             {selectedEnvironments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 {environments.length === 0
-                  ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
-                  : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
+                  ? showingLimits
+                    ? gt("Connect an environment to see limits.")
+                    : gt("Connect an environment to see usage.")
+                  : showingLimits
+                    ? gt("Select an environment to see limits.")
+                    : gt("Select an environment to see usage.")}
               </p>
             ) : showingLimits ? (
               <UsageLimitsSection
@@ -536,8 +545,12 @@ export function UsagePage() {
               <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
                 {selectedEnvironments.map((environment) => (
                   <p key={environment.environmentId}>
-                    {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
-                    {environment.error}
+                    {selectedEnvironments.length > 1
+                      ? gt("{environment}: {error}", {
+                          environment: environment.label,
+                          error: environment.error,
+                        })
+                      : environment.error}
                   </p>
                 ))}
               </div>
@@ -617,8 +630,10 @@ function UsageOverview({
   readonly showChatGptSharing: boolean;
   readonly onSelectModel: (key: string) => void;
 }) {
-  const language = useClientSettings((settings) => settings.uiLanguage);
   const t = useUiTranslation();
+  const gt = useGT();
+  const locale = useLocale();
+  const m = useMessages();
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const shownHourly = shownWindow.resolution === "hour";
   const loading = usageLoading(showingKept, selectedEnvironments, refreshingUsage, hiddenProviders);
@@ -644,6 +659,7 @@ function UsageOverview({
           (source) => !hiddenProviders.has(source.fingerprint.provider),
         ) ?? [],
     ),
+    m,
   );
   const breakdownPeriods: readonly (DailyTotals | HourlyTotals)[] = (
     shownHourly ? merged.hourly : merged.daily
@@ -674,14 +690,19 @@ function UsageOverview({
                 figureClass(loadingPartial),
               )}
             >
-              {metric === "cost" ? formatUsd(merged.costUsd) : formatTokens(merged.totalTokens)}
+              {metric === "cost"
+                ? formatUsd(merged.costUsd, locale)
+                : formatTokens(merged.totalTokens)}
             </p>
             <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <span>
                 <span className={figureClass(loadingPartial)}>
-                  {t("{count} sessions", { count: formatCount(merged.sessions) })}
+                  {gt("{count, plural, one {{formatted} sessions} other {{formatted} sessions}}", {
+                    count: merged.sessions,
+                    formatted: formatCount(merged.sessions, locale),
+                  })}
                 </span>
-                {metric === "cost" && t(" · API estimate")}
+                {metric === "cost" && ` · ${gt("API estimate")}`}
               </span>
               {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
                 <Popover>
@@ -713,9 +734,9 @@ function UsageOverview({
             const totals = merged.providers.find((entry) => entry.provider === provider);
             const share = metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
             const providerSessions = totals?.sessions ?? 0;
-            const sessionLabel = t(
-              providerSessions === 1 ? "{count} session" : "{count} sessions",
-              { count: formatCount(providerSessions) },
+            const sessionLabel = gt(
+              "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
+              { count: providerSessions, formatted: formatCount(providerSessions, locale) },
             );
             const providerLoading = loadingProviders.has(provider);
             const awaitingData = providerLoading && !providersWithData.has(provider);
@@ -753,7 +774,7 @@ function UsageOverview({
                     {awaitingData
                       ? "-"
                       : metric === "cost"
-                        ? formatUsd(totals?.costUsd ?? 0)
+                        ? formatUsd(totals?.costUsd ?? 0, locale)
                         : formatTokens(totals?.totalTokens ?? 0)}
                   </dd>
                 </dl>
@@ -765,13 +786,13 @@ function UsageOverview({
                   )}
                 >
                   {metric === "cost"
-                    ? t("{share} of cost · {tokens} tokens", {
+                    ? gt("{share} of cost · {tokens} tokens", {
                         share: formatPercent(share),
                         tokens: formatTokens(totals?.totalTokens ?? 0),
                       })
-                    : t("{share} of tokens · {cost}", {
+                    : gt("{share} of tokens · {cost}", {
                         share: formatPercent(share),
-                        cost: formatUsd(totals?.costUsd ?? 0),
+                        cost: formatUsd(totals?.costUsd ?? 0, locale),
                       })}
                 </p>
               </div>
@@ -781,15 +802,13 @@ function UsageOverview({
 
         <div className="flex min-w-0 flex-col gap-3">
           <h2 className="text-sm font-medium text-foreground">
-            {t(
-              shownHourly
-                ? metric === "tokens"
-                  ? "Hourly processed tokens"
-                  : "Hourly cost"
-                : metric === "tokens"
-                  ? "Daily processed tokens"
-                  : "Daily cost",
-            )}
+            {shownHourly
+              ? metric === "tokens"
+                ? gt("Hourly processed tokens")
+                : gt("Hourly cost")
+              : metric === "tokens"
+                ? gt("Daily processed tokens")
+                : gt("Daily cost")}
           </h2>
           <UsageProviderChart
             providers={activeProviders}
@@ -832,8 +851,8 @@ function UsageOverview({
           />
           <Metric
             loading={loadingPartial}
-            label={t("Cache savings")}
-            value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+            label={gt("Cache savings")}
+            value={formatUsd(merged.costQuality.cacheSavingsUsd, locale)}
           />
         </dl>
       </section>
@@ -853,13 +872,13 @@ function UsageOverview({
               <UsageShareBar
                 label={t("Cost by type")}
                 segments={costTypeSegments(merged.categoryCost)}
-                format={formatUsd}
+                format={(value: number) => formatUsd(value, locale)}
               />
               {merged.speedCost.fast + merged.speedCost.ultrafast > 0 ? (
                 <UsageShareBar
                   label={t("Cost by speed")}
                   segments={speedCostSegments(merged.speedCost)}
-                  format={formatUsd}
+                  format={(value: number) => formatUsd(value, locale)}
                   aside={<SpeedPremium premiumUsd={merged.speedCost.premium} />}
                 />
               ) : null}
@@ -882,8 +901,8 @@ function UsageOverview({
           >
             {(
               [
-                { value: "model", label: "Model" },
-                { value: "time", label: shownHourly ? "Hour" : "Day" },
+                { value: "model", label: gt("Model") },
+                { value: "time", label: shownHourly ? gt("Hour") : gt("Day") },
               ] as const
             ).map((option) => (
               <Toggle key={option.value} value={option.value}>
@@ -952,7 +971,7 @@ function UsageOverview({
                         {isModelCostUnknown(model) ? (
                           <span className="text-muted-foreground">{t("Unpriced")}</span>
                         ) : (
-                          formatUsd(model.costUsd)
+                          formatUsd(model.costUsd, locale)
                         )}
                       </td>
                       <td className={cn("hidden py-2.5 pl-6 sm:table-cell", rowFigures)}>
@@ -1008,13 +1027,8 @@ function UsageOverview({
                     >
                       <td className="py-2 pl-2 text-foreground">
                         {"hourStart" in period
-                          ? formatHourShort(
-                              period.hourStart,
-                              shownWindow.timeZone,
-                              hour12,
-                              language,
-                            )
-                          : formatDayShort(period.day, language)}
+                          ? formatHourShort(period.hourStart, shownWindow.timeZone, hour12, locale)
+                          : formatDayShort(period.day, locale)}
                       </td>
                       {activeProviders.map((provider) => (
                         <td
@@ -1024,7 +1038,7 @@ function UsageOverview({
                             figureClass(loadingProviders.has(provider)),
                           )}
                         >
-                          {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
+                          {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0, locale)}
                         </td>
                       ))}
                       <td
@@ -1033,7 +1047,7 @@ function UsageOverview({
                           figureClass(loadingPartial),
                         )}
                       >
-                        {formatUsd(period.costUsd)}
+                        {formatUsd(period.costUsd, locale)}
                       </td>
                       <td
                         className={cn(
@@ -1107,6 +1121,8 @@ function UsageCoverageNotice({
   readonly contractMismatches: MergedUsage["contractMismatches"];
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const failed = environments.filter((environment) => environment.error !== null);
   const mismatchByEnvironment = new Map(
     contractMismatches.map((mismatch) => [mismatch.environmentId, mismatch]),
@@ -1123,17 +1139,15 @@ function UsageCoverageNotice({
     <div className="flex flex-col gap-1 border-t border-border px-2 py-2 text-xs text-muted-foreground">
       {failed.map((environment) => (
         <span key={environment.label}>
-          {environment.label}: {environment.error}
+          {gt("{environment}: {error}", {
+            environment: environment.label,
+            error: environment.error,
+          })}
         </span>
       ))}
       {incompatible.map(({ environment, mismatch }) => (
         <span key={environment.environmentId}>
-          {t(
-            mismatch.direction === "serverBehind"
-              ? "{environment} runs an older server version and is excluded from totals."
-              : "This client is older than the server on {environment}; its usage is excluded from totals.",
-            { environment: environment.label },
-          )}
+          {formatUsageContractMismatch(environment.label, mismatch, m)}
         </span>
       ))}
       {duplicateSources.length > 0 ? (
@@ -1171,12 +1185,16 @@ function UsageEnvironmentFilter({
   readonly onOpenModelPrices: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const allSelected = selectedEnvironmentIds === null;
   const label = allSelected
-    ? t("All environments")
+    ? gt("All environments")
     : selectedEnvironments.length === 1
       ? selectedEnvironments[0]!.label
-      : t("{count} environments", { count: selectedEnvironments.length });
+      : gt("{count, plural, one {{count} environments} other {{count} environments}}", {
+          count: selectedEnvironments.length,
+        });
   const hasIssue =
     selectedEnvironments.some((environment) => environment.error !== null) ||
     contractMismatches.length > 0;
@@ -1215,22 +1233,22 @@ function UsageEnvironmentFilter({
           const progress = usageEnvironmentProgress(environment, refreshing);
           const status =
             environment.error !== null
-              ? "Unavailable"
+              ? gt("Unavailable")
               : environment.summary !== null &&
                   !isCompatibleUsageContractVersion(
                     environment.summary.contractVersion,
                     USAGE_CONTRACT_VERSION,
                   )
-                ? "Update required"
+                ? gt("Update required")
                 : !environment.isConnected
-                  ? "Connecting…"
+                  ? gt("Connecting…")
                   : progress.phase === "loading"
-                    ? "Scanning…"
+                    ? gt("Scanning…")
                     : progress.phase === "stale"
-                      ? "Refreshing…"
+                      ? gt("Refreshing…")
                       : progress.phase === "partway"
-                        ? updatingProvidersLabel(progress.providers, providerLabel)
-                        : "Ready";
+                        ? updatingProvidersLabel(progress.providers, providerLabel, m)
+                        : gt("Ready", { $context: "environment usage status" });
           return (
             <MenuCheckboxItem
               key={environment.environmentId}
@@ -1293,16 +1311,19 @@ function UsageProviderFilter({
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly onChange: (hiddenProviders: readonly UsageProviderKind[]) => void;
 }) {
+  const gt = useGT();
   const t = useUiTranslation();
   const visible = PROVIDER_ORDER.filter((provider) => !hiddenProviders.has(provider));
   const label =
     visible.length === PROVIDER_ORDER.length
-      ? t("All providers")
+      ? gt("All providers")
       : visible.length === 0
-        ? t("No providers")
+        ? gt("No providers")
         : visible.length === 1
           ? PROVIDER_PRESENTATION[visible[0]!].label
-          : t("{count} providers", { count: visible.length });
+          : gt("{count, plural, one {{count} providers} other {{count} providers}}", {
+              count: visible.length,
+            });
 
   return (
     <Menu>
@@ -1348,6 +1369,7 @@ function UsageProviderFilter({
 
 function UsageSkeleton() {
   const t = useUiTranslation();
+  const gt = useGT();
   return (
     <>
       <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
@@ -1383,7 +1405,13 @@ function UsageSkeleton() {
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-foreground">{t("Totals")}</h2>
         <MetricSkeletons
-          labels={["Processed tokens", "Cached input", "Uncached input", "Output", "Cache savings"]}
+          labels={[
+            gt("Processed tokens"),
+            gt("Cached input"),
+            gt("Uncached input"),
+            gt("Output", { $context: "output tokens" }),
+            gt("Cache savings"),
+          ]}
         />
       </section>
 

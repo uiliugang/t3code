@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { EnvironmentId } from "@t3tools/contracts";
+
 import { View } from "react-native";
 
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -41,6 +42,7 @@ export function AttachmentDocumentBody(props: {
 }) {
   const t = useUiTranslation();
   const { document } = props;
+
   if (document.error) {
     return (
       <View className="flex-1 items-center justify-center bg-sheet px-6">

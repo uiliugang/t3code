@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { MinusIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { FileSurfaceAction } from "./fileSurfaceChrome";
+
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "~/hooks/useTheme";
 import { observeResize } from "~/lib/observeResize";
@@ -80,6 +81,7 @@ export default function DocumentPages(props: {
   readonly details?: string;
 }) {
   const t = useUiTranslation();
+
   const { theme, resolvedTheme, themeHalves } = useTheme();
   const [colors, setColors] = useState(documentColors);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Read the host DOM's applied theme tokens so the sandboxed document receives the current palette.

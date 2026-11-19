@@ -190,7 +190,7 @@ export function RequirementDeliveryPanel({
             </Text>
           ))}
           {delivery.evidence.planIds.map((id) => (
-            <Text key={id}>MCM #{id}</Text>
+            <Text key={id}>{t("MCM #{id}", { id })}</Text>
           ))}
         </>
       ) : null}

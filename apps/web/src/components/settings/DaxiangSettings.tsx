@@ -51,7 +51,7 @@ export function DaxiangSettings({
       </h3>
       <div className="grid gap-3 sm:max-w-sm">
         <div className="grid gap-1.5">
-          <Label htmlFor={`dx-id-${environmentId}`}>Client ID</Label>
+          <Label htmlFor={`dx-id-${environmentId}`}>{t("Client ID")}</Label>
           <Input
             id={`dx-id-${environmentId}`}
             value={value.clientId}
@@ -61,7 +61,7 @@ export function DaxiangSettings({
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor={`dx-secret-${environmentId}`}>Client Secret</Label>
+          <Label htmlFor={`dx-secret-${environmentId}`}>{t("Client Secret")}</Label>
           <Input
             id={`dx-secret-${environmentId}`}
             type="password"

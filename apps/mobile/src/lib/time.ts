@@ -1,4 +1,6 @@
-import type { UiTranslator } from "@t3tools/shared/uiLocale";
+import { msg } from "gt-react-native";
+
+import { m, type MessageResolver } from "../i18n/messages";
 
 // Host timestamps may carry UTC offsets or mixed fractions, so text order is not time order.
 export function compareTimestamps(left: string, right: string): number {
@@ -12,23 +14,35 @@ export function byTimestamp(newestFirst: boolean) {
       : compareTimestamps(left.date, right.date);
 }
 
-export function relativeTime(input: string, nowMs: number = Date.now(), t?: UiTranslator): string {
+export function relativeTime(
+  input: string,
+  nowMs: number = Date.now(),
+  resolve: MessageResolver = m,
+): string {
+  const underAMinute = () =>
+    resolve(msg("<1m", { $context: "compact elapsed time, under one minute" }));
   const timestamp = Date.parse(input);
-  if (Number.isNaN(timestamp)) {
-    return t?.("<1m") ?? "<1m";
-  }
+  if (Number.isNaN(timestamp)) return underAMinute();
 
   const deltaSeconds = Math.max(0, Math.floor((nowMs - timestamp) / 1000));
-  if (deltaSeconds < 60) return t?.("<1m") ?? "<1m";
+  if (deltaSeconds < 60) return underAMinute();
 
   const deltaMinutes = Math.floor(deltaSeconds / 60);
-  if (deltaMinutes < 60) return t?.("{count}m", { count: deltaMinutes }) ?? `${deltaMinutes}m`;
+  if (deltaMinutes < 60) {
+    return resolve(
+      msg("{count}m", { count: String(deltaMinutes), $context: "compact elapsed minutes" }),
+    );
+  }
 
   const deltaHours = Math.floor(deltaMinutes / 60);
-  if (deltaHours < 24) return t?.("{count}h", { count: deltaHours }) ?? `${deltaHours}h`;
+  if (deltaHours < 24) {
+    return resolve(
+      msg("{count}h", { count: String(deltaHours), $context: "compact elapsed hours" }),
+    );
+  }
 
   const deltaDays = Math.floor(deltaHours / 24);
-  return t?.("{count}d", { count: deltaDays }) ?? `${deltaDays}d`;
+  return resolve(msg("{count}d", { count: String(deltaDays), $context: "compact elapsed days" }));
 }
 
 /** Milliseconds until the relative-time label next changes. */

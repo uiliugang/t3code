@@ -8,6 +8,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { ContextMenuSource, EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useGT } from "gt-react";
 import { FolderIcon } from "lucide-react";
 
 import { contextMenuSourceOf } from "../../contextMenuSource";
@@ -79,6 +80,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   resolveDragPath,
 }: MarkdownFileLinkProps) {
   const t = useUiTranslation();
+  const gt = useGT();
   const nativeDrag = useNativeFileDrag(environmentId, resolveDragPath);
   const handleOpenInEditor = () => {
     if (!onOpen) {
@@ -207,12 +209,16 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   };
 
   const handleCopy = (resolveValue: () => Promise<string>, title: string) => {
+    const failureTitle =
+      title === "Relative path"
+        ? gt("Failed to copy relative path")
+        : gt("Failed to copy full path");
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: t("Failed to copy {target}", { target: title.toLowerCase() }),
-          description: t("Clipboard API unavailable."),
+          title: failureTitle,
+          description: gt("Clipboard API unavailable."),
         }),
       );
       return;
@@ -236,8 +242,8 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: t("Failed to copy {target}", { target: title.toLowerCase() }),
-          description: error instanceof Error ? error.message : t("An error occurred."),
+          title: failureTitle,
+          description: error instanceof Error ? error.message : gt("An error occurred."),
         }),
       );
     });

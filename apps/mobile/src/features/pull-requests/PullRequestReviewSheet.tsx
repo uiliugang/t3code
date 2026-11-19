@@ -1,10 +1,13 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { AsyncResult } from "effect/reactivity";
 import { useAtomRefresh } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { PullRequestReviewVerdict } from "@t3tools/contracts";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Pressable, View } from "react-native";
@@ -22,9 +25,11 @@ import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff"
 import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import { PullRequestCompletionSuggestions } from "./PullRequestCompletionSuggestions";
 import { usePullRequestCompletions } from "./usePullRequestCompletions";
+import { m as resolveMessage } from "../../i18n/messages";
 
 function useActionSubmission(params: PullRequestParams) {
   const navigation = useNavigation();
+  const gt = useGT();
   const refreshDetail = useAtomRefresh(composerPullRequests.detail(pullRequestTarget(params)));
   const refreshActivity = useAtomRefresh(composerPullRequests.activity(pullRequestTarget(params)));
   const pending = useRef(false);
@@ -47,8 +52,8 @@ function useActionSubmission(params: PullRequestParams) {
       const cause = squashAtomCommandFailure(result);
       setError(
         cause instanceof Error
-          ? cause.message
-          : "The provider could not complete this action. Try again.",
+          ? (errorDisplayMessage(cause, resolveMessage) ?? cause.message)
+          : gt("The provider could not complete this action. Try again."),
       );
     }
   };
@@ -56,11 +61,11 @@ function useActionSubmission(params: PullRequestParams) {
 }
 
 const VERDICTS = [
-  { value: "comment", title: "Comment" },
-  { value: "approve", title: "Approve" },
+  { value: "comment", title: msg("Comment", { $context: "review verdict" }) },
+  { value: "approve", title: msg("Approve", { $context: "review verdict" }) },
   {
     value: "request-changes",
-    title: "Request changes",
+    title: msg("Request changes"),
   },
 ] as const;
 
@@ -69,6 +74,8 @@ export function PullRequestReviewSheet({
 }: StaticScreenProps<PullRequestParams & { readonly mode: "review" | "comment" }>) {
   const t = useUiTranslation();
   const params = route.params;
+  const gt = useGT();
+  const m = useMessages();
   const target = pullRequestTarget(params);
   const result = useEnvironmentQuery(composerPullRequests.detail(target));
   const { refresh: refreshDetail } = result;
@@ -117,7 +124,7 @@ export function PullRequestReviewSheet({
   const perform = () =>
     submission.submit(async () => {
       if (!canSubmit)
-        throw new Error("Add your feedback and check your permissions before submitting.");
+        throw new Error(gt("Add your feedback and check your permissions before submitting."));
       const submitted = store.draft;
       const response =
         reviewing && verdict
@@ -143,8 +150,12 @@ export function PullRequestReviewSheet({
     });
   return (
     <SheetContent
-      title={reviewing ? t("Submit review") : t("Add comment")}
-      subtitle={`#${params.number}${reviewing && result.data?.headSha ? ` · reviewing ${result.data.headSha.slice(0, 7)}` : ` · ${params.repository}`}`}
+      title={reviewing ? gt("Submit review") : gt("Add comment")}
+      subtitle={`#${params.number} · ${
+        reviewing && result.data?.headSha
+          ? gt("reviewing {sha}", { sha: result.data.headSha.slice(0, 7) })
+          : params.repository
+      }`}
       busy={submission.busy}
       footer={
         <Button
@@ -169,7 +180,7 @@ export function PullRequestReviewSheet({
     >
       {reviewing && offered.length > 1 ? (
         <SegmentedControl
-          options={offered.map((option) => ({ value: option.value, label: t(option.title) }))}
+          options={offered.map((option) => ({ value: option.value, label: m(option.title) }))}
           selected={verdict?.value ?? "comment"}
           onSelect={(value) => {
             if (!submission.busy) setRequestedVerdict(value);
@@ -205,7 +216,10 @@ export function PullRequestReviewSheet({
       {reviewing && store.draft.comments.length ? (
         <View className="gap-2">
           <Text className="text-sm font-t3-medium">
-            {t("{count} pending line comments", { count: store.draft.comments.length })}
+            {gt(
+              "{count, plural, one {{count} pending line comment} other {{count} pending line comments}}",
+              { count: store.draft.comments.length },
+            )}
           </Text>
           {store.draft.comments.map((draft) => (
             <Pressable
@@ -234,7 +248,7 @@ export function PullRequestReviewSheet({
               className="gap-1 rounded-[20px] bg-grouped-card p-4"
             >
               <Text className="font-mono text-xs text-foreground-muted">
-                {draft.path} · {reviewPositionLabel(draft.position)}
+                {draft.path} · {reviewPositionLabel(draft.position, m)}
               </Text>
               <Text numberOfLines={3} className="text-sm">
                 {draft.body}
@@ -257,9 +271,14 @@ export function PullRequestReviewSheet({
       ) : null}
       {reviewing && !canSubmitComments ? (
         <Text className="text-sm text-danger-foreground">
-          {t("You can no longer submit line comments on this {type}. Your drafts are kept here.", {
-            type: t(sourceControlClients.get(result.data?.provider).changeRequest.singular),
-          })}
+          {gt(
+            "You can no longer submit line comments on this {term, select, mr {merge request} cr {change request} other {pull request}}. Your drafts are kept here.",
+            {
+              term: changeRequestTermKind(
+                sourceControlClients.get(result.data?.provider).changeRequest,
+              ),
+            },
+          )}
         </Text>
       ) : null}
       {submission.error || result.error || store.error ? (

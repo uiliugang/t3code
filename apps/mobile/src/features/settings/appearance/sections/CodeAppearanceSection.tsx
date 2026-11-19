@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../../../lib/useUiTranslation";
 
+import { useGT } from "gt-react-native";
 import {
   CODE_FONT_SIZE_STEP,
   MAX_CODE_FONT_SIZE,
@@ -16,6 +17,7 @@ import { FontSizeSliderRow } from "../components/FontSizeSliderRow";
 
 export function CodeAppearanceSection() {
   const t = useUiTranslation();
+  const gt = useGT();
   const { isReady, appearance, setCodeFontSize, setCodeWordBreak } = useAppearancePreferences();
   const custom = appearance.isCodeFontSizeCustom;
 
@@ -47,7 +49,7 @@ export function CodeAppearanceSection() {
           onChange={setCodeFontSize}
           step={CODE_FONT_SIZE_STEP}
           value={appearance.codeFontSize}
-          valueLabel={`${appearance.codeFontSize} pt`}
+          valueLabel={gt("{size} pt", { size: appearance.codeFontSize })}
         />
       ) : null}
       <SettingsSwitchRow

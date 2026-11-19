@@ -3,6 +3,7 @@ import type { DeviceServiceState, EnvironmentId } from "@t3tools/contracts";
 import { Check, CircleAlert } from "lucide-react";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { useAtomMount } from "@effect/atom-react";
+import { T, Var } from "gt-react";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -46,7 +47,9 @@ function DeviceHostDiagnostics(props: {
     <div role="status" className={cn("space-y-1 text-xs text-muted-foreground", props.className)}>
       {diagnostics.map(({ hostId, label, detail }) => (
         <p key={hostId} className="whitespace-pre-line break-words">
-          {label}: {detail}
+          <T>
+            <Var>{label}</Var>: <Var>{detail}</Var>
+          </T>
         </p>
       ))}
     </div>

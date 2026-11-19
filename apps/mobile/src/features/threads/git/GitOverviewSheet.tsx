@@ -18,12 +18,14 @@ import {
 } from "@t3tools/client-runtime/state/vcs";
 import { EnvironmentId, ThreadId, isMeituanServiceEnabled } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestTermKind } from "../../../lib/changeRequestTerm";
 import {
   CommonActions,
   StackActions,
   useNavigation,
   type StaticScreenProps,
 } from "@react-navigation/native";
+import { useGT, useMessages } from "gt-react-native";
 import { use, useEffect, useState } from "react";
 import { View } from "react-native";
 import { RefreshControl } from "../../../components/ui/RefreshControl";
@@ -111,6 +113,8 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
 function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const t = useUiTranslation();
 
+  const gt = useGT();
+  const m = useMessages();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const presentation = props.presentation ?? "sheet";
@@ -189,7 +193,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     isMeituanServiceEnabled(config?.settings, "sourceControl");
 
   const menuItems = isRepo
-    ? buildMenuItems(gitStatus.data, busy, hasPrimaryRemote, pullRequestsEnabled)
+    ? buildMenuItems(gitStatus.data, busy, hasPrimaryRemote, pullRequestsEnabled, m)
     : [];
 
   const sheetMenuItems = menuItems.map((item) => ({
@@ -199,32 +203,46 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     },
     disabledReason:
       !canWriteSourceControl && item.kind !== "open_pr"
-        ? "This connection cannot change source control."
-        : getGitActionDisabledReason({
-            item,
-            gitStatus: gitStatus.data,
-            isBusy: busy,
-            hasOriginRemote: hasPrimaryRemote,
-          }),
+        ? gt("This connection cannot change source control.")
+        : getGitActionDisabledReason(
+            {
+              item,
+              gitStatus: gitStatus.data,
+              isBusy: busy,
+              hasOriginRemote: hasPrimaryRemote,
+            },
+            m,
+          ),
   }));
 
-  const { shortLabel, singular } = sourceControlClients.get(
-    gitStatus.data?.sourceControlProvider?.kind,
-  ).changeRequest;
+  const term = changeRequestTermKind(
+    sourceControlClients.get(gitStatus.data?.sourceControlProvider?.kind).changeRequest,
+  );
 
   const openExistingPr = async () => {
     const prUrl = gitStatus.data?.pr?.state === "open" ? gitStatus.data.pr.url : null;
     if (!prUrl) {
       Dialog.alert(
-        t("No open {term}", { term: shortLabel }),
-        t("This branch does not have an open {term}.", { term: t(singular) }),
+        gt("{term, select, mr {No open MR} cr {No open change request} other {No open PR}}", {
+          term,
+        }),
+        gt(
+          "{term, select, mr {This branch does not have an open merge request.} cr {This branch does not have an open change request.} other {This branch does not have an open pull request.}}",
+          { term },
+        ),
       );
       return;
     }
     if (!(await openPullRequest(prUrl))) {
       Dialog.alert(
-        t("Unable to open {term}", { term: shortLabel }),
-        t("The {term} could not be opened.", { term: t(singular) }),
+        gt(
+          "{term, select, mr {Unable to open MR} cr {Unable to open change request} other {Unable to open PR}}",
+          { term },
+        ),
+        gt(
+          "{term, select, mr {The merge request could not be opened.} cr {The change request could not be opened.} other {The pull request could not be opened.}}",
+          { term },
+        ),
       );
     }
   };
@@ -303,10 +321,19 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
     }
     if (item.dialogAction === "push" && (status.aheadCount ?? 0) > 0) {
       const ahead = status.aheadCount ?? 0;
-      return t(ahead === 1 ? "{count} commit ahead" : "{count} commits ahead", { count: ahead });
+      return gt("{count, plural, one {{count} commit ahead} other {{count} commits ahead}}", {
+        count: ahead,
+      });
     }
     if (item.kind === "open_pr" && status.pr?.number != null) {
-      return `${shortLabel} #${status.pr.number} ${t(status.pr.state ?? "open")}`;
+      return gt(
+        "{term, select, mr {MR #{number} {state, select, open {open} closed {closed} merged {merged} other {{state}}}} cr {change request #{number} {state, select, open {open} closed {closed} merged {merged} other {{state}}}} other {PR #{number} {state, select, open {open} closed {closed} merged {merged} other {{state}}}}}",
+        {
+          term,
+          number: status.pr.number,
+          state: status.pr.state ?? "open",
+        },
+      );
     }
     return undefined;
   };

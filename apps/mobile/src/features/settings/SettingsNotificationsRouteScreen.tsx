@@ -1,9 +1,8 @@
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { useGT, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
-import {
-  AuthRelayWriteScope,
-  managedCapabilityDenial,
-  type EnvironmentId,
-} from "@t3tools/contracts";
+import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
+import { AuthRelayWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../../state/session";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { serverEnvironment } from "../../state/server";
@@ -17,6 +16,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { Linking, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { m as resolveMessage } from "../../i18n/messages";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import {
@@ -140,13 +140,15 @@ export function SettingsNotificationsRouteScreen() {
 
 function ConfiguredSettingsNotificationsRouteScreen() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const agentAwarenessPushAvailable = supportsAgentAwarenessPush();
-  const agentAwarenessPlatform = resolveAgentAwarenessPlatformPresentation(Platform.OS);
+  const agentAwarenessPlatform = resolveAgentAwarenessPlatformPresentation(Platform.OS, m);
   const agentAwarenessSubtitle =
     Platform.OS === "android" && !agentAwarenessPushAvailable
-      ? "Install a newer app build to enable notifications"
+      ? gt("Install a newer app build to enable notifications")
       : agentAwarenessPlatform.subtitle;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -197,8 +199,10 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         Dialog.alert(
-          t("Notifications unavailable"),
-          t(error instanceof Error ? error.message : "Could not request notification permission."),
+          gt("Notifications unavailable"),
+          error instanceof Error
+            ? (errorDisplayMessage(error, resolveMessage) ?? error.message)
+            : gt("Could not request notification permission."),
         );
       }
       return;
@@ -267,8 +271,10 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         setLiveActivityStatus("disabled");
         const error = squashAtomCommandFailure(permission);
         Dialog.alert(
-          t("Ongoing activity unavailable"),
-          t(error instanceof Error ? error.message : "Could not enable agent notifications."),
+          gt("Ongoing activity unavailable"),
+          error instanceof Error
+            ? (errorDisplayMessage(error, resolveMessage) ?? error.message)
+            : gt("Could not enable agent notifications."),
         );
         return;
       }
@@ -291,12 +297,12 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       setLiveActivityStatus("disabled");
       const error = squashAtomCommandFailure(tokenResult);
       Dialog.alert(
-        t(
-          Platform.OS === "android"
-            ? "Ongoing activity unavailable"
-            : "Live Activities unavailable",
-        ),
-        t(error instanceof Error ? error.message : "Could not enable agent activity updates."),
+        Platform.OS === "android"
+          ? gt("Ongoing activity unavailable")
+          : gt("Live Activities unavailable"),
+        error instanceof Error
+          ? (errorDisplayMessage(error, resolveMessage) ?? error.message)
+          : gt("Could not enable agent activity updates."),
       );
       return;
     }
@@ -322,12 +328,12 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       if (!isAtomCommandInterrupted(updateResult)) {
         const error = squashAtomCommandFailure(updateResult);
         Dialog.alert(
-          t(
-            Platform.OS === "android"
-              ? "Ongoing activity unavailable"
-              : "Live Activities unavailable",
-          ),
-          t(error instanceof Error ? error.message : "Could not enable agent activity updates."),
+          Platform.OS === "android"
+            ? gt("Ongoing activity unavailable")
+            : gt("Live Activities unavailable"),
+          error instanceof Error
+            ? (errorDisplayMessage(error, resolveMessage) ?? error.message)
+            : gt("Could not enable agent activity updates."),
         );
       }
       return;
@@ -445,7 +451,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
-        <SettingsSection title="Agent activity">
+        <SettingsSection title={gt("Agent activity")}>
           <SettingsSwitchRow
             icon="bell.badge"
             label={t("Device Notifications")}
@@ -455,7 +461,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               notificationStatus === "checking" ||
               notificationStatus === "unsupported"
             }
-            subtitle={agentAwarenessSubtitle ? t(agentAwarenessSubtitle) : undefined}
+            subtitle={agentAwarenessSubtitle}
             value={
               agentAwarenessPushAvailable && notificationStatus === "enabled" && notificationsReady
             }
@@ -477,7 +483,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                   : "Ongoing Agent Activity"
                 : "Live Activity Updates",
             )}
-            subtitle={agentAwarenessSubtitle ? t(agentAwarenessSubtitle) : undefined}
+            subtitle={agentAwarenessSubtitle}
             value={
               agentAwarenessPushAvailable &&
               (liveActivityStatus === "enabled" || liveActivityStatus === "linking") &&
@@ -488,14 +494,14 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           {liveActivityStatus === "signed-out" && canClearLiveActivitiesPreference ? (
             <SettingsRow
               icon="bolt.circle"
-              label="Turn off Live Activity preference"
+              label={gt("Turn off Live Activity preference")}
               onPress={() => void handleLiveActivitiesChange(false)}
             />
           ) : null}
           {supportsAndroidLiveUpdateSettings() ? (
             <SettingsRow
               icon="bolt.circle"
-              label="Live Update Settings"
+              label={gt("Live Update Settings")}
               onPress={() => {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Dialog.alert(

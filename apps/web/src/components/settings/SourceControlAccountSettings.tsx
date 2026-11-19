@@ -2,6 +2,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type { EnvironmentId, SourceControlProviderAuth } from "@t3tools/contracts";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useState } from "react";
+import { T, Var } from "gt-react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
@@ -161,17 +162,20 @@ export function SourceControlAccountSettings({
                         {(value: string) =>
                           value === ACTIVE_ACCOUNT ? (
                             <span className="flex min-w-0 items-center gap-1">
-                              {t("Use active {cli} account", { cli: cliName })}
                               {group.activeAccount ? (
-                                <>
-                                  (
+                                <T>
+                                  Active <Var>{cliName}</Var> account (
                                   <RedactedLogin
                                     revealed={revealed}
                                     account={group.activeAccount}
                                   />
                                   )
-                                </>
-                              ) : null}
+                                </T>
+                              ) : (
+                                <T>
+                                  Active <Var>{cliName}</Var> account
+                                </T>
+                              )}
                             </span>
                           ) : (
                             <RedactedLogin revealed={revealed} account={value} />
@@ -182,12 +186,16 @@ export function SourceControlAccountSettings({
                     <SelectPopup align="end" alignItemWithTrigger={false}>
                       <SelectItem value={ACTIVE_ACCOUNT}>
                         <span className="flex min-w-0 items-center gap-1">
-                          {t("Use active {cli} account", { cli: cliName })}
                           {group.activeAccount ? (
-                            <>
-                              (<RedactedLogin revealed={revealed} account={group.activeAccount} />)
-                            </>
-                          ) : null}
+                            <T>
+                              Active <Var>{cliName}</Var> account (
+                              <RedactedLogin revealed={revealed} account={group.activeAccount} />)
+                            </T>
+                          ) : (
+                            <T>
+                              Active <Var>{cliName}</Var> account
+                            </T>
+                          )}
                         </span>
                       </SelectItem>
                       {group.selectable.map((account, index) => (

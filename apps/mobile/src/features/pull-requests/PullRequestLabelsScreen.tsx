@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { LegendList } from "@legendapp/list/react-native";
 import { useAtomValue } from "@effect/atom-react";
@@ -13,6 +14,7 @@ import {
 } from "@t3tools/client-runtime/pull-request-selection";
 import type { PullRequestLabelCandidate } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
+import { useGT } from "gt-react-native";
 import { useEffect, useState } from "react";
 import { Platform, View } from "react-native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -29,10 +31,12 @@ import { pullRequestLabelColor } from "./pullRequestList";
 import { PullRequestSearchSheet } from "./PullRequestSearchSheet";
 import { usePullRequestConnected } from "./usePullRequestConnected";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
+import { m } from "../../i18n/messages";
 
 export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequestParams>) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   const target = pullRequestTarget(route.params);
   const pr = useEnvironmentQuery(composerPullRequests.detail(target)).data;
   const canWrite = useAtomValue(
@@ -49,12 +53,12 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
     !pr || allowed
       ? null
       : !connected
-        ? "Reconnect to change labels."
+        ? gt("Reconnect to change labels.")
         : !canWrite
-          ? "This device isn't allowed to change source control on this environment."
+          ? gt("This device isn't allowed to change source control on this environment.")
           : pr.capabilities.labels !== true
-            ? "This provider doesn't support changing labels."
-            : "Changing labels needs triage access on this repository.";
+            ? gt("This provider doesn't support changing labels.")
+            : gt("Changing labels needs triage access on this repository.");
   const result = useEnvironmentQuery(composerPullRequests.labelCandidates(target));
   const setLabels = useAtomCommand(composerPullRequests.setLabels, { reportFailure: false });
   const [query, setQuery] = useState("");
@@ -86,8 +90,12 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
           if (!AsyncResult.isFailure(response)) return;
           const cause = squashAtomCommandFailure(response);
           Dialog.alert(
-            applied ? `Couldn't add ${names.join(", ")}` : `Couldn't remove ${names.join(", ")}`,
-            cause instanceof Error ? cause.message : "The provider refused the change.",
+            applied
+              ? gt("Couldn't add {labels}", { labels: names.join(", ") })
+              : gt("Couldn't remove {labels}", { labels: names.join(", ") }),
+            cause instanceof Error
+              ? (errorDisplayMessage(cause, m) ?? cause.message)
+              : gt("The provider refused the change."),
           );
         };
         const send = async (labels: ReadonlyArray<PullRequestLabelCandidate>, applied: boolean) => {
@@ -96,14 +104,14 @@ export function PullRequestLabelsScreen({ route }: StaticScreenProps<PullRequest
         // Adding first keeps the Labels row from showing empty between the two writes.
         void send(add, true).then(() => send(remove, false));
       }),
-    [navigation, draft, latest, setLabels, target],
+    [navigation, draft, latest, setLabels, target, gt],
   );
   return (
     <PullRequestSearchSheet
-      title={t("Labels")}
-      placeholder={t("Search labels")}
-      closeAccessibilityLabel="Close labels"
-      clearAccessibilityLabel="Clear label search"
+      title={gt("Labels", { $context: "pull request labels sheet title" })}
+      placeholder={gt("Search labels")}
+      closeAccessibilityLabel={gt("Close labels")}
+      clearAccessibilityLabel={gt("Clear label search")}
       query={query}
       onQueryChange={setQuery}
     >

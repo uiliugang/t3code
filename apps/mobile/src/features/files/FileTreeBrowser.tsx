@@ -5,6 +5,7 @@ import { LegendList } from "@legendapp/list/react-native";
 import type { ProjectEntry } from "@t3tools/contracts";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { useGT } from "gt-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -42,8 +43,8 @@ const FileTreeRow = function FileTreeRow(props: {
   readonly onPreviewFile?: (path: string) => void;
   readonly onPressFile: (path: string) => void;
 }) {
-  const t = useUiTranslation();
   const { node, depth } = props.item;
+  const gt = useGT();
 
   return (
     <Pressable
@@ -95,7 +96,7 @@ const FileTreeRow = function FileTreeRow(props: {
       {node.kind === "directory" && props.expanded && props.loading ? (
         <AppActivityIndicator
           size="small"
-          accessibilityLabel={t("Loading {name}", { name: String(node.name) })}
+          accessibilityLabel={gt("Loading {name}", { name: node.name })}
         />
       ) : null}
     </Pressable>

@@ -7,6 +7,7 @@ import {
   sanitizeFeatureBranchName,
 } from "@t3tools/shared/git";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useGT } from "gt-react-native";
 import { useState } from "react";
 
 import { SheetHeader } from "../../../components/ui/SheetHeader";
@@ -29,6 +30,7 @@ type GitBranchesSheetProps = StaticScreenProps<{
 
 export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const t = useUiTranslation();
+  const gt = useGT();
   const navigation = useNavigation();
   const { selectedThread, selectedThreadProject } = useThreadSelection();
   const mainBranchOnly =
@@ -50,7 +52,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
       : null,
   );
 
-  const currentBranchLabel = gitStatus.data?.refName ?? selectedThread?.branch ?? "Detached HEAD";
+  const currentBranch = gitStatus.data?.refName ?? selectedThread?.branch ?? null;
   const currentWorktreePath = selectedThreadCwd;
   const availableBranches = gitState.selectedThreadBranches;
   const branchesLoading = gitState.selectedThreadBranchesLoading;
@@ -62,9 +64,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
     worktreeBaseBranchOverride ??
     (mainBranchOnly
       ? (availableBranches.find((branch) => isMainOrMasterBranch(branch.name))?.name ?? "main")
-      : currentBranchLabel === "Detached HEAD"
-        ? "main"
-        : currentBranchLabel);
+      : (currentBranch ?? "main"));
   const [worktreeBranchName, setWorktreeBranchName] = useState("");
 
   return (
@@ -156,17 +156,17 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         {availableBranches.map((branch, index) => {
           const subtitle = branch.worktreePath
             ? branch.worktreePath === currentWorktreePath
-              ? "Checked out in this thread"
-              : "Checked out in another worktree"
+              ? gt("Checked out in this thread")
+              : gt("Checked out in another worktree")
             : branch.isDefault
-              ? "Default branch"
-              : "Local branch";
+              ? gt("Default branch")
+              : gt("Local branch");
 
           return (
             <ListChoiceRow
               key={branch.name}
               label={getBranchDisplayName(branch)}
-              description={t(subtitle)}
+              description={subtitle}
               selected={branch.current}
               separated={index > 0}
               disabled={!canChangeThreadBranch || busy}

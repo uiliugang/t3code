@@ -6,6 +6,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { sortInboxThreadsByReturn } from "@t3tools/client-runtime/state/thread-inbox";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Modal, Pressable, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
@@ -65,6 +66,13 @@ type Drag = {
   destination: Destination | null;
 };
 
+const SECTION_LABELS = {
+  pinned: msg("Pinned", { $context: "thread list section" }),
+  active: msg("Active", { $context: "thread list section" }),
+  snoozed: msg("Snoozed", { $context: "thread list section" }),
+  settled: msg("Settled", { $context: "thread list section" }),
+} as const;
+
 function ArrangementRow(props: {
   height: number;
   offset: number;
@@ -107,6 +115,7 @@ function DragHandle(props: {
 }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const latest = useRef(props);
   /* oxlint-disable react/refs -- The pan gesture captures its callbacks once per `disabled` change; they read the latest handlers when native gesture events fire. */
   latest.current = props;
@@ -131,8 +140,8 @@ function DragHandle(props: {
         collapsable={false}
         accessible
         accessibilityRole="adjustable"
-        accessibilityLabel={`Reorder ${props.title}`}
-        accessibilityHint={t(
+        accessibilityLabel={gt("Reorder {title}", { title: props.title })}
+        accessibilityHint={gt(
           "Move up and Move down reorder within this section. Other actions move between sections.",
         )}
         accessibilityState={{ disabled: props.disabled }}
@@ -171,6 +180,8 @@ function DragHandle(props: {
 function ThreadArrangementSheet(props: { onClose: () => void }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
+  const m = useMessages();
   const { appearance } = useAppearancePreferences();
   const { fontScale } = useWindowDimensions();
   const { rowHeight, headerHeight } = deriveThreadArrangementSizing({
@@ -452,7 +463,7 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
                           label: string;
                         }>((section) => {
                           if (section === item.section) return [];
-                          const label = threadDragAction(item.section, section);
+                          const label = threadDragAction(item.section, section, m);
                           if (!label) return [];
                           if (section === "settled")
                             return configLoaded ? [{ name: section, label }] : [];
@@ -546,10 +557,15 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
                           >
                             <Text className="text-sm text-foreground-muted">
                               {olderSettledShelf.loading
-                                ? t("Loading")
+                                ? gt("Loading", { $context: "older threads are loading" })
                                 : olderSettledShelf.failed
-                                  ? t("Could not load older threads. Retry")
-                                  : `Show more (${settledCount - visibleSettled.length} settled hidden)`}
+                                  ? gt("Could not load older threads. Retry")
+                                  : gt(
+                                      "{count, plural, one {Show more ({count} settled hidden)} other {Show more ({count} settled hidden)}}",
+                                      {
+                                        count: settledCount - visibleSettled.length,
+                                      },
+                                    )}
                             </Text>
                           </Pressable>
                         ) : (
@@ -563,11 +579,13 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
                             }}
                           >
                             <Text className="text-sm font-t3-semibold text-foreground-muted">
-                              {item.section[0]!.toUpperCase() + item.section.slice(1)} (
-                              {item.section === "settled"
-                                ? settledCount
-                                : sections[item.section].length}
-                              )
+                              {gt("{section} ({count})", {
+                                section: m(SECTION_LABELS[item.section]),
+                                count:
+                                  item.section === "settled"
+                                    ? settledCount
+                                    : sections[item.section].length,
+                              })}
                             </Text>
                           </Pressable>
                         )}
@@ -592,6 +610,7 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
                         {threadDragAction(
                           visiblePreview.sourceSection,
                           visiblePreview.destination.section,
+                          m,
                         )}
                       </Text>
                     ) : null}

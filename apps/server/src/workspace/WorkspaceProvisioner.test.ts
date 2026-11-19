@@ -439,11 +439,11 @@ it.live(
             workspace,
             managedRoots: [yield* fs.realPath(temp)],
             isOccupied: () => Effect.succeed(false),
+            beforeRemove: Effect.void,
           };
-          for (const resource of workspace.resources) {
-            yield* fs.writeFileString(path.join(resource.checkoutRoot, ".gitignore"), ".env\n");
-            yield* fs.writeFileString(path.join(resource.checkoutRoot, ".env"), "LOCAL_TEST=1\n");
-          }
+          for (const resource of workspace.resources)
+            yield* fs.remove(path.join(resource.checkoutRoot, "setup.txt"));
+          yield* fs.remove(path.join(prepared, "keep.txt"));
           const childRoot = path.join(workspace.resources[1]!.checkoutRoot, "src");
           yield* fs.makeDirectory(childRoot);
           const linkedRoot = path.join(temp, "linked-backend");
@@ -487,7 +487,31 @@ it.live(
             cwd: roots[1]!.sourcePath,
             args: ["worktree", "unlock", lockedRoot],
           });
-          yield* fs.remove(path.join(prepared, ".git"));
+          const notes = path.join(lockedRoot, "notes.txt");
+          yield* fs.writeFileString(notes, "uncommitted notes");
+          const dirty = yield* cleanup.remove(cleanupInput).pipe(Effect.flip);
+          assert.include(dirty.message, "uncommitted changes");
+          assert.isTrue(yield* fs.exists(prepared));
+          assert.equal(yield* fs.readFileString(notes), "uncommitted notes");
+          yield* fs.writeFileString(
+            path.join(roots[1]!.sourcePath, ".git/info/exclude"),
+            "notes.txt\n",
+          );
+          const ignored = yield* cleanup.remove(cleanupInput).pipe(Effect.flip);
+          assert.include(ignored.message, "ignored files");
+          assert.isTrue(yield* fs.exists(prepared));
+          assert.equal(yield* fs.readFileString(notes), "uncommitted notes");
+          yield* fs.remove(notes);
+
+          const gitFile = path.join(lockedRoot, ".git");
+          const gitFileContents = yield* fs.readFileString(gitFile);
+          yield* fs.remove(gitFile);
+          const missingGitFile = yield* cleanup.remove(cleanupInput).pipe(Effect.flip);
+          assert.include(missingGitFile.message, "no longer a linked worktree");
+          assert.isTrue(yield* fs.exists(prepared));
+          assert.isTrue(yield* fs.exists(lockedRoot));
+          yield* fs.writeFileString(gitFile, gitFileContents);
+
           yield* cleanup.remove(cleanupInput);
           yield* cleanup.remove(cleanupInput);
           for (const resource of workspace.resources)

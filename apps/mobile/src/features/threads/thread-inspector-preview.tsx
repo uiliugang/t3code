@@ -1,11 +1,13 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+
 import { type ReactNode } from "react";
 import { View } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
 import { SheetHeader } from "../../components/ui/SheetHeader";
+import { LocalPreviewScreen } from "../browser/LocalPreviewRouteScreen";
 import { DevicePreviewScreen } from "../devices/DevicePreviewRouteScreen";
 import {
   WorkspaceContentWidthContext,
@@ -26,6 +28,7 @@ export function ThreadInspectorHeader(
   props: ThreadInspectorPresentation & { readonly title: string; readonly subtitle?: string },
 ) {
   const t = useUiTranslation();
+
   if ("onMaximize" in props) {
     return (
       <AppBar
@@ -87,7 +90,21 @@ export function ThreadInspectorPreview(props: {
   return (
     <ThreadInspectorNavigationContext value={props.onOpen}>
       <InspectorContentScope>
-        {target.type === "device" ? (
+        {target.type === "localPreview" && target.url ? (
+          <LocalPreviewScreen
+            key={`${target.environmentId}:${target.url}`}
+            environmentId={EnvironmentId.make(target.environmentId)}
+            url={target.url}
+            onClose={props.onClose}
+            onMaximize={(url) => {
+              props.onOpen({ ...target, url });
+              navigation.navigate("ThreadLocalPreview", {
+                environmentId: target.environmentId,
+                url,
+              });
+            }}
+          />
+        ) : target.type === "device" ? (
           <DevicePreviewScreen
             key={`${target.environmentId}:${target.threadId}`}
             environmentId={EnvironmentId.make(target.environmentId)}

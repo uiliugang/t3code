@@ -12,10 +12,12 @@ import {
   markdownWithInlineFileLinks,
   markdownWithTableBreaks,
 } from "../lib/markdownDocument";
+import { useGT } from "gt-react-native";
 import { isValidElement, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { Platform, Share, StyleSheet, useWindowDimensions, View } from "react-native";
 import {
   EnrichedMarkdownText,
+  type AccessibilityLabels,
   type MarkdownCodeBlock,
   type MarkdownImageBlock,
   type MarkdownLinkOccurrence,
@@ -181,7 +183,8 @@ function codeBlockElement(
   markdownStyle: MarkdownStyle,
   mathRenderingEnabled: boolean,
   scheme: HighlightScheme,
-  onCite: SelectableMarkdownTextProps["onCite"],
+  accessibilityLabels: AccessibilityLabels,
+  onCiteFormula: SelectableMarkdownTextProps["onCiteFormula"],
   citeFormulaLabel: string,
 ): ReactElement | undefined {
   const renderer = codeFenceRenderer(block.language, mathRenderingEnabled);
@@ -203,14 +206,15 @@ function codeBlockElement(
           selectable
           selectionColor={textStyle.selectionColor}
           selectionHandleColor={textStyle.selectionHandleColor}
+          accessibilityLabels={accessibilityLabels}
         />
-        {onCite ? (
+        {onCiteFormula ? (
           <View style={{ alignSelf: "flex-end" }}>
             <Button
               label={citeFormulaLabel}
               tone="text"
               size="compact"
-              onPress={() => onCite(block.code)}
+              onPress={() => onCiteFormula(block.code.trim())}
             />
           </View>
         ) : null}
@@ -237,7 +241,29 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const t = useUiTranslation();
 
   const { renderImage, resolveImageSource, fileEmbedLabel } = props;
+  const gt = useGT();
   const { themeAppearance, mathRenderingEnabled } = useAppearancePreferences();
+  // The library fills in {n}, {content} and {speech} itself when VoiceOver or TalkBack speaks.
+  const accessibilityLabels = useMemo<AccessibilityLabels>(
+    () => ({
+      list: {
+        bulletPoint: gt("Bullet point"),
+        nestedBulletPoint: gt("Nested bullet point"),
+        orderedItem: gt("List item {n}", { n: "{n}" }),
+        nestedOrderedItem: gt("Nested list item {n}", { n: "{n}" }),
+      },
+      blockquote: { quote: gt("Blockquote"), nestedQuote: gt("Nested blockquote") },
+      table: { row: gt("Row {n}: {content}", { n: "{n}", content: "{content}" }) },
+      math: { equation: gt("Math: {speech}", { speech: "{speech}" }) },
+      codeBlock: { wrap: gt("Wrap lines"), unwrap: gt("Disable line wrap") },
+      rotor: {
+        headings: gt("Headings", { $context: "screen reader rotor category" }),
+        links: gt("Links", { $context: "screen reader rotor category" }),
+        images: gt("Images", { $context: "screen reader rotor category" }),
+      },
+    }),
+    [gt],
+  );
   const { markdown, fileHrefs } = useMemo(() => {
     if (!fileEmbedLabel) {
       return {
@@ -298,8 +324,8 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
       ? {
           title: model.label,
           actions: [
-            { id: "enriched-copy-link", title: "Copy model reference" },
-            { id: "enriched-share-link", title: "Share model reference" },
+            { id: "enriched-copy-link", title: gt("Copy model reference") },
+            { id: "enriched-share-link", title: gt("Share model reference") },
           ],
         }
       : undefined;
@@ -393,8 +419,9 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
         baseMarkdownStyle,
         mathRenderingEnabled,
         themeAppearance,
-        props.onCite,
-        t("Cite formula"),
+        accessibilityLabels,
+        props.onCiteFormula,
+        gt("Cite formula"),
       ),
   };
   const resolveNativeImageSource = useRetryingImageSource(resolveImageSource);
@@ -441,11 +468,12 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           flavor="github"
           selectable
           contextMenuItems={
-            props.onCite
+            props.onCiteText
               ? [
                   {
-                    text: t("Cite"),
-                    onPress: ({ text }) => props.onCite?.(text),
+                    text: gt("Cite", { $context: "verb, quote selected text" }),
+                    icon: "quote.bubble",
+                    onPress: ({ text }) => props.onCiteText?.(text),
                   },
                 ]
               : undefined
@@ -462,19 +490,6 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           enableTaskListItemToggle={props.onTaskListItemPress !== undefined}
           onTaskListItemPress={props.onTaskListItemPress}
           enableCodeBlockWrapToggle
-          accessibilityLabels={{
-            codeBlock: { wrap: t("Wrap lines"), unwrap: t("Disable line wrap") },
-            list: {
-              bulletPoint: t("Bullet point"),
-              nestedBulletPoint: t("Nested bullet point"),
-              orderedItem: t("List item {n}"),
-              nestedOrderedItem: t("Nested list item {n}"),
-            },
-            blockquote: { quote: t("Blockquote"), nestedQuote: t("Nested blockquote") },
-            table: { row: t("Row {n}: {content}") },
-            math: { equation: t("Math: {latex}") },
-            rotor: { headings: t("Headings"), links: t("Links"), images: t("Images") },
-          }}
           selectionMenuConfig={{
             copy: { label: t("Copy") },
             copyAsMarkdown: { label: t("Copy as Markdown") },
@@ -487,6 +502,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           onLinkLongPress={onLinkLongPress}
           linkContextMenuItems={linkContextMenuItems}
           linkPillContent={linkPillContent}
+          accessibilityLabels={accessibilityLabels}
         />
       </View>
     );

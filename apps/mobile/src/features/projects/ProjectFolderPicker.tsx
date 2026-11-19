@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useMessages } from "gt-react-native";
 import { useAtomValue } from "@effect/atom-react";
 import {
   PROJECT_FOLDER_BATCH_LIMIT,
@@ -33,6 +34,7 @@ export function ProjectFolderPicker({
   initialPath: string;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
 
   const [directory, setDirectory] = useState(initialPath);
   const [pathInput, setPathInput] = useState(initialPath);
@@ -89,7 +91,7 @@ export function ProjectFolderPicker({
         },
       });
       if (response._tag === "Failure") {
-        setError("Import interrupted. Retry remaining folders.");
+        setError(t("Import interrupted. Retry remaining folders."));
         break;
       }
       completed.push(...response.value);
@@ -104,7 +106,7 @@ export function ProjectFolderPicker({
   };
   return (
     <View className="gap-3">
-      {!canImport ? <ErrorBanner message="This connection cannot import folders." /> : null}
+      {!canImport ? <ErrorBanner message={t("This connection cannot import folders.")} /> : null}
       {(error ?? browse.error ?? inspect.error) ? (
         <ErrorBanner message={(error ?? browse.error ?? inspect.error)!} />
       ) : null}
@@ -176,7 +178,7 @@ export function ProjectFolderPicker({
             >
               <Pressable
                 accessibilityRole="checkbox"
-                accessibilityLabel={`Select folder ${candidate.title}`}
+                accessibilityLabel={t("Select folder {title}", { title: candidate.title })}
                 accessibilityState={{
                   checked,
                   disabled: busy || Boolean(added) || Boolean(candidate.error),
@@ -200,12 +202,12 @@ export function ProjectFolderPicker({
                   <Text className="flex-1 text-base text-foreground">{candidate.title}</Text>
                 </View>
                 <Text className="text-xs text-foreground-muted">
-                  {added ? t("Already added") : projectFolderStatus(candidate)}
+                  {added ? t("Already added") : projectFolderStatus(candidate, messages)}
                 </Text>
               </Pressable>
               <Button
                 label={t("Open")}
-                accessibilityLabel={`Open folder ${candidate.title}`}
+                accessibilityLabel={t("Open folder {title}", { title: candidate.title })}
                 icon="chevron.right"
                 tone="text"
                 disabled={busy}
@@ -239,7 +241,7 @@ export function ProjectFolderPicker({
         <Pressable
           key={entry.workspaceRoot}
           accessibilityRole="button"
-          accessibilityLabel={`Remove ${entry.title}`}
+          accessibilityLabel={t("Remove {title}", { title: entry.title })}
           disabled={busy}
           onPress={() =>
             setSelected((previous) =>

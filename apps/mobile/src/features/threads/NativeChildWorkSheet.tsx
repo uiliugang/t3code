@@ -5,6 +5,7 @@ import type {
   OrchestrationV2NativeChildWork,
   ThreadId,
 } from "@t3tools/contracts";
+import { useGT } from "gt-react-native";
 import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -78,10 +79,11 @@ export function NativeChildWorkSheet(props: {
 function NativeChild(props: { readonly child: OrchestrationV2NativeChildWork }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const { child } = props;
   return (
     <View className="gap-2">
-      <Text className="font-t3-bold text-sm text-foreground">{child.role || "Subagent"}</Text>
+      <Text className="font-t3-bold text-sm text-foreground">{child.role || gt("Subagent")}</Text>
       <Text selectable className="font-sans text-sm text-foreground-secondary">
         {child.prompt}
       </Text>

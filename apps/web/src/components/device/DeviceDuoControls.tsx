@@ -1,3 +1,4 @@
+import { msg, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 import {
   duoFoldState,
@@ -17,8 +18,8 @@ const FOLDS = [
   { id: "open", angle: 180 },
 ] as const;
 const STANDS = [
-  { id: "laptop", label: "Laptop stand" },
-  { id: "tent", label: "Tent stand" },
+  { id: "laptop", label: msg("Laptop stand") },
+  { id: "tent", label: msg("Tent stand") },
 ] as const;
 
 export function DeviceDuoControls(props: {
@@ -29,6 +30,8 @@ export function DeviceDuoControls(props: {
 }) {
   const t = useUiTranslation();
   const { screen } = props;
+  const gt = useGT();
+  const m = useMessages();
   const { fold, stand, phoneVertical: reportedVertical, settled } = duoFoldState(screen);
   const [settledVertical, setSettledVertical] = useState(reportedVertical);
   if (settled && settledVertical !== reportedVertical) setSettledVertical(reportedVertical);
@@ -92,11 +95,11 @@ export function DeviceDuoControls(props: {
           ),
         )}
       </div>
-      <div role="group" aria-label={t("Device stance")} className={group}>
+      <div role="group" aria-label={gt("Device stance")} className={group}>
         {STANDS.map(({ id, label }) =>
           button(
             id,
-            t(label),
+            m(label),
             screen.hingePose === id,
             () => {
               if (!stand) setStandVertical(settledVertical);

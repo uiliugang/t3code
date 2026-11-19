@@ -65,7 +65,7 @@ export function CodexConnectionSettings({
     if (result._tag === "Failure") {
       const failure = squashAtomCommandFailure(result);
       setError(
-        failure instanceof Error ? failure.message : "Could not switch connection. Try again.",
+        failure instanceof Error ? failure.message : t("Could not switch connection. Try again."),
       );
     }
   };

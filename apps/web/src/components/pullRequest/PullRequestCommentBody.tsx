@@ -1,4 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+
 import { useId, useRef, useState, type ComponentProps } from "react";
 
 import { cn } from "~/lib/utils";
@@ -11,6 +12,7 @@ export function PullRequestCommentBody({
   ...props
 }: ComponentProps<typeof PullRequestMarkdown>) {
   const t = useUiTranslation();
+
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const clip = useRef<HTMLDivElement>(null);

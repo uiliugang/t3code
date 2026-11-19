@@ -1,5 +1,6 @@
 /* oxlint-disable react/no-array-index-key -- Notebook cells and outputs retain their saved source order. */
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { useMessages } from "gt-react";
 import { useEffect, useRef, useState } from "react";
 import type { Root, RootContent } from "mdast";
 import ChatMarkdown from "~/components/ChatMarkdown";
@@ -47,6 +48,7 @@ export default function NotebookPreview(props: {
   readonly sizeBytes?: number | undefined;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const [visible, setVisible] = useState(20);
   const scroll = useRef<HTMLDivElement>(null);
   const [outputView, setOutputView] = useState(() => ({
@@ -105,7 +107,7 @@ export default function NotebookPreview(props: {
         })}{" "}
         · {props.notebook.language}
         {props.sizeBytes !== undefined
-          ? ` · ${props.sizeBytes === 0 ? t("0 bytes") : formatAttachmentSize(props.sizeBytes)}`
+          ? ` · ${props.sizeBytes === 0 ? t("0 bytes") : formatAttachmentSize(props.sizeBytes, messages)}`
           : ""}
       </div>
       <FileSurfaceNotice>{t("Saved outputs only. Code is never executed.")}</FileSurfaceNotice>

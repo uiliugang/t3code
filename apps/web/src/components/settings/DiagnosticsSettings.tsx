@@ -1,5 +1,7 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m as resolveMessage } from "~/i18n/messages";
 import { ProcessSignalActions } from "./ProcessSignalActions";
 import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
 import { environmentSession } from "../../state/session";
@@ -20,6 +22,8 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { useRef, useState, type ReactNode } from "react";
+import { msg, T, useGT, useMessages, Var } from "gt-react";
+import type { MessageResolver } from "../../i18n/messages";
 import type {
   ServerProcessDiagnosticsEntry,
   ServerProcessResourceHistorySummary,
@@ -60,7 +64,7 @@ function RelativeTimeNoWrap(props: { value: DateTime.Utc }) {
   const t = useUiTranslation();
   const relative = useRelativeTimeState(DateTime.formatIso(props.value), t);
   if (relative.status !== "relative") return null;
-  return relative.suffix ? `${relative.value}\u00a0${relative.suffix}` : relative.value;
+  return relative.label.replaceAll(" ", "\u00a0");
 }
 
 function shortenTraceId(traceId: string): string {
@@ -200,7 +204,11 @@ function DiagnosticsTable({
 function TraceIdCell({ traceId }: { traceId: string }) {
   const t = useUiTranslation();
   const { copyToClipboard, isCopied: copied } = useCopyToClipboard({
-    target: "trace ID",
+    target: {
+      target: "trace ID",
+      unavailableMessage: msg("Clipboard API is unavailable while copying trace ID."),
+      failureMessage: msg("Failed to copy trace ID to the clipboard."),
+    },
     timeout: 1_200,
   });
 
@@ -245,10 +253,14 @@ function formatProcessName(command: string): string {
   return segments.at(-1) ?? normalized;
 }
 
-function formatProcessType(process: ServerProcessDiagnosticsEntry): string {
-  if (process.depth > 0) return "Subprocess";
-  if (/\b(codex|claude|opencode|cursor)\b/i.test(process.command)) return "Agent";
-  return "Process";
+function formatProcessType(
+  process: ServerProcessDiagnosticsEntry,
+  resolve: MessageResolver,
+): string {
+  if (process.depth > 0) return resolve(msg("Subprocess"));
+  if (/\b(codex|claude|opencode|cursor)\b/i.test(process.command))
+    return resolve(msg("Agent", { $context: "process type" }));
+  return resolve(msg("Process", { $context: "process type" }));
 }
 
 function ProcessNameCell({
@@ -335,6 +347,7 @@ function ProcessDiagnosticsTable({
   emptyLabel?: string;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const [collapsedPids, setCollapsedPids] = useState<ReadonlySet<number>>(() => new Set());
   const visibleProcesses = visibleProcessTree(processes, collapsedPids);
 
@@ -371,13 +384,27 @@ function ProcessDiagnosticsTable({
           </colgroup>
           <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-2xs uppercase tracking-widest text-muted-foreground/70">
             <tr>
-              <th className="px-4 py-2 font-semibold sm:pl-5">{t("Name")}</th>
-              <th className="px-3 py-2 text-right font-semibold">CPU</th>
-              <th className="px-3 py-2 text-right font-semibold">{t("Memory")}</th>
-              <th className="px-3 py-2 font-semibold">{t("Command")}</th>
-              <th className="px-3 py-2 text-right font-semibold">PID</th>
-              <th className="px-3 py-2 font-semibold">{t("Type")}</th>
-              <th className="p-2 text-right font-semibold sm:pr-4">{t("Kill")}</th>
+              <th className="px-4 py-2 font-semibold sm:pl-5">
+                <T>Name</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>CPU</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>Memory</T>
+              </th>
+              <th className="px-3 py-2 font-semibold">
+                <T>Command</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>PID</T>
+              </th>
+              <th className="px-3 py-2 font-semibold">
+                <T>Type</T>
+              </th>
+              <th className="p-2 text-right font-semibold sm:pr-4">
+                <T>Kill</T>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
@@ -418,7 +445,7 @@ function ProcessDiagnosticsTable({
                   {process.pid}
                 </td>
                 <td className="truncate px-3 py-2 align-middle text-muted-foreground">
-                  {t(formatProcessType(process))}
+                  {formatProcessType(process, m)}
                 </td>
                 <td className="p-2 align-middle sm:pr-4">
                   <ProcessSignalActions
@@ -548,10 +575,10 @@ function ResourceHistoryWindowSelector({
   selectedWindowMs: number;
   onSelect: (windowMs: number) => void;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   return (
     <ToggleGroup
-      aria-label={t("Process history period")}
+      aria-label={gt("Process history period")}
       variant="segmented"
       value={[String(selectedWindowMs)]}
       onValueChange={(next) => {
@@ -578,6 +605,7 @@ function ProcessResourceHistoryTable({
   emptyLabel: string;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const shallowestChildDepth = processes.reduce<number | null>((minDepth, process) => {
     if (process.isServerRoot) return minDepth;
     return minDepth === null ? process.depth : Math.min(minDepth, process.depth);
@@ -604,14 +632,30 @@ function ProcessResourceHistoryTable({
           </colgroup>
           <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-2xs uppercase tracking-widest text-muted-foreground/70">
             <tr>
-              <th className="px-4 py-2 font-semibold sm:pl-5">{t("Process")}</th>
-              <th className="px-3 py-2 text-right font-semibold">{t("CPU Time")}</th>
-              <th className="px-3 py-2 text-right font-semibold">{t("Current")}</th>
-              <th className="px-3 py-2 text-right font-semibold">{t("Average")}</th>
-              <th className="px-3 py-2 text-right font-semibold">{t("Peak")}</th>
-              <th className="px-3 py-2 text-right font-semibold">{t("Max Mem")}</th>
-              <th className="px-3 py-2 font-semibold">{t("Command")}</th>
-              <th className="px-3 py-2 text-right font-semibold sm:pr-5">PID</th>
+              <th className="px-4 py-2 font-semibold sm:pl-5">
+                <T>Process</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>CPU Time</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>Current</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>Average</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>Peak</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold">
+                <T>Max Mem</T>
+              </th>
+              <th className="px-3 py-2 font-semibold">
+                <T>Command</T>
+              </th>
+              <th className="px-3 py-2 text-right font-semibold sm:pr-5">
+                <T>PID</T>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
@@ -636,7 +680,7 @@ function ProcessResourceHistoryTable({
                   />
                 </td>
                 <td className="px-3 py-2 text-right align-middle font-mono tabular-nums">
-                  {formatCpuTime(process.cpuSecondsApprox)}
+                  {formatCpuTime(process.cpuSecondsApprox, m)}
                 </td>
                 <td className="px-3 py-2 text-right align-middle font-mono tabular-nums">
                   {process.currentCpuPercent.toFixed(1)}%
@@ -673,29 +717,37 @@ function ProcessResourceHistoryTable({
 }
 
 function DiagnosticsLastChecked({ checkedAt }: { checkedAt: DateTime.Utc | null }) {
-  const t = useUiTranslation();
-  const relative = useRelativeTimeState(checkedAt ? DateTime.formatIso(checkedAt) : null, t);
+  const gt = useGT();
+  const relative = useRelativeTimeState(checkedAt ? DateTime.formatIso(checkedAt) : null);
 
   if (relative.status === "missing") {
-    return <span className="text-2xs text-muted-foreground/50">{t("Checking")}</span>;
+    return (
+      <span className="text-2xs text-muted-foreground/50">
+        <T>Checking</T>
+      </span>
+    );
   }
 
   if (relative.status === "invalid") {
-    return <span className="text-2xs text-muted-foreground/50">{t("Checked unavailable")}</span>;
+    return (
+      <span className="text-2xs text-muted-foreground/50">
+        <T>Checked unavailable</T>
+      </span>
+    );
   }
 
   return (
     <span className="text-2xs text-muted-foreground/60">
       {relative.suffix ? (
-        <>
-          {t("Checked")} <span className="font-mono tabular-nums">{relative.value}</span>{" "}
-          {relative.suffix}
-        </>
+        <T context="the time is an elapsed time such as 5m">
+          Checked{" "}
+          <span className="font-mono tabular-nums">
+            <Var>{relative.value}</Var>
+          </span>{" "}
+          ago
+        </T>
       ) : (
-        <>
-          {t("Checked")}
-          {relative.value}
-        </>
+        gt("Checked {time}", { time: relative.value })
       )}
     </span>
   );
@@ -738,6 +790,8 @@ export function DiagnosticsSettingsPanel() {
 
 function DiagnosticsSettingsBody() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const { environment } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const canMaintainEnvironment = useEnvironmentScope(environmentId, AuthEnvironmentMaintainScope);
@@ -746,12 +800,16 @@ function DiagnosticsSettingsBody() {
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const session = useEnvironmentQuery(
     environmentId === null ? null : environmentSession.sessionStateAtom(environmentId),
+    m,
   );
-  const diagnosticsAccess = resolveUsageAccess({
-    connectionPhase: environment?.connection.phase ?? "available",
-    session: session.data,
-    hasSessionError: session.error !== null,
-  });
+  const diagnosticsAccess = resolveUsageAccess(
+    {
+      connectionPhase: environment?.connection.phase ?? "available",
+      session: session.data,
+      hasSessionError: session.error !== null,
+    },
+    m,
+  );
   const canReadDiagnostics = diagnosticsAccess.canReadDiagnostics;
   const signalServerProcess = useAtomCommand(serverEnvironment.signalProcess, {
     reportFailure: false,
@@ -765,6 +823,7 @@ function DiagnosticsSettingsBody() {
     environmentId === null || !canReadDiagnostics
       ? null
       : serverEnvironment.traceDiagnostics({ environmentId, input: {} }),
+    m,
   );
   const {
     data: processData,
@@ -775,6 +834,7 @@ function DiagnosticsSettingsBody() {
     environmentId === null || !canReadDiagnostics
       ? null
       : serverEnvironment.processDiagnostics({ environmentId, input: {} }),
+    m,
   );
   const {
     data: resourceData,
@@ -791,6 +851,7 @@ function DiagnosticsSettingsBody() {
             bucketMs: selectedResourceWindow.bucketMs,
           },
         }),
+    m,
   );
   const [isOpeningLogsDirectory, setIsOpeningLogsDirectory] = useState(false);
   const [openLogsDirectoryError, setOpenLogsDirectoryError] = useState<string | null>(null);
@@ -816,7 +877,9 @@ function DiagnosticsSettingsBody() {
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setOpenLogsDirectoryError(
-          error instanceof Error ? t(error.message) : t("Unable to open logs folder."),
+          error instanceof Error
+            ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+            : gt("Unable to open logs folder."),
         );
       }
     })();
@@ -864,9 +927,11 @@ function DiagnosticsSettingsBody() {
         clearSignaling();
         toastManager.add({
           type: "error",
-          title: t("Could not confirm signal"),
+          title: gt("Could not confirm signal"),
           description:
-            error instanceof Error ? t(error.message) : t("Failed to send {signal}.", { signal }),
+            error instanceof Error
+              ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+              : gt("Failed to send {signal}.", { signal }),
         });
         return;
       }
@@ -892,9 +957,11 @@ function DiagnosticsSettingsBody() {
         const error = squashAtomCommandFailure(result);
         toastManager.add({
           type: "error",
-          title: t("Could not send {signal}", { signal }),
+          title: gt("Could not send {signal}", { signal }),
           description:
-            error instanceof Error ? t(error.message) : t("Failed to send {signal}.", { signal }),
+            error instanceof Error
+              ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+              : gt("Failed to send {signal}.", { signal }),
         });
       }
       return;
@@ -935,10 +1002,10 @@ function DiagnosticsSettingsBody() {
       <SettingsPageContainer>
         <p className="text-sm text-muted-foreground">
           {environmentId === null
-            ? t("Connect an environment to see diagnostics.")
+            ? gt("Connect an environment to see diagnostics.")
             : diagnosticsAccess.isPending
-              ? t("Checking diagnostics access…")
-              : diagnosticsAccess.error && t(diagnosticsAccess.error)}
+              ? gt("Checking diagnostics access…")
+              : diagnosticsAccess.error}
         </p>
       </SettingsPageContainer>
     );
@@ -967,7 +1034,7 @@ function DiagnosticsSettingsBody() {
             value={processData ? formatCount(processData.processCount) : "..."}
           />
           <StatBlock
-            label="CPU"
+            label={gt("CPU")}
             value={processData ? `${processData.totalCpuPercent.toFixed(1)}%` : "..."}
             tooltip={t(
               "Total CPU across live child processes of the current server process. The desktop shell and other parent processes are not included.",
@@ -1033,9 +1100,9 @@ function DiagnosticsSettingsBody() {
       >
         <StatsGrid>
           <StatBlock
-            label={t("CPU Time")}
-            value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox) : "..."}
-            tooltip={t(
+            label={gt("CPU Time")}
+            value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox, m) : "..."}
+            tooltip={gt(
               "Approximate active CPU time for the T3 server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves.",
             )}
           />
@@ -1164,11 +1231,11 @@ function DiagnosticsSettingsBody() {
                 <AlertTriangleIcon className="size-3.5 h-lh shrink-0" />
                 <span>
                   {traceDiagnosticsPartialFailure
-                    ? t(
-                        "Some trace files could not be read, so diagnostics may be incomplete. {error}",
-                        { error: t(traceDiagnosticsError.message) },
+                    ? gt(
+                        "Some trace files could not be read, so diagnostics may be incomplete. {message}",
+                        { message: traceDiagnosticsError.message },
                       )
-                    : t(traceDiagnosticsError.message)}
+                    : traceDiagnosticsError.message}
                 </span>
               </div>
             ) : null}

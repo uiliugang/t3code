@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react";
 import {
   getClientSettings,
   updateClientSettings,
@@ -17,6 +18,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 export function ThreadDetailsItemsMenuItems() {
   const t = useUiTranslation();
   const visibility = useClientSettings(resolveThreadDetailsVisibility);
+  const m = useMessages();
   const separate = useClientSettings((settings) => settings.branchIssuesPlacement === "separate");
   const expanded = useClientSettings((settings) => settings.branchIssuesExpanded);
   const showEmpty = useClientSettings((settings) => settings.branchIssuesShowEmpty);
@@ -34,7 +36,7 @@ export function ThreadDetailsItemsMenuItems() {
               })
             }
           >
-            {t(item.label)}
+            {m(item.label)}
           </MenuCheckboxItem>
         ))}
       </MenuGroup>

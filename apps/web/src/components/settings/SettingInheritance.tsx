@@ -12,11 +12,13 @@ import {
 } from "@t3tools/contracts";
 import { CheckIcon, ChevronRightIcon, LayersIcon } from "lucide-react";
 import * as Equal from "effect/Equal";
+import { decodeOptions, msg, useGT } from "gt-react";
 
+import { m } from "../../i18n/messages";
 import { cn } from "../../lib/utils";
 import type { EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
-import { resolveEnvModeLabel, WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
+import { WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { Button, InlineButton } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -36,19 +38,25 @@ interface InheritanceLayer {
 }
 
 const WRITING_STYLE_LABELS: Record<string, string> = {
-  repo_conventions: "Repository conventions",
-  conventional_commits: "Conventional Commits",
-  custom: "Custom instructions",
+  repo_conventions: msg("Repository conventions"),
+  conventional_commits: msg("Conventional Commits"),
+  custom: msg("Custom instructions"),
 };
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<string, string> = {
-  balanced: "Balanced",
-  performance: "Performance",
-  "battery-saver": "Battery saver",
-  custom: "Advanced",
+  balanced: msg("Balanced"),
+  performance: msg("Performance"),
+  "battery-saver": msg("Battery saver"),
+  custom: msg("Advanced", { $context: "background activity power profile" }),
 };
 
 function formatValue(key: keyof ServerSettings, value: unknown, t: UiTranslator): string {
+  const translateLabel = (message: string) => {
+    const decoded = decodeOptions(message)?.$_source;
+    const source = typeof decoded === "string" ? decoded : message;
+    const translated = t(source);
+    return translated !== source ? translated : m(message);
+  };
   if (value === null || value === undefined) {
     return t(
       key === "pullRequestMergeMethod"
@@ -78,13 +86,13 @@ function formatValue(key: keyof ServerSettings, value: unknown, t: UiTranslator)
       if (mode) return t(mode.label);
     }
     if (key === "defaultThreadEnvMode" && (value === "local" || value === "worktree")) {
-      return t(resolveEnvModeLabel(value));
+      return t(value === "worktree" ? "New worktree" : "Current checkout");
     }
     if (key === "worktreeSubmodules" && value in WORKTREE_SUBMODULES_LABELS) {
-      return t(WORKTREE_SUBMODULES_LABELS[value as WorktreeSubmodules]);
+      return translateLabel(WORKTREE_SUBMODULES_LABELS[value as WorktreeSubmodules]);
     }
     if (key === "pullRequestMergeMethod" && value in PULL_REQUEST_MERGE_METHOD_LABELS) {
-      return t(
+      return translateLabel(
         PULL_REQUEST_MERGE_METHOD_LABELS[value as keyof typeof PULL_REQUEST_MERGE_METHOD_LABELS],
       );
     }
@@ -94,13 +102,16 @@ function formatValue(key: keyof ServerSettings, value: unknown, t: UiTranslator)
     return t(value.length === 1 ? "{count} item" : "{count} items", { count: value.length });
   if (typeof value === "object") {
     if (key === "backgroundActivity" && "profile" in value && typeof value.profile === "string") {
-      return t(BACKGROUND_ACTIVITY_PROFILE_LABELS[value.profile] ?? value.profile);
+      const label = BACKGROUND_ACTIVITY_PROFILE_LABELS[value.profile];
+      return label ? translateLabel(label) : value.profile;
     }
     if ("model" in value && typeof value.model === "string") return value.model;
     if ("mode" in value && typeof value.mode === "string") {
       if (key === "worktreeCleanup") return t(value.mode === "off" ? "Off" : "Custom");
       return key === "sourceControlWritingStyle"
-        ? t(WRITING_STYLE_LABELS[value.mode] ?? value.mode)
+        ? WRITING_STYLE_LABELS[value.mode]
+          ? translateLabel(WRITING_STYLE_LABELS[value.mode]!)
+          : value.mode
         : value.mode;
     }
   }
@@ -124,7 +135,7 @@ export function settingInheritanceLayers(
   if (target.projectId !== null && isProjectScopedSettingKey(key)) {
     layers.push({
       key: "project",
-      label: "Project",
+      label: t("Project"),
       value: source === "project" ? formatValue(key, target.settings[key], t) : t("Inherits"),
       effective: source === "project",
       set: source === "project",
@@ -152,7 +163,7 @@ export function settingInheritanceLayers(
     : DEFAULT_SERVER_SETTINGS[key];
   layers.push({
     key: "built-in",
-    label: "Default",
+    label: t("Default"),
     value: formatValue(key, builtIn, t),
     effective: source === "environment" && !environmentSet,
     set: true,
@@ -199,6 +210,7 @@ export function SettingInheritance({
   onClearOverrides?: (entries: readonly ProjectOverrideEntry[]) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const scopeContext = useOptionalSettingsScope();
   const key = keys[0];
   if (!key || targets.length === 0) return null;
@@ -307,7 +319,7 @@ export function SettingInheritance({
                         layer.effective ? "font-medium text-foreground" : "text-muted-foreground",
                       )}
                     >
-                      {layer.key === "environment" ? t("Environment") : t(layer.label)}
+                      {layer.key === "environment" ? gt("Environment") : layer.label}
                     </span>
                     <span
                       className={cn(
@@ -360,8 +372,8 @@ export function SettingInheritance({
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {winningLayer?.key === "environment"
-                              ? t("Environment")
-                              : winningLayer && t(winningLayer.label)}
+                              ? gt("Environment")
+                              : winningLayer?.label}
                           </span>
                           <ChevronRightIcon
                             aria-hidden

@@ -70,7 +70,7 @@ function useRunScopedPlan() {
       toastManager.add({
         type: "warning",
         title: t("Setting not saved"),
-        description: t(plan.unavailableReason),
+        description: plan.unavailableReason,
       });
       onFailed?.();
       return;
@@ -125,7 +125,7 @@ function useRunScopedPlan() {
           ...failedEnvironments.map(({ label, message }) =>
             t("Could not save on {environment}: {message}", {
               environment: label,
-              message: t(message),
+              message,
             }),
           ),
           ...(savedEnvironmentCount > 0

@@ -1,3 +1,4 @@
+import { msg, useMessages } from "gt-react-native";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
@@ -22,22 +23,28 @@ const options: ReadonlyArray<{
   label: string;
   description: string;
 }> = [
-  { value: "off", label: "Off", description: "Keep source control requests on this environment." },
+  {
+    value: "off",
+    label: msg("Off", { $context: "pull request routing permission" }),
+    description: msg("Keep source control requests on this environment."),
+  },
   {
     value: "read",
-    label: "Read PRs",
-    description: "Share PR data with other enabled environments.",
+    label: msg("Read PRs"),
+    description: msg("Share PR data with other enabled environments."),
   },
   {
     value: "read-write",
-    label: "Read and act",
-    description:
+    label: msg("Read and act"),
+    description: msg(
       "Actions may use broader source control permissions than the original environment.",
+    ),
   },
 ];
 
 export function PullRequestRoutingSettings() {
   const t = useUiTranslation();
+  const m = useMessages();
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const permissions = useAtomValue(environmentCatalog.pullRequestRoutingPermissionsValueAtom);
   const update = useAtomCommand(environmentCatalog.setPullRequestRoutingPermission);
@@ -73,7 +80,7 @@ export function PullRequestRoutingSettings() {
                   </Text>
                 </View>
                 <Text className="text-sm text-foreground-muted">
-                  {t(options.find((option) => option.value === selected)?.label ?? "")}
+                  {m(options.find((option) => option.value === selected)?.label ?? "")}
                 </Text>
                 <SymbolView
                   name={expanded === environmentId ? "chevron.up" : "chevron.down"}
@@ -85,8 +92,8 @@ export function PullRequestRoutingSettings() {
                 ? options.map((option) => (
                     <ListChoiceRow
                       key={option.value}
-                      label={t(option.label)}
-                      description={t(option.description)}
+                      label={m(option.label)}
+                      description={m(option.description)}
                       selected={selected === option.value}
                       disabled={disabled}
                       onPress={() => {

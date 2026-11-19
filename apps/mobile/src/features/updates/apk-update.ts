@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
+import { mFallback, msg } from "gt-react-native";
 
 const ApkUpdateManifest = Schema.Struct({
   packageName: Schema.NonEmptyString,
@@ -77,7 +78,7 @@ export function createApkUpdater(options: {
   const fail = (error: unknown) => {
     options.onStateChange({
       status: "error",
-      message: error instanceof Error ? error.message : "Could not update the app.",
+      message: error instanceof Error ? error.message : mFallback(msg("Could not update the app.")),
     });
   };
 

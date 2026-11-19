@@ -1,4 +1,5 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { msg, useGT } from "gt-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
@@ -116,9 +117,8 @@ import type { RequirementsSearch } from "../../routes/_chat.requirements";
 const requirementViews = {
   storageKey: "t3.requirements.savedViews",
   empty: [],
-  noun: "requirement",
-  shortNoun: "requirement",
-  placeholder: "Assigned to me",
+  list: "requirement",
+  placeholder: msg("Assigned to me"),
   suggestedName: () => "",
   schema: Schema.Array(
     Schema.Struct({ ...SavedViewIdentity.fields, preferences: RequirementFilters }),
@@ -214,6 +214,7 @@ export function RequirementBoard({
   compact?: boolean;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const registry = useContext(RegistryContext);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const rightPanelRef = panelRef ?? REQUIREMENTS_PANEL_REF;
@@ -752,10 +753,10 @@ export function RequirementBoard({
                     {(
                       [
                         { value: "all", label: t("All sources") },
-                        { value: "meituan", label: "MEP ONES" },
-                        { value: "github", label: "GitHub Issues" },
+                        { value: "meituan", label: gt("MEP ONES") },
+                        { value: "github", label: gt("GitHub Issues") },
                         { value: "gitlab", label: "GitLab" },
-                        { value: "linear", label: "Linear" },
+                        { value: "linear", label: gt("Linear") },
                         { value: "local", label: t("Local work items") },
                       ] as const
                     )

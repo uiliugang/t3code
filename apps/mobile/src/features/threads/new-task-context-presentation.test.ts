@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { UiTranslator } from "@t3tools/shared/uiLocale";
+import { decodeOptions } from "gt-react-native";
 
+import type { MessageResolver } from "../../i18n/messages";
 import {
   fillNewTaskWorkspaceBranch,
   filterNewTaskBranches,
@@ -123,17 +124,18 @@ describe("resolveNewTaskBranchLabel", () => {
   it.each(["Choose branch", "feature/{branch}", "分支/中文"])(
     "keeps the branch name unchanged while translating its source label (%s)",
     (branchName) => {
-      const t: UiTranslator = (_message, values) => `来源：${values?.branch ?? "选择分支"}`;
+      const resolve = ((message: string) =>
+        `来源：${decodeOptions(message)?.branch ?? "选择分支"}`) as MessageResolver;
       expect(
         resolveNewTaskBranchLabel(
           { branchName, startFromOrigin: false, workspaceMode: "local" },
-          t,
+          resolve,
         ),
       ).toBe(branchName);
       expect(
         resolveNewTaskBranchLabel(
           { branchName, startFromOrigin: false, workspaceMode: "worktree" },
-          t,
+          resolve,
         ),
       ).toBe(`来源：${branchName}`);
     },

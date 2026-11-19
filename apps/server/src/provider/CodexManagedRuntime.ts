@@ -77,7 +77,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
       ),
     );
     const executable = yield* installation
-      .acquire(codexRuntimeSource(options.config), localBinary)
+      .acquire(codexRuntimeSource(options.config), localBinary, options.environment)
       .pipe(
         Effect.mapError(
           () =>
@@ -146,6 +146,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
     installation,
     homePath,
     homeLayout,
-    resolveExecutable: () => installation.resolve(codexRuntimeSource(options.config), localBinary),
+    resolveExecutable: () =>
+      installation.resolve(codexRuntimeSource(options.config), localBinary, options.environment),
   };
 });

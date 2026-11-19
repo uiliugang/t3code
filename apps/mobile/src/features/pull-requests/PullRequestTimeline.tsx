@@ -14,12 +14,14 @@ import {
   type PullRequestComment,
 } from "@t3tools/contracts";
 import { StackActions, type NavigationProp } from "@react-navigation/native";
+import { useMessages } from "gt-react-native";
 import { useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { parseMarkdownDocument } from "../../lib/markdownDocument";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
-import { byTimestamp, relativeTime } from "../../lib/time";
+import { byTimestamp } from "../../lib/time";
+import { RelativeTime } from "../../components/RelativeTime";
 import { PullRequestAvatar } from "./PullRequestPresentation";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestCommentFooter } from "./PullRequestReactions";
@@ -89,11 +91,12 @@ function TimelineComment({
   const linked =
     target?.kind === "timeline" && pullRequestAnchorMatchesUrl(target.anchor, comment.url);
   const [expanded, setExpanded] = useState(linked);
+  const messages = useMessages();
   const { themeVariables: colors } = useAppearancePreferences();
   const long = comment.body.length > 450 || comment.body.split("\n").length > 8;
   const content = useMemo(
-    () => pullRequestDescriptionContent(parseMarkdownDocument(comment.body)),
-    [comment.body],
+    () => pullRequestDescriptionContent(parseMarkdownDocument(comment.body), [], messages),
+    [comment.body, messages],
   );
   const preview = content.preview;
   const state = normalizedReviewState(comment.reviewState);
@@ -115,7 +118,7 @@ function TimelineComment({
           </Text>
         </View>
         <Text className="text-2xs text-foreground-tertiary">
-          {relativeTime(comment.createdAt, undefined, t)}
+          <RelativeTime timestamp={comment.createdAt} />
         </Text>
       </View>
       {comment.path ? (
@@ -266,7 +269,7 @@ export function pullRequestTimelineRows(
             </Text>
             {thread.comments[0] ? (
               <Text className="text-2xs text-foreground-tertiary">
-                {relativeTime(thread.comments[0].createdAt, undefined, t)}
+                <RelativeTime timestamp={thread.comments[0].createdAt} />
               </Text>
             ) : null}
           </View>

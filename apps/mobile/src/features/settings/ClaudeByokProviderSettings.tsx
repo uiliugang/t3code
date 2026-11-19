@@ -290,12 +290,12 @@ function ClaudeByokEditor({
                 actions={[
                   {
                     id: "anthropic",
-                    title: "Anthropic Messages",
+                    title: t("Anthropic Messages"),
                     state: protocol === "anthropic" ? "on" : "off",
                   },
                   {
                     id: "openai",
-                    title: "OpenAI Chat Completions",
+                    title: t("OpenAI Chat Completions"),
                     state: protocol === "openai" ? "on" : "off",
                   },
                 ]}
@@ -308,7 +308,9 @@ function ClaudeByokEditor({
                 }}
               >
                 <ControlPill
-                  label={protocol === "openai" ? "OpenAI Chat Completions" : "Anthropic Messages"}
+                  label={
+                    protocol === "openai" ? t("OpenAI Chat Completions") : t("Anthropic Messages")
+                  }
                   variant="pill"
                   disabled={disabled}
                 />
@@ -318,10 +320,14 @@ function ClaudeByokEditor({
             {!codex ? (
               <Menu
                 actions={[
-                  { id: "bearer", title: "Bearer Token", state: mode === "bearer" ? "on" : "off" },
+                  {
+                    id: "bearer",
+                    title: t("Bearer Token"),
+                    state: mode === "bearer" ? "on" : "off",
+                  },
                   {
                     id: "apiKey",
-                    title: protocol === "openai" ? "API Key (Bearer)" : "API Key (x-api-key)",
+                    title: protocol === "openai" ? t("API Key (Bearer)") : t("API Key (x-api-key)"),
                     state: mode === "apiKey" ? "on" : "off",
                   },
                 ]}
@@ -336,10 +342,10 @@ function ClaudeByokEditor({
                 <ControlPill
                   label={
                     mode === "bearer"
-                      ? "Bearer Token"
+                      ? t("Bearer Token")
                       : protocol === "openai"
-                        ? "API Key (Bearer)"
-                        : "API Key (x-api-key)"
+                        ? t("API Key (Bearer)")
+                        : t("API Key (x-api-key)")
                   }
                   variant="pill"
                   disabled={disabled}

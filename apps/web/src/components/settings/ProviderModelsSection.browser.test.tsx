@@ -144,29 +144,6 @@ it("edits Antigravity names without changing account-owned IDs or options and re
   expect(props.onModelOrderChange).not.toHaveBeenCalled();
 });
 
-it("lists a favorite the provider no longer reports so it can be unstarred", async () => {
-  const onToggleFavorite = vi.fn();
-  await using screen = await render(
-    <ProviderModelsSection
-      instanceId={ProviderInstanceId.make("claude")}
-      driverKind={ProviderDriverKind.make("claudeAgent")}
-      models={[]}
-      customModels={[]}
-      canManageCustomModels
-      hiddenModels={[]}
-      favoriteModels={["retired-model"]}
-      modelOrder={[]}
-      onChange={async () => true}
-      onHiddenModelsChange={() => {}}
-      onFavoriteModelsChange={() => {}}
-      onToggleFavorite={onToggleFavorite}
-      onModelOrderChange={() => {}}
-    />,
-  );
-  await screen.getByRole("button", { name: "Remove retired-model from favorites" }).click();
-  expect(onToggleFavorite).toHaveBeenCalledWith("retired-model");
-});
-
 function section(props: Partial<ComponentProps<typeof ProviderModelsSection>>) {
   return (
     <ProviderModelsSection
@@ -195,6 +172,35 @@ it("lists a favorite the provider no longer reports so it can be unstarred", asy
   );
   await screen.getByRole("button", { name: "Remove retired-model from favorites" }).click();
   expect(onToggleFavorite).toHaveBeenCalledWith("retired-model");
+});
+
+it("keeps favorite and order preferences until custom model removal succeeds", async () => {
+  const model = { slug: "my-model", name: "My model", capabilities: null };
+  const results: Array<(saved: boolean) => void> = [];
+  const onChange = () => new Promise<boolean>((resolve) => results.push(resolve));
+  const onFavoriteModelsChange = vi.fn();
+  const onModelOrderChange = vi.fn();
+  await using screen = await render(
+    section({
+      onChange,
+      models: [{ ...model, isCustom: true }],
+      customModels: [model],
+      favoriteModels: [model.slug],
+      modelOrder: [model.slug],
+      onFavoriteModelsChange,
+      onModelOrderChange,
+    }),
+  );
+  const remove = screen.getByRole("button", { name: "Remove my-model", exact: true });
+  await remove.click();
+  await act(() => results[0]!(false));
+  expect(onFavoriteModelsChange).not.toHaveBeenCalled();
+  expect(onModelOrderChange).not.toHaveBeenCalled();
+
+  await remove.click();
+  await act(() => results[1]!(true));
+  expect(onFavoriteModelsChange).toHaveBeenCalledExactlyOnceWith([]);
+  expect(onModelOrderChange).toHaveBeenCalledExactlyOnceWith([]);
 });
 
 it("keeps custom model drafts until they save, so a failed save can be retried", async () => {

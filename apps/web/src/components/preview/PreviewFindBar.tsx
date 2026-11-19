@@ -14,6 +14,7 @@ interface PreviewFindBarProps {
 
 export function PreviewFindBar({ tabId, focusRequestId, onClose }: PreviewFindBarProps) {
   const t = useUiTranslation();
+
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<{ active: number; matches: number } | null>(null);

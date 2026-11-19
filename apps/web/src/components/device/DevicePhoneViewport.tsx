@@ -26,6 +26,7 @@ export function DevicePhoneViewport(props: {
   readonly onUnavailable: () => void;
 }) {
   const t = useUiTranslation();
+
   const viewerRef = useRef<PhoneViewer | null>(null);
   const interactionRef = useRef<ReturnType<typeof createPhoneInteraction> | null>(null);
   const screenRef = useRef(props.screen);

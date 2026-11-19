@@ -13,7 +13,7 @@ import {
   ProviderSetupError,
   type ProviderSetupInput,
 } from "@t3tools/contracts";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -35,7 +35,6 @@ import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 
 const ANTIGRAVITY = ProviderDriverKind.make("antigravity");
-const hasBinaryPath = Schema.is(Schema.Struct({ binaryPath: Schema.String }));
 const decodeCodexSettings = Schema.decodeUnknownEffect(CodexSettings);
 const decodeClaudeSettings = Schema.decodeUnknownEffect(ClaudeSettings);
 const decodeAntigravitySettings = Schema.decodeUnknownEffect(AntigravitySettings);
@@ -69,7 +68,6 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const scope = yield* Effect.scope;
-  const accountCheckOperations = new Map<ProviderInstanceId, string>();
   const resolveInstallEnvironment = Effect.fn("ProviderInstallation.resolveInstallEnvironment")(
     function* (instanceId: ProviderInstanceId, environment: ProviderInstanceEnvironment = []) {
       const references = environment.flatMap((variable) =>
@@ -95,6 +93,8 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
       return yield* mergeProviderInstanceEnvironment(resolved);
     },
   );
+  // A start during a running install joins it, so one operation is checked once whichever instance asked.
+  let accountCheckOperation: string | undefined;
 
   const readEntries = Effect.fn("ProviderInstallation.readEntries")(function* (
     instanceId: ProviderInstanceId,
@@ -192,14 +192,30 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     }
     if (isCodex && operation === "observe-install") {
       const source = codexRuntimeSource(config);
+      const instanceEnvironment = yield* mergeProviderInstanceEnvironment(
+        entries[instanceId]?.environment,
+      );
       const binaryPath = expandHomePath(
         config.binaryPath ?? "codex",
         yield* HostProcess.HomeDirectory,
       );
-      const projectState = (state: ProviderInstallState) =>
-        source !== "local" && ["downloading", "extracting", "verifying"].includes(state.phase)
+      const projectState = (shared: ProviderInstallState) => {
+        const state: ProviderInstallState =
+          source === "local"
+            ? {
+                ...shared,
+                source,
+                phase: "idle",
+                operationId: null,
+                downloadedBytes: 0,
+                totalBytes: null,
+                message: null,
+              }
+            : shared;
+        return source !== "local" &&
+          ["downloading", "extracting", "verifying"].includes(state.phase)
           ? Effect.succeed(state)
-          : codexInstallation.resolve(source, binaryPath).pipe(
+          : codexInstallation.resolve(source, binaryPath, instanceEnvironment).pipe(
               Effect.match({
                 onFailure: (error): ProviderInstallState => ({
                   ...state,
@@ -214,12 +230,10 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
                   installedVersion: executable.version,
                   executablePath: executable.executablePath,
                   canRemove: executable.source === "managed" && state.canRemove,
-                  ...(source === "local"
-                    ? { phase: "idle", operationId: null, message: null }
-                    : {}),
                 }),
               }),
             );
+      };
       return {
         installation: {
           ...installation,
@@ -245,15 +259,34 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     ) =>
       new ProviderSetupError({ instanceId, operation: error.operation, detail: error.detail });
 
+  // Every instance without a custom executable runs the one managed runtime, so an install
+  // replaces the runtime behind all of their model lists, not only the instance that asked.
+  const checkManagedRuntimeInstances = Effect.fn(
+    "ProviderInstallation.checkManagedRuntimeInstances",
+  )(function* (instanceId: ProviderInstanceId) {
+    const entries = yield* readEntries(instanceId, "install");
+    for (const instance of yield* instances.listInstances) {
+      if (instance.driverKind !== ANTIGRAVITY || !instance.enabled || !instance.refreshModels) {
+        continue;
+      }
+      const config = yield* decodeAntigravitySettings(
+        entries[instance.instanceId]?.config ?? {},
+      ).pipe(Effect.option);
+      if (Option.isNone(config) || config.value.binaryPath) continue;
+      yield* instance.refreshModels().pipe(Effect.ignore({ log: true }));
+      yield* providers.refreshInstance(instance.instanceId);
+    }
+  });
+
   const start = Effect.fn("ProviderInstallation.start")(function* (input: ProviderSetupInput) {
     const { installation, driver } = yield* requireInstance(input.instanceId, "install", true);
     const started = yield* installation.start.pipe(Effect.mapError(failure(input.instanceId)));
     if (
       driver === ANTIGRAVITY &&
       started.operationId !== null &&
-      accountCheckOperations.get(input.instanceId) !== started.operationId
+      accountCheckOperation !== started.operationId
     ) {
-      accountCheckOperations.set(input.instanceId, started.operationId);
+      accountCheckOperation = started.operationId;
       // Installation outlives the request and may finish while every client is disconnected.
       yield* installation.changes.pipe(
         Stream.filter(
@@ -264,25 +297,14 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
             state.phase === "cancelled",
         ),
         Stream.runHead,
-        Effect.flatMap(
-          Effect.fnUntraced(function* (result) {
-            if (
-              Option.isNone(result) ||
-              result.value.operationId !== started.operationId ||
-              result.value.phase !== "succeeded"
-            )
-              return;
-            const instance = yield* instances.getInstance(input.instanceId);
-            if (
-              instance?.driverKind !== ANTIGRAVITY ||
-              !instance.enabled ||
-              !instance.refreshModels
-            )
-              return;
-            yield* instance.refreshModels().pipe(Effect.ignore({ log: true }));
-            yield* providers.refreshInstance(input.instanceId);
-          }),
+        Effect.flatMap((result) =>
+          Option.isSome(result) &&
+          result.value.operationId === started.operationId &&
+          result.value.phase === "succeeded"
+            ? checkManagedRuntimeInstances(input.instanceId)
+            : Effect.void,
         ),
+        Effect.ignore({ log: true }),
         Effect.forkIn(scope),
       );
     }
@@ -345,10 +367,17 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
               entry?.driver,
               entry?.driver === "codex" ? codexRuntimeSource(config) : read("setupMode"),
               read("binaryPath"),
+              ...(entry?.driver === "codex"
+                ? (entry.environment
+                    ?.filter((variable) => variable.name.toUpperCase() === "PATH")
+                    .map((variable) => variable.value) ?? [])
+                : []),
             ];
           }),
-          Stream.changesWith((before, after) =>
-            before.every((value, index) => value === after[index]),
+          Stream.changesWith(
+            (before, after) =>
+              before.length === after.length &&
+              before.every((value, index) => value === after[index]),
           ),
           Stream.switchMap(() => subscribeCurrent(input)),
         );
@@ -362,25 +391,11 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
       true,
     );
     const entries = yield* readEntries(input.instanceId, "remove-install");
-    const protectedPaths = yield* Effect.forEach(
-      Object.values(entries),
-      Effect.fnUntraced(function* (entry) {
-        if (!hasBinaryPath(entry.config) || !entry.config.binaryPath.trim()) {
-          return [];
-        }
-        const binaryPath = entry.config.binaryPath.trim();
-        const resolved = yield* resolveCommandPath(binaryPath, {
-          env: yield* mergeProviderInstanceEnvironment(entry.environment),
-        }).pipe(
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, path),
-        );
-        return resolved === null ? [binaryPath] : [binaryPath, resolved];
-      }),
+    const protectedPaths = yield* configuredBinaryPaths(entries).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
     );
-    yield* installation
-      .remove(protectedPaths.flat())
-      .pipe(Effect.mapError(failure(input.instanceId)));
+    yield* installation.remove(protectedPaths).pipe(Effect.mapError(failure(input.instanceId)));
     const allInstances = yield* instances.listInstances;
     yield* Effect.forEach(
       allInstances.filter((instance) => instance.driverKind === driver),

@@ -3,6 +3,7 @@ import type { AssistantCitation, MessageId, ScopedThreadRef } from "@t3tools/con
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useEffect, useEffectEvent, useRef, type ReactNode, type RefObject } from "react";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+
 import {
   resolveAssistantCitationRange,
   type AssistantCitationSourceAnchor,

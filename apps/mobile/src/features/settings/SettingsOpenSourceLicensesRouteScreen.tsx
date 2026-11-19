@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useMessages } from "gt-react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useSearchToolbarInset } from "../../components/ui/useBarInset";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -49,6 +50,7 @@ function LicenseRow(props: {
 
 export function SettingsOpenSourceLicensesRouteScreen() {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
@@ -119,6 +121,8 @@ type LicenseDetailProps = StaticScreenProps<{ readonly entryKey: string }>;
 
 export function SettingsOpenSourceLicenseRouteScreen({ route }: LicenseDetailProps) {
   const t = useUiTranslation();
+
+  const messages = useMessages();
   const insets = useSafeAreaInsets();
   const manifest = useMobileThirdPartyLicenses();
   const entry = manifest
@@ -150,7 +154,7 @@ export function SettingsOpenSourceLicenseRouteScreen({ route }: LicenseDetailPro
         <View className="gap-2 px-1">
           <Text className="text-2xl font-t3-bold text-foreground">{entry.name}</Text>
           <Text className="text-base leading-normal text-foreground-muted">
-            {[entry.version, entry.license, formatLicenseBundles(entry.bundles)]
+            {[entry.version, entry.license, formatLicenseBundles(entry.bundles, messages)]
               .filter((value): value is string => Boolean(value))
               .join(" · ")}
           </Text>

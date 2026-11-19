@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import { translateUi } from "@t3tools/shared/uiLocale";
+import { decodeOptions, mFallback } from "gt-react-native";
 
+import type { MessageResolver } from "../../i18n/messages";
 import { filterSettingsSections } from "./settings-search";
 
 const SECTIONS = [
@@ -78,6 +80,21 @@ describe("filterSettingsSections", () => {
     const general = [{ rows: [{ id: "SettingsOrganization", label: "General" }] }];
     for (const query of ["语言", "中文", "简体中文", "英语", "language", "locale", "English"]) {
       expect(filterSettingsSections(general, query, t)).toEqual(general);
+    }
+  });
+
+  it("finds project settings by both translated and fork-specific keywords", () => {
+    const sections = [{ rows: [{ id: "SettingsProjectOverview", label: "Project overview" }] }];
+    const resolve = ((term: string) => {
+      const options = decodeOptions(term);
+      return options?.$context === "settings search keyword" && options.$_source === "checkouts"
+        ? "检出目录"
+        : mFallback(term);
+    }) as MessageResolver;
+    for (const query of ["检出目录", "checkouts", "export"]) {
+      expect(filterSettingsSections(sections, query, (message) => message, resolve)).toEqual(
+        sections,
+      );
     }
   });
 });

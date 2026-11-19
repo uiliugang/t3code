@@ -3,6 +3,7 @@ import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { useMessages } from "gt-react";
 import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -37,17 +38,21 @@ export function WorktreeBaseBranchPicker({
   id?: string;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const [open, setOpen] = useState(false);
   const mainBranchOnly = useEnvironmentSettings(
     environmentId,
     (settings) => resolveProjectSettings(settings, projectId).settings.newWorktreesMainBranchOnly,
   );
   const [query, setQuery] = useState("");
-  const branches = usePaginatedBranches({
-    environmentId,
-    cwd,
-    query: sanitizeNewRefName(query.trim()),
-  });
+  const branches = usePaginatedBranches(
+    {
+      environmentId,
+      cwd,
+      query: sanitizeNewRefName(query.trim()),
+    },
+    messages,
+  );
   const selectedRefQuery = useEnvironmentQuery(
     cwd && value
       ? vcsEnvironment.listRefs({

@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import {
   BASE_FONT_SIZE_STEP,
   MAX_BASE_FONT_SIZE,
@@ -15,6 +16,7 @@ import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 
 export function TextAppearanceSection() {
   const t = useUiTranslation();
+  const gt = useGT();
   const { isReady, appearance, setBaseFontSize, mathRenderingEnabled, setMathRenderingEnabled } =
     useAppearancePreferences();
 
@@ -31,7 +33,7 @@ export function TextAppearanceSection() {
         onChange={setBaseFontSize}
         step={BASE_FONT_SIZE_STEP}
         value={appearance.baseFontSize}
-        valueLabel={`${appearance.baseFontSize} pt`}
+        valueLabel={gt("{size} pt", { size: appearance.baseFontSize })}
       />
       <SettingsSwitchRow
         disabled={!isReady}

@@ -56,7 +56,9 @@ import {
   SquareIcon,
   UnplugIcon,
 } from "lucide-react";
+import { msg, useMessages } from "gt-react";
 import { useRef, useState, type ReactNode } from "react";
+import type { MessageResolver } from "~/i18n/messages";
 
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -207,12 +209,22 @@ function ThreadLineageGroup<Row extends LineageRow>(props: {
   );
 }
 
-function relationshipLabel(edge: ThreadRelationshipEdge, currentThreadId: ThreadId) {
-  if (edge.kind === "transfer") return "Context transfer";
+function relationshipHint(
+  edge: ThreadRelationshipEdge,
+  currentThreadId: ThreadId,
+  sideChat: boolean,
+  resolve: MessageResolver,
+) {
+  if (sideChat) return resolve(msg("Open side chat in this chat"));
+  if (edge.kind === "transfer") return resolve(msg("Open context transfer in this chat"));
   if (edge.kind === "subagent") {
-    return edge.sourceThreadId === currentThreadId ? "Subagent" : "Parent agent";
+    return edge.sourceThreadId === currentThreadId
+      ? resolve(msg("Open subagent in this chat"))
+      : resolve(msg("Open parent agent in this chat"));
   }
-  return edge.sourceThreadId === currentThreadId ? "Fork" : "Parent thread";
+  return edge.sourceThreadId === currentThreadId
+    ? resolve(msg("Open fork in this chat"))
+    : resolve(msg("Open parent thread in this chat"));
 }
 
 function relationshipThreadTitle(input: {
@@ -274,6 +286,7 @@ function RemoteSubagentRow(props: {
   readonly anyInstanceBadge: boolean;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const navigate = useNavigate();
   const environment = useEnvironment(props.agent.remoteChild.environmentId);
   const { remoteChild } = props.agent;
@@ -323,7 +336,7 @@ function RemoteSubagentRow(props: {
             className={`flex max-w-1/2 shrink-0 gap-1 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
           >
             <span className="truncate">{t("on {name}", { name: remoteChild.label })}</span>
-            <span className="shrink-0">· {t(threadRelationshipStatusLabel(status))}</span>
+            <span className="shrink-0">· {threadRelationshipStatusLabel(status, m)}</span>
           </span>
         </TooltipTrigger>
         <TooltipPopup side="left">
@@ -431,7 +444,7 @@ function DelegatedFromRow(props: {
             hint={
               environment === null
                 ? t("Delegated from {name}. Connect to it to open the parent thread.", {
-                    name: label ?? t("a linked environment"),
+                    name: label || t("a linked environment"),
                   })
                 : t("Open parent agent on {name}", { name: environment.label })
             }
@@ -449,6 +462,7 @@ export function ThreadRelationshipsPanel(props: {
   readonly showSideChats: boolean;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const ref = scopeThreadRef(props.environmentId, props.threadId);
   const projection = useQuietThreadProjection(ref)?.projection ?? null;
   const providersByEnvironment = useEnvironmentProviders();
@@ -527,7 +541,7 @@ export function ThreadRelationshipsPanel(props: {
       ]),
   );
   const workflowGroupsById = new Map(
-    deriveWorkflowGroups(runtimeSubagents).map((group) => [group.workflow.id, group]),
+    deriveWorkflowGroups(runtimeSubagents, m).map((group) => [group.workflow.id, group]),
   );
   const shells: ReadonlyArray<OrchestrationV2ThreadShell> = [
     ...relationshipShells,
@@ -761,10 +775,6 @@ export function ThreadRelationshipsPanel(props: {
         : node?.thread?.lineage.sideChat === true
           ? MessagesSquareIcon
           : GitForkIcon;
-    const relationship =
-      node?.thread?.lineage.sideChat === true && !isParent
-        ? t("Side chat")
-        : t(relationshipLabel(edge, props.threadId));
     const projectedAgent = isSubagent && !isParent ? subagentsByThreadId.get(threadId) : undefined;
     const workflowGroup =
       projectedAgent === undefined ? undefined : workflowGroupsById.get(projectedAgent.id);
@@ -807,7 +817,12 @@ export function ThreadRelationshipsPanel(props: {
       ? "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0 [@media(hover:none)]:opacity-0"
       : "";
     const project = projects.find((project) => project.id === node?.thread?.projectId);
-    const relationshipHint = t("Open {relationship} in this chat", { relationship });
+    const hint = relationshipHint(
+      edge,
+      props.threadId,
+      node?.thread?.lineage.sideChat === true && !isParent,
+      m,
+    );
     const RelationshipPopup = agent ? ThreadHoverCardPopup : TooltipPopup;
     const relationshipTooltip = agent ? (
       <SubagentTooltipContent
@@ -829,7 +844,7 @@ export function ThreadRelationshipsPanel(props: {
         childProject={project}
       />
     ) : (
-      <LineageTooltipContent title={threadTitle} hint={relationshipHint} />
+      <LineageTooltipContent title={threadTitle} hint={hint} />
     );
     const relationshipContent = (
       <>
@@ -862,7 +877,7 @@ export function ThreadRelationshipsPanel(props: {
                 : `shrink-0 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"} ${trailingVisibilityClass}`
             }
           >
-            {t(threadRelationshipStatusLabel(rowStatus))}
+            {threadRelationshipStatusLabel(rowStatus, m)}
           </span>
         ) : null}
       </>
@@ -915,7 +930,7 @@ export function ThreadRelationshipsPanel(props: {
                     size="sm"
                     variant="ghost"
                     part="primary"
-                    aria-label={`${threadTitle} ${t(threadRelationshipStatusLabel(rowStatus))}`}
+                    aria-label={`${threadTitle} ${threadRelationshipStatusLabel(rowStatus, m)}`}
                     onClick={() => openThread(threadId)}
                   />
                 }
@@ -957,7 +972,7 @@ export function ThreadRelationshipsPanel(props: {
               </TooltipPopup>
             </Tooltip>
             <span className="shrink-0 border border-transparent ps-1 pe-2.5 text-2xs font-medium text-muted-foreground">
-              {t(threadRelationshipStatusLabel(rowStatus))}
+              {threadRelationshipStatusLabel(rowStatus, m)}
             </span>
           </div>
         ) : (

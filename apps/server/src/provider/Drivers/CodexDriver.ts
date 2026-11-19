@@ -284,7 +284,7 @@ export const CodexDriver: ProviderDriver<
         codexRuntimeSource(config) === "local"
           ? effectiveConfig.binaryPath
           : (yield* installation
-              .acquire(codexRuntimeSource(config), effectiveConfig.binaryPath)
+              .acquire(codexRuntimeSource(config), effectiveConfig.binaryPath, processEnv)
               .pipe(
                 Effect.mapError(
                   (error) =>

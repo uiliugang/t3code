@@ -1,4 +1,6 @@
+import { useGT, useMessages } from "gt-react-native";
 import { useAtom, useAtomValue } from "@effect/atom-react";
+import { serverUpdateFailureText } from "@t3tools/client-runtime/state/server";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
@@ -30,6 +32,8 @@ export function OutdatedServerUpdateSection({
   readonly label: string;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const messages = useMessages();
   const describe = useAtomCommand(describeOutdatedServer, { reportFailure: false });
   const update = useAtomCommand(updateOutdatedServer, { reportFailure: false });
   const state = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
@@ -88,19 +92,21 @@ export function OutdatedServerUpdateSection({
         <Text className="text-sm text-foreground-muted">
           {state.status === "running"
             ? state.stage === "resuming"
-              ? t("Restarting and reconnecting…")
+              ? gt("Restarting and reconnecting…")
               : state.stage === "installing"
-                ? t("Installing update…")
-                : t("Downloading update…")
+                ? gt("Installing update…")
+                : gt("Downloading update…")
             : release
               ? release.targetVersion
-                ? t("Version {version} is available.", { version: release.targetVersion })
-                : t("No newer version is available yet.")
-              : t("This app needs a newer version of T3 Code on this machine.")}
+                ? gt("Version {version} is available.", { version: release.targetVersion })
+                : gt("No newer version is available yet.")
+              : gt("This app needs a newer version of {product} on this machine.", {
+                  product: "T3 Code",
+                })}
         </Text>
         {error || state.status === "failed" ? (
           <Text selectable accessibilityRole="alert" className="text-sm text-danger-foreground">
-            {t(error ?? (state.status === "failed" ? state.message : ""))}
+            {error ?? (state.status === "failed" ? serverUpdateFailureText(state, messages) : null)}
           </Text>
         ) : null}
       </View>

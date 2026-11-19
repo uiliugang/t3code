@@ -1,4 +1,5 @@
 import { codexByokFormError } from "@t3tools/shared/codexByok";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { CodexByokFields } from "./CodexByokFields";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
@@ -35,7 +36,10 @@ export const CLAUDE_BYOK_ENVIRONMENT_NAMES = new Set([
   "ANTHROPIC_API_KEY",
 ]);
 
-export function claudeByokFormError(environment: ProviderInstanceEnvironment): string | null {
+export function claudeByokFormError(
+  environment: ProviderInstanceEnvironment,
+  t: UiTranslator = translateUi.bind(null, "en"),
+): string | null {
   const url = environment.find((entry) => entry.name === "ANTHROPIC_BASE_URL")?.value;
   const error = claudeByokUrlError(typeof url === "string" ? url.trim() : "");
   if (error) return error;
@@ -44,7 +48,7 @@ export function claudeByokFormError(environment: ProviderInstanceEnvironment): s
       (entry.name === "ANTHROPIC_AUTH_TOKEN" || entry.name === "ANTHROPIC_API_KEY") &&
       (entry.valueRedacted || typeof entry.value !== "string" || entry.value.trim().length > 0),
   );
-  return credentials.length === 1 ? null : "Configure exactly one Bearer Token or API Key.";
+  return credentials.length === 1 ? null : t("Configure exactly one Bearer Token or API Key.");
 }
 
 export function ClaudeByokFields({
@@ -199,7 +203,7 @@ export function ProviderByokSettings({
   const dirty = JSON.stringify(draft) !== JSON.stringify(instance.environment ?? []);
   const codex = instance.driver === "codex";
   const Fields = codex ? CodexByokFields : ClaudeByokFields;
-  const error = codex ? codexByokFormError(draft) : claudeByokFormError(draft);
+  const error = codex ? codexByokFormError(draft) : claudeByokFormError(draft, t);
   const runCheck = useAtomCommand(serverEnvironment.validateProviderEndpoint, {
     reportFailure: false,
   });
@@ -229,7 +233,7 @@ export function ProviderByokSettings({
           ? result.value.message
           : failure instanceof Error
             ? failure.message
-            : "Check failed. Try again.",
+            : t("Check failed. Try again."),
     });
   };
   const unavailable =
@@ -264,7 +268,7 @@ export function ProviderByokSettings({
       onSaved?.();
     } else {
       const failure = squashAtomCommandFailure(result);
-      setSaveError(failure instanceof Error ? failure.message : "Save failed. Try again.");
+      setSaveError(failure instanceof Error ? failure.message : t("Save failed. Try again."));
     }
   };
   return (

@@ -1,4 +1,5 @@
 import { useNavigation } from "@react-navigation/native";
+
 import { View } from "react-native";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { openSettings } from "../../settings/settings-navigation";
@@ -6,6 +7,7 @@ import { useUiTranslation } from "../../../lib/useUiTranslation";
 
 export function WorkspaceNoTabs() {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   return (
     <View className="flex-1 items-center justify-center bg-screen">

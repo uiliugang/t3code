@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { sortProjectsByGroupOrder } from "@t3tools/client-runtime/state/project-grouping";
 import type { ScopedProjectRef, SidebarProjectGroupingMode } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
+import { msg, useGT, useMessages } from "gt-react-native";
 import type { ReactNode } from "react";
 import { Platform, ScrollView } from "react-native";
 import type { MenuProps } from "../../components/ui/Menu.types";
@@ -12,23 +13,43 @@ import { environmentThreadShells } from "../../state/threads";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
 import { buildHomeProjectScopes, sortHomeProjectScopes } from "../home/homeThreadList";
 import { DEFAULT_PR_LIST_CONTROLS, type PullRequestListControls } from "./pullRequestList";
+import type { MessageResolver } from "../../i18n/messages";
 
-const STATES = { open: "Open", closed: "Closed", merged: "Merged", all: "All states" } as const;
-const INVOLVEMENT = { all: "All PRs", reviewing: "Your review", authored: "By you" } as const;
-const DRAFTS = { all: "All drafts", only: "Drafts only", hide: "Hide drafts" } as const;
+const STATES = {
+  open: msg("Open", { $context: "pull request state filter" }),
+  closed: msg("Closed", { $context: "pull request state filter" }),
+  merged: msg("Merged", { $context: "pull request state filter" }),
+  all: msg("All states"),
+};
+const INVOLVEMENT = {
+  all: msg("All PRs"),
+  reviewing: msg("Your review"),
+  authored: msg("By you"),
+};
+const DRAFTS = { all: msg("All drafts"), only: msg("Drafts only"), hide: msg("Hide drafts") };
 const REVIEWS = {
-  all: "All reviews",
-  approved: "Approved",
-  "changes-requested": "Changes requested",
-  "review-required": "Review required",
-  none: "No reviews",
-} as const;
-const CHECKS = { all: "All checks", passing: "Passing", failing: "Failing" } as const;
+  all: msg("All reviews"),
+  approved: msg("Approved", { $context: "review status filter" }),
+  "changes-requested": msg("Changes requested"),
+  "review-required": msg("Review required"),
+  none: msg("No reviews"),
+};
+const CHECKS = {
+  all: msg("All checks"),
+  passing: msg("Passing", { $context: "CI checks filter" }),
+  failing: msg("Failing", { $context: "CI checks filter" }),
+};
+const CHECKS_TITLES = { passing: msg("Passing checks"), failing: msg("Failing checks") };
 const SORTS = {
-  updated: "Recently updated",
-  created: "Newest created",
-  oldest: "Oldest updated",
-} as const;
+  updated: msg("Recently updated"),
+  created: msg("Newest created"),
+  oldest: msg("Oldest updated"),
+};
+const resolveOptions = <Key extends string>(
+  options: Readonly<Record<Key, string>>,
+  resolve: MessageResolver,
+) =>
+  Object.fromEntries(Object.entries<string>(options).map(([key, title]) => [key, resolve(title)]));
 // A 12dp inset keeps 16dp chips concentric with Android's 28dp ScreenContent corner.
 const ROW_STYLE =
   Platform.OS === "android"
@@ -125,6 +146,7 @@ export function usePullRequestListFilters(props: {
 }) {
   const t = useUiTranslation();
   const { value } = props;
+  const m = useMessages();
   const projects = useProjectsInSidebarOrder(props.projects);
   const selectedLabels = value.filters.labels?.flat() ?? [];
   const selectedLabelSet = new Set(selectedLabels);
@@ -241,20 +263,24 @@ export function usePullRequestListFilters(props: {
   const more: MenuProps["actions"] = [
     {
       id: "drafts",
-      title: value.filters.draft ? t(DRAFTS[value.filters.draft]) : t("Drafts"),
-      subactions: choices("draft", DRAFTS, value.filters.draft ?? "all", t),
+      title: value.filters.draft
+        ? m(DRAFTS[value.filters.draft])
+        : m(msg("Drafts", { $context: "filter menu" })),
+      subactions: choices("draft", resolveOptions(DRAFTS, m), value.filters.draft ?? "all"),
     },
     {
       id: "reviews",
-      title: value.filters.review ? t(REVIEWS[value.filters.review]) : t("Reviews"),
-      subactions: choices("review", REVIEWS, value.filters.review ?? "all", t),
+      title: value.filters.review
+        ? m(REVIEWS[value.filters.review])
+        : m(msg("Reviews", { $context: "filter menu" })),
+      subactions: choices("review", resolveOptions(REVIEWS, m), value.filters.review ?? "all"),
     },
     {
       id: "checks",
       title: value.filters.checks
-        ? t("{value} checks", { value: t(CHECKS[value.filters.checks]) })
-        : t("Checks"),
-      subactions: choices("checks", CHECKS, value.filters.checks ?? "all", t),
+        ? m(CHECKS_TITLES[value.filters.checks])
+        : m(msg("Checks", { $context: "filter menu" })),
+      subactions: choices("checks", resolveOptions(CHECKS, m), value.filters.checks ?? "all"),
     },
     {
       id: "projects",
@@ -275,11 +301,15 @@ export function usePullRequestListFilters(props: {
         value.projectId ? JSON.stringify([value.projectEnvironmentId, value.projectId]) : "",
       ),
     },
-    { id: "sort", title: t(SORTS[value.sort]), subactions: choices("sort", SORTS, value.sort, t) },
+    {
+      id: "sort",
+      title: m(SORTS[value.sort]),
+      subactions: choices("sort", resolveOptions(SORTS, m), value.sort),
+    },
   ];
   const reset = (withEnvironment: boolean): MenuProps["actions"][number] => ({
     id: id("reset", withEnvironment ? "environment" : ""),
-    title: t("Reset filters"),
+    title: m(msg("Reset filters")),
     attributes: {
       disabled:
         count === 0 &&
@@ -299,11 +329,19 @@ export function usePullRequestListFilters(props: {
     ]),
     props.environmentId ?? "",
   );
-  const stateActions = choices("state", STATES, value.state, t);
-  const involvementActions = choices("involvement", INVOLVEMENT, value.involvement, t);
+  const stateActions = choices("state", resolveOptions(STATES, m), value.state);
+  const involvementActions = choices(
+    "involvement",
+    resolveOptions(INVOLVEMENT, m),
+    value.involvement,
+  );
   const labelActions: MenuProps["actions"] = [
-    { id: id("search", "labels"), title: t("Search labels…"), image: "magnifyingglass" },
-    { id: id("labels", ""), title: t("All labels"), state: selectedLabels.length ? "off" : "on" },
+    { id: id("search", "labels"), title: m(msg("Search labels…")), image: "magnifyingglass" },
+    {
+      id: id("labels", ""),
+      title: m(msg("All labels")),
+      state: selectedLabels.length ? "off" : "on",
+    },
     ...labels.map((label) => {
       const color = props.labelColors[label.toLowerCase()];
       return {
@@ -375,6 +413,8 @@ export function PullRequestListFilters(props: {
 }) {
   const t = useUiTranslation();
   const { count, more, reset, select, author, selectedLabelCount } = props.filters;
+  const gt = useGT();
+  const m = useMessages();
   return (
     <ScrollView
       horizontal
@@ -391,11 +431,16 @@ export function PullRequestListFilters(props: {
       {props.savedViewsMenu}
       {Platform.OS === "android" ? null : (
         <ListFilterMenu
-          label={count ? String(count) : t("Filters")}
+          label={count ? String(count) : gt("Filters")}
           icon
           active={count > 0}
           accessibilityLabel={
-            count ? t("Filters, {count} active", { count: String(count) }) : t("More filters")
+            count
+              ? gt(
+                  "{count, plural, one {Filters, {count} active} other {Filters, {count} active}}",
+                  { count },
+                )
+              : gt("More filters")
           }
           actions={[...more, reset(false)]}
           onSelect={select}
@@ -410,16 +455,16 @@ export function PullRequestListFilters(props: {
         />
       ) : null}
       <ListFilterMenu
-        label={t(STATES[props.filters.state])}
+        label={m(STATES[props.filters.state])}
         active={props.filters.state !== "open"}
-        accessibilityLabel={t("Filter by state")}
+        accessibilityLabel={gt("Filter by state")}
         actions={props.filters.stateActions}
         onSelect={select}
       />
       <ListFilterMenu
-        label={t(INVOLVEMENT[props.filters.involvement])}
+        label={m(INVOLVEMENT[props.filters.involvement])}
         active={props.filters.involvement !== "all"}
-        accessibilityLabel={t("Filter by involvement")}
+        accessibilityLabel={gt("Filter by involvement")}
         actions={props.filters.involvementActions}
         onSelect={select}
       />

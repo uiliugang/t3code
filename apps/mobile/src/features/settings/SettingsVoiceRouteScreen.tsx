@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -82,38 +83,42 @@ const KINDS: Record<
   }
 > = {
   wired: {
-    label: "Wired",
-    row: "Other wired",
-    rowDescription: "Headsets and USB microphones not listed here",
+    label: msg("Wired", { $context: "microphone connection type" }),
+    row: msg("Other wired"),
+    rowDescription: msg("Headsets and USB microphones not listed here"),
     icon: "cable.connector",
   },
   bluetooth: {
-    label: "Bluetooth",
-    row: "Other Bluetooth",
+    label: msg("Bluetooth"),
+    row: msg("Other Bluetooth"),
     rowDescription:
       Platform.OS === "android"
-        ? "Earbuds, headsets, and cars, including Android Auto, not listed here"
-        : "AirPods, headsets, and cars not listed here",
+        ? msg("Earbuds, headsets, and cars, including Android Auto, not listed here")
+        : msg("AirPods, headsets, and cars not listed here"),
     icon: "headphones",
   },
   builtIn: {
-    label: "Built-in",
-    row: "Built-in microphone",
-    rowDescription: "The microphone on this device",
+    label: msg("Built-in", { $context: "microphone connection type" }),
+    row: msg("Built-in microphone"),
+    rowDescription: msg("The microphone on this device"),
     icon: "iphone",
   },
   carPlay: {
     label: "CarPlay",
     row: "CarPlay",
-    rowDescription: "The car’s microphone",
+    rowDescription: msg("The car’s microphone"),
     icon: "car",
   },
 };
 
 const UNAVAILABLE_EXPLANATION =
   Platform.OS === "android"
-    ? "Dictation on this device needs Android 12 or later and Google speech services that support your language. Your keyboard’s voice typing is separate."
-    : "Dictation on this device needs iOS 26 or later, a supported device, and a supported language. Your keyboard’s dictation is separate.";
+    ? msg(
+        "Dictation on this device needs Android 12 or later and Google speech services that support your language. Your keyboard’s voice typing is separate.",
+      )
+    : msg(
+        "Dictation on this device needs iOS 26 or later, a supported device, and a supported language. Your keyboard’s dictation is separate.",
+      );
 
 function saveDestination(id: EnvironmentId | null, t: ReturnType<typeof useUiTranslation>) {
   try {
@@ -213,6 +218,7 @@ function EnvironmentMethodSection({
 
 export function SettingsVoiceRouteScreen() {
   const t = useUiTranslation();
+  const m = useMessages();
   const transcriber = useAtomValue(localVoiceTranscriberAtom);
   const grant = useAtomValue(voiceGrantAtom);
   const { environments, isReady } = useEnvironments();
@@ -330,7 +336,7 @@ export function SettingsVoiceRouteScreen() {
           />
         ) : null}
         {!grant && transcriber === null ? (
-          <Text className="px-2 text-sm text-foreground-muted">{t(UNAVAILABLE_EXPLANATION)}</Text>
+          <Text className="px-2 text-sm text-foreground-muted">{m(UNAVAILABLE_EXPLANATION)}</Text>
         ) : null}
         {permission === "ask" || permission === "denied" ? (
           <>
@@ -414,9 +420,11 @@ function MicrophoneRow(props: {
   readonly onForget: (() => void) | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const { lifted, offset, entry, onForget } = props;
   const kind = KINDS[entry.kind];
-  const title = isMicrophoneDevice(entry) ? entry.name : t(kind.row);
+  const title = isMicrophoneDevice(entry) ? entry.name : m(kind.row);
   const { width: windowWidth } = useWindowDimensions();
   const style = useAnimatedStyle(() => ({
     transform: [
@@ -433,8 +441,17 @@ function MicrophoneRow(props: {
     <View className="flex-row items-center bg-grouped-card">
       <View
         accessible
-        accessibilityLabel={`${title}, ${t(kind.label)}, ${t("{position} of {count}", { position: props.position, count: props.count })}`}
-        accessibilityActions={onForget ? [{ name: "forget", label: t("Forget") }] : undefined}
+        accessibilityLabel={gt("{title}, {kind}, {position} of {count}", {
+          title,
+          kind: m(kind.label),
+          position: props.position,
+          count: props.count,
+        })}
+        accessibilityActions={
+          onForget
+            ? [{ name: "forget", label: gt("Forget", { $context: "verb, forget a microphone" }) }]
+            : undefined
+        }
         onAccessibilityAction={({ nativeEvent }) => {
           if (nativeEvent.actionName === "forget") onForget?.();
         }}
@@ -443,7 +460,7 @@ function MicrophoneRow(props: {
         <ListRowLayout
           icon={kind.icon}
           label={title}
-          description={t(isMicrophoneDevice(entry) ? kind.label : kind.rowDescription)}
+          description={isMicrophoneDevice(entry) ? m(kind.label) : m(kind.rowDescription)}
         />
       </View>
       {props.reorderable ? (

@@ -2,6 +2,7 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
+import { useMessages } from "gt-react";
 import { useState } from "react";
 
 import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
@@ -86,11 +87,13 @@ function BreadcrumbMenuContent(props: {
   readonly workspaceMutationId: string | null;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const entriesQuery = useProjectEntriesQuery(
     props.environmentId,
     props.cwd,
     props.directoryPath,
     props.workspaceMutationId,
+    messages,
   );
   const { resolvedTheme } = useTheme();
   const entries = entriesQuery.data?.entries ?? [];

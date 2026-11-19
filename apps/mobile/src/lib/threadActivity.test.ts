@@ -19,9 +19,12 @@ import {
 } from "@t3tools/contracts";
 import { deriveThreadCheckpointSummaries } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { summarizeToolGroup } from "@t3tools/client-runtime/work-log/presentation";
-import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { getReviewSectionIdForCheckpoint } from "../features/review/reviewModel";
+import type { MessageResolver } from "../i18n/messages";
+import englishCatalog from "../i18n/translations/en.json";
+import chineseCatalog from "../i18n/translations/zh.json";
 import * as DateTime from "effect/DateTime";
+import { decodeOptions, gtFallback } from "gt-react-native";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -39,6 +42,20 @@ import {
 const threadId = ThreadId.make("thread-1");
 const sourceThreadId = ThreadId.make("thread-source");
 const runId = RunId.make("run-1");
+const chineseBySource = new Map<string, string>(
+  Object.entries(englishCatalog).flatMap(([key, source]) => {
+    const translation = chineseCatalog[key as keyof typeof chineseCatalog];
+    return typeof source === "string" && typeof translation === "string"
+      ? [[source, translation]]
+      : [];
+  }),
+);
+const chinese = ((message: string) => {
+  const options = decodeOptions(message);
+  const source = typeof options?.$_source === "string" ? options.$_source : message;
+  const translation = chineseBySource.get(source);
+  return gtFallback(translation ?? source, { ...options, $locale: translation ? "zh" : "en" });
+}) as MessageResolver;
 
 it.each(["info", "warning", "error", undefined] as const)(
   "renders %s system notice severity",
@@ -960,7 +977,6 @@ describe("buildThreadFeed", () => {
   });
 
   it("folds progress messages while keeping the final assistant answer visible", () => {
-    const t: UiTranslator = (message, values) => translateUi("zh-CN", message, values);
     const opening = {
       ...assistantMessage("2026-06-20T00:00:01.500Z"),
       id: TurnItemId.make("item-opening"),
@@ -1008,11 +1024,12 @@ describe("buildThreadFeed", () => {
         false,
         undefined,
         undefined,
-        t,
+        chinese,
+        "zh",
       );
-    expect(localized(latestRun)[1]).toMatchObject({ label: "工作用时 2s" });
+    expect(localized(latestRun)[1]).toMatchObject({ label: "工作用时 2 秒" });
     expect(localized({ ...latestRun, status: "interrupted" })[1]).toMatchObject({
-      label: "运行 2s 后由你停止",
+      label: "运行 2 秒 后由你停止",
     });
     expect(localized({ ...latestRun, startedAt: "invalid" })[1]).toMatchObject({
       label: "已完成工作",
@@ -1049,7 +1066,8 @@ describe("buildThreadFeed", () => {
         false,
         undefined,
         undefined,
-        t,
+        chinese,
+        "zh",
       ).find((entry) => entry.type === "run-fold"),
     ).toMatchObject({ label: "较早的工作" });
     if (disclosure?.type !== "run-fold") throw new Error("Expected deferred work disclosure");
@@ -2209,10 +2227,11 @@ describe("streamed feed updates", () => {
     step: (typeof steps)[number],
     expandedRunIds: ReadonlySet<RunId>,
     cache?: ThreadFeedCache,
-    t?: UiTranslator,
+    resolve?: MessageResolver,
+    locale = "en",
   ) =>
     deriveThreadFeedPresentation(
-      buildThreadFeed(step.items.map(row), { cache }),
+      buildThreadFeed(step.items.map(row), { cache, resolve, locale }),
       step.latestRun,
       expandedRunIds,
       new Set(),
@@ -2220,7 +2239,8 @@ describe("streamed feed updates", () => {
       false,
       cache,
       undefined,
-      t,
+      resolve,
+      locale,
     );
 
   it.each([
@@ -2235,10 +2255,11 @@ describe("streamed feed updates", () => {
     for (const [index, rows] of streamed.entries()) {
       expect(values(rows), `step ${index}`).toEqual(values(fresh[index]!));
     }
-    const t: UiTranslator = (message, values) => translateUi("zh-CN", message, values);
     const lastStep = steps.at(-1)!;
-    const localized = present(lastStep, expandedRunIds, cache, t);
-    expect(values(localized)).toEqual(values(present(lastStep, expandedRunIds, undefined, t)));
+    const localized = present(lastStep, expandedRunIds, cache, chinese, "zh");
+    expect(values(localized)).toEqual(
+      values(present(lastStep, expandedRunIds, undefined, chinese, "zh")),
+    );
     expect(localized.find((entry) => entry.type === "run-fold")).toMatchObject({
       label: expect.stringMatching(/^工作用时 /),
     });

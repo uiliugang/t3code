@@ -164,7 +164,8 @@ export function ProjectSources({
               className="gap-2 border-b border-border-subtle py-3"
             >
               <Text>
-                {project.title} · {source.provider === "meituan" ? "MEP ONES" : "GitHub Issues"}
+                {project.title} ·{" "}
+                {source.provider === "meituan" ? t("MEP ONES") : t("GitHub Issues")}
               </Text>
               <Text className="text-foreground-muted">
                 {source.scope} · {t(manual ? "Manual override" : "Automatic")}
@@ -193,8 +194,8 @@ export function ProjectSources({
         value={provider}
         options={
           providerOnly === "meituan"
-            ? [{ value: "meituan", label: "MEP ONES" }]
-            : [{ value: "github", label: "GitHub Issues" }]
+            ? [{ value: "meituan", label: t("MEP ONES") }]
+            : [{ value: "github", label: t("GitHub Issues") }]
         }
         onChange={(value) => {
           setProvider(value === "github" ? "github" : "meituan");

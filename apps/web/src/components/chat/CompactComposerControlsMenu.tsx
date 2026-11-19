@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type { RuntimeMode } from "@t3tools/contracts";
+
 import { memo, useRef } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -18,6 +19,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   const t = useUiTranslation();
+
   const composerFloatingLayerProps = useComposerMenuProps();
   const size = props.size ?? "sm";
   const [open, setOpen] = useComposerMenuState(props.hidden);

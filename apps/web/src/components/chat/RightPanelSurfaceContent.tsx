@@ -2,6 +2,7 @@ import { isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
 import { useProjects, useQuietThreadShell } from "../../state/entities";
 import { joinHostPath } from "../files/filePath";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useGT } from "gt-react";
 import type {
   EditorId,
   EnvironmentId,
@@ -108,6 +109,7 @@ export function RightPanelSurfaceContent(props: {
   const workspace = useQuietThreadShell(threadRef)?.workspace;
   const projects = useProjects();
   const t = useUiTranslation();
+  const gt = useGT();
   if (surface === null) return null;
   switch (surface.kind) {
     case "tasks":
@@ -156,8 +158,8 @@ export function RightPanelSurfaceContent(props: {
       if (!pullRequest.supported) {
         return (
           <PullRequestsUnavailableState
-            title={t("Pull requests unavailable")}
-            error="Update this environment's T3 Code server to browse pull requests."
+            title={gt("Pull requests unavailable")}
+            error={gt("Update this environment's T3 Code server to browse pull requests.")}
           />
         );
       }
@@ -209,14 +211,14 @@ export function RightPanelSurfaceContent(props: {
       if (!props.issuesSupported) {
         return (
           <PullRequestsUnavailableState
-            title={t("Issues unavailable")}
-            error="Update this environment's T3 Code server to browse issues."
+            title={gt("Issues unavailable")}
+            error={gt("Update this environment's T3 Code server to browse issues.")}
           />
         );
       }
       return (
         <IssueDetailPanel
-          key={surface.id}
+          key={`${surface.environmentId ?? props.environmentId}:${surface.id}`}
           environmentId={
             (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId
           }

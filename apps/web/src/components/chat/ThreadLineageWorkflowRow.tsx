@@ -4,6 +4,7 @@ import {
   type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { ProviderDriverKind, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+import { msg, useMessages } from "gt-react";
 import { ChevronDownIcon, SquareIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -38,6 +39,14 @@ function phaseElapsed(phase: SubagentWorkflowGroup["phases"][number]) {
     completedAt,
   };
 }
+
+const PHASE_STATUS_LABEL = {
+  running: msg("running", { $context: "workflow phase status" }),
+  failed: msg("failed", { $context: "workflow phase status" }),
+  stopped: msg("stopped", { $context: "workflow phase status" }),
+  done: msg("done", { $context: "workflow phase status" }),
+  "not started": msg("not started", { $context: "workflow phase status" }),
+} satisfies Record<ReturnType<typeof phaseStatusLabel>, string>;
 
 function phaseStatusLabel(phase: SubagentWorkflowGroup["phases"][number]) {
   if (phase.state === "running") return "running";
@@ -145,6 +154,7 @@ export function ThreadLineageWorkflowRow({
   readonly stopDisabled: boolean;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const [expanded, setExpanded] = useState(false);
   const [phaseOpen, setPhaseOpen] = useState<ReadonlyMap<number, boolean>>(() => new Map());
   const label = group.workflow.workflowName ?? group.workflow.title;
@@ -210,7 +220,7 @@ export function ThreadLineageWorkflowRow({
                   expanded={open}
                   aria-label={t(
                     open ? "Collapse {name} phase, {status}" : "Expand {name} phase, {status}",
-                    { name: phase.title, status: t(status) },
+                    { name: phase.title, status: m(PHASE_STATUS_LABEL[status]) },
                   )}
                   onClick={() => setPhaseOpen((phases) => new Map(phases).set(phase.index, !open))}
                   accessory={

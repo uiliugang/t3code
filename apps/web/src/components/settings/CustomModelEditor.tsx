@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { PlusIcon, XIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 import { useState, type SetStateAction } from "react";
 import type { ProviderDriverKind, ServerProviderModel } from "@t3tools/contracts";
 import type { CustomModelDefinition } from "@t3tools/shared/model";
@@ -49,6 +50,8 @@ export function CustomModelEditor({
   onDraftChange,
 }: CustomModelEditorProps) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const [draft, setDraft] = useState<CustomModelDraft>(() => draftFromDefinition(entry));
   const [error, setError] = useState<string | null>(null);
   const nameOnly = driverKind === "antigravity";
@@ -56,7 +59,15 @@ export function CustomModelEditor({
     onDraftChange();
     setDraft(next);
   };
-  const presets = driverKind ? (DESCRIPTOR_PRESETS_BY_KIND[driverKind] ?? []) : [];
+  const presets = (driverKind ? (DESCRIPTOR_PRESETS_BY_KIND[driverKind] ?? []) : []).map(
+    (preset) => ({
+      ...preset,
+      label: m(preset.label),
+      ...(preset.choices
+        ? { choices: preset.choices.map((choice) => ({ ...choice, label: m(choice.label) })) }
+        : {}),
+    }),
+  );
   const startFromCandidates = builtInModels.filter(
     (model) => (model.capabilities?.optionDescriptors?.length ?? 0) > 0,
   );
@@ -140,7 +151,7 @@ export function CustomModelEditor({
       });
       return;
     }
-    const problem = validateDraft(draft, reservedSlugs);
+    const problem = validateDraft(draft, reservedSlugs, m);
     if (problem) {
       setError(problem);
       return;
@@ -214,8 +225,7 @@ export function CustomModelEditor({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-14 shrink-0 text-2xs text-muted-foreground">
-          {t("Option")}
-          {index + 1}
+          {gt("Option {number}", { number: index + 1 })}
         </span>
         {presets.length > 0 ? (
           <Select
@@ -277,7 +287,7 @@ export function CustomModelEditor({
         <Button
           size="icon-micro"
           variant="ghost-muted"
-          aria-label={`Remove option ${index + 1}`}
+          aria-label={gt("Remove option {number}", { number: index + 1 })}
           onClick={() => removeDescriptor(descriptor.key)}
         >
           <XIcon className="size-3" />
@@ -420,7 +430,7 @@ export function CustomModelEditor({
         </div>
       ) : null}
 
-      {error ? <p className="text-xs text-destructive">{t(error)}</p> : null}
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
       <div className="flex gap-2">
         <Button size="sm" variant="outline" onClick={handleSave}>

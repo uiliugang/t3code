@@ -2779,6 +2779,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       assert.isFalse(settings.projectSettingsFolded);
       assert.isFalse(settings.continueThreadsAfterServerUpdate);
       assert.equal(settings.usageHistoryRetentionDays, "unlimited");
+      assert.include(settings.storageCleanup, {
+        worktreeAfterDays: null,
+        worktreeSettledAfterDays: null,
+        worktreeOnMerge: false,
+        worktreeOnDelete: false,
+        worktreeUnchanged: false,
+        browserArtifactsAfterDays: null,
+        logsAfterDays: null,
+      });
       assert.deepEqual(settings.projectSettingsOverrides, {});
 
       assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), broken);

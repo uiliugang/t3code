@@ -1,6 +1,7 @@
 import { useAtom } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import type { IssueCandidatesTarget } from "@t3tools/client-runtime/state/issues";
+
 import { useState } from "react";
 
 import { useUiTranslation } from "../../lib/useUiTranslation";
@@ -27,6 +28,7 @@ export function IssueFilterSearchScreen({
   readonly scopes: ReadonlyArray<IssueCandidatesTarget>;
 }>) {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   const { kind, scopes } = route.params;
   const known = useIssueFilterCandidates(scopes);

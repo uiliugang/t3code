@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { SourceControlProviderKind } from "@t3tools/contracts";
+import { useMessages } from "gt-react";
 import { ExternalLinkIcon, TriangleAlertIcon } from "lucide-react";
 
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
@@ -7,6 +8,7 @@ import { getSourceControlPresentationForKind } from "~/sourceControlPresentation
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { RefreshIcon } from "../ui/refresh-icon";
+import { changeRequestTermKind } from "./changeRequestTerm";
 import { describePullRequestDiffError } from "./pullRequestDiffError";
 
 export function PullRequestDiffUnavailableState({
@@ -21,12 +23,13 @@ export function PullRequestDiffUnavailableState({
   onRetry: () => void;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const { providerName, terminology } = getSourceControlPresentationForKind(provider);
   const { title, description } = describePullRequestDiffError(
     error,
     providerName,
-    terminology.singular,
-    t,
+    changeRequestTermKind(terminology),
+    m,
   );
 
   return (

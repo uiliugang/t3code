@@ -28,6 +28,8 @@ import {
   XIcon,
 } from "lucide-react";
 import * as DateTime from "effect/DateTime";
+import { msg, useGT, useMessages } from "gt-react";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { useAssetUrls } from "../../assets/assetUrls";
@@ -40,6 +42,7 @@ import { isImageAttachment, type ChatImageAttachment, type ChatMessage } from ".
 import { cn } from "~/lib/utils";
 import { Button, InlineButton } from "../ui/button";
 import { toastManager } from "../ui/toast";
+import { m } from "../../i18n/messages";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { GuestMessageName } from "./guestMessageStyle";
@@ -97,6 +100,7 @@ export function QueuedRunsControl({
   readonly onImageExpand: (preview: ExpandedImagePreview) => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const projection = useQuietThreadProjection(
     scopeThreadRef(props.environmentId, props.threadId),
   )?.projection;
@@ -114,7 +118,7 @@ export function QueuedRunsControl({
     props.environmentId,
     queuedImageAttachmentResources,
   );
-  const workflow = projection ? deriveThreadQueueWorkflowState(projection) : null;
+  const workflow = projection ? deriveThreadQueueWorkflowState(projection, messages) : null;
   const queued = workflow?.queuedRuns ?? [];
   const activeRun = workflow?.activeRun ?? null;
   // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
@@ -192,8 +196,11 @@ export function QueuedRunsControl({
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: t("Could not send queued message"),
-        description: error instanceof Error ? error.message : t("An error occurred."),
+        title: m(msg("Could not send queued message")),
+        description:
+          error instanceof Error
+            ? (thrownErrorMessage(error, m) ?? error.message)
+            : m(msg("An error occurred.")),
       });
     }
   };
@@ -431,6 +438,7 @@ function QueuedMessage(props: {
   readonly onImageExpand: (preview: ExpandedImagePreview) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const presentation = props.message ? resolveUserMessagePresentation(props.message) : null;
   const attribution = presentation?.attribution ?? null;
   const scheduledTaskId = presentation?.scheduledTaskId;
@@ -445,18 +453,22 @@ function QueuedMessage(props: {
   const linkedSenderEnvironment = useEnvironment(
     props.message?.linkedSender?.environmentId ?? null,
   );
+  const senderTitle = senderShell?.title.trim() || props.message?.linkedSender?.title.trim();
   const fold =
     attribution === "automation"
       ? {
           icon: CalendarClockIcon,
-          label: t("Automation"),
+          label: gt("Automation"),
+          fitLabel: true,
           summary: taskTitle ?? props.previewText.split(/\r?\n/, 1)[0] ?? "",
         }
       : attribution === "agent"
         ? {
             icon: MessagesSquareIcon,
             label:
-              senderShell?.title.trim() || props.message?.linkedSender?.title.trim() || t("Agent"),
+              senderTitle ||
+              gt("Agent", { $context: "fallback name of the agent that sent a message" }),
+            fitLabel: !senderTitle,
             summary: props.previewText.split(/\r?\n/).find((line) => line.trim()) ?? "",
           }
         : null;
@@ -487,6 +499,7 @@ function QueuedMessage(props: {
           <FoldedMessageHeader
             icon={fold.icon}
             label={fold.label}
+            fitLabel={fold.fitLabel}
             summary={fold.summary}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}

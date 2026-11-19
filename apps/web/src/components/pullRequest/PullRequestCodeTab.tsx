@@ -1,14 +1,3 @@
-import type { CodeViewItem } from "@pierre/diffs";
-import type { SelectedLineRange } from "@pierre/diffs";
-import type { CodeViewAnnotationArgs } from "@pierre/diffs/react";
-import type { CodeViewDiffItem } from "@pierre/diffs/react";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { PullRequestDetailView } from "@t3tools/contracts";
-import type { PullRequestDiffSide } from "@t3tools/contracts";
-import type { PullRequestOmittedFileStat } from "@t3tools/contracts";
-import type { PullRequestRef } from "@t3tools/contracts";
-import type { PullRequestReviewPosition } from "@t3tools/contracts";
-import type { PullRequestThreadCommentsResult } from "@t3tools/contracts";
 import type { PullRequestChatSubject } from "./pullRequestDetail.logic";
 import type { PullRequestFinding } from "./pullRequestDetail.logic";
 import type { PendingReviewComment } from "./pullRequestReviewStore";
@@ -32,10 +21,24 @@ import {
   capitalizeTerm,
   sourceControlClients,
 } from "@t3tools/client-runtime/source-control-clients";
-import type { DiffLineAnnotation } from "@pierre/diffs";
-import type { FileDiffMetadata } from "@pierre/diffs";
-
-import type { PullRequestDiffResult, PullRequestReviewThread } from "@t3tools/contracts";
+import type {
+  DiffLineAnnotation,
+  FileDiffMetadata,
+  CodeViewItem,
+  SelectedLineRange,
+} from "@pierre/diffs";
+import type {
+  PullRequestDiffResult,
+  PullRequestReviewThread,
+  EnvironmentId,
+  PullRequestDetailView,
+  PullRequestDiffSide,
+  PullRequestOmittedFileStat,
+  PullRequestRef,
+  PullRequestReviewPosition,
+  PullRequestThreadCommentsResult,
+} from "@t3tools/contracts";
+import type { CodeViewAnnotationArgs, CodeViewDiffItem } from "@pierre/diffs/react";
 import { SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
@@ -65,6 +68,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { msg, useGT, useMessages } from "gt-react";
+
+import { m, type MessageResolver } from "~/i18n/messages";
 
 import { observeIntersection } from "~/lib/observeIntersection";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -205,6 +211,8 @@ const NO_SLICES: ReadonlyArray<DiffSlice> = [];
 // Query results outlive the panel's slices, so their parses survive closing and reopening
 // without retaining anything beyond the query cache's lifetime.
 const sliceParses = new WeakMap<PullRequestDiffResult, Map<string, RenderablePatch | null>>();
+// Cached parses keep a raw patch's reason untranslated; the view resolves it in the UI language.
+const keepMessage = ((message: string) => message) as MessageResolver;
 
 function parseSlice(slice: DiffSlice, cacheKey: string, ignoreWhitespace: boolean) {
   let parses = sliceParses.get(slice.source);
@@ -213,10 +221,12 @@ function parseSlice(slice: DiffSlice, cacheKey: string, ignoreWhitespace: boolea
     sliceParses.set(slice.source, parses);
   }
   if (parses.has(cacheKey)) return parses.get(cacheKey) ?? null;
-  const parsed = getRenderablePatch(slice.patch, cacheKey, {
-    compactPartialHunkOffsets: true,
-    ignoreWhitespace,
-  });
+  const parsed = getRenderablePatch(
+    slice.patch,
+    cacheKey,
+    { compactPartialHunkOffsets: true, ignoreWhitespace },
+    keepMessage,
+  );
   parses.set(cacheKey, parsed);
   return parsed;
 }
@@ -393,7 +403,7 @@ function PullRequestCodeTab({
   selectedCommitOid,
   onSelectedCommitChange,
   pendingFinding,
-  fixFindingLabel = "Fix in a thread",
+  fixFindingLabel: requestedFixFindingLabel,
   onFixFinding,
   onAddToChat,
   onAddToAgentSelection,
@@ -425,6 +435,9 @@ function PullRequestCodeTab({
   revealRequest?: { readonly path: string; readonly nonce: number } | null;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const messages = useMessages();
+  const fixFindingLabel = requestedFixFindingLabel ?? t("Fix in a thread");
   const resolvedTheme = useRenderedAppearance();
   const fileContextMenu = useFileContextMenu(environmentId);
   const showFileContextMenu = useStableCallback(
@@ -510,6 +523,7 @@ function PullRequestCodeTab({
         ...(commit === null ? {} : { commit }),
       },
     }),
+    messages,
   );
   const [appliedPage, setAppliedPage] = useState<{
     readonly data: typeof diffQuery.data;
@@ -915,7 +929,7 @@ function PullRequestCodeTab({
       <div className="space-y-4 px-4 py-5">
         {rawSlices.map((slice) => (
           <div key={`${slice.reason}:${slice.text.slice(0, 64)}`} className="space-y-2">
-            <p className="text-xs text-muted-foreground">{slice.reason}</p>
+            <p className="text-xs text-muted-foreground">{messages(slice.reason)}</p>
             <pre className="whitespace-pre-wrap break-words font-mono text-xs">{slice.text}</pre>
           </div>
         ))}
@@ -926,7 +940,7 @@ function PullRequestCodeTab({
       <div className="space-y-4 border-t border-border/60 px-4 py-5">
         {rawSlices.map((slice) => (
           <div key={`${slice.reason}:${slice.text.slice(0, 64)}`} className="space-y-2">
-            <p className="text-xs text-muted-foreground">{slice.reason}</p>
+            <p className="text-xs text-muted-foreground">{messages(slice.reason)}</p>
             <pre className="whitespace-pre-wrap break-words font-mono text-xs">{slice.text}</pre>
           </div>
         ))}
@@ -1092,6 +1106,7 @@ function PullRequestCodeTab({
         : buildDiffReviewComment({
             id: `pull-request-selection:${diffReviewSelectionId(anchor.fileKey, anchor.range)}`,
             sectionId: `pull-request:${detail.number}`,
+            // oxlint-disable-next-line t3code/no-untranslated-copy -- context title sent to the agent
             sectionTitle: `PR #${detail.number} review`,
             filePath: anchor.path,
             fileDiff: file,
@@ -1118,7 +1133,7 @@ function PullRequestCodeTab({
             </Button>
           </>
         ) : diffQuery.isPending ? (
-          "Loading more files..."
+          gt("Loading more files...")
         ) : null}
       </div>
     );
@@ -1180,7 +1195,9 @@ function PullRequestCodeTab({
     // Full contents would not match the cut lines, and would bring back the lines just cut.
     loadDiffFiles: (fileDiff: FileDiffMetadata) =>
       cutFiles.has(fileDiff)
-        ? Promise.reject(new Error("Unchanged lines are unavailable in a file with cut lines."))
+        ? Promise.reject(
+            new Error(m(msg("Unchanged lines are unavailable in a file with cut lines."))),
+          )
         : loadDiffFiles(fileDiff),
     enableGutterUtility: canSelectLines && draft === null && !withheldRefetching,
     enableLineSelection: canSelectLines && draft === null && !withheldRefetching,
@@ -1917,7 +1934,7 @@ function PullRequestCodeTab({
             resizable
             storageKey="t3code:diff-file-tree-width"
             defaultWidthFraction={0.3}
-            resizeLabel="Resize PR Code files"
+            resizeLabel={gt("Resize PR Code files")}
           >
             <DiffFileTree
               ariaLabel={t("{term} #{number} files", {

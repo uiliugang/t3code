@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import { Button } from "../../components/ui/Button";
 import {
   AuthSettingsWriteScope,
@@ -33,11 +34,11 @@ import {
 } from "./settings-scoped-server";
 
 export function SettingsLabsRouteScreen() {
-  const t = useUiTranslation();
+  const gt = useGT();
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title={t("Labs")}>
+    <SettingsScreen title={gt("Labs")}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -46,18 +47,22 @@ export function SettingsLabsRouteScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         <MachineBetaSection
-          title="Linked environments"
+          title={gt("Linked environments")}
           icon="link"
           capability="peerLinks"
           setting="linkedEnvironmentsEnabled"
-          description="Let agents on a machine work on your other machines, and theirs on it. Turn it on for each machine. While off, nothing new starts over a link; running tasks finish."
+          description={gt(
+            "Let agents on a machine work on your other machines, and theirs on it. Turn it on for each machine. While off, nothing new starts over a link; running tasks finish.",
+          )}
         />
         <MachineBetaSection
-          title="Fast worktree checkout"
+          title={gt("Fast worktree checkout")}
           icon="bolt.circle"
           capability="fastWorktreeCheckout"
           setting="fastWorktreeCheckout"
-          description="On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
+          description={gt(
+            "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+          )}
         />
       </ScrollView>
     </SettingsScreen>
@@ -75,6 +80,7 @@ export function AutoSettleSettingsRows(props: {
   readonly pending: boolean;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
   const writableEnvironments = useEnvironmentsWithScope(selectedTargets, AuthSettingsWriteScope);
@@ -123,13 +129,13 @@ export function AutoSettleSettingsRows(props: {
 
   const disabled = !canWriteSettings || props.pending;
   const disabledFor = (...keys: string[]) =>
-    disabled || managedSettingReason(displayTargets, ...keys) !== undefined;
+    disabled || managedSettingReason(displayTargets, keys) !== undefined;
   const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
 
   return (
     <View className="gap-6">
       {!projectSelected ? (
-        <SettingsSection title="Usage limits">
+        <SettingsSection title={gt("Usage limits")}>
           <SettingsSwitchRow
             icon="clock"
             label={t("Resume after usage limits")}
@@ -152,7 +158,7 @@ export function AutoSettleSettingsRows(props: {
           />
         </SettingsSection>
       ) : null}
-      <SettingsSection title="Auto-settle">
+      <SettingsSection title={gt("Auto-settle")}>
         <SettingsSwitchRow
           icon="arrow.triangle.branch"
           label={t("Auto-settle merged threads")}
@@ -184,7 +190,7 @@ export function AutoSettleSettingsRows(props: {
         ) : null}
       </SettingsSection>
       {!props.pending && mismatches.length > 0 ? (
-        <SettingsSection title="Across environments">
+        <SettingsSection title={gt("Across environments")}>
           <View className="gap-3 p-4">
             <Text className="text-base text-foreground">{t("Auto-settle defaults differ")}</Text>
             <Text className="text-sm text-foreground-muted">
@@ -205,6 +211,7 @@ export function AutoSettleSettingsRows(props: {
 
 export function WorkingSectionSettings() {
   const t = useUiTranslation();
+  const gt = useGT();
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const workingShelfEnabled =
@@ -212,7 +219,7 @@ export function WorkingSectionSettings() {
 
   return (
     <View className="gap-3">
-      <SettingsSection title="Sidebar">
+      <SettingsSection title={gt("Sidebar")}>
         <SettingsSwitchRow
           icon="bolt.circle"
           label={t("Working section")}
@@ -231,13 +238,14 @@ export function WorkingSectionSettings() {
 
 export function NewThreadSettingsSection() {
   const t = useUiTranslation();
+  const gt = useGT();
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const useLastProject =
     AsyncResult.isSuccess(preferences) && preferences.value.useLastProjectForNewThreads !== false;
 
   return (
-    <SettingsSection title="New threads">
+    <SettingsSection title={gt("New threads")}>
       <SettingsSwitchRow
         icon="square.and.pencil"
         label={t("Use last project")}
@@ -266,6 +274,7 @@ function MachineBetaSection({
   readonly description: string;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { environments } = useEnvironments();
   const supported = environments.filter(
     (environment) =>
@@ -280,7 +289,7 @@ function MachineBetaSection({
   if (supported.length === 0) return null;
   return (
     <View className="gap-3">
-      <SettingsSection title={t("Beta: {feature}", { feature: t(title) })}>
+      <SettingsSection title={gt("Beta: {feature}", { feature: title })}>
         {supported.map((environment) => {
           const policy = environment.serverConfig?.managedPolicy;
           const managed = isManagedSettingPath(policy, setting);

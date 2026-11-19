@@ -1,3 +1,6 @@
+import { msg, useGT, useMessages } from "gt-react";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { type EnvironmentId } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
@@ -68,6 +71,8 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     autoUpdateEnvironments,
   } = input;
   const t = useUiTranslation();
+  const gt = useGT();
+  const messages = useMessages();
   const navigate = useNavigate();
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
@@ -96,8 +101,8 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: t("Could not reconnect environment"),
-          description: error instanceof Error ? error.message : t("Failed to reconnect."),
+          title: m(msg("Could not reconnect environment")),
+          description: thrownErrorMessage(error, m) ?? m(msg("Failed to reconnect.")),
         }),
       );
     }
@@ -124,8 +129,8 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: t("Could not disconnect server"),
-            description: error instanceof Error ? error.message : t("Failed to disconnect."),
+            title: m(msg("Could not disconnect server")),
+            description: thrownErrorMessage(error, m) ?? m(msg("Failed to disconnect.")),
           }),
         );
       }
@@ -137,11 +142,15 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     handleDisconnectActiveEnvironment,
   );
   const autoBalanceUpdateBanner = useAutoBalanceUpdateBanner(autoUpdateEnvironments);
-  const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
-  const versionMismatchServerLabel =
+  const versionMismatch = resolveServerConfigVersionMismatch(serverConfig, messages);
+  const versionMismatchServerName =
     hasMultipleRegisteredEnvironments && activeThreadEnvironmentId !== null
-      ? `${activeEnvironment?.label ?? serverConfig?.environment.label ?? activeThreadEnvironmentId} server`
-      : "server";
+      ? (activeEnvironment?.label ?? serverConfig?.environment.label ?? activeThreadEnvironmentId)
+      : null;
+  const versionMismatchServerLabel =
+    versionMismatchServerName !== null
+      ? gt("{environment} server", { environment: versionMismatchServerName })
+      : gt("server", { $context: "noun, the T3 Code server" });
   const serverUpdateEnvironmentId = activeThreadEnvironmentId;
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
   const versionMismatchInstallation = serverConfig?.environment.capabilities.serverInstallation;
@@ -246,7 +255,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         description:
           serverUpdateState.status === "failed"
             ? serverUpdateState.message
-            : serverUpdateStageLabel(serverUpdateState.stage),
+            : serverUpdateStageLabel(serverUpdateState.stage, messages),
         actions: !updateFailed ? (
           disconnectAction
         ) : !versionMismatch ||

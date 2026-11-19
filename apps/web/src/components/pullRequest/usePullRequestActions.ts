@@ -15,6 +15,7 @@ import type {
   PullRequestSummary,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import { useRef, useState } from "react";
 import {
   capitalizeTerm,
@@ -38,6 +39,8 @@ import { usePreparePullRequestThreadAction } from "~/state/sourceControlActions"
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 
+import { m } from "~/i18n/messages";
+
 import { toastManager } from "../ui/toast";
 import { offHeadPullRequestCheckoutToast } from "./pullRequestCheckoutToast";
 import {
@@ -46,6 +49,8 @@ import {
   readableFailure,
 } from "./pullRequestDetail.logic";
 import { pullRequestEntryKey, type EnvironmentPullRequestEntry } from "./pullRequestList.logic";
+
+import { changeRequestTermKind } from "./changeRequestTerm";
 
 export function usePullRequestDefaultMergeMethodResolver(
   environmentId: EnvironmentId,
@@ -144,23 +149,27 @@ export function usePullRequestActionRunner({
   const runAction = useAtomCommand(pullRequestEnvironment.runAction, {
     reportFailure: false,
   });
-  const pendingRef = useRef(new Set<string>());
-  const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const pendingRef = useRef(new Map<string, PullRequestAction>());
+  const [pendingActions, setPendingActions] = useState<ReadonlyMap<string, PullRequestAction>>(
+    () => new Map(),
+  );
   const actionKey =
     reference === null
       ? null
       : JSON.stringify([
           environmentId,
+          reference.projectId,
           reference.host ?? null,
           reference.repository,
           reference.number,
         ]);
-  const actionPending = actionKey !== null && pendingKeys.has(actionKey);
+  const pendingAction = actionKey === null ? null : (pendingActions.get(actionKey) ?? null);
+  const actionPending = pendingAction !== null;
 
   const perform = async (action: PullRequestAction, method?: PullRequestMergeMethod) => {
     if (actionKey === null || reference === null || pendingRef.current.has(actionKey)) return;
-    pendingRef.current.add(actionKey);
-    setPendingKeys(new Set(pendingRef.current));
+    pendingRef.current.set(actionKey, action);
+    setPendingActions(new Map(pendingRef.current));
     const result = await runAction({
       environmentId,
       input: {
@@ -170,7 +179,7 @@ export function usePullRequestActionRunner({
       },
     });
     pendingRef.current.delete(actionKey);
-    setPendingKeys(new Set(pendingRef.current));
+    setPendingActions(new Map(pendingRef.current));
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
@@ -198,7 +207,7 @@ export function usePullRequestActionRunner({
     onSuccess?.(action, result.value);
   };
 
-  return { actionPending, perform };
+  return { actionPending, pendingAction, perform };
 }
 
 export function usePullRequestCloseBatch(
@@ -358,7 +367,12 @@ export function usePullRequestHandoffs({
     // Explicit timeouts survive toast updates and would pin the result after loading.
     const toastId = toastManager.add({
       type: "loading",
-      title: `Preparing the ${terminology.singular} checkout...`,
+      title: m(
+        msg(
+          "Preparing the {term, select, mr {merge request} cr {change request} other {pull request}} checkout...",
+          { term: changeRequestTermKind(terminology) },
+        ),
+      ),
       data: {
         onClose: () => {
           cancelled = true;
@@ -452,7 +466,7 @@ export function usePullRequestHandoffs({
                       term: t(terminology.singular),
                     }),
             }
-          : offHeadPullRequestCheckoutToast(terminology, t),
+          : offHeadPullRequestCheckoutToast(terminology),
       );
       return;
     }
@@ -467,7 +481,7 @@ export function usePullRequestHandoffs({
             title: t("Checkout ready"),
             description: t("The task is in the composer. Read it over, then send."),
           }
-        : offHeadPullRequestCheckoutToast(terminology, t),
+        : offHeadPullRequestCheckoutToast(terminology),
     );
   };
 

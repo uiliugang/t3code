@@ -1,5 +1,4 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { pipe } from "effect/Function";
 import { useAtomValue } from "@effect/atom-react";
 import {
   ANOTHER_ADDRESS,
@@ -12,7 +11,6 @@ import {
   linkRequestInitialMachine,
   type LinkRequestItem,
   linkRequestTarget,
-  linkRequestTargetName,
   rankMachinesByHint,
 } from "@t3tools/client-runtime/link-request";
 import {
@@ -27,6 +25,7 @@ import {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
+import { msg, T, useGT, useMessages, Var } from "gt-react-native";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,6 +33,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
+import type { MessageResolver } from "../../i18n/messages";
 import { peerLinkEnvironment, useLinkableMachines } from "../../state/peerLinks";
 import { mintPairingCodeOn } from "../../state/peerPairingCode";
 import { useEnvironmentScope, usePreparedConnection } from "../../state/session";
@@ -52,13 +52,15 @@ const ACCESS_CHOICES: ReadonlyArray<{
 }> = [
   {
     access: "read-only",
-    label: "Read only",
-    description: "Read projects and threads. Cannot start, message or change anything.",
+    label: msg("Read only"),
+    description: msg("Read projects and threads. Cannot start, message or change anything."),
   },
   ...RUNTIME_MODE_CHOICES.map((choice) => ({ ...choice, access: choice.mode })),
 ];
-const accessLabel = (access: AuthMcpClientAccess) =>
-  ACCESS_CHOICES.find((choice) => choice.access === access)?.label ?? access;
+const accessLabel = (access: AuthMcpClientAccess, resolve: MessageResolver) => {
+  const label = ACCESS_CHOICES.find((choice) => choice.access === access)?.label;
+  return label === undefined ? access : resolve(label);
+};
 
 const LINK_SYMBOL: AppSymbolName = { ios: "link", android: "desktop_windows" };
 
@@ -76,9 +78,10 @@ export function LinkRequestCard(props: {
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
   readonly iconColor: ColorValue;
 }) {
+  const m = useMessages();
   const { item, visibility } = props.projectedItem;
   if (item.type !== "link_request") return null;
-  const display = linkRequestDisplay(item, visibility, accessLabel);
+  const display = linkRequestDisplay(item, visibility, (access) => accessLabel(access, m), m);
   if (display.kind === "pending") {
     return <PendingLinkRequest environmentId={props.environmentId} item={item} />;
   }
@@ -106,6 +109,8 @@ function PendingLinkRequest(props: {
 }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
+  const m = useMessages();
   const { item } = props;
   const [open, setOpen] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -118,8 +123,6 @@ function PendingLinkRequest(props: {
   const canAnswer = useAtomValue(
     peerLinkEnvironment.answerRequest.permissionAtom(props.environmentId),
   );
-  const target = linkRequestTargetName(item);
-
   const decline = async () => {
     const input = linkRequestAnswerInput(item, { type: "decline" });
     if (input === null) return;
@@ -129,7 +132,7 @@ function PendingLinkRequest(props: {
       setDeclining(false),
     );
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      pipe(squashAtomCommandFailure(result), linkRequestFailureMessage, setError);
+      setError(linkRequestFailureMessage(squashAtomCommandFailure(result), m));
     }
   };
 
@@ -137,9 +140,9 @@ function PendingLinkRequest(props: {
     <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
       <View className="gap-1">
         <Text className="font-t3-bold text-base text-foreground">
-          {picksMachine(item)
-            ? "Link a machine to this environment"
-            : `Link ${target} to this environment`}
+          {item.url === undefined
+            ? gt("Link a machine to this environment")
+            : gt("Link {target} to this environment", { target: linkDestination(item.url) })}
         </Text>
         {item.reason.trim() ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted">{item.reason}</Text>
@@ -157,7 +160,7 @@ function PendingLinkRequest(props: {
       {canAnswer ? (
         <>
           <Button
-            label={picksMachine(item) ? "Choose machine…" : "Review link…"}
+            label={picksMachine(item) ? gt("Choose machine…") : gt("Review link…")}
             disabled={declining}
             onPress={() => setOpen(true)}
             tone="primary"
@@ -199,6 +202,8 @@ function LinkRequestSheet(props: {
 }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
+  const m = useMessages();
   const { item } = props;
   const insets = useSafeAreaInsets();
   const pickMachine = picksMachine(item);
@@ -220,8 +225,13 @@ function LinkRequestSheet(props: {
     reportDefect: false,
   });
   const selected = choice ?? linkRequestInitialMachine(item, machines);
-  const target = linkRequestTarget(item, machines, selected);
-  const targetName = target.kind === "machine" ? target.label : linkRequestTargetName(item);
+  const target = linkRequestTarget(item, machines, selected, m);
+  const targetName =
+    target.kind === "machine"
+      ? target.label
+      : item.url === undefined
+        ? null
+        : linkDestination(item.url);
   const targetId = target.kind === "machine" ? target.environmentId : null;
   const connected = usePreparedConnection(targetId);
   const mayMint = useEnvironmentScope(targetId, AuthAccessWriteScope);
@@ -255,7 +265,7 @@ function LinkRequestSheet(props: {
       const minted = await mintPairingCodeOn(targetId, access);
       if (Result.isFailure(minted)) {
         setMintFailed((failed) => new Set(failed).add(targetId));
-        setError(linkRequestFailureMessage(minted.failure));
+        setError(linkRequestFailureMessage(minted.failure, m));
         return null;
       }
       code = minted.success;
@@ -283,13 +293,17 @@ function LinkRequestSheet(props: {
       setPairingCode("");
       props.onClose();
     } else if (!isAtomCommandInterrupted(result)) {
-      pipe(squashAtomCommandFailure(result), linkRequestFailureMessage, setError);
+      setError(linkRequestFailureMessage(squashAtomCommandFailure(result), m));
     }
   };
 
   return (
     <Sheet
-      title={pickMachine ? t("Link a machine") : t("Link {name}", { name: targetName })}
+      title={
+        pickMachine || targetName === null
+          ? gt("Link a machine")
+          : gt("Link {targetName}", { targetName })
+      }
       onClose={props.onClose}
       // An answer that lands after a close would still link, and would close a reopened sheet.
       dismissDisabled={busy}
@@ -377,10 +391,10 @@ function LinkRequestSheet(props: {
             />
             {target.kind === "machine" ? (
               <Text className="font-sans text-xs text-foreground-muted">
-                {t(
-                  "This app has no reachable address for {machine}. Enter its HTTPS or Tailscale address.",
-                  { machine: target.label },
-                )}
+                <T>
+                  This app has no address for <Var>{target.label}</Var> that another machine can
+                  reach. Enter its https or Tailscale address.
+                </T>
               </Text>
             ) : null}
           </View>
@@ -389,7 +403,7 @@ function LinkRequestSheet(props: {
           <Text className="font-sans text-sm leading-5 text-foreground-muted">
             {t(
               "This environment is already linked to {machine}. The agent can use that link as it is; change its access in Settings → Environments.",
-              { machine: targetName },
+              { machine: target.label },
             )}
           </Text>
         ) : target.kind === "none" ? null : (
@@ -409,19 +423,26 @@ function LinkRequestSheet(props: {
                   spellCheck={false}
                 />
                 <Text className="font-sans text-xs text-foreground-muted">
-                  {t(
-                    "Create a link on {machine}: Settings → Sharing & access → Authorized clients → Create link, then paste its code here.",
-                    { machine: targetName },
+                  {targetName === null ? (
+                    <T>
+                      Create a link on a machine: Settings → Sharing & access → Authorized clients →
+                      Create link, then paste its code here.
+                    </T>
+                  ) : (
+                    <T>
+                      Create a link on <Var>{targetName}</Var>: Settings → Sharing & access →
+                      Authorized clients → Create link, then paste its code here.
+                    </T>
                   )}
                 </Text>
               </View>
             )}
-            <SettingsSection title={t("What agents here may do there")}>
+            <SettingsSection title={gt("What agents here may do there")}>
               {ACCESS_CHOICES.map((choice, index) => (
                 <SettingsChoiceRow
                   key={choice.access}
-                  label={t(choice.label)}
-                  description={t(choice.description)}
+                  label={m(choice.label)}
+                  description={m(choice.description)}
                   selected={choice.access === access}
                   separated={index > 0}
                   disabled={busy}
@@ -446,7 +467,13 @@ function LinkRequestSheet(props: {
           </Text>
         ) : null}
         <Button
-          label={busy ? "Linking…" : useExisting ? "Use this link" : t("Link")}
+          label={
+            busy
+              ? gt("Linking…")
+              : useExisting
+                ? gt("Use this link")
+                : gt("Link", { $context: "verb, confirms linking the machine" })
+          }
           disabled={busy || !ready}
           onPress={() => void submit()}
           tone="primary"
@@ -472,14 +499,15 @@ function MachineRow(props: {
   readonly disabled: boolean;
   readonly onPress: () => void;
 }) {
+  const gt = useGT();
   const { machine } = props;
   const status = machine.linked
-    ? "Linked"
+    ? gt("Linked")
     : machine.connected
       ? null
       : machine.connectOnly
         ? "T3 Connect"
-        : "Not connected";
+        : gt("Not connected");
   return (
     <Pressable
       accessibilityRole="radio"

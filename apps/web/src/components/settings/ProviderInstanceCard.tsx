@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
-import { Fragment, useState, type ReactElement, type ReactNode } from "react";
+import { Fragment, useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
+import { T, useGT, useMessages, Var } from "gt-react";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -30,7 +31,6 @@ import {
   type AcpRegistryUrlAuthAction,
   type EnvironmentId,
   type ProjectId,
-  type ProviderDriverKind,
   type SecretReference,
   type ServerProvider,
   type ServerProviderModel,
@@ -87,6 +87,7 @@ import {
   getProviderStatusKey,
   getProviderSummary,
   getProviderVersionLabel,
+  providerAuthLabel,
 } from "./providerStatus";
 
 const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -106,6 +107,8 @@ function ProviderStatusDiagnostic({
     </Tooltip>
   );
 }
+
+const ENVIRONMENT_VARIABLE_NAME_PLACEHOLDER = "VARIABLE_NAME";
 
 let environmentVariableDraftId = 0;
 const DRAFT_ROW_ID_PREFIX = "provider-env-";
@@ -221,15 +224,16 @@ export function deriveProviderModelsForDisplay(input: {
 }
 
 function ProviderAuthEmail(props: { readonly email: string | undefined }) {
+  const gt = useGT();
   const email = props.email?.trim();
   if (!email) return null;
 
   return (
     <RedactedSensitiveText
       value={email}
-      ariaLabel="Toggle account email visibility"
-      revealTooltip="Click to reveal email"
-      hideTooltip="Click to hide email"
+      ariaLabel={gt("Toggle account email visibility")}
+      revealTooltip={gt("Click to reveal email")}
+      hideTooltip={gt("Click to hide email")}
       className="max-w-full truncate"
     />
   );
@@ -309,6 +313,7 @@ function ProviderEnvironmentFieldRow(props: {
   readonly secretSources: ReadonlyArray<SecretSource>;
   readonly environmentId?: EnvironmentId | undefined;
 }) {
+  const gt = useGT();
   const inputId = `${props.idPrefix}-environment-${props.field.name}`;
   const value = props.variable?.valueRedacted ? "" : (props.variable?.value ?? "");
 
@@ -352,7 +357,7 @@ function ProviderEnvironmentFieldRow(props: {
               size="icon-sm"
               variant="ghost-destructive"
               onClick={() => props.onRemove(props.field)}
-              aria-label={`Clear ${props.field.label}`}
+              aria-label={gt("Clear {field}", { field: props.field.label })}
             >
               <XIcon className="size-3.5" />
             </Button>
@@ -372,6 +377,7 @@ export function ProviderEnvironmentSection(props: {
   readonly environmentId?: EnvironmentId | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [storedDraft, setDraft] = useState(() =>
     seedRowsDraft(props.environment, toEnvironmentDraftRows),
   );
@@ -494,9 +500,9 @@ export function ProviderEnvironmentSection(props: {
                 value={variable.name}
                 onCommit={(name) => updateVariable(variable.id, { name: name.trim() })}
                 disabled={variable.valueRedacted === true}
-                placeholder="VARIABLE_NAME"
+                placeholder={ENVIRONMENT_VARIABLE_NAME_PLACEHOLDER}
                 spellCheck={false}
-                aria-label={`Environment variable name ${index + 1}`}
+                aria-label={gt("Environment variable name {number}", { number: index + 1 })}
               />
             );
             const removeButton = (
@@ -505,7 +511,9 @@ export function ProviderEnvironmentSection(props: {
                 size="icon-micro"
                 variant="ghost-destructive"
                 onClick={() => removeVariable(variable.id)}
-                aria-label={`Remove environment variable ${variable.name || index + 1}`}
+                aria-label={gt("Remove environment variable {name}", {
+                  name: variable.name || index + 1,
+                })}
               >
                 <XIcon className="size-3" />
               </Button>
@@ -572,7 +580,7 @@ export function ProviderEnvironmentSection(props: {
                     placeholder={t("value")}
                     configured={variable.valueRedacted === true}
                     spellCheck={false}
-                    aria-label={`Environment variable value ${index + 1}`}
+                    aria-label={gt("Environment variable value {number}", { number: index + 1 })}
                     sources={props.secretSources ?? []}
                     environmentId={props.environmentId}
                     onSecretChange={(secret) => setVariableSecret(variable.id, secret)}
@@ -595,7 +603,7 @@ export function ProviderEnvironmentSection(props: {
                       autoComplete="off"
                       placeholder={t("value")}
                       spellCheck={false}
-                      aria-label={`Environment variable value ${index + 1}`}
+                      aria-label={gt("Environment variable value {number}", { number: index + 1 })}
                     />,
                   )
                 )}
@@ -603,10 +611,11 @@ export function ProviderEnvironmentSection(props: {
             );
           })}
           <p className="text-xs text-muted-foreground">
-            {t("Sensitive values are stored separately and never returned to the app.")}
             {rows.some((row) => row.valueRedacted === true)
-              ? " Enter a new value to rename a saved one or make it plain text."
-              : null}
+              ? gt(
+                  "Sensitive values are stored separately and never returned to the app. Enter a new value to rename a saved one or make it plain text.",
+                )
+              : gt("Sensitive values are stored separately and never returned to the app.")}
           </p>
         </div>
       ) : null}
@@ -622,9 +631,20 @@ function ProjectOverrideInheritance({
   readonly deviceEnabled: boolean;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const layers = [
-    { key: "project", label: "Project", enabled: projectEnabled, effective: true },
-    { key: "device", label: "Device", enabled: deviceEnabled, effective: false },
+    {
+      key: "project",
+      label: gt("Project", { $context: "settings layer" }),
+      enabled: projectEnabled,
+      effective: true,
+    },
+    {
+      key: "device",
+      label: gt("Device", { $context: "settings layer" }),
+      enabled: deviceEnabled,
+      effective: false,
+    },
   ];
   return (
     <Popover>
@@ -765,6 +785,49 @@ function useCustomModelSaves(
   return [current, update] as const;
 }
 
+function ProviderInstanceModels({
+  instance,
+  liveModels,
+  onUpdate,
+  ...props
+}: Omit<
+  ComponentProps<typeof ProviderModelsSection>,
+  "driverKind" | "models" | "customModels" | "onChange"
+> & {
+  readonly instance: ProviderInstanceConfig;
+  readonly liveModels: ServerProvider["models"] | undefined;
+  readonly onUpdate: ProviderInstanceCardProps["onUpdate"];
+}) {
+  const storedCustomModels =
+    instance.config !== null && typeof instance.config === "object"
+      ? (instance.config as Record<string, unknown>).customModels
+      : undefined;
+  const [customModels, updateCustomModels] = useCustomModelSaves(
+    readCustomModelEntries(storedCustomModels),
+    (next) => {
+      const nextConfig = nextConfigBlobWithValue(
+        instance.config,
+        "customModels",
+        next.map(toCustomModelSetting),
+      );
+      return onUpdate({ ...instance, config: nextConfig });
+    },
+  );
+  return (
+    <ProviderModelsSection
+      {...props}
+      driverKind={isProviderDriverKind(instance.driver) ? instance.driver : null}
+      models={deriveProviderModelsForDisplay({
+        liveModels,
+        customModels,
+        includeCustomModels: instance.driver !== "antigravity",
+      })}
+      customModels={customModels}
+      onChange={updateCustomModels}
+    />
+  );
+}
+
 /** Unknown drivers stay read-only to preserve fork config. projectOverride switches affect only the
  * project, not instance.enabled. */
 export function ProviderInstanceCard({
@@ -801,33 +864,35 @@ export function ProviderInstanceCard({
   projectOverride,
 }: ProviderInstanceCardProps) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const enabled = projectOverride?.effectiveEnabled ?? resolveProviderInstanceEnabled(instance);
   const effectiveProvider = liveProvider && { ...liveProvider, enabled };
   const compatibility = enabled ? liveProvider?.compatibilityAdvisory : undefined;
   const statusKey = enabled ? getProviderStatusKey(effectiveProvider) : "disabled";
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
   const summary = enabled
-    ? getProviderSummary(effectiveProvider, t)
-    : { headline: t("Disabled"), detail: null };
+    ? getProviderSummary(effectiveProvider, m)
+    : { headline: gt("Disabled", { $context: "provider status" }), detail: null };
   const authEmail = liveProvider?.auth.email?.trim();
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";
   const authLabel =
     enabled && liveProvider?.auth.status === "authenticated"
-      ? (liveProvider.auth.label ?? liveProvider.auth.type ?? null)
+      ? (providerAuthLabel(liveProvider.auth, m) ?? null)
       : null;
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(
     liveProvider?.versionAdvisory,
     liveProvider?.compatibilityAdvisory,
     enabled,
-    t,
+    m,
   );
   const updateCommand = versionAdvisory?.updateCommand ?? null;
   const updateState = liveProvider?.updateState;
   const updateProgress = isUpdating
     ? ((updateState?.status === "queued" || updateState?.status === "running"
         ? updateState.message
-        : null) ?? "Starting update")
+        : null) ?? gt("Starting update"))
     : null;
   const updateProblem =
     !isUpdating && (updateState?.status === "failed" || updateState?.status === "unchanged")
@@ -850,7 +915,7 @@ export function ProviderInstanceCard({
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
   const accentColor = normalizeProviderAccentColor(instance.accentColor);
   const managedPolicy = useManagedPolicy(environmentId);
-  const instanceLocks = managedInstanceLocks(managedPolicy, instance.driver);
+  const instanceLocks = managedInstanceLocks(managedPolicy, instance.driver, m);
   const managedDriverReason = isManagedDriverAllowed(managedPolicy, instance.driver)
     ? undefined
     : disallowedProviderMessage(
@@ -876,30 +941,6 @@ export function ProviderInstanceCard({
     },
   });
 
-  const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
-    ? instance.driver
-    : null;
-  const storedCustomModels =
-    instance.config !== null && typeof instance.config === "object"
-      ? (instance.config as Record<string, unknown>).customModels
-      : undefined;
-  const [customModels, updateCustomModels] = useCustomModelSaves(
-    readCustomModelEntries(storedCustomModels),
-    (next) => {
-      const nextConfig = nextConfigBlobWithValue(
-        instance.config,
-        "customModels",
-        next.map(toCustomModelSetting),
-      );
-      const { config: _omit, ...rest } = instance;
-      return onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
-    },
-  );
-  const modelsForDisplay = deriveProviderModelsForDisplay({
-    liveModels: liveProvider?.models,
-    customModels,
-    includeCustomModels: instance.driver !== "antigravity",
-  });
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();
     const { displayName: _omit, ...rest } = instance;
@@ -946,11 +987,15 @@ export function ProviderInstanceCard({
         : (rest as ProviderInstanceConfig),
     );
   };
-  const connectionFingerprint = JSON.stringify([
-    instance.driver,
+  const connectionMode =
     instance.driver === "codex"
       ? codexConnectionMode(instance.config)
-      : isClaudeByok(instance.config),
+      : instance.driver === "claudeAgent" && isClaudeByok(instance.config)
+        ? "byok"
+        : "existing";
+  const connectionFingerprint = JSON.stringify([
+    instance.driver,
+    connectionMode,
     instance.environment,
   ]);
   const [connectionDraft, setConnectionDraft] = useState({
@@ -960,10 +1005,7 @@ export function ProviderInstanceCard({
   const connectionDirty =
     connectionDraft.fingerprint === connectionFingerprint && connectionDraft.dirty;
   const [checkRevision, setCheckRevision] = useState(0);
-  const isByok =
-    instance.driver === "claudeAgent"
-      ? isClaudeByok(instance.config)
-      : instance.driver === "codex" && codexConnectionMode(instance.config) === "byok";
+  const isByok = connectionMode === "byok";
   const byokNames =
     instance.driver === "codex" ? CODEX_BYOK_ENVIRONMENT_NAMES : CLAUDE_BYOK_ENVIRONMENT_NAMES;
   const environmentFields = (driverOption?.environmentFields ?? []).filter(
@@ -1000,7 +1042,7 @@ export function ProviderInstanceCard({
 
   const titleIconNode = (
     <ProviderInstanceIcon
-      driverKind={driverKind ?? instance.driver}
+      driverKind={instance.driver}
       displayName={displayName}
       accentColor={accentColor}
       acpRegistryAgentId={
@@ -1036,17 +1078,23 @@ export function ProviderInstanceCard({
   const statusDiagnostic = hasCompatibilityWarning && needsAttention ? summary.detail : null;
   const inlineStatusDetail = hasCompatibilityWarning
     ? compatibility?.status === "broken"
-      ? "Incompatible"
+      ? gt("Incompatible")
       : compatibility?.status === "unsupported"
-        ? "Unsupported"
-        : "Limited support"
+        ? gt("Unsupported")
+        : gt("Limited support")
     : summary.detail;
   const editorStatusNode =
     isAuthenticated && authEmail ? (
       <>
         {needsAttention ? statusDotNode : null}
-        <span>{t("Authenticated as")}</span>
-        <ProviderAuthEmail email={authEmail} />
+        <span className="min-w-0 max-w-full">
+          <T>
+            Authenticated as{" "}
+            <Var>
+              <ProviderAuthEmail email={authEmail} />
+            </Var>
+          </T>
+        </span>
         {authLabel ? <span>· {authLabel}</span> : null}
         {inlineStatusDetail ? (
           <span className="min-w-0 [overflow-wrap:anywhere]">· {t(inlineStatusDetail)}</span>
@@ -1108,7 +1156,7 @@ export function ProviderInstanceCard({
                 versionAdvisory.emphasis === "strong" ? "text-warning" : "text-muted-foreground",
               )}
             >
-              {versionAdvisory.detail}
+              {t(versionAdvisory.detail)}
             </p>
           </div>
           {onRunVersionAction ? (
@@ -1122,14 +1170,14 @@ export function ProviderInstanceCard({
             >
               {isUpdating ? <Spinner /> : <DownloadIcon />}
               {isUpdating
-                ? t("Updating")
+                ? gt("Updating")
                 : versionAdvisory.targetVersion
-                  ? t("Install {version}", {
+                  ? gt("Install {version}", {
                       version:
                         getProviderVersionLabel(versionAdvisory.targetVersion) ??
                         versionAdvisory.targetVersion,
                     })
-                  : t("Update now")}
+                  : gt("Update now")}
             </Button>
           ) : null}
           {updateProgress || updateProblem ? (
@@ -1198,7 +1246,7 @@ export function ProviderInstanceCard({
             type="button"
             className="pointer-events-auto absolute inset-0 cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={onSelect}
-            aria-label={`Select ${displayName}`}
+            aria-label={gt("Select {provider}", { provider: displayName })}
             aria-pressed={selected}
           />
           {titleIconNode}
@@ -1217,7 +1265,7 @@ export function ProviderInstanceCard({
                   className="pointer-events-auto line-clamp-2 [overflow-wrap:anywhere]"
                 >
                   {updateProgress ? (
-                    `Updating · ${updateProgress}`
+                    gt("Updating · {progress}", { progress: updateProgress })
                   ) : (
                     <>
                       {summary.headline}
@@ -1237,8 +1285,8 @@ export function ProviderInstanceCard({
                 deviceEnabled={resolveProviderInstanceEnabled(instance)}
               />
               <SettingResetButton
-                label={`${displayName} enablement`}
-                tooltip={t("Reset to the device setting")}
+                ariaLabel={gt("Reset {provider} enablement to default", { provider: displayName })}
+                tooltip={gt("Reset to the device setting")}
                 disabled={readOnly || !canWriteSettings}
                 onClick={projectOverride.onReset}
               />
@@ -1250,7 +1298,7 @@ export function ProviderInstanceCard({
               checked={enabled}
               disabled={readOnly || (projectOverride !== undefined && !canWriteSettings)}
               onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
-              aria-label={`Enable ${displayName}`}
+              aria-label={gt("Enable {provider}", { provider: displayName })}
             />
           </ManagedControl>
         </span>
@@ -1281,7 +1329,7 @@ export function ProviderInstanceCard({
             variant="ghost-destructive"
             disabled={readOnly}
             onClick={onDelete}
-            aria-label={`Delete instance ${instanceId}`}
+            aria-label={gt("Delete instance {instanceId}", { instanceId })}
           >
             <Trash2Icon />
           </Button>
@@ -1333,17 +1381,17 @@ export function ProviderInstanceCard({
   );
 
   const modelsSection = (
-    <ProviderModelsSection
+    <ProviderInstanceModels
+      key={JSON.stringify([environmentId, instanceId, instance.driver, connectionMode])}
+      instance={instance}
+      liveModels={liveProvider?.models}
+      onUpdate={onUpdate}
       canManageCustomModels={!readOnly}
       canWritePreferences={canWriteSettings}
       instanceId={instanceId}
-      driverKind={driverKind}
-      models={modelsForDisplay}
-      customModels={customModels}
       hiddenModels={hiddenModels}
       favoriteModels={favoriteModels}
       modelOrder={modelOrder}
-      onChange={updateCustomModels}
       onHiddenModelsChange={onHiddenModelsChange}
       onFavoriteModelsChange={onFavoriteModelsChange}
       onToggleFavorite={onToggleFavorite}
@@ -1365,13 +1413,16 @@ export function ProviderInstanceCard({
     />
   ) : (
     <SettingsRow
-      title="Driver"
+      title={gt("Driver")}
       description={
         <span>
-          {t(
-            "This instance uses {driver}, which is not available in this build. Its configuration is preserved.",
-            { driver: String(instance.driver) },
-          )}
+          <T>
+            This instance uses{" "}
+            <code className="text-foreground">
+              <Var>{String(instance.driver)}</Var>
+            </code>
+            , which is not available in this build. Its configuration is preserved.
+          </T>
         </span>
       }
     />
@@ -1404,7 +1455,7 @@ export function ProviderInstanceCard({
                 className="min-w-0 flex-1 @min-[32rem]/settings-row:w-56"
                 value={instance.displayName ?? ""}
                 onCommit={updateDisplayName}
-                placeholder={driverOption?.label ?? "Instance label"}
+                placeholder={driverOption?.label ?? gt("Instance label")}
                 spellCheck={false}
               />
             </div>
@@ -1449,7 +1500,7 @@ export function ProviderInstanceCard({
         </SettingsSection>
       ) : null}
       {setup || environmentFields.length > 0 ? (
-        <SettingsSection title="Setup">
+        <SettingsSection title={gt("Setup")}>
           {setup}
           {environmentFields.length > 0 ? (
             <div
@@ -1496,7 +1547,7 @@ export function ProviderInstanceCard({
             {runtime ?? runtimeFields}
           </FoldedSettingsSection>
         </div>
-      ) : !driverOption || deriveProviderSettingsFields(driverOption).length > 0 ? (
+      ) : !driverOption || deriveProviderSettingsFields(driverOption, undefined, m).length > 0 ? (
         <div
           inert={readOnly}
           aria-disabled={readOnly || undefined}

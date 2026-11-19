@@ -1,3 +1,4 @@
+import { msg, useGT, useMessages } from "gt-react";
 import { useRef } from "react";
 import { BranchNamingMode, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -7,7 +8,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Textarea } from "../ui/textarea";
 import { SettingsRow, SettingResetButton } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -15,13 +16,16 @@ import {
 } from "./useScopedSettings";
 
 const MODES = {
-  static: "Static prefix",
-  semantic: "Semantic prefix",
-  custom: "Custom instructions",
+  static: msg("Static prefix"),
+  semantic: msg("Semantic prefix"),
+  custom: msg("Custom instructions"),
 } satisfies Record<BranchNamingMode, string>;
 
 export function BranchNamingSettings() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
+  const gt = useGT();
+  const m = useMessages();
   const settings = useScopedSettings();
   const { targets } = useSettingsScope();
   const scopeKey = targets.map((target) => `${target.environmentId}:${target.projectId}`).join(",");
@@ -41,13 +45,15 @@ export function BranchNamingSettings() {
         description={t("Choose how new worktree branches are named from your first message.")}
         status={
           !modeMixed && settings.branchNamingMode === "semantic"
-            ? "The model chooses a prefix that describes the work, such as feat/add-search, fix/login-timeout, or refactor/auth."
+            ? gt(
+                "The model chooses a prefix that describes the work, such as feat/add-search, fix/login-timeout, or refactor/auth.",
+              )
             : undefined
         }
         resetAction={
           settings.branchNamingMode !== DEFAULT_SERVER_SETTINGS.branchNamingMode || modeMixed ? (
             <SettingResetButton
-              label={t("branch naming")}
+              ariaLabel={gt("Reset branch naming to default")}
               onClick={() =>
                 updateSettings({ branchNamingMode: DEFAULT_SERVER_SETTINGS.branchNamingMode })
               }
@@ -63,15 +69,19 @@ export function BranchNamingSettings() {
               }
             }}
           >
-            <SelectTrigger size="sm" aria-label={t("Worktree branch naming")}>
+            <SelectTrigger size="sm" aria-label={gt("Worktree branch naming")}>
               <SelectValue>
-                {(value: BranchNamingMode | null) => t(value === null ? "Mixed" : MODES[value])}
+                {(value: BranchNamingMode | null) =>
+                  value === null
+                    ? gt("Mixed", { $context: "values differ across targets" })
+                    : m(MODES[value])
+                }
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {BranchNamingMode.literals.map((mode) => (
                 <SelectItem key={mode} value={mode}>
-                  {t(MODES[mode])}
+                  {m(MODES[mode])}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -90,7 +100,7 @@ export function BranchNamingSettings() {
             prefixMixed ||
             settings.branchNamePrefix !== DEFAULT_SERVER_SETTINGS.branchNamePrefix ? (
               <SettingResetButton
-                label={t("branch prefix")}
+                ariaLabel={gt("Reset branch prefix to default")}
                 onClick={() =>
                   updateSettings({ branchNamePrefix: DEFAULT_SERVER_SETTINGS.branchNamePrefix })
                 }
@@ -129,7 +139,7 @@ export function BranchNamingSettings() {
           resetAction={
             instructionsMixed || settings.branchNameInstructions !== "" ? (
               <SettingResetButton
-                label={t("branch naming instructions")}
+                ariaLabel={gt("Reset branch naming instructions to default")}
                 onClick={() => updateSettings({ branchNameInstructions: "" })}
               />
             ) : null

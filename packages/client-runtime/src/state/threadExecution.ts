@@ -49,6 +49,9 @@ import {
 } from "./models.ts";
 import { commandDisplayText } from "../work-log/commandLabel.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
+import { mFallback, msg } from "gt-i18n";
+import { markedTextEnglish } from "../errors/translatable.ts";
+import type { MFunctionType } from "gt-i18n/types";
 
 const ACTIVITY_RUN_STATUSES = new Set(["preparing", "starting", "running", "waiting"]);
 const INTERRUPTIBLE_RUN_STATUSES = new Set(["preparing", "starting", "running"]);
@@ -107,15 +110,19 @@ function latestMatchingRun(
   );
 }
 
-function providerStartingLabel(
+function providerStarting(
   projection: ThreadStructure,
   run: OrchestrationV2ThreadProjection["runs"][number],
-): string {
+): Pick<ThreadRunSummary, "providerStartingLabel" | "providerStartingLabelMsg"> {
   const driver = projection.providerSessions.findLast(
     (session) => session.providerInstanceId === run.providerInstanceId,
   )?.driver;
   const name = driver === undefined ? undefined : PROVIDER_DISPLAY_NAMES[driver];
-  return name === undefined ? "Starting" : `Starting ${name}`;
+  const label =
+    name === undefined
+      ? msg("Starting", { $context: "a provider is launching" })
+      : msg("Starting {provider}", { provider: name });
+  return { providerStartingLabel: markedTextEnglish([label]), providerStartingLabelMsg: label };
 }
 
 function summarizeThreadRun(
@@ -139,7 +146,7 @@ function summarizeThreadRun(
     // the provider can still be launching for minutes.
     ...(turnStatus === undefined
       ? PROVIDER_STARTING_RUN_STATUSES.has(run.status)
-        ? { providerStartingLabel: providerStartingLabel(projection, run) }
+        ? providerStarting(projection, run)
         : {}
       : turnStatus === "pending" || turnStatus === "running"
         ? {}
@@ -276,23 +283,24 @@ export function formatSubagentEffort(input: {
 }
 
 const SUBAGENT_STATUS_LABELS: Record<OrchestrationV2ExecutionNode["status"], string> = {
-  idle: "Idle",
-  pending: "Working",
-  running: "Working",
-  waiting: "Waiting",
-  completed: "Completed",
-  interrupted: "Interrupted",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  rolled_back: "Cancelled",
+  idle: msg("Idle"),
+  pending: msg("Working"),
+  running: msg("Working"),
+  waiting: msg("Waiting"),
+  completed: msg("Completed"),
+  interrupted: msg("Interrupted"),
+  failed: msg("Failed"),
+  cancelled: msg("Cancelled"),
+  rolled_back: msg("Cancelled"),
 };
 
 export function formatProviderSubagentStatus(
   status: ProviderSubagentStatus | null,
   nowMs: number,
+  resolve: MFunctionType = mFallback,
 ): string {
-  if (status === null) return "Starting";
-  const label = SUBAGENT_STATUS_LABELS[status.status];
+  if (status === null) return resolve(msg("Starting"));
+  const label = resolve(SUBAGENT_STATUS_LABELS[status.status]);
   const live = isOrchestrationV2WorkActive(status.status);
   if (!live && status.status !== "completed") return label;
   const start = status.startedAt === null ? Number.NaN : Date.parse(status.startedAt);
@@ -303,7 +311,9 @@ export function formatProviderSubagentStatus(
       : Date.parse(status.completedAt);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return label;
   const elapsed = formatDuration(Math.max(1_000, Math.floor((end - start) / 1_000) * 1_000));
-  return live ? `${label} ${elapsed}` : `${label} in ${elapsed}`;
+  return live
+    ? resolve(msg("{label} {elapsed}", { label, elapsed }))
+    : resolve(msg("{label} in {elapsed}", { label, elapsed }));
 }
 
 /** The run a manual continuation resumes; the server holds the queue until it does. */
@@ -662,12 +672,12 @@ export interface ProviderGoalPresentation {
 }
 
 const PROVIDER_GOAL_TITLES: Record<OrchestrationV2ProviderGoal["status"], string> = {
-  active: "Pursuing goal",
-  paused: "Goal paused",
-  blocked: "Goal blocked",
-  usage_limited: "Goal hit a usage limit",
-  budget_limited: "Goal reached its token budget",
-  complete: "Goal complete",
+  active: msg("Pursuing goal"),
+  paused: msg("Goal paused"),
+  blocked: msg("Goal blocked"),
+  usage_limited: msg("Goal hit a usage limit"),
+  budget_limited: msg("Goal reached its token budget"),
+  complete: msg("Goal complete"),
 };
 
 function formatGoalTokens(tokens: number): string {
@@ -680,23 +690,36 @@ function formatGoalTokens(tokens: number): string {
 export function presentProviderGoal(
   goal: OrchestrationV2ProviderGoal,
   working: boolean,
+  resolve: MFunctionType = mFallback,
 ): ProviderGoalPresentation {
   const usage: Array<string> = [];
   if (goal.tokensUsed !== undefined && goal.tokensUsed > 0) {
     usage.push(
       goal.tokenBudget == null
-        ? `${formatGoalTokens(goal.tokensUsed)} tokens`
-        : `${formatGoalTokens(goal.tokensUsed)} / ${formatGoalTokens(goal.tokenBudget)} tokens`,
+        ? resolve(msg("{used} tokens", { used: formatGoalTokens(goal.tokensUsed) }))
+        : resolve(
+            msg("{used} / {budget} tokens", {
+              used: formatGoalTokens(goal.tokensUsed),
+              budget: formatGoalTokens(goal.tokenBudget),
+            }),
+          ),
     );
   }
   if (goal.timeUsedSeconds !== undefined && goal.timeUsedSeconds >= 60) {
     usage.push(formatDuration(goal.timeUsedSeconds * 1_000));
   }
   if (goal.checks !== undefined && goal.checks > 0) {
-    usage.push(`${goal.checks} ${goal.checks === 1 ? "check" : "checks"}`);
+    usage.push(
+      resolve(
+        msg("{count, plural, one {{count} check} other {{count} checks}}", { count: goal.checks }),
+      ),
+    );
   }
   return {
-    title: goal.status === "active" && !working ? "Goal set" : PROVIDER_GOAL_TITLES[goal.status],
+    title:
+      goal.status === "active" && !working
+        ? resolve(msg("Goal set"))
+        : resolve(PROVIDER_GOAL_TITLES[goal.status]),
     objective: goal.objective,
     usage: usage.length === 0 ? null : usage.join(" · "),
     canResume: goal.status !== "active" && goal.status !== "complete",

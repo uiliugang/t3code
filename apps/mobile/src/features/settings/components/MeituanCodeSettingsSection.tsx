@@ -78,7 +78,7 @@ export function MeituanCodeSettingsSection(props: {
     if (result._tag === "Success") {
       setDraft(null);
       discovery.refresh();
-    } else setError("Could not save the MIS ID. Try again.");
+    } else setError(t("Could not save the MIS ID. Try again."));
   };
   const request = async () => {
     setBusy(true);
@@ -86,16 +86,20 @@ export function MeituanCodeSettingsSection(props: {
     const result = await (pending ? cancel : start)({ environmentId, input });
     setBusy(false);
     if (result._tag !== "Success")
-      setError("Could not start authorization. Rescan the server and try again.");
+      setError(t("Could not start authorization. Rescan the server and try again."));
     discovery.refresh();
   };
   return (
     <SettingsSection
-      title={props.multiple ? `Meituan Code · ${props.environment.label}` : "Meituan Code"}
+      title={
+        props.multiple
+          ? t("Meituan Code · {account}", { account: props.environment.label })
+          : t("Meituan Code")
+      }
     >
       <SettingsRow
         icon="person.crop.circle"
-        label="Meituan Code"
+        label={t("Meituan Code")}
         value={t(item?.auth.status === "authenticated" ? "Authenticated" : "Not authenticated")}
         onPress={() => setExpanded((open) => !open)}
       />
@@ -136,7 +140,7 @@ export function MeituanCodeSettingsSection(props: {
           </View>
           <SettingsRow
             icon="checkmark"
-            label="Save"
+            label={t("Save")}
             disabled={props.disabled || busy || pending || !dirty || Boolean(value.trim() && !mis)}
             onPress={() => void save()}
           />
@@ -145,10 +149,10 @@ export function MeituanCodeSettingsSection(props: {
               icon="person.crop.circle"
               label={
                 pending
-                  ? "Cancel authorization"
+                  ? t("Cancel authorization")
                   : attempted
-                    ? "Send again"
-                    : "Send authorization request"
+                    ? t("Send again")
+                    : t("Send authorization request")
               }
               disabled={
                 !canSignIn ||

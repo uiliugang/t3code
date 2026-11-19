@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -15,10 +16,11 @@ export function PullRequestActivityFilters({
   readonly hiddenCount: number;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const kinds = [
-    { id: "all", title: t("All activity") },
-    { id: "comments", title: t("Comments") },
-    { id: "commits", title: t("Commits") },
+    { id: "all", title: gt("All activity") },
+    { id: "comments", title: gt("Comments", { $context: "activity filter" }) },
+    { id: "commits", title: gt("Commits", { $context: "activity filter" }) },
   ] as const;
   return (
     <View className="mb-4 flex-row items-center justify-between gap-3">
@@ -32,8 +34,8 @@ export function PullRequestActivityFilters({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t("Activity type, {value}", {
-            value: String(kinds.find((kind) => kind.id === value.kind)?.title),
+          accessibilityLabel={gt("Activity type, {kind}", {
+            kind: kinds.find((kind) => kind.id === value.kind)?.title ?? "",
           })}
           className="min-h-11 flex-row items-center gap-2 active:opacity-60"
         >
@@ -61,14 +63,17 @@ export function PullRequestActivityFilters({
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("Filter activity, {hiddenCount} hidden", {
-              hiddenCount: String(hiddenCount),
-            })}
+            accessibilityLabel={gt(
+              "{count, plural, one {Filter activity, {count} hidden} other {Filter activity, {count} hidden}}",
+              { count: hiddenCount },
+            )}
             className="min-h-11 flex-row items-center gap-1.5 active:opacity-60"
           >
             {hiddenCount > 0 ? (
               <Text className="text-xs text-foreground-muted">
-                {t("{count} hidden", { count: hiddenCount })}
+                {gt("{count, plural, one {{count} hidden} other {{count} hidden}}", {
+                  count: hiddenCount,
+                })}
               </Text>
             ) : null}
             <SymbolView

@@ -1,4 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { ChevronRightIcon, ExternalLinkIcon, SearchIcon } from "lucide-react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
@@ -7,6 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { FetchHttpClient, HttpClient } from "effect/http";
 import { Atom } from "effect/reactivity";
+import { msg, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import {
@@ -17,6 +19,7 @@ import {
   type ThirdPartyLicenseEntry,
 } from "@t3tools/shared/thirdPartyLicenses";
 
+import { m } from "../../i18n/messages";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
@@ -37,15 +40,22 @@ const licenseManifestAtom = Atom.make(
     );
     if (response.status < 200 || response.status >= 300) {
       return yield* new LicenseManifestLoadError({
-        message: `The license manifest request failed with status ${String(response.status)}.`,
+        message: m(
+          msg("The license manifest request failed with status {status}.", {
+            status: String(response.status),
+          }),
+        ),
       });
     }
     const body = yield* response.json;
     return yield* Effect.try({
-      try: () => decodeThirdPartyLicenseManifest(body),
+      try: () => decodeThirdPartyLicenseManifest(body, m),
       catch: (error) =>
         new LicenseManifestLoadError({
-          message: error instanceof Error ? error.message : "The license manifest could not load.",
+          message:
+            error instanceof Error
+              ? (thrownErrorMessage(error, m) ?? error.message)
+              : m(msg("The license manifest could not load.")),
         }),
     });
   }).pipe(
@@ -57,7 +67,9 @@ const licenseManifestAtom = Atom.make(
       duration: "30 seconds",
       orElse: () =>
         Effect.fail(
-          new LicenseManifestLoadError({ message: "The license manifest took too long to load." }),
+          new LicenseManifestLoadError({
+            message: m(msg("The license manifest took too long to load.")),
+          }),
         ),
     }),
     Effect.provide(FetchHttpClient.layer),
@@ -74,6 +86,7 @@ function LicenseNoticeRow({
   readonly onOpenChange: (open: boolean) => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <article>
@@ -90,7 +103,7 @@ function LicenseNoticeRow({
               ) : null}
             </span>
             <span className="max-w-[42%] shrink-0 truncate text-xs text-muted-foreground">
-              {entry.license} · {formatLicenseBundles(entry.bundles)}
+              {entry.license} · {formatLicenseBundles(entry.bundles, messages)}
             </span>
           </CollapsibleTrigger>
           {entry.sourceUrl ? (
@@ -230,6 +243,7 @@ function LicenseManifestError({ message, onRetry }: { message: string; onRetry: 
 
 export function OpenSourceLicensesPanel() {
   const t = useUiTranslation();
+  const gt = useGT();
   const result = useAtomValue(licenseManifestAtom);
   const retry = useAtomRefresh(licenseManifestAtom);
   const [query, setQuery] = useState("");
@@ -241,7 +255,7 @@ export function OpenSourceLicensesPanel() {
   const errorMessage =
     result._tag === "Failure" && !result.waiting
       ? Option.match(Cause.findErrorOption(result.cause), {
-          onNone: () => "The license manifest could not load.",
+          onNone: () => gt("The license manifest could not load."),
           onSome: (error) => error.message,
         })
       : null;

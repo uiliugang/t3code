@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import type { ChatComposerProps } from "./ChatComposer";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
@@ -185,26 +187,35 @@ export function useComposerAttachmentIntake(input: {
         replacedReattachMarkerIds.add(matchingReattachMarker.id);
       }
       if (!matchingReattachMarker && reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
+        error = m(
+          msg("You can attach up to {max} files per message.", {
+            max: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+          }),
+        );
         continue;
       }
       if (attachmentKind === "unsupported-image") {
-        error = `'${file.name}' is not a supported image type. Attach GIF, HEIC, HEIF, JPEG, PNG, or WebP images.`;
+        error = m(
+          msg(
+            "''{name}'' is not a supported image type. Attach GIF, HEIC, HEIF, JPEG, PNG, or WebP images.",
+            { name: file.name },
+          ),
+        );
         continue;
       }
       if (attachmentKind === "image") {
         acceptedImages.push(normalizeComposerImageFileMimeType(file));
       } else {
         if (fileStagingLimit === null) {
-          error = "This server does not support file attachments.";
+          error = m(msg("This server does not support file attachments."));
           continue;
         }
         if (file.size <= 0) {
-          error = `'${file.name}' is empty or could not be read.`;
+          error = m(msg("''{name}'' is empty or could not be read.", { name: file.name }));
           continue;
         }
         if (file.size > fileStagingLimit) {
-          error = fileAttachmentTooLargeMessage(file.name, fileStagingLimit);
+          error = fileAttachmentTooLargeMessage(file.name, fileStagingLimit, m);
           continue;
         }
         const attachmentFile =
@@ -240,11 +251,13 @@ export function useComposerAttachmentIntake(input: {
         const attached = storedFiles[0]!;
         toastManager.add({
           type: "info",
-          title: t("Large paste attached as {name}", { name: attached.name }),
-          description: t("{size} · Use {shortcut} to keep a large paste inline.", {
-            size: formatAttachmentSize(attached.sizeBytes),
-            shortcut: isMacPlatform(navigator.platform) ? "⌘⇧V" : "Ctrl+Shift+V",
-          }),
+          title: m(msg("Large paste attached as {name}", { name: attached.name })),
+          description: m(
+            msg("{size} · Use {shortcut} to keep a large paste inline.", {
+              size: formatAttachmentSize(attached.sizeBytes, m),
+              shortcut: isMacPlatform(navigator.platform) ? "⌘⇧V" : "Ctrl+Shift+V",
+            }),
+          ),
           data: { hideCopyButton: true },
         });
       }
@@ -288,8 +301,12 @@ export function useComposerAttachmentIntake(input: {
         compressionErrors.set(
           id,
           result.reason === "unreadable"
-            ? `'${file.name}' could not be read as an image.`
-            : `'${file.name}' is too large to attach, even after compression.`,
+            ? m(msg("''{name}'' could not be read as an image.", { name: file.name }))
+            : m(
+                msg("''{name}'' is too large to attach, even after compression.", {
+                  name: file.name,
+                }),
+              ),
         );
         continue;
       }
@@ -307,6 +324,7 @@ export function useComposerAttachmentIntake(input: {
     const stillPreparingIds = removePreparingComposerImages(
       attachmentTargetKey,
       new Set(preparingImages.map((image) => image.id)),
+      { cancelSubmission: compressionErrors.size > 0 || questionDiscarded },
     );
     if (questionAttachmentTarget)
       changeQuestionAttachmentPreparation(questionAttachmentTarget, -stillPreparingIds.size);
@@ -357,7 +375,11 @@ export function useComposerAttachmentIntake(input: {
   };
 
   const removeComposerImage = (imageId: string) => {
-    if (removePreparingComposerImages(attachmentTargetKey, new Set([imageId])).size > 0) {
+    if (
+      removePreparingComposerImages(attachmentTargetKey, new Set([imageId]), {
+        cancelSubmission: true,
+      }).size > 0
+    ) {
       // Its compression finishes in the background and is dropped.
       if (questionAttachmentTarget)
         changeQuestionAttachmentPreparation(questionAttachmentTarget, -1);
@@ -372,7 +394,18 @@ export function useComposerAttachmentIntake(input: {
       return;
     }
     const confirmation = requestConfirmDialog(
-      `Remove ${image?.name ?? "this image"} from the message?\nIt is referenced in your text; removing it also removes every reference.`,
+      image?.name != null
+        ? m(
+            msg(
+              "Remove {name} from the message?\nIt is referenced in your text; removing it also removes every reference.",
+              { name: image.name },
+            ),
+          )
+        : m(
+            msg(
+              "Remove this image from the message?\nIt is referenced in your text; removing it also removes every reference.",
+            ),
+          ),
       { variant: "destructive" },
     );
     if (!confirmation) {

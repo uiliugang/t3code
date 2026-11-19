@@ -1,8 +1,10 @@
+import { msg } from "gt-react-native";
 import { AuthAccessWriteScope, type AuthPairingLink, type EnvironmentId } from "@t3tools/contracts";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useEffect, useEffectEvent } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
+import { m } from "../../i18n/messages";
 import { authEnvironment } from "../../state/auth";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -82,8 +84,14 @@ const approvalPrompts = createApprovalPromptQueue<QueuedApprovalPrompt>((prompt,
     prompt.title,
     prompt.message,
     [
-      { text: t("Deny"), onPress: respond(prompt.deny, "Could not deny the device") },
-      { text: t("Approve"), onPress: respond(prompt.approve, "Could not approve the device") },
+      {
+        text: m(msg("Deny")),
+        onPress: respond(prompt.deny, m(msg("Could not deny the device"))),
+      },
+      {
+        text: m(msg("Approve")),
+        onPress: respond(prompt.approve, m(msg("Could not approve the device"))),
+      },
     ],
     // Another dialog took the screen; offer the request again on the next update.
     { cancelable: false, onDismiss: () => answer("later") },

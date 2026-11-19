@@ -1,3 +1,5 @@
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -11,6 +13,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import type { MessageResolver } from "../../i18n/messages";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -30,6 +33,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 function connectionStatusLabel(
   environment: ConnectedEnvironmentSummary,
   t: UiTranslator,
+  resolve: MessageResolver,
 ): string | null {
   if (!environment.isEnabled && environment.connectionState !== "unsupported") {
     return t("Off");
@@ -38,9 +42,13 @@ function connectionStatusLabel(
     {
       phase: environment.connectionState,
       error: environment.connectionError,
+      ...(environment.i18nConnectionError === undefined
+        ? {}
+        : { i18nError: environment.i18nConnectionError }),
       traceId: environment.connectionErrorTraceId,
     },
     t,
+    resolve,
   );
 }
 
@@ -58,6 +66,7 @@ export function ConnectionEnvironmentRow(props: {
   ) => Promise<AtomCommandResult<unknown, unknown>>;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const [label, setLabel] = useState(props.environment.environmentLabel);
   const [url, setUrl] = useState(props.environment.displayUrl);
   const serverConfig = useAtomValue(
@@ -75,13 +84,13 @@ export function ConnectionEnvironmentRow(props: {
   const enabled = props.environment.isEnabled && !unsupported;
   const awaitingApproval = enabled && presentation?.connection.awaitingApproval === true;
   const statusLabel = awaitingApproval
-    ? environmentStatusText(presentation.connection, t)
-    : connectionStatusLabel(props.environment, t);
+    ? environmentStatusText(presentation.connection, t, m)
+    : connectionStatusLabel(props.environment, t, m);
   const statusTraceId = enabled ? props.environment.connectionErrorTraceId : null;
   const hasConnectionFailure =
     enabled && props.environment.connectionError !== null && !awaitingApproval;
   const freeze = enabled
-    ? hostFreezeNotice(props.environment.environmentLabel, serverConfig?.lastEventLoopStall)
+    ? hostFreezeNotice(props.environment.environmentLabel, serverConfig?.lastEventLoopStall, m)
     : null;
   const isRetrying =
     enabled &&
@@ -99,7 +108,9 @@ export function ConnectionEnvironmentRow(props: {
     const error = Cause.squash(result.cause);
     Dialog.alert(
       t("Could not update environment"),
-      t(error instanceof Error ? error.message : "The environment could not be updated."),
+      error instanceof Error
+        ? t(errorDisplayMessage(error, m) ?? error.message)
+        : t("The environment could not be updated."),
     );
   };
 

@@ -5,7 +5,7 @@ import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { DraftInput } from "../ui/draft-input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 const COLOR_LABELS = {
@@ -22,6 +22,7 @@ const SCHEME_LABELS = {
 
 export function DiffColorsSettings() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const colors =

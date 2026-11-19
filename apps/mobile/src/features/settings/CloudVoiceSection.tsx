@@ -1,8 +1,8 @@
-import type { CloudSpeechModel } from "@t3tools/contracts";
-import type { SettingsSecretValue } from "@t3tools/contracts";
+import type { CloudSpeechModel, SettingsSecretValue } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import type { EnvironmentPresentation } from "../../state/environments";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useMessages } from "gt-react-native";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { cloudSpeechDisclosure } from "@t3tools/shared/speech";
 import { setCloudSpeechKey } from "@t3tools/client-runtime/voice-input";
@@ -181,6 +181,7 @@ function Separated({ children }: { children: ReactNode }) {
 
 function CloudChoices({ environment, active, onClose }: Props & { onClose: () => void }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const id = environment.environmentId;
   const connection = useAtomValue(cloudVoiceConnectionAtom(id));
   const keys = useAtomValue(cloudVoiceKeysAtom(id));
@@ -199,7 +200,7 @@ function CloudChoices({ environment, active, onClose }: Props & { onClose: () =>
   const sources =
     Constants.expoConfig?.extra?.secretsFeatureEnabled === true &&
     environment.serverConfig?.secretReferences
-      ? configuredSecretSources(environment.serverConfig.settings.secretProviders)
+      ? configuredSecretSources(environment.serverConfig.settings.secretProviders, messages)
       : [];
   const source = sources.find((candidate) => candidate.id === sourceId);
   const credential =

@@ -1,6 +1,7 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAuth, useClerk } from "@clerk/react";
 import { readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
+import { msg, useMessages } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
@@ -13,16 +14,18 @@ import { resolveClerkSignInProps } from "../clerk/authRedirect";
 import { retryClerkLoad, useClerkLoadFailed } from "../clerk/clerkLoadFailure";
 import { Button } from "../ui/button";
 
+const invalidLinkMessage = {
+  context: msg("Authorization request"),
+  title: msg("This connect link is incomplete"),
+  description: msg(
+    "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.",
+  ),
+} as const;
+
 export function ConnectCliAuthorizeSurface() {
   const t = useUiTranslation();
-  const invalidLinkMessage = {
-    context: t("Authorization request"),
-    title: t("This connect link is incomplete"),
-    description: t(
-      "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.",
-    ),
-  } as const;
   const [request] = useState(() => readConnectAuthorizeRequest(new URL(window.location.href)));
+  const m = useMessages();
   const clerk = useClerk();
   const { isLoaded, isSignedIn } = useAuth();
   const loadFailed = useClerkLoadFailed();
@@ -65,7 +68,11 @@ export function ConnectCliAuthorizeSurface() {
   if (!request) {
     return (
       <StandalonePage>
-        <StandalonePageHeader {...invalidLinkMessage} />
+        <StandalonePageHeader
+          context={m(invalidLinkMessage.context)}
+          title={m(invalidLinkMessage.title)}
+          description={m(invalidLinkMessage.description)}
+        />
       </StandalonePage>
     );
   }

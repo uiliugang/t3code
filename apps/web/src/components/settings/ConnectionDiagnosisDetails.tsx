@@ -10,6 +10,7 @@ import {
 } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
+import { msg, useMessages } from "gt-react";
 import { ChevronRightIcon } from "lucide-react";
 
 import { APP_VERSION } from "~/branding";
@@ -29,6 +30,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
  */
 export function useConnectionDiagnosis(environment: EnvironmentPresentation) {
   const t = useUiTranslation();
+  const m = useMessages();
   const environmentId = environment.environmentId;
   const state = AsyncResult.getOrElse(
     useAtomValue(environmentCatalog.stateAtom(environmentId)),
@@ -51,6 +53,7 @@ export function useConnectionDiagnosis(environment: EnvironmentPresentation) {
             serverVersion: environment.serverConfig?.environment.serverVersion,
           },
           t,
+          m,
         )
       : null;
   return { diagnosis, state, relayOnly };
@@ -66,7 +69,11 @@ export function ConnectionDiagnosisHeadline({
 }
 
 const HOP_MARK = { ok: "✓", failed: "✕", unchecked: "–" } as const;
-const HOP_NOTE = { ok: "", failed: "Failed", unchecked: "Not checked" } as const;
+const HOP_NOTE = {
+  ok: "",
+  failed: "Failed",
+  unchecked: "Not checked",
+} as const;
 
 /** Ticks once per second, and only while a retry is scheduled, so the list around it does not re-render. */
 function RetryCountdown({ retryAt }: { readonly retryAt: number }) {
@@ -137,7 +144,11 @@ export function ConnectionDiagnosisPanel({
 }) {
   const t = useUiTranslation();
   const { copyToClipboard } = useCopyToClipboard({
-    target: "connection diagnostics",
+    target: {
+      target: "connection diagnostics",
+      unavailableMessage: msg("Clipboard API is unavailable while copying connection diagnostics."),
+      failureMessage: msg("Failed to copy connection diagnostics to the clipboard."),
+    },
     onError: (error) =>
       toastManager.add(
         stackedThreadToast({

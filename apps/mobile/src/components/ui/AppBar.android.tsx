@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { type RefObject, use, useRef, useState } from "react";
 import { Keyboard, type TextInputInstance, View } from "react-native";
 import { useHardwareBack } from "../../lib/backHandler";
@@ -78,6 +79,7 @@ function SearchableAppBar(props: AppBarProps & { readonly search: AppBarSearch }
 
 function AppBarView(props: AppBarProps & { readonly searchState?: SearchState }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { search, searchState } = props;
   const inFormSheet = use(RoutedFormSheetContext);
   const { paddingTop, paddingBottom } = useToolbarLayout(props.sheet || inFormSheet);
@@ -194,7 +196,7 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
       leading={
         (props.onClose ? (
           <AndroidHeaderIconButton
-            accessibilityLabel={props.closeAccessibilityLabel ?? "Close"}
+            accessibilityLabel={props.closeAccessibilityLabel ?? gt("Close")}
             icon="xmark"
             onPress={props.onClose}
           />
@@ -271,7 +273,7 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
               {inline ? (
                 props.onClose ? (
                   <ScreenHeaderButton
-                    accessibilityLabel={props.closeAccessibilityLabel ?? "Close"}
+                    accessibilityLabel={props.closeAccessibilityLabel ?? gt("Close")}
                     icon="xmark"
                     onPress={props.onClose}
                   />

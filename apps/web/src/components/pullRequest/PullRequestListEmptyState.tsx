@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { useGT } from "gt-react";
 import { PlusIcon, SearchIcon } from "lucide-react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -70,6 +71,8 @@ export function PullRequestListEmptyState({
   onRefresh: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const shownQuery = query.length > 48 ? `${query.slice(0, 48)}…` : query;
   if (!hasProjects) {
     return (
       <Empty>
@@ -94,9 +97,7 @@ export function PullRequestListEmptyState({
     return (
       <PullRequestListGhost
         rows={5}
-        caption={t("Searching every host for “{query}”", {
-          query: query.length > 48 ? `${query.slice(0, 48)}…` : query,
-        })}
+        caption={gt("Searching every host for “{query}”", { query: shownQuery })}
       />
     );
   }

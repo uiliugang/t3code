@@ -4,6 +4,7 @@ import { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
 import { mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -58,6 +59,7 @@ function descendsFrom(
 /** Resolve apps from stored tool calls so links cannot supply apps the call never produced. */
 export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   const { environmentId, threadId, itemId } = route.params;
   if (!environmentId?.trim() || !threadId?.trim() || !itemId?.trim()) {
@@ -94,6 +96,7 @@ function McpAppFullscreen({
   readonly itemId: TurnItemId;
 }) {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   // Wait for focus before goBack; an exit under another screen must not pop that screen.

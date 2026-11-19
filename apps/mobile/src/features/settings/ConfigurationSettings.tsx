@@ -278,14 +278,14 @@ export function ProjectConfigurationSettings({
   });
   const identity = projectTransferIdentity(project);
   return (
-    <SettingsSection title="Project configuration">
+    <SettingsSection title={t("Project configuration")}>
       <View className="gap-1 p-4">
         <Text selectable className="text-sm text-foreground">
           {project.workspaceRoot}
         </Text>
         {identity.repository ? (
           <Text selectable className="text-xs text-foreground-muted">
-            Git: {identity.repository}
+            {t("Git: {repository}", { repository: identity.repository })}
             {identity.directory ? ` · ${identity.directory}` : ""}
           </Text>
         ) : null}
@@ -367,7 +367,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
     reportFailure: false,
   });
   return (
-    <SettingsSection title="Import and export">
+    <SettingsSection title={t("Import and export")}>
       <ConfigurationTransfer
         scope="application"
         connected={environment.connection.phase === "connected"}

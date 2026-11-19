@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { AppBar } from "../../components/ui/AppBar";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -27,6 +28,7 @@ export function ConnectOnboardingRouteScreen() {
 
 function ConfiguredConnectOnboardingRouteScreen() {
   const t = useUiTranslation();
+  const gt = useGT();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
@@ -62,10 +64,10 @@ function ConfiguredConnectOnboardingRouteScreen() {
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       <AppBar
-        title={t("Set up T3 Connect")}
+        title={gt("Set up {product}", { product: "T3 Connect" })}
         onClose={handleClose}
         refresh={{
-          accessibilityLabel: t("Refresh environments"),
+          accessibilityLabel: gt("Refresh environments"),
           disabled: isRefreshing,
           onPress: handleRefresh,
         }}
@@ -94,7 +96,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
         ) : (
           <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
             <Text className="text-sm leading-normal text-foreground-muted">
-              {t("Sign in to your T3 account to set up T3 Connect.")}
+              {gt("Sign in to your T3 account to set up {product}.", { product: "T3 Connect" })}
             </Text>
           </View>
         )}

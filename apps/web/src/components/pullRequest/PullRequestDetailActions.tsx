@@ -6,6 +6,7 @@ import type {
   PullRequestUpdateMethod,
 } from "@t3tools/contracts";
 import { CheckIcon, ChevronDownIcon, FolderGit2Icon, GitBranchIcon, PlayIcon } from "lucide-react";
+import { Branch, T } from "gt-react";
 import type { ReactNode } from "react";
 
 import { AnimatedWidth } from "~/components/AnimatedWidth";
@@ -28,6 +29,8 @@ import { PullRequestGlyph } from "./pullRequestIcons";
 import type { resolvePullRequestState } from "./pullRequestPresentation";
 import type { PickableEnvironment } from "./pullRequestProjectAssignment.logic";
 import { useInlineActionConfirm } from "./useInlineActionConfirm";
+
+import type { ChangeRequestTermKind } from "./changeRequestTerm";
 
 export type PerformPullRequestAction = (
   action: PullRequestAction,
@@ -92,8 +95,7 @@ export function PullRequestCheckoutMenu({
   pickableEnvironments: ReadonlyArray<PickableEnvironment>;
   actingEnvironmentId: EnvironmentId;
   onActingEnvironmentChange: (environmentId: EnvironmentId) => void;
-  /** The host's word for a change request, as in "pull request". */
-  term: string;
+  term: ChangeRequestTermKind;
 }) {
   const t = useUiTranslation();
   return (
@@ -121,7 +123,14 @@ export function PullRequestCheckoutMenu({
             />
           }
         />
-        <TooltipPopup>{t("Check out this {term}", { term: t(term) })}</TooltipPopup>
+        <TooltipPopup>
+          <T>
+            Check out this{" "}
+            <Branch branch={term} mr="merge request" cr="change request">
+              pull request
+            </Branch>
+          </T>
+        </TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" side="bottom">
         <MenuItem disabled={!canPrepareWorktree} onClick={() => onCheckout("worktree")}>

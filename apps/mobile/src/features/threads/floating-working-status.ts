@@ -1,5 +1,6 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { UiTranslator } from "@t3tools/shared/uiLocale";
+import { msg } from "gt-react-native";
+import { m, type MessageResolver } from "../../i18n/messages";
 
 export interface FloatingStatusAction {
   readonly label: string;
@@ -31,29 +32,35 @@ export type FloatingWorkingStatus =
     };
 
 /** A connection still retrying on its own; short enough for the thread header subtitle. */
-export function connectionRetryLabel(input: {
-  readonly connectionError: string | null;
-  readonly connectionState: EnvironmentConnectionPhase;
-  readonly connectionAwaitingApproval?: boolean;
-}): string | null {
+export function connectionRetryLabel(
+  input: {
+    readonly connectionError: string | null;
+    readonly connectionState: EnvironmentConnectionPhase;
+    readonly connectionAwaitingApproval?: boolean;
+  },
+  resolve: MessageResolver = m,
+): string | null {
   if (input.connectionState === "reconnecting" && input.connectionAwaitingApproval) {
-    return "Awaiting device approval";
+    return resolve(msg("Awaiting device approval"));
   }
   if (input.connectionState !== "connecting" && input.connectionState !== "reconnecting") {
     return null;
   }
-  return input.connectionError === null ? "Reconnecting…" : "Retrying connection…";
+  return input.connectionError === null
+    ? resolve(msg("Reconnecting…"))
+    : resolve(msg("Retrying connection…"));
 }
 
-export function connectionFloatingStatus(input: {
-  readonly connectionError: string | null;
-  readonly connectionState: EnvironmentConnectionPhase;
-  readonly environmentLabel: string | null;
-  readonly onReconnect: () => void;
-  readonly t: UiTranslator;
-}): FloatingWorkingStatus | null {
-  const { t } = input;
-  const environmentLabel = input.environmentLabel ?? t("Environment");
+export function connectionFloatingStatus(
+  input: {
+    readonly connectionError: string | null;
+    readonly connectionState: EnvironmentConnectionPhase;
+    readonly environmentLabel: string | null;
+    readonly onReconnect: () => void;
+  },
+  resolve: MessageResolver = m,
+): FloatingWorkingStatus | null {
+  const environmentLabel = input.environmentLabel ?? resolve(msg("Environment"));
   const unavailable = (label: string): FloatingWorkingStatus => ({
     kind: "connection",
     label,
@@ -62,20 +69,24 @@ export function connectionFloatingStatus(input: {
 
   switch (input.connectionState) {
     case "offline":
-      return unavailable(t("You are offline"));
+      return unavailable(resolve(msg("You are offline")));
     case "unsupported":
-      return unavailable(t("Client not supported"));
+      return unavailable(resolve(msg("Client not supported")));
     case "error":
       return unavailable(
         input.connectionError
-          ? t("Failed to connect to {environment}: {error}", {
-              environment: environmentLabel,
-              error: input.connectionError,
-            })
-          : t("Failed to connect to {environment}", { environment: environmentLabel }),
+          ? resolve(
+              msg("Failed to connect to {environment}: {error}", {
+                environment: environmentLabel,
+                error: input.connectionError,
+              }),
+            )
+          : resolve(msg("Failed to connect to {environment}", { environment: environmentLabel })),
       );
     case "available":
-      return unavailable(t("{environment} is not connected", { environment: environmentLabel }));
+      return unavailable(
+        resolve(msg("{environment} is not connected", { environment: environmentLabel })),
+      );
     case "connecting":
     case "reconnecting":
     case "connected":

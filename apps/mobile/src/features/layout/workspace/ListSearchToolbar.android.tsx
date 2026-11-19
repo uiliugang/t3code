@@ -1,24 +1,25 @@
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useNavigation } from "@react-navigation/native";
+
 import { useEffect } from "react";
 import { BackHandler, Keyboard } from "react-native";
 import { AppBar } from "../../../components/ui/AppBar";
 import { appBarMenuItemsFromActions } from "../../../components/ui/menuActionItems";
 import { useHardwareKeyboardCommand } from "../../keyboard/hardwareKeyboardCommands";
 import { WorkspaceBrandTitle } from "./WorkspaceBrandTitle";
+import type { SharedSlotTab } from "./navigation-tab-order";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import type { PullRequestFilterMenu } from "../../pull-requests/PullRequestListFilters";
 import { openSettings } from "../../settings/settings-navigation";
 
-const NOUNS = { pullRequests: "pull requests", issues: "issues" } as const;
-
 /** Pull request and issue search share the thread list's Android header. */
 export function ListSearchToolbar(props: {
-  readonly tab: keyof typeof NOUNS;
+  readonly tab: SharedSlotTab;
   readonly filters?: PullRequestFilterMenu | null;
   readonly onRequestVisibility?: () => void;
 }) {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   const { filters, tab: section } = props;
   const workspace = useWorkspaceTabs()!;

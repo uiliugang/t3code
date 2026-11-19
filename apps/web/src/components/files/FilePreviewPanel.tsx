@@ -1,7 +1,11 @@
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { DownloadIcon, CopyIcon, CheckIcon, Code2Icon, EyeIcon, Table2Icon } from "lucide-react";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { T, useGT, useMessages } from "gt-react";
+import { m } from "~/i18n/messages";
+import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { Spinner } from "~/components/ui/spinner";
 import {
+  type AssetResource,
   AuthPreviewOperateScope,
   type EditorId,
   type EnvironmentId,
@@ -296,7 +300,56 @@ export function WorkspaceBrowserPreview(props: {
       documentId={`${props.environmentId}:${resource._tag}:${props.threadRef.threadId}:${props.absolutePath}`}
       title={props.title}
       pdf={pdf}
+      pdfActions={
+        <WorkspacePdfSaveAction
+          environmentId={props.environmentId}
+          resource={resource}
+          name={props.title}
+        />
+      }
     />
+  );
+}
+
+function WorkspacePdfSaveAction(props: {
+  readonly environmentId: EnvironmentId;
+  readonly resource: AssetResource;
+  readonly name: string;
+}) {
+  const gt = useGT();
+  const [saving, setSaving] = useState(false);
+  const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, props.resource);
+  return (
+    <FileSurfaceAction
+      label={saving ? gt("Preparing file…") : gt("Save file")}
+      disabled={saving}
+      onPress={() => {
+        setSaving(true);
+        void (async () => {
+          const url = await refreshAssetUrl();
+          if (!url) throw new Error(gt("Reconnect to the environment and try again."));
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(gt("The file could not be loaded. Try again."));
+          // Blob downloads keep desktop's custom app scheme from navigating to an external browser.
+          const downloadUrl = URL.createObjectURL(await response.blob());
+          setTimeout(() => URL.revokeObjectURL(downloadUrl), 30_000);
+          const anchor = document.createElement("a");
+          anchor.href = downloadUrl;
+          anchor.download = props.name.split(/[\\/]/).at(-1) || props.name;
+          anchor.click();
+        })()
+          .catch((cause: unknown) =>
+            toastManager.add({
+              type: "error",
+              title: gt("Could not save file"),
+              description: thrownErrorMessage(cause, m) ?? gt("Please try again."),
+            }),
+          )
+          .finally(() => setSaving(false));
+      }}
+    >
+      <DownloadIcon className="size-3.5" />
+    </FileSurfaceAction>
   );
 }
 
@@ -809,6 +862,7 @@ function EditableFileSurface({
   onEditorChange,
 }: EditableFileSurfaceProps) {
   const codeTheme = useCodeTheme(resolvedTheme);
+  const messages = useMessages();
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const promptCommentIds = new Set(
@@ -1052,7 +1106,7 @@ function EditableFileSurface({
                         entry.id,
                       ])}
                       kind={entry.kind}
-                      rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
+                      rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine, messages)}
                       text={entry.text}
                       onCancel={() => removeAnnotationEntry(entry.id)}
                       onComment={(text) => submitAnnotationEntry(entry.id, text)}
@@ -1187,6 +1241,8 @@ export default function FilePreviewPanel({
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
   const draft = typeof composerDraftTarget === "string";
+  const gt = useGT();
+  const m = useMessages();
   const { resolvedTheme } = useTheme();
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
   const [wordWrapOverride, setWordWrapOverride] = useState<boolean | null>(null);
@@ -1200,6 +1256,7 @@ export default function FilePreviewPanel({
   const previewAvailable = usePreviewAvailable(environmentId);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
+    refresh: true,
   });
   const openPreview = useAtomCommand(previewEnvironment.open, {
     reportFailure: false,
@@ -1217,7 +1274,7 @@ export default function FilePreviewPanel({
   const isHtml = relativePath !== null && !isPdf && isBrowserPreviewFile(relativePath);
   const isHostFile =
     attachment !== undefined || (relativePath !== null && isHostPath(relativePath));
-  const fileAccess = useFilesystemReadAccess(environmentId);
+  const fileAccess = useFilesystemReadAccess(environmentId, m);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const file = useProjectFileQuery(
@@ -1225,6 +1282,7 @@ export default function FilePreviewPanel({
     cwd,
     relativePath,
     attachment === undefined && relativePath !== null,
+    m,
   );
   const [fileRefreshRevision, setFileRefreshRevision] = useState(0);
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
@@ -1457,8 +1515,8 @@ export default function FilePreviewPanel({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: t("Unable to open file in browser"),
-          description: error instanceof Error ? error.message : t("An error occurred."),
+          title: gt("Unable to open file in browser"),
+          description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
         }),
       );
     })();
@@ -1702,7 +1760,7 @@ export default function FilePreviewPanel({
             >
               <div className="my-auto flex shrink-0 flex-col gap-3 px-6 py-6 text-center text-xs leading-relaxed">
                 <p className="text-destructive">
-                  {file.readError ? filePreviewReadErrorMessage(file.readError) : file.error}
+                  {file.readError ? filePreviewReadErrorMessage(file.readError, m) : file.error}
                 </p>
                 {attemptedPath ? (
                   <p className="text-muted-foreground">
@@ -1840,15 +1898,18 @@ export function WorkspaceLargeTextPreview(props: {
     path: props.absolutePath,
     disposition: "attachment",
   } as const;
+  const gt = useGT();
   const copyContents = useRef<(() => Promise<string>) | null>(null);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: namedClipboardTarget(props.name),
+  });
   const [saving, setSaving] = useState(false);
   const [revision, setRevision] = useState(0);
   const showError = (cause: unknown) => {
     toastManager.add({
       type: "error",
-      title: t("Could not read file"),
-      description: cause instanceof Error ? cause.message : t("Try again."),
+      title: gt("Could not read file"),
+      description: thrownErrorMessage(cause, m) ?? gt("Try again."),
     });
   };
   // Each workspace mutation re-mints the URL, so an edited file loads its new bytes.
@@ -1879,7 +1940,11 @@ export function WorkspaceLargeTextPreview(props: {
       />
     );
   if (assetUrl._tag !== "Success" || loaded === null)
-    return <div className="p-6 text-xs text-muted-foreground">{t("Loading…")}</div>;
+    return (
+      <div className="p-6 text-xs text-muted-foreground">
+        <T>Loading…</T>
+      </div>
+    );
   const src = `${loaded.url}${loaded.url.includes("?") ? "&" : "?"}revision=${encodeURIComponent(loaded.revision)}`;
   return (
     <>

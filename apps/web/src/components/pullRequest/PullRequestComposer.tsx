@@ -19,6 +19,8 @@ import {
 } from "./pullRequestReviewStore";
 import { pullRequestCompletionScope } from "./PullRequestMarkdownTextarea";
 
+import { changeRequestTermKind } from "./changeRequestTerm";
+
 export function PullRequestComposer({
   environmentId,
   reference,
@@ -42,7 +44,8 @@ export function PullRequestComposer({
   openReviewRequest?: number | undefined;
 }) {
   const t = useUiTranslation();
-  const term = sourceControlClients.get(detail.provider).changeRequest.singular;
+  const terminology = sourceControlClients.get(detail.provider).changeRequest;
+  const term = terminology.singular;
   const [open, setOpen] = useState(false);
   const [reviewPending, setReviewPending] = useState(false);
   const [requestedMode, setRequestedMode] = useState<"comment" | "review">("comment");
@@ -167,7 +170,7 @@ export function PullRequestComposer({
               environmentId={environmentId}
               reference={reference}
               completionScope={pullRequestCompletionScope(detail, environmentId, reference)}
-              term={term}
+              term={changeRequestTermKind(terminology)}
               verdicts={verdicts}
               requestChangesSummaryRequired={sourceControlClients
                 .get(detail.provider)

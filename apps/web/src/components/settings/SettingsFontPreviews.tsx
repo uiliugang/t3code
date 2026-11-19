@@ -4,6 +4,7 @@ import type { ServerProviderSkill } from "@t3tools/contracts";
 import { preloadPatchFile } from "@pierre/diffs/ssr";
 import { useAtomValue } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
+
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -31,6 +32,7 @@ function noop() {}
 
 export function PromptFontPreview() {
   const t = useUiTranslation();
+
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const [draft, setDraft] = useState<{ value: string; cursor: number } | null>(null);
   const prompt = draft?.value ?? t(PROMPT_PREVIEW_TEXT);
@@ -157,6 +159,7 @@ function previewTerminalFont(family: string, size: number): { family?: string; s
 
 export function TerminalFontPreview({ family, size }: { family: string; size: number }) {
   const t = useUiTranslation();
+
   const mountRef = useRef<HTMLDivElement>(null);
   const [surface, setSurface] = useState<GhosttyTerminalSurface | null>(null);
   const [initialFont] = useState(() => previewTerminalFont(family, size));

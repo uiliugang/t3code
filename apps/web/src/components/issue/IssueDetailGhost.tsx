@@ -1,4 +1,5 @@
 import type { IssueListEntry } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { ExternalLinkIcon } from "lucide-react";
 
 import { useUiTranslation } from "~/hooks/useUiTranslation";
@@ -20,11 +21,12 @@ import { IssueStateGlyph, issueTrackerPresentation } from "./issuePresentation";
 export function IssueDetailGhost({ seed }: { seed?: IssueListEntry | null }) {
   const t = useUiTranslation();
   const uiLanguage = useClientSettings((settings) => settings.uiLanguage);
+  const gt = useGT();
   const tracker = seed ? issueTrackerPresentation(seed.tracker) : null;
   return (
     <div
       role="status"
-      aria-label={t("Loading issue")}
+      aria-label={gt("Loading issue")}
       className={cn(
         "scrollbar-gutter-both flex h-full min-h-0 flex-col gap-4 overflow-hidden px-4 pt-3 pb-4",
         !seed && "motion-safe:animate-skeleton",

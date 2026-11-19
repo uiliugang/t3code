@@ -13,6 +13,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   onToggleMenu: () => void;
 }) {
   const t = useUiTranslation();
+
   if (props.count === 0) return null;
   const pulsed = props.pulseKey > 0;
   const count = (

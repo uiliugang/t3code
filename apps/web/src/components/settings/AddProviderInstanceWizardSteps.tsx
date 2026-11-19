@@ -1,5 +1,6 @@
+import { useMessages } from "gt-react";
+
 import { WizardSteps } from "../ui/wizard";
-import { useUiTranslation } from "~/hooks/useUiTranslation";
 import {
   ADD_PROVIDER_WIZARD_STEPS,
   resolveWizardNavigation,
@@ -30,10 +31,10 @@ export function AddProviderInstanceWizardSteps({
   onNavigation,
   disabled = false,
 }: AddProviderInstanceWizardStepsProps) {
-  const t = useUiTranslation();
+  const m = useMessages();
   return (
     <WizardSteps
-      steps={steps.map((step) => t(step))}
+      steps={steps.map((step) => m(step))}
       currentStep={currentStep}
       summaries={summaries}
       isStepDisabled={() => disabled}

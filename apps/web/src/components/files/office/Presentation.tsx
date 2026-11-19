@@ -1,5 +1,6 @@
 /* oxlint-disable react/no-unstable-nested-components -- These callbacks return overlays, and are invoked as render functions. */
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { msg, useGT } from "gt-react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import {
   FileSurfaceAction,
@@ -11,6 +12,7 @@ import { createWorkerClient } from "./worker-rpc";
 import type { SlideMethods, SlideSummary } from "./slide-protocol";
 import { rasterize } from "./vector-pictures";
 import { useUiTranslation } from "../../../hooks/useUiTranslation";
+import { m } from "~/i18n/messages";
 
 type Opened = { slides: readonly SlideSummary[]; paint: PaintPage };
 export default function Presentation(props: {
@@ -19,8 +21,8 @@ export default function Presentation(props: {
   onError: (cause: unknown) => void;
 }) {
   const t = useUiTranslation();
-  const translate = useEffectEvent(t);
   const { onError, bytes: source, onDetails } = props;
+  const gt = useGT();
   const [opened, setOpened] = useState<Opened>();
   const [page, setPage] = useState(0);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
@@ -58,7 +60,7 @@ export default function Presentation(props: {
       const context = canvas.getContext("bitmaprenderer");
       if (!context) {
         result.bitmap.close();
-        throw new Error(translate("This browser cannot draw slides."));
+        throw new Error(m(msg("This browser cannot draw slides.")));
       }
       canvas.width = result.bitmap.width;
       canvas.height = result.bitmap.height;
@@ -80,12 +82,14 @@ export default function Presentation(props: {
       .call("open", { bytes }, { transfer: [bytes], signal: controller.signal })
       .then((slides) => {
         if (slides.length === 0 || slides.length > 500)
-          throw new Error(translate("Preview limited to presentations with 1 to 500 slides."));
+          throw new Error(m(msg("Preview limited to presentations with 1 to 500 slides.")));
         setOpened({ slides, paint });
         onDetails(
-          slides.length === 1
-            ? translate("{count} slide", { count: slides.length })
-            : translate("{count} slides", { count: slides.length }),
+          m(
+            msg("{count, plural, one {{count} slide} other {{count} slides}}", {
+              count: slides.length,
+            }),
+          ),
         );
       })
       .catch(fail);
@@ -110,10 +114,13 @@ export default function Presentation(props: {
           <ChevronLeftIcon className="size-3.5" />
         </FileSurfaceAction>
         <span className="flex-1 text-center text-xs tabular-nums" aria-live="polite">
-          {t("Slide {page} of {count}", { page: page + 1, count: opened.slides.length })}
+          {gt("Slide {page} of {count}", {
+            page: String(page + 1),
+            count: String(opened.slides.length),
+          })}
         </span>
         <FileSurfaceAction
-          label={t("Next slide")}
+          label={gt("Next slide")}
           disabled={page + 1 === opened.slides.length}
           onPress={() => select(page + 1)}
         >
@@ -123,7 +130,7 @@ export default function Presentation(props: {
       <OfficePages
         pages={opened.slides}
         paint={opened.paint}
-        label={t("Slide")}
+        kind="slide"
         scrollRef={scroll}
         onPageChange={setPage}
         onError={onError}

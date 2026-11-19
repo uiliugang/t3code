@@ -1,8 +1,11 @@
 import { MessageId, RunAttemptId, RunId, type ScreenReaderAnnouncements } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
+import { getTranslationsSnapshot, initializeGT } from "gt-react";
 import { translateUi } from "@t3tools/shared/uiLocale";
 
+import { m, setActiveLocale } from "../../i18n/messages";
+import zhTranslations from "../../i18n/translations/zh.json";
 import type { TimelineAttempt, TimelineEntry, WorkLogEntry } from "../../session-logic";
 import {
   nextTurnDetailAnnouncement,
@@ -160,19 +163,33 @@ describe("turnDetail", () => {
     expect(turnDetail([prompt, edit], undefined, null, english).activity).not.toMatch(
       /[\uD800-\uDFFF]/u,
     );
-    const chinese = (message: string, values?: Parameters<typeof translateUi>[2]) =>
-      translateUi("zh-CN", message, values);
-    expect(turnDetail([prompt, command("git")], undefined, null, chinese).activity).toBe(
-      "正在运行 git",
-    );
-    expect(
-      turnDetail(
-        [prompt, work("edit", { itemType: "file_change", changedFiles: ["search.ts"] })],
-        undefined,
-        null,
-        chinese,
-      ).activity,
-    ).toBe("正在编辑 search.ts");
+  });
+
+  it("announces the command and file name in Chinese", async () => {
+    initializeGT({
+      defaultLocale: "en",
+      locales: ["en", "zh"],
+      loadTranslations: async (locale) => (locale === "zh" ? zhTranslations : {}),
+    });
+    await getTranslationsSnapshot("zh");
+    const chinese = translateUi.bind(null, "zh-CN");
+    setActiveLocale("zh");
+    try {
+      expect(turnDetail([prompt, command("git")], undefined, null, chinese, m).activity).toBe(
+        "正在运行 git",
+      );
+      expect(
+        turnDetail(
+          [prompt, work("edit", { itemType: "file_change", changedFiles: ["search.ts"] })],
+          undefined,
+          null,
+          chinese,
+          m,
+        ).activity,
+      ).toBe("正在编辑 search.ts");
+    } finally {
+      setActiveLocale("en");
+    }
   });
 
   it.each<{

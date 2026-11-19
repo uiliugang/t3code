@@ -1,4 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { useGT } from "gt-react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import {
   isAtomCommandInterrupted,
@@ -12,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import { useRef, useState } from "react";
 import { TextInput, View } from "react-native";
+import { m } from "../../i18n/messages";
 
 import * as Dialog from "../../components/ui/Dialog";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -32,7 +35,7 @@ import { ClaudeInstallationControls } from "./ClaudeInstallationControls";
 import type { ProviderRowRenderer } from "./ProviderSwipeRow";
 
 function useProviderInstanceMutation(environment: SettingsTarget) {
-  const t = useUiTranslation();
+  const gt = useGT();
   const mutate = useAtomCommand(serverEnvironment.mutateProviderInstance, {
     reportFailure: false,
     reportDefect: false,
@@ -55,7 +58,9 @@ function useProviderInstanceMutation(environment: SettingsTarget) {
     if (!isAtomCommandInterrupted(result)) {
       const failure = squashAtomCommandFailure(result);
       setError(
-        failure instanceof Error ? failure.message : t("Could not save the Claude account."),
+        failure instanceof Error
+          ? (errorDisplayMessage(failure, m) ?? failure.message)
+          : gt("Could not save the {provider} account.", { provider: "Claude" }),
       );
     }
     return false;
@@ -233,6 +238,7 @@ function ClaudeAccountForm({
   readonly onDone: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [draft, setDraft] = useState(initial);
   const { run, pending, error, setError } = useProviderInstanceMutation(environment);
   function save() {
@@ -273,8 +279,12 @@ function ClaudeAccountForm({
           { environment: environment.label },
         )}
       </Text>
-      {field("name", "Account name", "Name, e.g. Work")}
-      {field("configDir", "Claude config folder", "Config folder, e.g. ~/.claude-work")}
+      {field("name", gt("Account name"), gt("Name, e.g. Work"))}
+      {field(
+        "configDir",
+        gt("{provider} config folder", { provider: "Claude" }),
+        gt("Config folder, e.g. {path}", { path: "~/.claude-work" }),
+      )}
       {error ? (
         <Text accessibilityRole="alert" className="text-danger-foreground">
           {error}

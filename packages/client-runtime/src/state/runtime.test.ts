@@ -1256,7 +1256,7 @@ describe("environment query lifecycle", () => {
     }),
   );
 
-  it.effect("refetches when mounted again after its stale time, while still cached", () =>
+  it.effect("refetches a stale query on remount while another view keeps the cache live", () =>
     Effect.gen(function* () {
       let now = 0;
       using _now = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -1270,6 +1270,11 @@ describe("environment query lifecycle", () => {
       );
       const registry = AtomRegistry.make();
       yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+      const sidebar = harness.family(
+        { environmentId: QUERY_ENVIRONMENT.environmentId, input: undefined },
+        "sidebar",
+      );
+      registry.mount(sidebar);
       const read = readEnvironmentQuery(registry, harness.atom);
       const remount = Effect.gen(function* () {
         const unmount = registry.mount(harness.atom);
@@ -1298,6 +1303,7 @@ describe("environment query lifecycle", () => {
       });
       expect(yield* read).toBe("after edit");
       unmount();
+      expect(yield* readEnvironmentQuery(registry, sidebar)).toBe("after edit");
       expect(fetches).toBe(2);
     }),
   );

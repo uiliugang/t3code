@@ -957,11 +957,21 @@ const make = Effect.gen(function* () {
       }
       if (decoded._tag === "Failure" || legacySettings._tag === "Failure") {
         const failure = decoded._tag === "Failure" ? decoded : legacySettings;
-        // The file may hold an opt-out we can no longer read; never resume threads on a guess.
+        // The file may hold an opt-out we can no longer read.
         settings = {
           ...managed.defaults,
           continueThreadsAfterServerUpdate: false,
           usageHistoryRetentionDays: "unlimited",
+          storageCleanup: {
+            worktreeKeepWhen: "any-local-files",
+            worktreeAfterDays: null,
+            worktreeSettledAfterDays: null,
+            worktreeOnMerge: false,
+            worktreeOnDelete: false,
+            worktreeUnchanged: false,
+            browserArtifactsAfterDays: null,
+            logsAfterDays: null,
+          },
         };
         if (failure._tag === "Failure") {
           parseFailure = Option.some(Cause.squash(failure.cause));

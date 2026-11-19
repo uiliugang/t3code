@@ -1,7 +1,7 @@
+import { useGT } from "gt-react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
-import { useUiTranslation } from "../../lib/useUiTranslation";
 
 export function ConnectionTraceId({
   traceId,
@@ -12,20 +12,21 @@ export function ConnectionTraceId({
   readonly tone?: "muted" | "danger";
   readonly activation?: "press" | "longPress";
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   const copy = () => copyTextWithHaptic(traceId, { target: "connection-trace-id" });
   return (
     <>
-      {t(" Trace ID: ")}
+      {" "}
+      {gt("Trace ID:")}{" "}
       <Text
         accessibilityHint={
           activation === "longPress"
-            ? t("Long press to copy the trace ID")
-            : t("Copies the trace ID")
+            ? gt("Long press to copy the trace ID")
+            : gt("Copies the trace ID")
         }
-        accessibilityLabel={t("Copy trace ID {traceId}", { traceId })}
+        accessibilityLabel={gt("Copy trace ID {traceId}", { traceId })}
         accessibilityRole="button"
-        accessibilityActions={[{ name: "activate", label: t("Copy trace ID") }]}
+        accessibilityActions={[{ name: "activate", label: gt("Copy trace ID") }]}
         onAccessibilityAction={(event) => {
           event.stopPropagation();
           if (event.nativeEvent.actionName === "activate") copy();

@@ -19,7 +19,6 @@ import {
   type WorktreeKeepWhen,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { unquoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
@@ -42,6 +41,7 @@ import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionMana
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { makeWorktreeFileInspection } from "../vcs/worktreeFileInspection.ts";
 import { removeLinkedWorktree } from "../vcs/worktreeRemoval.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
@@ -356,46 +356,7 @@ const make = Effect.gen(function* () {
       managedRoots: yield* roots(),
     };
   });
-  const hasSubmoduleFiles = Effect.fn("ManagedWorktrees.hasSubmoduleFiles")(function* (
-    identity: WorkspaceCheckoutIdentity,
-  ) {
-    let protectedFiles = yield* fs.exists(path.join(identity.gitDir, "modules"));
-    yield* git.execute({
-      operation: "ManagedWorktrees.submodules",
-      cwd: identity.checkoutRoot,
-      args: ["ls-files", "--stage"],
-      maxOutputBytes: 64 * 1024,
-      appendTruncationMarker: true,
-      keepLineCallbacksAfterTruncation: true,
-      progress: {
-        onStdoutLine: (line) => {
-          if (protectedFiles || !line.startsWith("160000 ")) return Effect.void;
-          const relative = unquoteGitPatchPath(line.slice(line.indexOf("\t") + 1));
-          const directory = path.resolve(identity.checkoutRoot, relative);
-          // Uninitialized gitlinks may be empty; status omits local files placed inside them.
-          return fs.realPath(directory).pipe(
-            Effect.flatMap((real) =>
-              real !== directory || relative.includes("\uFFFD")
-                ? Effect.succeed(true)
-                : fs.readDirectory(real).pipe(Effect.map((names) => names.length > 0)),
-            ),
-            Effect.catchIf(
-              (error) => error.reason._tag === "NotFound",
-              () => Effect.succeed(relative.includes("\uFFFD")),
-            ),
-            Effect.orElseSucceed(() => true),
-            Effect.tap((present) =>
-              Effect.sync(() => {
-                if (present) protectedFiles = true;
-              }),
-            ),
-            Effect.asVoid,
-          );
-        },
-      },
-    });
-    return protectedFiles;
-  });
+  const { hasSubmoduleFiles } = yield* makeWorktreeFileInspection;
   const inspect = Effect.fn("ManagedWorktrees.inspect")(function* (
     group: Group,
     context: Effect.Success<ReturnType<typeof inspectionContext>>,

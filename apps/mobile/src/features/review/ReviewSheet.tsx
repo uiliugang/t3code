@@ -10,6 +10,7 @@ import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import type { ReviewSectionItem } from "./reviewModel";
 import { useReviewHeaderPresentation } from "./useReviewHeaderPresentation";
+import { useGT } from "gt-react-native";
 import { type Ref, type ReactElement, useImperativeHandle, useRef, useState } from "react";
 import { Pressable, ScrollView, type NativeSyntheticEvent, StyleSheet, View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -72,6 +73,7 @@ function ReviewHeader(
   const { toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
   const { panes } = useWorkspacePaneState();
   const presentation = useReviewHeaderPresentation(props);
+  const gt = useGT();
   const sectionAction = (section: ReviewSectionItem | null, title: string): AppBarMenuItem => ({
     id: section ? `section:${section.id}` : `unavailable:${title}`,
     title: t(title),
@@ -114,9 +116,15 @@ function ReviewHeader(
                     id: "sections",
                     inline: true,
                     items: [
-                      sectionAction(props.sectionMenu.branchChanges, "Changes"),
-                      sectionAction(props.sectionMenu.workingTree, "Uncommitted"),
-                      sectionAction(props.sectionMenu.latestTurn, "Latest turn"),
+                      sectionAction(
+                        props.sectionMenu.branchChanges,
+                        gt("Changes", { $context: "diff section: branch changes" }),
+                      ),
+                      sectionAction(
+                        props.sectionMenu.workingTree,
+                        gt("Uncommitted", { $context: "diff section: working tree" }),
+                      ),
+                      sectionAction(props.sectionMenu.latestTurn, gt("Latest turn")),
                     ],
                   },
                   ...(props.sectionMenu.turns.length > 0
@@ -274,7 +282,6 @@ interface ReviewFileNavigatorProps {
 }
 
 function ReviewFileNavigator({ files, sectionId, onSelectFile, ref }: ReviewFileNavigatorProps) {
-  const t = useUiTranslation();
   const [fileSelection, setFileSelection] = useState<{
     readonly sectionId: string | null;
     readonly fileId: string | null;
@@ -308,6 +315,7 @@ function ReviewFileNavigator({ files, sectionId, onSelectFile, ref }: ReviewFile
     setFileSelection({ sectionId, fileId });
     onSelectFile(fileId);
   };
+  const gt = useGT();
 
   const renderFile = ({ item }: { readonly item: ReviewNavigatorFile }) => (
     <ReviewFileNavigatorRow
@@ -320,8 +328,10 @@ function ReviewFileNavigator({ files, sectionId, onSelectFile, ref }: ReviewFile
   return (
     <SheetPane>
       <AppBar
-        title={t("Changed files")}
-        subtitle={t(files.length === 1 ? "{count} file" : "{count} files", { count: files.length })}
+        title={gt("Changed files")}
+        subtitle={gt("{count, plural, one {{count} file} other {{count} files}}", {
+          count: files.length,
+        })}
         hideBottomBorder
       />
       <ScreenContent insetHorizontal>
@@ -349,6 +359,7 @@ type ReviewSheetProps = StaticScreenProps<{
 
 export function ReviewSheet(props: ReviewSheetProps) {
   const t = useUiTranslation();
+  const gt = useGT();
   const reduceMotion = useReduceMotionEnabled();
   const { nativeReviewDiffStyle } = useAppearanceCodeSurface();
   const { panes } = useWorkspacePaneState();
@@ -586,7 +597,9 @@ export function ReviewSheet(props: ReviewSheetProps) {
     headerDiffSummary.additions,
     headerDiffSummary.deletions,
     pendingReviewCommentCount > 0
-      ? `${pendingReviewCommentCount} comment${pendingReviewCommentCount === 1 ? "" : "s"}`
+      ? gt("{count, plural, one {{count} comment} other {{count} comments}}", {
+          count: pendingReviewCommentCount,
+        })
       : null,
   ]
     .filter(Boolean)
@@ -655,7 +668,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     traceId: null,
                   }
                 }
-                resourceName="review"
+                resource="review"
                 onRetry={handleRetryEnvironment}
               />
             </View>

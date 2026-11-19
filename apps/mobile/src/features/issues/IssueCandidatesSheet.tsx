@@ -1,4 +1,5 @@
 import { LegendList } from "@legendapp/list/react-native";
+
 import type { ReactNode } from "react";
 import { Platform, View } from "react-native";
 
@@ -35,6 +36,7 @@ export function IssueCandidatesSheet(props: {
   readonly onToggle: (key: string) => void;
 }) {
   const t = useUiTranslation();
+
   const labels = props.noun === "labels";
   const searching = props.query.trim().length > 0;
   return (

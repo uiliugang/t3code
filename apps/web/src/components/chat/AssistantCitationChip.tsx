@@ -5,6 +5,7 @@ import {
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { Link, useNavigate } from "@tanstack/react-router";
+
 import { PencilIcon, QuoteIcon } from "lucide-react";
 import {
   useEffect,
@@ -124,6 +125,7 @@ export function AssistantCitationEmbed({
   trailing: boolean;
 }) {
   const t = useUiTranslation();
+
   const wholeResponse = citation.prefix === "" && citation.suffix === "";
   const { comment, ...quoted } = citation;
   return (
@@ -165,6 +167,7 @@ export function ResponseReplyCard({
   trailing: boolean;
 }) {
   const t = useUiTranslation();
+
   return (
     <ResponseCard
       citation={record.citation}

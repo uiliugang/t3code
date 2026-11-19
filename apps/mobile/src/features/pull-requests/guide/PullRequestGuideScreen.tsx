@@ -3,6 +3,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { msg, useMessages } from "gt-react-native";
 import { useEffect } from "react";
 import { Pressable, View } from "react-native";
 import { AppBar } from "../../../components/ui/AppBar";
@@ -38,11 +39,11 @@ export type GuideStopParams = PullRequestParams & {
 };
 
 const attentionLabels = {
-  tradeoff: "A tradeoff to weigh",
-  contract: "A contract to check",
-  product: "A product call",
-  risk: "A risk to judge",
-  accessibility: "An accessibility call",
+  tradeoff: msg("A tradeoff to weigh"),
+  contract: msg("A contract to check"),
+  product: msg("A product call"),
+  risk: msg("A risk to judge"),
+  accessibility: msg("An accessibility call"),
 };
 
 export function PullRequestGuideContent({
@@ -99,6 +100,7 @@ export function PullRequestGuideContent({
 export function PullRequestGuideStopScreen({ route }: StaticScreenProps<GuideStopParams>) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const m = useMessages();
   const state = useReviewGuide(route.params);
   const detail = useEnvironmentQuery(composerPullRequests.detail(pullRequestTarget(route.params)));
   const permissions = usePullRequestPermissions(route.params, detail.data);
@@ -172,7 +174,7 @@ export function PullRequestGuideStopScreen({ route }: StaticScreenProps<GuideSto
                     <View className="flex-row items-center gap-2">
                       <SymbolView name="eye" size={17} tintColorClassName="accent-icon-muted" />
                       <Text className="text-sm font-t3-semibold">
-                        {attentionLabels[stop.attention.kind]}
+                        {m(attentionLabels[stop.attention.kind])}
                       </Text>
                     </View>
                     <PullRequestMarkdown lineBreaks={false} markdown={stop.attention.note} />

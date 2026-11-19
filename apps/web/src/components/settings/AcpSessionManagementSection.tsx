@@ -1,6 +1,6 @@
-import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { ProjectLabel } from "../ProjectLabel";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import {
   AuthOrchestrationOperateScope,
   AuthProvidersManageScope,
@@ -22,6 +22,8 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { useLayoutEffect, useRef, useState } from "react";
+import { msg, useGT } from "gt-react";
+import { m } from "../../i18n/messages";
 
 import { ensureLocalApi } from "../../localApi";
 import { serverEnvironment } from "../../state/server";
@@ -43,17 +45,16 @@ function needsImport(session: AcpRegistrySession) {
   return session.importedThreadId === null || session.nativeHistoryPending === true;
 }
 
-function reportFailure(
-  t: UiTranslator,
-  title: string,
-  result: AtomCommandResult<unknown, unknown>,
-) {
+function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>) {
   if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
   const error = squashAtomCommandFailure(result);
   toastManager.add({
     type: "error",
-    title: t(title),
-    description: error instanceof Error ? t(error.message) : t("The ACP operation failed."),
+    title,
+    description:
+      error instanceof Error
+        ? (thrownErrorMessage(error, m) ?? error.message)
+        : m(msg("The ACP operation failed.")),
   });
 }
 
@@ -69,7 +70,10 @@ function parseProviderHeaders(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Headers must be valid JSON.",
+      error:
+        error instanceof Error
+          ? (thrownErrorMessage(error, m) ?? error.message)
+          : m(msg("Headers must be valid JSON.")),
     };
   }
   if (
@@ -78,7 +82,7 @@ function parseProviderHeaders(
     Array.isArray(parsed) ||
     !Object.values(parsed).every((value) => typeof value === "string")
   ) {
-    return { ok: false, error: "Headers must be a JSON object with string values." };
+    return { ok: false, error: m(msg("Headers must be a JSON object with string values.")) };
   }
   return { ok: true, headers: parsed as Record<string, string> };
 }
@@ -116,6 +120,7 @@ function InstanceSessionManagement(
   },
 ) {
   const t = useUiTranslation();
+  const gt = useGT();
   const canOperate = useEnvironmentScope(props.environmentId, AuthOrchestrationOperateScope);
   const canRead = useEnvironmentScope(props.environmentId, AuthOrchestrationReadScope);
   const { projectId } = props;
@@ -209,7 +214,7 @@ function InstanceSessionManagement(
       setNextCursor(result.value.nextCursor);
       return;
     }
-    reportFailure(t, "Could not list ACP sessions", result);
+    reportFailure(gt("Could not list ACP sessions"), result);
   };
 
   const importNativeSession = async (session: AcpRegistrySession) => {
@@ -244,12 +249,12 @@ function InstanceSessionManagement(
       toastManager.add({
         type: "success",
         title: result.value.imported
-          ? t("ACP session imported")
-          : t("ACP session already imported"),
+          ? gt("ACP session imported")
+          : gt("ACP session already imported"),
       });
       return;
     }
-    reportFailure(t, "Could not import ACP session", result);
+    reportFailure(gt("Could not import ACP session"), result);
   };
 
   const deleteNativeSession = async (session: AcpRegistrySession) => {
@@ -257,7 +262,9 @@ function InstanceSessionManagement(
     if (projectId === null || deletingSessionId !== null || session.importedThreadId !== null)
       return;
     const confirmed = await ensureLocalApi().dialogs.confirm(
-      `Permanently delete native ACP session "${session.title ?? session.sessionId}"?`,
+      gt('Permanently delete native ACP session "{session}"?', {
+        session: session.title ?? session.sessionId,
+      }),
       { variant: "destructive" },
     );
     if (
@@ -279,7 +286,7 @@ function InstanceSessionManagement(
       );
       return;
     }
-    reportFailure(t, "Could not delete ACP session", result);
+    reportFailure(gt("Could not delete ACP session"), result);
   };
 
   const loadProviders = async (resetProviderId?: string) => {
@@ -310,7 +317,7 @@ function InstanceSessionManagement(
       );
       return;
     }
-    reportFailure(t, "Could not list ACP providers", result);
+    reportFailure(gt("Could not list ACP providers"), result);
   };
 
   const saveProvider = async (provider: AcpRegistryConfigurableProvider) => {
@@ -352,7 +359,7 @@ function InstanceSessionManagement(
       await loadProviders(provider.providerId);
       return;
     }
-    reportFailure(t, "Could not configure ACP provider", result);
+    reportFailure(gt("Could not configure ACP provider"), result);
   };
 
   const disableConfiguredProvider = async (provider: AcpRegistryConfigurableProvider) => {
@@ -360,7 +367,7 @@ function InstanceSessionManagement(
     if (projectId === null || savingProviderId !== null || loadingProviders || provider.required)
       return;
     const confirmed = await ensureLocalApi().dialogs.confirm(
-      `Disable ACP provider "${provider.providerId}"?`,
+      gt('Disable ACP provider "{provider}"?', { provider: provider.providerId }),
       { variant: "destructive" },
     );
     if (
@@ -380,7 +387,7 @@ function InstanceSessionManagement(
       await loadProviders(provider.providerId);
       return;
     }
-    reportFailure(t, "Could not disable ACP provider", result);
+    reportFailure(gt("Could not disable ACP provider"), result);
   };
 
   const logoutProvider = async () => {
@@ -396,17 +403,17 @@ function InstanceSessionManagement(
       setNextCursor(null);
       return;
     }
-    reportFailure(t, "Could not log out of ACP agent", result);
+    reportFailure(gt("Could not log out of ACP agent"), result);
   };
 
   return (
     <div className="grid gap-3">
       <SettingsRow
-        title="Native sessions"
-        description={t("Resume agent-owned conversations as T3 threads.")}
+        title={gt("Native sessions")}
+        description={gt("Resume agent-owned conversations as T3 threads.")}
         status={
           canList && props.projects.length === 0
-            ? t("Add a project before importing sessions.")
+            ? gt("Add a project before importing sessions.")
             : undefined
         }
         control={
@@ -503,7 +510,7 @@ function InstanceSessionManagement(
                         onClick={() => void importNativeSession(session)}
                       >
                         {!needsImport(session)
-                          ? "Imported"
+                          ? gt("Imported")
                           : importingSessionId === session.sessionId
                             ? t("Importing")
                             : t("Import")}
@@ -623,8 +630,10 @@ function InstanceSessionManagement(
                           {provider.providerId}
                         </p>
                         <p className="text-3xs text-muted-foreground">
-                          {provider.current === null ? t("Disabled") : t("Configured")}
-                          {provider.required ? t(" · Required") : ""}
+                          {provider.current === null
+                            ? gt("Disabled", { $context: "ACP provider status" })
+                            : gt("Configured")}
+                          {provider.required ? ` · ${gt("Required")}` : ""}
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
@@ -666,7 +675,10 @@ function InstanceSessionManagement(
                           if (value !== null) updateDraft({ apiType: value });
                         }}
                       >
-                        <SelectTrigger aria-label={`${provider.providerId} protocol`} size="sm">
+                        <SelectTrigger
+                          aria-label={gt("{provider} protocol", { provider: provider.providerId })}
+                          size="sm"
+                        >
                           <SelectValue>{draft.apiType}</SelectValue>
                         </SelectTrigger>
                         <SelectPopup>
@@ -680,7 +692,7 @@ function InstanceSessionManagement(
                       <Input
                         size="sm"
                         type="url"
-                        aria-label={`${provider.providerId} base URL`}
+                        aria-label={gt("{provider} base URL", { provider: provider.providerId })}
                         placeholder="https://api.example.com"
                         value={draft.baseUrl}
                         disabled={props.readOnly || savingProviderId !== null}
@@ -690,8 +702,12 @@ function InstanceSessionManagement(
                     <Input
                       size="sm"
                       type="password"
-                      aria-label={`${provider.providerId} write-only headers JSON`}
-                      placeholder={t('Write-only headers JSON, e.g. {"Authorization":"Bearer …"}')}
+                      aria-label={gt("{provider} write-only headers JSON", {
+                        provider: provider.providerId,
+                      })}
+                      placeholder={gt("Write-only headers JSON, e.g. {example}", {
+                        example: '{"Authorization":"Bearer …"}',
+                      })}
                       value={draft.headers}
                       disabled={props.readOnly || savingProviderId !== null}
                       onValueChange={(value) => updateDraft({ headers: value })}

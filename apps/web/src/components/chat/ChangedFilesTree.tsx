@@ -1,8 +1,8 @@
 import { useSyncLayout } from "@legendapp/list/react";
-import {
-  type ExecutionResourceId,
-  type OrchestrationV2CheckpointFileTotals,
-  type RunId,
+import type {
+  ExecutionResourceId,
+  OrchestrationV2CheckpointFileTotals,
+  RunId,
 } from "@t3tools/contracts";
 import { type MouseEvent, type ReactNode, memo, useLayoutEffect, useRef, useState } from "react";
 import { type TurnDiffFileChange } from "../../types";

@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { SettingsIcon } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 import { type BackgroundActivityProfile } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
@@ -35,28 +36,28 @@ import {
 } from "./SettingsPanels.logic";
 import { IntervalSecondsField } from "./IntervalSecondsField";
 import { PolicyTooltip, SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
-  balanced: "Balanced",
-  performance: "Performance",
-  "battery-saver": "Battery saver",
+  balanced: msg("Balanced"),
+  performance: msg("Performance"),
+  "battery-saver": msg("Battery saver"),
 };
 
 type BackgroundActivityProfileOption = BackgroundActivityProfile | "advanced";
 
 const BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS: Record<BackgroundActivityProfileOption, string> = {
   ...BACKGROUND_ACTIVITY_PROFILE_LABELS,
-  advanced: "Advanced",
+  advanced: msg("Advanced", { $context: "background activity power profile" }),
 };
 
 const BACKGROUND_ACTIVITY_PROFILE_DESCRIPTIONS: Record<BackgroundActivityProfile, string> = {
-  balanced: "Pauses probes for idle clients, locked hosts, or low power mode.",
-  performance: "Allows scoped background probes while any subscribed client remains connected.",
-  "battery-saver": "Also pauses background probes when the host or client is on battery.",
+  balanced: msg("Pauses probes for idle clients, locked hosts, or low power mode."),
+  performance: msg(
+    "Allows scoped background probes while any subscribed client remains connected.",
+  ),
+  "battery-saver": msg("Also pauses background probes when the host or client is on battery."),
 };
-
-const ADVANCED_BACKGROUND_ACTIVITY_DESCRIPTION = "Uses custom intervals.";
 
 const BACKGROUND_ACTIVITY_BOOLEAN_OVERRIDES: ReadonlyArray<{
   readonly key:
@@ -66,10 +67,10 @@ const BACKGROUND_ACTIVITY_BOOLEAN_OVERRIDES: ReadonlyArray<{
     | "pauseWhenOnBattery";
   readonly label: string;
 }> = [
-  { key: "pauseWhenHostLocked", label: "Pause when host is locked" },
-  { key: "pauseWhenHostLowPower", label: "Pause on host low power" },
-  { key: "pauseWhenClientLowPower", label: "Pause on client low power" },
-  { key: "pauseWhenOnBattery", label: "Pause on battery" },
+  { key: "pauseWhenHostLocked", label: msg("Pause when host is locked") },
+  { key: "pauseWhenHostLowPower", label: msg("Pause on host low power") },
+  { key: "pauseWhenClientLowPower", label: msg("Pause on client low power") },
+  { key: "pauseWhenOnBattery", label: msg("Pause on battery") },
 ];
 
 function resetBackgroundActivitySettings() {
@@ -96,6 +97,9 @@ function BackgroundActivityAdvancedDialog({
   readonly onOpenChange: (open: boolean) => void;
 }) {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
+  const gt = useGT();
+  const m = useMessages();
   const canWriteSettings = useScopedSettingsWriteAllowed();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -152,19 +156,19 @@ function BackgroundActivityAdvancedDialog({
                 <SelectTrigger
                   size="sm"
                   className="w-full sm:w-40"
-                  aria-label={t("Shared background policy")}
+                  aria-label={gt("Shared background policy")}
                 >
-                  <SelectValue>{t(BACKGROUND_ACTIVITY_PROFILE_LABELS[activeProfile])}</SelectValue>
+                  <SelectValue>{m(BACKGROUND_ACTIVITY_PROFILE_LABELS[activeProfile])}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   <SelectItem hideIndicator value="balanced">
-                    {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced)}
+                    {m(BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced)}
                   </SelectItem>
                   <SelectItem hideIndicator value="performance">
-                    {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.performance)}
+                    {m(BACKGROUND_ACTIVITY_PROFILE_LABELS.performance)}
                   </SelectItem>
                   <SelectItem hideIndicator value="battery-saver">
-                    {t(BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"])}
+                    {m(BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"])}
                   </SelectItem>
                 </SelectPopup>
               </Select>
@@ -181,7 +185,11 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label={t("Git fetch interval")}
+                  labels={{
+                    decrease: gt("Decrease Git fetch interval"),
+                    input: gt("Git fetch interval in seconds"),
+                    increase: gt("Increase Git fetch interval"),
+                  }}
                   value={automaticGitFetchIntervalSeconds}
                   min={0}
                   step={5}
@@ -211,7 +219,11 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label={t("provider health interval")}
+                  labels={{
+                    decrease: gt("Decrease provider health interval"),
+                    input: gt("Provider health interval in seconds"),
+                    increase: gt("Increase provider health interval"),
+                  }}
                   value={providerHealthRefreshIntervalSeconds}
                   min={0}
                   step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
@@ -239,7 +251,11 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label={t("active host power interval")}
+                  labels={{
+                    decrease: gt("Decrease active host power interval"),
+                    input: gt("Active host power interval in seconds"),
+                    increase: gt("Increase active host power interval"),
+                  }}
                   value={hostPowerMonitorActiveIntervalSeconds}
                   min={5}
                   step={5}
@@ -267,7 +283,11 @@ function BackgroundActivityAdvancedDialog({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <IntervalSecondsField
-                  label={t("idle host power interval")}
+                  labels={{
+                    decrease: gt("Decrease idle host power interval"),
+                    input: gt("Idle host power interval in seconds"),
+                    increase: gt("Increase idle host power interval"),
+                  }}
                   value={hostPowerMonitorIdleIntervalSeconds}
                   min={5}
                   step={30}
@@ -292,7 +312,7 @@ function BackgroundActivityAdvancedDialog({
                   key={key}
                   className="flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 sm:border-r sm:even:border-r-0"
                 >
-                  <span className="text-sm font-medium">{t(label)}</span>
+                  <span className="text-sm font-medium">{m(label)}</span>
                   <Switch
                     checked={resolvedBackgroundActivity[key]}
                     onCheckedChange={(checked) =>
@@ -306,7 +326,7 @@ function BackgroundActivityAdvancedDialog({
                         ),
                       )
                     }
-                    aria-label={t(label)}
+                    aria-label={m(label)}
                   />
                 </label>
               ))}
@@ -330,6 +350,9 @@ function BackgroundActivityAdvancedDialog({
 
 export function BackgroundActivitySettingsRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
+  const gt = useGT();
+  const m = useMessages();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const { scope, environment } = useSettingsScope();
@@ -342,10 +365,10 @@ export function BackgroundActivitySettingsRow() {
   const backgroundActivityProfileOption = resolveBackgroundActivityProfileOption(settings);
   const backgroundActivityDescription =
     backgroundActivityProfileOption === "advanced"
-      ? `${ADVANCED_BACKGROUND_ACTIVITY_DESCRIPTION} Shared policy: ${
-          BACKGROUND_ACTIVITY_PROFILE_LABELS[activeBackgroundActivityProfile]
-        }.`
-      : BACKGROUND_ACTIVITY_PROFILE_DESCRIPTIONS[resolvedBackgroundActivity.profile];
+      ? gt("Uses custom intervals. Shared policy: {profile}.", {
+          profile: m(BACKGROUND_ACTIVITY_PROFILE_LABELS[activeBackgroundActivityProfile]),
+        })
+      : m(BACKGROUND_ACTIVITY_PROFILE_DESCRIPTIONS[resolvedBackgroundActivity.profile]);
   const canResetBackgroundActivity = !Equal.equals(
     settings.backgroundActivity,
     DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -370,7 +393,7 @@ export function BackgroundActivitySettingsRow() {
       resetAction={
         canResetBackgroundActivity ? (
           <SettingResetButton
-            label={t("background activity")}
+            ariaLabel={gt("Reset background activity to default")}
             onClick={() => updateSettings(resetBackgroundActivitySettings())}
           />
         ) : null
@@ -396,26 +419,26 @@ export function BackgroundActivitySettingsRow() {
             >
               <SelectValue>
                 {(value: BackgroundActivityProfileOption | null) =>
-                  value === null ? "Mixed" : BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS[value]
+                  value === null
+                    ? gt("Mixed", { $context: "values differ across targets" })
+                    : m(BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS[value])
                 }
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectItem hideIndicator value="balanced">
-                {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced)}
+                {m(BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced)}
               </SelectItem>
               <SelectItem hideIndicator value="performance">
-                {t(BACKGROUND_ACTIVITY_PROFILE_LABELS.performance)}
+                {m(BACKGROUND_ACTIVITY_PROFILE_LABELS.performance)}
               </SelectItem>
               <SelectItem hideIndicator value="battery-saver">
-                {t(BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"])}
+                {m(BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"])}
               </SelectItem>
               <SelectItem hideIndicator value="advanced" disabled={!isEnvironmentScope}>
                 {isEnvironmentScope
-                  ? t(BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced)
-                  : t("{profile} (one environment)", {
-                      profile: t(BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced),
-                    })}
+                  ? m(BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced)
+                  : gt("Advanced (one environment)")}
               </SelectItem>
             </SelectPopup>
           </Select>

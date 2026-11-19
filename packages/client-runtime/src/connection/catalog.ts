@@ -64,7 +64,19 @@ export class BearerConnectionCredential extends Schema.TaggedClass<
   token: Schema.String,
 }) {}
 
-export const ConnectionCredential = Schema.Union([BearerConnectionCredential]);
+/** A token bound to this device's DPoP key, which the host renews while the device uses it. */
+export class DpopConnectionCredential extends Schema.TaggedClass<DpopConnectionCredential>()(
+  "DpopConnectionCredential",
+  {
+    accessToken: Schema.String,
+    expiresAtEpochMs: Schema.Number,
+  },
+) {}
+
+export const ConnectionCredential = Schema.Union([
+  BearerConnectionCredential,
+  DpopConnectionCredential,
+]);
 export type ConnectionCredential = typeof ConnectionCredential.Type;
 
 export class PrimaryConnectionRegistration extends Schema.TaggedClass<
@@ -87,7 +99,7 @@ export class BearerConnectionRegistration extends Schema.TaggedClass<
 >()("BearerConnectionRegistration", {
   target: BearerConnectionTarget,
   profile: BearerConnectionProfile,
-  credential: BearerConnectionCredential,
+  credential: ConnectionCredential,
 }) {}
 
 export class SshConnectionRegistration extends Schema.TaggedClass<

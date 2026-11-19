@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { useId, useState } from "react";
 import { Image, Pressable, View } from "react-native";
 
@@ -16,6 +17,7 @@ function ResolvedWorkspaceFileImagePreview(props: {
   readonly actionsSource?: MediaActionsSource;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   const sourceIdentifier = useId();
@@ -53,7 +55,7 @@ function ResolvedWorkspaceFileImagePreview(props: {
               resizeMode="contain"
               onLoadStart={() => setLoadError(null)}
               onError={(event) => {
-                setLoadError(event.nativeEvent.error || "The image could not be rendered.");
+                setLoadError(event.nativeEvent.error || gt("The image could not be rendered."));
               }}
             />
           </PresentationSource>
@@ -77,9 +79,9 @@ export function WorkspaceFileImagePreview(props: {
   readonly uri: string | null;
   readonly actionsSource?: MediaActionsSource;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   if (props.uri === null) {
-    return <FilePreviewLoading message={t("Preparing image preview...")} background="card" />;
+    return <FilePreviewLoading message={gt("Preparing image preview...")} background="card" />;
   }
 
   return (
