@@ -528,6 +528,7 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
           projectId: boxProject,
           title: "Run the suite there",
           modelSelection: codex,
+          workspaceStrategy: { type: "root" },
           message: "Run the suite.",
           clientRequestId: "launch-1",
           ...args,
