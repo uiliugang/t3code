@@ -3,7 +3,7 @@ import { resolveLocaleSelection } from "@t3tools/client-runtime/locales";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { GTProvider, initializeGT, useLocale } from "gt-react-native";
-import { createContext, use, useDeferredValue, useEffect, useMemo, type ReactNode } from "react";
+import { createContext, use, useEffect, type ReactNode } from "react";
 import { Platform, TurboModuleRegistry, View, type TurboModule } from "react-native";
 
 import { mobilePreferencesAtom } from "../state/preferences";
@@ -64,17 +64,10 @@ export function I18nProvider(props: { readonly children: ReactNode }) {
     SUPPORTED_LOCALES,
     DEFAULT_LOCALE,
   );
-  // GT suspends while a locale's catalog loads. Deferring the switch keeps the current language
-  // on screen until then, instead of GT's full-screen spinner.
-  const selection = useDeferredValue(
-    useMemo(() => ({ catalogLocale, formattingLocale }), [catalogLocale, formattingLocale]),
-  );
   return (
-    <GTProvider locale={selection.catalogLocale} fallback={<View className="flex-1 bg-screen" />}>
+    <GTProvider locale={catalogLocale} fallback={<View className="flex-1 bg-screen" />}>
       <ActiveLocale />
-      <FormattingLocaleContext value={selection.formattingLocale}>
-        {props.children}
-      </FormattingLocaleContext>
+      <FormattingLocaleContext value={formattingLocale}>{props.children}</FormattingLocaleContext>
     </GTProvider>
   );
 }

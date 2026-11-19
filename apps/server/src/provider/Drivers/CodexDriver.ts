@@ -3,7 +3,6 @@ import {
   codexRuntimeSource,
   codexByokUrlError,
   codexByokLaunchArgs,
-  CODEX_BYOK_ENVIRONMENT_NAMES,
 } from "@t3tools/shared/codexByok";
 import { ProviderSetupError, ServerSettingsError } from "@t3tools/contracts";
 import { validateCodexEndpoint } from "../CodexEndpointValidation.ts";
@@ -184,7 +183,7 @@ export const CodexDriver: ProviderDriver<
         instanceId,
         displayName,
         accentColor,
-        environment: environment.filter((entry) => !CODEX_BYOK_ENVIRONMENT_NAMES.has(entry.name)),
+        environment,
         enabled,
         config,
       });
